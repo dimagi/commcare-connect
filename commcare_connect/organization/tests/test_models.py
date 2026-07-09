@@ -79,7 +79,7 @@ class TestOrganizationInvite:
     def test_expired_after_expiry_window(self, organization):
         invite = OrganizationInviteFactory(organization=organization)
         OrganizationInvite.objects.filter(pk=invite.pk).update(
-            date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+            date_modified=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
         )
         invite.refresh_from_db()
         assert invite.is_expired
@@ -97,18 +97,40 @@ class TestOrganizationInvite:
         with pytest.raises(IntegrityError):
             OrganizationInviteFactory(organization=organization, email="dup@example.com")
 
-    def test_retire_expired_frees_up_slot(self, organization):
+    def test_send_invite_resets_lapsed_invite(self, organization):
         invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
+        old_token = invite.token
         OrganizationInvite.objects.filter(pk=invite.pk).update(
-            date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+            date_modified=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+        )
+        admin = UserFactory(email="admin@example.com")
+
+        reinvited = OrganizationInvite.send_invite(
+            organization=organization,
+            email="lapsed@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=admin,
         )
 
-        OrganizationInvite.retire_expired(organization, "lapsed@example.com")
+        assert reinvited.pk == invite.pk
+        assert reinvited.status == OrganizationInvite.Status.INVITED
+        assert reinvited.token != old_token
+        assert not reinvited.is_expired
 
-        invite.refresh_from_db()
-        assert invite.status == OrganizationInvite.Status.EXPIRED
-        # Now a new pending invite for the same email can be created without violating the constraint.
-        OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
+    def test_send_invite_preserves_original_created_by_on_reinvite(self, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
+        original_created_by = invite.created_by
+        admin = UserFactory(email="admin@example.com")
+
+        reinvited = OrganizationInvite.send_invite(
+            organization=organization,
+            email="lapsed@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=admin,
+        )
+
+        assert reinvited.created_by == original_created_by
+        assert reinvited.modified_by == admin.email
 
     def test_accept_creates_membership_and_marks_accepted(self, organization):
         invite = OrganizationInviteFactory(organization=organization, role=UserOrganizationMembership.Role.ADMIN)

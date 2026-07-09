@@ -47,7 +47,7 @@ class PendingInviteTable(tables.Table):
     index = IndexColumn()
     email = tables.Column()
     role = tables.Column()
-    date_created = columns.DateColumn(verbose_name="Invited on")
+    date_modified = columns.DateColumn(verbose_name="Invited on")
     revoke = columns.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -63,8 +63,8 @@ class PendingInviteTable(tables.Table):
 
     class Meta:
         model = OrganizationInvite
-        fields = ("email", "role", "date_created")
-        sequence = ("index", "email", "role", "date_created", "revoke")
+        fields = ("email", "role", "date_modified")
+        sequence = ("index", "email", "role", "date_modified", "revoke")
 
     def render_role(self, record):
         return format_html("<div class=' underline underline-offset-4'>{}</div>", record.get_role_display())

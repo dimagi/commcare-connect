@@ -157,10 +157,8 @@ class OrganizationInviteForm(forms.ModelForm):
         if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
             raise ValidationError(gettext("This person is already a member of this workspace."))
 
-        OrganizationInvite.retire_expired(self.organization, email)
-        if OrganizationInvite.objects.filter(
-            organization=self.organization, email=email, status=OrganizationInvite.Status.INVITED
-        ).exists():
+        existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
+        if existing and existing.status == OrganizationInvite.Status.INVITED and not existing.is_expired:
             raise ValidationError(gettext("An invite has already been sent to this email."))
 
         return email

@@ -182,7 +182,7 @@ class TestAcceptInviteView:
         invite = OrganizationInviteFactory(organization=organization, **kwargs)
         if status is None:
             OrganizationInvite.objects.filter(pk=invite.pk).update(
-                date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+                date_modified=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
             )
 
         response = client.get(self._url(organization.slug, invite.token))
@@ -190,7 +190,8 @@ class TestAcceptInviteView:
         assert response.status_code == 302
         assert response.url == reverse("account_login")
         invite.refresh_from_db()
-        assert invite.status == (OrganizationInvite.Status.EXPIRED if status is None else status)
+        # An expired invite is never persisted as such — it's only reset when re-invited via send_invite().
+        assert invite.status == (OrganizationInvite.Status.INVITED if status is None else status)
 
     def test_authenticated_matching_email_accepts_and_creates_membership(self, client, organization):
         user = UserFactory(email="invitee@example.com")
@@ -324,7 +325,7 @@ class TestPendingInvitesTableView:
         OrganizationInviteFactory(organization=organization, status=OrganizationInvite.Status.ACCEPTED)
         expired = OrganizationInviteFactory(organization=organization, email="expired@example.com")
         OrganizationInvite.objects.filter(pk=expired.pk).update(
-            date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+            date_modified=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
         )
         client.force_login(org_user_admin)
 

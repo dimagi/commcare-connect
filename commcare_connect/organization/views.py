@@ -75,12 +75,13 @@ def add_members_form(request, org_slug):
     form = OrganizationInviteForm(request.POST or None, organization=org)
 
     if form.is_valid():
-        form.instance.organization = org
-        form.instance.invited_by = request.user
-        form.instance.created_by = request.user.email
-        form.instance.modified_by = request.user.email
-        form.save()
-        send_org_invite(invite_id=form.instance.pk)
+        invite = OrganizationInvite.send_invite(
+            organization=org,
+            email=form.cleaned_data["email"],
+            role=form.cleaned_data["role"],
+            invited_by=request.user,
+        )
+        send_org_invite(invite_id=invite.pk)
         messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
     else:
         error = next(iter(form.errors.values()))[0] if form.errors else gettext("Unable to send invite.")
@@ -124,10 +125,6 @@ def accept_invite(request, org_slug, token):
 
 
 def _reject_invalid_invite(request, invite):
-    if invite.status == OrganizationInvite.Status.INVITED and invite.is_expired:
-        invite.status = OrganizationInvite.Status.EXPIRED
-        invite.save(update_fields=["status", "date_modified"])
-
     if invite.status == OrganizationInvite.Status.REVOKED:
         messages.error(
             request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
@@ -215,7 +212,7 @@ def _render_pending_invites(request):
         invite
         for invite in OrganizationInvite.objects.filter(
             organization=request.org, status=OrganizationInvite.Status.INVITED
-        ).order_by("-date_created")
+        ).order_by("-date_modified")
         if not invite.is_expired
     ]
     table = PendingInviteTable(invites)

@@ -70,10 +70,11 @@ class TestAddMembersView:
         assert OrganizationInvite.objects.filter(organization=organization, email=existing_invite.email).count() == 1
 
     @pytest.mark.django_db
-    def test_reinvite_after_expiry_creates_new_invite(self, organization):
+    def test_reinvite_after_expiry_resets_existing_invite(self, organization):
         expired_invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
+        old_token = expired_invite.token
         OrganizationInvite.objects.filter(pk=expired_invite.pk).update(
-            date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+            date_modified=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
         )
 
         response = self.client.post(self.url, {"email": "lapsed@example.com", "role": "member"}, follow=True)
@@ -81,10 +82,9 @@ class TestAddMembersView:
         messages = list(response.context["messages"])
         assert messages[0].level_tag == "success"
         expired_invite.refresh_from_db()
-        assert expired_invite.status == OrganizationInvite.Status.EXPIRED
-        assert OrganizationInvite.objects.filter(
-            organization=organization, email="lapsed@example.com", status=OrganizationInvite.Status.INVITED
-        ).exists()
+        assert expired_invite.status == OrganizationInvite.Status.INVITED
+        assert expired_invite.token != old_token
+        assert OrganizationInvite.objects.filter(organization=organization, email="lapsed@example.com").count() == 1
 
     @pytest.mark.django_db
     def test_valid_invite_shows_success_message(self):
