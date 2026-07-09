@@ -57,10 +57,10 @@ from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
 from django_weasyprint.views import WeasyTemplateResponse
 from geopy import distance
-from waffle import switch_is_active
+from waffle import flag_is_active, switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
@@ -3149,57 +3149,71 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
-        {
-            "icon": "fa-map-location-dot",
-            "name": _("View Progress Map"),
-            "status": "",
-            "value": "",
-            "url": microplanning_url,
-        },
-        {
-            "icon": "fa-magnifying-glass",
-            "name": _("Audit Opportunity"),
-            "status": "",
-            "value": "",
-            "url": reverse(
-                "opportunity:audit:audit_report_list",
-                kwargs={"org_slug": org_slug, "opp_id": opp_id},
-            ),
-        },
     ]
+    if flag_is_active(request, MICROPLANNING):
+        deliveries_panels.append(
+            {
+                "icon": "fa-map-location-dot",
+                "name": _("View Progress Map"),
+                "status": "",
+                "value": "",
+                "url": microplanning_url,
+            }
+        )
+    if is_flag_active(WEEKLY_PERFORMANCE_REPORT, request.opportunity):
+        deliveries_panels.append(
+            {
+                "icon": "fa-magnifying-glass",
+                "name": _("Audit Opportunity"),
+                "status": "",
+                "value": "",
+                "url": reverse(
+                    "opportunity:audit:audit_report_list",
+                    kwargs={"org_slug": org_slug, "opp_id": opp_id},
+                ),
+            }
+        )
 
     tasks_url = reverse("opportunity:assigned_task_list", args=(org_slug, opp_id))
+    connect_worker_panels = [
+        {
+            "icon": "fa-user-group",
+            "name": _("Connect Workers"),
+            "status": "",
+            "value": "",
+            "url": status_url,
+        },
+        {
+            "icon": "fa-clipboard-list",
+            "name": _("Connect Workers"),
+            "status": _("Inactive last 3 days"),
+            "url": f"{delivery_url}?{urlencode({'last_active': '3'})}",
+            "value": header_with_tooltip(
+                stats.inactive_workers, _("Did not submit a Learn or Deliver form in the last 3 days")
+            ),
+            **panel_type_2,
+        },
+    ]
+    if (
+        switch_is_active(WORKER_VISITS_TASKS)
+        and TaskType.objects.filter(opportunity=request.opportunity, is_active=True).exists()
+    ):
+        connect_worker_panels.append(
+            {
+                "icon": "fa-list-check",
+                "name": _("Tasks Assigned to Connect Workers"),
+                "status": "",
+                "value": stats.active_tasks_count,
+                "url": tasks_url,
+            }
+        )
+
     opp_stats = [
         {
             "title": _("Connect Workers"),
             "sub_heading": "",
             "value": "",
-            "panels": [
-                {
-                    "icon": "fa-user-group",
-                    "name": _("Connect Workers"),
-                    "status": "",
-                    "value": "",
-                    "url": status_url,
-                },
-                {
-                    "icon": "fa-clipboard-list",
-                    "name": _("Connect Workers"),
-                    "status": _("Inactive last 3 days"),
-                    "url": f"{delivery_url}?{urlencode({'last_active': '3'})}",
-                    "value": header_with_tooltip(
-                        stats.inactive_workers, _("Did not submit a Learn or Deliver form in the last 3 days")
-                    ),
-                    **panel_type_2,
-                },
-                {
-                    "icon": "fa-list-check",
-                    "name": _("Tasks Assigned to Connect Workers"),
-                    "status": "",
-                    "value": stats.active_tasks_count,
-                    "url": tasks_url,
-                },
-            ],
+            "panels": connect_worker_panels,
         },
         {
             "title": _("Services Delivered"),

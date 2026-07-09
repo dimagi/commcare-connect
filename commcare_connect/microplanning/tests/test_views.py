@@ -19,7 +19,7 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter, get_implementation_area_import_cache_key
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
@@ -1014,10 +1014,10 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert photo.name == "photo.jpg"
 
     @pytest.mark.parametrize(
-        "action, expected_status, expect_notify",
+        "action, expected_status, expected_request_status, expect_notify",
         [
-            ("approve", WorkAreaStatus.INACCESSIBLE, False),
-            ("deny", WorkAreaStatus.NOT_VISITED, True),
+            ("approve", WorkAreaStatus.INACCESSIBLE, InaccessibilityRequestStatus.APPROVED, False),
+            ("deny", WorkAreaStatus.NOT_VISITED, InaccessibilityRequestStatus.DENIED, True),
         ],
         ids=["approve", "deny"],
     )
@@ -1025,6 +1025,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         self,
         action,
         expected_status,
+        expected_request_status,
         expect_notify,
         client,
         org_user_admin,
@@ -1046,6 +1047,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert response.status_code == 204
         work_area.refresh_from_db()
         assert work_area.status == expected_status
+        inacc_request.refresh_from_db()
+        assert inacc_request.status == expected_request_status
         hx_trigger = json.loads(response["HX-Trigger"])
         assert "inaccessibilityReviewed" in hx_trigger
         assert hx_trigger["inaccessibilityReviewed"]["status"] == expected_status
@@ -1095,6 +1098,23 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
         response = client.post(url, {"action": "approve"})
         assert response.status_code == 404
+
+    def test_review_modal_returns_pending_not_historical_request(
+        self, client, org_user_admin, pending_wa, organization
+    ):
+        work_area, historical_request = pending_wa
+        historical_request.status = InaccessibilityRequestStatus.DENIED
+        historical_request.save(update_fields=["status"])
+        pending_request = WorkAreaInaccessibilityRequestFactory(
+            work_area=work_area,
+            opportunity_access=historical_request.opportunity_access,
+            status=InaccessibilityRequestStatus.PENDING,
+        )
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["inaccessibility_request"].id == pending_request.id
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_get_modal_microplanning_flag_required(self, client, org_user_admin, opportunity, organization):
@@ -1821,3 +1841,48 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
             report_cls.return_value.header.side_effect = OperationalError("connection lost")  # no pgcode 57014
             with pytest.raises(OperationalError):
                 client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+
+@pytest.mark.django_db
+class TestClusterWorkAreas(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:cluster_work_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+
+    @pytest.fixture
+    def work_area(self, opportunity):
+        return WorkAreaFactory(opportunity=opportunity)
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_valid_building_count_forwards_to_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        mock_delay.return_value = MagicMock(id="task-123")
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"building_count": 250})
+
+        assert response.status_code == 200
+        mock_delay.assert_called_once_with(opportunity.id, 250)
+        assert "clustering_task_id=task-123" in response.headers["HX-Push-Url"]
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_empty_building_count_defaults(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        mock_delay.return_value = MagicMock(id="task-123")
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {})
+
+        assert response.status_code == 200
+        mock_delay.assert_called_once_with(opportunity.id, 200)
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_out_of_range_does_not_start_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"building_count": 500})
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        assert "between 100 and 300" in response.content.decode()
+        assert response.headers["HX-Retarget"] == "#building-count-field"

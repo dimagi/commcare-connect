@@ -19,6 +19,8 @@ from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
+from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
+from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
@@ -2906,3 +2908,66 @@ class TestAudioAttachmentTranscribe:
         response = client.get(self._url(organization, opportunity, audio))
 
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestOpportunityDeliveryStatsTiles:
+    def _url(self, organization, opportunity):
+        return reverse("opportunity:delivery_stats", args=(organization.slug, opportunity.opportunity_id))
+
+    def test_tiles_hidden_by_default(self, client, organization, org_user_member, opportunity):
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+
+        assert response.status_code == 200
+        assert b"View Progress Map" not in response.content
+        assert b"Audit Opportunity" not in response.content
+        assert b"Tasks Assigned to Connect Workers" not in response.content
+
+    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+    def test_progress_map_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
+        flag = Flag.objects.create(name=MICROPLANNING)
+        if scope == "opportunity":
+            flag.opportunities.add(opportunity)
+        elif scope == "program":
+            program = ProgramFactory(organization=organization)
+            opportunity.program = program
+            opportunity.save(update_fields=["program"])
+            flag.programs.add(program)
+        elif scope == "organization":
+            flag.organizations.add(organization)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+
+        assert b"View Progress Map" in response.content
+
+    def test_audit_tile_shown_only_when_flag_scoped_to_opportunity(
+        self, client, organization, org_user_member, opportunity
+    ):
+        program = ProgramFactory(organization=organization)
+        opportunity.program = program
+        opportunity.save(update_fields=["program"])
+        Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT).programs.add(program)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+        assert b"Audit Opportunity" not in response.content
+
+        Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT).opportunities.add(opportunity)
+        response = client.get(self._url(organization, opportunity))
+        assert b"Audit Opportunity" in response.content
+
+    def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
+        self, client, organization, org_user_member, opportunity
+    ):
+        client.force_login(org_user_member)
+
+        with override_switch(WORKER_VISITS_TASKS, active=True):
+            response = client.get(self._url(organization, opportunity))
+        assert b"Tasks Assigned to Connect Workers" not in response.content
+
+        TaskTypeFactory(opportunity=opportunity, is_active=True)
+        with override_switch(WORKER_VISITS_TASKS, active=True):
+            response = client.get(self._url(organization, opportunity))
+        assert b"Tasks Assigned to Connect Workers" in response.content

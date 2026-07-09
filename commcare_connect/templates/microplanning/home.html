@@ -12,6 +12,7 @@
 {% endblock javascript %}
 {% block content %}
   <div class="min-w-0">
+    {% include 'components/breadcrumbs.html' with path=path %}
     <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
     <!-- Top header section -->
     <header class="mb-2">
@@ -198,9 +199,17 @@
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
                         x-text="selectedFeature.group_name ?? '—'">
                     </dd>
+                    <dt class="text-sm text-gray-500">{% translate "Area Slug" %}</dt>
+                    <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                        x-text="selectedFeature.slug ?? '—'">
+                    </dd>
                     <dt class="text-sm text-gray-500">{% translate "Expected Visit Count" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
                         x-text="selectedFeature.expected_visit_count ?? '—'">
+                    </dd>
+                    <dt class="text-sm text-gray-500">{% translate "Number of Visits Completed" %}</dt>
+                    <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                        x-text="selectedFeature.visits_completed ?? '—'">
                     </dd>
                     <dt class="text-sm text-gray-500">{% translate "Number of Buildings" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"

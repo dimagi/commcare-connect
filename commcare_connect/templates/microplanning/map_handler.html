@@ -132,8 +132,19 @@
             openReviewInaccessibilityModal(workAreaId) {
                 const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
                 const url = reviewUrl + workAreaId + '/';
+                const fragment = document.getElementById('review-inaccessibility-fragment');
+                // Clear any previously loaded content so an errored fetch (htmx does not swap
+                // non-2xx responses) can't leave a stale or blank modal behind.
+                fragment.innerHTML = '';
                 htmx.ajax('GET', url, { target: '#review-inaccessibility-fragment', swap: 'innerHTML' })
                     .then(() => {
+                        if (!fragment.innerHTML.trim()) {
+                            this.showToast(
+                                "{% translate 'This request is no longer available. Refresh the map and try again.' %}",
+                                true,
+                            );
+                            return;
+                        }
                         this.showReviewInaccessibilityModal = true;
                         setTimeout(() => window.reviewInaccessibilityMap?.resize(), 0);
                     });
@@ -554,6 +565,8 @@
                             expected_visit_count: data.expected_visit_count,
                             group_id: data.group_id,
                             group_name: data.group_name,
+                            slug: data.slug,
+                            visits_completed: data.visits_completed,
                         };
                     }
 

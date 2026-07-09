@@ -7,6 +7,7 @@ from http import HTTPStatus
 
 import pghistory
 from celery.result import AsyncResult
+from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.gis.db.models import Extent, Union
@@ -50,7 +51,7 @@ from commcare_connect.microplanning.filters import (
     UserVisitMapFilterSet,
     WorkAreaMapFilterSet,
 )
-from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
+from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
     exclude_work_areas_for_opportunity,
     pct,
@@ -58,6 +59,7 @@ from commcare_connect.microplanning.helpers import (
 )
 from commcare_connect.microplanning.models import (
     ImplementationArea,
+    InaccessibilityRequestStatus,
     WorkArea,
     WorkAreaGroup,
     WorkAreaInaccessibilityRequest,
@@ -182,6 +184,14 @@ def microplanning_home(request, *args, **kwargs):
         "task_id": request.GET.get("task_id"),
         "import_status_url": import_status_url,
         "opportunity": opportunity,
+        "path": [
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
+            },
+            {"title": _("Progress Map")},
+        ],
         "metrics": get_metrics_for_microplanning(opportunity),
         "tiles_url": tiles_url,
         "visit_tiles_url": visit_tiles_url,
@@ -196,6 +206,7 @@ def microplanning_home(request, *args, **kwargs):
         ).replace("/0/", "/"),
         "exclude_url": exclude_url,
         "filter_form": filterset.form,
+        "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
     }
@@ -496,7 +507,17 @@ def import_status(request, org_slug, opp_id, area_type="work_area"):
 
 class WorkAreaVectorLayer(VectorLayer):
     id = "workareas"
-    tile_fields = ("id", "status", "building_count", "expected_visit_count", "group_id", "group_name", "assignee_name")
+    tile_fields = (
+        "id",
+        "status",
+        "building_count",
+        "expected_visit_count",
+        "group_id",
+        "group_name",
+        "assignee_name",
+        "slug",
+        "visits_completed",
+    )
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -510,6 +531,7 @@ class WorkAreaVectorLayer(VectorLayer):
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
             assignee_name=F("opportunity_access__user__name"),
+            visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
         )
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
 
@@ -622,12 +644,21 @@ def cluster_work_areas(request, org_slug, opp_id):
         messages.error(request, _("Work Area Groups already exist for this opportunity."))
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
+    form = ClusterWorkAreasForm(request.POST)
+    if not form.is_valid():
+        # Retarget the swap onto the field container so the error renders in
+        # place, keeping the Create Groups button and the modal untouched.
+        response = HttpResponse(render_crispy_form(form))
+        response.headers["HX-Retarget"] = "#building-count-field"
+        response.headers["HX-Reswap"] = "outerHTML"
+        return response
+
     lock_key = get_cluster_area_cache_lock_key(request.opportunity.id)
     if cache.lock(lock_key).locked():
         messages.error(request, _("Work Area Clustering is already in progress for this opportunity."))
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
-    task = cluster_work_areas_task.delay(request.opportunity.id)
+    task = cluster_work_areas_task.delay(request.opportunity.id, form.cleaned_data["building_count"])
     redirect_url += f"?clustering_task_id={task.id}"
     response = render(
         request,
@@ -769,6 +800,11 @@ class ModifyWorkAreaUpdateView(UpdateView):
             )
             return super().form_invalid(form)
 
+        visits_completed = UserVisit.objects.filter(
+            opportunity=work_area.opportunity,
+            work_area=work_area,
+            status=VisitValidationStatus.approved,
+        ).count()
         response = HttpResponse(status=204)
         response["HX-Trigger"] = json.dumps(
             {
@@ -777,6 +813,8 @@ class ModifyWorkAreaUpdateView(UpdateView):
                     "expected_visit_count": work_area.expected_visit_count,
                     "group_id": work_area.work_area_group_id,
                     "group_name": getattr(work_area.work_area_group, "name", None),
+                    "slug": work_area.slug,
+                    "visits_completed": visits_completed,
                 }
             }
         )
@@ -967,7 +1005,9 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         opportunity=request.opportunity,
         status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
-    inacc_request = get_object_or_404(WorkAreaInaccessibilityRequest, work_area=work_area)
+    inacc_request = get_object_or_404(
+        WorkAreaInaccessibilityRequest, work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+    )
     try:
         photo = BlobMeta.objects.get(parent_id=inacc_request.xform_id)
     except BlobMeta.DoesNotExist:
@@ -998,6 +1038,11 @@ _ACTION_TO_NEW_STATUS = {
     InaccessibilityReviewAction.DENY: WorkAreaStatus.NOT_VISITED,
 }
 
+_ACTION_TO_REQUEST_STATUS = {
+    InaccessibilityReviewAction.APPROVE: InaccessibilityRequestStatus.APPROVED,
+    InaccessibilityReviewAction.DENY: InaccessibilityRequestStatus.DENIED,
+}
+
 
 @require_POST
 @org_admin_required
@@ -1020,13 +1065,16 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     inacc_request = get_object_or_404(
         WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
         work_area=work_area,
+        status=InaccessibilityRequestStatus.PENDING,
     )
 
     work_area.status = new_status
+    inacc_request.status = _ACTION_TO_REQUEST_STATUS[action]
     try:
         with transaction.atomic():
             with pghistory.context(username=request.user.username, user_email=request.user.email):
                 work_area.save(update_fields=["status"])
+            inacc_request.save(update_fields=["status"])
             if work_area.opportunity_access_id:
                 create_or_update_case_by_work_area(work_area)
     except CommCareHQAPIException as e:
@@ -1106,6 +1154,11 @@ def coverage_progress(request, *args, **kwargs):
         "filter_form": filterset.form,
         "export_hrefs": export_hrefs,
         "path": [
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
+            },
             {
                 "title": _("Progress Map"),
                 "url": reverse(

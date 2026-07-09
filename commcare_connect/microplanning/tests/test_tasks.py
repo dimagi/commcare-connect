@@ -6,10 +6,12 @@ import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
+from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea
 from commcare_connect.microplanning.tasks import (
     ImplementationAreaCSVImporter,
     WorkAreaCSVImporter,
+    cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
 )
@@ -294,3 +296,21 @@ def test_implementation_area_missing_columns(opportunity):
     content = io.StringIO("Implementation Area Name,Centroid\nWard,77.1 28.6\n")
     result = ImplementationAreaCSVImporter(opportunity.id, content).run()
     assert any("Missing columns" in msg for msg in result["errors"])
+
+
+@mock.patch("commcare_connect.microplanning.tasks.cache")
+@mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
+def test_cluster_work_areas_task_forwards_max_buildings(mock_grouper, mock_cache):
+    cluster_work_areas_task(opp_id=1, max_buildings=250)
+
+    mock_grouper.assert_called_once_with(1, max_buildings=250)
+    mock_grouper.return_value.cluster_work_areas.assert_called_once()
+
+
+@mock.patch("commcare_connect.microplanning.tasks.cache")
+@mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
+def test_cluster_work_areas_task_defaults_max_buildings(mock_grouper, mock_cache):
+
+    cluster_work_areas_task(opp_id=1)
+
+    mock_grouper.assert_called_once_with(1, max_buildings=DEFAULT_BUILDING_COUNT)

@@ -22,7 +22,11 @@ from commcare_connect.form_receiver.tests.xforms import (
     WorkAreaUpdateStubFactory,
     get_form_json,
 )
-from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest, WorkAreaStatus
+from commcare_connect.microplanning.models import (
+    InaccessibilityRequestStatus,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -1308,6 +1312,66 @@ def test_work_area_update_inaccessible_creates_request_row(mobile_user_with_conn
     assert req.location is not None
     assert abs(req.location.y - 20.09) < 0.01  # lat
     assert abs(req.location.x - 40.09) < 0.01  # lng
+
+
+@pytest.mark.django_db
+def test_work_area_update_inaccessible_allowed_again_after_denial(
+    mobile_user_with_connect_link, api_client, opportunity
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=work_area_group,
+        opportunity_access=access,
+        status=WorkAreaStatus.NOT_VISITED,
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+
+    def submit(expected_status_code=200):
+        stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible")
+        form_json = get_form_json(
+            form_block={**stub.json},
+            domain=opportunity.deliver_app.cc_domain,
+            app_id=opportunity.deliver_app.cc_app_id,
+            attachments={
+                "photo.jpg": {"content_type": "image/jpeg", "length": 20, "url": "https://example.com/photo.jpg"},
+            },
+        )
+        make_request(
+            api_client,
+            form_json,
+            mobile_user_with_connect_link,
+            expected_status_code=expected_status_code,
+            oauth_application=oauth_application,
+        )
+
+    # First request creates a pending row and moves the work area into review.
+    submit()
+
+    # A second request while one is still pending is rejected.
+    submit(expected_status_code=400)
+
+    # PM reviews (deny): the request is resolved and the work area returns to NOT_VISITED.
+    pending = WorkAreaInaccessibilityRequest.objects.get(
+        work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+    )
+    pending.status = InaccessibilityRequestStatus.DENIED
+    pending.save(update_fields=["status"])
+    work_area.status = WorkAreaStatus.NOT_VISITED
+    work_area.save(update_fields=["status"])
+
+    # Now a fresh request is accepted and a new pending row is created alongside the historical one.
+    submit()
+    work_area.refresh_from_db()
+    assert work_area.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+    assert WorkAreaInaccessibilityRequest.objects.filter(work_area=work_area).count() == 2
+    assert (
+        WorkAreaInaccessibilityRequest.objects.filter(
+            work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db(transaction=True)

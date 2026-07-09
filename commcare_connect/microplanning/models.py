@@ -137,6 +137,12 @@ class WorkArea(geo_models.Model):
                 self.save(update_fields=["status"])
 
 
+class InaccessibilityRequestStatus(geo_models.TextChoices):
+    PENDING = "PENDING", _("Pending Review")
+    APPROVED = "APPROVED", _("Approved")
+    DENIED = "DENIED", _("Denied")
+
+
 class WorkAreaInaccessibilityRequest(geo_models.Model):
     work_area = geo_models.ForeignKey(WorkArea, on_delete=geo_models.CASCADE)
     opportunity_access = geo_models.ForeignKey(OpportunityAccess, on_delete=geo_models.CASCADE)
@@ -145,9 +151,20 @@ class WorkAreaInaccessibilityRequest(geo_models.Model):
     location = geo_models.PointField(null=True, blank=True, srid=SRID)
     reason = geo_models.CharField(max_length=256)
     additional_details = geo_models.TextField(blank=True, default="")
+    status = geo_models.CharField(
+        max_length=20,
+        choices=InaccessibilityRequestStatus.choices,
+        default=InaccessibilityRequestStatus.PENDING,
+    )
 
     class Meta:
-        constraints = [geo_models.UniqueConstraint(fields=["work_area"], name="unique_work_area_inaccessibility")]
+        constraints = [
+            geo_models.UniqueConstraint(
+                fields=["work_area"],
+                condition=Q(status=InaccessibilityRequestStatus.PENDING),
+                name="unique_pending_work_area_inaccessibility",
+            )
+        ]
 
     def __str__(self):
         return f"WorkAreaInaccessibilityRequest {self.xform_id} - {self.work_area}"
