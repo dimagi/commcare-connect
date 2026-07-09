@@ -66,7 +66,7 @@ from commcare_connect.opportunity.utils.invoice import generate_invoice_number, 
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
-from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, set_task_progress
+from commcare_connect.utils.celery import set_task_progress
 from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
@@ -522,7 +522,7 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
         finally:
             default_storage.delete(file_path)
 
-        self.update_state(state=CELERY_TASK_SUCCESS, meta={"message": message, "is_error": is_error})
+        set_task_progress(self, message, is_complete=True, is_error=is_error)
 
 
 @celery_app.task(bind=True)

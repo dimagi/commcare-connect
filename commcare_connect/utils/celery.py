@@ -9,8 +9,11 @@ CELERY_TASK_PENDING = "PENDING"
 CELERY_TASK_FAILURE = "FAILURE"
 
 
-def set_task_progress(task, message, is_complete=False):
-    task.update_state(state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS, meta={"message": message})
+def set_task_progress(task, message, is_complete=False, is_error=False):
+    task.update_state(
+        state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS,
+        meta={"message": message, "is_error": is_error},
+    )
 
 
 def get_task_progress_message(task):
