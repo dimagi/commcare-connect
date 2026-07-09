@@ -2844,10 +2844,13 @@ class WorkerPaymentsView(BaseWorkerListView):
             return
         if task_meta.get("status") == CELERY_TASK_FAILURE:
             messages.error(self.request, _("The payment import failed. Please try again."))
-        else:
-            message = get_task_progress_message(task)
-            if message:
-                messages.info(self.request, mark_safe(message))
+            return
+        message = get_task_progress_message(task)
+        if not message:
+            return
+        is_error = (task_meta.get("result") or {}).get("is_error")
+        add_message = messages.error if is_error else messages.success
+        add_message(self.request, mark_safe(message))
 
     def get_extra_context(self, opportunity, org_slug):
         return {

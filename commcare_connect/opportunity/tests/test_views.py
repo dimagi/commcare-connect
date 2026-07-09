@@ -3024,17 +3024,28 @@ def test_payment_import_status_complete_shows_reload_link(
     assert "hx-get" not in content  # polling stops once complete
 
 
+@pytest.mark.parametrize(
+    ("is_error", "expected_class"),
+    [(False, "bg-message-success"), (True, "bg-message-error")],
+)
 @mock.patch("commcare_connect.opportunity.views.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
-    mock_async_result, client, organization, opportunity, org_user_member
+    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
+    message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
     task = mock_async_result.return_value
-    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
-    task.info = {"message": "Payment status updated successfully for 3 users."}
+    task._get_task_meta.return_value = {
+        "status": "SUCCESS",
+        "args": [opportunity.id],
+        "result": {"message": message, "is_error": is_error},
+    }
+    task.info = {"message": message}
     client.force_login(org_user_member)
     url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
 
     response = client.get(url, {"show_import_status": "task-xyz"})
 
+    content = response.content.decode()
     assert response.status_code == 200
-    assert "Payment status updated successfully for 3 users." in response.content.decode()
+    assert message in content
+    assert expected_class in content  # success -> green banner, error -> red banner

@@ -637,3 +637,21 @@ def test_send_task_assignment_notification(send_message_patch):
             },
         )
     )
+
+
+@pytest.mark.parametrize(
+    ("seen_users", "expect_error", "expect_text"),
+    [
+        ({"a", "b"}, False, "uploaded successfully for 2 users"),
+        (set(), True, "No payments were uploaded."),
+    ],
+)
+def test_get_payment_import_result_message(seen_users, expect_error, expect_text):
+    from commcare_connect.opportunity.tasks import get_payment_import_result_message
+    from commcare_connect.opportunity.visit_import import PaymentImportStatus
+
+    status = PaymentImportStatus(seen_users=seen_users, missing_users=set())
+    message, is_error = get_payment_import_result_message(status)
+
+    assert is_error is expect_error
+    assert expect_text in message
