@@ -2971,3 +2971,88 @@ class TestOpportunityDeliveryStatsTiles:
         with override_switch(WORKER_VISITS_TASKS, active=True):
             response = client.get(self._url(organization, opportunity))
         assert b"Tasks Assigned to Connect Workers" in response.content
+
+
+@pytest.mark.django_db
+class TestUserVisitRedirect:
+    def _url(self, organization, opportunity, visit_id):
+        return reverse(
+            "opportunity:user_visit_redirect",
+            args=(organization.slug, opportunity.opportunity_id, visit_id),
+        )
+
+    def test_redirects_to_verification_page_with_user_and_visit(
+        self, client, organization, org_user_member, opportunity
+    ):
+        visit = UserVisitFactory.create(opportunity=opportunity)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, visit.user_visit_id))
+
+        assert response.status_code == 302
+        assert response.url == (
+            f"{reverse('opportunity:user_visits_list', args=(organization.slug, opportunity.opportunity_id))}"
+            f"?{urlencode({'user': visit.user.user_id, 'visit': visit.user_visit_id})}"
+        )
+
+    def test_visit_from_other_opportunity_returns_404(self, client, organization, org_user_member, opportunity):
+        other_visit = UserVisitFactory.create()  # belongs to a different opportunity
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, other_visit.user_visit_id))
+
+        assert response.status_code == 404
+
+    def test_unknown_visit_returns_404(self, client, organization, org_user_member, opportunity):
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, uuid4()))
+
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestUserVisitVerificationDeepLink:
+    def _url(self, organization, opportunity, **params):
+        url = reverse("opportunity:user_visits_list", args=(organization.slug, opportunity.opportunity_id))
+        return f"{url}?{urlencode(params)}"
+
+    def _details_url(self, organization, opportunity, visit):
+        return reverse(
+            "opportunity:user_visit_details",
+            args=(organization.slug, opportunity.opportunity_id, visit.user_visit_id),
+        )
+
+    def test_visit_param_auto_opens_details(self, client, organization, org_user_member, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        visit = UserVisitFactory.create(opportunity=opportunity, user=access.user, opportunity_access=access)
+
+        client.force_login(org_user_member)
+        response = client.get(
+            self._url(organization, opportunity, user=access.user.user_id, visit=visit.user_visit_id)
+        )
+
+        assert response.status_code == 200
+        assert self._details_url(organization, opportunity, visit).encode() in response.content
+
+    def test_visit_param_for_other_worker_is_ignored(self, client, organization, org_user_member, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        other_access = OpportunityAccessFactory(opportunity=opportunity)
+        other_visit = UserVisitFactory.create(
+            opportunity=opportunity, user=other_access.user, opportunity_access=other_access
+        )
+
+        client.force_login(org_user_member)
+        response = client.get(
+            self._url(organization, opportunity, user=access.user.user_id, visit=other_visit.user_visit_id)
+        )
+
+        assert response.status_code == 200
+        assert self._details_url(organization, opportunity, other_visit).encode() not in response.content
+
+    def test_invalid_visit_param_is_ignored(self, client, organization, org_user_member, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, user=access.user.user_id, visit="not-a-uuid"))
+
+        assert response.status_code == 200

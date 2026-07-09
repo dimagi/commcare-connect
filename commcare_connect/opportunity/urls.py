@@ -84,6 +84,7 @@ urlpatterns = [
     path("<slug:opp_id>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<slug:opp_id>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
     path("<slug:opp_id>/user_visits/", view=views.UserVisitVerificationView.as_view(), name="user_visits_list"),
+    path("<slug:opp_id>/user_visits/visit/<slug:pk>/", view=views.user_visit_redirect, name="user_visit_redirect"),
     path("<slug:opp_id>/user_tasks/", view=views.UserTasksView.as_view(), name="user_tasks_list"),
     path(
         "<slug:opp_id>/user_tasks_table/",
