@@ -261,8 +261,8 @@ def test_implementation_area_import_success(opportunity):
 @pytest.mark.parametrize(
     "row,expected_error",
     [
-        (f",77.1 28.6,{IA_POLY}", "Implementation Area Name is required and should be unique."),
-        ("Ward,bad-centroid," + IA_POLY, "Centroid must be in 'lon lat' format"),
+        (f',77.1 28.6,"{IA_POLY}"', "Implementation Area Name is required and should be unique."),
+        (f'Ward,bad-centroid,"{IA_POLY}"', "Centroid must be in 'lon lat' format"),
         ("Ward,77.1 28.6,NOT_WKT", "Invalid WKT format for Boundary(Polygon)."),
     ],
 )
@@ -275,9 +275,18 @@ def test_implementation_area_row_validations(opportunity, row, expected_error):
 
 @pytest.mark.django_db
 def test_implementation_area_duplicate_name_in_file(opportunity):
-    content = io.StringIO(f"{IA_HEADER}\nWard,77.1 28.6,{IA_POLY}\nWard,77.2 28.7,{IA_POLY}\n")
+    content = io.StringIO(f'{IA_HEADER}\nWard,77.1 28.6,"{IA_POLY}"\nWard,77.2 28.7,"{IA_POLY}"\n')
     result = ImplementationAreaCSVImporter(opportunity.id, content).run()
     assert "Duplicate Implementation Area Name in file" in result["errors"]
+
+
+@pytest.mark.django_db
+def test_implementation_area_short_row_reports_boundary_error(opportunity):
+    # A row with fewer fields than headers leaves boundary as None; it must surface as a
+    # clean per-row validation error, not crash the import with an AttributeError.
+    content = io.StringIO(f"{IA_HEADER}\nWard,77.1 28.6\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert "Invalid WKT format for Boundary(Polygon)." in result["errors"]
 
 
 @pytest.mark.django_db

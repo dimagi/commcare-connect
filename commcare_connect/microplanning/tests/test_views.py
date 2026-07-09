@@ -125,6 +125,7 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
         response = client.post(url, {"csv_file": csv_file})
         assert response.status_code == 302
         assert "task_id=" in response.url
+        assert "area_type=implementation_area" in response.url
         mock_delay.assert_called_once()
         assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None
 
@@ -183,6 +184,28 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         client.force_login(org_user_member)
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert response.status_code == 404
+
+    def test_auto_poll_targets_matching_status_endpoint(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        base = self.url(organization.slug, str(opportunity.opportunity_id))
+        wa_status = reverse(
+            "microplanning:import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        ia_status = reverse(
+            "microplanning:implementation_area_import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        wa_response = client.get(f"{base}?task_id=abc")
+        assert wa_response.context["import_status_url"] == wa_status
+
+        ia_response = client.get(f"{base}?task_id=abc&area_type=implementation_area")
+        assert ia_response.context["import_status_url"] == ia_status
+        assert ia_status.encode() in ia_response.content
 
 
 @pytest.mark.django_db

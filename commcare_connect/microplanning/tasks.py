@@ -86,7 +86,7 @@ class BaseAreaCSVImporter:
         headers = set(reader.fieldnames or [])
         missing = set(self.HEADERS.values()) - headers
         if missing:
-            self._add_error(1, f"Missing columns: {', '.join(sorted(missing))}")
+            self._add_error(1, _("Missing columns: ") + ", ".join(sorted(missing)))
             return False
         return True
 
@@ -139,7 +139,7 @@ class BaseAreaCSVImporter:
                 geom = self.get_boundary(row)
                 if geom.geom_type == "Polygon":
                     invalid = False
-            except (GEOSException, ValueError, TypeError):
+            except (GEOSException, ValueError, TypeError, AttributeError):
                 pass
         if invalid:
             self._add_error(line_num, _("Invalid WKT format for Boundary(Polygon)."))
