@@ -99,8 +99,8 @@
       <a href="/portfolio" data-route="/portfolio">Portfolio</a>
       <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
       <div class="nav-cta">
-        <a href="{{ app_login_url }}" class="btn btn-ghost">Sign In</a>
-        <a href="https://connect.dimagi.com/accounts/signup/" class="btn btn-primary" target="_blank" rel="noopener">Sign Up</a>
+        <a href="{% url 'account_login' %}" class="btn btn-ghost">Sign In</a>
+        <a href="{% url 'account_signup' %}" class="btn btn-primary" target="_blank" rel="noopener">Sign Up</a>
       </div>
     </nav>
 
@@ -115,8 +115,8 @@
     <a href="/platform" data-route="/platform">Platform</a>
     <a href="/portfolio" data-route="/portfolio">Portfolio</a>
     <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
-    <a href="{{ app_login_url }}" class="mobile-nav-cta-secondary">Sign In</a>
-    <a href="https://connect.dimagi.com/accounts/signup/" class="mobile-nav-cta" target="_blank" rel="noopener">Sign Up</a>
+    <a href="{% url 'account_login' %}" class="mobile-nav-cta-secondary">Sign In</a>
+    <a href="{% url 'account_signup' %}" class="mobile-nav-cta" target="_blank" rel="noopener">Sign Up</a>
   </nav>
 </header>
 <main id="main">
@@ -3515,8 +3515,8 @@
       <ul>
         <li><a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509" target="_blank" rel="noopener">Help Site ↗</a></li>
         <li><a href="/release-notes">Release Notes</a></li>
-        <li><a href="https://connect.dimagi.com/accounts/signup/" target="_blank" rel="noopener">Sign Up</a></li>
-        <li><a href="{{ app_login_url }}">Sign In</a></li>
+        <li><a href="{% url 'account_signup' %}" target="_blank" rel="noopener">Sign Up</a></li>
+        <li><a href="{% url 'account_login' %}">Sign In</a></li>
       </ul>
     </div>
     <div class="foot-col">
@@ -3537,7 +3537,7 @@
   <div class="foot-bottom">
     <span>© 2026 DIMAGI, INC.</span>
     <span class="foot-legal-links">
-      <a href="https://dimagi.com/terms-privacy/" target="_blank" rel="noopener">PRIVACY</a>
+      <a href="https://dimagi.com/terms-privacy-dimagi/" target="_blank" rel="noopener">PRIVACY</a>
       <a href="https://dimagi.com/terms-of-service/" target="_blank" rel="noopener">TERMS</a>
       <a href="https://dimagi.com/terms-aup/" target="_blank" rel="noopener">Acceptable Use Policy</a>
       <a href="https://dimagi.safebase.us/" target="_blank" rel="noopener">SECURITY</a>

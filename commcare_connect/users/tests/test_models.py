@@ -39,8 +39,7 @@ class TestConnectIDUserLink:
         link = ConnectIdUserLinkFactory()
         with pytest.raises(IntegrityError):
             ConnectIDUserLink.objects.create(
-                user=link.user,
-                commcare_username=link.commcare_username,
+                user=link.user, commcare_username=link.commcare_username, hq_server=link.hq_server
             )
 
 

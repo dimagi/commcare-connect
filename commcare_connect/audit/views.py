@@ -17,7 +17,7 @@ from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import AssignedTask, TaskType
-from commcare_connect.organization.decorators import opportunity_required, org_program_manager_required
+from commcare_connect.organization.decorators import opportunity_required, org_member_required
 
 DEFAULT_PAGE_SIZE = 25
 DEFAULT_TASK_DUE_DAYS = 7
@@ -35,7 +35,7 @@ def _require_feature_flag(opportunity):
         raise Http404("Weekly performance report is not enabled for this opportunity.")
 
 
-@org_program_manager_required
+@org_member_required
 @opportunity_required
 def audit_report_list(request, org_slug, opp_id):
     opportunity = request.opportunity
@@ -73,7 +73,7 @@ def audit_report_list(request, org_slug, opp_id):
 
 
 @opportunity_required
-@org_program_manager_required
+@org_member_required
 def audit_report_detail(request, org_slug, opp_id, audit_report_id):
     opportunity = request.opportunity
     _require_feature_flag(opportunity)
@@ -146,7 +146,7 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
 
 
 @opportunity_required
-@org_program_manager_required
+@org_member_required
 def audit_report_task_modal(request, org_slug, opp_id, audit_report_id, entry_id):
     opportunity = request.opportunity
     _require_feature_flag(opportunity)
@@ -175,7 +175,7 @@ def audit_report_task_modal(request, org_slug, opp_id, audit_report_id, entry_id
 
 
 @opportunity_required
-@org_program_manager_required
+@org_member_required
 @require_POST
 def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_id):
     opportunity = request.opportunity
@@ -222,7 +222,7 @@ def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_i
 
 
 @opportunity_required
-@org_program_manager_required
+@org_member_required
 @require_POST
 def audit_report_complete(request, org_slug, opp_id, audit_report_id):
     opportunity = request.opportunity
@@ -243,7 +243,7 @@ def audit_report_complete(request, org_slug, opp_id, audit_report_id):
 
 
 @opportunity_required
-@org_program_manager_required
+@org_member_required
 @require_GET
 def export_audit_report(request, org_slug, opp_id, audit_report_id):
     opportunity = request.opportunity

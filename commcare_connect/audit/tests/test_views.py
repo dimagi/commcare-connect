@@ -6,8 +6,15 @@ from commcare_connect.audit.tests.factories import AuditReportEntryFactory, Audi
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import AssignedTask
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, TaskTypeFactory
+from commcare_connect.opportunity.tests.factories import (
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    TaskTypeFactory,
+    UserFactory,
+)
+from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.users.tests.factories import OrgWithUsersFactory
 
 
 @pytest.fixture
@@ -16,6 +23,121 @@ def audit_opp(program_manager_org):
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(opportunity)
     return opportunity
+
+
+@pytest.fixture
+def nm_audit_opp(managed_opportunity):
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.opportunities.add(managed_opportunity)
+    return managed_opportunity
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role, expected_status",
+    [
+        (UserOrganizationMembership.Role.ADMIN, 200),
+        (UserOrganizationMembership.Role.MEMBER, 200),
+        (UserOrganizationMembership.Role.VIEWER, 404),
+    ],
+)
+def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_opp):
+    """Audit access for the network manager (the opportunity's delivery org) follows
+    @org_member_required: members and admins are allowed, viewers are denied. The same
+    decorator gates all audit views, so the role behaviour is asserted once here."""
+    user = UserFactory()
+    UserOrganizationMembership.objects.create(user=user, organization=nm_audit_opp.organization, role=role)
+    client.force_login(user)
+    AuditReportFactory(opportunity=nm_audit_opp)
+
+    url = reverse(
+        "opportunity:audit:audit_report_list",
+        kwargs={"org_slug": nm_audit_opp.organization.slug, "opp_id": nm_audit_opp.opportunity_id},
+    )
+    assert client.get(url).status_code == expected_status
+
+
+@pytest.mark.django_db
+def test_unrelated_org_admin_cannot_access_audit(client, nm_audit_opp):
+    """An admin of an org unrelated to the opportunity is denied both ways: via the
+    opportunity's slug (not a member of that org) and via their own org's slug (the
+    opportunity doesn't belong to it, so opportunity_required rejects it)."""
+    other_org = OrgWithUsersFactory()
+    other_admin = other_org.memberships.filter(role="admin").first().user
+    client.force_login(other_admin)
+    AuditReportFactory(opportunity=nm_audit_opp)
+
+    via_real_slug = reverse(
+        "opportunity:audit:audit_report_list",
+        kwargs={"org_slug": nm_audit_opp.organization.slug, "opp_id": nm_audit_opp.opportunity_id},
+    )
+    assert client.get(via_real_slug).status_code == 404
+
+    via_own_slug = reverse(
+        "opportunity:audit:audit_report_list",
+        kwargs={"org_slug": other_org.slug, "opp_id": nm_audit_opp.opportunity_id},
+    )
+    assert client.get(via_own_slug).status_code == 404
+
+
+@pytest.mark.django_db
+def test_nm_member_can_complete_review(client, org_user_member, nm_audit_opp):
+    """AC: a network manager — here a non-admin member, the newly-granted case — can
+    complete the FLW review. Business logic of completion is covered by the PM tests."""
+    client.force_login(org_user_member)
+    report = AuditReportFactory(opportunity=nm_audit_opp)
+    access = OpportunityAccessFactory(opportunity=nm_audit_opp, accepted=True)
+    AuditReportEntryFactory(
+        audit_report=report,
+        opportunity_access=access,
+        flagged=True,
+        reviewed=True,
+        results={"fake": {"value": 0.5, "has_sufficient_data": True, "in_range": False, "label": "Fake"}},
+    )
+
+    url = reverse(
+        "opportunity:audit:audit_report_complete",
+        kwargs={
+            "org_slug": nm_audit_opp.organization.slug,
+            "opp_id": nm_audit_opp.opportunity_id,
+            "audit_report_id": report.audit_report_id,
+        },
+    )
+    response = client.post(url)
+    assert response.status_code == 204
+    report.refresh_from_db()
+    assert report.status == AuditReport.Status.COMPLETED
+    assert report.completed_by == org_user_member
+
+
+@pytest.mark.django_db
+def test_nm_member_can_assign_tasks(client, org_user_member, nm_audit_opp):
+    """AC: a network manager — here a non-admin member — can assign audit tasks to an FLW."""
+    client.force_login(org_user_member)
+    report = AuditReportFactory(opportunity=nm_audit_opp)
+    access = OpportunityAccessFactory(opportunity=nm_audit_opp, accepted=True)
+    entry = AuditReportEntryFactory(
+        audit_report=report,
+        opportunity_access=access,
+        flagged=True,
+        results={"fake": {"value": 0.5, "has_sufficient_data": True, "in_range": False, "label": "Fake"}},
+    )
+    task_type = TaskTypeFactory(opportunity=nm_audit_opp, name="Refresher Module A")
+
+    url = reverse(
+        "opportunity:audit:audit_report_task_action",
+        kwargs={
+            "org_slug": nm_audit_opp.organization.slug,
+            "opp_id": nm_audit_opp.opportunity_id,
+            "audit_report_id": report.audit_report_id,
+            "entry_id": entry.audit_report_entry_id,
+        },
+    )
+    response = client.post(url, data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]})
+    assert response.status_code == 200
+    entry.refresh_from_db()
+    assert entry.reviewed is True
+    assert AssignedTask.objects.filter(task_type=task_type).count() == 1
 
 
 @pytest.mark.django_db

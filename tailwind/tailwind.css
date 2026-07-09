@@ -602,31 +602,54 @@
 
   .base-table tbody tr {
     @apply relative;
+    --row-hl-top: 50%;
+    --row-hl-height: 90%;
+  }
+
+  .base-table tbody tr:first-child {
+    --row-hl-top: 53.8%;
+    --row-hl-height: 80%;
   }
 
   .base-table tbody tr::after {
     content: '';
-    @apply -translate-1/2 absolute left-1/2 top-1/2 -z-10 h-[90%] w-[99%] -translate-y-1/2 rounded-lg bg-gray-100 opacity-0;
+    @apply -translate-1/2 absolute left-1/2 -z-10 w-[99%] rounded-lg bg-gray-100 opacity-0;
+    top: var(--row-hl-top);
+    height: var(--row-hl-height);
   }
 
-  .base-table tbody tr:first-child::after {
-    content: '';
-    @apply -translate-1/2 absolute left-1/2 top-[53.8%] -z-10 h-[80%] w-[99%] -translate-y-1/2 rounded-lg bg-gray-100 opacity-0;
-  }
-
-  .base-table tbody tr:hover::after {
-    @apply opacity-100;
-  }
-
+  .base-table tbody tr:hover::after,
   .base-table tbody tr.active::after {
     @apply opacity-100;
   }
 
-  /* .base-table tbody tr:hover{
-      @apply bg-gray-100 rounded-lg;
-  }  */
   .base-table tbody td {
     @apply whitespace-nowrap border-b-[1px] border-gray-100 p-4 text-left;
+  }
+
+  .base-table th.col-action,
+  .base-table td.col-action {
+    @apply sticky right-0;
+  }
+
+  /* The sticky action column needs an opaque base so cells scrolling beneath
+     it are masked. That base hides the row's tr::after (which sits behind all
+     cells), so the column carries its own highlight overlay that reuses the
+     row's geometry variables and therefore always lines up with it. */
+  .base-table tbody td.col-action {
+    @apply bg-white;
+  }
+
+  .base-table tbody td.col-action::after {
+    content: '';
+    @apply absolute left-0 right-[0.5%] -z-10 -translate-y-1/2 rounded-r-lg bg-gray-100 opacity-0;
+    top: var(--row-hl-top);
+    height: var(--row-hl-height);
+  }
+
+  .base-table tbody tr:hover td.col-action::after,
+  .base-table tbody tr.active td.col-action::after {
+    @apply opacity-100;
   }
 }
 

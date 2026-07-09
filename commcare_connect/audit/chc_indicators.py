@@ -291,9 +291,17 @@ class WACoverageToVisitRatio(AuditCalculation):
         if not (total_eligible and expected_visits and actual_visits):
             return Measurement(None, 0)
 
-        coverage_ratio = wa_stats["visited_count"] / total_eligible
+        visited_count = wa_stats["visited_count"]
+        coverage_ratio = visited_count / total_eligible
         visit_ratio = actual_visits / expected_visits
-        return Measurement(coverage_ratio / visit_ratio, total_eligible)
+        return Measurement(
+            coverage_ratio / visit_ratio,
+            total_eligible,
+            components=[
+                {"numerator": visited_count, "denominator": total_eligible},
+                {"numerator": actual_visits, "denominator": expected_visits},
+            ],
+        )
 
 
 @register_calculation
@@ -330,7 +338,7 @@ class InaccessibleWARateEarlyWarning(AuditCalculation):
         return Measurement(
             value=_percent(stats["inaccessible_count"], stats["total"]),
             sample_size=stats["terminal_count"],
-            denominator=stats["total"],
+            denominator_override=stats["total"],
         )
 
 

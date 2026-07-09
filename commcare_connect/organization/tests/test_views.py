@@ -161,17 +161,25 @@ class TestAcceptInviteView:
     def _url(org_slug, invite_id):
         return reverse("organization:accept_invite", args=(org_slug, invite_id))
 
-    def test_valid_invite_redirects_to_org_home(self, client, user, organization):
+    def test_valid_invite_redirects_to_opportunity_list(self, client, user, organization):
         membership = organization.memberships.first()
         client.force_login(user)
 
         response = client.get(self._url(organization.slug, membership.invite_id))
 
         assert response.status_code == 302
-        assert response.url == reverse("organization:home", args=(organization.slug,))
+        assert response.url == reverse("opportunity:list", args=(organization.slug,))
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
         assert organization.slug in str(messages[0])
+
+    def test_non_admin_invitee_lands_on_accessible_page(self, client, org_user_member, organization):
+        membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
+        client.force_login(org_user_member)
+
+        response = client.get(self._url(organization.slug, membership.invite_id), follow=True)
+
+        assert response.status_code == 200
 
     def test_invalid_invite_id_returns_404(self, client, user, organization):
         client.force_login(user)
@@ -179,6 +187,17 @@ class TestAcceptInviteView:
         response = client.get(self._url(organization.slug, "nonexistent-invite-id"))
 
         assert response.status_code == 404
+
+    def test_invite_id_for_different_org_slug_returns_404_without_message(
+        self, client, user, organization, program_manager_org
+    ):
+        membership = organization.memberships.first()
+        client.force_login(user)
+
+        response = client.get(self._url(program_manager_org.slug, membership.invite_id))
+
+        assert response.status_code == 404
+        assert not list(get_messages(response.wsgi_request))
 
 
 @pytest.mark.django_db
