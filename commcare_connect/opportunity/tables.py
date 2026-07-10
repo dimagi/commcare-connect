@@ -814,6 +814,17 @@ class WorkerVisitTable(tables.Table):
     last_activity = DMYTColumn(verbose_name=gettext_lazy("Last Activity"), accessor="status_modified_date")
     status = columns.Column(verbose_name=gettext_lazy("Status"), accessor="status")
 
+    @staticmethod
+    def get_visit_url(record, table):
+        return reverse(
+            "opportunity:user_visit_details",
+            args=[
+                table.organization.slug,
+                record.opportunity.opportunity_id,
+                record.user_visit_id,
+            ],
+        )
+
     class Meta:
         model = UserVisit
         sequence = (
@@ -834,6 +845,10 @@ class WorkerVisitTable(tables.Table):
             "hx-get": lambda record, table: reverse(
                 "opportunity:user_visit_details",
                 args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
+            ),
+            "hx-push-url": lambda record, table: (
+                f"{reverse('opportunity:user_visits_list', args=[table.organization.slug, record.opportunity.opportunity_id])}"  # noqa
+                f"?{urlencode({'user': record.user.user_id, 'visit_id': record.user_visit_id})}"
             ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
