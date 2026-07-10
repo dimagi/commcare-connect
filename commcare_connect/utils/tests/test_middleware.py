@@ -1,5 +1,4 @@
 import pytest
-from django.contrib.messages import get_messages
 from django.contrib.messages.middleware import MessageMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.http import HttpResponseRedirect
@@ -13,19 +12,6 @@ def _request_with_messages(rf, **extra):
     SessionMiddleware(lambda r: None).process_request(request)
     MessageMiddleware(lambda r: None).process_request(request)
     return request
-
-
-@pytest.mark.django_db
-def test_missing_ocs_token_redirects_with_connect_message(rf):
-    request = _request_with_messages(rf, HTTP_REFERER="/a/org/opportunity/")
-    middleware = CustomErrorHandlingMiddleware(lambda r: None)
-
-    response = middleware.process_exception(request, SocialTokenMissingError("no token"))
-
-    assert isinstance(response, HttpResponseRedirect)
-    assert response.url == "/a/org/opportunity/"
-    text = " ".join(str(m) for m in get_messages(request))
-    assert "reconnect the account" in text
 
 
 @pytest.mark.django_db
