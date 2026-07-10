@@ -18,6 +18,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage, storages
 from django.db import transaction
 from django.db.models import (
@@ -2188,7 +2189,22 @@ class UserVisitVerificationView(WorkerPageView):
         context = super().get_context_data(**kwargs)
         context["MAPBOX_TOKEN"] = settings.MAPBOX_TOKEN
         context["show_worker_tasks_tabs"] = switch_is_active(WORKER_VISITS_TASKS)
+        context["initial_visit_details_url"] = self._get_initial_visit_details_url()
         return context
+
+    def _get_initial_visit_details_url(self):
+        """Return the details URL for a valid ``visit`` query param, so the template auto-opens it."""
+        visit_id = self.request.GET.get("visit")
+        if not visit_id:
+            return None
+        try:
+            user_visit = UserVisit.objects.get(user_visit_id=visit_id, opportunity_access=self.opportunity_access)
+        except (UserVisit.DoesNotExist, ValidationError, ValueError):
+            return None
+        return reverse(
+            "opportunity:user_visit_details",
+            args=(self.request.org.slug, self.opportunity.opportunity_id, user_visit.user_visit_id),
+        )
 
 
 def _can_manage_tasks(request, opportunity):
@@ -2439,6 +2455,22 @@ def visit_verification_table_view(request, org_slug, opp_id):
     if switch_is_active(WORKER_VISITS_TASKS):
         return WorkerVisitTableView.as_view()(request, org_slug=org_slug, opp_id=opp_id)
     return VisitVerificationTableView.as_view()(request, org_slug=org_slug, opp_id=opp_id)
+
+
+@org_viewer_required
+@opportunity_required
+def user_visit_redirect(request, org_slug, opp_id, pk):
+    """Canonical shareable URL for a single visit.
+
+    Resolves the visit's worker and redirects to the visit verification page,
+    which requires a ``user`` param and auto-opens the visit via ``visit``.
+    """
+    user_visit = get_object_or_404(
+        UserVisit.objects.select_related("user"), user_visit_id=pk, opportunity=request.opportunity
+    )
+    url = reverse("opportunity:user_visits_list", args=(org_slug, opp_id))
+    query = urlencode({"user": user_visit.user.user_id, "visit": user_visit.user_visit_id})
+    return redirect(f"{url}?{query}")
 
 
 @org_viewer_required

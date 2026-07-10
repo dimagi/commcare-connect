@@ -213,3 +213,12 @@ class TestUserVisitDataViewV2:
         assert len(all_results) == 5
         ids = [r["id"] for r in all_results]
         assert len(set(ids)) == 5
+
+    def test_includes_user_visit_id(self, api_client_v2, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity, user=org_user_member)
+        _add_export_credentials(api_client_v2, org_user_member)
+
+        response = api_client_v2.get(_get_url(opportunity.id))
+
+        assert response.status_code == 200
+        assert response.json()["results"][0]["user_visit_id"] == str(visit.user_visit_id)

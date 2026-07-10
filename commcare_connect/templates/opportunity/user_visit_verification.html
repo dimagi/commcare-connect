@@ -32,6 +32,7 @@
             </div>
             <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
               <div id="visit-details"
+                   {% if initial_visit_details_url %} hx-get="{{ initial_visit_details_url }}" hx-trigger="load" hx-indicator="#visit-loading-indicator" {% endif %}
                    hx-on:before-swap="removeMap()"
                    hx-on::after-settle="loadMap()">
                 <div class="flex justify-items-center align-items-center">
