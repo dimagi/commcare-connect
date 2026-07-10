@@ -59,7 +59,7 @@
         </div>
       </div>
     </header>
-    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, }"
+    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false }"
          class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
       <div class="flex items-end space-x-2 w-full">
         {% if task_id %}
@@ -86,6 +86,20 @@
             <i class="fa-solid fa-play"></i> {% translate "Create Work Area Groups" %}
           </button>
         {% endif %}
+        {% if show_rerun_clear_work_area_groups_btn %}
+          <button class="button button-md primary-dark"
+                  type="button"
+                  id="rerun-clustering"
+                  @click="showCreateWorkAreaGroupsModal = true">
+            <i class="fa-solid fa-play"></i> {% translate "Rerun Clustering" %}
+          </button>
+          <button class="button button-md outline-style"
+                  type="button"
+                  id="clear-work-area-groups"
+                  @click="showClearWorkAreaGroupsModal = true">
+            <i class="fa-solid fa-trash"></i> {% translate "Clear Work Area Groups" %}
+          </button>
+        {% endif %}
         {% if is_program_manager and not assignment_mode %}
           <a href="?assignment_mode=1"
              class="button button-md primary-dark ml-auto">
@@ -105,8 +119,11 @@
         {% endif %}
       </div>
       <div x-show="showImportWorkAreaModal" id="modal-container"></div>
-      {% if show_workarea_groups_btn %}
+      {% if show_workarea_groups_btn or show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/cluster_work_area_modal.html" %}
+      {% endif %}
+      {% if show_rerun_clear_work_area_groups_btn %}
+        {% include "microplanning/clear_work_area_groups_modal.html" %}
       {% endif %}
     </div>
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]"

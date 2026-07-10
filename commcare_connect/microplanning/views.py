@@ -101,10 +101,13 @@ PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a 
 @waffle_flag(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
-    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
-    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
+    areas_present = WorkArea.objects.filter(opportunity_id=opportunity.id).exists()
+    areas_assigned = WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
     work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
+
+    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
     show_workarea_groups_btn = areas_present and not work_area_groups_present
+    show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
 
     tiles_url = reverse(
         "microplanning:workareas_tiles",
@@ -158,6 +161,8 @@ def microplanning_home(request, *args, **kwargs):
     context = {
         "show_area_btn": show_area_btn,
         "show_workarea_groups_btn": show_workarea_groups_btn,
+        "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
+        "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
         "opportunity": opportunity,
@@ -526,11 +531,21 @@ def workareas_group_geojson(request, org_slug, opp_id):
 @org_admin_required
 @opportunity_required
 @require_POST
+@waffle_flag(MICROPLANNING)
 def cluster_work_areas(request, org_slug, opp_id):
     redirect_url = reverse(
         "microplanning:microplanning_home",
         kwargs={"org_slug": org_slug, "opp_id": opp_id},
     )
+
+    rerun = request.GET.get("rerun") is not None
+    if rerun:
+        if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
+            messages.error(
+                request, _("Clustering cannot be re-run because Work Areas have already been assigned to FLWs.")
+            )
+            return HttpResponse(headers={"HX-Redirect": redirect_url})
+        WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
 
     if not WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
         messages.error(request, _("Please upload Work Areas for this opportunity."))
@@ -645,6 +660,23 @@ def exclude_work_areas(request, org_slug, opp_id):
         {"work_areas_excluded": {"excluded": result["excluded_ids"], "skipped": result["skipped"]}}
     )
     return response
+
+
+@org_admin_required
+@opportunity_required
+@require_POST
+def clear_work_area_groups(request, org_slug, opp_id):
+    redirect_url = reverse(
+        "microplanning:microplanning_home",
+        kwargs={"org_slug": org_slug, "opp_id": opp_id},
+    )
+    if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
+        messages.error(request, _("Work Areas already assigned to users. Work Area Groups cannot be cleared."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
+    messages.success(request, _("Work Area Groups have been cleared for this opportunity."))
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 @require_GET

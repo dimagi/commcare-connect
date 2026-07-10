@@ -8,8 +8,18 @@
     <div class="px-4 py-3">
       <div class="header text-lg font-semibold text-brand-deep-purple flex flex-col items-center gap-4">
         <i class="text-xl fa-solid fa-network-wired"></i>
-        <h1>{% translate "Create Work Area Groups" %}</h1>
+        {% if clustering_is_rerun %}
+          <h1>{% translate "Rerun Clustering" %}</h1>
+        {% else %}
+          <h1>{% translate "Create Work Area Groups" %}</h1>
+        {% endif %}
       </div>
+      {% if clustering_is_rerun %}
+        <p class="mt-4 text-sm text-amber-700">
+          <i class="fa-solid fa-circle-info"></i>
+          {% translate "Rerunning will discard the existing Work Area Groups and replace them with new clustering output." %}
+        </p>
+      {% endif %}
       <p class="mt-4">
         {% translate "This process may take a few minutes. Please do not close this window until it has completed." %}
       </p>
@@ -32,14 +42,26 @@
       </div>
       <div class="flex justify-between mt-4">
         {% if request.GET.clustering_task_id %}
-          <button type="button" disabled class="button button-md primary-dark">{% translate "Create Groups" %}</button>
+          <button type="button" disabled class="button button-md primary-dark">
+            {% if clustering_is_rerun %}
+              {% trans 'Rerun Clustering' %}
+            {% else %}
+              {% trans 'Create Groups' %}
+            {% endif %}
+          </button>
         {% else %}
           <button type="submit"
                   class="button button-md primary-dark"
-                  hx-post="{% url 'microplanning:cluster_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+                  hx-post="{% url 'microplanning:cluster_work_areas' request.org.slug request.opportunity.opportunity_id %}{% if clustering_is_rerun %}?rerun=1{% endif %}"
                   hx-trigger="click"
                   hx-include="[name='building_count']"
-                  hx-swap="outerHTML">{% trans 'Create Groups' %}</button>
+                  hx-swap="outerHTML">
+            {% if clustering_is_rerun %}
+              {% trans 'Rerun Clustering' %}
+            {% else %}
+              {% trans 'Create Groups' %}
+            {% endif %}
+          </button>
         {% endif %}
         <button type="button"
                 class="button button-md outline-style"
