@@ -814,17 +814,6 @@ class WorkerVisitTable(tables.Table):
     last_activity = DMYTColumn(verbose_name=gettext_lazy("Last Activity"), accessor="status_modified_date")
     status = columns.Column(verbose_name=gettext_lazy("Status"), accessor="status")
 
-    @staticmethod
-    def get_visit_url(record, table):
-        return reverse(
-            "opportunity:user_visit_details",
-            args=[
-                table.organization.slug,
-                record.opportunity.opportunity_id,
-                record.user_visit_id,
-            ],
-        )
-
     class Meta:
         model = UserVisit
         sequence = (
