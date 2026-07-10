@@ -17,7 +17,20 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection, transaction
-from django.db.models import Count, F, FloatField, Func, IntegerField, OuterRef, Q, Subquery, Sum, TextChoices, Value
+from django.db.models import (
+    CharField,
+    Count,
+    F,
+    FloatField,
+    Func,
+    IntegerField,
+    OuterRef,
+    Q,
+    Subquery,
+    Sum,
+    TextChoices,
+    Value,
+)
 from django.db.models.functions import Cast, Coalesce
 from django.db.utils import OperationalError
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
@@ -132,6 +145,11 @@ def microplanning_home(request, *args, **kwargs):
         args=[request.org.slug, opportunity.opportunity_id, 0],
     ).replace("/0/", "/")
 
+    user_visit_data_url = reverse(
+        "opportunity:user_visit_data",
+        args=[request.org.slug, opportunity.opportunity_id, 0],
+    ).replace("/0/", "/")
+
     download_url = reverse(
         "microplanning:download_work_areas",
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
@@ -181,6 +199,7 @@ def microplanning_home(request, *args, **kwargs):
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
+        "user_visit_data_url": user_visit_data_url,
         "download_url": download_url,
         "review_inaccessibility_url": reverse(
             "microplanning:review_inaccessibility_request",
@@ -452,7 +471,7 @@ class WorkAreaTileView(MVTView):
 
 class UserVisitVectorLayer(VectorLayer):
     id = "user-visits"
-    tile_fields = ("work_area_id",)
+    tile_fields = ("work_area_id", "visit_uuid")
     geom_field = "location_point"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -484,9 +503,10 @@ class UserVisitVectorLayer(VectorLayer):
                     Value(4326),
                     function="ST_SetSRID",
                     output_field=PointField(srid=4326),
-                )
+                ),
+                visit_uuid=Cast("user_visit_id", output_field=CharField()),
             )
-            .values("location_point", "work_area_id")
+            .values("location_point", "work_area_id", "visit_uuid")
         )
 
 

@@ -51,6 +51,35 @@
                 .then(() => this.showWorkAreaEditModal = true)
             },
 
+            showVisitPopup(feature, lngLat) {
+                const userVisitDataUrl = '{{ user_visit_data_url|escapejs }}';
+                const url = userVisitDataUrl + feature.properties.visit_uuid + '/';
+                fetch(url)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load visit data');
+                        return res.json();
+                    })
+                    .then((data) => {
+                        new mapboxgl.Popup()
+                            .setLngLat(lngLat)
+                            .setHTML(`
+                                <table><tbody>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Connect Worker" %}</th><td>${data.worker_name}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Visit Date" %}</th><td>${data.visit_date}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Deliver Type" %}</th><td>${data.deliver_type ?? '—'}</td></tr>
+                                </tbody></table>
+                                <a href="${data.worker_url}" class="button button-sm button-outline-rounded mt-2">{% translate "View Visit" %}</a>
+                            `)
+                            .addTo(this.map);
+                    })
+                    .catch(() => {
+                        new mapboxgl.Popup()
+                            .setLngLat(lngLat)
+                            .setHTML(`<p>{% translate "Visit details unavailable." %}</p>`)
+                            .addTo(this.map);
+                    });
+            },
+
             updateHighlightedWorkAreaId() {
                 this.highlightedWorkAreaId = (this.assignmentMode || !this.selectedFeature)
                     ? null
@@ -818,6 +847,20 @@
                         this.addVisitHighlightLayer();
                         visitsLayerAdded = true;
                         this.refreshVisitStyling();
+
+                        ['user-visits-circle', 'user-visits-highlight'].forEach((layerId) => {
+                            this.map.on('click', layerId, (e) => {
+                                const feature = e.features?.[0];
+                                if (!feature) return;
+                                this.showVisitPopup(feature, e.lngLat);
+                            });
+                            this.map.on('mouseenter', layerId, () => {
+                                this.map.getCanvasContainer().style.cursor = 'pointer';
+                            });
+                            this.map.on('mouseleave', layerId, () => {
+                                this.map.getCanvasContainer().style.cursor = '';
+                            });
+                        });
                     } else if (visitsLayerAdded) {
                         this.map.setLayoutProperty('user-visits-circle', 'visibility', visible ? 'visible' : 'none');
                         if (this.map.getLayer('user-visits-highlight')) {
