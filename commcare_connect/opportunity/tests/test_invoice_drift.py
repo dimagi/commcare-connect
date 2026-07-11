@@ -4,6 +4,8 @@ from decimal import Decimal
 import pytest
 
 from commcare_connect.opportunity.management.commands.report_invoice_drift import (
+    compute_invoice_drift,
+    invoice_has_drift,
     reconstruct_billed_count,
     service_delivery_invoices,
 )
@@ -129,3 +131,196 @@ def test_reconstruct_child_constraint_uses_pre_agreement_basis(opportunity):
 
     assert parent_cw.approved_count == 0  # live, agreement-gated logic drops it
     assert reconstruct_billed_count(parent_cw, END) == 1  # legacy basis keeps it, parent constrained by child
+
+
+IN_WINDOW = datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC)
+AFTER_WINDOW = datetime.datetime(2026, 2, 15, tzinfo=datetime.UTC)
+# An invoice whose service period ends END (Jan 31) but that was generated later (Feb 28): visits
+# approved between END and the generation date were still billed.
+GENERATED_ON = datetime.date(2026, 2, 28)
+
+
+def _completed_work_with_visits(
+    invoice,
+    opportunity,
+    *,
+    amount,
+    org_amount,
+    agreed_in_window=0,
+    approved_only_in_window=0,
+    agreed_late=0,
+):
+    """Build a completed work linked to `invoice` from real visits, so both counts are recalculated:
+
+    reconstructed (old logic, status-only, <= end_date) = agreed_in_window + approved_only_in_window
+    desired (cw.approved_count, agreement-gated, all-time) = agreed_in_window + agreed_late
+    """
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    pu = PaymentUnitFactory(opportunity=opportunity, amount=amount, org_amount=org_amount)
+    du = DeliverUnitFactory(payment_unit=pu, optional=False)
+    cw = CompletedWorkFactory(opportunity_access=access, payment_unit=pu)
+    cw.invoice = invoice
+    cw.save()
+    for _ in range(agreed_in_window):
+        _approved_visit(cw, du, on=IN_WINDOW, agree=True)
+    for _ in range(approved_only_in_window):
+        _approved_visit(cw, du, on=IN_WINDOW, agree=False)
+    for _ in range(agreed_late):
+        _approved_visit(cw, du, on=AFTER_WINDOW, agree=True)
+    return cw
+
+
+def test_no_drift(opportunity):
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=0, agreed_in_window=1)
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.reconstructed_flw_amount == Decimal(100)
+    assert drift.reconstruction_gap == Decimal(0)
+    assert drift.late_delivery_units == 0
+    assert drift.overbilled_units == 0
+    assert drift.org_pay_drift == Decimal(0)
+    assert drift.works[0].desired_deliveries_count == 1
+
+
+def test_late_delivery_drift_is_per_work(opportunity):
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    # 1 agreed in-window + 1 agreed only after end_date (orphaned) → desired 2, reconstructed 1 → +1 unit.
+    _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=0, agreed_in_window=1, agreed_late=1)
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.works[0].reconstructed_deliveries_count == 1
+    assert drift.works[0].desired_deliveries_count == 2
+    assert drift.works[0].late_delivery_units == 1
+    assert drift.late_delivery_units == 1
+    assert drift.late_delivery_drift == Decimal(100)
+    assert drift.overbilled_units == 0
+    assert drift.org_pay_drift == Decimal(0)
+
+
+def test_overbilling_when_billed_visit_never_agreed(opportunity):
+    # 1 approved-but-never-agreed visit → billed under old logic (reconstructed 1) but not owed now
+    # (desired 0) → 1 unit over-billed = clawback candidate.
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=0, approved_only_in_window=1)
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.works[0].reconstructed_deliveries_count == 1
+    assert drift.works[0].desired_deliveries_count == 0
+    assert drift.overbilled_units == 1
+    assert drift.overbilled_drift == Decimal(100)
+    assert drift.late_delivery_units == 0
+
+
+@pytest.mark.parametrize("frozen_amount", [Decimal(100), Decimal(120)])
+def test_org_pay_drift_is_reported_separately(opportunity, frozen_amount):
+    # flw=100, org=20. org_pay_drift is always the omitted workspace pay (Σ r*o) regardless of frozen.
+    # reconstruction_gap distinguishes eras: 0 → FLW-only invoice (org truly missing);
+    # ≈ org_pay_drift → the invoice already billed org (org not actually missing).
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=frozen_amount,
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=20, agreed_in_window=1)
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.reconstructed_flw_amount == Decimal(100)
+    assert drift.org_pay_drift == Decimal(20)
+    assert drift.late_delivery_units == 0
+    assert drift.overbilled_units == 0
+    assert drift.reconstruction_gap == frozen_amount - Decimal(100)
+    # Neither era counts as drift: residual is either 0 (FLW-era) or == org_pay_drift (org-era).
+    assert not invoice_has_drift(drift)
+
+
+def test_unexplained_residual_is_flagged(opportunity):
+    # No org pay, 1 clean delivery → reconstructed_flw = 100, but frozen is 150. The 50 residual is
+    # not explained by either era (org_pay_drift is 0), so the invoice must surface as an anomaly.
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(150),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=0, agreed_in_window=1)
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.late_delivery_units == 0
+    assert drift.overbilled_units == 0
+    assert drift.org_pay_drift == Decimal(0)
+    assert drift.reconstruction_gap == Decimal(50)
+    assert invoice_has_drift(drift)
+
+
+def test_visits_approved_between_end_date_and_generation_are_billed_not_late(opportunity):
+    # Period ends Jan 31 (END) but the invoice was generated Feb 28 (GENERATED_ON). The one delivery was
+    # approved+agreed Feb 15 — after end_date but before generation — so it WAS billed. The reconstruction
+    # must count it (cutoff = generation date), yielding no late-delivery drift and a clean reconciliation.
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=GENERATED_ON,
+    )
+    _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=0, agreed_late=1)
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.works[0].reconstructed_deliveries_count == 1  # counted via generation-date cutoff
+    assert drift.works[0].desired_deliveries_count == 1
+    assert drift.late_delivery_units == 0
+    assert drift.reconstruction_gap == Decimal(0)
+
+
+def test_overbilling_negative_drift_with_clean_reconciliation(opportunity):
+    # Invoice honestly billed 2 units (frozen 200): 1 agreed + 1 approved-but-never-agreed, both
+    # in-window. Old logic counts 2 (reconstruction reproduces the 200 → residual 0); current logic
+    # owes only the agreed 1 → 1 unit over-billed = negative drift, with clean reconciliation.
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(200),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    _completed_work_with_visits(
+        invoice, opportunity, amount=100, org_amount=0, agreed_in_window=1, approved_only_in_window=1
+    )
+
+    drift = compute_invoice_drift(invoice)
+    assert drift.works[0].reconstructed_deliveries_count == 2
+    assert drift.works[0].desired_deliveries_count == 1
+    assert drift.reconstructed_flw_amount == Decimal(200)
+    assert drift.reconstruction_gap == Decimal(0)
+    assert drift.overbilled_units == 1
+    assert drift.overbilled_drift == Decimal(100)
+    assert drift.late_delivery_units == 0

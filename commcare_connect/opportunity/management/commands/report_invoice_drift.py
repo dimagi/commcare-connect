@@ -1,5 +1,7 @@
 import datetime
 from collections import Counter
+from dataclasses import dataclass, field
+from decimal import Decimal
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -92,3 +94,124 @@ def reconstruct_billed_count(completed_work, as_of_date):
         child_count = sum(reconstruct_billed_count(child, as_of_date) for child in children)
         number_approved = min(number_approved, child_count)
     return number_approved
+
+
+@dataclass
+class WorkDrift:
+    completed_work_id: int
+    payment_unit_name: str
+    entity_name: str
+    reconstructed_deliveries_count: int  # old logic, in-invoice-window (what was billed)
+    desired_deliveries_count: int  # current agreement-gated logic, all-time (what is owed now)
+    late_delivery_units: int  # max(0, desired - reconstructed)
+    # Late-delivery drift, valued at the FULL per-unit rate (flw_amount + org_amount). Org pay is INCLUDED here.
+    late_delivery_drift: Decimal
+    # overbilled_units: max(0, reconstructed - desired): billed under the legacy rule but never
+    # PM-agreed (or otherwise not owed now) — a clawback candidate.
+    overbilled_units: int
+    # Over-billing drift, also valued at the FULL rate (flw_amount + org_amount); org pay included.
+    overbilled_drift: Decimal
+    # reconstructed_deliveries_count * org_amount: org omitted on billed units (reporting only).
+    org_pay_drift: Decimal
+
+
+@dataclass
+class InvoiceDrift:
+    invoice_id: int
+    invoice_number: str
+    opportunity_id: int
+    opportunity_name: str
+    org_name: str
+    status: str
+    invoice_date: object
+    frozen_amount: Decimal
+    reconstructed_flw_amount: Decimal  # Σ reconstructed_deliveries_count * flw_amount;
+    late_delivery_units: int
+    late_delivery_drift: Decimal
+    overbilled_units: int
+    overbilled_drift: Decimal
+    # org pay omitted on the units that WERE billed (before CCCT-2470 fix)
+    org_pay_drift: Decimal
+    # reconstruction_gap = frozen_amount - reconstructed_flw_amount.
+    # This compares the ACTUAL frozen invoice vs our reconstruction of old-logic
+    # billing i.e. "does our reconstruction even reproduce what was billed?" It is the confidence gauge for
+    # every other number on the row. Interpret:
+    #   ≈ 0              → reconstruction reproduces the invoice (only FLW amounts); trust the drift.
+    #   ≈ org_pay_drift  → the invoice already billed org pay, so org_pay_drift is NOT actually missing
+    #                      (a false positive for this row).
+    #   anything else    → reconstruction can't reproduce the frozen amount; drift numbers are unreliable —
+    #                      review this.
+    reconstruction_gap: Decimal
+    works: list = field(default_factory=list)
+
+
+def compute_invoice_drift(invoice):
+    works = []
+    reconstructed_flw_amount = Decimal(0)
+    completed_works = CompletedWork.objects.filter(invoice=invoice).select_related("payment_unit")
+    # invoice.date is date-only, so the whole generation day is counted; in the rare case a visit was approved
+    # later that same day (after the invoice was cut) it is slightly over-counted, which reconstruction_gap
+    # surfaces if ever material.
+    billed_through = invoice.date
+    for cw in completed_works:
+        reconstructed_deliveries_count = reconstruct_billed_count(cw, billed_through)
+        desired_deliveries_count = cw.approved_count
+        flw_amount = cw.payment_unit.amount
+        org_amount = cw.payment_unit.org_amount
+        full_rate = flw_amount + org_amount
+        late_units = max(0, desired_deliveries_count - reconstructed_deliveries_count)
+        over_units = max(0, reconstructed_deliveries_count - desired_deliveries_count)
+        works.append(
+            WorkDrift(
+                completed_work_id=cw.id,
+                payment_unit_name=cw.payment_unit.name,
+                entity_name=cw.entity_name or "",
+                reconstructed_deliveries_count=reconstructed_deliveries_count,
+                desired_deliveries_count=desired_deliveries_count,
+                late_delivery_units=late_units,
+                late_delivery_drift=Decimal(late_units * full_rate),
+                overbilled_units=over_units,
+                overbilled_drift=Decimal(over_units * full_rate),
+                org_pay_drift=Decimal(reconstructed_deliveries_count * org_amount),
+            )
+        )
+        reconstructed_flw_amount += reconstructed_deliveries_count * flw_amount
+
+    frozen = invoice.amount
+    return InvoiceDrift(
+        invoice_id=invoice.id,
+        invoice_number=invoice.invoice_number,
+        opportunity_id=invoice.opportunity_id,
+        opportunity_name=invoice.opportunity.name,
+        org_name=invoice.opportunity.organization.name,
+        status=invoice.status,
+        invoice_date=invoice.date,
+        frozen_amount=frozen,
+        reconstructed_flw_amount=reconstructed_flw_amount,
+        late_delivery_units=sum(w.late_delivery_units for w in works),
+        late_delivery_drift=sum((w.late_delivery_drift for w in works), Decimal(0)),
+        overbilled_units=sum(w.overbilled_units for w in works),
+        overbilled_drift=sum((w.overbilled_drift for w in works), Decimal(0)),
+        org_pay_drift=sum((w.org_pay_drift for w in works), Decimal(0)),
+        reconstruction_gap=frozen - reconstructed_flw_amount,
+        works=works,
+    )
+
+
+def gap_is_unexplained(drift):
+    """True when the reconstruction gap is NOT explained by the invoice's era.
+    gap == 0            → FLW-era invoice(only flw amounts), reconstruction reproduces it exactly.
+    gap == org_pay_drift → recent org-era invoice(flw + org amounts) that already billed org pay (org not missing).
+    Anything else is a genuine model-fit anomaly.
+    """
+    return drift.reconstruction_gap not in (Decimal(0), drift.org_pay_drift)
+
+
+def invoice_has_drift(drift):
+    """True if the invoice shows correctable or anomalous drift, i.e. worth showing."""
+    return drift.late_delivery_units > 0 or drift.overbilled_units > 0 or gap_is_unexplained(drift)
+
+
+def iter_invoice_drift(invoices):
+    for invoice in invoices:
+        yield compute_invoice_drift(invoice)
