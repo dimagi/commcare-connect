@@ -1,7 +1,12 @@
+import argparse
+import csv
 import datetime
+import os
 from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal
+
+from django.core.management import BaseCommand
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -198,6 +203,41 @@ def compute_invoice_drift(invoice):
     )
 
 
+INVOICE_CSV_HEADER = [
+    "opportunity_id",
+    "opportunity_name",
+    "org_name",
+    "invoice_id",
+    "invoice_number",
+    "invoice_status",
+    "invoice_date",
+    "frozen_amount",
+    "reconstructed_flw_amount",
+    "reconstruction_gap",
+    "late_delivery_units",
+    "late_delivery_drift",
+    "overbilled_units",
+    "overbilled_drift",
+    "org_pay_drift",
+]
+
+WORK_CSV_HEADER = [
+    "invoice_id",
+    "invoice_number",
+    "opportunity_id",
+    "completed_work_id",
+    "payment_unit",
+    "entity_name",
+    "reconstructed_deliveries_count",
+    "desired_deliveries_count",
+    "late_delivery_units",
+    "late_delivery_drift",
+    "overbilled_units",
+    "overbilled_drift",
+    "org_pay_drift",
+]
+
+
 def gap_is_unexplained(drift):
     """True when the reconstruction gap is NOT explained by the invoice's era.
     gap == 0            → FLW-era invoice(only flw amounts), reconstruction reproduces it exactly.
@@ -215,3 +255,133 @@ def invoice_has_drift(drift):
 def iter_invoice_drift(invoices):
     for invoice in invoices:
         yield compute_invoice_drift(invoice)
+
+
+def invoice_row(drift):
+    return [
+        drift.opportunity_id,
+        drift.opportunity_name,
+        drift.org_name,
+        drift.invoice_id,
+        drift.invoice_number,
+        drift.status,
+        drift.invoice_date,
+        drift.frozen_amount,
+        drift.reconstructed_flw_amount,
+        drift.reconstruction_gap,
+        drift.late_delivery_units,
+        drift.late_delivery_drift,
+        drift.overbilled_units,
+        drift.overbilled_drift,
+        drift.org_pay_drift,
+    ]
+
+
+def work_has_drift(work):
+    """A work is worth a row only if it under- or over-delivered (positive or negative count drift)."""
+    return work.late_delivery_units > 0 or work.overbilled_units > 0
+
+
+def work_rows(drift):
+    for work in drift.works:
+        if not work_has_drift(work):
+            continue
+        yield [
+            drift.invoice_id,
+            drift.invoice_number,
+            drift.opportunity_id,
+            work.completed_work_id,
+            work.payment_unit_name,
+            work.entity_name,
+            work.reconstructed_deliveries_count,
+            work.desired_deliveries_count,
+            work.late_delivery_units,
+            work.late_delivery_drift,
+            work.overbilled_units,
+            work.overbilled_drift,
+            work.org_pay_drift,
+        ]
+
+
+def write_invoice_csv(drifts, path):
+    """One row per drifting invoice."""
+    with open(path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(INVOICE_CSV_HEADER)
+        for drift in drifts:
+            if invoice_has_drift(drift):
+                writer.writerow(invoice_row(drift))
+
+
+def write_work_csv(drifts, path):
+    """One row per completed work, for drifting invoices only; join to the invoice report on invoice_id."""
+    with open(path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(WORK_CSV_HEADER)
+        for drift in drifts:
+            if not invoice_has_drift(drift):
+                continue
+            for row in work_rows(drift):
+                writer.writerow(row)
+
+
+def summary_lines(drifts):
+    reportable = [d for d in drifts if invoice_has_drift(d)]
+    late = sum(1 for d in drifts if d.late_delivery_units > 0)
+    late_units = sum(d.late_delivery_units for d in drifts)
+    over = sum(1 for d in drifts if d.overbilled_units > 0)
+    over_units = sum(d.overbilled_units for d in drifts)
+    unexplained_gap = sum(1 for d in drifts if gap_is_unexplained(d))
+    return [
+        f"Invoices scanned: {len(drifts)}",
+        f"Invoices shown (correctable / anomalous drift): {len(reportable)}",
+        f"Late-delivery drift (incl org): {late} invoice(s), {late_units} unit(s)",
+        f"Over-billing drift (clawback, incl org): {over} invoice(s), {over_units} unit(s)",
+        f"Reconstruction gap unexplained (model-fit anomalies): {unexplained_gap} invoice(s)",
+    ]
+
+
+class Command(BaseCommand):
+    help = "Read-only legacy invoice drift report (CCCT-2524). Writes a CSV and prints a summary."
+
+    def add_arguments(self, parser):
+        parser.add_argument("--opportunity", type=int, default=None)
+        parser.add_argument("--program", type=int, default=None)
+        parser.add_argument(
+            "--output", type=str, default="/tmp/invoice_drift_report.csv", help="Invoice-level report path."
+        )
+        parser.add_argument(
+            "--exclude-test",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Exclude test opportunities (is_test=True). Defaults to True; --no-exclude-test to include them.",
+        )
+
+    def handle(self, *args, **options):
+        invoices = service_delivery_invoices(
+            opportunity_id=options["opportunity"],
+            program_id=options["program"],
+            exclude_test=options["exclude_test"],
+        )
+        drifts = list(iter_invoice_drift(invoices))
+
+        for drift in drifts:
+            if gap_is_unexplained(drift):
+                self.stderr.write(
+                    self.style.WARNING(
+                        f"Reconstruction gap for invoice {drift.invoice_number}: frozen "
+                        f"{drift.frozen_amount} vs reconstructed_flw_amount {drift.reconstructed_flw_amount} "
+                        f"(gap {drift.reconstruction_gap})"
+                    )
+                )
+        for line in summary_lines(drifts):
+            self.stdout.write(line)
+
+        if drifts:
+            invoice_output = options["output"]
+            base, ext = os.path.splitext(invoice_output)
+            work_output = f"{base}_works{ext}"
+            write_invoice_csv(drifts, invoice_output)
+            write_work_csv(drifts, work_output)
+            self.stdout.write(self.style.SUCCESS(f"Invoice report written to {os.path.abspath(invoice_output)}"))
+            self.stdout.write(self.style.SUCCESS(f"Work report written to {os.path.abspath(work_output)}"))

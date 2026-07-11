@@ -6,8 +6,13 @@ import pytest
 from commcare_connect.opportunity.management.commands.report_invoice_drift import (
     compute_invoice_drift,
     invoice_has_drift,
+    iter_invoice_drift,
     reconstruct_billed_count,
     service_delivery_invoices,
+    summary_lines,
+    work_rows,
+    write_invoice_csv,
+    write_work_csv,
 )
 from commcare_connect.opportunity.models import InvoiceStatus, UserVisit, VisitReviewStatus, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
@@ -324,3 +329,35 @@ def test_overbilling_negative_drift_with_clean_reconciliation(opportunity):
     assert drift.overbilled_units == 1
     assert drift.overbilled_drift == Decimal(100)
     assert drift.late_delivery_units == 0
+
+
+def test_iter_and_summary_end_to_end(opportunity, tmp_path):
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    _completed_work_with_visits(
+        invoice, opportunity, amount=100, org_amount=0, agreed_in_window=1, agreed_late=1
+    )  # desired 2, reconstructed 1 → +1 late unit
+
+    drifts = list(iter_invoice_drift(service_delivery_invoices()))
+    assert len(drifts) == 1
+    assert list(work_rows(drifts[0]))  # at least one work row
+
+    invoice_out = tmp_path / "invoice_drift.csv"
+    write_invoice_csv(drifts, str(invoice_out))
+    invoice_contents = invoice_out.read_text()
+    assert invoice.invoice_number in invoice_contents
+    # Invoice-level report has exactly one data row (header + 1).
+    assert len(invoice_contents.strip().splitlines()) == 2
+
+    work_out = tmp_path / "work_drift.csv"
+    write_work_csv(drifts, str(work_out))
+    assert invoice.invoice_number in work_out.read_text()
+
+    summary = "\n".join(summary_lines(drifts))
+    assert "Invoices scanned: 1" in summary
