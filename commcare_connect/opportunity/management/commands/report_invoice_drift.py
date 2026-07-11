@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from django.contrib.sites.models import Site
 from django.core.management import BaseCommand
+from django.db.models import Q
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import (
@@ -46,10 +47,17 @@ def service_delivery_invoices(opportunity_id=None, program_id=None, exclude_test
 
 
 def _approved_deliver_unit_ids(completed_work, as_of_date):
-    """Deliver-unit ids for visits approved by STATUS ONLY on/before as_of_date."""
+    """Deliver-unit ids for visits approved by STATUS ONLY on/before as_of_date.
+
+    Visits with a NULL status_modified_date ARE counted: a NULL means the approval date was never
+    recorded (a data-quality gap), so we can't place the visit in time and assume it was billed (excluding
+    them manufactured phantom late-delivery drift). If that assumption is wrong the reconstruction
+    over-counts and reconstruction_gap goes non-zero, flagging the row — legacy_null_status_date_visits
+    shows how many such visits are involved.
+    """
     return completed_work.uservisit_set.filter(
+        Q(status_modified_date__date__lte=as_of_date) | Q(status_modified_date__isnull=True),
         status=VisitValidationStatus.approved,
-        status_modified_date__date__lte=as_of_date,
     ).values_list("deliver_unit_id", flat=True)
 
 
@@ -83,6 +91,15 @@ def _late_approved_visit_count(completed_work, as_of_date):
     return count
 
 
+def _null_status_date_approved_visit_count(completed_work):
+    count = completed_work.uservisit_set.filter(
+        status=VisitValidationStatus.approved,
+        status_modified_date__isnull=True,
+    ).count()
+    count += sum(_null_status_date_approved_visit_count(child) for child in _child_completed_works(completed_work))
+    return count
+
+
 def invoice_review_url(invoice, base_url=""):
     opportunity = invoice.opportunity
     path = reverse(
@@ -105,7 +122,8 @@ def reconstruct_billed_count(completed_work, as_of_date):
     billed. Bounding at end_date instead would drop them and manufacture phantom late-delivery drift.
 
     Mirrors CompletedWork.calculate_completed(approved=True) but (1) counts visits by approval STATUS only
-    (no review_status=agree gate) and (2) bounds them to status_modified_date <= as_of_date. Child payment units are
+    (no review_status=agree gate) and (2) bounds them to status_modified_date <= as_of_date, treating a
+    NULL status_modified_date as billed (see _approved_deliver_unit_ids). Child payment units are
     reconstructed recursively with the same rules rather than via the live, agreement-gated approved_count.
     """
     unit_counts = Counter(_approved_deliver_unit_ids(completed_work, as_of_date))
@@ -149,6 +167,8 @@ class WorkDrift:
     overbilled_drift: Decimal
     # reconstructed_deliveries_count * org_amount: org omitted on billed units (reporting only).
     org_pay_drift: Decimal
+    # Approved visits counted with an unrecorded status date (see _null_status_date_approved_visit_count).
+    legacy_null_status_date_visits: int
 
 
 @dataclass
@@ -179,6 +199,7 @@ class InvoiceDrift:
     #   anything else    → reconstruction can't reproduce the frozen amount; drift numbers are unreliable —
     #                      review this.
     reconstruction_gap: Decimal
+    legacy_null_status_date_visits: int
     works: list = field(default_factory=list)
 
 
@@ -199,6 +220,7 @@ def compute_invoice_drift(invoice, base_url=""):
         late_units = max(0, desired_deliveries_count - reconstructed_deliveries_count)
         over_units = max(0, reconstructed_deliveries_count - desired_deliveries_count)
         late_approved_visits = _late_approved_visit_count(cw, billed_through) if late_units else 0
+        null_date_visits = _null_status_date_approved_visit_count(cw)
         works.append(
             WorkDrift(
                 completed_work_id=cw.id,
@@ -212,6 +234,7 @@ def compute_invoice_drift(invoice, base_url=""):
                 overbilled_units=over_units,
                 overbilled_drift=Decimal(over_units * full_rate),
                 org_pay_drift=Decimal(reconstructed_deliveries_count * org_amount),
+                legacy_null_status_date_visits=null_date_visits,
             )
         )
         reconstructed_flw_amount += reconstructed_deliveries_count * flw_amount
@@ -234,6 +257,7 @@ def compute_invoice_drift(invoice, base_url=""):
         overbilled_drift=sum((w.overbilled_drift for w in works), Decimal(0)),
         org_pay_drift=sum((w.org_pay_drift for w in works), Decimal(0)),
         reconstruction_gap=frozen - reconstructed_flw_amount,
+        legacy_null_status_date_visits=sum(w.legacy_null_status_date_visits for w in works),
         works=works,
     )
 
@@ -255,6 +279,7 @@ INVOICE_CSV_HEADER = [
     "overbilled_units",
     "overbilled_drift",
     "org_pay_drift",
+    "legacy_null_status_date_visits",
 ]
 
 WORK_CSV_HEADER = [
@@ -272,6 +297,7 @@ WORK_CSV_HEADER = [
     "overbilled_units",
     "overbilled_drift",
     "org_pay_drift",
+    "legacy_null_status_date_visits",
 ]
 
 
@@ -312,6 +338,7 @@ def invoice_row(drift):
         drift.overbilled_units,
         drift.overbilled_drift,
         drift.org_pay_drift,
+        drift.legacy_null_status_date_visits,
     ]
 
 
@@ -339,6 +366,7 @@ def work_rows(drift):
             work.overbilled_units,
             work.overbilled_drift,
             work.org_pay_drift,
+            work.legacy_null_status_date_visits,
         ]
 
 

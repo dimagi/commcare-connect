@@ -4,7 +4,10 @@ from decimal import Decimal
 import pytest
 
 from commcare_connect.opportunity.management.commands.report_invoice_drift import (
+    _late_approved_visit_count,
+    _null_status_date_approved_visit_count,
     compute_invoice_drift,
+    gap_is_unexplained,
     invoice_has_drift,
     iter_invoice_drift,
     reconstruct_billed_count,
@@ -98,6 +101,23 @@ def test_reconstruct_counts_only_visits_approved_by_end_date(opportunity):
 
     # Only the January visit is within the invoice window.
     assert reconstruct_billed_count(cw, END) == 1
+
+
+def test_null_status_date_visits_are_counted_as_billed_and_surfaced(opportunity):
+    """Some visits have a NULL status_modified_date because the approval timestamp was never recorded (a
+    known data-quality gap, not tied to age). We assume such visits were billed and COUNT them in the
+    reconstruction (excluding them manufactured phantom late drift); their presence is also surfaced via
+    _null_status_date_approved_visit_count so a bad assumption shows up against reconstruction_gap."""
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    pu = PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=0)
+    du = DeliverUnitFactory(payment_unit=pu, optional=False)
+    cw = CompletedWorkFactory(opportunity_access=access, payment_unit=pu)
+
+    _approved_visit(cw, du, on=None)
+
+    assert reconstruct_billed_count(cw, END) == 1  # unknown date → assumed billed, counted
+    assert _late_approved_visit_count(cw, END) == 0  # a NULL-date visit is never "late" either
+    assert _null_status_date_approved_visit_count(cw) == 1  # and its presence is surfaced
 
 
 def test_reconstruct_excludes_rejected_visits(opportunity):
@@ -194,6 +214,63 @@ def test_no_drift(opportunity):
     assert drift.org_pay_drift == Decimal(0)
     assert drift.works[0].desired_deliveries_count == 1
     assert drift.invoice_url.startswith("https://staging.example.com")
+
+
+def test_null_visit_that_was_billed_leaves_no_drift(opportunity):
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),  # the null-date visit WAS billed
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    pu = PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=0)
+    du = DeliverUnitFactory(payment_unit=pu, optional=False)
+    cw = CompletedWorkFactory(opportunity_access=access, payment_unit=pu)
+    cw.invoice = invoice
+    cw.save()
+    _approved_visit(cw, du, on=None, agree=True)
+
+    drift = compute_invoice_drift(invoice)
+    work = drift.works[0]
+    assert work.desired_deliveries_count == 1
+    assert work.reconstructed_deliveries_count == 1  # null assumed billed → counted
+    assert work.late_delivery_units == 0
+    assert work.legacy_null_status_date_visits == 1
+    assert drift.reconstruction_gap == Decimal(0)  # reconstruction reproduces frozen
+    assert drift.legacy_null_status_date_visits == 1
+
+
+def test_gap_catches_null_visit_that_was_not_billed(opportunity):
+    """When the "null was billed" assumption is wrong (the null visit was a genuine unbilled miss), folding
+    over-counts the reconstruction so no unit drift shows — but reconstruction_gap goes negative and
+    flags the invoice for review, with legacy_null_status_date_visits giving the reason."""
+    invoice = PaymentInvoiceFactory(
+        opportunity=opportunity,
+        amount=Decimal(100),  # only the one dated visit was billed; the null visit was NOT
+        service_delivery=True,
+        status=InvoiceStatus.PAID,
+        end_date=END,
+        date=END,
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    pu = PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=0)
+    du = DeliverUnitFactory(payment_unit=pu, optional=False)
+    cw = CompletedWorkFactory(opportunity_access=access, payment_unit=pu)
+    cw.invoice = invoice
+    cw.save()
+    _approved_visit(cw, du, on=IN_WINDOW, agree=True)  # billed
+    _approved_visit(cw, du, on=None, agree=True)  # unbilled null → over-counted by the fold
+
+    drift = compute_invoice_drift(invoice)
+    work = drift.works[0]
+    assert work.reconstructed_deliveries_count == 2  # both folded in
+    assert work.late_delivery_units == 0  # unit drift hidden by the fold...
+    assert drift.reconstruction_gap == Decimal(-100)  # ...but the gap catches it
+    assert gap_is_unexplained(drift) is True
+    assert drift.legacy_null_status_date_visits == 1
 
 
 def test_late_delivery_drift_is_per_work(opportunity):
