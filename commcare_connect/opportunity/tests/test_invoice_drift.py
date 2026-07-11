@@ -186,13 +186,14 @@ def test_no_drift(opportunity):
     )
     _completed_work_with_visits(invoice, opportunity, amount=100, org_amount=0, agreed_in_window=1)
 
-    drift = compute_invoice_drift(invoice)
+    drift = compute_invoice_drift(invoice, base_url="https://staging.example.com/")
     assert drift.reconstructed_flw_amount == Decimal(100)
     assert drift.reconstruction_gap == Decimal(0)
     assert drift.late_delivery_units == 0
     assert drift.overbilled_units == 0
     assert drift.org_pay_drift == Decimal(0)
     assert drift.works[0].desired_deliveries_count == 1
+    assert drift.invoice_url.startswith("https://staging.example.com")
 
 
 def test_late_delivery_drift_is_per_work(opportunity):
@@ -211,6 +212,7 @@ def test_late_delivery_drift_is_per_work(opportunity):
     assert drift.works[0].reconstructed_deliveries_count == 1
     assert drift.works[0].desired_deliveries_count == 2
     assert drift.works[0].late_delivery_units == 1
+    assert drift.works[0].late_approved_visit_count == 1
     assert drift.late_delivery_units == 1
     assert drift.late_delivery_drift == Decimal(100)
     assert drift.overbilled_units == 0
@@ -236,6 +238,7 @@ def test_overbilling_when_billed_visit_never_agreed(opportunity):
     assert drift.overbilled_units == 1
     assert drift.overbilled_drift == Decimal(100)
     assert drift.late_delivery_units == 0
+    assert drift.works[0].late_approved_visit_count == 0
 
 
 @pytest.mark.parametrize("frozen_amount", [Decimal(100), Decimal(120)])

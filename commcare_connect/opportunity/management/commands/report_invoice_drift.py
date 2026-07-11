@@ -6,7 +6,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from django.contrib.sites.models import Site
 from django.core.management import BaseCommand
+from django.urls import reverse
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -63,6 +65,33 @@ def _child_completed_works(completed_work):
     )
 
 
+def _late_approved_visit_count(completed_work, as_of_date):
+    """Raw count of visits approved AFTER the invoice generation date (status=approved, status_modified_date > it).
+
+    These are the deliveries that landed too late to be billed on this invoice and therefore explain
+    late-delivery drift. Sums this completed work's late visits plus those of its child completed works
+    recursively.
+
+    NOTE: this is a raw visit tally, NOT a delivery count, so it does NOT equal late_delivery_units in
+    general.
+    """
+    count = completed_work.uservisit_set.filter(
+        status=VisitValidationStatus.approved,
+        status_modified_date__date__gt=as_of_date,
+    ).count()
+    count += sum(_late_approved_visit_count(child, as_of_date) for child in _child_completed_works(completed_work))
+    return count
+
+
+def invoice_review_url(invoice, base_url=""):
+    opportunity = invoice.opportunity
+    path = reverse(
+        "opportunity:invoice_review",
+        args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+    )
+    return f"{base_url.rstrip('/')}{path}" if base_url else path
+
+
 def reconstruct_billed_count(completed_work, as_of_date):
     """Reconstruct the approved count billed at invoice time, using the *pre-agreement* rules.
 
@@ -109,6 +138,8 @@ class WorkDrift:
     reconstructed_deliveries_count: int  # old logic, in-invoice-window (what was billed)
     desired_deliveries_count: int  # current agreement-gated logic, all-time (what is owed now)
     late_delivery_units: int  # max(0, desired - reconstructed)
+    # deliveries approved after the invoice end date; the raw evidence behind late-delivery drift.
+    late_approved_visit_count: int
     # Late-delivery drift, valued at the FULL per-unit rate (flw_amount + org_amount). Org pay is INCLUDED here.
     late_delivery_drift: Decimal
     # overbilled_units: max(0, reconstructed - desired): billed under the legacy rule but never
@@ -124,6 +155,7 @@ class WorkDrift:
 class InvoiceDrift:
     invoice_id: int
     invoice_number: str
+    invoice_url: str
     opportunity_id: int
     opportunity_name: str
     org_name: str
@@ -150,7 +182,7 @@ class InvoiceDrift:
     works: list = field(default_factory=list)
 
 
-def compute_invoice_drift(invoice):
+def compute_invoice_drift(invoice, base_url=""):
     works = []
     reconstructed_flw_amount = Decimal(0)
     completed_works = CompletedWork.objects.filter(invoice=invoice).select_related("payment_unit")
@@ -166,6 +198,7 @@ def compute_invoice_drift(invoice):
         full_rate = flw_amount + org_amount
         late_units = max(0, desired_deliveries_count - reconstructed_deliveries_count)
         over_units = max(0, reconstructed_deliveries_count - desired_deliveries_count)
+        late_approved_visits = _late_approved_visit_count(cw, billed_through) if late_units else 0
         works.append(
             WorkDrift(
                 completed_work_id=cw.id,
@@ -174,6 +207,7 @@ def compute_invoice_drift(invoice):
                 reconstructed_deliveries_count=reconstructed_deliveries_count,
                 desired_deliveries_count=desired_deliveries_count,
                 late_delivery_units=late_units,
+                late_approved_visit_count=late_approved_visits,
                 late_delivery_drift=Decimal(late_units * full_rate),
                 overbilled_units=over_units,
                 overbilled_drift=Decimal(over_units * full_rate),
@@ -186,6 +220,7 @@ def compute_invoice_drift(invoice):
     return InvoiceDrift(
         invoice_id=invoice.id,
         invoice_number=invoice.invoice_number,
+        invoice_url=invoice_review_url(invoice, base_url),
         opportunity_id=invoice.opportunity_id,
         opportunity_name=invoice.opportunity.name,
         org_name=invoice.opportunity.organization.name,
@@ -209,6 +244,7 @@ INVOICE_CSV_HEADER = [
     "org_name",
     "invoice_id",
     "invoice_number",
+    "invoice_url",
     "invoice_status",
     "invoice_date",
     "frozen_amount",
@@ -231,6 +267,7 @@ WORK_CSV_HEADER = [
     "reconstructed_deliveries_count",
     "desired_deliveries_count",
     "late_delivery_units",
+    "late_approved_visit_count",
     "late_delivery_drift",
     "overbilled_units",
     "overbilled_drift",
@@ -252,9 +289,9 @@ def invoice_has_drift(drift):
     return drift.late_delivery_units > 0 or drift.overbilled_units > 0 or gap_is_unexplained(drift)
 
 
-def iter_invoice_drift(invoices):
+def iter_invoice_drift(invoices, base_url=""):
     for invoice in invoices:
-        yield compute_invoice_drift(invoice)
+        yield compute_invoice_drift(invoice, base_url)
 
 
 def invoice_row(drift):
@@ -264,6 +301,7 @@ def invoice_row(drift):
         drift.org_name,
         drift.invoice_id,
         drift.invoice_number,
+        drift.invoice_url,
         drift.status,
         drift.invoice_date,
         drift.frozen_amount,
@@ -296,6 +334,7 @@ def work_rows(drift):
             work.reconstructed_deliveries_count,
             work.desired_deliveries_count,
             work.late_delivery_units,
+            work.late_approved_visit_count,
             work.late_delivery_drift,
             work.overbilled_units,
             work.overbilled_drift,
@@ -363,7 +402,8 @@ class Command(BaseCommand):
             program_id=options["program"],
             exclude_test=options["exclude_test"],
         )
-        drifts = list(iter_invoice_drift(invoices))
+        base_url = f"https://{Site.objects.get_current().domain}"
+        drifts = list(iter_invoice_drift(invoices, base_url=base_url))
 
         for drift in drifts:
             if gap_is_unexplained(drift):
