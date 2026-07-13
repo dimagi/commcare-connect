@@ -1,0 +1,38 @@
+{% with columns=columns|default:4 rows=rows|default:5 %}
+  <div class="table-container flex flex-col gap-2 mb-1">
+    <div class="w-full overflow-x-auto block">
+      <table class="base-table animate-pulse">
+        <thead>
+          <tr>
+            {% if checkbox %}
+              <th>
+                <div class="h-3 w-4 rounded bg-gray-300"></div>
+              </th>
+            {% endif %}
+            {% for _ in ""|ljust:columns %}
+              <th>
+                <div class="h-3 {% cycle 'w-28' 'w-24' 'w-20' 'w-16' %} rounded bg-gray-300"></div>
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for _ in ""|ljust:rows %}
+            <tr>
+              {% if checkbox %}
+                <td>
+                  <div class="h-3 w-4 rounded bg-gray-200"></div>
+                </td>
+              {% endif %}
+              {% for _ in ""|ljust:columns %}
+                <td>
+                  <div class="h-3 {% cycle 'w-28' 'w-24' 'w-20' 'w-16' %} rounded bg-gray-200"></div>
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endwith %}
