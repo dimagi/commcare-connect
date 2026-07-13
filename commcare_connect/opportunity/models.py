@@ -488,9 +488,11 @@ class AssignedTask(XFormBaseModel):
         return assigned_task
 
     def trigger_ocs_bot(self, assigned_by):
+        task_user = self.opportunity_access.user
+
         response = ocs_api.trigger_bot(
             assigned_by,
-            identifier=self.opportunity_access.user.phone_number,
+            identifier=task_user.phone_number or task_user.username,
             experiment=self.task_type.ocs_chatbot_id,
             participant_data={"connectTaskId": str(self.assigned_task_id)},
         )
