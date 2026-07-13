@@ -206,6 +206,7 @@ TEMPLATES = [
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",
                 "commcare_connect.web.context_processors.session_tracking_context",
+                "commcare_connect.web.context_processors.hubspot_context",
             ],
         },
     }
@@ -421,3 +422,6 @@ CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
 
 # LiveSession Settings
 LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
+
+# HubSpot Settings
+HUBSPOT_API_ID = env("HUBSPOT_API_ID", default="")
