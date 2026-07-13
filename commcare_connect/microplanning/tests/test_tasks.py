@@ -170,6 +170,36 @@ class TestWorkAreaCSVImporter:
 
         assert result["created"] == 1
 
+    def test_case_insensitive_headers(self, opportunity):
+        headers = [
+            "area slug",
+            "WARD",
+            "Centroid",
+            "boundary",
+            "Building count",
+            "expected VISIT count",
+            "target population",
+            "lga",
+            "STATE",
+        ]
+        row = [
+            "area-case",
+            "ward",
+            self.CENTROID,
+            self.POLYGON,
+            5,
+            "6",
+            "100",
+            "LGA1",
+            "State1",
+        ]
+
+        csv_data = self.build_csv([row], headers=headers)
+        result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
+
+        assert result["created"] == 1
+        assert WorkArea.objects.filter(slug="area-case", target_population=100).exists()
+
     def test_missing_extra_properties(self, opportunity):
         row = [
             "area-1",
