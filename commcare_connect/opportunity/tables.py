@@ -1850,7 +1850,8 @@ class AssignedTaskListTable(OpportunityContextTable):
     due_date = DMYTColumn(verbose_name=gettext_lazy("Due Date"), accessor="due_date")
     assigned_by = tables.Column(
         verbose_name=gettext_lazy("Assigned By"),
-        accessor="assigned_by__name",
+        accessor="assigned_by__display_name",
+        orderable=False,
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )
@@ -1878,6 +1879,11 @@ class AssignedTaskListTable(OpportunityContextTable):
         row_attrs = {"class": "group"}
         empty_text = gettext_lazy("No tasks have been assigned yet.")
 
+    def __init__(self, *args, can_edit_tasks=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not can_edit_tasks:
+            self.columns.hide("action")
+
     def render_assigned_task_id(self, value):
         # TODO: CCCT-2184 - Link to Connect Worker page filtered to task view
         return format_html(
@@ -1903,7 +1909,8 @@ class WorkerCompletedTaskTable(tables.Table):
     task_type = tables.Column(verbose_name=_("Task Type"), accessor="task_type", orderable=False)
     assigned_by = tables.Column(
         verbose_name=_("Assigned By"),
-        accessor="assigned_by__name",
+        accessor="assigned_by__display_name",
+        orderable=False,
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )

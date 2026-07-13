@@ -25,7 +25,7 @@
       <div class="text-sm text-brand-blue-light">{% translate "Assigned By" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">
         {% if completed_task.assigned_by %}
-          {{ completed_task.assigned_by.name }}
+          {{ completed_task.assigned_by.display_name }}
         {% else %}
           {% translate "Deleted user" %}
         {% endif %}
