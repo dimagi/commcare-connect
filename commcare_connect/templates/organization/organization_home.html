@@ -60,13 +60,17 @@
            class="w-full"
            hx-get="{% url 'organization:org_member_table' request.org.slug %}?{% querystring %}"
            hx-swap="innerHTML"
-           hx-trigger="loadMembers from:body"></div>
+           hx-trigger="loadMembers from:body">
+        {% include "components/tables/table_skeleton.html" with columns=3 rows=5 checkbox=True %}
+      </div>
       <div x-show="selectedTab === 'members'"
            id="pending_invites_container"
            class="w-full"
            hx-get="{% url 'organization:pending_invites_table' request.org.slug %}"
            hx-swap="innerHTML"
-           hx-trigger="loadMembers from:body"></div>
+           hx-trigger="loadMembers from:body">
+        {% include "components/tables/table_skeleton.html" with columns=5 rows=3 %}
+      </div>
     </div>
     {% include "components/organization_home_page/add_org_member_modal.html" %}
     {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
