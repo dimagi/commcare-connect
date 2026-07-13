@@ -5,12 +5,15 @@ from allauth.account.utils import user_email
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
+from allauth.socialaccount.providers.base import AuthProcess
 from allauth.utils import email_address_exists
 from django.conf import settings
 from django.contrib import messages
 from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.utils.translation import gettext as _
+
+from commcare_connect.ocs_provider.provider import OcsProvider
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -25,6 +28,8 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin):
         if sociallogin.is_existing:
             return
+        if sociallogin.state.get("process") == AuthProcess.CONNECT and sociallogin.account.provider == OcsProvider.id:
+            return  # OCS account being linked to an already-authenticated user
         email = user_email(sociallogin.user)
         if not email:
             return

@@ -101,6 +101,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "commcare_connect.audit",
     "commcare_connect.commcarehq_provider",
+    "commcare_connect.ocs_provider",
     "commcare_connect.commcarehq",
     "commcare_connect.data_export",
     "commcare_connect.flags",
@@ -368,6 +369,9 @@ DJANGO_TABLES2_TABLE_ATTRS = {
 # ------------------------------------------------------------------------------
 # HQ integration settings
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org")
+
+# Open Chat Studio (OCS) integration settings
+OCS_BASE_URL = env("OCS_BASE_URL", default="https://www.openchatstudio.com")
 
 # ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
