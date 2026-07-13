@@ -98,7 +98,7 @@
       <a href="/portfolio" data-route="/portfolio">Portfolio</a>
       <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
       <div class="nav-cta">
-        <a href="{{ app_login_url }}" class="btn btn-ghost">Sign In</a>
+        <a href="{% url 'account_login' %}" class="btn btn-ghost">Sign In</a>
         <a href="/contact/" class="btn btn-primary">Request a conversation</a>
       </div>
     </nav>
@@ -113,7 +113,7 @@
     <a href="/platform" data-route="/platform">Platform</a>
     <a href="/portfolio" data-route="/portfolio">Portfolio</a>
     <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
-    <a href="{{ app_login_url }}" class="mobile-nav-cta-secondary">Sign In</a>
+    <a href="{% url 'account_login' %}" class="mobile-nav-cta-secondary">Sign In</a>
     <a href="/contact/" class="mobile-nav-cta">Request a conversation</a>
   </nav>
 </header>
@@ -3514,7 +3514,7 @@
         <li><a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509" target="_blank" rel="noopener">Help Site ↗</a></li>
         <li><a href="/release-notes">Release Notes</a></li>
         <li><a href="/contact/">Request a conversation</a></li>
-        <li><a href="{{ app_login_url }}">Sign In</a></li>
+        <li><a href="{% url 'account_login' %}">Sign In</a></li>
       </ul>
     </div>
     <div class="foot-col">
