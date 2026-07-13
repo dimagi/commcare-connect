@@ -1397,9 +1397,13 @@ class PaymentUnitForm(forms.ModelForm):
             raise ValidationError(
                 _(
                     "The opportunity budget cannot give the full limit to all %(claimants)d workers "
-                    "who have already claimed. Increase it to at least %(required)d before saving."
+                    "who have already claimed. Increase it to at least %(required)d %(currency)s before saving."
                 )
-                % {"claimants": claimant_count, "required": required_budget}
+                % {
+                    "claimants": claimant_count,
+                    "required": required_budget,
+                    "currency": opportunity.currency_code or "",
+                }
             )
 
 
