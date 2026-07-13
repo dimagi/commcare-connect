@@ -835,6 +835,10 @@ class WorkerVisitTable(tables.Table):
                 "opportunity:user_visit_details",
                 args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
             ),
+            "hx-push-url": lambda record, table: (
+                f"{reverse('opportunity:user_visits_list', args=[table.organization.slug, record.opportunity.opportunity_id])}"  # noqa
+                f"?{urlencode({'user': record.user.user_id, 'visit_id': record.user_visit_id})}"
+            ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",

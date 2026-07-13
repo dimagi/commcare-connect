@@ -2338,7 +2338,7 @@ class WorkerVisitTableView(WorkerTableView):
         return kwargs
 
     def get_queryset(self):
-        queryset = UserVisit.objects.filter(opportunity=self.opportunity)
+        queryset = UserVisit.objects.filter(opportunity=self.opportunity).select_related("user", "opportunity")
         user_id = self.request.GET.get("user")
         if user_id:
             queryset = queryset.filter(user__user_id=user_id)
