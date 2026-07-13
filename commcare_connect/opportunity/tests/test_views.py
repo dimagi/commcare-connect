@@ -2346,7 +2346,7 @@ class TestTaskTypesConfig:
         response = client.get(self._edit_url(opp, task_type))
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    def test_edit_task_type_managed_opp_requires_pm_role(
+    def test_edit_task_type_managed_opp_delivery_org_admin_can_edit(
         self, client, organization, org_user_admin, program_manager_org
     ):
         program = ProgramFactory(organization=program_manager_org)
@@ -2355,7 +2355,7 @@ class TestTaskTypesConfig:
         url = reverse("opportunity:edit_task_type", args=(organization.slug, managed_opp.opportunity_id, task_type.pk))
         client.force_login(org_user_admin)
         response = client.get(url)
-        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert response.status_code == HTTPStatus.OK
 
     def test_edit_task_type_scoped_to_opportunity_app(self, client, program_manager_org_user_admin, opp):
         other_task_type = TaskTypeFactory()  # different app
@@ -2467,6 +2467,15 @@ class TestEditAssignedTask:
         assert f'hx-get="{edit_url}"' in content, f'Edit button hx-get not found. Looking for: hx-get="{edit_url}"'
         assert 'hx-target="#edit-assigned-task-form"' in content
 
+    def test_list_page_hides_edit_button_for_viewer(self, client, opp, assigned_task):
+        viewer = MembershipFactory(organization=opp.organization, role="viewer").user
+        client.force_login(viewer)
+        url = reverse("opportunity:assigned_task_list", args=(opp.organization.slug, opp.opportunity_id))
+        response = client.get(url)
+        content = response.content.decode()
+        edit_url = self._edit_url(opp, assigned_task)
+        assert f'hx-get="{edit_url}"' not in content
+
     def test_get_returns_form(self, client, program_manager_org_user_admin, opp, assigned_task):
         client.force_login(program_manager_org_user_admin)
         response = client.get(self._edit_url(opp, assigned_task))
@@ -2511,7 +2520,7 @@ class TestEditAssignedTask:
         response = client.get(self._edit_url(opp, assigned_task))
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    def test_managed_opp_requires_pm_role(self, client, organization, org_user_admin, program_manager_org):
+    def test_managed_opp_delivery_org_admin_can_edit(self, client, organization, org_user_admin, program_manager_org):
         program = ProgramFactory(organization=program_manager_org)
         managed_opp = OpportunityFactory(program=program, organization=organization)
         access = OpportunityAccessFactory(opportunity=managed_opp)
@@ -2526,6 +2535,18 @@ class TestEditAssignedTask:
         )
         client.force_login(org_user_admin)
         response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
+
+    def test_viewer_cannot_edit(self, client, opp, user):
+        viewer = MembershipFactory(organization=opp.organization, role="viewer").user
+        access = OpportunityAccessFactory(opportunity=opp, user=user)
+        task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=TaskTypeFactory(app=opp.deliver_app),
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        client.force_login(viewer)
+        response = client.get(self._edit_url(opp, task))
         assert response.status_code == HTTPStatus.NOT_FOUND
 
 

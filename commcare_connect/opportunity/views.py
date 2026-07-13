@@ -202,8 +202,10 @@ from commcare_connect.opportunity.visit_import import (
 )
 from commcare_connect.organization.decorators import (
     OrganizationProgramManagerMixin,
+    OrganizationUserAdminRoleMixin,
     OrganizationUserMemberRoleMixin,
     OrganizationUserMixin,
+    _request_user_is_admin,
     _request_user_is_member,
     managed_opportunity_pm_required,
     opportunity_required,
@@ -1349,7 +1351,7 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
         return self.render_to_response(self.get_context_data(form=form))
 
 
-class EditTaskType(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class EditTaskType(OrganizationUserAdminRoleMixin, OpportunityObjectMixin, UpdateView):
     template_name = "opportunity/edit_task_type_form.html"
     form_class = EditTaskTypeForm
     model = TaskType
@@ -2624,7 +2626,7 @@ def user_task_details(request, org_slug, opp_id, pk):
             completed_task=completed_task,
             images=images,
             hq_link=hq_link,
-            can_manage_tasks=_can_manage_tasks(request, request.opportunity),
+            can_edit_tasks=_request_user_is_admin(request),
         ),
     )
 
@@ -3516,6 +3518,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["opp_id"] = self.get_opportunity().opportunity_id
+        kwargs["can_edit_tasks"] = _request_user_is_admin(self.request)
         return kwargs
 
     def get_table_data(self):
@@ -3563,7 +3566,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         return context
 
 
-class EditAssignedTask(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class EditAssignedTask(OrganizationUserAdminRoleMixin, OpportunityObjectMixin, UpdateView):
     template_name = "opportunity/edit_assigned_task_form.html"
     form_class = EditAssignedTaskForm
     model = AssignedTask

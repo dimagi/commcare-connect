@@ -155,3 +155,11 @@ class OrganizationUserMemberRoleMixin:
     @method_decorator(org_member_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
+
+
+class OrganizationUserAdminRoleMixin:
+    """Mixin version of org_admin_required decorator"""
+
+    @method_decorator(org_admin_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
