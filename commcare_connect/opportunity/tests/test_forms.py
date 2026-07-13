@@ -20,6 +20,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitForm,
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
+    PaymentUnitForm,
 )
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
@@ -32,8 +33,10 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CommCareAppFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
+    OpportunityClaimFactory,
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
@@ -1102,3 +1105,65 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert saved.slug == "original-slug"
         assert saved.case_property == "original_prop"
+
+
+@pytest.mark.django_db
+class TestPaymentUnitFormBudgetValidation:
+    """The per-user delivery limit is allocated from a shared budget pool per payment unit.
+
+    Adding or enlarging a payment unit lowers the derived ``number_of_users``; if it drops
+    below the count of workers who have already claimed, some workers silently receive a
+    reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
+    """
+
+    def _make_claimants(self, opportunity, count):
+        for _ in range(count):
+            OpportunityClaimFactory(opportunity_access__opportunity=opportunity, opportunity_access__accepted=True)
+
+    def _form(self, opportunity, data, instance=None):
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        return PaymentUnitForm(
+            data={
+                "name": "Bonus",
+                "description": "Bonus payment unit",
+                "max_daily": 10,
+                "org_amount": 0,
+                "required_deliver_units": [str(deliver_unit.id)],
+                **data,
+            },
+            deliver_units=[deliver_unit],
+            payment_units=[],
+            org_slug=opportunity.organization.slug,
+            opportunity=opportunity,
+            instance=instance,
+        )
+
+    @pytest.mark.parametrize(
+        "num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid",
+        [
+            # Budget covers 3 users with only the existing unit; adding a second unit needs double.
+            pytest.param(1, 1500, 3, False, 100, False, id="reject_new_over_budget"),
+            pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
+            # Budget that would fail with claimants, proving the no-claimants early return fires.
+            pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
+            # Doubling an existing unit's max_total pushes number_of_users below the 3 claimants.
+            pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
+        ],
+    )
+    def test_budget_validation(
+        self, opportunity, num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid
+    ):
+        units = [
+            PaymentUnitFactory(opportunity=opportunity, max_total=100, amount=5, org_amount=0)
+            for _ in range(num_existing)
+        ]
+        opportunity.total_budget = total_budget
+        opportunity.save()
+        self._make_claimants(opportunity, num_claimants)
+
+        instance = units[0] if edit_existing else None
+        form = self._form(opportunity, {"max_total": new_max_total, "amount": 5}, instance=instance)
+
+        assert form.is_valid() == expect_valid
+        if not expect_valid:
+            assert any("budget cannot give the full limit" in e for e in form.non_field_errors())

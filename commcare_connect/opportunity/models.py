@@ -187,15 +187,16 @@ class Opportunity(BaseModel):
             opportunity_access__opportunity=self, status=CompletedWorkStatus.approved
         ).count()
 
+    @staticmethod
+    def budget_per_user_for_units(payment_units):
+        """Total budget consumed per user (worker + org pay) across the given payment units."""
+        return sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
+
     @property
     def number_of_users(self):
         if not self.total_budget:
             return 0
-        budget_per_user = 0
-        payment_units = self.paymentunit_set.all()
-        for pu in payment_units:
-            budget_per_user += pu.max_total * (pu.amount + pu.org_amount)
-        return self.total_budget / budget_per_user
+        return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
 
     @property
     def allotted_visits(self):

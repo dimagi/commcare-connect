@@ -1370,7 +1370,37 @@ class PaymentUnitForm(forms.ModelForm):
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+        self._validate_budget_covers_claimants(cleaned_data)
+
         return cleaned_data
+
+    def _validate_budget_covers_claimants(self, cleaned_data):
+        """
+        Reject the create/edit if the budget can't give every existing claimant the full limit.
+        """
+        opportunity = self.opportunity
+        claimant_count = OpportunityClaim.objects.filter(opportunity_access__opportunity=opportunity).count()
+        if not claimant_count or not opportunity.total_budget:
+            return
+
+        max_total = cleaned_data.get("max_total")
+        amount = cleaned_data.get("amount")
+        if max_total is None or amount is None:
+            return
+        org_amount = cleaned_data.get("org_amount") or 0
+
+        other_units = opportunity.paymentunit_set.exclude(pk=self.instance.pk)
+        budget_per_user = max_total * (amount + org_amount) + Opportunity.budget_per_user_for_units(other_units)
+
+        required_budget = budget_per_user * claimant_count
+        if opportunity.total_budget < required_budget:
+            raise ValidationError(
+                _(
+                    "The opportunity budget cannot give the full limit to all %(claimants)d workers "
+                    "who have already claimed. Increase it to at least %(required)d before saving."
+                )
+                % {"claimants": claimant_count, "required": required_budget}
+            )
 
 
 class SendMessageMobileUsersForm(forms.Form):
