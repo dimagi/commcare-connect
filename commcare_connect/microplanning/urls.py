@@ -21,6 +21,11 @@ urlpatterns = [
         name="implementation_area_import_status",
     ),
     path(
+        "<slug:opp_id>/clear_implementation_areas/",
+        views.clear_implementation_areas,
+        name="clear_implementation_areas",
+    ),
+    path(
         "<slug:opp_id>/tiles/<int:z>/<int:x>/<int:y>/",
         views.WorkAreaTileView.as_view(),
         name="workareas_tiles",

@@ -179,6 +179,7 @@ def microplanning_home(request, *args, **kwargs):
     context = {
         "show_area_btn": show_area_btn,
         "show_implementation_area_btn": show_implementation_area_btn,
+        "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
@@ -433,6 +434,20 @@ class ImplementationAreaImport(View):
         messages.info(request, _("Implementation Area upload has been started."))
         redirect_url += f"?task_id={task.id}&area_type=implementation_area"
         return redirect(redirect_url)
+
+
+@require_POST
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def clear_implementation_areas(request, org_slug, opp_id):
+    # Delete the opportunity's Implementation Areas so a fresh set can be uploaded. Work Areas
+    # keep their implementation_area_name (the FK is set null via SET_NULL) and re-link on the
+    # next Implementation Area upload.
+    ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).delete()
+    messages.success(request, _("Implementation Areas cleared. You can now upload a new file."))
+    redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 def _area_modal_context(org_slug, opp_id, area_type):

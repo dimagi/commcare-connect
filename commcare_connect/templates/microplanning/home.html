@@ -86,6 +86,14 @@
             <i class="fa-solid fa-upload"></i>{% translate "Upload Implementation Area" %}
           </button>
         {% endif %}
+        {% if implementation_areas_present %}
+          <button type="button"
+                  hx-post="{% url 'microplanning:clear_implementation_areas' request.org.slug request.opportunity.opportunity_id %}"
+                  hx-confirm="{% translate 'This deletes all Implementation Areas for this opportunity. Work Areas keep their Implementation Area name and re-link on the next upload. Continue?' %}"
+                  class="button button-md outline-style">
+            <i class="fa-solid fa-trash"></i>{% translate "Clear Implementation Areas" %}
+          </button>
+        {% endif %}
         {% if show_workarea_groups_btn %}
           <button class="button button-md primary-dark"
                   x-show="showCreateGroupBtn"
