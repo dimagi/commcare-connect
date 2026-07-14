@@ -43,10 +43,10 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
-from django.utils.timezone import now
+from django.utils.timezone import is_aware, localtime, now
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views import View
@@ -222,6 +222,7 @@ from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import (
+    DATE_TIME_FORMAT,
     DEFAULT_PAGE_SIZE,
     PAGE_SIZE_OPTIONS,
     get_duration_min,
@@ -1136,7 +1137,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
-@org_member_required
+@org_viewer_required
 @opportunity_required
 def fetch_attachment(request, org_slug, opp_id, blob_id):
     blob_meta = get_object_or_404(BlobMeta, blob_id=blob_id)
@@ -1156,7 +1157,7 @@ def fetch_attachment(request, org_slug, opp_id, blob_id):
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
 
 
-@org_member_required
+@org_viewer_required
 @opportunity_required
 def fetch_audio_attachment(request, org_slug, opp_id, pk):
     audio = get_object_or_404(AudioAttachment, pk=pk, user_visit__opportunity=request.opportunity)
@@ -2188,6 +2189,7 @@ class UserVisitVerificationView(WorkerPageView):
         context = super().get_context_data(**kwargs)
         context["MAPBOX_TOKEN"] = settings.MAPBOX_TOKEN
         context["show_worker_tasks_tabs"] = switch_is_active(WORKER_VISITS_TASKS)
+        context["visit_id"] = self.request.GET.get("visit_id")
         return context
 
 
@@ -2332,14 +2334,34 @@ class WorkerVisitTableView(WorkerTableView):
         kwargs = super().get_table_kwargs()
         kwargs["organization"] = self.request.org
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
+        kwargs["highlighted_visit_id"] = self.request.GET.get("visit_id")
         return kwargs
 
     def get_queryset(self):
-        queryset = UserVisit.objects.filter(opportunity=self.opportunity)
+        queryset = UserVisit.objects.filter(opportunity=self.opportunity).select_related("user", "opportunity")
         user_id = self.request.GET.get("user")
         if user_id:
             queryset = queryset.filter(user__user_id=user_id)
-        return queryset.order_by("visit_date")
+        return queryset.order_by("visit_date", "pk")
+
+    def get_table(self, **kwargs):
+        table = super().get_table(**kwargs)
+        visit_id = self.request.GET.get("visit_id")
+        if visit_id and "page" not in self.request.GET:
+            page = self._get_visit_page(visit_id)
+            if page:
+                table.paginate(page=page, per_page=get_validated_page_size(self.request))
+        return table
+
+    def _get_visit_page(self, visit_id):
+        queryset = self.get_queryset()
+        target = queryset.filter(user_visit_id=visit_id).first()
+        if not target:
+            return None
+        preceding_count = queryset.filter(
+            Q(visit_date__lt=target.visit_date) | Q(visit_date=target.visit_date, pk__lt=target.pk)
+        ).count()
+        return preceding_count // get_validated_page_size(self.request) + 1
 
 
 class VisitVerificationTableView(WorkerVisitTableView):
@@ -2547,6 +2569,30 @@ def user_visit_details(request, org_slug, opp_id, pk):
             flag_count=flag_count,
             attachment_flagged=attachment_flagged,
         ),
+    )
+
+
+@org_viewer_required
+@opportunity_required
+def user_visit_data(request, org_slug, opp_id, pk):
+    user_visit = get_object_or_404(
+        UserVisit.objects.select_related("user", "deliver_unit"),
+        user_visit_id=pk,
+        opportunity=request.opportunity,
+    )
+    worker_url = reverse("opportunity:user_visits_list", args=[org_slug, opp_id])
+    visit_date = user_visit.visit_date
+    if is_aware(visit_date):
+        visit_date = localtime(visit_date)
+    return JsonResponse(
+        {
+            "visit_date": visit_date.strftime(DATE_TIME_FORMAT),
+            "worker_name": escape(user_visit.user.name),
+            "deliver_type": escape(user_visit.deliver_unit.name) if user_visit.deliver_unit else None,
+            "worker_url": (
+                f"{worker_url}?{urlencode({'user': user_visit.user.user_id, 'visit_id': user_visit.user_visit_id})}"
+            ),
+        }
     )
 
 

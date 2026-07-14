@@ -17,7 +17,20 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection, transaction
-from django.db.models import Count, F, FloatField, Func, IntegerField, OuterRef, Q, Subquery, Sum, TextChoices, Value
+from django.db.models import (
+    CharField,
+    Count,
+    F,
+    FloatField,
+    Func,
+    IntegerField,
+    OuterRef,
+    Q,
+    Subquery,
+    Sum,
+    TextChoices,
+    Value,
+)
 from django.db.models.functions import Cast, Coalesce
 from django.db.utils import OperationalError
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
@@ -106,13 +119,16 @@ PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a 
 def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
     areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
-    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
     implementation_areas_present = ImplementationArea.objects.filter(opportunity_id=opportunity.id).exists()
+    areas_assigned = WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
+    work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
+
+    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
+    show_workarea_groups_btn = areas_present and not work_area_groups_present
+    show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
     show_implementation_area_btn = not (
         cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None or implementation_areas_present
     )
-    work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
-    show_workarea_groups_btn = areas_present and not work_area_groups_present
 
     tiles_url = reverse(
         "microplanning:workareas_tiles",
@@ -134,6 +150,11 @@ def microplanning_home(request, *args, **kwargs):
 
     edit_work_area_url = reverse(
         "microplanning:modify_work_area",
+        args=[request.org.slug, opportunity.opportunity_id, 0],
+    ).replace("/0/", "/")
+
+    user_visit_data_url = reverse(
+        "opportunity:user_visit_data",
         args=[request.org.slug, opportunity.opportunity_id, 0],
     ).replace("/0/", "/")
 
@@ -181,6 +202,8 @@ def microplanning_home(request, *args, **kwargs):
         "show_implementation_area_btn": show_implementation_area_btn,
         "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
+        "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
+        "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
         "import_status_url": import_status_url,
@@ -200,6 +223,7 @@ def microplanning_home(request, *args, **kwargs):
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
+        "user_visit_data_url": user_visit_data_url,
         "download_url": download_url,
         "review_inaccessibility_url": reverse(
             "microplanning:review_inaccessibility_request",
@@ -566,7 +590,7 @@ class WorkAreaTileView(MVTView):
 
 class UserVisitVectorLayer(VectorLayer):
     id = "user-visits"
-    tile_fields = ("work_area_id",)
+    tile_fields = ("work_area_id", "visit_uuid")
     geom_field = "location_point"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -598,9 +622,10 @@ class UserVisitVectorLayer(VectorLayer):
                     Value(4326),
                     function="ST_SetSRID",
                     output_field=PointField(srid=4326),
-                )
+                ),
+                visit_uuid=Cast("user_visit_id", output_field=CharField()),
             )
-            .values("location_point", "work_area_id")
+            .values("location_point", "work_area_id", "visit_uuid")
         )
 
 
@@ -645,11 +670,21 @@ def workareas_group_geojson(request, org_slug, opp_id):
 @org_admin_required
 @opportunity_required
 @require_POST
+@waffle_flag(MICROPLANNING)
 def cluster_work_areas(request, org_slug, opp_id):
     redirect_url = reverse(
         "microplanning:microplanning_home",
         kwargs={"org_slug": org_slug, "opp_id": opp_id},
     )
+
+    rerun = request.GET.get("rerun") is not None
+    if rerun:
+        if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
+            messages.error(
+                request, _("Clustering cannot be re-run because Work Areas have already been assigned to FLWs.")
+            )
+            return HttpResponse(headers={"HX-Redirect": redirect_url})
+        WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
 
     if not WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
         messages.error(request, _("Please upload Work Areas for this opportunity."))
@@ -764,6 +799,23 @@ def exclude_work_areas(request, org_slug, opp_id):
         {"work_areas_excluded": {"excluded": result["excluded_ids"], "skipped": result["skipped"]}}
     )
     return response
+
+
+@org_admin_required
+@opportunity_required
+@require_POST
+def clear_work_area_groups(request, org_slug, opp_id):
+    redirect_url = reverse(
+        "microplanning:microplanning_home",
+        kwargs={"org_slug": org_slug, "opp_id": opp_id},
+    )
+    if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
+        messages.error(request, _("Work Areas already assigned to users. Work Area Groups cannot be cleared."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
+    messages.success(request, _("Work Area Groups have been cleared for this opportunity."))
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 @require_GET

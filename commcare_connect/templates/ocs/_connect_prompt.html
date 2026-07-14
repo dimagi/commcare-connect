@@ -1,0 +1,7 @@
+{% load socialaccount i18n %}
+<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800"
+     role="alert">
+  <p class="mb-2 text-sm">{% translate "Connect your Open Chat Studio account to configure or assign OCS tasks." %}</p>
+  <a class="button button-md primary-dark"
+     href="{% provider_login_url 'ocs' process='connect' next=next_url %}">{% translate "Connect OCS account" %}</a>
+</div>

@@ -1,10 +1,5 @@
-import datetime
-
 import httpx
-from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 from asgiref.sync import async_to_sync
-from django.conf import settings
-from django.utils import timezone
 
 from commcare_connect.opportunity.models import HQApiKey
 
@@ -15,39 +10,6 @@ class CommCareHQAPIException(Exception):
 
 class CommCareTokenException(CommCareHQAPIException):
     pass
-
-
-def refresh_access_token(user, force=False):
-    social_app = SocialApp.objects.filter(provider="commcarehq").first()
-    social_acc = SocialAccount.objects.filter(user=user).first()
-    social_token = SocialToken.objects.filter(account=social_acc).first()
-
-    if not all([social_app, social_acc, social_token]):
-        raise CommCareTokenException("User does not have a valid token")
-
-    if not force and social_token.expires_at > timezone.now():
-        return social_token
-
-    response = httpx.post(
-        f"{settings.COMMCARE_HQ_URL}/oauth/token/",
-        data={
-            "grant_type": "refresh_token",
-            "client_id": social_app.client_id,
-            "client_secret": social_app.secret,
-            "refresh_token": social_token.token_secret,
-        },
-    )
-    if response.status_code != 200:
-        raise CommCareHQAPIException(f"Failed to refresh token: {response.text}")
-
-    data = response.json()
-    if data.get("access_token", ""):
-        social_token.token = data["access_token"]
-        social_token.token_secret = data["refresh_token"]
-        social_token.expires_at = timezone.now() + datetime.timedelta(seconds=900)
-        social_token.save()
-
-    return social_token
 
 
 def get_domains_for_user(api_key):

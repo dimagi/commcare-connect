@@ -835,13 +835,21 @@ class WorkerVisitTable(tables.Table):
                 "opportunity:user_visit_details",
                 args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
             ),
+            "hx-push-url": lambda record, table: (
+                f"{reverse('opportunity:user_visits_list', args=[table.organization.slug, record.opportunity.opportunity_id])}"  # noqa
+                f"?{urlencode({'user': record.user.user_id, 'visit_id': record.user_visit_id})}"
+            ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
             "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
-            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
+            ":class": lambda record, table: (
+                f"(selectedRow == {record.id} || (selectedRow === null && "
+                f"{str(str(record.user_visit_id) == table.highlighted_visit_id).lower()})) "
+                f"? 'active' : ''"
+            ),
             "data-visit-id": lambda record: record.pk,
             "data-visit-status": lambda record: record.status,
         }
@@ -849,6 +857,7 @@ class WorkerVisitTable(tables.Table):
     def __init__(self, *args, **kwargs):
         self.organization = kwargs.pop("organization", None)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm", False)
+        self.highlighted_visit_id = kwargs.pop("highlighted_visit_id", None)
         super().__init__(*args, **kwargs)
         self.use_view_url = True
 
