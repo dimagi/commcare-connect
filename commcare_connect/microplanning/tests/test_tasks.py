@@ -232,11 +232,14 @@ def test_work_area_import_matches_implementation_area_by_name(opportunity):
 
 
 @pytest.mark.django_db
-def test_work_area_import_unmatched_implementation_area_is_null(opportunity):
+def test_work_area_import_unmatched_implementation_area_is_null_but_name_kept(opportunity):
     content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Nonexistent\n")
     result = WorkAreaCSVImporter(opportunity.id, content).run()
     assert result == {"created": 1}
-    assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
+    work_area = WorkArea.objects.get(slug="area-1")
+    assert work_area.implementation_area_id is None
+    # Name is kept so a later Implementation Area upload can complete the link.
+    assert work_area.implementation_area_name == "Nonexistent"
 
 
 @pytest.mark.django_db
@@ -244,6 +247,34 @@ def test_work_area_import_without_implementation_area_column(opportunity):
     content = io.StringIO(f"{WA_BASE_HEADER}\n" + WA_ROW.format(n=1) + "\n")
     result = WorkAreaCSVImporter(opportunity.id, content).run()
     assert result == {"created": 1}
+    work_area = WorkArea.objects.get(slug="area-1")
+    assert work_area.implementation_area_id is None
+    assert work_area.implementation_area_name == ""
+
+
+@pytest.mark.django_db
+def test_implementation_area_import_backlinks_existing_work_areas(opportunity):
+    # Work Areas uploaded first, before any Implementation Area exists: FK stays null, name kept.
+    wa_content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Ward North\n")
+    assert WorkAreaCSVImporter(opportunity.id, wa_content).run() == {"created": 1}
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
+
+    # Uploading the matching Implementation Area afterwards links the existing work area.
+    ia_content = io.StringIO(f'{IA_HEADER}\nWard North,77.1 28.6,"{IA_POLY}"\n')
+    assert ImplementationAreaCSVImporter(opportunity.id, ia_content).run() == {"created": 1}
+
+    area = ImplementationArea.objects.get(opportunity=opportunity, name="Ward North")
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id == area.id
+
+
+@pytest.mark.django_db
+def test_implementation_area_import_does_not_link_unrelated_work_areas(opportunity):
+    wa_content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Ward North\n")
+    WorkAreaCSVImporter(opportunity.id, wa_content).run()
+
+    ia_content = io.StringIO(f'{IA_HEADER}\nWard South,77.1 28.6,"{IA_POLY}"\n')
+    ImplementationAreaCSVImporter(opportunity.id, ia_content).run()
+
     assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
 
 

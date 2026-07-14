@@ -19,9 +19,15 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import (
+    ImplementationArea,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaStatus,
+)
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter, get_implementation_area_import_cache_key
 from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
@@ -160,6 +166,26 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
             in response.content
         )
 
+    def test_clear_deletes_areas_and_keeps_work_area_names(self, client, org_user_admin, organization, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+        work_area = WorkAreaFactory(
+            opportunity=opportunity, implementation_area=area, implementation_area_name="Ward North"
+        )
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:clear_implementation_areas",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        response = client.post(url)
+
+        assert response.status_code == 200
+        assert response["HX-Redirect"]
+        assert not ImplementationArea.objects.filter(opportunity=opportunity).exists()
+        work_area.refresh_from_db()
+        assert work_area.implementation_area_id is None
+        assert work_area.implementation_area_name == "Ward North"
+
 
 @pytest.mark.django_db
 class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
@@ -184,6 +210,27 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         client.force_login(org_user_member)
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert response.status_code == 404
+
+    def test_upload_and_clear_buttons_toggle_on_implementation_areas(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        url = self.url(organization.slug, str(opportunity.opportunity_id))
+
+        response = client.get(url)
+        assert response.context["show_implementation_area_btn"] is True
+        assert response.context["implementation_areas_present"] is False
+        assert b"Upload Implementation Area" in response.content
+        assert b"Clear Implementation Areas" not in response.content
+
+        ImplementationAreaFactory(opportunity=opportunity)
+
+        response = client.get(url)
+        assert response.context["show_implementation_area_btn"] is False
+        assert response.context["implementation_areas_present"] is True
+        assert b"Upload Implementation Area" not in response.content
+        assert b"Clear Implementation Areas" in response.content
 
     def test_auto_poll_targets_matching_status_endpoint(
         self, client: Client, settings, organization, org_user_admin, opportunity
