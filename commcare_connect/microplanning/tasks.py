@@ -49,6 +49,7 @@ class BaseAreaCSVImporter:
             return self._result()  # abort if any row is invalid
         # --- Second pass: streaming batch insert ---
         self._stream_and_insert(self.csv_source)
+        self._after_insert()
         return self._result()
 
     def _result(self):
@@ -103,6 +104,9 @@ class BaseAreaCSVImporter:
         pass
 
     def _prepare_insert(self):
+        pass
+
+    def _after_insert(self):
         pass
 
     def get_processors(self):
@@ -182,10 +186,12 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             ImplementationArea.objects.filter(opportunity_id=self.opp_id).values_list("name", "id")
         )
 
-    def get_implementation_area_id(self, row):
+    def get_implementation_area_name(self, row):
         header = self.OPTIONAL_HEADERS["implementation_area"]
-        name = (row.get(header) or "").strip()
-        return self.implementation_area_map.get(name)
+        return (row.get(header) or "").strip()
+
+    def get_implementation_area_id(self, row):
+        return self.implementation_area_map.get(self.get_implementation_area_name(row))
 
     def get_processors(self):
         return [
@@ -210,6 +216,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             expected_visit_count=visits,
             target_population=self.get_target_population(row),
             implementation_area_id=self.get_implementation_area_id(row),
+            implementation_area_name=self.get_implementation_area_name(row),
             case_properties={
                 "lga": extra_props.get("lga"),
                 "state": extra_props.get("state"),
@@ -351,6 +358,16 @@ class ImplementationAreaCSVImporter(BaseAreaCSVImporter):
             boundary=self.get_boundary(row),
         )
 
+    def _after_insert(self):
+        # Link work areas that were uploaded before their implementation area existed (e.g. after
+        # the areas were cleared and re-uploaded): match each unlinked work area by stored name.
+        for area in ImplementationArea.objects.filter(opportunity_id=self.opp_id):
+            WorkArea.objects.filter(
+                opportunity_id=self.opp_id,
+                implementation_area__isnull=True,
+                implementation_area_name=area.name,
+            ).update(implementation_area=area)
+
 
 @celery_app.task(bind=True)
 def import_implementation_areas_task(self, opp_id, file_name):
@@ -385,7 +402,7 @@ class WorkAreaCSVExporter:
         "target_population": lambda wa: wa.target_population,
         "lga": lambda wa: (wa.case_properties or {}).get("lga", ""),
         "state": lambda wa: (wa.case_properties or {}).get("state", ""),
-        "implementation_area": lambda wa: wa.implementation_area.name if wa.implementation_area_id else "",
+        "implementation_area": lambda wa: wa.implementation_area_name,
         "group_name": lambda wa: wa.group_name or "",
     }
 

@@ -96,6 +96,10 @@ class WorkArea(geo_models.Model):
     implementation_area = geo_models.ForeignKey(
         ImplementationArea, null=True, blank=True, on_delete=geo_models.SET_NULL
     )
+    # Name of the Implementation Area from the upload sheet, kept so the FK can be resolved
+    # regardless of upload order (Implementation Areas may be cleared and re-uploaded after
+    # Work Areas exist).
+    implementation_area_name = geo_models.CharField(max_length=255, blank=True, default="")
     excluded_by = geo_models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
