@@ -1139,7 +1139,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
-@org_member_required
+@org_viewer_required
 @opportunity_required
 def fetch_attachment(request, org_slug, opp_id, blob_id):
     blob_meta = get_object_or_404(BlobMeta, blob_id=blob_id)
@@ -1159,7 +1159,7 @@ def fetch_attachment(request, org_slug, opp_id, blob_id):
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
 
 
-@org_member_required
+@org_viewer_required
 @opportunity_required
 def fetch_audio_attachment(request, org_slug, opp_id, pk):
     audio = get_object_or_404(AudioAttachment, pk=pk, user_visit__opportunity=request.opportunity)

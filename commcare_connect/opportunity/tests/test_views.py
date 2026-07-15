@@ -1012,19 +1012,20 @@ class TestFetchAttachmentView:
         assert response.status_code == 404
         storage_handler_getitem_mock.assert_not_called()
 
-    @mock.patch.object(StorageHandler, "__getitem__")
-    def test_user_can_fetch(self, storage_handler_getitem_mock, org_user_member, organization, client):
+    def test_viewer_can_fetch(self, organization, client):
+        viewer = MembershipFactory(organization=organization, role="viewer").user
         visit = UserVisitFactory(opportunity__organization=organization)
-        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
 
         url = reverse(
             "opportunity:fetch_attachment", args=(organization.slug, visit.opportunity.id, blob_meta.blob_id)
         )
-        client.force_login(org_user_member)
+        client.force_login(viewer)
 
         response = client.get(url)
         assert response.status_code == 200
-        storage_handler_getitem_mock.assert_called_once()
+        assert b"".join(response.streaming_content) == b"imagebytes"
 
     def test_user_cannot_fetch_managed_opp(self, org_user_member, organization, client):
         opp = OpportunityFactory()
@@ -2798,7 +2799,8 @@ class TestDeleteTasks:
 
 
 @pytest.mark.django_db
-def test_fetch_audio_attachment_returns_file(client, organization, org_user_member, opportunity):
+def test_fetch_audio_attachment_returns_file(client, organization, opportunity):
+    viewer = MembershipFactory(organization=organization, role="viewer").user
     visit = UserVisitFactory.create(opportunity=opportunity)
     audio = AudioAttachmentFactory.create(user_visit=visit, content_type="audio/mp4")
     storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
@@ -2807,7 +2809,7 @@ def test_fetch_audio_attachment_returns_file(client, organization, org_user_memb
         "opportunity:fetch_audio_attachment",
         args=(organization.slug, opportunity.id, audio.pk),
     )
-    client.force_login(org_user_member)
+    client.force_login(viewer)
     response = client.get(url)
 
     assert response.status_code == 200

@@ -1842,7 +1842,6 @@ _task_select_td_extra = {
 
 class AssignedTaskListTable(OpportunityContextTable):
     select = select_column(td_extra=_task_select_td_extra)
-    assigned_task_id = tables.Column(verbose_name=gettext_lazy("Task ID"), accessor="pk")
     connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
     status = TaskStatusColumn(verbose_name=gettext_lazy("Status"), accessor="status")
     task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
@@ -1866,7 +1865,6 @@ class AssignedTaskListTable(OpportunityContextTable):
         fields = ()
         sequence = (
             "select",
-            "assigned_task_id",
             "connect_worker",
             "status",
             "task_type",
@@ -1883,13 +1881,6 @@ class AssignedTaskListTable(OpportunityContextTable):
         super().__init__(*args, **kwargs)
         if not can_edit_tasks:
             self.columns.hide("action")
-
-    def render_assigned_task_id(self, value):
-        # TODO: CCCT-2184 - Link to Connect Worker page filtered to task view
-        return format_html(
-            '<a href="#" class="text-brand-indigo hover:underline"><span class="text-sm font-medium">#{}</span></a>',
-            value,
-        )
 
     def render_connect_worker(self, value):
         return format_html(
