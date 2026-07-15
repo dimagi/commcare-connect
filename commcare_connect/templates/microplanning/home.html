@@ -59,7 +59,7 @@
         </div>
       </div>
     </header>
-    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showImplUploadBtn: {{ show_implementation_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false }"
+    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showImplUploadBtn: {{ show_implementation_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false, showClearImplementationAreasModal: false }"
          class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
       <div class="flex items-end space-x-2 w-full">
         {% if task_id %}
@@ -88,8 +88,7 @@
         {% endif %}
         {% if implementation_areas_present %}
           <button type="button"
-                  hx-post="{% url 'microplanning:clear_implementation_areas' request.org.slug request.opportunity.opportunity_id %}"
-                  hx-confirm="{% translate 'This deletes all Implementation Areas for this opportunity. Work Areas keep their Implementation Area name and re-link on the next upload. Continue?' %}"
+                  @click="showClearImplementationAreasModal = true"
                   class="button button-md outline-style">
             <i class="fa-solid fa-trash"></i>{% translate "Clear Implementation Areas" %}
           </button>
@@ -141,6 +140,9 @@
       {% endif %}
       {% if show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/clear_work_area_groups_modal.html" %}
+      {% endif %}
+      {% if implementation_areas_present %}
+        {% include "microplanning/clear_implementation_areas_modal.html" %}
       {% endif %}
     </div>
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]"

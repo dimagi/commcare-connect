@@ -1,0 +1,23 @@
+{% load i18n %}
+<div id="clear-implementation-areas-modal"
+     class="modal-backdrop"
+     x-cloak
+     x-show="showClearImplementationAreasModal"
+     @click.self="showClearImplementationAreasModal = false"
+     @keydown.escape.window="showClearImplementationAreasModal = false">
+  <div class="modal relative p-6" @click.stop>
+    <h3 class="text-lg font-semibold mb-3">{% translate "Clear Implementation Areas" %}</h3>
+    <p class="text-sm mb-4">
+      {% translate "This will remove all Implementation Areas for this opportunity. Work Areas keep their Implementation Area name and will re-link on the next upload. This action cannot be undone. Are you sure you want to continue?" %}
+    </p>
+    <div class="flex gap-2 justify-between">
+      <button type="button"
+              class="button button-md outline-style"
+              @click="showClearImplementationAreasModal = false">{% translate "Cancel" %}</button>
+      <button type="button"
+              class="button button-md negative-dark"
+              hx-post="{% url 'microplanning:clear_implementation_areas' request.org.slug request.opportunity.opportunity_id %}"
+              hx-swap="none">{% translate "Clear Implementation Areas" %}</button>
+    </div>
+  </div>
+</div>
