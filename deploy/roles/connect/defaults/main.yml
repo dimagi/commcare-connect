@@ -11,7 +11,7 @@ project_dir: '{{ base_dir }}/{{ project_name }}'
 docker_env_file: '{{ project_dir }}/docker.env'
 
 # Django settings
-aws_region: us-east-1
+aws_region: eu-west-1
 connectid_url: https://connectid.dimagi.com
 django_admin_url: admin/
 django_email_backend: anymail.backends.amazon_ses.EmailBackend

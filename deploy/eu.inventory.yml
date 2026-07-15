@@ -1,0 +1,13 @@
+webservers:
+  hosts:
+    web0:
+      ansible_host: i-0061917b7240cfaef
+    web1:
+      ansible_host: i-0006273d9b40ce3e0
+    celery0:
+      ansible_host: i-0517c5593d6eb861e
+  vars:
+    secrets_file: 'Ansible Secrets - Production EU'
+    commcare_hq_url: 'https://www.commcarehq.org'
+    deploy_environment: 'eu'
+    env_file: 'connect.docker.env.j2'
