@@ -194,6 +194,48 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
+class TestImplementationAreasGeojson(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:implementation_areas_geojson",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_feature_per_area(self, client, org_user_admin, organization, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == 200
+        features = response.json()["implementation_area_features"]
+        assert len(features) == 1
+        feature = features[0]
+        assert feature["type"] == "Feature"
+        assert feature["properties"]["name"] == "Ward North"
+        assert feature["geometry"]["type"] == "Polygon"
+        assert feature["geometry"]["coordinates"]
+
+    def test_empty_when_none(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == 200
+        assert response.json() == {"implementation_area_features": []}
+
+    def test_scoped_to_opportunity(self, client, org_user_admin, organization, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="Mine")
+        other_opp = OpportunityFactory(organization=organization)
+        ImplementationAreaFactory(opportunity=other_opp, name="Theirs")
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        names = [f["properties"]["name"] for f in response.json()["implementation_area_features"]]
+        assert names == ["Mine"]
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        assert client.get(self.url(organization.slug, opportunity.opportunity_id)).status_code == 404
+
+
+@pytest.mark.django_db
 class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
     def url(self, org_slug: str, opp_id: str):
         return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
