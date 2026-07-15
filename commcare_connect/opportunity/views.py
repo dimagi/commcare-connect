@@ -1102,6 +1102,7 @@ def approve_visits(request, org_slug, opp_id):
         visits,
         [
             "status",
+            "status_modified_date",
             "review_created_on",
             "review_status",
             "review_status_modified_date",
@@ -1135,7 +1136,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
 
     updated_count = visits.exclude(
         Q(status=VisitValidationStatus.rejected) | Q(review_status=VisitReviewStatus.agree)
-    ).update(status=VisitValidationStatus.rejected, reason=reason)
+    ).update(status=VisitValidationStatus.rejected, reason=reason, status_modified_date=now())
     if visits.exists():
         user_ids = visits.values_list("user_id", flat=True).distinct()
         update_payment_accrued(opportunity=request.opportunity, users=user_ids)

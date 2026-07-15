@@ -416,6 +416,7 @@ def test_approve_visits(
     user = MembershipFactory.create(organization=opportunity.organization).user
     approve_url = reverse("opportunity:approve_visits", args=(opportunity.organization.slug, opportunity.id))
     client.force_login(user)
+    before_update = now()
 
     response = client.post(
         approve_url,
@@ -432,8 +433,34 @@ def test_approve_visits(
     for v in visits:
         v.refresh_from_db()
         assert v.status == VisitValidationStatus.approved
+        assert v.status_modified_date >= before_update
         if opportunity.managed:
             assert v.justification == justification
+
+
+@pytest.mark.django_db
+def test_approve_visits_resets_disagree_and_sets_status_modified_date(client: Client, organization, opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    visit = UserVisitFactory.create(
+        opportunity=opportunity,
+        opportunity_access=access,
+        status=VisitValidationStatus.pending,
+        review_status=VisitReviewStatus.disagree,
+    )
+
+    user = MembershipFactory.create(organization=opportunity.organization).user
+    client.force_login(user)
+    approve_url = reverse("opportunity:approve_visits", args=(opportunity.organization.slug, opportunity.id))
+    before_update = now()
+
+    response = client.post(approve_url, {"visit_ids[]": [visit.id]}, follow=True)
+
+    assert response.status_code == HTTPStatus.OK
+    visit.refresh_from_db()
+    assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_update
+    assert visit.review_status == VisitReviewStatus.pending
+    assert visit.review_status_modified_date >= before_update
 
 
 @pytest.mark.django_db
@@ -455,10 +482,12 @@ def test_reject_visit(client: Client, opportunity):
     user = MembershipFactory.create(organization=opportunity.organization).user
     client.force_login(user)
     reject_url = reverse("opportunity:reject_visits", args=(opportunity.organization.slug, opportunity.id))
+    before_update = now()
     response = client.post(reject_url, {"reason": reason, "visit_ids[]": [visit.id, accept_visit.id]}, follow=True)
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
     assert visit.reason == reason
+    assert visit.status_modified_date >= before_update
     assert response.status_code == HTTPStatus.OK
 
     accept_visit.refresh_from_db()
@@ -490,15 +519,19 @@ def test_approve_previously_rejected_visit_updates_completed_work_status(
     reject_url = reverse("opportunity:reject_visits", args=(organization.slug, managed_opportunity.id))
     approve_url = reverse("opportunity:approve_visits", args=(organization.slug, managed_opportunity.id))
 
+    before_reject = now()
     client.post(reject_url, {"reason": "wrong data", "visit_ids[]": [visit.id]})
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
+    assert visit.status_modified_date >= before_reject
     completed_work.refresh_from_db()
     assert completed_work.status == CompletedWorkStatus.rejected
 
+    before_approve = now()
     client.post(approve_url, {"visit_ids[]": [visit.id]})
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_approve
 
     # PM must agree for CompletedWork to be marked approved on managed opportunities
     client.force_login(program_manager_org_user_admin)
