@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 from django.db.utils import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
@@ -210,6 +211,14 @@ def test_access_visit_count(opportunity: Opportunity):
     )
     update_payment_accrued(opportunity, [access.user])
     assert access.visit_count == 1
+
+
+@pytest.mark.django_db
+def test_completed_work_sets_status_modified_date_on_creation():
+    before_create = now()
+    completed_work = CompletedWorkFactory.create()
+    assert completed_work.status_modified_date is not None
+    assert completed_work.status_modified_date >= before_create
 
 
 @pytest.mark.django_db

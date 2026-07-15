@@ -91,12 +91,14 @@ class TestBulkUpdateVisitStatus:
             user=mobile_user,
             opportunity_access=access,
         )
+        initial_status_modified_date = visit.status_modified_date
         dataset = Dataset(headers=["visit id", "status", "rejected reason"])
         dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, ""]])
         import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
         assert import_status.locked_visits == {visit.xform_id}
         visit.refresh_from_db()
         assert visit.status == VisitValidationStatus.approved.value
+        assert visit.status_modified_date == initial_status_modified_date
 
 
 @pytest.mark.django_db
@@ -132,11 +134,13 @@ def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
     reason = "bad form"
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, reason]])
+    before_update = now()
     import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
     assert not import_status.missing_visits
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
     assert visit.reason == reason
+    assert visit.status_modified_date >= before_update
 
 
 @pytest.mark.django_db

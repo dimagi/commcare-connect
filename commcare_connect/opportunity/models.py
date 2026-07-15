@@ -726,7 +726,7 @@ class CompletedWork(models.Model):
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     reason = models.CharField(max_length=300, null=True, blank=True)
-    status_modified_date = models.DateTimeField(null=True)
+    status_modified_date = models.DateTimeField(null=True, default=now)
     payment_date = models.DateTimeField(null=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
@@ -753,7 +753,6 @@ class CompletedWork(models.Model):
 
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
-        self.status_modified_date = now()
         super().__init__(*args, **kwargs)
 
     def __setattr__(self, name, value):
@@ -882,7 +881,7 @@ class UserVisit(XFormBaseModel):
         blank=True,
         on_delete=models.PROTECT,
     )
-    status_modified_date = models.DateTimeField(null=True)
+    status_modified_date = models.DateTimeField(null=True, default=now)
     review_status = models.CharField(
         max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
     )
@@ -893,7 +892,6 @@ class UserVisit(XFormBaseModel):
 
     def __init__(self, *args, **kwargs):
         self.status = VisitValidationStatus.pending
-        self.status_modified_date = now()
         super().__init__(*args, **kwargs)
 
     def __setattr__(self, name, value):
