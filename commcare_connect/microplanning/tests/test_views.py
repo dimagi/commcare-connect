@@ -258,6 +258,17 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert b"Implementation Area" in response.content
         assert b"selectedFeature.implementation_area_name" in response.content
 
+    def test_map_wires_implementation_area_hover(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # The map registers a hover handler on the Implementation Area outline layer
+        # (highlight + name tooltip).
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"'mousemove', 'implementation-areas-outline'" in response.content
+        assert b"implementationAreaPopup" in response.content
+
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_flag_disabled(self, client: Client, organization, org_user_admin, opportunity):
         client.force_login(org_user_admin)

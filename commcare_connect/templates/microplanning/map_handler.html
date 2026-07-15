@@ -932,14 +932,19 @@
                     .catch(err => console.error(err));
 
                 // Implementation Area outlines — a standalone visual layer (black line),
-                // independent of Work Areas. No fill and no click/hover handlers, so it
-                // never interacts with the Work Area boxes. A future ticket will let users
-                // toggle this layer on/off. Cleared uploads reload the page, so an empty
-                // response here simply renders no outlines.
+                // independent of Work Areas. It is a line-only layer with hover handlers
+                // scoped to the outline itself, so it never adds a surface over (and never
+                // interferes with) the Work Area boxes. Hovering an outline bolds it and
+                // shows the area's name in a tooltip. A future ticket will let users toggle
+                // this layer on/off. Cleared uploads reload the page, so an empty response
+                // here simply renders no outlines.
                 const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
 
+                // generateId gives each feature a stable id so hover can be tracked per
+                // area via setFeatureState.
                 this.map.addSource('implementation-areas', {
                     type: 'geojson',
+                    generateId: true,
                     data: { type: 'FeatureCollection', features: [] }
                 });
 
@@ -949,7 +954,13 @@
                     source: 'implementation-areas',
                     paint: {
                         'line-color': '#000000',
-                        'line-width': 2,
+                        // Bolder line while hovered so the highlighted area stands out.
+                        'line-width': [
+                            'case',
+                            ['boolean', ['feature-state', 'hovered'], false],
+                            4,
+                            2
+                        ],
                         'line-opacity': 1
                     }
                 });
@@ -968,6 +979,57 @@
                         }
                     })
                     .catch(err => console.error(err));
+
+                // Hover indicator for Implementation Areas: highlight the hovered outline
+                // and show its name in a tooltip. Handlers are scoped to the outline layer,
+                // so they only fire over the boundary line — never over the Work Area boxes.
+                // setText (not setHTML) is used because area names come from user uploads.
+                let hoveredImplementationAreaId = null;
+                const implementationAreaPopup = new mapboxgl.Popup({
+                    closeButton: false,
+                    closeOnClick: false
+                });
+
+                const clearImplementationAreaHover = () => {
+                    if (hoveredImplementationAreaId !== null) {
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: false }
+                        );
+                        hoveredImplementationAreaId = null;
+                    }
+                    implementationAreaPopup.remove();
+                };
+
+                this.map.on('mousemove', 'implementation-areas-outline', (e) => {
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    this.map.getCanvasContainer().style.cursor = 'pointer';
+
+                    if (feature.id !== hoveredImplementationAreaId) {
+                        if (hoveredImplementationAreaId !== null) {
+                            this.map.setFeatureState(
+                                { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                                { hovered: false }
+                            );
+                        }
+                        hoveredImplementationAreaId = feature.id;
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: true }
+                        );
+                    }
+
+                    implementationAreaPopup
+                        .setLngLat(e.lngLat)
+                        .setText(feature.properties?.name ?? '')
+                        .addTo(this.map);
+                });
+
+                this.map.on('mouseleave', 'implementation-areas-outline', () => {
+                    this.map.getCanvasContainer().style.cursor = '';
+                    clearImplementationAreaHover();
+                });
 
 
                 // When the user clicks on the map, Mapbox returns the geographic object
