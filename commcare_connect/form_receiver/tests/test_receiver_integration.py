@@ -814,12 +814,14 @@ def test_receiver_visit_review_status(
     if visit_status != VisitValidationStatus.approved:
         form_json["metadata"]["location"] = None
     oauth_application = opportunity.hq_server.oauth_application
+    before_request = now()
     make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     if visit_status != VisitValidationStatus.approved:
         assert visit.flagged
     assert visit.status == visit_status
     assert visit.review_status == review_status
+    assert visit.review_status_modified_date >= before_request
 
 
 @pytest.mark.parametrize(

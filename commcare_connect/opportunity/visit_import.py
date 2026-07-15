@@ -758,6 +758,7 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
     user_ids = set()
     updated_visit_ids = set()
     locked_visit_ids = set()
+    review_status_modified_date = now()
     with transaction.atomic():
         for visit in existing_visits:
             new_status = visit_data.get(visit.xform_id)
@@ -767,12 +768,13 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
 
             if new_status and visit.review_status != new_status:
                 visit.review_status = new_status
+                visit.review_status_modified_date = review_status_modified_date
                 to_update.append(visit)
                 updated_visit_ids.add(visit.xform_id)
                 user_ids.add(visit.user_id)
 
         if to_update:
-            UserVisit.objects.bulk_update(to_update, fields=["review_status"])
+            UserVisit.objects.bulk_update(to_update, fields=["review_status", "review_status_modified_date"])
 
     if user_ids:
         bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))

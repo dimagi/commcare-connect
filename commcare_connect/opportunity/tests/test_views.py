@@ -503,20 +503,24 @@ def test_approve_previously_rejected_visit_updates_completed_work_status(
     # PM must agree for CompletedWork to be marked approved on managed opportunities
     client.force_login(program_manager_org_user_admin)
     review_url = reverse("opportunity:user_visit_review", args=(program_manager_org.slug, managed_opportunity.id))
+    before_review = now()
     client.post(review_url, {"review_status": "agree", "pk": [visit.id]})
+    visit.refresh_from_db()
+    assert visit.review_status == VisitReviewStatus.agree
+    assert visit.review_status_modified_date >= before_review
 
     completed_work.refresh_from_db()
     assert completed_work.status == CompletedWorkStatus.approved
 
 
 @pytest.mark.parametrize(
-    "review_status, new_status, expected_status",
+    "review_status, new_status, expected_status, expect_modified_date_set",
     [
-        ("pending", "agree", "agree"),
-        ("pending", "disagree", "disagree"),
-        ("agree", "disagree", "agree"),
-        ("disagree", "agree", "agree"),
-        ("disagree", "pending", "disagree"),
+        ("pending", "agree", "agree", True),
+        ("pending", "disagree", "disagree", True),
+        ("agree", "disagree", "agree", False),
+        ("disagree", "agree", "agree", True),
+        ("disagree", "pending", "disagree", False),
     ],
 )
 @pytest.mark.django_db
@@ -530,11 +534,14 @@ def test_user_visit_review(
     review_status,
     new_status,
     expected_status,
+    expect_modified_date_set,
 ):
     access = OpportunityAccessFactory(opportunity=managed_opportunity)
     visit = UserVisitFactory.create(
         opportunity=managed_opportunity, opportunity_access=access, review_status=review_status
     )
+    initial_modified_date = visit.review_status_modified_date
+    before_update = now()
     client.force_login(program_manager_org_user_admin)
     url = reverse(
         "opportunity:user_visit_review",
@@ -547,6 +554,11 @@ def test_user_visit_review(
     assert response.status_code == 200
     visit.refresh_from_db()
     assert visit.review_status == expected_status
+
+    if expect_modified_date_set:
+        assert visit.review_status_modified_date >= before_update
+    else:
+        assert visit.review_status_modified_date == initial_modified_date
 
     if new_status in ["agree", "disagree"]:
         expected_users = [visit.user] if review_status != "agree" else []
