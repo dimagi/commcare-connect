@@ -565,6 +565,7 @@ class WorkAreaVectorLayer(VectorLayer):
         "assignee_name",
         "slug",
         "visits_completed",
+        "implementation_area_name",
     )
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM

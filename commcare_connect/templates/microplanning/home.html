@@ -224,6 +224,10 @@
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
                         x-text="selectedFeature.group_name ?? '—'">
                     </dd>
+                    <dt class="text-sm text-gray-500">{% translate "Implementation Area" %}</dt>
+                    <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                        x-text="selectedFeature.implementation_area_name || '—'">
+                    </dd>
                     <dt class="text-sm text-gray-500">{% translate "Area Slug" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
                         x-text="selectedFeature.slug ?? '—'">

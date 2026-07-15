@@ -248,6 +248,16 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.status_code == 200
         assert any(t.name == "microplanning/home.html" for t in response.templates)
 
+    def test_sidebar_shows_implementation_area_label(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # The "Select Work Area" sidebar detail panel labels the selected area's Implementation Area.
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"Implementation Area" in response.content
+        assert b"selectedFeature.implementation_area_name" in response.content
+
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_flag_disabled(self, client: Client, organization, org_user_admin, opportunity):
         client.force_login(org_user_admin)
@@ -549,6 +559,10 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert response.status_code in (200, 204)
         assert len(captured_qs) == 1
         return captured_qs[0]
+
+    def test_implementation_area_name_is_a_tile_field(self):
+        # Exposed in the vector tile so the map sidebar can show it for the selected work area.
+        assert "implementation_area_name" in microplanning_views.WorkAreaVectorLayer.tile_fields
 
     def test_unfiltered_returns_all_work_areas(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
