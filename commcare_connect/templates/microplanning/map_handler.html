@@ -931,6 +931,44 @@
                     })
                     .catch(err => console.error(err));
 
+                // Implementation Area outlines — a standalone visual layer (black line),
+                // independent of Work Areas. No fill and no click/hover handlers, so it
+                // never interacts with the Work Area boxes. A future ticket will let users
+                // toggle this layer on/off. Cleared uploads reload the page, so an empty
+                // response here simply renders no outlines.
+                const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
+
+                this.map.addSource('implementation-areas', {
+                    type: 'geojson',
+                    data: { type: 'FeatureCollection', features: [] }
+                });
+
+                this.map.addLayer({
+                    id: 'implementation-areas-outline',
+                    type: 'line',
+                    source: 'implementation-areas',
+                    paint: {
+                        'line-color': '#000000',
+                        'line-width': 2,
+                        'line-opacity': 1
+                    }
+                });
+
+                fetch(implementationAreasUrl)
+                    .then(res => {
+                        if (!res.ok) throw new Error("Failed to fetch implementation areas");
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.implementation_area_features?.length) {
+                            this.map.getSource('implementation-areas').setData({
+                                type: "FeatureCollection",
+                                features: data.implementation_area_features
+                            });
+                        }
+                    })
+                    .catch(err => console.error(err));
+
 
                 // When the user clicks on the map, Mapbox returns the geographic object
                 // under the cursor as a "feature". A feature represents a single polygon

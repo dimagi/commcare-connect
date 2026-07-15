@@ -148,6 +148,14 @@ def microplanning_home(request, *args, **kwargs):
         },
     )
 
+    implementation_areas_url = reverse(
+        "microplanning:implementation_areas_geojson",
+        kwargs={
+            "org_slug": request.org.slug,
+            "opp_id": opportunity.opportunity_id,
+        },
+    )
+
     edit_work_area_url = reverse(
         "microplanning:modify_work_area",
         args=[request.org.slug, opportunity.opportunity_id, 0],
@@ -220,6 +228,7 @@ def microplanning_home(request, *args, **kwargs):
         "tiles_url": tiles_url,
         "visit_tiles_url": visit_tiles_url,
         "groups_url": groups_url,
+        "implementation_areas_url": implementation_areas_url,
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
@@ -665,6 +674,28 @@ def workareas_group_geojson(request, org_slug, opp_id):
     ]
     extent = qs.aggregate(extent=Extent("boundary"))["extent"]
     return JsonResponse({"group_features": group_features, "workarea_bounds": extent})
+
+
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def implementation_areas_geojson(request, org_slug, opp_id):
+    # Implementation Areas render as a standalone visual layer on the progress map. They are
+    # independent of Work Areas (Work Area boxes may fall outside these boundaries), so this is
+    # kept separate from workareas_group_geojson and does not affect the map's auto-zoom.
+    features = [
+        {
+            "type": "Feature",
+            "geometry": json.loads(ia["geojson"]),
+            "properties": {"name": ia["name"]},
+        }
+        for ia in (
+            ImplementationArea.objects.filter(opportunity_id=request.opportunity.id)
+            .values("name")
+            .annotate(geojson=AsGeoJSON("boundary"))
+        )
+    ]
+    return JsonResponse({"implementation_area_features": features})
 
 
 @org_admin_required
