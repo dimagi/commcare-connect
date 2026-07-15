@@ -1116,10 +1116,6 @@ class TestPaymentUnitFormBudgetValidation:
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
 
-    def _make_claimants(self, opportunity, count):
-        for _ in range(count):
-            OpportunityClaimFactory(opportunity_access__opportunity=opportunity, opportunity_access__accepted=True)
-
     def _form(self, opportunity, data, instance=None):
         deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
         return PaymentUnitForm(
@@ -1127,6 +1123,7 @@ class TestPaymentUnitFormBudgetValidation:
                 "name": "Bonus",
                 "description": "Bonus payment unit",
                 "max_daily": 10,
+                "amount": 5,
                 "org_amount": 0,
                 "required_deliver_units": [str(deliver_unit.id)],
                 **data,
@@ -1153,16 +1150,17 @@ class TestPaymentUnitFormBudgetValidation:
     def test_budget_validation(
         self, opportunity, num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid
     ):
-        units = [
-            PaymentUnitFactory(opportunity=opportunity, max_total=100, amount=5, org_amount=0)
-            for _ in range(num_existing)
-        ]
+        units = PaymentUnitFactory.create_batch(
+            num_existing, opportunity=opportunity, max_total=100, amount=5, org_amount=0
+        )
         opportunity.total_budget = total_budget
         opportunity.save()
-        self._make_claimants(opportunity, num_claimants)
+        OpportunityClaimFactory.create_batch(
+            num_claimants, opportunity_access__opportunity=opportunity, opportunity_access__accepted=True
+        )
 
         instance = units[0] if edit_existing else None
-        form = self._form(opportunity, {"max_total": new_max_total, "amount": 5}, instance=instance)
+        form = self._form(opportunity, {"max_total": new_max_total}, instance=instance)
 
         assert form.is_valid() == expect_valid
         if not expect_valid:
