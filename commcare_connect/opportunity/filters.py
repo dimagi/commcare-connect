@@ -393,8 +393,16 @@ class AssignedTaskFilterSet(django_filters.FilterSet):
             "task_status",
             "task_type",
             "is_active",
-            Row(Column("date_assigned_after"), Column("date_assigned_before")),
-            Row(Column("due_date_after"), Column("due_date_before")),
+            Row(
+                Column("date_assigned_after", css_class="flex-1"),
+                Column("date_assigned_before", css_class="flex-1"),
+                css_class="flex gap-2",
+            ),
+            Row(
+                Column("due_date_after", css_class="flex-1"),
+                Column("due_date_before", css_class="flex-1"),
+                css_class="flex gap-2",
+            ),
         )
 
     def _get_task_type_choices(self):
