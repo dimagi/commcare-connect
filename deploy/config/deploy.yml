@@ -16,6 +16,7 @@ logging:
   driver: awslogs
   options:
     awslogs-region: 'eu-west-1'
+    awslogs-group: 'commcare-connect'
 
 builder:
   multiarch: false
