@@ -4,7 +4,7 @@
 
 set -e
 
-REGION=eu-west-1
+REGION=us-east-1
 PROFILE_ARG=""
 if [ -z "$CI" ]; then
   # if not in github actions, specify the profile
