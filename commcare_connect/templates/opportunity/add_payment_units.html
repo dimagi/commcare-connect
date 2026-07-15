@@ -28,6 +28,10 @@
         </a>
       </div>
     </div>
-    <div id="paymentunitform" class="card_bg"></div>
+    <div id="paymentunitform" class="card_bg">
+      {% if form %}
+        {% include "components/partial_form.html" %}
+      {% endif %}
+    </div>
   </div>
 {% endblock content %}

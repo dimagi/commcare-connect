@@ -853,9 +853,15 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
             "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
         )
     elif request.POST:
-        messages.error(request, "Invalid Data")
-        return redirect(
-            "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+        return render(
+            request,
+            "opportunity/add_payment_units.html",
+            dict(
+                opportunity=request.opportunity,
+                paymentunit_count=PaymentUnit.objects.filter(opportunity=request.opportunity).count(),
+                form=form,
+                form_title="Payment Unit Create",
+            ),
         )
 
     path = [
