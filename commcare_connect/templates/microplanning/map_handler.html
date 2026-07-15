@@ -8,6 +8,7 @@
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
             showVisits: false,
+            showImplementationAreas: true,
             filterQuery: '',
 
             // Assignment mode state
@@ -1029,6 +1030,21 @@
                 this.map.on('mouseleave', 'implementation-areas-outline', () => {
                     this.map.getCanvasContainer().style.cursor = '';
                     clearImplementationAreaHover();
+                });
+
+                // Layer toggle: show/hide the Implementation Area outlines. Clears any active
+                // hover state when hiding so a tooltip can't linger over the hidden layer.
+                this.$watch('showImplementationAreas', (visible) => {
+                    if (!this.map.getLayer('implementation-areas-outline')) return;
+                    this.map.setLayoutProperty(
+                        'implementation-areas-outline',
+                        'visibility',
+                        visible ? 'visible' : 'none'
+                    );
+                    if (!visible) {
+                        this.map.getCanvasContainer().style.cursor = '';
+                        clearImplementationAreaHover();
+                    }
                 });
 
 
