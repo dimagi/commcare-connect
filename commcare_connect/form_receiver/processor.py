@@ -534,8 +534,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         if _has_blocking_pending_task(access, app):
             flags.append(["pending_task", "Worker has an incomplete assigned task."])
             user_visit.status = VisitValidationStatus.rejected
-            completed_work.status = CompletedWorkStatus.rejected
-            completed_work_needs_save = True
+            if completed_work is not None:
+                completed_work.status = CompletedWorkStatus.rejected
+                completed_work_needs_save = True
         if flags:
             user_visit.flagged = True
             user_visit.flag_reason = {"flags": flags}
