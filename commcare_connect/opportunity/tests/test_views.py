@@ -2512,7 +2512,9 @@ class TestEditAssignedTask:
         response = client.get(self._edit_url(opp, assigned_task))
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    def test_managed_opp_requires_pm_role(self, client, organization, org_user_admin, program_manager_org):
+    def test_managed_opp_allows_nm_and_pm_org_members(
+        self, client, organization, org_user_admin, program_manager_org, program_manager_org_user_admin
+    ):
         program = ProgramFactory(organization=program_manager_org)
         managed_opp = OpportunityFactory(program=program, organization=organization)
         access = OpportunityAccessFactory(opportunity=managed_opp)
@@ -2521,13 +2523,22 @@ class TestEditAssignedTask:
             task_type=TaskTypeFactory(app=managed_opp.deliver_app),
             status=AssignedTaskStatus.ASSIGNED,
         )
-        url = reverse(
+
+        # NM org member (the opportunity's own org) can edit.
+        nm_url = reverse(
             "opportunity:edit_assigned_task",
             args=(organization.slug, managed_opp.opportunity_id, task.pk),
         )
         client.force_login(org_user_admin)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert client.get(nm_url).status_code == HTTPStatus.OK
+
+        # PM org member (the program's managing org) can also edit.
+        pm_url = reverse(
+            "opportunity:edit_assigned_task",
+            args=(program_manager_org.slug, managed_opp.opportunity_id, task.pk),
+        )
+        client.force_login(program_manager_org_user_admin)
+        assert client.get(pm_url).status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db
