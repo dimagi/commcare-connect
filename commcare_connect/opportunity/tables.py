@@ -1842,11 +1842,9 @@ _task_select_td_extra = {
 }
 
 
-class AssignedTaskListTable(OpportunityContextTable):
+class BaseAssignedTaskTable(tables.Table):
     select = select_column(td_extra=_task_select_td_extra)
-    connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
     status = TaskStatusColumn(verbose_name=gettext_lazy("Status"), accessor="status")
-    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     assigned_date = DMYTColumn(verbose_name=gettext_lazy("Assigned Date"), accessor="date_created")
     due_date = DMYTColumn(verbose_name=gettext_lazy("Due Date"), accessor="due_date")
     assigned_by = tables.Column(
@@ -1855,6 +1853,19 @@ class AssignedTaskListTable(OpportunityContextTable):
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )
+
+    def render_assigned_by(self, value):
+        return value.name or value.email
+
+    def order_assigned_by(self, queryset, is_descending):
+        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
+        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
+        return queryset, True
+
+
+class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
+    connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
+    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -1888,29 +1899,11 @@ class AssignedTaskListTable(OpportunityContextTable):
             value.username,
         )
 
-    def render_assigned_by(self, value):
-        return value.name or value.email
 
-    def order_assigned_by(self, queryset, is_descending):
-        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
-        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
-        return queryset, True
-
-
-class WorkerCompletedTaskTable(tables.Table):
+class WorkerCompletedTaskTable(BaseAssignedTaskTable):
     use_view_url = True
 
-    select = select_column(td_extra=_task_select_td_extra)
     task_type = tables.Column(verbose_name=_("Task Type"), accessor="task_type", orderable=False)
-    assigned_by = tables.Column(
-        verbose_name=_("Assigned By"),
-        accessor="assigned_by",
-        empty_values=(None,),
-        default=gettext_lazy("Deleted user"),
-    )
-    assigned_date = DMYTColumn(verbose_name=_("Assigned Date"), accessor="date_created")
-    due_date = DMYTColumn(verbose_name=_("Due Date"))
-    status = TaskStatusColumn(verbose_name=_("Status"), accessor="status")
 
     class Meta:
         model = AssignedTask
@@ -1946,14 +1939,6 @@ class WorkerCompletedTaskTable(tables.Table):
 
     def render_task_type(self, value):
         return format_html("{} ({})", value.name, value.slug)
-
-    def render_assigned_by(self, value):
-        return value.name or value.email
-
-    def order_assigned_by(self, queryset, is_descending):
-        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
-        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
-        return queryset, True
 
 
 class TaskTable(OpportunityContextTable):
