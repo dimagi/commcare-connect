@@ -11,3 +11,4 @@ webservers:
     commcare_hq_url: 'https://www.commcarehq.org'
     deploy_environment: 'eu'
     env_file: 'connect.docker.env.j2'
+    aws_region: 'eu-west-1'
