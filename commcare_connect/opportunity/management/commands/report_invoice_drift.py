@@ -199,6 +199,8 @@ class InvoiceDrift:
     #   anything else    → reconstruction can't reproduce the frozen amount; drift numbers are unreliable —
     #                      review this.
     reconstruction_gap: Decimal
+    # Per-line exposure roll-up, NOT a distinct-visit count: a composite's child visit is counted on both
+    # the child and parent rows (intentional — a child visit explains the parent's drift), so it sums twice.
     legacy_null_status_date_visits: int
     works: list = field(default_factory=list)
 
