@@ -845,7 +845,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
             parent_payment_unit=form.instance.id
         )
-        messages.success(request, f"Payment unit {form.instance.name} created.")
+        messages.success(request, _("Payment unit %(name)s created.") % {"name": form.instance.name})
         claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=request.opportunity)
         for claim in claims:
             OpportunityClaimLimit.create_claim_limits(request.opportunity, claim)
@@ -853,19 +853,25 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
             "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
         )
     elif request.POST:
-        messages.error(request, "Invalid Data")
-        return redirect(
-            "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+        return render(
+            request,
+            "opportunity/add_payment_units.html",
+            dict(
+                opportunity=request.opportunity,
+                paymentunit_count=PaymentUnit.objects.filter(opportunity=request.opportunity).count(),
+                form=form,
+                form_title=_("Payment Unit Create"),
+            ),
         )
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(request.org.slug,))},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
         },
         {
-            "title": "Payment unit",
+            "title": _("Payment unit"),
         },
     ]
     return render(
@@ -873,7 +879,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title="Payment Unit Create",
+            form_title=_("Payment Unit Create"),
             form=form,
             path=path,
         ),
