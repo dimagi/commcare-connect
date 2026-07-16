@@ -173,9 +173,9 @@
     </div>
     {% if can_manage_tasks %}
       {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
-      {% include 'opportunity/edit_assigned_task_modal.html' %}
-      {% include 'components/confirm_modal.html' %}
     {% endif %}
+    {% include 'components/confirm_modal.html' %}
+    {% include 'opportunity/edit_assigned_task_modal.html' %}
   </div>
 {% endblock %}
 {% block inline_javascript %}

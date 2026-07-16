@@ -1859,6 +1859,13 @@ class AssignedTaskListTable(OpportunityContextTable):
         template_name="opportunity/assigned_task_edit_button.html",
     )
 
+    def __init__(self, *args, can_edit_tasks=False, can_delete_tasks=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not can_edit_tasks:
+            self.columns.hide("action")
+        if not can_delete_tasks:
+            self.columns.hide("select")
+
     class Meta:
         model = AssignedTask
         fields = ()

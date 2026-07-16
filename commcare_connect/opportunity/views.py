@@ -2194,7 +2194,12 @@ class UserVisitVerificationView(WorkerPageView):
 
 
 def _can_manage_tasks(request, opportunity):
+    """Permission to create, edit, or delete tasks."""
     return _request_user_is_member(request) and request.is_opportunity_pm
+
+
+def _can_edit_tasks(request):
+    return _request_user_is_member(request) or request.is_opportunity_pm
 
 
 def _task_redirect_url(request, org_slug, opp_id):
@@ -2624,7 +2629,7 @@ def user_task_details(request, org_slug, opp_id, pk):
             completed_task=completed_task,
             images=images,
             hq_link=hq_link,
-            can_manage_tasks=_can_manage_tasks(request, request.opportunity),
+            can_edit_tasks=_can_edit_tasks(request),
         ),
     )
 
@@ -3516,6 +3521,8 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["opp_id"] = self.get_opportunity().opportunity_id
+        kwargs["can_edit_tasks"] = _can_edit_tasks(self.request)
+        kwargs["can_delete_tasks"] = _can_manage_tasks(self.request, self.get_opportunity())
         return kwargs
 
     def get_table_data(self):
@@ -3563,7 +3570,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         return context
 
 
-class EditAssignedTask(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
     template_name = "opportunity/edit_assigned_task_form.html"
     form_class = EditAssignedTaskForm
     model = AssignedTask
