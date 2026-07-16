@@ -3,6 +3,8 @@ from urllib.parse import urlencode
 
 import django_tables2 as tables
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.db.models import CharField, Value
+from django.db.models.functions import Coalesce, NullIf
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -1849,7 +1851,7 @@ class AssignedTaskListTable(OpportunityContextTable):
     due_date = DMYTColumn(verbose_name=gettext_lazy("Due Date"), accessor="due_date")
     assigned_by = tables.Column(
         verbose_name=gettext_lazy("Assigned By"),
-        accessor="assigned_by__name",
+        accessor="assigned_by",
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )
@@ -1886,6 +1888,14 @@ class AssignedTaskListTable(OpportunityContextTable):
             value.username,
         )
 
+    def render_assigned_by(self, value):
+        return value.name or value.email
+
+    def order_assigned_by(self, queryset, is_descending):
+        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
+        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
+        return queryset, True
+
 
 class WorkerCompletedTaskTable(tables.Table):
     use_view_url = True
@@ -1894,7 +1904,7 @@ class WorkerCompletedTaskTable(tables.Table):
     task_type = tables.Column(verbose_name=_("Task Type"), accessor="task_type", orderable=False)
     assigned_by = tables.Column(
         verbose_name=_("Assigned By"),
-        accessor="assigned_by__name",
+        accessor="assigned_by",
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )
@@ -1936,6 +1946,14 @@ class WorkerCompletedTaskTable(tables.Table):
 
     def render_task_type(self, value):
         return format_html("{} ({})", value.name, value.slug)
+
+    def render_assigned_by(self, value):
+        return value.name or value.email
+
+    def order_assigned_by(self, queryset, is_descending):
+        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
+        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
+        return queryset, True
 
 
 class TaskTable(OpportunityContextTable):
