@@ -83,7 +83,16 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
                     }
                 )
             seen_du_ids.update(item_dus)
+        self._validate_budget_covers_claimants(data["payment_units"])
         return data
+
+    def _validate_budget_covers_claimants(self, payment_units):
+        opportunity = self.context["opportunity"]
+        proposed_units = [
+            PaymentUnit(max_total=pu["max_total"], amount=pu["amount"], org_amount=pu.get("org_amount") or 0)
+            for pu in payment_units
+        ]
+        opportunity.validate_budget_for_payment_units([*proposed_units, *opportunity.paymentunit_set.all()])
 
     @transaction.atomic
     def create(self, validated_data):
