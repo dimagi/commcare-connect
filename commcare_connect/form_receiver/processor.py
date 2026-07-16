@@ -592,6 +592,8 @@ def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> b
         opportunity_access=access,
         status=AssignedTaskStatus.ASSIGNED,
         task_type__app=app,
+        task_type__archived__isnull=True,
+        task_type__is_active=True,
     ).exists()
 
 
