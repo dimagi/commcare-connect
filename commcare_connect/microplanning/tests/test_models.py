@@ -41,11 +41,12 @@ class TestWorkAreaGroupModel:
 
         assert group.building_count == expected_count
 
-    def test_update_centroid(self):
+    def test_update_centroid(self, django_assert_num_queries):
         """Really simple test plots 4 Work Areas that share a center at 78, 29."""
         group = WorkAreaGroupFactory()
+        work_areas = []
         for x, y in [(77, 28), (77, 29), (78, 28), (78, 29)]:
-            WorkAreaFactory(
+            work_area = WorkAreaFactory(
                 opportunity=group.opportunity,
                 work_area_group=group,
                 centroid=Point(x, y, srid=SRID),
@@ -60,8 +61,29 @@ class TestWorkAreaGroupModel:
                     srid=SRID,
                 ),
             )
+            work_areas.append(work_area)
 
+        # happy-path
         assert group.centroid is None
-        group.update_centroid()
-        assert group.centroid.x == 78
-        assert group.centroid.y == 29
+        with django_assert_num_queries(2):
+            group.update_centroid()
+            assert group.centroid.x == 78
+            assert group.centroid.y == 29
+
+        # re-run with no change to centroid value
+        with django_assert_num_queries(1):
+            group.update_centroid()
+            assert group.centroid.x == 78
+            assert group.centroid.y == 29
+
+        # exclude first 2 work areas, moves the x value to 78.5
+        work_areas[0].work_area_group = None
+        work_areas[0].save()
+        work_areas[1].work_area_group = None
+        work_areas[1].save()
+
+        with django_assert_num_queries(2):
+            group.update_centroid()
+            assert group.centroid is not None
+            assert group.centroid.x == 78.5
+            assert group.centroid.y == 29
