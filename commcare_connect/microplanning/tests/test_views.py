@@ -28,6 +28,7 @@ from commcare_connect.microplanning.tests.factories import (
 from commcare_connect.microplanning.views import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
+    InaccessibilityReviewAction,
     UserVisitVectorLayer,
     get_metrics_for_microplanning,
 )
@@ -997,6 +998,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
 
+        old_wag_centroid_value = work_area.work_area_group.centroid
+
         with (
             patch("commcare_connect.microplanning.views.send_push_notification_task") as mock_notif,
             patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area"),
@@ -1016,6 +1019,14 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         event = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.last()
         assert event.pgh_context.metadata["username"] == org_user_admin.username
         assert event.pgh_context.metadata["user_email"] == org_user_admin.email
+
+        if action == InaccessibilityReviewAction.APPROVE.value:
+            assert work_area.work_area_group.centroid is not None
+            assert work_area.work_area_group.centroid.x == 77.5
+            assert work_area.work_area_group.centroid.y == 28.5
+
+        if action == InaccessibilityReviewAction.DENY.value:
+            assert work_area.work_area_group.centroid == old_wag_centroid_value
 
         if expect_notify:
             mock_notif.delay.assert_called_once()

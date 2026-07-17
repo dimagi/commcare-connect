@@ -1027,6 +1027,10 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
             inacc_request.save(update_fields=["status"])
             if work_area.opportunity_access_id:
                 create_or_update_case_by_work_area(work_area)
+
+        if work_area.work_area_group and action == InaccessibilityReviewAction.APPROVE:
+            work_area.work_area_group.update_centroid()
+
     except CommCareHQAPIException as e:
         logger.info(f"Failed to sync work area {work_area.id} to HQ after review action. Error: {e}")
         return HttpResponse(status=500, content=_("Failed to sync work area status. Please try again."))
