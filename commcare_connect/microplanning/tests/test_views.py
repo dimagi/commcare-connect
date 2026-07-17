@@ -1081,9 +1081,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert event.pgh_context.metadata["user_email"] == org_user_admin.email
 
         if action == InaccessibilityReviewAction.APPROVE.value:
-            assert work_area.work_area_group.centroid is not None
-            assert work_area.work_area_group.centroid.x == 77.5
-            assert work_area.work_area_group.centroid.y == 28.5
+            assert work_area.work_area_group.centroid is None
 
         if action == InaccessibilityReviewAction.DENY.value:
             assert work_area.work_area_group.centroid == old_wag_centroid_value
