@@ -417,7 +417,7 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
     with pytest.raises(ImportException) as excinfo:
         bulk_update_payments(opportunity.pk, dataset_headers, duplicate_dataset_rows)
 
-    assert "1 rows have errors" in str(excinfo.value.message)
+    assert "1 row has errors" in str(excinfo.value.message)
 
     error_details = excinfo.value.rows
     expected_error_substring = "A payment for this user with the same amount and date already exists."

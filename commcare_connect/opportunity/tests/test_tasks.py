@@ -642,7 +642,8 @@ def test_send_task_assignment_notification(send_message_patch):
 @pytest.mark.parametrize(
     ("seen_users", "expect_error", "expect_text"),
     [
-        ({"a", "b"}, False, "uploaded successfully for 2 users"),
+        ({"a"}, False, "uploaded successfully for 1 user."),
+        ({"a", "b"}, False, "uploaded successfully for 2 users."),
         (set(), True, "No payments were uploaded."),
     ],
 )

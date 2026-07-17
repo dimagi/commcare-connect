@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
+from django.utils.translation import ngettext
 from tablib import Dataset
 
 from commcare_connect.opportunity.models import (
@@ -386,7 +387,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     if invalid_rows:
         error_details = [f"{reason}: {', '.join(cells)}" for cells, reason in invalid_rows]
-        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join(error_details))
+        count = len(invalid_rows)
+        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
+        raise ImportException(summary, "<br>".join(error_details))
 
     seen_users = set()
     payment_ids = []

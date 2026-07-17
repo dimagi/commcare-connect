@@ -18,7 +18,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.text import slugify
 from django.utils.timezone import now
-from django.utils.translation import gettext
+from django.utils.translation import gettext, ngettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
@@ -486,8 +486,14 @@ def get_payment_import_result_message(status):
 
     No payments uploaded is treated as an error so it surfaces as a red banner.
     """
-    if len(status):
-        lines = [f"Payment status uploaded successfully for {len(status)} users."]
+    count = len(status)
+    if count:
+        message = ngettext(
+            "Payment status uploaded successfully for %(count)d user.",
+            "Payment status uploaded successfully for %(count)d users.",
+            count,
+        ) % {"count": count}
+        lines = [message]
         is_error = False
     else:
         lines = ["No payments were uploaded."]
