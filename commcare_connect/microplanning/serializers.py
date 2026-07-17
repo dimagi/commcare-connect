@@ -32,7 +32,7 @@ class WorkAreaCaseSerializer(serializers.ModelSerializer):
 
         wag_centroid = ""
         if obj.work_area_group and obj.work_area_group.centroid:
-            wag_centroid = _coords_to_lat_lon_string(obj.work_area_group.centroid)
+            wag_centroid = _coords_to_lat_lon_string(obj.work_area_group.centroid.coords)
 
         return {
             "bounding_box": bounding_box_lat_lon,
