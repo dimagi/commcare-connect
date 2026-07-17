@@ -29,6 +29,11 @@ class WorkAreaCaseSerializer(serializers.ModelSerializer):
         if obj.boundary:
             lat_lon_strings = [_coords_to_lat_lon_string(coords) for coords in list(obj.boundary.shell.coords)]
             bounding_box_lat_lon = " ".join(lat_lon_strings)
+
+        wag_centroid = ""
+        if obj.work_area_group and obj.work_area_group.centroid:
+            wag_centroid = _coords_to_lat_lon_string(obj.work_area_group.centroid)
+
         return {
             "bounding_box": bounding_box_lat_lon,
             "bounding_box_wkt": str(obj.boundary) if obj.boundary else "",
@@ -42,6 +47,7 @@ class WorkAreaCaseSerializer(serializers.ModelSerializer):
             "work_area_group_id": str(obj.work_area_group_id) if obj.work_area_group_id else "",
             "lga": str(obj.case_properties.get("lga", "")),
             "state": str(obj.case_properties.get("state", "")),
+            "wag_centroid": wag_centroid,
         }
 
 
