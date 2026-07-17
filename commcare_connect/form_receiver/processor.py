@@ -530,7 +530,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
-            completed_work.status = CompletedWorkStatus.rejected
+            if completed_work is not None:
+                completed_work.status = CompletedWorkStatus.rejected
         if _has_blocking_pending_task(access, app):
             flags.append(["pending_task", "Worker has an incomplete assigned task."])
             user_visit.status = VisitValidationStatus.rejected
