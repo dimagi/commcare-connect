@@ -766,8 +766,17 @@ class ModifyWorkAreaUpdateView(UpdateView):
                 }
             }
         )
-        if work_area.work_area_group:
-            work_area.work_area_group.update_centroid()
+
+        old_wag_id = form.initial.get("work_area_group")
+        updated_wag = work_area.work_area_group
+        updated_wag_id = getattr(updated_wag, "id", None)
+
+        if updated_wag_id != old_wag_id:
+            if updated_wag:
+                updated_wag.update_centroid()
+            if old_wag_id:
+                old_wag = WorkAreaGroup.objects.get(id=old_wag_id)
+                old_wag.update_centroid()
         return response
 
 
