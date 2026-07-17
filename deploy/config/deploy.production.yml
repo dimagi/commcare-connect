@@ -1,7 +1,13 @@
 logging:
   options:
     awslogs-region: 'eu-west-1'
-    awslogs-group: 'commcare-connect-traefik'
+
+traefik:
+  options:
+    log-driver: awslogs
+    log-opt:
+      - awslogs-region=eu-west-1
+      - awslogs-group=commcare-connect-traefik
 
 servers:
   web:
