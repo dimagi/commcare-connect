@@ -10,17 +10,15 @@ def get_managed_opp(opp_id) -> Opportunity | None:
     return queryset.filter(opportunity_id=opp_id).first()
 
 
-def is_program_manager(request):
+def is_org_pm(request):
     return request.org.program_manager and (
         (request.org_membership != None and request.org_membership.is_admin) or request.user.is_superuser  # noqa: E711
     )
 
 
-def is_program_manager_of_opportunity(request, opp_id) -> bool:
+def is_opportunity_pm(request, opp_id) -> bool:
     managed_opp = get_managed_opp(opp_id)
-    return bool(
-        managed_opp and managed_opp.program.organization.slug == request.org.slug and is_program_manager(request)
-    )
+    return bool(managed_opp and managed_opp.program.organization.slug == request.org.slug and is_org_pm(request))
 
 
 def populate_currency_and_country_fk_for_model(apps, model_name, app_label, total_label):
