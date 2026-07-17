@@ -229,6 +229,10 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
         assert event.expected_visit_count == new_expected_visit_count
         assert event.work_area_group == group
+        assert group.centroid is None
+        group.refresh_from_db()
+        assert group.centroid.x == 77.5
+        assert group.centroid.y == 28.5
 
     @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):

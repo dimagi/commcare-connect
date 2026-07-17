@@ -766,6 +766,8 @@ class ModifyWorkAreaUpdateView(UpdateView):
                 }
             }
         )
+        if work_area.work_area_group:
+            work_area.work_area_group.update_centroid()
         return response
 
 
