@@ -1,8 +1,10 @@
 from functools import cached_property
 
 import pghistory
+import shapely
 from django.conf import settings
 from django.contrib.gis.db import models as geo_models
+from django.contrib.gis.geos import Point
 from django.db.models import Count, Index, Q, Sum
 from django.utils.translation import gettext_lazy as _
 
@@ -41,6 +43,19 @@ class WorkAreaGroup(geo_models.Model):
             self.workarea_set.exclude(status=WorkAreaStatus.EXCLUDED).aggregate(total=Sum("building_count"))["total"]
             or 0
         )
+
+    def update_centroid(self, commit=True):
+        """
+        Calculates the Work Area Group centroid from the Work Area boundaries.
+        The commit parameter (default True) will save the change to database, to save manually set it to False.
+        """
+        work_areas_boundaries = self.workarea_set.exclude(status=WorkAreaStatus.EXCLUDED).values_list(
+            "boundary", flat=True
+        )
+        centroid = shapely.MultiPolygon(work_areas_boundaries).centroid
+        self.centroid = Point(centroid.x, centroid.y)
+        if commit:
+            self.save()
 
 
 @pghistory.track(
