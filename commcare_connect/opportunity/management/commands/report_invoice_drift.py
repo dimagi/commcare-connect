@@ -2,19 +2,23 @@ import argparse
 import csv
 import datetime
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.contrib.sites.models import Site
 from django.core.management import BaseCommand
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
+    DeliverUnit,
     InvoiceStatus,
     PaymentInvoice,
+    PaymentUnit,
+    UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 
@@ -205,6 +209,79 @@ class InvoiceDrift:
     works: list = field(default_factory=list)
 
 
+@dataclass
+class _InvoiceLookups:
+    recon: dict  # completed_work_id -> Counter(deliver_unit_id -> n): approved by status, date-bounded or NULL
+    agreed: dict  # completed_work_id -> Counter(deliver_unit_id -> n): approved AND agreed (current owed basis)
+    late: dict  # completed_work_id -> n: approved with status_modified_date after as_of_date
+    null: dict  # completed_work_id -> n: approved with NULL status_modified_date
+    du_meta: dict  # payment_unit_id -> (required_deliver_unit_ids, optional_deliver_unit_ids)
+    parents_with_children: set  # payment_unit_ids that have child payment units
+
+
+def _build_invoice_lookups(invoice, as_of_date):
+    """Batch every per-completed-work count this invoice's works need into a handful of grouped queries.
+
+    Replaces the per-work N+1 (each work previously issued ~6-8 queries, so a 10k-work invoice ran ~75k
+    queries) with a constant number of queries per invoice. Scoped to the invoice's own works; child
+    (composite) works are rare and still resolved via the query path inside the count functions.
+    """
+    approved = VisitValidationStatus.approved
+    invoice_visits = UserVisit.objects.filter(completed_work__invoice=invoice, status=approved)
+
+    recon = defaultdict(Counter)
+    for row in (
+        invoice_visits.filter(Q(status_modified_date__date__lte=as_of_date) | Q(status_modified_date__isnull=True))
+        .values("completed_work_id", "deliver_unit_id")
+        .annotate(n=Count("id"))
+    ):
+        recon[row["completed_work_id"]][row["deliver_unit_id"]] = row["n"]
+
+    agreed = defaultdict(Counter)
+    for row in (
+        invoice_visits.filter(review_status=VisitReviewStatus.agree)
+        .values("completed_work_id", "deliver_unit_id")
+        .annotate(n=Count("id"))
+    ):
+        agreed[row["completed_work_id"]][row["deliver_unit_id"]] = row["n"]
+
+    late = {
+        row["completed_work_id"]: row["n"]
+        for row in invoice_visits.filter(status_modified_date__date__gt=as_of_date)
+        .values("completed_work_id")
+        .annotate(n=Count("id"))
+    }
+    null = {
+        row["completed_work_id"]: row["n"]
+        for row in invoice_visits.filter(status_modified_date__isnull=True)
+        .values("completed_work_id")
+        .annotate(n=Count("id"))
+    }
+
+    pu_ids = list(CompletedWork.objects.filter(invoice=invoice).values_list("payment_unit_id", flat=True).distinct())
+    du_meta = {pu_id: ([], []) for pu_id in pu_ids}
+    for row in DeliverUnit.objects.filter(payment_unit_id__in=pu_ids).values("payment_unit_id", "id", "optional"):
+        required, optional = du_meta[row["payment_unit_id"]]
+        (optional if row["optional"] else required).append(row["id"])
+
+    parents_with_children = set(
+        PaymentUnit.objects.filter(parent_payment_unit_id__in=pu_ids).values_list("parent_payment_unit_id", flat=True)
+    )
+
+    return _InvoiceLookups(recon, agreed, late, null, du_meta, parents_with_children)
+
+
+def _delivery_count(unit_counts, required, optional):
+    """min-across-required delivery count, capped by the optional total; from a deliver_unit_id -> n map.
+
+    Same rule as reconstruct_billed_count / calculate_completed for a work with no children.
+    """
+    number = min((unit_counts[du_id] for du_id in required), default=0)
+    if optional:
+        number = min(number, sum(unit_counts[du_id] for du_id in optional))
+    return number
+
+
 def compute_invoice_drift(invoice, base_url=""):
     works = []
     reconstructed_flw_amount = Decimal(0)
@@ -213,16 +290,29 @@ def compute_invoice_drift(invoice, base_url=""):
     # later that same day (after the invoice was cut) it is slightly over-counted, which reconstruction_gap
     # surfaces if ever material.
     billed_through = invoice.date
+    lookups = _build_invoice_lookups(invoice, billed_through)
     for cw in completed_works:
-        reconstructed_deliveries_count = reconstruct_billed_count(cw, billed_through)
-        desired_deliveries_count = cw.approved_count
+        is_composite = cw.payment_unit_id in lookups.parents_with_children
+        if is_composite:
+            reconstructed_deliveries_count = reconstruct_billed_count(cw, billed_through)
+            desired_deliveries_count = cw.approved_count
+        else:
+            required, optional = lookups.du_meta[cw.payment_unit_id]
+            reconstructed_deliveries_count = _delivery_count(lookups.recon.get(cw.id, Counter()), required, optional)
+            desired_deliveries_count = _delivery_count(lookups.agreed.get(cw.id, Counter()), required, optional)
+
         flw_amount = cw.payment_unit.amount
         org_amount = cw.payment_unit.org_amount
         full_rate = flw_amount + org_amount
         late_units = max(0, desired_deliveries_count - reconstructed_deliveries_count)
         over_units = max(0, reconstructed_deliveries_count - desired_deliveries_count)
-        late_approved_visits = _late_approved_visit_count(cw, billed_through) if late_units else 0
-        null_date_visits = _null_status_date_approved_visit_count(cw)
+
+        if is_composite:
+            late_approved_visits = _late_approved_visit_count(cw, billed_through) if late_units else 0
+            null_date_visits = _null_status_date_approved_visit_count(cw)
+        else:
+            late_approved_visits = lookups.late.get(cw.id, 0) if late_units else 0
+            null_date_visits = lookups.null.get(cw.id, 0)
         works.append(
             WorkDrift(
                 completed_work_id=cw.id,
@@ -318,8 +408,15 @@ def invoice_has_drift(drift):
 
 
 def iter_invoice_drift(invoices, base_url=""):
-    for invoice in invoices:
-        yield compute_invoice_drift(invoice, base_url)
+    invoices = list(invoices)
+    total = len(invoices)
+    print(f"Scanning {total} invoices...", flush=True)
+    for i, invoice in enumerate(invoices, 1):
+        print(f"[{i}/{total}] {invoice.id}  computing drift...", flush=True)
+        drift = compute_invoice_drift(invoice, base_url)
+        # Per-invoice progress: the run is a per-completed-work N+1, so a slow line = an invoice with many works.
+        print(f"[{i}/{total}] {invoice.id}  works={len(drift.works)}  gap={drift.reconstruction_gap}", flush=True)
+        yield drift
 
 
 def invoice_row(drift):
@@ -427,6 +524,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        print("Generating invoice drift report...")
         invoices = service_delivery_invoices(
             opportunity_id=options["opportunity"],
             program_id=options["program"],
