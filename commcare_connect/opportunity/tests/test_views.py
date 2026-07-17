@@ -3034,11 +3034,9 @@ def test_worker_payments_shows_import_banner_on_reload(
 ):
     message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
     task = mock_async_result.return_value
-    task._get_task_meta.return_value = {
-        "status": "SUCCESS",
-        "args": [opportunity.id],
-        "result": {"message": message, "is_error": is_error},
-    }
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": message, "is_error": is_error}
     task.info = {"message": message}
     client.force_login(org_user_member)
     url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))

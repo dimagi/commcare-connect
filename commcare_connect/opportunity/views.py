@@ -2832,25 +2832,27 @@ class WorkerPaymentsView(BaseWorkerListView):
         if not task_id:
             return None
         task = AsyncResult(task_id)
-        args = task._get_task_meta().get("args") or []
+        args = task.args or []
         if not args or args[0] != self.get_opportunity().pk:
             return None
         return task
 
     def _payment_import_complete(self):
         task = self._payment_import_task()
-        return bool(task) and task._get_task_meta().get("status") in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
+        return bool(task) and task.status in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
 
     def _add_payment_import_message(self):
         """Surface the finished import task's result as a standard banner."""
         task = self._payment_import_task()
-        if task._get_task_meta().get("status") == CELERY_TASK_FAILURE:
+        if not task:
+            return
+        if task.status == CELERY_TASK_FAILURE:
             messages.error(self.request, _("The payment import failed. Please try again."))
             return
         message = get_task_progress_message(task)
         if not message:
             return
-        is_error = (task._get_task_meta().get("result") or {}).get("is_error")
+        is_error = (task.result or {}).get("is_error")
         add_message = messages.error if is_error else messages.success
         add_message(self.request, mark_safe(message))
 
