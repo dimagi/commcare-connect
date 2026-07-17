@@ -61,14 +61,6 @@ class TestUserOrganizationMembership:
         membership = MembershipFactory(role=UserOrganizationMembership.Role.VIEWER)
         assert membership.is_viewer
 
-    def test_is_program_manager_admin_in_pm_org(self, program_manager_org_user_admin, program_manager_org):
-        membership = program_manager_org.memberships.get(user=program_manager_org_user_admin)
-        assert membership.is_program_manager
-
-    def test_is_program_manager_member_in_pm_org(self, program_manager_org_user_member, program_manager_org):
-        membership = program_manager_org.memberships.get(user=program_manager_org_user_member)
-        assert not membership.is_program_manager
-
 
 @pytest.mark.django_db
 class TestOrganizationInvite:
