@@ -2,7 +2,7 @@ traefik:
   options:
     log-driver: awslogs
     log-opt:
-      - awslogs-region=eu-west-1
+      - awslogs-region=us-east-1
       - awslogs-group=commcare-connect
 
 servers:
