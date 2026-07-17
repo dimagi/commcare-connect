@@ -1,7 +1,7 @@
 name: Deploy
 
 env:
-  AWS_REGION: 'us-east-1'
+  AWS_REGION: 'us-west-1'
   SENTRY_ORG: 'dimagi'
   SENTRY_PROJECT: 'commcare-connect'
 
