@@ -50,9 +50,9 @@ class WorkAreaGroup(geo_models.Model):
         The commit parameter (default True) will save the change to database,
         to save manually set it to False.
         """
-        work_areas_boundaries = self.workarea_set.exclude(status=WorkAreaStatus.EXCLUDED).values_list(
-            "boundary", flat=True
-        )
+        work_areas_boundaries = self.workarea_set.exclude(
+            status__in=[WorkAreaStatus.EXCLUDED, WorkAreaStatus.INACCESSIBLE]
+        ).values_list("boundary", flat=True)
         old_centroid = self.centroid
         if work_areas_boundaries:
             self.centroid = shapely.MultiPolygon(work_areas_boundaries).centroid.wkt
