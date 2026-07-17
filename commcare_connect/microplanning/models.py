@@ -27,6 +27,7 @@ class WorkAreaGroup(geo_models.Model):
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
     ward = geo_models.SlugField(max_length=255)
     name = geo_models.CharField(max_length=255)
+    centroid = geo_models.PointField(srid=SRID, null=True, help_text="Centroid of the Work Area Group as a Point.")
 
     def __str__(self):
         return self.name
