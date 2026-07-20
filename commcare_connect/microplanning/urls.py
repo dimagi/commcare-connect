@@ -66,7 +66,7 @@ urlpatterns = [
         name="act_on_inaccessibility_request",
     ),
     path(
-        "<slug:opp_id>/assignment/group_work_areas/<int:group_id>/",
+        "<slug:opp_id>/assignment/group_work_areas/",
         views.get_work_areas_for_assignment,
         name="get_work_areas_for_assignment",
     ),

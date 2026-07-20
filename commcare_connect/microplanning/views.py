@@ -347,8 +347,8 @@ def _get_assignment_mode_context(request, opportunity):
         ),
         "group_work_areas_url": reverse(
             "microplanning:get_work_areas_for_assignment",
-            args=[org_slug, opp_id, 0],
-        ).replace("/0/", "/__group_id__/"),
+            args=[org_slug, opp_id],
+        ),
         "flw_work_areas_url": reverse(
             "microplanning:get_flw_work_areas_for_assignment",
             args=[org_slug, opp_id, 0],
@@ -370,7 +370,7 @@ def _get_assignment_mode_context(request, opportunity):
             args=[org_slug, opp_id],
         ),
         "worker_list_url": reverse(
-            "opportunity:worker_list",
+            "opportunity:worker_work_areas",
             args=[org_slug, opp_id],
         ),
     }
@@ -924,11 +924,12 @@ class ModifyWorkAreaUpdateView(UpdateView):
 @org_program_manager_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
-def get_work_areas_for_assignment(request, org_slug, opp_id, group_id):
+def get_work_areas_for_assignment(request, org_slug, opp_id):
+    group_ids = request.GET.getlist("group_id")
     work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
-            work_area_group_id=group_id,
+            work_area_group_id__in=group_ids,
         ).values("id", "building_count", "expected_visit_count", "status")
     )
     return JsonResponse({"work_areas": work_areas})
