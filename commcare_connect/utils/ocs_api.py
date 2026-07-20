@@ -19,7 +19,7 @@ def user_has_connected_ocs(user) -> bool:
 
 def list_chatbots(user) -> list[tuple[str, str]]:
     """Return ``[(id, name), ...]`` for every OCS chatbot, following cursor pagination."""
-    token = _valid_token(user)
+    token = _get_valid_token(user)
     headers = {"Authorization": f"Bearer {token.token}"}
     url = f"{settings.OCS_BASE_URL}/api/v2/chatbots/"
     chatbots = []
@@ -47,7 +47,7 @@ def trigger_bot(
     participant_data: dict | None = None,
 ) -> dict:
     """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
-    token = _valid_token(user)
+    token = _get_valid_token(user)
     payload = {"identifier": identifier, "experiment": experiment, "platform": "commcare_connect"}
     # prompt_text is not shown in the conversation and is only for getting the bot
     # to
@@ -78,5 +78,5 @@ def trigger_bot(
     return response.json()
 
 
-def _valid_token(user):
+def _get_valid_token(user):
     return refresh_access_token(user, provider=OcsProvider.id, token_url=f"{settings.OCS_BASE_URL}/o/token/")

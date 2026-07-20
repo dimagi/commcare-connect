@@ -1,7 +1,9 @@
-from uuid import uuid4
+import secrets
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.users.models import User
@@ -63,7 +65,6 @@ class UserOrganizationMembership(models.Model):
         related_name="memberships",
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
-    invite_id = models.CharField(max_length=50, default=uuid4)
 
     @property
     def is_admin(self):
@@ -80,4 +81,59 @@ class UserOrganizationMembership(models.Model):
     class Meta:
         db_table = "organization_membership"
         unique_together = ("user", "organization")
-        indexes = [models.Index(fields=["invite_id"])]
+
+
+class OrganizationInvite(BaseModel):
+    EXPIRY_DAYS = 7
+
+    class Status(models.TextChoices):
+        INVITED = "invited", _("Invited")
+        ACCEPTED = "accepted", _("Accepted")
+        REVOKED = "revoked", _("Revoked")
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="invites")
+    email = models.EmailField()
+    role = models.CharField(max_length=20, choices=UserOrganizationMembership.Role.choices)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.INVITED)
+    token = models.CharField(max_length=64, unique=True, default=secrets.token_urlsafe)
+    invited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="sent_invites")
+
+    class Meta:
+        unique_together = ("organization", "email")
+
+    def __str__(self):
+        return f"Invite for {self.email} to {self.organization}"
+
+    @property
+    def is_expired(self):
+        return self.status == self.Status.INVITED and self.date_modified < timezone.now() - timedelta(
+            days=self.EXPIRY_DAYS
+        )
+
+    @classmethod
+    def send_invite(cls, organization, email, role, invited_by):
+        """Creates a pending invite, or resets an existing one (revoked/accepted/lapsed) to pending."""
+        invite, created = cls.objects.update_or_create(
+            organization=organization,
+            email=email,
+            defaults={
+                "role": role,
+                "status": cls.Status.INVITED,
+                "token": secrets.token_urlsafe(),
+                "invited_by": invited_by,
+                "modified_by": invited_by.email,
+            },
+        )
+        if created:
+            invite.created_by = invited_by.email
+            invite.save(update_fields=["created_by"])
+        return invite
+
+    def accept(self, user):
+        membership, _created = UserOrganizationMembership.objects.update_or_create(
+            organization=self.organization, user=user, defaults={"role": self.role}
+        )
+        self.status = self.Status.ACCEPTED
+        self.modified_by = user.email
+        self.save(update_fields=["status", "modified_by", "date_modified"])
+        return membership

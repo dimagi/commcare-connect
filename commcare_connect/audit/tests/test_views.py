@@ -17,6 +17,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserFactory,
 )
 from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrgWithUsersFactory
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -195,6 +196,22 @@ def test_list_view_404_when_flag_disabled(client, program_manager_org_user_admin
     )
     response = client.get(url)
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_list_view_allows_program_flagged_opportunity(client, program_manager_org_user_admin, program_manager_org):
+    program = ProgramFactory(organization=program_manager_org)
+    opportunity = OpportunityFactory(organization=program_manager_org, program=program)
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.programs.add(program)
+    client.force_login(program_manager_org_user_admin)
+
+    url = reverse(
+        "opportunity:audit:audit_report_list",
+        kwargs={"org_slug": program_manager_org.slug, "opp_id": opportunity.opportunity_id},
+    )
+    response = client.get(url)
+    assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

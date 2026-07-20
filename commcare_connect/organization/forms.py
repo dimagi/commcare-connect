@@ -1,3 +1,4 @@
+from allauth.account.forms import SetPasswordForm
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
@@ -6,7 +7,11 @@ from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    LLOEntity,
+    Organization,
+    OrganizationInvite,
+)
 from commcare_connect.users.models import User
 from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
@@ -116,8 +121,8 @@ class OrganizationChangeForm(forms.ModelForm):
         return org
 
 
-class MembershipForm(forms.ModelForm):
-    email = forms.CharField(
+class OrganizationInviteForm(forms.ModelForm):
+    email = forms.EmailField(
         max_length=254,
         required=True,
         label="",
@@ -125,8 +130,8 @@ class MembershipForm(forms.ModelForm):
     )
 
     class Meta:
-        model = UserOrganizationMembership
-        fields = ("role",)
+        model = OrganizationInvite
+        fields = ("email", "role")
         labels = {"role": ""}
 
     def __init__(self, *args, **kwargs):
@@ -147,14 +152,26 @@ class MembershipForm(forms.ModelForm):
         )
 
     def clean_email(self):
-        email = self.cleaned_data["email"]
-        user = User.objects.filter(email=email).exclude(memberships__organization=self.organization).first()
+        email = self.cleaned_data["email"].strip().lower()
 
-        if not user:
-            raise ValidationError("User with this email does not exist or is already a member")
+        if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
+            raise ValidationError(gettext("This person is already a member of this workspace."))
 
-        self.instance.user = user
+        existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
+        if existing and existing.status == OrganizationInvite.Status.INVITED and not existing.is_expired:
+            raise ValidationError(gettext("An invite has already been sent to this email."))
+
         return email
+
+
+class InviteAcceptForm(SetPasswordForm):
+    """Sets a password for a brand-new user accepting an organization invite."""
+
+    agree = forms.BooleanField(
+        required=True,
+        label=gettext_lazy("I agree to the Acceptable Use Policy"),
+        error_messages={"required": gettext_lazy("You must agree to the Acceptable Use Policy to continue.")},
+    )
 
 
 class AddCredentialForm(forms.Form):

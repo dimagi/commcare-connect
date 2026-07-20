@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pghistory
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
@@ -188,15 +189,44 @@ class Opportunity(BaseModel):
             opportunity_access__opportunity=self, status=CompletedWorkStatus.approved
         ).count()
 
+    @staticmethod
+    def budget_per_user_for_units(payment_units):
+        """Total budget consumed per user (worker + org pay) across the given payment units."""
+        return sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
+
+    def validate_budget_for_payment_units(self, payment_units):
+        """Validate that ``total_budget`` can give every existing claimant the full per-user
+        limit for ``payment_units``, raising ``ValidationError`` if it can't.
+
+        ``payment_units`` is the complete set of units that would exist after the proposed
+        change (each exposing ``max_total``/``amount``/``org_amount``; unsaved instances are
+        fine).
+        """
+        if not self.total_budget:
+            return
+        claimant_count = OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
+        if not claimant_count:
+            return
+
+        required_budget = self.budget_per_user_for_units(payment_units) * claimant_count
+        if self.total_budget < required_budget:
+            raise ValidationError(
+                gettext_lazy(
+                    "The opportunity budget cannot give the full limit to all %(claimants)d workers "
+                    "who have already claimed. Increase it to at least %(required)d %(currency)s."
+                )
+                % {
+                    "claimants": claimant_count,
+                    "required": required_budget,
+                    "currency": self.currency_code or "",
+                }
+            )
+
     @property
     def number_of_users(self):
         if not self.total_budget:
             return 0
-        budget_per_user = 0
-        payment_units = self.paymentunit_set.all()
-        for pu in payment_units:
-            budget_per_user += pu.max_total * (pu.amount + pu.org_amount)
-        return self.total_budget / budget_per_user
+        return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
 
     @property
     def allotted_visits(self):

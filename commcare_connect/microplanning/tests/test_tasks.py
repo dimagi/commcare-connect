@@ -6,9 +6,11 @@ import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
+from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.microplanning.tasks import (
     WorkAreaCSVImporter,
+    cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
 )
@@ -168,6 +170,36 @@ class TestWorkAreaCSVImporter:
 
         assert result["created"] == 1
 
+    def test_case_insensitive_headers(self, opportunity):
+        headers = [
+            "area slug",
+            "WARD",
+            "Centroid",
+            "boundary",
+            "Building count",
+            "expected VISIT count",
+            "target population",
+            "lga",
+            "STATE",
+        ]
+        row = [
+            "area-case",
+            "ward",
+            self.CENTROID,
+            self.POLYGON,
+            5,
+            "6",
+            "100",
+            "LGA1",
+            "State1",
+        ]
+
+        csv_data = self.build_csv([row], headers=headers)
+        result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
+
+        assert result["created"] == 1
+        assert WorkArea.objects.filter(slug="area-case", target_population=100).exists()
+
     def test_missing_extra_properties(self, opportunity):
         row = [
             "area-1",
@@ -214,3 +246,21 @@ def test_send_work_area_assignment_notification(opportunity):
     assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
     assert message.data["title"]
     assert message.data["body"]
+
+
+@mock.patch("commcare_connect.microplanning.tasks.cache")
+@mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
+def test_cluster_work_areas_task_forwards_max_buildings(mock_grouper, mock_cache):
+    cluster_work_areas_task(opp_id=1, max_buildings=250)
+
+    mock_grouper.assert_called_once_with(1, max_buildings=250)
+    mock_grouper.return_value.cluster_work_areas.assert_called_once()
+
+
+@mock.patch("commcare_connect.microplanning.tasks.cache")
+@mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
+def test_cluster_work_areas_task_defaults_max_buildings(mock_grouper, mock_cache):
+
+    cluster_work_areas_task(opp_id=1)
+
+    mock_grouper.assert_called_once_with(1, max_buildings=DEFAULT_BUILDING_COUNT)

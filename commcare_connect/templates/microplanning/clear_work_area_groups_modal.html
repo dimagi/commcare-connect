@@ -1,0 +1,23 @@
+{% load i18n %}
+<div id="clear-work-area-groups-modal"
+     class="modal-backdrop"
+     x-cloak
+     x-show="showClearWorkAreaGroupsModal"
+     @click.self="showClearWorkAreaGroupsModal = false"
+     @keydown.escape.window="showClearWorkAreaGroupsModal = false">
+  <div class="modal relative p-6" @click.stop>
+    <h3 class="text-lg font-semibold mb-3">{% translate "Clear Work Area Groups" %}</h3>
+    <p class="text-sm mb-4">
+      {% translate "This will remove all Work Area Groups and return the map to its pre-clustering, ungrouped state. This action cannot be undone. Are you sure you want to continue?" %}
+    </p>
+    <div class="flex gap-2 justify-between">
+      <button type="button"
+              class="button button-md outline-style"
+              @click="showClearWorkAreaGroupsModal = false">{% translate "Cancel" %}</button>
+      <button type="button"
+              class="button button-md negative-dark"
+              hx-post="{% url 'microplanning:clear_work_area_groups' request.org.slug request.opportunity.opportunity_id %}"
+              hx-swap="none">{% translate "Clear Work Area Groups" %}</button>
+    </div>
+  </div>
+</div>

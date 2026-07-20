@@ -1013,19 +1013,20 @@ class TestFetchAttachmentView:
         assert response.status_code == 404
         storage_handler_getitem_mock.assert_not_called()
 
-    @mock.patch.object(StorageHandler, "__getitem__")
-    def test_user_can_fetch(self, storage_handler_getitem_mock, org_user_member, organization, client):
+    def test_viewer_can_fetch(self, organization, client):
+        viewer = MembershipFactory(organization=organization, role="viewer").user
         visit = UserVisitFactory(opportunity__organization=organization)
-        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
 
         url = reverse(
             "opportunity:fetch_attachment", args=(organization.slug, visit.opportunity.id, blob_meta.blob_id)
         )
-        client.force_login(org_user_member)
+        client.force_login(viewer)
 
         response = client.get(url)
         assert response.status_code == 200
-        storage_handler_getitem_mock.assert_called_once()
+        assert b"".join(response.streaming_content) == b"imagebytes"
 
     def test_user_cannot_fetch_managed_opp(self, org_user_member, organization, client):
         opp = OpportunityFactory()
@@ -2512,7 +2513,9 @@ class TestEditAssignedTask:
         response = client.get(self._edit_url(opp, assigned_task))
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    def test_managed_opp_requires_pm_role(self, client, organization, org_user_admin, program_manager_org):
+    def test_managed_opp_allows_nm_and_pm_org_members(
+        self, client, organization, org_user_admin, program_manager_org, program_manager_org_user_admin
+    ):
         program = ProgramFactory(organization=program_manager_org)
         managed_opp = OpportunityFactory(program=program, organization=organization)
         access = OpportunityAccessFactory(opportunity=managed_opp)
@@ -2521,13 +2524,22 @@ class TestEditAssignedTask:
             task_type=TaskTypeFactory(app=managed_opp.deliver_app),
             status=AssignedTaskStatus.ASSIGNED,
         )
-        url = reverse(
+
+        # NM org member (the opportunity's own org) can edit.
+        nm_url = reverse(
             "opportunity:edit_assigned_task",
             args=(organization.slug, managed_opp.opportunity_id, task.pk),
         )
         client.force_login(org_user_admin)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert client.get(nm_url).status_code == HTTPStatus.OK
+
+        # PM org member (the program's managing org) can also edit.
+        pm_url = reverse(
+            "opportunity:edit_assigned_task",
+            args=(program_manager_org.slug, managed_opp.opportunity_id, task.pk),
+        )
+        client.force_login(program_manager_org_user_admin)
+        assert client.get(pm_url).status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db
@@ -2793,7 +2805,8 @@ class TestDeleteTasks:
 
 
 @pytest.mark.django_db
-def test_fetch_audio_attachment_returns_file(client, organization, org_user_member, opportunity):
+def test_fetch_audio_attachment_returns_file(client, organization, opportunity):
+    viewer = MembershipFactory(organization=organization, role="viewer").user
     visit = UserVisitFactory.create(opportunity=opportunity)
     audio = AudioAttachmentFactory.create(user_visit=visit, content_type="audio/mp4")
     storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
@@ -2802,7 +2815,7 @@ def test_fetch_audio_attachment_returns_file(client, organization, org_user_memb
         "opportunity:fetch_audio_attachment",
         args=(organization.slug, opportunity.id, audio.pk),
     )
-    client.force_login(org_user_member)
+    client.force_login(viewer)
     response = client.get(url)
 
     assert response.status_code == 200
@@ -2924,6 +2937,52 @@ class TestAudioAttachmentTranscribe:
         response = client.get(self._url(organization, opportunity, audio))
 
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestUserVisitsListVisitIdParam:
+    def _make_visits(self, opportunity, mobile_user):
+        access = mobile_user.opportunityaccess_set.first()
+        return [
+            UserVisitFactory(
+                opportunity=opportunity,
+                user=mobile_user,
+                opportunity_access=access,
+                visit_date=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+            )
+            for i in range(25)
+        ]
+
+    def test_visit_id_jumps_to_containing_page(self, client, organization, org_user_member, opportunity, mobile_user):
+        visits = self._make_visits(opportunity, mobile_user)
+        target = visits[20]  # 21st visit in date order -> page 2 at the default page size of 20
+
+        client.force_login(org_user_member)
+        url = reverse(
+            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
+        )
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}")
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert table.page.number == 2
+        assert any(row.record.pk == target.pk for row in table.page.object_list)
+
+    def test_explicit_page_param_is_not_overridden(
+        self, client, organization, org_user_member, opportunity, mobile_user
+    ):
+        visits = self._make_visits(opportunity, mobile_user)
+        target = visits[20]
+
+        client.force_login(org_user_member)
+        url = reverse(
+            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
+        )
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}&page=1")
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert table.page.number == 1
 
 
 @pytest.mark.django_db

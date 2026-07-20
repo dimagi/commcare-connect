@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 {% load static %}
-{# Marketing site — authored upstream in the labs repo (jjackson/connect-labs), #}
-{# which is the source of truth + staging. Promoted to prod via PR; see that #}
-{# repo's docs/prelogin-marketing-site.md. #}
+{# Marketing site — source of truth lives in THIS repo (labs is staging). Edit #}
+{# directly; promote to prod per docs/prelogin-marketing-site.md. #}
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -100,10 +99,9 @@
       <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
       <div class="nav-cta">
         <a href="{% url 'account_login' %}" class="btn btn-ghost">Sign In</a>
-        <a href="{% url 'account_signup' %}" class="btn btn-primary" target="_blank" rel="noopener">Sign Up</a>
+        <a href="/contact/" class="btn btn-primary">Request a conversation</a>
       </div>
     </nav>
-
     <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
       <span class="nav-toggle-bar"></span>
       <span class="nav-toggle-bar"></span>
@@ -116,7 +114,7 @@
     <a href="/portfolio" data-route="/portfolio">Portfolio</a>
     <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
     <a href="{% url 'account_login' %}" class="mobile-nav-cta-secondary">Sign In</a>
-    <a href="{% url 'account_signup' %}" class="mobile-nav-cta" target="_blank" rel="noopener">Sign Up</a>
+    <a href="/contact/" class="mobile-nav-cta">Request a conversation</a>
   </nav>
 </header>
 <main id="main">
@@ -136,7 +134,7 @@
           <h1 id="hero-headline">Pay for <em>verified service delivery</em>, not planned activity</h1>
           <p class="lede">Pick the program, geography, and amount. Frontline Workers deliver in their own communities, paid only for verified services. Everyone sees the results.</p>
           <div class="hero-actions">
-            <a href="/contact/" class="btn btn-primary">Request a demo</a>
+            <a href="/contact/" class="btn btn-primary">Request a conversation</a>
             <a href="#home-model" data-scroll-to="home-model" class="btn btn-ghost-on-dark">Learn more →</a>
           </div>
         </div>
@@ -3515,7 +3513,7 @@
       <ul>
         <li><a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509" target="_blank" rel="noopener">Help Site ↗</a></li>
         <li><a href="/release-notes">Release Notes</a></li>
-        <li><a href="{% url 'account_signup' %}" target="_blank" rel="noopener">Sign Up</a></li>
+        <li><a href="/contact/">Request a conversation</a></li>
         <li><a href="{% url 'account_login' %}">Sign In</a></li>
       </ul>
     </div>

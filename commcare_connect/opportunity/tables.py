@@ -3,6 +3,8 @@ from urllib.parse import urlencode
 
 import django_tables2 as tables
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.db.models import CharField, Value
+from django.db.models.functions import Coalesce, NullIf
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -835,13 +837,21 @@ class WorkerVisitTable(tables.Table):
                 "opportunity:user_visit_details",
                 args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
             ),
+            "hx-push-url": lambda record, table: (
+                f"{reverse('opportunity:user_visits_list', args=[table.organization.slug, record.opportunity.opportunity_id])}"  # noqa
+                f"?{urlencode({'user': record.user.user_id, 'visit_id': record.user_visit_id})}"
+            ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
             "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
-            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
+            ":class": lambda record, table: (
+                f"(selectedRow == {record.id} || (selectedRow === null && "
+                f"{str(str(record.user_visit_id) == table.highlighted_visit_id).lower()})) "
+                f"? 'active' : ''"
+            ),
             "data-visit-id": lambda record: record.pk,
             "data-visit-status": lambda record: record.status,
         }
@@ -849,6 +859,7 @@ class WorkerVisitTable(tables.Table):
     def __init__(self, *args, **kwargs):
         self.organization = kwargs.pop("organization", None)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm", False)
+        self.highlighted_visit_id = kwargs.pop("highlighted_visit_id", None)
         super().__init__(*args, **kwargs)
         self.use_view_url = True
 
@@ -1831,32 +1842,48 @@ _task_select_td_extra = {
 }
 
 
-class AssignedTaskListTable(OpportunityContextTable):
+class BaseAssignedTaskTable(tables.Table):
     select = select_column(td_extra=_task_select_td_extra)
-    assigned_task_id = tables.Column(verbose_name=gettext_lazy("Task ID"), accessor="pk")
-    connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
     status = TaskStatusColumn(verbose_name=gettext_lazy("Status"), accessor="status")
-    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     assigned_date = DMYTColumn(verbose_name=gettext_lazy("Assigned Date"), accessor="date_created")
     due_date = DMYTColumn(verbose_name=gettext_lazy("Due Date"), accessor="due_date")
     assigned_by = tables.Column(
         verbose_name=gettext_lazy("Assigned By"),
-        accessor="assigned_by__name",
+        accessor="assigned_by",
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )
+
+    def render_assigned_by(self, value):
+        return value.name or value.email
+
+    def order_assigned_by(self, queryset, is_descending):
+        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
+        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
+        return queryset, True
+
+
+class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
+    connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
+    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
         template_name="opportunity/assigned_task_edit_button.html",
     )
 
+    def __init__(self, *args, can_edit_tasks=False, can_delete_tasks=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not can_edit_tasks:
+            self.columns.hide("action")
+        if not can_delete_tasks:
+            self.columns.hide("select")
+
     class Meta:
         model = AssignedTask
         fields = ()
         sequence = (
             "select",
-            "assigned_task_id",
             "connect_worker",
             "status",
             "task_type",
@@ -1869,13 +1896,6 @@ class AssignedTaskListTable(OpportunityContextTable):
         row_attrs = {"class": "group"}
         empty_text = gettext_lazy("No tasks have been assigned yet.")
 
-    def render_assigned_task_id(self, value):
-        # TODO: CCCT-2184 - Link to Connect Worker page filtered to task view
-        return format_html(
-            '<a href="#" class="text-brand-indigo hover:underline"><span class="text-sm font-medium">#{}</span></a>',
-            value,
-        )
-
     def render_connect_worker(self, value):
         return format_html(
             '<div class="flex flex-col items-start">'
@@ -1887,20 +1907,10 @@ class AssignedTaskListTable(OpportunityContextTable):
         )
 
 
-class WorkerCompletedTaskTable(tables.Table):
+class WorkerCompletedTaskTable(BaseAssignedTaskTable):
     use_view_url = True
 
-    select = select_column(td_extra=_task_select_td_extra)
     task_type = tables.Column(verbose_name=_("Task Type"), accessor="task_type", orderable=False)
-    assigned_by = tables.Column(
-        verbose_name=_("Assigned By"),
-        accessor="assigned_by__name",
-        empty_values=(None,),
-        default=gettext_lazy("Deleted user"),
-    )
-    assigned_date = DMYTColumn(verbose_name=_("Assigned Date"), accessor="date_created")
-    due_date = DMYTColumn(verbose_name=_("Due Date"))
-    status = TaskStatusColumn(verbose_name=_("Status"), accessor="status")
 
     class Meta:
         model = AssignedTask

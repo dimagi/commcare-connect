@@ -16,7 +16,13 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaInaccessibilityRequest, WorkAreaStatus
+from commcare_connect.microplanning.models import (
+    SRID,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -277,8 +283,10 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
-        if WorkAreaInaccessibilityRequest.objects.filter(work_area=work_area).exists():
-            raise ProcessingError("Only one inaccessibility request per work area")
+        if WorkAreaInaccessibilityRequest.objects.filter(
+            work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        ).exists():
+            raise ProcessingError("A pending inaccessibility request already exists for this work area")
 
         if work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
@@ -418,10 +426,11 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     submissions for the same user + payment unit, then:
     1. Creates a UserVisit with initial status based on daily/total/claim limits
     2. Runs verification flag checks via clean_form_submission()
-    3. Auto-rejects flagged visits if automatic_visit_verification is enabled
-    4. Auto-approves if auto_approve_visits is enabled and no flags are raised
-    5. Updates or creates the associated CompletedWork record
-    6. Triggers incremental payment recalculation
+    3. Rejects the visit if the worker has a pending assigned task
+    4. Auto-rejects flagged visits if automatic_visit_verification is enabled
+    5. Auto-approves if auto_approve_visits is enabled and no flags are raised
+    6. Updates or creates the associated CompletedWork record
+    7. Triggers incremental payment recalculation
     """
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     try:
@@ -501,7 +510,14 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
-            completed_work.status = CompletedWorkStatus.rejected
+            if completed_work is not None:
+                completed_work.status = CompletedWorkStatus.rejected
+        if _has_blocking_pending_task(access, app):
+            flags.append(["pending_task", "Worker has an incomplete assigned task."])
+            user_visit.status = VisitValidationStatus.rejected
+            if completed_work is not None:
+                completed_work.status = CompletedWorkStatus.rejected
+                completed_work_needs_save = True
         if flags:
             user_visit.flagged = True
             user_visit.flag_reason = {"flags": flags}
@@ -550,6 +566,16 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     completed_work_id = completed_work.id if completed_work is not None else None
     update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+
+
+def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
+    return AssignedTask.objects.filter(
+        opportunity_access=access,
+        status=AssignedTaskStatus.ASSIGNED,
+        task_type__app=app,
+        task_type__archived__isnull=True,
+        task_type__is_active=True,
+    ).exists()
 
 
 def get_or_create_deliver_unit(app, unit_data):

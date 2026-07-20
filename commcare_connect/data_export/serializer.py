@@ -94,6 +94,7 @@ class OpportunityUserDataSerializer(serializers.Serializer):
 
 class UserVisitDataSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
+    user_id = serializers.UUIDField(source="user.user_id")
 
     class Meta:
         model = UserVisit
@@ -101,6 +102,8 @@ class UserVisitDataSerializer(serializers.ModelSerializer):
             "id",
             "opportunity_id",
             "username",
+            "user_id",
+            "user_visit_id",
             "deliver_unit",
             "entity_id",
             "entity_name",

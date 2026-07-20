@@ -197,6 +197,16 @@ class TestUserVisitDataViewV2:
             }
         ]
 
+    def test_includes_user_id_and_user_visit_id(self, api_client_v2, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity, user=org_user_member)
+        _add_export_credentials(api_client_v2, org_user_member)
+
+        response = api_client_v2.get(_get_url(opportunity.id))
+
+        data = response.json()["results"][0]
+        assert data["user_id"] == str(org_user_member.user_id)
+        assert data["user_visit_id"] == str(visit.user_visit_id)
+
     def test_pagination_traversal(self, api_client_v2, opportunity, org_user_member):
         UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member)
         _add_export_credentials(api_client_v2, org_user_member)

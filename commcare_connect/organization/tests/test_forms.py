@@ -1,12 +1,15 @@
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth.models import Permission
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationSelectOrCreateForm
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import LLOEntity, Organization, OrganizationInvite
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import LLOEntityFactory, UserFactory
+from commcare_connect.users.tests.factories import LLOEntityFactory, OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
@@ -21,55 +24,70 @@ class TestAddMembersView:
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(
-        "email, role, expected_status_code, create_user, expected_role, should_exist",
+        "email, role, create_existing_user",
         [
-            ("testformember@example.com", "member", 302, True, "member", True),
-            ("testforadmin@example.com", "admin", 302, True, "admin", True),
-            ("nonexistent@example.com", "member", 302, False, None, False),
-            ("existing@example.com", "admin", 302, True, "member", True),
+            ("brandnew@example.com", "member", False),
+            ("brandnewadmin@example.com", "admin", False),
+            ("registered@example.com", "member", True),
         ],
     )
-    def test_add_member(
-        self,
-        email,
-        role,
-        expected_status_code,
-        create_user,
-        expected_role,
-        should_exist,
-        organization,
-    ):
-        if create_user:
-            user = UserFactory(email=email)
+    def test_add_member_creates_pending_invite(self, email, role, create_existing_user, organization):
+        if create_existing_user:
+            UserFactory(email=email)
 
-            if email == "existing@example.com":
-                organization.members.add(user, through_defaults={"role": expected_role})
+        response = self.client.post(self.url, {"email": email, "role": role})
 
-        data = {"email": email, "role": role}
-        response = self.client.post(self.url, data)
-
-        membership_filter = {"user__email": email}
-
-        assert response.status_code == expected_status_code
-        membership_exists = organization.memberships.filter(**membership_filter).exists()
-        assert membership_exists == should_exist
-
-        if should_exist and expected_role:
-            membership = organization.memberships.get(**membership_filter)
-            assert membership.role == expected_role
+        assert response.status_code == 302
+        assert not organization.memberships.filter(user__email=email).exists()
+        invite = OrganizationInvite.objects.get(organization=organization, email=email)
+        assert invite.role == role
+        assert invite.status == OrganizationInvite.Status.INVITED
+        assert invite.invited_by == self.user
 
     @pytest.mark.django_db
-    def test_invalid_invite_shows_error_message(self):
-        response = self.client.post(self.url, {"email": "nonexistent@example.com", "role": "member"}, follow=True)
+    def test_invite_rejected_for_existing_member(self, organization):
+        member = UserFactory(email="already-a-member@example.com")
+        organization.members.add(member, through_defaults={"role": "member"})
+
+        response = self.client.post(self.url, {"email": member.email, "role": "member"}, follow=True)
 
         messages = list(response.context["messages"])
         assert len(messages) == 1
         assert messages[0].level_tag == "error"
-        assert "does not exist or is already a member" in str(messages[0])
+        assert "already a member" in str(messages[0])
+        assert not OrganizationInvite.objects.filter(organization=organization, email=member.email).exists()
+
+    @pytest.mark.django_db
+    def test_invite_rejected_when_pending_invite_already_exists(self, organization):
+        existing_invite = OrganizationInviteFactory(organization=organization, email="pending@example.com")
+
+        response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "error"
+        assert "already been sent" in str(messages[0])
+        assert OrganizationInvite.objects.filter(organization=organization, email=existing_invite.email).count() == 1
+
+    @pytest.mark.django_db
+    def test_reinvite_after_expiry_resets_existing_invite(self, organization):
+        expired_invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
+        old_token = expired_invite.token
+        OrganizationInvite.objects.filter(pk=expired_invite.pk).update(
+            date_modified=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+        )
+
+        response = self.client.post(self.url, {"email": "lapsed@example.com", "role": "member"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert messages[0].level_tag == "success"
+        expired_invite.refresh_from_db()
+        assert expired_invite.status == OrganizationInvite.Status.INVITED
+        assert expired_invite.token != old_token
+        assert OrganizationInvite.objects.filter(organization=organization, email="lapsed@example.com").count() == 1
 
     @pytest.mark.django_db
     def test_valid_invite_shows_success_message(self):
-        UserFactory(email="newmember@example.com")
         response = self.client.post(self.url, {"email": "newmember@example.com", "role": "member"}, follow=True)
 
         messages = list(response.context["messages"])

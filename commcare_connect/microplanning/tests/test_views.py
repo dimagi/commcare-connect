@@ -18,14 +18,19 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
 )
-from commcare_connect.microplanning.views import UserVisitVectorLayer, get_metrics_for_microplanning
+from commcare_connect.microplanning.views import (
+    MAX_EXCLUDE_WORK_AREAS,
+    MAX_UNASSIGN_WORK_AREAS,
+    UserVisitVectorLayer,
+    get_metrics_for_microplanning,
+)
 from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -123,6 +128,41 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         client.force_login(org_user_member)
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert response.status_code == 404
+
+    def test_rerun_and_clear_buttons_shown_post_clustering(self, client, org_user_admin, opportunity):
+        """After clustering (groups exist) with no FLW assignments, rerun/clear controls are offered."""
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_rerun_clear_work_area_groups_btn"] is True
+        assert response.context["clustering_is_rerun"] is True
+        # The one-time "create" control is gone once groups exist.
+        assert response.context["show_workarea_groups_btn"] is False
+
+    def test_rerun_and_clear_buttons_hidden_when_assigned(self, client, org_user_admin, opportunity):
+        """Once any work area is assigned to an FLW, rerun/clear controls disappear."""
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_rerun_clear_work_area_groups_btn"] is False
+        assert response.context["clustering_is_rerun"] is False
+
+    def test_rerun_and_clear_buttons_hidden_before_clustering(self, client, org_user_admin, opportunity):
+        """Before any clustering has run, only the initial create control is available."""
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_rerun_clear_work_area_groups_btn"] is False
+        assert response.context["show_workarea_groups_btn"] is True
 
 
 @pytest.mark.django_db
@@ -930,10 +970,10 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert photo.name == "photo.jpg"
 
     @pytest.mark.parametrize(
-        "action, expected_status, expect_notify",
+        "action, expected_status, expected_request_status, expect_notify",
         [
-            ("approve", WorkAreaStatus.INACCESSIBLE, False),
-            ("deny", WorkAreaStatus.NOT_VISITED, True),
+            ("approve", WorkAreaStatus.INACCESSIBLE, InaccessibilityRequestStatus.APPROVED, False),
+            ("deny", WorkAreaStatus.NOT_VISITED, InaccessibilityRequestStatus.DENIED, True),
         ],
         ids=["approve", "deny"],
     )
@@ -941,6 +981,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         self,
         action,
         expected_status,
+        expected_request_status,
         expect_notify,
         client,
         org_user_admin,
@@ -962,6 +1003,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert response.status_code == 204
         work_area.refresh_from_db()
         assert work_area.status == expected_status
+        inacc_request.refresh_from_db()
+        assert inacc_request.status == expected_request_status
         hx_trigger = json.loads(response["HX-Trigger"])
         assert "inaccessibilityReviewed" in hx_trigger
         assert hx_trigger["inaccessibilityReviewed"]["status"] == expected_status
@@ -1011,6 +1054,23 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
         response = client.post(url, {"action": "approve"})
         assert response.status_code == 404
+
+    def test_review_modal_returns_pending_not_historical_request(
+        self, client, org_user_admin, pending_wa, organization
+    ):
+        work_area, historical_request = pending_wa
+        historical_request.status = InaccessibilityRequestStatus.DENIED
+        historical_request.save(update_fields=["status"])
+        pending_request = WorkAreaInaccessibilityRequestFactory(
+            work_area=work_area,
+            opportunity_access=historical_request.opportunity_access,
+            status=InaccessibilityRequestStatus.PENDING,
+        )
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["inaccessibility_request"].id == pending_request.id
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_get_modal_microplanning_flag_required(self, client, org_user_admin, opportunity, organization):
@@ -1278,7 +1338,6 @@ class TestUnassignWorkAreas:
         program_manager_org_user_admin,
         managed_opportunity,
     ):
-        from commcare_connect.microplanning.views import MAX_UNASSIGN_WORK_AREAS
 
         client.force_login(program_manager_org_user_admin)
         response = client.post(
@@ -1366,7 +1425,6 @@ class TestExcludeWorkAreasView:
 
     @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
     def test_too_many_work_area_ids_returns_400(self, mock_exclude, client, org_user_admin, opportunity):
-        from commcare_connect.microplanning.views import MAX_EXCLUDE_WORK_AREAS
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -1737,3 +1795,134 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
             report_cls.return_value.header.side_effect = OperationalError("connection lost")  # no pgcode 57014
             with pytest.raises(OperationalError):
                 client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+
+@pytest.mark.django_db
+class TestClusterWorkAreas(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:cluster_work_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+
+    @pytest.fixture
+    def work_area(self, opportunity):
+        return WorkAreaFactory(opportunity=opportunity)
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_valid_building_count_forwards_to_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        mock_delay.return_value = MagicMock(id="task-123")
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"building_count": 250})
+
+        assert response.status_code == 200
+        mock_delay.assert_called_once_with(opportunity.id, 250)
+        assert "clustering_task_id=task-123" in response.headers["HX-Push-Url"]
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_empty_building_count_defaults(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        mock_delay.return_value = MagicMock(id="task-123")
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {})
+
+        assert response.status_code == 200
+        mock_delay.assert_called_once_with(opportunity.id, 200)
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_out_of_range_does_not_start_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"building_count": 500})
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        assert "between 100 and 300" in response.content.decode()
+        assert response.headers["HX-Retarget"] == "#building-count-field"
+
+
+@pytest.mark.django_db
+class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:cluster_work_areas", args=(org_slug, opp_id))
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_rerun_replaces_existing_groups(self, mock_delay, client, org_user_admin, opportunity):
+
+        mock_task = MagicMock()
+        mock_task.id = "3f8f2e6c-0000-4000-8000-000000000000"
+        mock_delay.return_value = mock_task
+
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=old_group)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)) + "?rerun=1")
+
+        assert response.status_code == 200
+        # Old group is discarded; the async task will produce the new grouping.
+        assert not WorkAreaGroup.objects.filter(id=old_group.id).exists()
+        assert mock_delay.call_count == 1
+        # The work area itself survives (SET_NULL), just ungrouped until the task runs.
+        work_area.refresh_from_db()
+        assert work_area.work_area_group is None
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_rerun_blocked_when_assigned(self, mock_delay, client, org_user_admin, opportunity):
+
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=old_group, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)) + "?rerun=1")
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        assert mock_delay.call_count == 0
+        # Nothing is deleted when assignments exist.
+        assert WorkAreaGroup.objects.filter(id=old_group.id).exists()
+
+
+@pytest.mark.django_db
+class TestClearWorkAreaGroups(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:clear_work_area_groups", args=(org_slug, opp_id))
+
+    def test_clears_groups_and_ungroups_work_areas(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert response.headers["HX-Redirect"].endswith(
+            reverse(
+                "microplanning:microplanning_home", args=(opportunity.organization.slug, opportunity.opportunity_id)
+            )
+        )
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        # The polygons remain, returned to their pre-clustering ungrouped state.
+        work_area.refresh_from_db()
+        assert work_area.work_area_group is None
+        messages = list(response.wsgi_request._messages)
+        assert any("cleared" in str(m) for m in messages)
+
+    def test_clear_blocked_when_assigned(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        assert WorkAreaGroup.objects.filter(id=group.id).exists()
+
+    def test_clear_requires_post(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+        assert response.status_code == 405
