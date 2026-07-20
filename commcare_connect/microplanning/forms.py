@@ -101,16 +101,16 @@ class WorkAreaModelForm(forms.ModelForm):
 
 
 class AssignmentModeForm(forms.Form):
-    work_area_group = forms.ModelChoiceField(
+    work_area_group = forms.ModelMultipleChoiceField(
         queryset=WorkAreaGroup.objects.none(),
         required=False,
-        empty_label=_("— Select Group —"),
         label=_("Select Work Area Group"),
-        widget=forms.Select(
+        widget=forms.SelectMultiple(
             attrs={
                 "class": INPUT_CSS,
+                "data-tomselect": "1",
                 "x-ref": "groupSelect",
-                "@change": "selectGroup($event.target.value)",
+                "@change": "selectGroup(Array.from($event.target.selectedOptions).map(o => o.value))",
             }
         ),
     )
