@@ -1,9 +1,12 @@
 import datetime
 import itertools
 from datetime import timedelta
+from functools import cached_property
 
 import django_tables2 as tables
 from django.utils.timezone import is_aware, localtime  # For timezone handling
+from django_tables2.data import TableQuerysetData
+from django_tables2.rows import BoundRow
 
 STOP_CLICK_PROPAGATION_ATTR = {"td": {"@click.stop": ""}}
 TEXT_CENTER_ATTR = {"td": {"class": "text-center"}}
@@ -111,3 +114,114 @@ def get_validated_page_size(request):
         return page_size if page_size in PAGE_SIZE_OPTIONS else DEFAULT_PAGE_SIZE
     except (ValueError, TypeError):
         return DEFAULT_PAGE_SIZE
+
+
+class GroupedTableData(TableQuerysetData):
+    """Data source for `GroupedTable`. Paginates by distinct `pk` count, then
+    groups rows for each page into one head row per pk with a `sub_rows` list.
+    """
+
+    @cached_property
+    def _pks(self):
+        return list(dict.fromkeys(self.data.values_list("pk", flat=True)))
+
+    def order_by(self, aliases):
+        self.__dict__.pop("_pks", None)
+        super().order_by(aliases)
+
+    def __len__(self):
+        return len(self._pks)
+
+    def __iter__(self):
+        return iter(self._build_page(self._pks))
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            key = slice(key, key + 1)
+        return self._build_page(self._pks[key])
+
+    def _build_page(self, pks):
+        table = self.table
+        qs = self.data.filter(pk__in=pks)
+        if table.group_item_order_by:
+            qs = qs.order_by(*table.group_item_order_by)
+        groups: dict = {}
+        for row in qs:
+            if row.pk not in groups:
+                row.sub_rows = []
+                groups[row.pk] = row
+            groups[row.pk].sub_rows.append(table.SubBoundRow(record=row, table=table))
+        return [groups[pk] for pk in pks if pk in groups]
+
+
+class GroupedTable(tables.Table):
+    """A table where rows are grouped by `pk` into collapsible sections.
+    Each group renders as one clickable header row with sub-rows hidden beneath
+    it. Pagination counts groups, not individual rows — so a page size of 20
+    shows 20 headers, regardless of how many sub-rows they expand to.
+
+    Subclasses define:
+      - columns: as usual for django-tables2.
+      - `header_columns`: names of columns shown once in the group header row;
+        sub-rows leave these blank.
+      - `group_item_order_by`: ordering applied to rows within each group.
+      - `Meta`: standard django-tables2 Meta (template_name, etc.).
+
+    Pass a raw queryset — it is auto-wrapped into `GroupedTableData`.
+    """
+
+    group_item_order_by = ()
+    header_columns = ()
+    group_item_label = ()  # (singular, plural) — already translated; shown next to the count
+
+    class SubBoundRow(BoundRow):
+        def get_cell(self, name):
+            if name in self.table.header_columns:
+                return ""
+            return super().get_cell(name)
+
+    @property
+    def non_header_column_count(self):
+        return sum(1 for c in self.columns if c.name not in self.header_columns)
+
+    def __init__(self, data, *args, **kwargs):
+        if not isinstance(data, GroupedTableData):
+            data = GroupedTableData(data)
+        super().__init__(data, *args, **kwargs)
+
+
+def select_column(th_extra=None, td_extra=None):
+    """
+    Return a CheckBoxColumn wired for Alpine.js table selection.
+
+    Header checkbox binds to `selectAll` and triggers `toggleSelectAll()`.
+    Row checkboxes bind to `selected` and use `record.pk` as value.
+
+    Args:
+        th_extra (dict, optional): Extra/override attrs for header checkbox.
+        td_extra (dict, optional): Extra/override attrs for row checkboxes.
+    """
+    th_attrs = {
+        "@click": "toggleSelectAll()",
+        "x-model": "selectAll",
+        "name": "select_all",
+        "type": "checkbox",
+        "class": "checkbox",
+    }
+    td_attrs = {
+        "x-model": "selected",
+        "@click.stop": "",
+        "name": "row_select",
+        "type": "checkbox",
+        "class": "checkbox",
+        "value": lambda record: record.pk,
+        "id": lambda record: f"row_checkbox_{record.pk}",
+    }
+    if th_extra:
+        th_attrs.update(th_extra)
+    if td_extra:
+        td_attrs.update(td_extra)
+    return tables.CheckBoxColumn(
+        accessor="pk",
+        attrs={"th__input": th_attrs, "td__input": td_attrs},
+    )

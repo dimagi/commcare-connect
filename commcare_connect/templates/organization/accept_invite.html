@@ -1,0 +1,50 @@
+{% extends "account/base.html" %}
+{% load i18n %}
+{% block head_title %}
+  {% translate "Join Workspace" %}
+{% endblock %}
+{% block inner %}
+  <div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+    <form method="post"
+          class="flex flex-col gap-4"
+          x-data="{ password: '', confirmPassword: '', termsChecked: false, isFormValid() { return this.termsChecked && this.password && this.confirmPassword; } }">
+      {% csrf_token %}
+      <h6 class="title text-brand-deep-purple">
+        {% blocktranslate with org=invite.organization.name %}Join {{ org }}{% endblocktranslate %}
+      </h6>
+      <span class="text-sm text-gray-600">
+        {% blocktranslate with email=invite.email %}This invitation was sent to {{ email }}. Set a password to create your account and join.{% endblocktranslate %}
+      </span>
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}<p class="text-sm text-red-600">* {{ error }}</p>{% endfor %}
+      {% endif %}
+      {% translate "Password" as password_label %}
+      {% include "account/password_field.html" with field=form.password1 placeholder=password_label x_model="password" %}
+      {% translate "Confirm Password" as confirm_password_label %}
+      {% include "account/password_field.html" with field=form.password2 placeholder=confirm_password_label x_model="confirmPassword" %}
+      <div class="flex flex-col items-end gap-3">
+        <div class="input-group {% if form.agree.errors %}error{% endif %}">
+          <div class="flex items-start w-full gap-2">
+            <div>
+              <input type="checkbox"
+                     class="simple-checkbox"
+                     required
+                     id="{{ form.agree.auto_id }}"
+                     name="{{ form.agree.html_name }}"
+                     x-model="termsChecked" />
+            </div>
+            <p class="hint">
+              <span>{% blocktranslate %}I agree to Dimagi's <a class="text-brand-indigo font-medium" href="https://dimagi.com/terms-privacy-dimagi/" target="_blank">Privacy Policy</a> and <a class="text-brand-indigo font-medium" href="https://www.dimagi.com/terms/latest/aup/" target="_blank">Acceptable Use Policy</a>.{% endblocktranslate %}</span>
+            </p>
+          </div>
+          {% for error in form.agree.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+        </div>
+        <button class="button button-md primary-dark"
+                type="submit"
+                :disabled="!isFormValid()">
+          <span class="relative z-20">{% translate "Join" %}</span>
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

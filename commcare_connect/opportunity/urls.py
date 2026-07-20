@@ -1,26 +1,33 @@
-from django.urls import path
+from django.urls import include, path
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.payment_number_report import PaymentNumberReport
 from commcare_connect.opportunity.views import (
+    AssignedTaskListView,
+    AudioAttachmentTranscribe,
+    EditAssignedTask,
+    EditTaskType,
     OpportunityCompletedWorkTable,
     OpportunityDashboard,
     OpportunityEdit,
     OpportunityFinalize,
-    OpportunityInit,
-    OpportunityInitUpdate,
     OpportunityList,
     OpportunityPaymentUnitTableView,
+    TaskTypesConfig,
     WorkerDeliverView,
     WorkerLearnView,
     WorkerPaymentsView,
+    WorkerTaskView,
     WorkerView,
+    WorkerWorkAreaView,
     add_budget_existing_users,
     add_budget_new_users,
     add_payment_unit,
     add_payment_units,
     approve_visits,
+    create_task,
     delete_form_json_rule,
+    delete_tasks,
     download_export,
     edit_payment_unit,
     export_catchment_area,
@@ -31,6 +38,7 @@ from commcare_connect.opportunity.views import (
     export_user_visits,
     export_users_for_payment,
     fetch_attachment,
+    fetch_audio_attachment,
     import_catchment_area,
     opportunity_user_invite,
     payment_delete,
@@ -54,9 +62,7 @@ from commcare_connect.opportunity.views import (
 app_name = "opportunity"
 urlpatterns = [
     path("", view=OpportunityList.as_view(), name="list"),
-    path("init/", view=OpportunityInit.as_view(), name="init"),
     path("add_api_key/", views.add_api_key, name="add_api_key"),
-    path("<slug:opp_id>/init/edit/", view=OpportunityInitUpdate.as_view(), name="init_edit"),
     path("<slug:opp_id>/finalize/", view=OpportunityFinalize.as_view(), name="finalize"),
     path("<slug:opp_id>/edit", view=OpportunityEdit.as_view(), name="edit"),
     path("<slug:opp_id>/", view=OpportunityDashboard.as_view(), name="detail"),
@@ -78,18 +84,36 @@ urlpatterns = [
     path("<slug:opp_id>/payment_unit/<slug:pk>/edit", view=edit_payment_unit, name="edit_payment_unit"),
     path("<slug:opp_id>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<slug:opp_id>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
-    path("<slug:opp_id>/user_visits/", view=views.user_visit_verification, name="user_visits_list"),
+    path("<slug:opp_id>/user_visits/", view=views.UserVisitVerificationView.as_view(), name="user_visits_list"),
+    path("<slug:opp_id>/user_tasks/", view=views.UserTasksView.as_view(), name="user_tasks_list"),
+    path(
+        "<slug:opp_id>/user_tasks_table/",
+        view=views.WorkerCompletedTaskTableView.as_view(),
+        name="user_tasks_table",
+    ),
     path(
         "<slug:opp_id>/user_visit_verification_table/",
-        view=views.VisitVerificationTableView.as_view(),
+        view=views.visit_verification_table_view,
         name="user_visit_verification_table",
     ),
     path("<slug:opp_id>/user_visit_details/<slug:pk>/", view=views.user_visit_details, name="user_visit_details"),
+    path("<slug:opp_id>/user_visit_data/<slug:pk>/", view=views.user_visit_data, name="user_visit_data"),
+    path("<slug:opp_id>/user_task_details/<slug:pk>/", view=views.user_task_details, name="user_task_details"),
     path("<slug:opp_id>/payment/<slug:access_id>/delete/<slug:pk>/", view=payment_delete, name="payment_delete"),
     path("<slug:opp_id>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
     path("<slug:opp_id>/approve_visits", view=approve_visits, name="approve_visits"),
     path("<slug:opp_id>/reject_visits", view=reject_visits, name="reject_visits"),
     path("<slug:opp_id>/fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
+    path(
+        "<slug:opp_id>/fetch_audio_attachment/<int:pk>",
+        view=fetch_audio_attachment,
+        name="fetch_audio_attachment",
+    ),
+    path(
+        "<slug:opp_id>/audio_attachment/<int:pk>/transcribe/",
+        view=AudioAttachmentTranscribe.as_view(),
+        name="audio_attachment_transcribe",
+    ),
     path(
         "<slug:opp_id>/completed_work_table/",
         view=OpportunityCompletedWorkTable.as_view(),
@@ -100,6 +124,8 @@ urlpatterns = [
         "<slug:opp_id>/completed_work_import/", view=update_completed_work_status_import, name="completed_work_import"
     ),
     path("<slug:opp_id>/verification_flags_config/", view=verification_flags_config, name="verification_flags_config"),
+    path("<slug:opp_id>/task_types/", view=TaskTypesConfig.as_view(), name="task_types_config"),
+    path("<slug:opp_id>/task_types/<int:pk>/edit/", view=EditTaskType.as_view(), name="edit_task_type"),
     path("<slug:opp_id>/suspended_users/", view=suspended_users_list, name="suspended_users_list"),
     path("<slug:opp_id>/suspend_user/<slug:pk>/", view=suspend_user, name="suspend_user"),
     path(
@@ -131,6 +157,8 @@ urlpatterns = [
     path("<slug:opp_id>/workers/learn/", WorkerLearnView.as_view(), name="worker_learn"),
     path("<slug:opp_id>/workers/deliver/", WorkerDeliverView.as_view(), name="worker_deliver"),
     path("<slug:opp_id>/workers/payments/", WorkerPaymentsView.as_view(), name="worker_payments"),
+    path("<slug:opp_id>/workers/tasks/", WorkerTaskView.as_view(), name="worker_tasks"),
+    path("<slug:opp_id>/workers/work-areas/", WorkerWorkAreaView.as_view(), name="worker_work_areas"),
     path(
         "<slug:opp_id>/worker_learn_progress/<slug:access_id>",
         views.worker_learn_status_view,
@@ -163,4 +191,9 @@ urlpatterns = [
         name="download_invoice_line_items",
     ),
     path("<slug:opp_id>/visit_export_count/", views.visit_export_count, name="visit_export_count"),
+    path("<slug:opp_id>/assigned_tasks/", AssignedTaskListView.as_view(), name="assigned_task_list"),
+    path("<slug:opp_id>/assigned_tasks/create/", create_task, name="create_task"),
+    path("<slug:opp_id>/assigned_tasks/delete/", delete_tasks, name="delete_tasks"),
+    path("<slug:opp_id>/assigned_tasks/<int:pk>/edit/", EditAssignedTask.as_view(), name="edit_assigned_task"),
+    path("", include("commcare_connect.audit.urls", namespace="audit")),
 ]

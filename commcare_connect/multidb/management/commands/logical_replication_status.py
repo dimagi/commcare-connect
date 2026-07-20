@@ -16,9 +16,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         secondary_db_alias = settings.SECONDARY_DB_ALIAS
         if not secondary_db_alias:
-            raise CommandError(
-                "'secondary' database needs to be configured and " "logical replication needs to be setup"
-            )
+            raise CommandError("'secondary' database needs to be configured and logical replication needs to be setup")
 
         self.stdout.write(self.style.WARNING("This will run some queries to get logical replication status"))
         confirm = input("Proceed? (yes/no): ").strip().lower()

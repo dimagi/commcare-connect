@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load i18n static %}
+{% block title %}
+  {% blocktrans with start=report.period_start %}Weekly Performance Report — {{ start }}{% endblocktrans %}
+{% endblock %}
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock css %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
+{% endblock javascript %}
+{% block content %}
+  {% include 'components/breadcrumbs.html' with path=path %}
+  <div class="w-full flex flex-col gap-4">
+    {% include "audit/audit_report_body.html" %}
+    <div id="modal-root"></div>
+  </div>
+{% endblock %}

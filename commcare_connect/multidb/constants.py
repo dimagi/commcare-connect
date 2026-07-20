@@ -1,3 +1,4 @@
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.models import (
     Assessment,
     CommCareApp,
@@ -6,18 +7,20 @@ from commcare_connect.opportunity.models import (
     Country,
     Currency,
     DeliverUnit,
+    DeliverUnitFlagRules,
     DeliveryType,
     LearnModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityVerificationFlags,
     Payment,
     PaymentInvoice,
     PaymentUnit,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.models import ConnectIDUserLink, User, UserCredential
@@ -36,11 +39,14 @@ REPLICATION_ALLOWED_MODELS = [
     Currency,
     DeliverUnit,
     DeliveryType,
+    DeliverUnitFlagRules,
     LearnModule,
+    LLOEntity,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityVerificationFlags,
     Organization,
     CommCareApp,
     Payment,
@@ -51,4 +57,7 @@ REPLICATION_ALLOWED_MODELS = [
     UserAnalyticsData,
     UserCredential,
     PaymentInvoice,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
 ]

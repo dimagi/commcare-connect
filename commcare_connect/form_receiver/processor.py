@@ -3,20 +3,30 @@ import logging
 from functools import partial
 from uuid import UUID
 
+import pghistory
+from django.contrib.gis.geos import Point
 from django.db import transaction
 from django.db.models import Count, Min, Q
 from django.utils.timezone import now
 from geopy.distance import distance
-from jsonpath_ng import JSONPathError
+from jsonpath_ng.exceptions import JSONPathError
 from jsonpath_ng.ext import parse
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import (
+    SRID,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
+    AssignedTaskStatus,
     CommCareApp,
     CompletedModule,
     CompletedWork,
@@ -34,16 +44,21 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments, notify_user_for_scored_assessment
+from commcare_connect.opportunity.tasks import (
+    download_inaccessibility_request_attachments,
+    download_user_visit_attachments,
+    notify_user_for_scored_assessment,
+)
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
-from commcare_connect.utils.lock import try_redis_lock
 
 logger = logging.getLogger(__name__)
 
 LEARN_MODULE_JSONPATH = parse("$..module")
+TASK_MODULE_JSONPATH = parse("$..task")
 ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
+WORK_AREA_UPDATE_JSONPATH = parse("$..work_area_update")
 
 
 def is_a_uuid(value):
@@ -135,6 +150,64 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
             update_completed_learn_date(access, save_access)
 
 
+def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
+    """Process task modules from a form received from CommCare HQ."""
+    with transaction.atomic():
+        try:
+            access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+        except OpportunityAccess.DoesNotExist:
+            raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
+        save_access = False
+
+        updated_tasks = False
+
+        for task_data in blocks:
+            task_slug = task_data.get("@id")
+            if not task_slug:
+                continue
+
+            try:
+                assigned_task = (
+                    AssignedTask.objects.select_for_update()
+                    .filter(
+                        task_type__app=app,
+                        task_type__slug=task_slug,
+                        opportunity_access=access,
+                        xform_id=None,
+                        status=AssignedTaskStatus.ASSIGNED,
+                    )
+                    .get()
+                )
+            except AssignedTask.DoesNotExist:
+                continue
+
+            assigned_task.xform_id = xform.id
+            assigned_task.completed_at = xform.metadata.timeEnd
+            assigned_task.duration = xform.metadata.duration
+            assigned_task.app_build_id = xform.build_id
+            assigned_task.app_build_version = xform.metadata.app_build_version
+            assigned_task.status = AssignedTaskStatus.COMPLETED
+
+            assigned_task.save(
+                update_fields=[
+                    "xform_id",
+                    "completed_at",
+                    "duration",
+                    "app_build_id",
+                    "app_build_version",
+                    "status",
+                    "date_modified",
+                ]
+            )
+            updated_tasks = True
+            if not access.last_active or access.last_active < assigned_task.completed_at:
+                access.last_active = assigned_task.completed_at
+                save_access = True
+
+        if updated_tasks and save_access:
+            access.save(update_fields=["last_active"])
+
+
 def update_completed_learn_date(access, save_access=False):
     if not access.completed_learn_date and access.learn_progress == 100.0:
         # Get the earliest completion date for each unique module
@@ -184,28 +257,117 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         )
 
         if not created:
-            return ProcessingError("Learn Assessment is already completed")
+            raise ProcessingError("Learn Assessment is already completed")
 
-        notify_user_for_scored_assessment.delay(assessment.pk)
+        transaction.on_commit(partial(notify_user_for_scored_assessment.delay, assessment.pk))
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
-    matches = [
-        match.value for match in DELIVER_UNIT_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
-    ]
-    if matches:
-        for deliver_unit_block in matches:
-            process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
+    for deliver_unit_block in _get_matching_blocks(DELIVER_UNIT_JSONPATH, xform):
+        process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
+
+    task_matches = _get_matching_blocks(TASK_MODULE_JSONPATH, xform)
+    if task_matches:
+        process_task_modules(user, xform, app, opportunity, task_matches)
+
+    work_area_blocks = _get_matching_blocks(WORK_AREA_UPDATE_JSONPATH, xform)
+    if work_area_blocks:
+        process_work_area_update(user, opportunity, xform, work_area_blocks)
+
+
+def _parse_xform_location(location_str):
+    if not location_str:
+        return None
+    try:
+        parts = location_str.split()
+        lat, lng = float(parts[0]), float(parts[1])
+        return Point(lng, lat, srid=SRID)
+    except (ValueError, IndexError):
+        logger.warning("Failed to parse xform location string: %r", location_str)
+        return None
+
+
+def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm, blocks: list[dict]):
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
+
+    for block in blocks:
+        work_area_case_id = block.get("work_area_id")
+        if not work_area_case_id or not is_a_uuid(work_area_case_id):
+            raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+
+        try:
+            work_area = WorkArea.objects.select_for_update().get(case_id=work_area_case_id, opportunity=opportunity)
+        except WorkArea.DoesNotExist:
+            raise ProcessingError("Work area not found")
+
+        if WorkAreaInaccessibilityRequest.objects.filter(
+            work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        ).exists():
+            raise ProcessingError("A pending inaccessibility request already exists for this work area")
+
+        if work_area.opportunity_access_id != access.id:
+            raise ProcessingError("User is not assigned to this work area")
+
+        requested_status = block.get("status", "").upper()
+        try:
+            new_status = WorkAreaStatus(requested_status)
+        except ValueError:
+            raise ProcessingError(f"Invalid work area status: {requested_status}")
+
+        if not (
+            work_area.status == WorkAreaStatus.NOT_VISITED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+        ):
+            raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
+
+        reason = block.get("reason", "").strip()
+        if not reason:
+            raise ProcessingError("reason is required for request_for_inaccessible")
+
+        photo_evidence = block.get("photo_evidence", "").strip()
+        if not photo_evidence:
+            raise ProcessingError("photo_evidence is required for request_for_inaccessible")
+
+        additional_details = block.get("additional_details", "")
+        location = _parse_xform_location(xform.metadata.location)
+
+        WorkAreaInaccessibilityRequest.objects.create(
+            work_area=work_area,
+            opportunity_access=access,
+            xform_id=xform.id,
+            date_of_visit=xform.metadata.timeStart.date(),
+            location=location,
+            reason=reason,
+            additional_details=additional_details,
+        )
+        all_attachments = xform.raw_form.get("attachments", {})
+        photo_attachments = {name: meta for name, meta in all_attachments.items() if name == photo_evidence}
+        if not photo_attachments:
+            raise ProcessingError(f"photo_evidence attachment '{photo_evidence}' not found on form")
+        transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, photo_attachments))
+
+        work_area.status = new_status
+        with pghistory.context(username=user.username, user_email=user.email):
+            work_area.save(update_fields=["status"])
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+    """Validate a form submission against the opportunity's verification flags.
+
+    Checks GPS presence, location proximity, catchment areas, submission time window,
+    duplicate entities, attachments, form duration, and custom JSON validation rules.
+    Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
+    side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
+    """
     flags = []
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
-    if opportunity_flags.duplicate:
-        if user_visit.status == VisitValidationStatus.duplicate:
+    if user_visit.status == VisitValidationStatus.duplicate:
+        if opportunity_flags.duplicate:
             flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
-    else:
-        user_visit.status = VisitValidationStatus.pending
+        else:
+            user_visit.status = VisitValidationStatus.pending
     if opportunity_flags.gps and user_visit.location is None:
         flags.append(["gps", "GPS data is missing"])
     if opportunity_flags.location > 0 and user_visit.location:
@@ -278,6 +440,18 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
+    """Process a delivery form submission into a UserVisit and update CompletedWork.
+
+    Locks the claim limit row (select_for_update) to serialize concurrent
+    submissions for the same user + payment unit, then:
+    1. Creates a UserVisit with initial status based on daily/total/claim limits
+    2. Runs verification flag checks via clean_form_submission()
+    3. Rejects the visit if the worker has a pending assigned task
+    4. Auto-rejects flagged visits if automatic_visit_verification is enabled
+    5. Auto-approves if auto_approve_visits is enabled and no flags are raised
+    6. Updates or creates the associated CompletedWork record
+    7. Triggers incremental payment recalculation
+    """
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
@@ -291,15 +465,18 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         )
 
     claim = OpportunityClaim.objects.get(opportunity_access=access)
-    claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
 
-    # handle concurrent form submissions for same entity id
-    lock_key = f"visit_processor:{access.id}:{deliver_unit.id}:{entity_id}"
-    with try_redis_lock(lock_key, timeout=30, blocking_timeout=5) as acquired, transaction.atomic():
-        if not acquired:
-            raise ProcessingError("Error processing form, please retry again.")
+    with transaction.atomic():
+        # Lock the claim limit row to serialize concurrent submissions for the same
+        # user + payment unit. Without it, simultaneous submissions read the same
+        # daily/total counts before either commits and both pass the limit check,
+        # letting visits slip past the daily limit. The lock also serializes the
+        # duplicate-entity check below.
+        claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
+            opportunity_claim=claim, payment_unit=payment_unit
+        )
         counts = (
             UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
             .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
@@ -349,26 +526,28 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        if work_area_case_id := deliver_unit_block.get("work_area_id"):
-            if is_a_uuid(work_area_case_id):
-                try:
-                    user_visit.work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
-                except WorkArea.DoesNotExist:
-                    logger.error(
-                        f"No work area found for opportunity ({opportunity.id}) with case_id: {work_area_case_id}"
-                    )
-            else:
-                logger.error(f"Invalid work area case id specified: {work_area_case_id}")
-
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
-            completed_work.status = CompletedWorkStatus.rejected
+            if completed_work is not None:
+                completed_work.status = CompletedWorkStatus.rejected
+        if _has_blocking_pending_task(access, app):
+            flags.append(["pending_task", "Worker has an incomplete assigned task."])
+            user_visit.status = VisitValidationStatus.rejected
+            if completed_work is not None:
+                completed_work.status = CompletedWorkStatus.rejected
+                completed_work_needs_save = True
         if flags:
             user_visit.flagged = True
             user_visit.flag_reason = {"flags": flags}
 
+        if (
+            opportunity.automatic_visit_verification
+            and user_visit.status == VisitValidationStatus.pending
+            and user_visit.flagged
+        ):
+            user_visit.status = VisitValidationStatus.rejected
         if (
             opportunity.auto_approve_visits
             and user_visit.status == VisitValidationStatus.pending
@@ -377,20 +556,46 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.status = VisitValidationStatus.approved
             user_visit.review_status = VisitReviewStatus.agree
 
+        work_area = None
+        if work_area_case_id := deliver_unit_block.get("work_area_id"):
+            if not is_a_uuid(work_area_case_id):
+                raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+            try:
+                work_area = WorkArea.objects.select_for_update().get(
+                    case_id=work_area_case_id, opportunity=access.opportunity
+                )
+                user_visit.work_area = work_area
+            except WorkArea.DoesNotExist:
+                raise ProcessingError("Work area not found")
+
         user_visit.save()
+
+        if work_area:
+            work_area.update_status()
 
         if not access.last_active or access.last_active < user_visit.visit_date:
             access.last_active = user_visit.visit_date
 
         if completed_work is not None:
-            if completed_work.completed_count > 0 and completed_work.status == CompletedWorkStatus.incomplete:
+            if completed_work.status == CompletedWorkStatus.incomplete:
                 completed_work.status = CompletedWorkStatus.pending
                 completed_work_needs_save = True
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued_for_user(access, incremental=True)
+    completed_work_id = completed_work.id if completed_work is not None else None
+    update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+
+
+def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
+    return AssignedTask.objects.filter(
+        opportunity_access=access,
+        status=AssignedTaskStatus.ASSIGNED,
+        task_type__app=app,
+        task_type__archived__isnull=True,
+        task_type__is_active=True,
+    ).exists()
 
 
 def get_or_create_deliver_unit(app, unit_data):

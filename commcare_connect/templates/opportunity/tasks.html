@@ -1,0 +1,7 @@
+{% extends "opportunity/worker_list_base.html" %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+{% block tab_options %}
+  {% include "components/filter_modal.html" with form_id="taskFilterForm" hx_indicator="#loadingIndicator" %}
+  {% include "components/tomselect_init.html" %}
+{% endblock %}

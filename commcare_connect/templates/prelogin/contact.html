@@ -1,0 +1,308 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon"
+          type="image/svg+xml"
+          href="{% static 'prelogin/favicon.svg' %}">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact | Connect</title>
+    <meta name="description"
+          content="Get in touch with the Connect team to talk through your program, request a demo, or explore co-design and funding opportunities.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Connect by Dimagi">
+    <meta property="og:url" content="https://connect.dimagi.com/contact/">
+    <link rel="canonical" href="https://connect.dimagi.com/contact/">
+    <meta property="og:title"
+          content="Contact Connect: Talk to Our Team or Request a Demo">
+    <meta property="og:description"
+          content="Get in touch with the Connect team to talk through your program, request a demo, or explore co-design and funding opportunities.">
+    <meta property="og:image"
+          content="https://connect.dimagi.com/images/field-photos/join-hero.jpg">
+    <meta property="og:image:alt"
+          content="A Connect Frontline Worker delivering community health services">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title"
+          content="Contact Connect: Talk to Our Team or Request a Demo">
+    <meta name="twitter:description"
+          content="Get in touch with the Connect team to talk through your program, request a demo, or explore co-design and funding opportunities.">
+    <meta name="twitter:image"
+          content="https://connect.dimagi.com/images/field-photos/join-hero.jpg">
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ContactPage",
+  "name": "Contact Connect",
+  "description": "Get in touch with the Connect team to talk through your program, request a demo, or explore co-design and funding opportunities.",
+  "url": "https://connect.dimagi.com/contact/",
+  "mainEntity": {
+    "@type": "Organization",
+    "name": "Connect by Dimagi",
+    "url": "https://connect.dimagi.com/",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "sales",
+      "email": "connect-info@dimagi.com",
+      "availableLanguage": "English"
+    },
+    "parentOrganization": {
+      "@type": "Organization",
+      "name": "Dimagi, Inc.",
+      "url": "https://dimagi.com/"
+    }
+  }
+}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+          rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'prelogin/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'prelogin/contact.css' %}">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <!-- ── Inline SVG logo sprite ── -->
+    <svg width="0"
+         height="0"
+         style="position:absolute;
+                width:0;
+                height:0;
+                overflow:hidden"
+         aria-hidden="true">
+      <symbol id="connect-logo" viewBox="0 0 1526 431">
+      <path d="M412.293 29.2519C359.611 29.2519 316.538 72.3251 316.538 125.338C316.538 178.02 359.611 221.094 412.293 221.094C445.426 221.094 475.909 204.196 493.47 176.364C493.47 176.364 494.464 174.707 496.783 174.707C497.446 174.707 498.44 175.038 499.765 175.701L511.362 182.328C511.362 182.328 515.669 184.978 513.018 188.954C491.15 223.413 453.378 244.287 412.293 244.287C346.689 244.287 293.345 190.942 293.345 125.338C293.345 59.4032 346.689 6.05859 412.293 6.05859C453.71 6.05859 492.144 27.2639 513.681 62.0538C515.338 65.0358 513.35 68.0178 512.024 68.6805L500.096 75.6385C498.771 75.9698 497.777 76.3011 497.114 76.3011C494.795 76.3011 493.801 74.6445 493.801 74.6445C476.572 46.4812 445.758 29.2519 412.293 29.2519Z" fill="currentColor" />
+      <path d="M614.577 242.962C568.522 242.962 531.081 205.521 531.081 159.466C531.081 113.41 568.522 75.9698 614.577 75.9698C660.632 75.9698 697.742 113.41 697.742 159.466C697.742 205.521 660.632 242.962 614.577 242.962ZM614.577 99.4944C581.444 99.4944 554.274 126.332 554.274 159.466C554.274 192.599 581.444 219.437 614.577 219.437C647.71 219.437 674.548 192.599 674.548 159.466C674.548 126.332 647.71 99.4944 614.577 99.4944Z" fill="currentColor" />
+      <path d="M797.436 76.9638C835.208 76.9638 865.691 107.446 865.691 145.218V236.004C865.691 238.986 863.372 241.636 860.39 241.636H847.799C844.817 241.636 842.498 239.317 842.498 236.335V145.218C842.498 120.368 822.286 100.157 797.436 100.157C772.918 100.157 752.706 120.368 752.706 145.218V236.335C752.375 239.317 750.056 241.636 747.074 241.636H734.815C731.833 241.636 729.513 238.986 729.513 236.004V84.9158C729.513 81.6025 731.833 79.2831 735.146 79.2831H747.074C750.056 79.2831 752.375 81.6025 752.706 84.5844V86.5724C752.706 89.2231 754.032 90.2171 755.688 90.2171C756.351 90.2171 757.014 90.2171 757.676 89.8858C768.942 81.6025 782.526 76.9638 797.436 76.9638Z" fill="currentColor" />
+      <path d="M972.085 76.9638C1009.86 76.9638 1040.34 107.446 1040.34 145.218V236.004C1040.34 238.986 1038.02 241.636 1035.04 241.636H1022.45C1019.47 241.636 1017.15 239.317 1017.15 236.335V145.218C1017.15 120.368 996.935 100.157 972.085 100.157C947.566 100.157 927.355 120.368 927.355 145.218V236.335C927.024 239.317 924.704 241.636 921.722 241.636H909.463C906.481 241.636 904.162 238.986 904.162 236.004V84.9158C904.162 81.6025 906.481 79.2831 909.794 79.2831H921.722C924.704 79.2831 927.024 81.6025 927.355 84.5844V86.5724C927.355 89.2231 928.68 90.2171 930.337 90.2171C931 90.2171 931.662 90.2171 932.325 89.8858C943.59 81.6025 957.175 76.9638 972.085 76.9638Z" fill="currentColor" />
+      <path d="M1154.35 76.3011C1198.75 76.3011 1238.84 111.091 1238.18 165.43C1237.85 168.743 1235.53 171.062 1232.22 171.394H1100.02C1097.37 171.394 1096.04 173.382 1096.37 175.37C1103.33 200.882 1126.85 219.768 1154.35 219.768C1173.57 219.768 1192.13 210.16 1203.06 194.918C1204.05 193.593 1205.71 192.599 1207.7 192.599C1208.69 192.599 1209.69 192.93 1210.35 193.262L1221.28 199.557C1223.6 201.214 1224.6 204.527 1223.27 206.846C1207.37 229.708 1181.85 243.293 1154.35 243.293C1108.3 243.293 1070.86 205.852 1070.86 159.797C1070.86 113.742 1108.3 76.3011 1154.35 76.3011ZM1154.35 99.4944C1126.85 99.4944 1103.33 118.38 1096.37 143.893C1096.04 145.881 1097.37 147.869 1100.02 148.2H1208.69C1211.34 147.869 1212.67 145.881 1212.34 143.893C1205.38 118.38 1182.19 99.4944 1154.35 99.4944Z" fill="currentColor" />
+      <path d="M1417.44 191.605C1419.1 192.268 1419.76 193.924 1419.76 195.581C1419.76 196.575 1419.76 197.238 1419.1 197.9C1404.85 225.732 1376.36 243.293 1345.21 243.293C1299.16 243.293 1261.72 205.852 1261.72 159.797C1261.72 113.742 1299.16 76.3011 1345.21 76.3011C1376.03 76.3011 1404.52 93.8618 1418.77 121.031C1419.1 121.362 1419.43 122.025 1419.43 122.688C1419.43 124.676 1418.44 126.332 1417.11 126.995L1404.52 132.628C1403.53 133.29 1402.2 133.29 1401.21 133.29C1399.88 133.29 1398.89 132.959 1398.23 131.634C1387.95 112.085 1367.41 99.8258 1345.21 99.8258C1312.08 99.8258 1284.91 126.664 1284.91 159.797C1284.91 192.93 1312.08 219.768 1345.21 219.768C1367.74 219.768 1388.62 207.178 1398.89 186.966C1399.22 185.972 1400.54 185.31 1401.87 185.31C1402.86 185.31 1403.86 185.641 1404.85 185.972L1417.44 191.605Z" fill="currentColor" />
+      <path d="M1484.67 102.476C1481.36 102.476 1478.71 105.127 1478.71 108.44V182.99C1478.71 207.84 1489.64 217.449 1519.46 218.443C1522.44 218.443 1525.09 221.094 1525.09 224.407V236.335C1525.09 239.317 1523.1 241.636 1520.12 241.968C1481.69 240.974 1455.51 225.07 1455.51 182.99V107.778C1455.18 104.796 1452.53 102.476 1449.55 102.476H1440.6C1437.95 102.145 1435.96 100.488 1435.63 98.1691V83.9218C1436.3 81.2711 1438.28 79.2831 1440.93 79.2831H1450.21C1452.86 78.9518 1455.18 76.9638 1455.51 73.9818V15.6672C1455.51 12.3539 1457.83 10.0346 1461.15 10.0346H1473.07C1476.06 10.0346 1478.37 12.3539 1478.71 15.3359V73.3191C1478.71 76.6325 1481.03 78.9518 1484.01 79.2831H1519.79C1522.77 79.2831 1525.09 81.9338 1525.09 84.9158V97.1751C1525.09 99.8258 1523.1 102.145 1520.12 102.476H1484.67Z" fill="currentColor" />
+      <path d="M1043.6 342.094C1060.55 342.094 1074.21 355.883 1074.21 372.719C1074.21 389.678 1060.55 403.467 1043.6 403.467C1035.91 403.467 1028.96 400.666 1023.48 396.018H1023.6V399.558C1023.6 401.281 1022.13 402.605 1020.43 402.728H1016.03C1014.34 402.605 1012.99 401.374 1012.86 399.681V321.227C1013.11 319.626 1014.43 318.303 1016.03 318.303H1020.43C1022.16 318.303 1023.6 319.78 1023.6 321.473V349.42C1023.6 349.42 1023.6 349.543 1023.48 349.543L1023.6 349.42C1028.96 344.926 1035.91 342.094 1043.6 342.094ZM1043.6 392.848C1054.58 392.848 1063.6 383.83 1063.6 372.719C1063.6 361.731 1054.58 352.713 1043.6 352.713C1032.49 352.713 1023.6 361.731 1023.6 372.719C1023.6 383.83 1032.49 392.848 1043.6 392.848Z" fill="currentColor" />
+      <path d="M1131.87 343.078H1136.52C1138.58 343.078 1139.44 344.309 1139.44 345.632C1139.44 346.002 1139.44 346.371 1139.32 346.617L1111.87 410.298C1103.84 426.764 1091.63 429.688 1082.49 430.057C1080.89 429.934 1079.57 428.488 1079.57 426.764V422.609C1079.57 419.562 1082.12 419.316 1082.74 419.316C1089.44 418.946 1096.89 416.269 1102.24 405.773L1103.1 403.588C1103.35 402.972 1103.47 402.234 1103.47 401.772C1103.47 401.156 1103.35 400.541 1103.1 400.048C1095.41 382.474 1087.38 364.315 1079.57 346.74C1079.44 346.371 1079.32 346.002 1079.32 345.632C1079.32 344.309 1080.31 343.078 1082.24 343.078H1086.98C1088.46 343.078 1089.66 343.57 1090.52 345.386L1109.53 388.568C1109.66 388.568 1109.66 388.445 1109.66 388.445L1128.09 345.632C1128.92 343.693 1130.27 343.078 1131.87 343.078Z" fill="currentColor" />
+      <path d="M1233.98 321.628V399.713C1233.98 401.406 1232.63 402.76 1230.94 402.883H1226.45C1224.72 402.76 1223.4 401.406 1223.4 399.713V396.05V396.173C1218.05 400.667 1210.97 403.622 1203.4 403.622C1186.45 403.622 1172.67 389.833 1172.67 372.874C1172.67 355.915 1186.45 342.25 1203.4 342.25C1210.97 342.25 1217.92 344.927 1223.28 349.575L1223.4 349.698C1223.4 349.575 1223.4 349.575 1223.4 349.575V321.505C1223.52 319.812 1224.88 318.458 1226.57 318.458H1230.85C1232.66 318.458 1233.98 319.905 1233.98 321.628ZM1203.37 392.849C1214.36 392.849 1223.37 383.954 1223.37 372.843C1223.37 361.856 1214.36 352.837 1203.37 352.837C1192.27 352.837 1183.37 361.856 1183.37 372.843C1183.37 383.954 1192.3 392.849 1203.37 392.849Z" fill="currentColor" />
+      <path d="M1259.09 321.628V326.984C1259.09 328.707 1257.61 330.154 1255.92 330.154H1251.65C1249.83 330.154 1248.35 328.676 1248.35 326.984V321.628C1248.35 319.812 1249.83 318.335 1251.65 318.335H1255.92C1257.61 318.335 1259.09 319.781 1259.09 321.628ZM1259.09 346.128V399.436C1259.09 401.252 1257.61 402.729 1255.92 402.729H1251.65C1249.83 402.729 1248.35 401.252 1248.35 399.436V346.128C1248.35 344.312 1249.83 342.834 1251.65 342.834H1255.92C1257.61 342.834 1259.09 344.312 1259.09 346.128Z" fill="currentColor" />
+      <path d="M1338.81 342.093C1352.71 342.093 1364.07 353.45 1364.07 367.362V399.679C1364.07 401.249 1362.59 402.603 1361.02 402.726H1356.5C1354.78 402.603 1353.45 401.249 1353.45 399.556V367.362C1353.45 359.298 1346.87 352.711 1338.81 352.711C1330.78 352.711 1324.16 359.298 1324.16 367.362V399.679C1324.04 401.372 1322.69 402.603 1320.99 402.726H1316.59C1314.87 402.603 1313.42 401.249 1313.42 399.556V367.362C1313.42 359.298 1306.84 352.711 1298.78 352.711C1290.72 352.711 1284.13 359.298 1284.13 367.362V399.556C1284.13 401.28 1282.78 402.603 1281.09 402.726H1276.57C1274.97 402.603 1273.52 401.249 1273.52 399.679V346.002C1273.52 344.309 1275 342.832 1276.69 342.832H1280.97C1282.69 342.832 1284.13 344.309 1284.13 346.002V346.74C1288.29 343.816 1293.4 342.093 1298.78 342.093C1306.81 342.093 1314.01 345.755 1318.78 351.726H1318.9C1323.58 346.002 1330.78 342.093 1338.81 342.093Z" fill="currentColor" />
+      <path d="M1424.61 342.955H1428.89C1430.61 342.955 1431.93 344.309 1432.06 345.879V399.802C1431.93 401.526 1430.58 402.726 1429.01 402.726H1424.61C1422.8 402.726 1421.44 401.249 1421.44 399.556V396.14C1421.44 396.017 1421.44 396.017 1421.44 396.017V396.14C1417.04 400.295 1408.89 403.465 1401.45 403.465C1384.49 403.465 1370.71 389.799 1370.71 372.84C1370.71 355.882 1384.49 342.093 1401.45 342.093C1408.89 342.093 1415.97 344.894 1421.44 349.541V346.125C1421.44 344.432 1422.89 342.955 1424.61 342.955ZM1401.45 392.846C1412.43 392.846 1421.44 383.828 1421.44 372.84C1421.44 361.729 1412.43 352.835 1401.45 352.835C1390.34 352.835 1381.45 361.729 1381.45 372.84C1381.45 383.828 1390.34 392.846 1401.45 392.846Z" fill="currentColor" />
+      <path d="M1492.73 342.832H1497.01C1498.58 342.832 1499.93 344.186 1500.18 345.756V407.836C1500.18 423.194 1490.3 429.442 1476.27 429.78C1474.46 429.78 1473.1 428.426 1473.1 426.61V422.394C1473.1 420.67 1474.46 419.224 1476.27 419.224C1484.46 418.977 1489.44 417.161 1489.44 407.866V396.017C1484.09 400.664 1477.13 403.465 1469.44 403.465C1452.61 403.465 1438.83 389.676 1438.83 372.717C1438.83 355.882 1452.61 342.093 1469.44 342.093C1476.89 342.093 1483.84 344.771 1489.19 349.172C1489.32 349.418 1489.44 349.418 1489.44 349.541L1489.56 346.125C1489.56 344.309 1490.92 342.832 1492.73 342.832ZM1469.44 392.846C1480.55 392.846 1489.44 383.828 1489.44 372.717C1489.44 361.729 1480.55 352.711 1469.44 352.711C1458.46 352.711 1449.44 361.729 1449.44 372.717C1449.44 383.828 1458.46 392.846 1469.44 392.846Z" fill="currentColor" />
+      <path d="M1524.63 321.628V326.984C1524.63 328.707 1523.16 330.154 1521.47 330.154H1517.19C1515.34 330.154 1513.9 328.676 1513.9 326.984V321.628C1513.9 319.812 1515.37 318.335 1517.19 318.335H1521.47C1523.19 318.335 1524.63 319.781 1524.63 321.628ZM1524.63 346.128V399.436C1524.63 401.252 1523.16 402.729 1521.47 402.729H1517.19C1515.34 402.729 1513.9 401.252 1513.9 399.436V346.128C1513.9 344.312 1515.37 342.834 1517.19 342.834H1521.47C1523.19 342.834 1524.63 344.312 1524.63 346.128Z" fill="currentColor" />
+      <path d="M18.6841 128.139C16.8503 126.605 12.8259 121.49 9.56407 116.585C-4.7083 95.0877 -2.91544 69.3103 14.3302 50.3725C22.5169 41.5528 49.4666 26.1201 65.3249 21.4748C90.372 14.0341 122.316 9.11683 168.118 5.67202L184.346 4.51562L162.633 15.8549C115.018 41.0689 66.9929 78.8959 33.4348 117.85C27.6498 124.666 22.6152 130.252 22.3718 130.39C22.0067 130.597 20.4488 129.551 18.6841 128.139Z" fill="currentColor" />
+      <path d="M216.693 1.25915C201.165 3.91704 176.265 16.9267 151.645 35.3921C100.026 74.1413 57.4994 132.615 45.8886 180.737C38.6144 211.372 46.0285 237.252 66.1725 251.101C73.5866 256.137 91.7722 262.432 93.4509 260.474C94.1503 259.774 95.4093 254.179 96.3885 248.023C97.3678 242.008 99.8858 229.558 102.124 220.605C124.506 128.698 175.006 51.899 239.495 11.7508C251.665 4.19682 251.665 3.63726 238.516 1.25915C229.143 -0.419521 227.465 -0.419521 216.693 1.25915Z" fill="currentColor" />
+      </symbol>
+    </svg>
+    <!-- ───── NAV ───── -->
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="logo"
+           href="{% url 'prelogin:home' %}"
+           aria-label="Connect by Dimagi">
+          <svg viewBox="0 0 1526 431">
+            <use href="#connect-logo" />
+          </svg>
+        </a>
+        <nav id="primary-nav">
+          <a href="{% url 'prelogin:the-opportunity' %}">The Opportunity</a>
+          <a href="{% url 'prelogin:platform' %}">Platform</a>
+          <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
+          <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
+          <div class="nav-cta">
+            <a href="{% url 'account_login' %}" class="btn btn-ghost">Sign In</a>
+            <a href="{% url 'account_signup' %}" class="btn btn-primary">Sign Up</a>
+          </div>
+        </nav>
+        <button class="nav-toggle"
+                id="nav-toggle"
+                aria-label="Open menu"
+                aria-expanded="false"
+                aria-controls="mobile-nav">
+          <span class="nav-toggle-bar"></span>
+          <span class="nav-toggle-bar"></span>
+          <span class="nav-toggle-bar"></span>
+        </button>
+      </div>
+      <nav class="mobile-nav" id="mobile-nav" hidden>
+        <a href="{% url 'prelogin:the-opportunity' %}">The Opportunity</a>
+        <a href="{% url 'prelogin:platform' %}">Platform</a>
+        <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
+        <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
+        <a href="{% url 'account_login' %}" class="mobile-nav-cta-secondary">Sign In</a>
+        <a href="{% url 'account_signup' %}" class="mobile-nav-cta">Sign Up</a>
+      </nav>
+    </header>
+    <main id="main">
+      <!-- ───── HERO BAND ───── -->
+      <section class="contact-hero">
+        <div class="wrap">
+          <div class="eyebrow">Get In Touch</div>
+          <h1>
+            Talk to the <em>Connect</em> team
+          </h1>
+          <p>Tell us about your program, request a demo, or explore co-design and funding opportunities.</p>
+        </div>
+        <div class="contact-photo-strip">
+          <div class="contact-photo-item">
+            <img src="{% static 'prelogin/images/field-photos/join-hero.jpg' %}"
+                 width="1600"
+                 height="1200"
+                 alt="Frontline worker delivering community health services">
+          </div>
+          <div class="contact-photo-item">
+            <img src="{% static 'prelogin/images/field-photos/chc/chc-1.jpg' %}"
+                 width="1600"
+                 height="2133"
+                 alt="Child Health Campaign frontline worker, Nigeria">
+          </div>
+          <div class="contact-photo-item">
+            <img src="{% static 'prelogin/images/field-photos/kmc/kmc-1.jpg' %}"
+                 width="1600"
+                 height="1115"
+                 alt="Kangaroo Mother Care frontline worker">
+          </div>
+          <div class="contact-photo-item">
+            <img src="{% static 'prelogin/images/field-photos/readers/readers-1.jpg' %}"
+                 width="1600"
+                 height="2125"
+                 alt="Reading Glasses program, Connect">
+          </div>
+        </div>
+      </section>
+      <!-- ───── FORM SECTION ───── -->
+      <section class="form-section">
+        <div class="container">
+          <!-- Form card -->
+          <div class="form-card">
+            <div class="form-card-head">
+              <div class="form-card-head-icon">
+                <svg viewBox="0 0 16 16"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="1.5"
+                     stroke-linecap="round"
+                     stroke-linejoin="round"
+                     aria-hidden="true">
+                  <path d="M14 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3l3 3 3-3h3a1 1 0 001-1V3a1 1 0 00-1-1z" />
+                </svg>
+              </div>
+              <div>
+                <div class="form-card-head-text">Send us a message</div>
+                <div class="form-card-head-sub">Fill in the form or email connect-info@dimagi.com</div>
+              </div>
+            </div>
+            <div class="form-card-body">
+              <div id="hubspot-form">
+                <div class="form-fallback" id="hubspot-form-fallback">
+                  <strong>Loading form&hellip;</strong>
+                </div>
+                <noscript>
+                  <div class="form-fallback">
+                    This form needs JavaScript to load. Email us directly at
+                    <a href="mailto:connect-info@dimagi.com">connect-info@dimagi.com</a>.
+                  </div>
+                </noscript>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <!-- ───── FOOTER ───── -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="foot-brand">
+          <div class="logo" aria-label="Connect by Dimagi">
+            <svg viewBox="0 0 1526 431">
+              <use href="#connect-logo" />
+            </svg>
+          </div>
+          <p>
+            Pay for <em>verified service delivery</em>, not planned activity
+          </p>
+        </div>
+        <div class="foot-col">
+          <span class="foot-col-label eyebrow">Navigate</span>
+          <ul>
+            <li>
+              <a href="{% url 'prelogin:home' %}">Home</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:the-opportunity' %}">The Opportunity</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:platform' %}">Platform</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:insights' %}">Insights</a>
+            </li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <span class="foot-col-label eyebrow">For Organizations</span>
+          <ul>
+            <li>
+              <a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509"
+                 target="_blank"
+                 rel="noopener">Help Site &#8599;</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:release-notes' %}">Release Notes</a>
+            </li>
+            <li>
+              <a href="{% url 'account_signup' %}">Sign Up</a>
+            </li>
+            <li>
+              <a href="{% url 'account_login' %}">Sign In</a>
+            </li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <span class="foot-col-label eyebrow">Contact</span>
+          <ul>
+            <li>
+              <a href="{% url 'prelogin:contact' %}" aria-current="page">Contact Us</a>
+            </li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <span class="foot-col-label eyebrow">Company</span>
+          <ul>
+            <li>
+              <a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi &#8599;</a>
+            </li>
+            <li>
+              <a href="https://dimagi.com/blog/" target="_blank" rel="noopener">Blog</a>
+            </li>
+            <li>
+              <a href="https://www.dimagi.com/podcast/" target="_blank" rel="noopener">Podcast</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="foot-bottom">
+        <span>&copy; 2026 DIMAGI, INC.</span>
+        <span class="foot-legal-links">
+          <a href="https://dimagi.com/terms-privacy-dimagi/"
+             target="_blank"
+             rel="noopener">PRIVACY</a>
+          <a href="https://dimagi.com/terms-of-service/"
+             target="_blank"
+             rel="noopener">TERMS</a>
+          <a href="https://dimagi.com/terms-aup/" target="_blank" rel="noopener">Acceptable Use Policy</a>
+          <a href="https://dimagi.safebase.us/" target="_blank" rel="noopener">SECURITY</a>
+        </span>
+      </div>
+    </footer>
+    <!-- ───── HUBSPOT FORM ───── -->
+    <script charset="utf-8"
+            type="text/javascript"
+            src="https://js.hsforms.net/forms/embed/v2.js"></script>
+    <script src="{% static 'prelogin/contact-form.js' %}"></script>
+    <script src="{% static 'prelogin/app.js' %}"></script>
+  </body>
+</html>

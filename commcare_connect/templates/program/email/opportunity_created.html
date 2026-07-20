@@ -1,17 +1,15 @@
 {% extends "email/base.html" %}
-
 {% block content %}
-<p>Hi,</p>
-
-<p>A new opportunity has been created for your workspace!</p>
-
-<p>
-    <strong>Opportunity:</strong> {{ opportunity.name }}<br>
-    <strong>Program:</strong> {{ opportunity.program.name }}<br>
+  <p>Hi,</p>
+  <p>A new opportunity has been created for your workspace!</p>
+  <p>
+    <strong>Opportunity:</strong> {{ opportunity.name }}
+    <br>
+    <strong>Program:</strong> {{ opportunity.program.name }}
+    <br>
     <strong>Workspace:</strong> {{ opportunity.organization.name }}
-</p>
-
-<p>
+  </p>
+  <p>
     <a href="{{ opportunity_url }}">Click here to view the opportunity</a>
-</p>
+  </p>
 {% endblock %}

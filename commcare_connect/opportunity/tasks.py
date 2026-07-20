@@ -3,8 +3,8 @@ import logging
 from decimal import Decimal
 
 import httpx
+import pghistory
 import sentry_sdk
-import waffle
 from allauth.utils import build_absolute_uri
 from dateutil.relativedelta import relativedelta
 from django.conf import settings
@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.text import slugify
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from tablib import Dataset
@@ -23,7 +24,7 @@ from tablib import Dataset
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
+from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
@@ -37,6 +38,8 @@ from commcare_connect.opportunity.export import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
+    AudioAttachment,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
@@ -70,10 +73,13 @@ from config import celery_app
 
 logger = logging.getLogger(__name__)
 
+OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
+OPPORTUNITY_AUTO_ARCHIVE_DAYS = 30
+SYSTEM = "system"
 
-@celery_app.task()
-def create_learn_modules_and_deliver_units(opportunity_id):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
+
+def sync_learn_modules_and_deliver_units(opportunity):
+    """Fetch learn modules and deliver units from CommCare HQ and upsert them for the opportunity's apps."""
     learn_app = opportunity.learn_app
     deliver_app = opportunity.deliver_app
     learn_app_connect_blocks = get_connect_blocks_for_app(learn_app)
@@ -95,7 +101,17 @@ def create_learn_modules_and_deliver_units(opportunity_id):
 
 
 @celery_app.task()
+def create_learn_modules_and_deliver_units(opportunity_id):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    sync_learn_modules_and_deliver_units(opportunity)
+
+
+@celery_app.task()
 def add_connect_users(user_list: list[str], opportunity_id: str):
+    opportunity = Opportunity.objects.get(pk=opportunity_id)
+    if opportunity.has_ended:
+        logger.warning("Skipping invite for ended opportunity %s (%d users)", opportunity_id, len(user_list))
+        return
     found_users = fetch_users(user_list)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
@@ -125,8 +141,7 @@ def update_user_and_send_invite(user: ConnectIdUser, opp_id):
 def invite_user(user_id, opportunity_access_id):
     user = User.objects.get(pk=user_id)
     opportunity_access = OpportunityAccess.objects.get(pk=opportunity_access_id)
-    invite_id = opportunity_access.invite_id
-    location = reverse("users:accept_invite", args=(invite_id,))
+    location = reverse("users:invite_redirect", args=(opportunity_access.opportunity.opportunity_id,))
     url = build_absolute_uri(None, location)
     body = f"You have been invited to a job in Connect. Click the link to accept {url}"
     if not user.phone_number:
@@ -190,9 +205,8 @@ def generate_visit_export(
     )
     exporter = UserVisitExporter(opportunity, flatten)
     dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_visit_export.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
@@ -200,46 +214,44 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
     opportunity = Opportunity.objects.get(id=opportunity_id)
     logger.info(
         f"""Export review visit for {opportunity.name} with date
-        from {from_date} to {to_date} and status {','.join(status)}"""
+        from {from_date} to {to_date} and status {",".join(status)}"""
     )
     dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_review_visit_export.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
 def generate_payment_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_empty_payment_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_payment_export.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
 def generate_user_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_user_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_user_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_user_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
 def generate_deliver_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_deliver_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_deliver_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_deliver_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 def save_export(dataset: Dataset, file_name: str, export_format: str):
+    from commcare_connect.utils.storages import ExportS3Boto3Storage
+
     content = dataset.export(export_format)
     if isinstance(content, str):
         content = content.encode()
-    default_storage.save(file_name, ContentFile(content))
+    return ExportS3Boto3Storage().save(file_name, ContentFile(content))
 
 
 @celery_app.task()
@@ -254,6 +266,22 @@ def send_notification_inactive_users():
         if message:
             messages.append(message)
     send_message_bulk(messages)
+
+
+@celery_app.task()
+def auto_deactivate_ended_opportunities():
+    cutoff = datetime.date.today() - datetime.timedelta(days=OPPORTUNITY_AUTO_DEACTIVATION_DAYS)
+    opportunities = Opportunity.objects.filter(active=True, end_date__lte=cutoff)
+
+    action = f"{__name__}.auto_deactivate_ended_opportunities"
+    with pghistory.context(username=SYSTEM, action=action):
+        opportunities.update(active=False)
+
+
+@celery_app.task()
+def auto_archive_test_opportunities():
+    cutoff = datetime.date.today() - datetime.timedelta(days=OPPORTUNITY_AUTO_ARCHIVE_DAYS)
+    Opportunity.objects.filter(is_test=True, archived=False, end_date__lte=cutoff).update(archived=True)
 
 
 def _get_inactive_message(access: OpportunityAccess):
@@ -349,6 +377,44 @@ def send_push_notification_task(
 RETRYABLE_EXCS = (httpx.ReadTimeout, httpx.ConnectTimeout)
 
 
+def _download_attachments(api_key, domain: str, xform_id: str, attachments: dict, user_visit=None):
+    for name, blob in attachments.items():
+        if name == "form.xml":
+            continue
+        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{xform_id}/{name}"
+        _save_attachment(api_key, url, name, blob, xform_id, user_visit)
+
+
+def _fetch_hq_attachment(api_key, url):
+    response = httpx.get(
+        url,
+        headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+    )
+    return response.content
+
+
+def _save_attachment(api_key, url, name, blob, xform_id, user_visit=None):
+    content_type = blob.get("content_type") or ""
+    if user_visit is not None and content_type.startswith("audio/"):
+        model, lookup = AudioAttachment, {"user_visit": user_visit, "name": name}
+    else:
+        model, lookup = BlobMeta, {"parent_id": xform_id, "name": name}
+
+    with transaction.atomic():
+        obj, created = model.objects.get_or_create(
+            **lookup,
+            defaults={
+                "content_length": blob["length"],
+                "content_type": blob["content_type"],
+            },
+        )
+        if not created:
+            # attachment already exists
+            return
+        content = _fetch_hq_attachment(api_key, url)
+        default_storage.save(str(obj.blob_id), ContentFile(content, name))
+
+
 @celery_app.task(
     bind=True,
     autoretry_for=RETRYABLE_EXCS,
@@ -360,35 +426,34 @@ RETRYABLE_EXCS = (httpx.ReadTimeout, httpx.ConnectTimeout)
 def download_user_visit_attachments(self, user_visit_id: int):
     user_visit = UserVisit.objects.get(id=user_visit_id)
     api_key = user_visit.opportunity.api_key
-    blobs = user_visit.form_json.get("attachments", {})
     domain = user_visit.opportunity.deliver_app.cc_domain
-    form_id = user_visit.xform_id
-    for name, blob in blobs.items():
-        if name == "form.xml":
-            continue
-        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
+    attachments = user_visit.form_json.get("attachments", {})
+    _download_attachments(api_key, domain, user_visit.xform_id, attachments, user_visit=user_visit)
 
-        with transaction.atomic():
-            blob_meta, created = BlobMeta.objects.get_or_create(
-                name=name, parent_id=form_id, content_length=blob["length"], content_type=blob["content_type"]
-            )
-            if not created:
-                # attachment already exists
-                continue
-            response = httpx.get(
-                url,
-                headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
-            )
-            default_storage.save(str(blob_meta.blob_id), ContentFile(response.content, name))
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=RETRYABLE_EXCS,
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def download_inaccessibility_request_attachments(self, xform_id: str, attachments: dict):
+    request_obj = WorkAreaInaccessibilityRequest.objects.select_related(
+        "work_area__opportunity__deliver_app", "work_area__opportunity__api_key"
+    ).get(xform_id=xform_id)
+    api_key = request_obj.work_area.opportunity.api_key
+    domain = request_obj.work_area.opportunity.deliver_app.cc_domain
+    _download_attachments(api_key, domain, xform_id, attachments)
 
 
 @celery_app.task()
 def generate_work_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_verification.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
@@ -408,9 +473,8 @@ def bulk_approve_completed_work():
 def generate_catchment_area_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_catchment_area_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_catchment_area.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_catchment_area.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 def get_payment_upload_key(opp_id):
@@ -587,9 +651,6 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
 
 @celery_app.task()
 def generate_automated_service_delivery_invoice():
-    if not waffle.switch_is_active(AUTOMATED_INVOICES_MONTHLY):
-        return
-
     CHUNK_SIZE = 100
     invoices_chunk = []
     end_date_prev_month = get_end_date_previous_month()
@@ -597,7 +658,7 @@ def generate_automated_service_delivery_invoice():
     opp_start_date = datetime.date(2026, 1, 1)
     created_invoices_ids = []
 
-    for opportunity in Opportunity.objects.filter(active=True, managed=True, start_date__gte=opp_start_date).iterator(
+    for opportunity in Opportunity.objects.filter(active=True, is_test=False, start_date__gte=opp_start_date).iterator(
         chunk_size=CHUNK_SIZE
     ):
         start_date = get_start_date_for_invoice(opportunity)
@@ -704,6 +765,28 @@ def _send_auto_invoice_created_notification(invoice_ids):
             )
         except Exception as e:
             logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def send_task_assignment_notification(assigned_task_id: int):
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+    ).get(pk=assigned_task_id)
+    access = assigned_task.opportunity_access
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "New Task Assigned",
+            "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "task_assignment",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
 
 
 @celery_app.task()

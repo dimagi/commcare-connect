@@ -3,7 +3,6 @@ from urllib.parse import urlencode
 
 import django_filters
 import django_tables2 as tables
-import waffle
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Layout, Row
 from django import forms
@@ -18,7 +17,6 @@ from django.views.decorators.http import require_GET, require_POST
 from django_filters.views import FilterView
 from django_tables2.views import SingleTableMixin
 
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CompletedWork,
     Country,
@@ -28,13 +26,13 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
 )
 from commcare_connect.organization.models import LLOEntity
-from commcare_connect.program.models import ManagedOpportunity, Program
+from commcare_connect.program.models import Program
 from commcare_connect.reports.decorators import KPIReportMixin
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
 from commcare_connect.reports.tasks import export_invoice_report_task
 from commcare_connect.utils.celery import download_export_file, render_export_status
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, INVOICE_REPORT_ACCESS
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
 
 PERIOD_CHOICES = [
@@ -61,15 +59,17 @@ class DeliveryReportFilters(django_filters.FilterSet):
         label="Program",
     )
     llo = django_filters.ModelChoiceFilter(
-        queryset=LLOEntity.objects.all(),
+        queryset=LLOEntity.objects.all().order_by("name"),
         label="LLO",
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
     opportunity = django_filters.ModelChoiceFilter(
-        queryset=Opportunity.objects.filter(is_test=False),
+        queryset=Opportunity.objects.filter(is_test=False).order_by("name"),
         label="Opportunity",
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
     country = django_filters.ModelChoiceFilter(
-        queryset=Country.objects.filter(opportunity__isnull=False).distinct(),
+        queryset=Country.objects.filter(opportunity__isnull=False).distinct().order_by("name"),
         label="Country",
     )
     from_date = django_filters.DateFilter(
@@ -210,7 +210,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelT
 class InvoiceReportFilter(django_filters.FilterSet):
     opportunity_name = django_filters.ModelChoiceFilter(
         field_name="opportunity",
-        queryset=ManagedOpportunity.objects.only("id", "name"),
+        queryset=Opportunity.objects.only("id", "name"),
         label=_("Opportunity"),
         widget=forms.Select(
             attrs={
@@ -252,6 +252,13 @@ class InvoiceReportFilter(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if self.request and not self.request.user.has_perm(ALL_ORG_ACCESS):
+            self.filters["opportunity_name"].queryset = (
+                Opportunity.objects.filter(program__organization__memberships__user=self.request.user)
+                .distinct()
+                .only("id", "name")
+            )
+
         self.filters["opportunity_name"].field.label_from_instance = lambda obj: f"{obj.name} - {obj.id}"
         self.form.helper = FormHelper()
         self.form.helper.form_tag = False
@@ -280,7 +287,7 @@ class InvoiceReportView(
     model = PaymentInvoice
     table_class = InvoiceReportTable
     filterset_class = InvoiceReportFilter
-    permission_required = ALL_ORG_ACCESS
+    permission_required = INVOICE_REPORT_ACCESS
     paginate_by = DEFAULT_PAGE_SIZE
 
     def get_paginate_by(self, table):
@@ -305,32 +312,34 @@ class InvoiceReportView(
         return context
 
     @classmethod
-    def get_invoice_queryset(cls):
+    def get_invoice_queryset(cls, user):
         queryset = (
             PaymentInvoice.objects.select_related(
-                "opportunity__managedopportunity__program__organization",
+                "opportunity__program__organization",
                 "payment",
                 "exchange_rate",
             )
             .annotate(
                 date_paid=F("payment__date_paid"),
-                org_slug=F("opportunity__managedopportunity__program__organization__slug"),
+                org_slug=F("opportunity__program__organization__slug"),
+                program_name=F("opportunity__program__name"),
+                last_status_modified_at=Max("status_events__pgh_created_at"),
             )
             .order_by("-date")
         )
-        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
+        if not user.has_perm(ALL_ORG_ACCESS):
+            queryset = queryset.filter(opportunity__program__organization__memberships__user=user).distinct()
         return queryset
 
     def get_queryset(self):
-        return self.get_invoice_queryset()
+        return self.get_invoice_queryset(user=self.request.user)
 
 
 @require_POST
 @login_required
-@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+@permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def export_invoice_report(request):
-    filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none())
+    filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none(), request=request)
     if not filterset.is_valid():
         return HttpResponse("Invalid filters", status=400)
 
@@ -342,7 +351,7 @@ def export_invoice_report(request):
     if filters_data.get("to_date"):
         filters_data["to_date"] = filters_data["to_date"].isoformat()
 
-    task = export_invoice_report_task.delay(filters_data)
+    task = export_invoice_report_task.delay(filters_data, user_id=request.user.id)
 
     #  Build redirect URL preserving applied filters
     query_params = {k: v for k, v in filters_data.items() if v not in [None, "", []]}
@@ -355,7 +364,7 @@ def export_invoice_report(request):
 
 @require_GET
 @login_required
-@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+@permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def export_status(request, task_id):
     return render_export_status(
         request,
@@ -368,6 +377,6 @@ def export_status(request, task_id):
 
 @require_GET
 @login_required
-@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+@permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def download_export(request, task_id):
     return download_export_file(task_id=task_id, filename_without_ext=f"invoice_export_{request.user.name}")

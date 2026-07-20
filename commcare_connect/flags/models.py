@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.signals import m2m_changed
 from django.utils.translation import gettext_lazy
 from waffle.models import CACHE_EMPTY, AbstractUserFlag
 from waffle.utils import get_cache, get_setting, keyfmt
@@ -61,15 +62,11 @@ class Flag(AbstractUserFlag):
 
         return cls.objects.filter(filters).distinct()
 
-    @classmethod
-    def is_flag_active_for_request(cls, request, flag_name: str):
-        user = getattr(request, "user", None)
-        if not (user and user.is_authenticated):
-            return False
-        active_flags_query = cls.active_flags_for_user(user, include_role_flags=True).filter(name=flag_name)
-        return active_flags_query.exists()
-
     def is_active_for(self, obj: Organization | Opportunity | Program):
+        # A transient/unsaved Flag (e.g. waffle's default for a missing flag) has no
+        # primary key
+        if self.pk is None:
+            return False
         if isinstance(obj, Organization):
             organization_ids = self._get_ids_for_relation("organizations")
             return obj.pk in organization_ids
@@ -106,3 +103,35 @@ class Flag(AbstractUserFlag):
 
         cache.add(cache_key, ids)
         return ids
+
+    def is_active(self, request, read_only: bool = False) -> bool:
+        if super().is_active(request, read_only):
+            return True
+
+        opportunity = getattr(request, "opportunity", None)
+        if opportunity and self.is_active_for(opportunity):
+            return True
+        program = opportunity.program if opportunity else None
+        if program and self.is_active_for(program):
+            return True
+        org = getattr(request, "org", None)
+        if org and self.is_active_for(org):
+            return True
+
+        return False
+
+
+def _flush_flag_relation_cache(sender, instance, action, **kwargs):
+    from waffle.signals import flag_membership_changed
+
+    flag_membership_changed(sender, instance, action, **kwargs)
+
+
+# Ties the custom flag relationships to the m2m_changed signal
+# to ensure flag's cache is cleared after editing
+for _relation in ("organizations", "opportunities", "programs"):
+    m2m_changed.connect(
+        _flush_flag_relation_cache,
+        sender=getattr(Flag, _relation).through,
+        dispatch_uid=f"commcare_connect.flag.{_relation}.through",
+    )

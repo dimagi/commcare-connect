@@ -1,9 +1,7 @@
 {% extends "base.html" %}
 {% load django_tables2 %}
 {% load static %}
-
 {% block title %}{{ request.org }} - Suspended Users{% endblock %}
-
 {% block content %}
   {% include 'components/breadcrumbs.html' with path=path %}
   {% render_table table %}

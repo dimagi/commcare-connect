@@ -1,10 +1,10 @@
 from commcare_connect.cache import quickcache
-from commcare_connect.program.models import ManagedOpportunity
+from commcare_connect.opportunity.models import Opportunity
 
 
 @quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
-def get_managed_opp(opp_id) -> ManagedOpportunity | None:
-    queryset = ManagedOpportunity.objects.select_related("program__organization")
+def get_managed_opp(opp_id) -> Opportunity | None:
+    queryset = Opportunity.objects.select_related("program__organization")
     if str(opp_id).isdigit():
         return queryset.filter(pk=int(opp_id)).first()
     return queryset.filter(opportunity_id=opp_id).first()
@@ -19,10 +19,7 @@ def is_program_manager(request):
 def is_program_manager_of_opportunity(request, opp_id) -> bool:
     managed_opp = get_managed_opp(opp_id)
     return bool(
-        managed_opp
-        and managed_opp.managed
-        and managed_opp.program.organization.slug == request.org.slug
-        and is_program_manager(request)
+        managed_opp and managed_opp.program.organization.slug == request.org.slug and is_program_manager(request)
     )
 
 

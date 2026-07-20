@@ -1,0 +1,101 @@
+{% load i18n %}
+<div x-data="{ open: true, confirm: false, error: '' }"
+     x-ref="modal"
+     x-show="open"
+     x-cloak
+     @click.self="open = false"
+     @keydown.escape.window="open = false"
+     @htmx:after-request="if (!event.detail.successful) { error = event.detail.xhr.responseText || '{% trans "Something went wrong. Please try again." %}'; confirm = false; }"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl overflow-hidden relative">
+    <div class="metric-container px-6 py-4">
+      <h3 class="text-lg font-semibold text-white">
+        {% blocktrans with name=entry.opportunity_access.user.name %}{{ name }}: Weekly Performance Report{% endblocktrans %}
+      </h3>
+      <p class="text-sm text-gray-100">{{ report.period_start }} – {{ report.period_end }}</p>
+    </div>
+    <form x-ref="form"
+          method="post"
+          hx-post="{% url 'opportunity:audit:audit_report_task_action' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id entry_id=entry.audit_report_entry_id %}"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-target="#modal-root"
+          hx-swap="innerHTML">
+      <input type="hidden" name="action" x-ref="actionInput" />
+      <div class="grid grid-cols-2 gap-6 p-6">
+        <div>
+          <h4 class="font-semibold mb-2 flex items-center gap-2">
+            <i class="fa-solid fa-circle-xmark text-red-600"></i>
+            {% trans "Audit Results Out of Acceptable Range" %}
+          </h4>
+          {% if failed %}
+            <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+              {% for result in failed %}
+                <li>
+                  <strong>{{ result.label }}:</strong>
+                  {{ result.value }}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-gray-500">{% trans "No failed calculations for this worker." %}</p>
+          {% endif %}
+        </div>
+        <div>
+          <h4 class="font-semibold mb-2">{% trans "Suggested Tasks" %}</h4>
+          {% if task_types %}
+            <ul class="space-y-1">
+              {% for task_type in task_types %}
+                <li>
+                  <label class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="task_type_ids" value="{{ task_type.pk }}" />
+                    {{ task_type.name }}
+                  </label>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-gray-500">{% trans "No task types are configured for this opportunity." %}</p>
+          {% endif %}
+        </div>
+      </div>
+      <div x-show="error"
+           x-cloak
+           role="alert"
+           class="mx-6 mb-4 p-3 rounded-lg border border-message-error-border bg-message-error text-message-error-text text-sm"
+           x-text="error"></div>
+      <div class="px-6 pb-6 flex justify-end gap-2">
+        <button type="button"
+                class="button button-md outline-style"
+                @click="open = false">{% trans "Cancel" %}</button>
+        <button type="button"
+                class="button button-md outline-style"
+                @click="$refs.actionInput.value = 'none'; $refs.form.requestSubmit()">
+          {% trans "No Action Needed" %}
+        </button>
+        <button type="button"
+                class="button button-md primary-dark"
+                @click="confirm = true">{% trans "Complete Review" %}</button>
+      </div>
+      <!-- Confirmation overlay -->
+      <div x-show="confirm"
+           x-cloak
+           class="absolute inset-0 bg-black/40 flex items-center justify-center">
+        <div class="bg-white rounded-lg shadow p-6 w-96">
+          <p class="text-sm mb-4">
+            {% trans "This will assign the selected tasks to the Connect Worker. Are you sure you want to proceed?" %}
+          </p>
+          <div class="flex justify-end gap-2">
+            <button type="button"
+                    class="button button-md outline-style"
+                    @click="confirm=false">{% trans "Cancel" %}</button>
+            <button type="button"
+                    class="button button-md primary-dark"
+                    @click="$refs.actionInput.value = 'tasks_assigned'; $refs.form.requestSubmit()">
+              {% trans "Assign Tasks" %}
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>

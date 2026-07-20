@@ -37,29 +37,32 @@
   --color-message-warning-border: #dbb646;
   --color-message-info-border: #3a42c7;
   --color-message-error-border: #900000;
+  --color-tooltip-bg: #fff;
+  --color-tooltip: #141d4d;
   --width-screen-sm: var(--breakpoint-sm);
 }
 
 /* ------ Tippy.js tooltip ------ */
 .tippy-box {
-  background-color: var(--color-brand-indigo);
-  color: white;
+  background-color: var(--color-tooltip-bg);
+  color: var(--color-tooltip);
+  @apply shadow-md;
 }
 
 .tippy-box[data-placement^='top'] > .tippy-arrow::before {
-  border-top-color: var(--color-brand-indigo);
+  border-top-color: var(--color-tooltip-bg);
 }
 
 .tippy-box[data-placement^='bottom'] > .tippy-arrow::before {
-  border-bottom-color: var(--color-brand-indigo);
+  border-bottom-color: var(--color-tooltip-bg);
 }
 
 .tippy-box[data-placement^='left'] > .tippy-arrow::before {
-  border-left-color: var(--color-brand-indigo);
+  border-left-color: var(--color-tooltip-bg);
 }
 
 .tippy-box[data-placement^='right'] > .tippy-arrow::before {
-  border-right-color: var(--color-brand-indigo);
+  border-right-color: var(--color-tooltip-bg);
 }
 
 /* ----- background -------*/
@@ -196,20 +199,6 @@
 
   .button-icon-activatable:focus {
     @apply bg-brand-mango/10;
-  }
-}
-
-@layer components {
-  .chat-widget-container {
-    position: fixed;
-    right: 20px;
-    bottom: 20px;
-    z-index: 100;
-  }
-
-  .chat-widget-container > open-chat-studio-widget {
-    position: static;
-    inset: auto;
   }
 }
 
@@ -570,7 +559,7 @@
     @apply text-brand-deep-purple mt-4 text-lg font-medium;
   }
 
-  .htmx-request .loading-indicator {
+  .htmx-request.loading-indicator {
     @apply pointer-events-auto opacity-100;
   }
 }
@@ -613,31 +602,54 @@
 
   .base-table tbody tr {
     @apply relative;
+    --row-hl-top: 50%;
+    --row-hl-height: 90%;
+  }
+
+  .base-table tbody tr:first-child {
+    --row-hl-top: 53.8%;
+    --row-hl-height: 80%;
   }
 
   .base-table tbody tr::after {
     content: '';
-    @apply -translate-1/2 absolute left-1/2 top-1/2 -z-10 h-[90%] w-[99%] -translate-y-1/2 rounded-lg bg-gray-100 opacity-0;
+    @apply -translate-1/2 absolute left-1/2 -z-10 w-[99%] rounded-lg bg-gray-100 opacity-0;
+    top: var(--row-hl-top);
+    height: var(--row-hl-height);
   }
 
-  .base-table tbody tr:first-child::after {
-    content: '';
-    @apply -translate-1/2 absolute left-1/2 top-[53.8%] -z-10 h-[80%] w-[99%] -translate-y-1/2 rounded-lg bg-gray-100 opacity-0;
-  }
-
-  .base-table tbody tr:hover::after {
-    @apply opacity-100;
-  }
-
+  .base-table tbody tr:hover::after,
   .base-table tbody tr.active::after {
     @apply opacity-100;
   }
 
-  /* .base-table tbody tr:hover{
-      @apply bg-gray-100 rounded-lg;
-  }  */
   .base-table tbody td {
     @apply whitespace-nowrap border-b-[1px] border-gray-100 p-4 text-left;
+  }
+
+  .base-table th.col-action,
+  .base-table td.col-action {
+    @apply sticky right-0;
+  }
+
+  /* The sticky action column needs an opaque base so cells scrolling beneath
+     it are masked. That base hides the row's tr::after (which sits behind all
+     cells), so the column carries its own highlight overlay that reuses the
+     row's geometry variables and therefore always lines up with it. */
+  .base-table tbody td.col-action {
+    @apply bg-white;
+  }
+
+  .base-table tbody td.col-action::after {
+    content: '';
+    @apply absolute left-0 right-[0.5%] -z-10 -translate-y-1/2 rounded-r-lg bg-gray-100 opacity-0;
+    top: var(--row-hl-top);
+    height: var(--row-hl-height);
+  }
+
+  .base-table tbody tr:hover td.col-action::after,
+  .base-table tbody tr.active td.col-action::after {
+    @apply opacity-100;
   }
 }
 
@@ -686,9 +698,13 @@
   }
 }
 
-@layer {
+@layer components {
   .modal {
     @apply relative z-50 mx-auto my-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
+  }
+
+  .modal-lg {
+    @apply max-w-2xl;
   }
 
   .modal-backdrop {
@@ -725,7 +741,7 @@
 
 .better-tabs {
   .tabs {
-    @apply flex h-full gap-x-8 overflow-x-scroll px-2;
+    @apply flex h-full gap-x-8 overflow-x-auto px-2;
   }
 
   .tab {
@@ -765,4 +781,15 @@ select:disabled,
   line-clamp: 2;
   -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+/* Metric cards (indigo header with stat tiles) */
+@layer components {
+  .metric-container {
+    @apply w-full rounded-lg bg-brand-indigo p-6;
+  }
+
+  .metric-card {
+    @apply rounded-lg border border-white/30 bg-white/10 text-white;
+  }
 }

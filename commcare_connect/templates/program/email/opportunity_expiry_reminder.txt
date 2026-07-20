@@ -1,0 +1,12 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi,
+
+This is a reminder that the following {{ opportunities|length }} opportunit{{ opportunities|length|pluralize:"y,ies" }} will end on {{ target_date }}:
+
+{% for opp in opportunities %}
+- {{ opp.name }}
+  Program: {{ opp.program_name }}
+  Organization: {{ opp.org_name }}
+  End Date: {{ opp.end_date }}
+  Link: {{ opp.opportunity_url }}
+{% endfor %}{% endblock %}

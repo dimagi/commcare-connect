@@ -2,6 +2,14 @@ import mimetypes
 import os
 
 
+class EchoWriter:
+    """A Buffer interface that implements write for csv.writer
+    and returns back the value passed to write."""
+
+    def write(self, value):
+        return value
+
+
 def get_file_extension(file):
     file_extension = None
     if hasattr(file, "content_type") and file.content_type:

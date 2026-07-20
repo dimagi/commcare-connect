@@ -38,11 +38,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication
-from commcare_connect.program.tests.factories import (
-    ManagedOpportunityFactory,
-    ProgramApplicationFactory,
-    ProgramFactory,
-)
+from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import MobileUserFactory
 
 User = get_user_model()
@@ -136,7 +132,7 @@ class Command(BaseCommand):
         for _ in range(num_managed_opps):
             program = ProgramFactory(organization=org, delivery_type=DeliveryTypeFactory())
             ProgramApplicationFactory(program=program, organization=invited_org)
-            managed_opp = ManagedOpportunityFactory(
+            managed_opp = OpportunityFactory(
                 organization=invited_org,
                 program=program,
             )

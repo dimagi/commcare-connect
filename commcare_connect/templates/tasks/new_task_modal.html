@@ -1,63 +1,61 @@
 {% load i18n %}
 {% load crispy_forms_tags %}
 {% load static %}
-
 <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
-<script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-<script>
-    document.addEventListener('htmx:afterRequest', function (event) {
-        if (event.detail.successful && event.detail.elt.id === 'create-task-form') {
-            const form = document.getElementById('create-task-form');
-            form.reset();
-            form.querySelectorAll('[data-tomselect]').forEach(el => el.tomselect?.clear());
-            window.dispatchEvent(new CustomEvent('create-task-success'));
-        }
-    });
-</script>
-
-<div x-show="{{ modal_name }}" x-cloak x-transition.opacity class="modal-backdrop" role="dialog" aria-modal="true"
-    aria-labelledby="new-task-modal-title"
-    @keydown.escape.window="{{ modal_name }} = false"
-    @create-task-success.window="{{ modal_name }} = false">
+<script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
+{# H025: Alpine.js requires <template x-if> as a fragment container; djlint incorrectly flags it as an orphan tag #}
+{# djlint:off H025 #}
+<template x-if="{{ modal_name }}">
+  {# djlint:on #}
+  {# The form lives inside an x-if <template>, which htmx's page-load scan ignores. Without htmx.process, hx-post is dead and the form falls back to a native POST. #}
+  <div x-transition.opacity
+       class="modal-backdrop"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="new-task-modal-title"
+       x-init="htmx.process($el)"
+       @keydown.escape.window="{{ modal_name }} = false"
+       @create-task-success.window="{{ modal_name }} = false">
     <div @click.outside="{{ modal_name }} = false" class="modal">
-
-        <div class="flex justify-between items-start mb-4">
-            <div>
-                <div class="flex items-center gap-3 mb-1">
-                    <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100 shrink-0">
-                        <i class="fa-solid fa-list-check" aria-hidden="true"></i>
-                    </div>
-                    <h2 id="new-task-modal-title" class="text-xl font-bold text-brand-deep-purple">
-                        {% trans "Create Task" %}
-                    </h2>
-                </div>
-                <p class="text-sm text-gray-500 mt-1">
-                    {% trans "Create a new task, and assign it to the relevant Connect Worker." %}
-                </p>
+      <div class="flex justify-between items-start mb-4">
+        <div>
+          <div class="flex items-center gap-3 mb-1">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100 shrink-0">
+              <i class="fa-solid fa-list-check" aria-hidden="true"></i>
             </div>
-            <button type="button" class="button-icon" @click="{{ modal_name }} = false"
-                    aria-label="{% trans 'Close dialog' %}">
-                <i class="fa-solid fa-xmark cursor-pointer" aria-hidden="true"></i>
-            </button>
+            <h2 id="new-task-modal-title"
+                class="text-xl font-bold text-brand-deep-purple">{% trans "Create Task" %}</h2>
+          </div>
+          <p class="text-sm text-gray-500 mt-1">
+            {% trans "Create a new task, and assign it to the relevant Connect Worker." %}
+          </p>
         </div>
-
+        <button type="button"
+                class="button-icon"
+                @click="{{ modal_name }} = false"
+                aria-label="{% trans 'Close dialog' %}">
+          <i class="fa-solid fa-xmark cursor-pointer" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div id="create-task-form-wrapper">
         <form id="create-task-form"
               method="post"
               action="{{ create_task_url }}"
               hx-post="{{ create_task_url }}"
-              hx-target="#create-task-form"
+              hx-target="#create-task-form-wrapper"
+              hx-select="#create-task-form-wrapper"
               hx-swap="outerHTML">
-            {% csrf_token %}
-            {% crispy form %}
-            <div class="flex justify-between gap-3 pt-2">
-                <button type="button" @click="{{ modal_name }} = false"
-                        class="button button-md outline-style flex-1">
-                    {% trans "Cancel" %}
-                </button>
-                <button type="submit" class="button button-md primary-dark flex-1">
-                    {% trans "Save Changes" %}
-                </button>
-            </div>
+          {% csrf_token %}
+          {% crispy form %}
+          <div class="flex justify-between gap-3 pt-2">
+            <button type="button"
+                    @click="{{ modal_name }} = false"
+                    class="button button-md outline-style flex-1">{% trans "Cancel" %}</button>
+            <button type="submit" class="button button-md primary-dark flex-1">{% trans "Save Changes" %}</button>
+          </div>
         </form>
+        {% include "components/tomselect_init.html" %}
+      </div>
     </div>
-</div>
+  </div>
+</template>

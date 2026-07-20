@@ -1,6 +1,7 @@
 """Useful tasks for use when developing CommCare Connect.
 
 This uses the `Invoke` library."""
+
 from pathlib import Path
 
 from invoke import Context, Exit, call, task
@@ -29,21 +30,6 @@ def up(c: Context):
 def down(c: Context):
     """Run docker compose [down]"""
     pass
-
-
-@task
-def requirements(c: Context, upgrade=False, upgrade_package=None):
-    if upgrade and upgrade_package:
-        raise Exit("Cannot specify both upgrade and upgrade-package", -1)
-    args = " -U" if upgrade else ""
-    cmd_base = "pip-compile -q --resolver=backtracking"
-    env = {"CUSTOM_COMPILE_COMMAND": "inv requirements"}
-    if upgrade_package:
-        cmd_base += f" --upgrade-package {upgrade_package}"
-    c.run(f"{cmd_base} requirements/base.in{args}", env=env)
-    c.run(f"{cmd_base} requirements/dev.in{args}", env=env)
-    # can't use backtracking resolver for now: https://github.com/pypa/pip/issues/8713
-    c.run(f"{cmd_base} requirements/production.in{args}", env=env)
 
 
 @task
@@ -95,7 +81,15 @@ def restart_django(c: Context, env="staging", verbose=False, diff=False):
 
 @task
 def run_ansible(
-    c: Context, play="play.yml", env="staging", tags=None, verbose=False, diff=False, user="ubuntu", become=True
+    c: Context,
+    play="play.yml",
+    env="staging",
+    tags=None,
+    verbose=False,
+    diff=False,
+    user="ubuntu",
+    become=True,
+    limit=None,
 ):
     ansible_cmd = f"ansible-playbook {play} -i {env}.inventory.yml"
     if tags:
@@ -108,6 +102,8 @@ def run_ansible(
         ansible_cmd += f" -u {user}"
     if become:
         ansible_cmd += " -b"
+    if limit:
+        ansible_cmd += f" --limit {limit}"
 
     with c.cd(PROJECT_DIR / "deploy"):
         c.run(ansible_cmd)

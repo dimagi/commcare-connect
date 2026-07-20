@@ -1,15 +1,23 @@
 from django.contrib import messages
 from django.http import HttpResponseRedirect
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 from pghistory.middleware import HistoryMiddleware
 from rest_framework.settings import api_settings
 
 from commcare_connect.utils.commcarehq_api import CommCareTokenException
+from commcare_connect.utils.oauth_tokens import TokenRefreshError
 
 API_KEY_ERROR = """
     Unable to retrieve applications from CommCare HQ.<br>
     Please re-login using CommCare HQ or add a <a href="{url}">CommCare API Key</a>.
 """
+
+TOKEN_REFRESH_ERROR = _(
+    "We couldn't verify your (connected) account (it may have been disconnected "
+    "or its session expired). Please log in again and then try again."
+)
 
 
 class CustomErrorHandlingMiddleware:
@@ -23,7 +31,19 @@ class CustomErrorHandlingMiddleware:
         if isinstance(exception, CommCareTokenException):
             api_url = "#"  # TODO: make this a real URL
             messages.error(request, mark_safe(API_KEY_ERROR.format(url=api_url)))
-            return HttpResponseRedirect(request.headers["referer"])
+            return HttpResponseRedirect(_safe_referer(request))
+        if isinstance(exception, TokenRefreshError):
+            messages.error(request, TOKEN_REFRESH_ERROR)
+            return HttpResponseRedirect(_safe_referer(request))
+
+
+def _safe_referer(request):
+    referer = request.headers.get("referer")
+    if referer and url_has_allowed_host_and_scheme(
+        referer, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return referer
+    return "/"
 
 
 class CurrentVersionMiddleware:

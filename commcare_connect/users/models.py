@@ -12,9 +12,13 @@ from commcare_connect.users.managers import UserManager
 from commcare_connect.utils.permission_const import (
     ALL_ORG_ACCESS,
     DEMO_USER_ACCESS,
+    INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
+    MANAGE_INTERNAL_PERMISSIONS,
+    ORG_MANAGEMENT_SETTINGS_ACCESS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
+    WORKSPACE_ENTITY_MANAGEMENT_ACCESS,
 )
 
 
@@ -59,6 +63,9 @@ class User(AbstractUser):
         """
         return reverse("account_email")
 
+    def display_name_with_username(self):
+        return f"{self.name} ({self.username})"
+
     class Meta:
         constraints = [UniqueConstraint(fields=["email"], name="unique_user_email", condition=Q(email__isnull=False))]
         permissions = [
@@ -70,6 +77,8 @@ class User(AbstractUser):
             ("org_management_settings_access", "Can manage organizations settings"),
             ("workspace_entity_management_access", "Can manage LLO Entities for organizations"),
             ("product_features_access", "Can access and manage product features (flags and switches)"),
+            ("manage_internal_permissions", "Can manage internal permissions for users"),
+            ("invoice_report_access", "Access the Invoice reports dashboard"),
         ]
 
     def __str__(self):
@@ -77,7 +86,17 @@ class User(AbstractUser):
 
     @property
     def show_internal_features(self):
-        internal_features = [OTP_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, ALL_ORG_ACCESS, PRODUCT_FEATURES_ACCESS]
+        internal_features = [
+            OTP_ACCESS,
+            DEMO_USER_ACCESS,
+            KPI_REPORT_ACCESS,
+            ALL_ORG_ACCESS,
+            PRODUCT_FEATURES_ACCESS,
+            MANAGE_INTERNAL_PERMISSIONS,
+            ORG_MANAGEMENT_SETTINGS_ACCESS,
+            WORKSPACE_ENTITY_MANAGEMENT_ACCESS,
+            INVOICE_REPORT_ACCESS,
+        ]
         return any([self.has_perm(perm) for perm in internal_features])
 
 
@@ -90,9 +109,10 @@ class ConnectIDUserLink(models.Model):
     domain = models.CharField(max_length=255, null=True, blank=True)
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
     hq_case_id = models.CharField(max_length=50, null=True, blank=True)
+    hq_user_uuid = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["user", "commcare_username"], name="connect_user")]
+        constraints = [models.UniqueConstraint(fields=["user", "commcare_username", "hq_server"], name="connect_user")]
 
 
 class UserCredential(models.Model):

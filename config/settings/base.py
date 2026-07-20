@@ -1,6 +1,7 @@
 """
 Base settings to build other settings files upon.
 """
+
 from pathlib import Path
 
 import environ
@@ -98,7 +99,9 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "commcare_connect.audit",
     "commcare_connect.commcarehq_provider",
+    "commcare_connect.ocs_provider",
     "commcare_connect.commcarehq",
     "commcare_connect.data_export",
     "commcare_connect.flags",
@@ -111,6 +114,7 @@ LOCAL_APPS = [
     "commcare_connect.users",
     "commcare_connect.web",
     "commcare_connect.microplanning",
+    "commcare_connect.prelogin",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -202,6 +206,7 @@ TEMPLATES = [
                 "commcare_connect.web.context_processors.page_settings",
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",
+                "commcare_connect.web.context_processors.session_tracking_context",
             ],
         },
     }
@@ -236,7 +241,7 @@ DEFAULT_FROM_EMAIL = env(
 SERVER_EMAIL = env("DJANGO_SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
 EMAIL_SUBJECT_PREFIX = env(
     "DJANGO_EMAIL_SUBJECT_PREFIX",
-    default="[CommCare Connect]",
+    default="[Connect]",
 )
 
 # ADMIN
@@ -335,7 +340,6 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "CommCare Connect API",
     "DESCRIPTION": "Documentation of API endpoints of CommCare Connect",
     "VERSION": "1.0.0",
-    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
 }
 
 CACHES = {
@@ -366,6 +370,9 @@ DJANGO_TABLES2_TABLE_ATTRS = {
 # HQ integration settings
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org")
 
+# Open Chat Studio (OCS) integration settings
+OCS_BASE_URL = env("OCS_BASE_URL", default="https://www.openchatstudio.com")
+
 # ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 
@@ -383,10 +390,13 @@ OAUTH2_PROVIDER = {
         CONNECTID_CLIENT_SECRET,
     ),
     "SCOPES": {
+        "openid": "OpenID Connect scope",
         "read": "Read scope",
         "write": "Write scope",
         "export": "Allow exporting data to other platforms using export API's.",
     },
+    "OAUTH2_VALIDATOR_CLASS": "commcare_connect.users.oauth2_validator.CustomOAuth2Validator",
+    "OIDC_ENABLED": True,
 }
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
@@ -412,3 +422,6 @@ GA_API_SECRET = env("GA_API_SECRET", default="")
 # Chatbot Widget Settings
 CHATBOT_ID = env("CHATBOT_ID", default="")
 CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
+
+# LiveSession Settings
+LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")

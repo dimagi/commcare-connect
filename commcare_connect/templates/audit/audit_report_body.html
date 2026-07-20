@@ -1,0 +1,66 @@
+{% load i18n %}
+{% load django_tables2 %}
+<div id="detail-body"
+     hx-get="{% url 'opportunity:audit:audit_report_detail' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+     hx-trigger="refreshDetail from:body"
+     hx-include="#worker-filter"
+     hx-swap="outerHTML"
+     class="flex flex-col gap-4">
+  <div class="flex gap-4 h-32 items-center justify-between p-4 profile-bg metric-container rounded-2xl">
+    <div class="flex flex-col gap-2">
+      <h1 class="text-2xl font-medium text-white">{% trans "Weekly Performance Report" %}</h1>
+      <p class="text-sm text-gray-100">{% trans "Audit the activity of one or multiple FLWs" %}</p>
+    </div>
+    <div class="min-w-48 h-full metric-card relative flex flex-col justify-between p-4">
+      <span class="text-2xl">{{ reviewed_count }} of {{ total_flagged }}</span>
+      <span class="text-sm">{% trans "Workers reviewed" %}</span>
+    </div>
+  </div>
+  <div class="flex items-center justify-between gap-x-4">
+    <div class="w-64">
+      <select id="worker-filter"
+              name="worker"
+              multiple
+              data-tomselect
+              aria-label="{% trans 'Filter by worker name' %}"
+              placeholder="{% trans 'Filter by worker name' %}"
+              hx-get="{% url 'opportunity:audit:audit_report_detail' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+              hx-trigger="change delay:300ms"
+              hx-target="#audit-table-region"
+              hx-select="#audit-table-region"
+              hx-swap="outerHTML"
+              hx-push-url="true">
+        {% for value, name in worker_filter_choices %}
+          <option value="{{ value }}"
+                  {% if value in selected_workers %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div x-data>
+      <a href="{% url 'opportunity:audit:export_audit_report' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+         data-export-base="{% url 'opportunity:audit:export_audit_report' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+         @click="$el.href = $el.dataset.exportBase + window.location.search"
+         x-tooltip.raw="{% trans 'Export uses the currently applied filters.' %}"
+         class="button-icon"
+         aria-label="{% trans 'Export performance report (CSV)' %}"
+         download>
+        <i class="fa-solid fa-download text-brand-deep-purple"
+           aria-hidden="true"></i>
+      </a>
+    </div>
+  </div>
+  <div id="audit-table-region" class="flex flex-col gap-4">
+    {% render_table table %}
+    <div class="flex justify-end mt-6">
+      <button type="button"
+              class="button button-md primary-dark"
+              {% if not can_complete %}disabled{% endif %}
+              hx-post="{% url 'opportunity:audit:audit_report_complete' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+              hx-swap="none"
+              hx-on::after-request="if (event.detail.successful) window.location.reload()">
+        {% trans "Complete Audit" %}
+      </button>
+    </div>
+  </div>
+  {% include "components/tomselect_init.html" %}
+</div>

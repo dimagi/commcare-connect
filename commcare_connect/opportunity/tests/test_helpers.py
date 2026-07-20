@@ -1,9 +1,11 @@
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.utils.timezone import now
 
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
+from commcare_connect.opportunity.filters import TasksFilterSet
 from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
@@ -11,8 +13,12 @@ from commcare_connect.opportunity.helpers import (
     get_opportunity_worker_progress,
     get_worker_learn_table_data,
     get_worker_table_data,
+    get_worker_tasks_base_queryset,
+    get_worker_work_area_table_data,
 )
 from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
     CompletedWorkStatus,
     Opportunity,
     UserInviteStatus,
@@ -20,6 +26,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
+    AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     LearnModuleFactory,
@@ -27,6 +34,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     PaymentFactory,
     PaymentUnitFactory,
+    TaskTypeFactory,
     UserInviteFactory,
     UserVisitFactory,
 )
@@ -155,6 +163,61 @@ def test_get_worker_table_data_all_fields(opportunity):
     assert row.first_delivery.date() == two_days_ago
     assert row.days_to_start_delivery.days == (row.first_delivery.date() - access.date_learn_started).days
     assert row.opportunity_access.last_active.date() == today
+
+
+@pytest.mark.django_db
+def test_get_worker_table_data_search(opportunity):
+    """Search matches name (via linked user) and phone_number (including not_found invites)."""
+    # Accepted worker with known name
+    alpha_access = OpportunityAccessFactory(opportunity=opportunity)
+    alpha_access.user.name = "Alpha Worker"
+    alpha_access.user.phone_number = "+10000000001"
+    alpha_access.user.save()
+    alpha_invite = UserInviteFactory(
+        opportunity=opportunity,
+        opportunity_access=alpha_access,
+        phone_number=alpha_access.user.phone_number,
+        status=UserInviteStatus.accepted,
+    )
+
+    # Another accepted worker — should be filtered out by a name search for "Alpha"
+    beta_access = OpportunityAccessFactory(opportunity=opportunity)
+    beta_access.user.name = "Beta Worker"
+    beta_access.user.phone_number = "+10000000002"
+    beta_access.user.save()
+    beta_invite = UserInviteFactory(
+        opportunity=opportunity,
+        opportunity_access=beta_access,
+        phone_number=beta_access.user.phone_number,
+        status=UserInviteStatus.accepted,
+    )
+
+    # Pre-accept / not_found invite — no linked user, findable only by phone
+    not_found_invite = UserInviteFactory(
+        opportunity=opportunity,
+        opportunity_access=None,
+        phone_number="+10000009999",
+        status=UserInviteStatus.not_found,
+    )
+
+    # Empty search: returns everything (including not_found)
+    all_ids = set(get_worker_table_data(opportunity).values_list("id", flat=True))
+    assert all_ids == {alpha_invite.id, beta_invite.id, not_found_invite.id}
+
+    # Name search: matches Alpha only (case-insensitive substring)
+    name_ids = set(get_worker_table_data(opportunity, search_term="alpha").values_list("id", flat=True))
+    assert name_ids == {alpha_invite.id}
+
+    # Phone search on linked-user phone
+    phone_ids = set(get_worker_table_data(opportunity, search_term="0000002").values_list("id", flat=True))
+    assert phone_ids == {beta_invite.id}
+
+    # Phone search finds the not_found invite (no linked user, matches on UserInvite.phone_number)
+    not_found_ids = set(get_worker_table_data(opportunity, search_term="0009999").values_list("id", flat=True))
+    assert not_found_ids == {not_found_invite.id}
+
+    # No match: empty result
+    assert not get_worker_table_data(opportunity, search_term="zzzzzzz").exists()
 
 
 @pytest.mark.django_db
@@ -334,6 +397,12 @@ def test_opportunity_delivery_stats(opportunity):
     PaymentFactory(opportunity_access=oa1, date_paid=yesterday, amount=100)
     PaymentFactory(opportunity_access=oa2, date_paid=today, amount=50)
 
+    # active_tasks_count counts AssignedTask rows with status ASSIGNED on this opportunity
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=oa1, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=oa2, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=oa2, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+
     result = get_opportunity_delivery_progress(opportunity.id)
 
     assert opportunity.id == result.id
@@ -345,13 +414,10 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.accrued_since_yesterday == 10
     assert result.most_recent_delivery == today
     assert result.total_deliveries == 5
-    assert result.flagged_deliveries_waiting_for_review == 2
-    assert result.flagged_deliveries_waiting_for_review_since_yesterday == 2
-    assert result.deliveries_pending_for_pm_review == 2
-    assert result.deliveries_pending_for_pm_review_since_yesterday == 1
     assert result.recent_payment == today
     assert result.workers_invited == 3
     assert result.pending_invites == 1
+    assert result.active_tasks_count == 2
 
 
 @pytest.mark.django_db
@@ -520,3 +586,228 @@ def test_deliver_status_query_with_filters(opportunity, filters, expected_userna
     usernames = {a.user.username for a in access_objects}
 
     assert usernames == expected_usernames(users)
+
+
+def _filter_worker_tasks(opportunity, filters):
+    qs = get_worker_tasks_base_queryset(opportunity)
+    filterset = TasksFilterSet(data=filters, queryset=qs, opportunity=opportunity)
+    return list(filterset.qs)
+
+
+@pytest.mark.django_db
+def test_get_worker_tasks_base_queryset(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
+    AssignedTaskFactory(opportunity_access=access)
+    AssignedTaskFactory(opportunity_access=access)
+
+    result = list(get_worker_tasks_base_queryset(opportunity))
+    assert len(result) == 2
+    assert result[0].user is not None
+    assert result[0].task_name is not None
+    assert result[0].status == UserInviteStatus.accepted
+
+
+@pytest.mark.django_db
+def test_filter_worker_tasks_by_worker_name(opportunity):
+    access_alice = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Alice")
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access_alice, status="accepted")
+    access_bob = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Bob")
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access_bob, status="accepted")
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type)
+    AssignedTaskFactory(opportunity_access=access_bob, task_type=task_type)
+
+    result = _filter_worker_tasks(opportunity, {"worker_name": [str(access_alice.user.pk)]})
+    assert len(result) == 1
+    assert result[0].user.name == "Alice"
+
+
+@pytest.mark.django_db
+def test_filter_worker_tasks_by_task_status(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+
+    result = _filter_worker_tasks(opportunity, {"task_status": [AssignedTaskStatus.COMPLETED]})
+    assert len(result) == 1
+    assert result[0].task_status == AssignedTaskStatus.COMPLETED
+
+
+@pytest.mark.django_db
+def test_filter_worker_tasks_by_task_type(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
+    task_a = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity, is_active=True)
+    task_b = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_a)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_b)
+
+    result = _filter_worker_tasks(opportunity, {"task_type": [str(task_a.pk)]})
+    assert len(result) == 1
+    assert result[0].task_name == task_a.name
+
+
+@pytest.mark.django_db
+def test_filter_worker_tasks_by_date_assigned_range(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
+    task_type = TaskTypeFactory(app=opportunity.deliver_app, is_active=True)
+    old_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+    AssignedTask.objects.filter(pk=old_task.pk).update(date_created=date.today() - timedelta(days=30))
+
+    AssignedTaskFactory(opportunity_access=access)
+
+    result = _filter_worker_tasks(opportunity, {"date_assigned_from": date.today() - timedelta(days=7)})
+    assert len(result) == 1
+
+
+@pytest.mark.django_db
+def test_filter_worker_tasks_by_due_date_range(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
+    AssignedTaskFactory(opportunity_access=access, due_date=date.today() + timedelta(days=1))
+    AssignedTaskFactory(opportunity_access=access, due_date=date.today() + timedelta(days=30))
+
+    result = _filter_worker_tasks(opportunity, {"due_date_to": date.today() + timedelta(days=7)})
+    assert len(result) == 1
+
+
+@pytest.mark.django_db
+def test_filter_worker_tasks_combined_filters(opportunity):
+    access_alice = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Alice")
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access_alice, status="accepted")
+    access_bob = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Bob")
+    UserInviteFactory(opportunity=opportunity, opportunity_access=access_bob, status="accepted")
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=access_bob, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+
+    result = _filter_worker_tasks(
+        opportunity, {"worker_name": [str(access_alice.user.pk)], "task_status": [AssignedTaskStatus.COMPLETED]}
+    )
+    assert len(result) == 1
+    assert result[0].user.name == "Alice"
+    assert result[0].task_status == AssignedTaskStatus.COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_worker_work_area_table_data_unassigned_worker(opportunity):
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    result = get_worker_work_area_table_data(opportunity)
+    assert result.count() == 1
+
+    row = result.first()
+    assert row.assigned_buildings == 0
+    assert row.assigned_visits == 0
+    assert row.assigned_work_areas == 0
+    assert row.assigned_work_area_groups == 0
+    assert row.visits_done == 0
+
+
+@pytest.mark.django_db
+def test_get_worker_work_area_table_data_visit_without_work_area_not_counted(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserVisitFactory(
+        opportunity=opportunity,
+        user=access.user,
+        opportunity_access=access,
+        work_area=None,
+    )
+
+    result = get_worker_work_area_table_data(opportunity)
+    row = result.first()
+    assert row.visits_done == 0
+
+
+@pytest.mark.django_db
+def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity):
+    access1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    group1a = WorkAreaGroupFactory(opportunity=opportunity)
+    group1b = WorkAreaGroupFactory(opportunity=opportunity)
+    area1a = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1a,
+        opportunity_access=access1,
+        building_count=10,
+        expected_visit_count=5,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1a,
+        opportunity_access=access1,
+        building_count=15,
+        expected_visit_count=3,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1b,
+        opportunity_access=access1,
+        building_count=20,
+        expected_visit_count=7,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1b,
+        opportunity_access=access1,
+        building_count=25,
+        expected_visit_count=4,
+    )
+
+    group2a = WorkAreaGroupFactory(opportunity=opportunity)
+    group2b = WorkAreaGroupFactory(opportunity=opportunity)
+    area2a = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2a,
+        opportunity_access=access2,
+        building_count=30,
+        expected_visit_count=10,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2a,
+        opportunity_access=access2,
+        building_count=5,
+        expected_visit_count=2,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2b,
+        opportunity_access=access2,
+        building_count=8,
+        expected_visit_count=6,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2b,
+        opportunity_access=access2,
+        building_count=12,
+        expected_visit_count=1,
+    )
+
+    UserVisitFactory(opportunity=opportunity, user=access1.user, opportunity_access=access1, work_area=area1a)
+    UserVisitFactory(opportunity=opportunity, user=access1.user, opportunity_access=access1, work_area=area1a)
+    UserVisitFactory(opportunity=opportunity, user=access2.user, opportunity_access=access2, work_area=area2a)
+
+    result = get_worker_work_area_table_data(opportunity).order_by("user__name")
+    assert result.count() == 2
+
+    row1 = result.filter(pk=access1.pk).first()
+    assert row1.assigned_buildings == 70
+    assert row1.assigned_visits == 19
+    assert row1.assigned_work_areas == 4
+    assert row1.assigned_work_area_groups == 2
+    assert row1.visits_done == 2
+
+    row2 = result.filter(pk=access2.pk).first()
+    assert row2.assigned_buildings == 55
+    assert row2.assigned_visits == 19
+    assert row2.assigned_work_areas == 4
+    assert row2.assigned_work_area_groups == 2
+    assert row2.visits_done == 1

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Keep in sync with the data-page routes in index.html and the MARKETING_ROUTES
+     list in IMPORT.md. URLs use the canonical production origin (connect.dimagi.com),
+     matching the <link rel="canonical"> tags. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://connect.dimagi.com/</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/the-opportunity</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/platform</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/frontline-network</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/insights</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/release-notes</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/child-health-campaign</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/kangaroo-mother-care</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/early-childhood-development</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/reading-glasses</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/mother-baby-wellness</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/chlorine-dispenser</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/mental-health</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/survey-data-collection</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/therapeutic-food</loc><lastmod>2026-06-01</lastmod></url>
+  <url><loc>https://connect.dimagi.com/portfolio/rooftop-sampling</loc><lastmod>2026-06-01</lastmod></url>
+</urlset>

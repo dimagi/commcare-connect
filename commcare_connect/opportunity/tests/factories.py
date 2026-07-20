@@ -1,11 +1,11 @@
-from datetime import timezone
+from datetime import date, timedelta, timezone
 
 from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.opportunity.models import Country, Currency, VisitValidationStatus
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.opportunity.models import AssignedTaskStatus, Country, Currency, VisitValidationStatus
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
 class ApplicationFactory(DictFactory):
@@ -61,6 +61,7 @@ class OpportunityFactory(DjangoModelFactory):
     currency = LazyFunction(lambda: Currency.objects.get(code="USD"))
     country = LazyFunction(lambda: Country.objects.get(code="USA"))
     hq_server = SubFactory(HQServerFactory)
+    program = SubFactory("commcare_connect.program.tests.factories.ProgramFactory")
 
     class Meta:
         model = "opportunity.Opportunity"
@@ -267,15 +268,27 @@ class PaymentInvoiceFactory(DjangoModelFactory):
         model = "opportunity.PaymentInvoice"
 
 
-class TaskFactory(DjangoModelFactory):
+class TaskTypeFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("slug")
     name = Faker("name")
     description = Faker("text")
-    time_estimate = Faker("pyint", min_value=1, max_value=8)
 
     class Meta:
-        model = "opportunity.Task"
+        model = "opportunity.TaskType"
+
+
+class AssignedTaskFactory(DjangoModelFactory):
+    task_type = SubFactory(TaskTypeFactory)
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+    completed_at = Faker("date_time", tzinfo=timezone.utc)
+    duration = LazyFunction(lambda: timedelta(hours=1))
+    status = AssignedTaskStatus.ASSIGNED
+    due_date = LazyFunction(lambda: date.today() + timedelta(days=7))
+    assigned_by = SubFactory(UserFactory)
+
+    class Meta:
+        model = "opportunity.AssignedTask"
 
 
 class ExchangeRateFactory(DjangoModelFactory):
@@ -311,3 +324,14 @@ class BlobMetaFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.BlobMeta"
+
+
+class AudioAttachmentFactory(DjangoModelFactory):
+    user_visit = SubFactory(UserVisitFactory)
+    blob_id = Faker("uuid4")
+    name = Faker("file_name", extension="m4a")
+    content_type = "audio/mp4"
+    content_length = Faker("pyint", min_value=100, max_value=10000)
+
+    class Meta:
+        model = "opportunity.AudioAttachment"

@@ -1,13 +1,13 @@
 name: Deploy
 
 env:
-  AWS_REGION: 'us-east-1'
+  AWS_REGION: 'us-west-1'
   SENTRY_ORG: 'dimagi'
   SENTRY_PROJECT: 'commcare-connect'
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 on:
   #  workflow_run:
@@ -32,7 +32,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set release identifier
-        run: echo "APP_RELEASE=${GITHUB_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
+        run: |
+          # Sentry release versions cannot contain slashes, so sanitize the ref name
+          SAFE_REF_NAME="${GITHUB_REF_NAME//\//-}"
+          echo "APP_RELEASE=${SAFE_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
@@ -61,7 +64,7 @@ jobs:
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: 'C09TVKX4N2C'
+          channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           payload: |
             {
               "blocks": [
@@ -113,11 +116,24 @@ jobs:
           repo: dimagi/commcare-connect
           commit: ${{ github.sha }}
 
+      - name: Set release tag
+        if: ${{ success() && inputs.environment == 'production' }}
+        run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        if: ${{ success() && inputs.environment == 'production' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: 'C09TVKX4N2C'
+          channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {

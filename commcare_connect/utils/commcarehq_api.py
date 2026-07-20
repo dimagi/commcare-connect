@@ -1,10 +1,5 @@
-import datetime
-
 import httpx
-from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 from asgiref.sync import async_to_sync
-from django.conf import settings
-from django.utils import timezone
 
 from commcare_connect.opportunity.models import HQApiKey
 
@@ -15,39 +10,6 @@ class CommCareHQAPIException(Exception):
 
 class CommCareTokenException(CommCareHQAPIException):
     pass
-
-
-def refresh_access_token(user, force=False):
-    social_app = SocialApp.objects.filter(provider="commcarehq").first()
-    social_acc = SocialAccount.objects.filter(user=user).first()
-    social_token = SocialToken.objects.filter(account=social_acc).first()
-
-    if not all([social_app, social_acc, social_token]):
-        raise CommCareTokenException("User does not have a valid token")
-
-    if not force and social_token.expires_at > timezone.now():
-        return social_token
-
-    response = httpx.post(
-        f"{settings.COMMCARE_HQ_URL}/oauth/token/",
-        data={
-            "grant_type": "refresh_token",
-            "client_id": social_app.client_id,
-            "client_secret": social_app.secret,
-            "refresh_token": social_token.token_secret,
-        },
-    )
-    if response.status_code != 200:
-        raise CommCareHQAPIException(f"Failed to refresh token: {response.text}")
-
-    data = response.json()
-    if data.get("access_token", ""):
-        social_token.token = data["access_token"]
-        social_token.token_secret = data["refresh_token"]
-        social_token.expires_at = timezone.now() + datetime.timedelta(seconds=900)
-        social_token.save()
-
-    return social_token
 
 
 def get_domains_for_user(api_key):
@@ -84,6 +46,22 @@ async def _get_applications_for_domain(user_email, api_key, domain, hq_server_ur
     return applications
 
 
+def get_app_structure(api_key, app):
+    """Fetch the full application structure JSON from CommCare HQ."""
+    try:
+        response = httpx.get(
+            f"{api_key.hq_server.url}/a/{app.cc_domain}/api/v0.5/application/{app.cc_app_id}/",
+            headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+            timeout=300,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError:
+        raise CommCareHQAPIException(f"Failed to fetch app structure: {response.text}")
+    except httpx.RequestError as e:
+        raise CommCareHQAPIException(f"Failed to fetch app structure: {e}")
+    return response.json()
+
+
 async def _get_commcare_app_json(client, domain):
     applications = []
     response = await client.get(f"/a/{domain}/api/v0.5/application/")
@@ -95,7 +73,11 @@ async def _get_commcare_app_json(client, domain):
 
     for application in data.get("objects", []):
         app_name = application.get("name")
-        if not application.get("is_released"):
+        # The top-level app object is always a draft (is_released=False).
+        # Released builds are nested inside 'versions', so we check there.
+        versions = application.get("versions", [])
+        is_released = any(v.get("is_released") for v in versions)
+        if not is_released:
             app_name = f"Unreleased - {app_name}"
         applications.append({"id": application.get("id"), "name": app_name})
     return applications

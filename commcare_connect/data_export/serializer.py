@@ -3,7 +3,9 @@ from collections import OrderedDict
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from commcare_connect.opportunity.api.serializers import (
+from commcare_connect.audit.models import AuditReport, AuditReportEntry
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
     OpportunityVerificationFlagsSerializer,
@@ -11,6 +13,7 @@ from commcare_connect.opportunity.api.serializers import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     CompletedModule,
     CompletedWork,
     LabsRecord,
@@ -18,9 +21,10 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
+    TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 
 
@@ -43,7 +47,7 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
         ]
 
     def get_program(self, obj) -> int:
-        return obj.managedopportunity.program_id if obj.managed else None
+        return obj.program_id
 
     def get_visit_count(self, obj) -> int:
         return getattr(obj, "visit_count", 0)
@@ -90,6 +94,7 @@ class OpportunityUserDataSerializer(serializers.Serializer):
 
 class UserVisitDataSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
+    user_id = serializers.UUIDField(source="user.user_id")
 
     class Meta:
         model = UserVisit
@@ -97,6 +102,8 @@ class UserVisitDataSerializer(serializers.ModelSerializer):
             "id",
             "opportunity_id",
             "username",
+            "user_id",
+            "user_visit_id",
             "deliver_unit",
             "entity_id",
             "entity_name",
@@ -300,3 +307,127 @@ class OpportunitySerializer(serializers.ModelSerializer):
                         cleaned_value.append(dict(item))
                 data[key] = cleaned_value
         return data
+
+
+class TaskTypeDataSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskType
+        fields = [
+            "id",
+            "task_type_id",
+            "name",
+            "slug",
+            "description",
+            "unit_name",
+            "case_property",
+            "is_active",
+            "archived",
+            "duration",
+        ]
+
+
+class AssignedTaskDataSerializer(serializers.ModelSerializer):
+    task_type_name = serializers.CharField(source="task_type.name", read_only=True)
+    username = serializers.CharField(source="opportunity_access.user.username", read_only=True)
+
+    class Meta:
+        model = AssignedTask
+        fields = [
+            "id",
+            "assigned_task_id",
+            "task_type",
+            "task_type_name",
+            "username",
+            "completed_at",
+            "duration",
+            "status",
+            "due_date",
+            "date_created",
+        ]
+
+
+class WorkAreaGroupDataSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkAreaGroup
+        fields = ["id", "name", "ward", "opportunity"]
+
+
+class WorkAreaDataSerializer(serializers.ModelSerializer):
+    work_area_group_name = serializers.SerializerMethodField()
+    centroid = serializers.SerializerMethodField()
+    boundary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkArea
+        fields = [
+            "id",
+            "slug",
+            "ward",
+            "status",
+            "building_count",
+            "expected_visit_count",
+            "case_id",
+            "case_properties",
+            "work_area_group",
+            "work_area_group_name",
+            "centroid",
+            "boundary",
+        ]
+
+    def get_work_area_group_name(self, obj) -> str | None:
+        if obj.work_area_group_id is None:
+            return None
+        return obj.work_area_group.name
+
+    def get_centroid(self, obj) -> dict:
+        return {"type": "Point", "coordinates": [obj.centroid.x, obj.centroid.y]}
+
+    def get_boundary(self, obj) -> dict:
+        return {"type": "Polygon", "coordinates": obj.boundary.coords}
+
+
+class LLOEntityDataSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LLOEntity
+        fields = ["id", "name", "short_name"]
+
+
+class AuditReportDataSerializer(serializers.ModelSerializer):
+    completed_by_username = serializers.CharField(source="completed_by.username", read_only=True, default=None)
+
+    class Meta:
+        model = AuditReport
+        fields = [
+            "id",
+            "audit_report_id",
+            "opportunity",
+            "period_start",
+            "period_end",
+            "status",
+            "completed_by_username",
+            "completed_date",
+            "date_created",
+            "date_modified",
+        ]
+
+
+class AuditReportEntryDataSerializer(serializers.ModelSerializer):
+    audit_report_uuid = serializers.UUIDField(source="audit_report.audit_report_id", read_only=True)
+    username = serializers.CharField(source="opportunity_access.user.username", read_only=True)
+
+    class Meta:
+        model = AuditReportEntry
+        fields = [
+            "id",
+            "audit_report_entry_id",
+            "audit_report",
+            "audit_report_uuid",
+            "opportunity_access",
+            "username",
+            "results",
+            "flagged",
+            "reviewed",
+            "review_action",
+            "date_created",
+            "date_modified",
+        ]

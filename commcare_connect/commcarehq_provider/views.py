@@ -1,4 +1,5 @@
 import httpx
+from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.oauth2.views import OAuth2Adapter, OAuth2CallbackView, OAuth2LoginView
 from django.conf import settings
 
@@ -15,6 +16,8 @@ class CommcareHQOAuth2Adapter(OAuth2Adapter):
 
     def complete_login(self, request, app, token, **kwargs):
         response = httpx.get(self.profile_url, headers={"Authorization": f"Bearer {token}"})
+        if response.status_code != 200:
+            raise OAuth2Error("Failed to fetch profile data from CommCare HQ.")
         extra_data = response.json()
         return self.get_provider().sociallogin_from_response(request, extra_data)
 
