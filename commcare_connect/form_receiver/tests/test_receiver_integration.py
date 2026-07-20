@@ -1013,7 +1013,7 @@ def test_update_completed_learn_date_migration(opportunity, mobile_user):
     )
 
     migration_module = importlib.import_module(
-        "commcare_connect.opportunity.migrations.0074_opportunityaccess_completed_learn_date_and_more"
+        "commcare_connect.opportunity.migrations.0075_opportunityaccess_completed_learn_date_and_more"
     )
     back_fill_completed_learn_date = migration_module._back_fill_completed_learn_date
 
