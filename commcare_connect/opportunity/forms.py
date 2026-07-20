@@ -154,7 +154,6 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             "short_description",
             "is_test",
             "delivery_type",
-            "payment_info_required",
         ]
 
     def __init__(self, *args, **kwargs):

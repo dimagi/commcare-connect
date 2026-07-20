@@ -1169,7 +1169,6 @@ def test_views_use_opportunity_decorator_or_mixin():
     class_excluded = {
         "OpportunityList",  # OpportunityList - lists all opportunities, doesn't operate on specific one
         "OpportunityInit",  # OpportunityInit - creates new opportunity, no existing opportunity context
-        "PaymentNumberReport",
     }
 
     function_views, class_views = collect_views()

@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("organization", "0010_orguserpaymentnumberstatus"),
+        ("organization", "0009_lloentity_short_name"),
     ]
 
     operations = [
