@@ -16,7 +16,7 @@
             selectedWorkAreas: new Set(),
             groupWorkAreaIds: new Set(),
             flwFilterWorkAreaIds: new Set(),
-            selectedGroupId: null,
+            selectedGroupIds: [],
             selectedFlwFilterId: null,
             selectedAssigneeId: null,
             flwSummaryAssigneeId: null,
@@ -252,12 +252,12 @@
 
                 // Clear group dropdown if the map click breaks the group selection:
                 // either deselecting a WA inside the group, or selecting one outside it
-                if (this.selectedGroupId) {
+                if (this.selectedGroupIds.length) {
                     const isGroupWa = this.groupWorkAreaIds.has(id);
                     if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
                         this.groupWorkAreaIds.clear();
-                        this.selectedGroupId = null;
-                        if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                        this.selectedGroupIds = [];
+                        if (this.$refs.groupSelect?.tomselect) this.$refs.groupSelect.tomselect.clear();
                     }
                 }
 
@@ -265,12 +265,13 @@
                 this.updateFlwSummary();
             },
 
-            selectGroup(groupId) {
-                this.selectedGroupId = groupId || null;
+            selectGroup(groupIds) {
+                this.selectedGroupIds = groupIds || [];
+                const query = this.selectedGroupIds.map((id) => `group_id=${encodeURIComponent(id)}`).join('&');
                 return this.replaceFilterSelection({
                     trackingSet: this.groupWorkAreaIds,
-                    selectionId: groupId,
-                    url: '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId),
+                    selectionId: this.selectedGroupIds,
+                    url: query ? `{{ group_work_areas_url|escapejs }}?${query}` : '',
                     errorMsg: "{% translate 'Failed to load group work areas' %}",
                 });
             },
@@ -293,7 +294,8 @@
                 }
                 trackingSet.clear();
 
-                if (!selectionId) {
+                const hasSelection = Array.isArray(selectionId) ? selectionId.length > 0 : !!selectionId;
+                if (!hasSelection) {
                     this.updateFlwSummary();
                     return;
                 }
@@ -324,8 +326,8 @@
                 this.selectedWorkAreas.clear();
                 this.groupWorkAreaIds.clear();
                 this.flwFilterWorkAreaIds.clear();
-                if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
-                this.selectedGroupId = null;
+                if (this.$refs.groupSelect?.tomselect) this.$refs.groupSelect.tomselect.clear();
+                this.selectedGroupIds = [];
                 this.selectedFlwFilterId = null;
                 this.updateFlwSummary();
             },
