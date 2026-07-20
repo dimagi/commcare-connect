@@ -1,7 +1,6 @@
 name: Deploy
 
 env:
-  AWS_REGION: 'us-west-1'
   SENTRY_ORG: 'dimagi'
   SENTRY_PROJECT: 'commcare-connect'
 
@@ -58,7 +57,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::037129986032:role/github_deploy
           role-session-name: GithubDeploy
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ inputs.environment == 'production' && 'eu-west-1' || 'us-east-1' }}
 
       - id: slack
         name: Notify Deploy Start
