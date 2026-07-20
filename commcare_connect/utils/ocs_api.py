@@ -47,13 +47,22 @@ def trigger_bot(
     experiment: str,
     start_new_session: bool = True,
     session_data: dict | None = None,
+    participant_data: dict | None = None,
 ) -> dict:
     """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
     token = _get_valid_token(user)
     payload = {"identifier": identifier, "experiment": experiment, "platform": "commcare_connect"}
+    # prompt_text is not shown in the conversation and is only for getting the bot
+    # to
+    prompt_text = """
+    Initiate the conversation by starting with "Greetings! You've been assigned training ..."
+    """
+
     optionals = {
         "start_new_session": start_new_session,
         "session_data": session_data,
+        "prompt_text": prompt_text,
+        "participant_data": participant_data,
     }
     payload.update({k: v for k, v in optionals.items() if v is not None})
 
