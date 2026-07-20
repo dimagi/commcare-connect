@@ -4,6 +4,8 @@ import pytest
 from django.test import RequestFactory
 
 from commcare_connect.flags.models import Flag
+from commcare_connect.opportunity.tests.factories import OpportunityFactory
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 from commcare_connect.web.context_processors import chat_widget_context
 
@@ -76,3 +78,61 @@ class TestChatWidgetContext:
         assert context["chat_widget_enabled"] is True
         assert context["chatbot_id"] == "test-chatbot-id"
         assert context["chatbot_embed_key"] == "test-embed-key"
+
+    def test_flag_enabled_for_program_of_managed_opportunity(self, settings, managed_opportunity):
+        settings.CHATBOT_ID = "test-chatbot-id"
+        settings.CHATBOT_EMBED_KEY = "test-embed-key"
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=managed_opportunity.organization)
+        flag = Flag.objects.create(name="open_chat_studio_widget")
+        flag.programs.add(managed_opportunity.program)
+
+        request = RequestFactory().get("/")
+        request.user = user
+        request.org = managed_opportunity.organization
+        request.opportunity = managed_opportunity
+
+        assert chat_widget_context(request)["chat_widget_enabled"] is True
+
+    def test_flag_does_not_leak_across_programs(self, settings, organization):
+        settings.CHATBOT_ID = "test-chatbot-id"
+        settings.CHATBOT_EMBED_KEY = "test-embed-key"
+
+        program_with_flag = ProgramFactory()
+        program_without_flag = ProgramFactory()
+        OpportunityFactory(program=program_with_flag, organization=organization)
+        opp_without_flag = OpportunityFactory(program=program_without_flag, organization=organization)
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization)
+
+        flag = Flag.objects.create(name="open_chat_studio_widget")
+        flag.programs.add(program_with_flag)
+
+        request = RequestFactory().get("/")
+        request.user = user
+        request.org = organization
+        request.opportunity = opp_without_flag
+
+        assert chat_widget_context(request)["chat_widget_enabled"] is False
+
+    def test_flag_does_not_leak_across_orgs_for_multi_org_user(self, settings):
+        settings.CHATBOT_ID = "test-chatbot-id"
+        settings.CHATBOT_EMBED_KEY = "test-embed-key"
+
+        org_with_flag = OrganizationFactory()
+        org_without_flag = OrganizationFactory()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=org_with_flag)
+        MembershipFactory(user=user, organization=org_without_flag)
+
+        flag = Flag.objects.create(name="open_chat_studio_widget")
+        flag.organizations.add(org_with_flag)
+
+        request = RequestFactory().get("/")
+        request.user = user
+        request.org = org_without_flag
+
+        assert chat_widget_context(request)["chat_widget_enabled"] is False

@@ -8,10 +8,11 @@ from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CompletedWorkFactory,
     OpportunityAccessFactory,
+    OpportunityFactory,
     UserVisitFactory,
 )
 from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
@@ -21,7 +22,7 @@ class BaseManagedOpportunityTest:
     def setup(self, db):
         self.program = ProgramFactory.create()
         self.nm_org = OrganizationFactory.create()
-        self.opp = ManagedOpportunityFactory.create(program=self.program, organization=self.nm_org)
+        self.opp = OpportunityFactory.create(program=self.program, organization=self.nm_org)
 
     def create_user_with_access(self, visit_status=VisitValidationStatus.pending, passed_assessment=True):
         user = UserFactory.create()
@@ -250,7 +251,7 @@ class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
 def test_average_time_to_convert_for_negative_values():
     program = ProgramFactory.create()
     nm_org = OrganizationFactory.create()
-    opp = ManagedOpportunityFactory.create(program=program, organization=nm_org)
+    opp = OpportunityFactory.create(program=program, organization=nm_org)
     today = now()
 
     valid_durations = []

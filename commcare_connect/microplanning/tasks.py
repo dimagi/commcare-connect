@@ -1,4 +1,5 @@
 import csv
+import io
 import logging
 from collections import defaultdict
 
@@ -8,8 +9,13 @@ from django.core.files.storage import default_storage
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
+from commcare_connect.connect_id_client import send_message
+from commcare_connect.connect_id_client.models import Message
+from commcare_connect.opportunity.models import OpportunityAccess
 from config import celery_app
 
+from .clustering import WorkAreaGrouper
+from .const import DEFAULT_BUILDING_COUNT
 from .models import SRID, WorkArea
 
 logger = logging.getLogger(__name__)
@@ -17,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 def get_import_area_cache_key(opp_id: int):
     return f"work_area_import_lock_{opp_id}"
+
+
+def get_cluster_area_cache_lock_key(opp_id: int):
+    return f"work_area_clustering_cache_lock_key_{opp_id}"
 
 
 class WorkAreaCSVImporter:
@@ -27,8 +37,7 @@ class WorkAreaCSVImporter:
         "boundary": "Boundary",
         "building_count": "Building Count",
         "visit_count": "Expected Visit Count",
-        "max_wag": "Max WAG",
-        "wag_serial_number": "WAG Serial Number",
+        "target_population": "Target Population",
         "lga": "LGA",
         "state": "State",
     }
@@ -44,6 +53,7 @@ class WorkAreaCSVImporter:
     def _validate_all_rows(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         if not self._validate_headers(reader):
             return False
 
@@ -57,6 +67,7 @@ class WorkAreaCSVImporter:
     def _stream_and_insert(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         batch = []
         batch_size = 5000
 
@@ -72,9 +83,8 @@ class WorkAreaCSVImporter:
                     boundary=self.get_boundary(row),
                     building_count=buildings,
                     expected_visit_count=visits,
+                    target_population=self.get_target_population(row),
                     case_properties={
-                        "max_wag": extra_props.get("max_wag"),
-                        "wag_serial_number": extra_props.get("wag_serial_number"),
                         "lga": extra_props.get("lga"),
                         "state": extra_props.get("state"),
                     },
@@ -104,6 +114,10 @@ class WorkAreaCSVImporter:
         if self.errors:
             return {"errors": self.errors}
         return {"created": self.created_count}
+
+    def _normalize_headers(self, reader):
+        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
+        reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
         headers = set(reader.fieldnames or [])
@@ -148,21 +162,20 @@ class WorkAreaCSVImporter:
         slug = (row.get(self.HEADERS.get("slug")) or "").strip()
         return strip_tags(slug)
 
+    def _get_int(self, row, key):
+        raw = row.get(self.HEADERS.get(key))
+        return int(raw) if raw else 0
+
     def get_building_and_visit(self, row):
-        building_raw = row.get(self.HEADERS.get("building_count"))
-        visit_raw = row.get(self.HEADERS.get("visit_count"))
-        building = int(building_raw) if building_raw else 0
-        visit = int(visit_raw) if visit_raw else 0
-        return building, visit
+        return self._get_int(row, "building_count"), self._get_int(row, "visit_count")
+
+    def get_target_population(self, row):
+        return self._get_int(row, "target_population")
 
     def get_extra_properties(self, row):
-        max_wag = row.get(self.HEADERS.get("max_wag"))
-        wag_serial_number = row.get(self.HEADERS.get("wag_serial_number"))
         lga = row.get(self.HEADERS.get("lga"))
         state = row.get(self.HEADERS.get("state"))
         return {
-            "max_wag": max_wag,
-            "wag_serial_number": wag_serial_number,
             "lga": lga,
             "state": state,
         }
@@ -220,13 +233,16 @@ class WorkAreaCSVImporter:
         invalid = True
         try:
             building, visit = self.get_building_and_visit(row)
-            if building >= 0 and visit >= 0:
+            target_population = self.get_target_population(row)
+            if building >= 0 and visit >= 0 and target_population >= 0:
                 invalid = False
         except ValueError:
             pass
 
         if invalid:
-            self._add_error(line_num, _("Building count and Expected visit count must be positive integers"))
+            self._add_error(
+                line_num, _("Building count, Expected visit count, and Target population must be positive integers")
+            )
         return invalid
 
     def _validate_extra_properties(self, row, line_num):
@@ -247,10 +263,77 @@ def import_work_areas_task(self, opp_id, file_name):
         if WorkArea.objects.filter(opportunity_id=opp_id).exists():
             return {"errors": {_("Work Areas already exist for this opportunity"): [0]}}
 
-        with default_storage.open(file_name, "r") as f:
-            importer = WorkAreaCSVImporter(opp_id, f)
-            result = importer.run()
+        with default_storage.open(file_name, "rb") as f:
+            content = io.StringIO(f.read().decode("utf-8-sig"))
+        importer = WorkAreaCSVImporter(opp_id, content)
+        result = importer.run()
         return result
     finally:
         cache.delete(get_import_area_cache_key(opp_id))
         default_storage.delete(file_name)
+
+
+class WorkAreaCSVExporter:
+    HEADERS = {
+        **WorkAreaCSVImporter.HEADERS,
+        "group_name": "Work Area Group Name",
+    }
+
+    FIELD_MAP = {
+        "slug": lambda wa: wa.slug,
+        "ward": lambda wa: wa.ward,
+        "centroid": lambda wa: f"{wa.centroid.x} {wa.centroid.y}",
+        "boundary": lambda wa: wa.boundary.wkt,
+        "building_count": lambda wa: wa.building_count,
+        "visit_count": lambda wa: wa.expected_visit_count,
+        "target_population": lambda wa: wa.target_population,
+        "lga": lambda wa: (wa.case_properties or {}).get("lga", ""),
+        "state": lambda wa: (wa.case_properties or {}).get("state", ""),
+        "group_name": lambda wa: wa.group_name or "",
+    }
+
+    @classmethod
+    def get_row(cls, wa):
+        return [cls.FIELD_MAP[key](wa) for key in cls.HEADERS]
+
+    @classmethod
+    def rows(cls, queryset):
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        headers = cls.HEADERS
+
+        writer.writerow(headers.values())
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+
+        for wa in queryset.iterator(chunk_size=2000):
+            writer.writerow(cls.get_row(wa))
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
+
+@celery_app.task()
+def send_work_area_assignment_notification(opportunity_access_id: int):
+    access = OpportunityAccess.objects.select_related("user", "opportunity").get(pk=opportunity_access_id)
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "New Work Areas Assigned",
+            "body": "You have been assigned new work areas. Click here to begin.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "work_area_assignment",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
+
+
+@celery_app.task()
+def cluster_work_areas_task(opp_id, max_buildings=DEFAULT_BUILDING_COUNT):
+    lock_key = get_cluster_area_cache_lock_key(opp_id)
+    with cache.lock(lock_key, timeout=1200):
+        WorkAreaGrouper(opp_id, max_buildings=max_buildings).cluster_work_areas()

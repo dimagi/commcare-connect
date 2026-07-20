@@ -1,0 +1,18 @@
+{% extends "email/base.html" %}
+{% load i18n %}
+{% block content %}
+  <p>{% trans "Hi," %}</p>
+  <p>
+    {% blocktrans with org_name=organization.name %}
+        New audit reports have been generated for <strong>{{ org_name }}</strong>:
+    {% endblocktrans %}
+  </p>
+  <ul>
+    {% for report in reports %}
+      <li>
+        <a href="{{ report.url }}">{{ report.opportunity_name }}</a>
+        {% blocktrans with period_start=report.period_start period_end=report.period_end %}({{ period_start }} to {{ period_end }}){% endblocktrans %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

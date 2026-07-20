@@ -11,6 +11,7 @@ project_dir: '{{ base_dir }}/{{ project_name }}'
 docker_env_file: '{{ project_dir }}/docker.env'
 
 # Django settings
+# Default region - can be overridden per-inventory
 aws_region: us-east-1
 connectid_url: https://connectid.dimagi.com
 django_admin_url: admin/

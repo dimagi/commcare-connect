@@ -3,7 +3,12 @@ from factory import Faker, RelatedFactory, Sequence, SubFactory
 from factory.django import DjangoModelFactory, Password
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    LLOEntity,
+    Organization,
+    OrganizationInvite,
+    UserOrganizationMembership,
+)
 from commcare_connect.users.models import ConnectIDUserLink
 
 
@@ -48,6 +53,7 @@ class MobileUserFactory(DjangoModelFactory):
 
 class LLOEntityFactory(DjangoModelFactory):
     name = Faker("company")
+    short_name = Faker("company_suffix")
 
     class Meta:
         model = LLOEntity
@@ -67,6 +73,16 @@ class MembershipFactory(DjangoModelFactory):
     user = SubFactory(UserFactory)
     organization = SubFactory(OrganizationFactory)
     role = "admin"
+
+
+class OrganizationInviteFactory(DjangoModelFactory):
+    class Meta:
+        model = OrganizationInvite
+
+    organization = SubFactory(OrganizationFactory)
+    email = Faker("email")
+    role = "member"
+    invited_by = SubFactory(UserFactory)
 
 
 class OrgWithUsersFactory(OrganizationFactory):

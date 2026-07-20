@@ -1,31 +1,49 @@
 import datetime
+import uuid
 from decimal import Decimal
 from unittest import mock
 
 import pytest
 from django.utils.timezone import now
-from waffle.testutils import override_switch
+from tablib import Dataset
 
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
+from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.models import (
+    AudioAttachment,
     BlobMeta,
     CompletedWorkStatus,
     ExchangeRate,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
+    OpportunityActiveEvent,
     PaymentInvoice,
+    UserInvite,
 )
 from commcare_connect.opportunity.tasks import (
+    OPPORTUNITY_AUTO_ARCHIVE_DAYS,
     _get_inactive_message,
     add_connect_users,
+    auto_archive_test_opportunities,
+    auto_deactivate_ended_opportunities,
+    download_inaccessibility_request_attachments,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
+    generate_catchment_area_export,
+    generate_deliver_status_export,
+    generate_payment_export,
+    generate_review_visit_export,
+    generate_user_status_export,
+    generate_visit_export,
+    generate_work_status_export,
     notify_user_for_scored_assessment,
+    save_export,
+    send_task_assignment_notification,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
+    AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     LearnModuleFactory,
@@ -33,6 +51,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     OpportunityFactory,
     PaymentUnitFactory,
+    TaskTypeFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
@@ -62,6 +81,20 @@ class TestConnectUserCreation:
         user2 = User.objects.filter(username="test2")
         assert len(user2) == 1
         assert len(OpportunityAccess.objects.filter(user=user2.first(), opportunity=opportunity)) == 1
+
+    @pytest.mark.django_db
+    def test_add_connect_users_skips_ended_opportunity(self):
+        opportunity = OpportunityFactory(end_date=datetime.date.today() - datetime.timedelta(days=1))
+        with mock.patch("commcare_connect.opportunity.tasks.fetch_users") as fetch_users:
+            fetch_users.return_value = [
+                ConnectIdUser(username="test", phone_number="+15555555555", name="a"),
+            ]
+            add_connect_users(["+15555555555"], opportunity.id)
+
+        fetch_users.assert_not_called()
+        assert User.objects.filter(username="test").count() == 0
+        assert OpportunityAccess.objects.filter(opportunity=opportunity).count() == 0
+        assert UserInvite.objects.filter(opportunity=opportunity).count() == 0
 
 
 def test_send_inactive_notification_learn_inactive_message(mobile_user: User, opportunity: Opportunity):
@@ -163,9 +196,10 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         opportunity=opportunity,
         form_json={"attachments": {"myimage.jpg": {"content_type": "image/jpeg", "length": 20}}},
     )
-    with mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response, mock.patch(
-        "commcare_connect.opportunity.tasks.default_storage.save"
-    ) as save_blob:
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
         get_response.return_value.content = b"asdas"
         download_user_visit_attachments.run(user_visit.id)
         blob_meta = BlobMeta.objects.first()
@@ -177,6 +211,114 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         blob_id, content_file = save_blob.call_args_list[0].args
         assert str(blob_id) == blob_meta.blob_id
         assert content_file.read() == b"asdas"
+
+
+def test_download_routes_audio_to_audio_attachment(mobile_user: User, opportunity: Opportunity):
+    user_visit = UserVisitFactory.create(
+        user=mobile_user,
+        opportunity=opportunity,
+        form_json={
+            "attachments": {
+                "myimage.jpg": {"content_type": "image/jpeg", "length": 20},
+                "recording.m4a": {"content_type": "audio/mp4", "length": 50},
+            }
+        },
+    )
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
+        get_response.return_value.content = b"bytes"
+        download_user_visit_attachments.run(user_visit.id)
+
+    # Image still goes to BlobMeta
+    blob_metas = BlobMeta.objects.filter(parent_id=user_visit.xform_id)
+    assert blob_metas.count() == 1
+    assert blob_metas.first().name == "myimage.jpg"
+
+    # Audio goes to AudioAttachment, not BlobMeta
+    assert not BlobMeta.objects.filter(name="recording.m4a").exists()
+    audios = AudioAttachment.objects.filter(user_visit=user_visit)
+    assert audios.count() == 1
+    audio = audios.first()
+    assert audio.name == "recording.m4a"
+    assert audio.content_type == "audio/mp4"
+    assert audio.content_length == 50
+    # Bytes saved under the audio's blob_id
+    saved_keys = [call.args[0] for call in save_blob.call_args_list]
+    assert str(audio.blob_id) in saved_keys
+
+
+def test_download_audio_attachment_is_idempotent(mobile_user: User, opportunity: Opportunity):
+    user_visit = UserVisitFactory.create(
+        user=mobile_user,
+        opportunity=opportunity,
+        form_json={"attachments": {"recording.m4a": {"content_type": "audio/mp4", "length": 50}}},
+    )
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
+        get_response.return_value.content = b"bytes"
+        download_user_visit_attachments.run(user_visit.id)
+        download_user_visit_attachments.run(user_visit.id)
+
+    assert AudioAttachment.objects.filter(user_visit=user_visit).count() == 1
+    assert save_blob.call_count == 1
+
+
+@pytest.mark.django_db
+def test_download_inaccessibility_request_attachments_creates_blobs(opportunity):
+    xform_id = str(uuid.uuid4())
+    WorkAreaInaccessibilityRequestFactory(
+        xform_id=xform_id,
+        work_area__opportunity=opportunity,
+    )
+    attachments = {
+        "form.xml": {"content_type": "text/xml", "length": 500},
+        "photo.jpg": {"content_type": "image/jpeg", "length": 20},
+    }
+
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
+        get_response.return_value.content = b"imgdata"
+        download_inaccessibility_request_attachments.run(xform_id, attachments)
+
+    assert BlobMeta.objects.filter(parent_id=xform_id).count() == 1  # form.xml excluded
+    blob = BlobMeta.objects.get(parent_id=xform_id)
+    assert blob.name == "photo.jpg"
+    assert blob.content_length == 20
+    assert blob.content_type == "image/jpeg"
+    blob_id, content_file = save_blob.call_args_list[0].args
+    assert str(blob_id) == blob.blob_id
+    assert content_file.read() == b"imgdata"
+
+
+@pytest.mark.django_db
+def test_download_inaccessibility_request_attachments_skips_existing_blobs(opportunity):
+    xform_id = str(uuid.uuid4())
+    WorkAreaInaccessibilityRequestFactory(
+        xform_id=xform_id,
+        work_area__opportunity=opportunity,
+    )
+    BlobMeta.objects.create(
+        name="photo.jpg",
+        parent_id=xform_id,
+        content_length=20,
+        content_type="image/jpeg",
+    )
+    attachments = {"photo.jpg": {"content_type": "image/jpeg", "length": 20}}
+
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
+        download_inaccessibility_request_attachments.run(xform_id, attachments)
+
+    get_response.assert_not_called()
+    save_blob.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -207,10 +349,9 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
             yield
 
-    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
     def test_generate_invoice_for_two_active_managed_opportunities(self):
-        opportunity1 = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
-        opportunity2 = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 12, 1))
+        opportunity1 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        opportunity2 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 12, 1))
 
         payment_unit1 = PaymentUnitFactory(opportunity=opportunity1, amount=Decimal("100.00"))
         payment_unit2 = PaymentUnitFactory(opportunity=opportunity2, amount=Decimal("50.00"))
@@ -248,7 +389,6 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice1.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice1.start_date == datetime.date(2024, 1, 1)
         assert invoice1.end_date == datetime.date(2024, 1, 31)
-        assert invoice1.invoice_number == "INV001"
         assert completed_work1.invoice == invoice1
 
         invoice2 = PaymentInvoice.objects.get(opportunity=opportunity2)
@@ -256,12 +396,11 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice2.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice2.start_date == datetime.date(2024, 1, 1)
         assert invoice2.end_date == datetime.date(2024, 1, 31)
-        assert invoice2.invoice_number == "INV002"
+        assert {invoice1.invoice_number, invoice2.invoice_number} == {"INV001", "INV002"}
         assert completed_work2.invoice == invoice2
 
-    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
     def test_no_invoice_for_inactive_opportunities(self):
-        inactive_opportunity = OpportunityFactory(active=False, managed=True, start_date=datetime.date(2026, 1, 1))
+        inactive_opportunity = OpportunityFactory(active=False, is_test=False, start_date=datetime.date(2026, 1, 1))
         payment_unit = PaymentUnitFactory(opportunity=inactive_opportunity)
         access = OpportunityAccessFactory(opportunity=inactive_opportunity)
         completed_work = CompletedWorkFactory(
@@ -280,11 +419,18 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert PaymentInvoice.objects.count() == 0
         assert completed_work.invoice is None
 
-    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
-    def test_no_invoice_for_active_unmanaged_opportunity(self):
-        unmanaged_opportunity = OpportunityFactory(active=True, managed=False, start_date=datetime.date(2026, 1, 1))
-        payment_unit = PaymentUnitFactory(opportunity=unmanaged_opportunity, amount=Decimal("100.00"))
-        access = OpportunityAccessFactory(opportunity=unmanaged_opportunity)
+    def test_no_invoice_with_no_approved_work(self):
+        opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+
+        generate_automated_service_delivery_invoice()
+
+        invoice = PaymentInvoice.objects.filter(opportunity=opportunity)
+        assert len(invoice) == 0
+
+    def test_no_invoice_for_test_opportunity(self):
+        test_opportunity = OpportunityFactory(active=True, is_test=True, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=test_opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=test_opportunity)
         completed_work = CompletedWorkFactory(
             opportunity_access=access,
             payment_unit=payment_unit,
@@ -296,39 +442,67 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
         generate_automated_service_delivery_invoice()
 
-        assert PaymentInvoice.objects.count() == 0
-        assert completed_work.invoice is None
-
-    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=False)
-    def test_no_invoice_when_switch_inactive(self):
-        opportunity = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
-        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        completed_work = CompletedWorkFactory(
-            opportunity_access=access,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            status_modified_date=now(),
-        )
-        completed_work.saved_payment_accrued = Decimal("100.00")
-        completed_work.save()
-
-        generate_automated_service_delivery_invoice()
+        completed_work.refresh_from_db()
 
         assert PaymentInvoice.objects.count() == 0
         assert completed_work.invoice is None
-
-    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
-    def test_no_invoice_with_no_approved_work(self):
-        opportunity = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
-
-        generate_automated_service_delivery_invoice()
-
-        invoice = PaymentInvoice.objects.filter(opportunity=opportunity)
-        assert len(invoice) == 0
 
 
 @pytest.mark.django_db
+class TestAutoDeactivateEndedOpportunities:
+    def test_deactivates_opportunities_30_days_after_end(self):
+        cutoff = datetime.date.today() - datetime.timedelta(days=30)
+        opp_to_deactivate = OpportunityFactory(active=True, end_date=cutoff)
+        opp_still_active = OpportunityFactory(active=True, end_date=datetime.date.today())
+        opp_already_inactive = OpportunityFactory(active=False, end_date=cutoff)
+
+        auto_deactivate_ended_opportunities()
+
+        opp_to_deactivate.refresh_from_db()
+        opp_still_active.refresh_from_db()
+        opp_already_inactive.refresh_from_db()
+
+        assert opp_to_deactivate.active is False
+        assert opp_still_active.active is True
+        assert opp_already_inactive.active is False  # unchanged
+
+    def test_records_pghistory_event_with_system_context(self):
+        cutoff = datetime.date.today() - datetime.timedelta(days=30)
+        opp = OpportunityFactory(active=True, end_date=cutoff)
+
+        auto_deactivate_ended_opportunities()
+
+        # Should have 2 events: initial create + the deactivation
+        events = OpportunityActiveEvent.objects.filter(pgh_obj=opp).order_by("pgh_id")
+        assert events.count() == 1
+        deactivation_event = events.last()
+        assert deactivation_event.active is False
+        assert deactivation_event.pgh_context is not None
+        assert deactivation_event.pgh_context.metadata["username"] == "system"
+        assert (
+            deactivation_event.pgh_context.metadata["action"]
+            == "commcare_connect.opportunity.tasks.auto_deactivate_ended_opportunities"
+        )
+
+
+@pytest.mark.django_db
+class TestAutoArchiveTestOpportunities:
+    @pytest.mark.parametrize(
+        "is_test,days_ago,expected_archived",
+        [
+            (True, OPPORTUNITY_AUTO_ARCHIVE_DAYS, True),
+            (True, OPPORTUNITY_AUTO_ARCHIVE_DAYS - 1, False),
+            (False, OPPORTUNITY_AUTO_ARCHIVE_DAYS, False),
+        ],
+    )
+    def test_archive_boundary_conditions(self, is_test, days_ago, expected_archived):
+        end_date = datetime.date.today() - datetime.timedelta(days=days_ago)
+        opp = OpportunityFactory(is_test=is_test, archived=False, end_date=end_date)
+        auto_archive_test_opportunities()
+        opp.refresh_from_db()
+        assert opp.archived is expected_archived
+
+
 @mock.patch("commcare_connect.opportunity.tasks.send_message")
 def test_notify_user_for_scored_assessment(send_message_patch):
     assessment = AssessmentFactory()
@@ -345,6 +519,121 @@ def test_notify_user_for_scored_assessment(send_message_patch):
                 "opportunity_uuid": str(assessment.opportunity.opportunity_id),
                 "title": "Update on your Assessment",
                 "body": f"Assessment for opportunity '{assessment.opportunity.name}' scored, check your status",
+            },
+        )
+    )
+
+
+def test_save_export_uses_export_storage():
+    mock_storage_cls = mock.MagicMock()
+    mock_storage_cls.return_value.save.side_effect = lambda name, content: name
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "2026-03-09T10:00:00_test_visit_export.csv"
+
+    with mock.patch.dict(
+        "sys.modules", {"commcare_connect.utils.storages": mock.MagicMock(ExportS3Boto3Storage=mock_storage_cls)}
+    ):
+        result = save_export(dataset, filename, "csv")
+
+    mock_storage_cls.return_value.save.assert_called_once()
+    assert result == filename
+
+
+@pytest.mark.django_db
+class TestExportTasksCreateExportFile:
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.UserVisitExporter")
+    def test_generate_visit_export(self, mock_exporter_cls, mock_save, opportunity):
+        mock_exporter_cls.return_value.get_dataset.return_value = Dataset()
+        generate_visit_export(opportunity.id, None, None, [], "csv", False)
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_visit_export.csv")
+        assert args[2] == "csv"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_user_visit_review_data")
+    def test_generate_review_visit_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_review_visit_export(opportunity.id, None, None, [], "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_review_visit_export.csv")
+        assert args[2] == "csv"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_empty_payment_table")
+    def test_generate_payment_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_payment_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_payment_export.csv")
+        assert args[2] == "csv"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_user_status_table")
+    def test_generate_user_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_user_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_user_status.csv")
+        assert args[2] == "csv"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_deliver_status_table")
+    def test_generate_deliver_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_deliver_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_deliver_status.csv")
+        assert args[2] == "csv"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_work_status_table")
+    def test_generate_work_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_work_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_work_status.csv")
+        assert args[2] == "csv"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_catchment_area_table")
+    def test_generate_catchment_area_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_catchment_area_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_catchment_area.csv")
+        assert args[2] == "csv"
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.send_message")
+def test_send_task_assignment_notification(send_message_patch):
+    opportunity = OpportunityFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app)
+    assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+
+    send_task_assignment_notification(assigned_task.pk)
+
+    assert send_message_patch.call_count == 1
+    send_message_patch.assert_called_with(
+        Message(
+            usernames=[access.user.username],
+            data={
+                "action": "ccc_generic_opportunity",
+                "title": "New Task Assigned",
+                "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
+                "opportunity_uuid": str(opportunity.opportunity_id),
+                "opportunity_status": "delivery",
+                "key": "task_assignment",
+                "session_endpoint_id": "cc_app_home",
             },
         )
     )

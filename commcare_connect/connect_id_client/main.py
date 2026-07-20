@@ -44,7 +44,8 @@ def send_message_bulk(messages: list[Message]) -> MessagingBulkResponse:
 
 def add_credentials(credentials_items: list[dict]):
     json = {"credentials": credentials_items}
-    response = _make_request(POST, "/users/add_credential", json=json, timeout=30)
+    auth = BasicAuth(settings.CONNECTID_CREDENTIALS_CLIENT_ID, settings.CONNECTID_CREDENTIALS_CLIENT_SECRET)
+    response = _make_request(POST, "/users/add_credential", json=json, timeout=30, auth=auth)
     return response.json()
 
 
@@ -104,11 +105,11 @@ def get_user_otp(phone_number):
         raise
 
 
-def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
+def _make_request(method, path, params=None, json=None, timeout=5, auth=None) -> Response:
     if json and not method == "POST":
         raise ValueError("json can only be used with POST requests")
-
-    auth = BasicAuth(settings.CONNECTID_CLIENT_ID, settings.CONNECTID_CLIENT_SECRET)
+    if not auth:
+        auth = BasicAuth(settings.CONNECTID_CLIENT_ID, settings.CONNECTID_CLIENT_SECRET)
     response = httpx.request(
         method, f"{settings.CONNECTID_URL}{path}", params=params, json=json, auth=auth, timeout=timeout
     )

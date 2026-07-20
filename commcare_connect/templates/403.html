@@ -1,9 +1,12 @@
 {% extends "base.html" %}
-
 {% block title %}Forbidden (403){% endblock %}
-
 {% block content %}
-<h1 class="title text-deep-purple">Forbidden (403)</h1>
-
-<p>{% if exception %}{{ exception }}{% else %}You're not allowed to access this page.{% endif %}</p>
+  <h1 class="title text-deep-purple">Forbidden (403)</h1>
+  <p>
+    {% if exception %}
+      {{ exception }}
+    {% else %}
+      You're not allowed to access this page.
+    {% endif %}
+  </p>
 {% endblock content %}

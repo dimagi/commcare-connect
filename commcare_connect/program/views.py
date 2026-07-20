@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
+from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -12,6 +12,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 
+from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
@@ -27,8 +28,8 @@ from commcare_connect.organization.decorators import (
     org_viewer_required,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.forms import ManagedOpportunityInitForm, ManagedOpportunityInitUpdateForm, ProgramForm
-from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.forms import ProgramForm
+from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tasks import (
     send_opportunity_created_email,
     send_program_invite_applied_email,
@@ -113,7 +114,7 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
 
 
 class ManagedOpportunityList(ProgramManagerMixin, ListView):
-    model = ManagedOpportunity
+    model = Opportunity
     paginate_by = 10
     default_ordering = "name"
     template_name = "opportunity/opportunity_list.html"
@@ -122,7 +123,7 @@ class ManagedOpportunityList(ProgramManagerMixin, ListView):
         ordering = self.request.GET.get("sort", self.default_ordering)
         ordering = ALLOWED_ORDERINGS.get(ordering, self.default_ordering)
         program_id = self.kwargs.get("pk")
-        return ManagedOpportunity.objects.filter(program__program_id=program_id).order_by(ordering)
+        return Opportunity.objects.filter(program__program_id=program_id).order_by(ordering)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -152,6 +153,11 @@ class ManagedOpportunityViewMixin:
             send_opportunity_created_email(self.object.id)
         return response
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["program"] = self.program
+        return context
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["program"] = self.program
@@ -159,11 +165,11 @@ class ManagedOpportunityViewMixin:
 
 
 class ManagedOpportunityInit(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInit):
-    form_class = ManagedOpportunityInitForm
+    form_class = OpportunityInitForm
 
 
 class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInitUpdate):
-    form_class = ManagedOpportunityInitUpdateForm
+    form_class = OpportunityInitUpdateForm
 
 
 @org_program_manager_required
@@ -230,13 +236,11 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     action_map = {
         "apply": {
             "status": ProgramApplicationStatus.APPLIED,
-            "message": f"Application for the program '{application.program.name}' has been "
-            f"successfully submitted.",
+            "message": f"Application for the program '{application.program.name}' has been successfully submitted.",
         },
         "decline": {
             "status": ProgramApplicationStatus.DECLINED,
-            "message": f"The application for the program '{application.program.name}' has been marked "
-            f"as 'Declined'.",
+            "message": f"The application for the program '{application.program.name}' has been marked as 'Declined'.",
         },
     }
 
@@ -267,8 +271,8 @@ def program_manager_home(request, org):
         queryset=ProgramApplication.objects.select_related("organization").annotate(
             current_budget=Coalesce(
                 Sum(
-                    "program__managedopportunity__total_budget",
-                    filter=Q(program__managedopportunity__organization=F("organization")),
+                    "program__opportunity__total_budget",
+                    filter=Q(program__opportunity__organization=F("organization")),
                 ),
                 Value(0),
             )
@@ -307,9 +311,9 @@ def program_manager_home(request, org):
         UserVisit.objects.filter(
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.pending,
-            opportunity__managed=True,
-            opportunity__managedopportunity__program__in=programs_qs,
+            opportunity__program__in=programs_qs,
         )
+        .exclude(opportunity__automatic_visit_verification=True)
         .values(
             "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
         )
@@ -320,8 +324,7 @@ def program_manager_home(request, org):
 
     pending_payments_data = (
         PaymentInvoice.objects.filter(
-            opportunity__managed=True,
-            opportunity__managedopportunity__program__in=programs_qs,
+            opportunity__program__in=programs_qs,
             payment__isnull=True,
         )
         .values(
@@ -367,8 +370,8 @@ def network_manager_home(request, org):
         )
         .prefetch_related(
             Prefetch(
-                "managedopportunity_set",
-                queryset=ManagedOpportunity.objects.filter(organization=org),
+                "opportunity_set",
+                queryset=Opportunity.objects.filter(organization=org),
                 to_attr="managed_opportunities_for_org",
             )
         )
@@ -379,21 +382,34 @@ def network_manager_home(request, org):
     pending_review_data = (
         UserVisit.objects.filter(
             status="pending",
-            opportunity__managed=True,
             opportunity__organization=org,
         )
+        .exclude(opportunity__automatic_visit_verification=True)
         .values(
             "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
         )
         .annotate(count=Count("id", distinct=True))
     )
     pending_review = _make_recent_activity_data(pending_review_data, org.slug, "opportunity:worker_deliver")
-    access_qs = OpportunityAccess.objects.filter(opportunity__managed=True, opportunity__organization=org)
+    access_qs = OpportunityAccess.objects.filter(opportunity__organization=org)
 
+    payment_accrued_sum_sq = (
+        OpportunityAccess.objects.filter(opportunity_id=OuterRef("id"))
+        .values("opportunity_id")
+        .annotate(total=Sum("payment_accrued"))
+        .values("total")[:1]
+    )
+    payment_amount_sum_sq = (
+        OpportunityAccess.objects.filter(opportunity_id=OuterRef("id"))
+        .values("opportunity_id")
+        .annotate(total=Sum("payment__amount"))
+        .values("total")[:1]
+    )
     pending_payments_data_opps = (
-        Opportunity.objects.filter(managed=True, organization=org)
+        Opportunity.objects.filter(organization=org)
         .annotate(
-            pending_payment=Sum("opportunityaccess__payment_accrued") - Sum("opportunityaccess__payment__amount")
+            pending_payment=Coalesce(Subquery(payment_accrued_sum_sq), 0, output_field=DecimalField())
+            - Coalesce(Subquery(payment_amount_sum_sq), 0, output_field=DecimalField())
         )
         .filter(pending_payment__gte=0)
     )

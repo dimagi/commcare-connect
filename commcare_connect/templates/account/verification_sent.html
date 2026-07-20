@@ -1,13 +1,17 @@
 {% extends "account/base.html" %}
-
 {% load i18n %}
-
-{% block head_title %}{% translate "Verify Your E-mail Address" %}{% endblock %}
-
+{% block head_title %}
+  {% translate "Verify Your E-mail Address" %}
+{% endblock %}
 {% block inner %}
-  <div class="w-full min-h-[620px] h-fit">
+  <div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
     <h1 class="title text-brand-deep-purple mb-4">{% translate "Verify Your E-mail Address" %}</h1>
-
-    <p class="text-sm">{% blocktranslate %}We have sent an e-mail to you for verification. Follow the link provided to finalize the signup process. Please contact us if you do not receive it within a few minutes.{% endblocktranslate %}</p>
+    {# Silently drain messages — this page already says it #}
+    {% for message in messages %}{% endfor %}
+    <p class="text-sm">
+      {% blocktranslate %}We have sent an e-mail to you for verification. Follow the link provided to finalize the signup process. Please contact us if you do not receive it within a few minutes.{% endblocktranslate %}
+    </p>
+    <a href="{% url 'account_login' %}"
+       class="button button-md primary-dark w-fit">{% translate "Sign In" %}</a>
   </div>
 {% endblock %}

@@ -168,8 +168,8 @@ def get_table_data_for_year_month(
         filter_kwargs.update({"opportunity_access__opportunity__delivery_type__slug": delivery_type})
         filter_kwargs_nm.update({"invoice__opportunity__delivery_type__slug": delivery_type})
     if program:
-        filter_kwargs.update({"opportunity_access__opportunity__managedopportunity__program": program})
-        filter_kwargs_nm.update({"invoice__opportunity__managedopportunity__program": program})
+        filter_kwargs.update({"opportunity_access__opportunity__program": program})
+        filter_kwargs_nm.update({"invoice__opportunity__program": program})
     if llo:
         filter_kwargs.update({"opportunity_access__opportunity__organization__llo_entity": llo})
         filter_kwargs_nm.update({"invoice__opportunity__organization__llo_entity": llo})

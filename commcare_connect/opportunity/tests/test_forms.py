@@ -4,33 +4,47 @@ from unittest.mock import patch
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from django.core.cache import cache
+from django.utils.timezone import now
 from waffle.testutils import override_switch
 
-from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OPPORTUNITY_CREDENTIALS
+from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
+    AddTaskTypeForm,
     AutomatedPaymentInvoiceForm,
     CreateTaskForm,
+    EditTaskTypeForm,
     OpportunityChangeForm,
+    OpportunityInitForm,
     OpportunityInitUpdateForm,
+    OpportunityUserInviteForm,
+    PaymentUnitForm,
 )
 from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
     CompletedWork,
     CompletedWorkStatus,
     CredentialConfiguration,
     PaymentUnit,
 )
 from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
     CommCareAppFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
+    OpportunityClaimFactory,
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
-    TaskFactory,
+    TaskTypeFactory,
 )
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
+from commcare_connect.program.models import ProgramApplicationStatus
+from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.users.models import UserCredential
 
 
 @pytest.fixture
@@ -65,6 +79,7 @@ class TestOpportunityChangeForm:
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": (datetime.date.today() + datetime.timedelta(days=60)).isoformat(),
             "users": "+1234567890\n+9876543210",
+            "enable_credentials": True,
             "learn_level": None,
             "deliver_level": None,
         }
@@ -104,8 +119,6 @@ class TestOpportunityChangeForm:
             "name",
             "description",
             "short_description",
-            "currency",
-            "country",
         ],
     )
     def test_required_fields(self, valid_opportunity, field, base_form_data):
@@ -198,10 +211,9 @@ class TestOpportunityChangeForm:
     @pytest.mark.parametrize(
         "data_updates,expected_valid",
         [
-            ({"currency": "USD", "additional_users": 5}, True),
-            ({"currency": "EUR", "additional_users": 10}, True),
-            ({"currency": "INVALID", "additional_users": 5}, False),
-            ({"currency": "USD", "additional_users": -5}, True),
+            ({"additional_users": 5}, True),
+            ({"additional_users": 10}, True),
+            ({"additional_users": -5}, True),
         ],
     )
     def test_valid_combinations(self, valid_opportunity, base_form_data, data_updates, expected_valid):
@@ -209,6 +221,21 @@ class TestOpportunityChangeForm:
         data.update(data_updates)
         form = OpportunityChangeForm(data=data, instance=valid_opportunity)
         assert form.is_valid() == expected_valid
+
+    @pytest.mark.parametrize("submitted_currency", ["EUR", "INVALID"])
+    def test_currency_and_country_are_immutable(self, valid_opportunity, base_form_data, submitted_currency):
+        """currency and country are disabled fields, so submitted values are ignored and the instance is preserved."""
+        original_currency = valid_opportunity.currency
+        original_country = valid_opportunity.country
+
+        data = base_form_data.copy()
+        data.update({"currency": submitted_currency, "country": "INVALID"})
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+
+        assert form.is_valid()
+        opp = form.save()
+        assert opp.currency == original_currency
+        assert opp.country == original_country
 
     def test_for_incomplete_opp(self, base_form_data, valid_opportunity):
         data = data = base_form_data.copy()
@@ -220,17 +247,20 @@ class TestOpportunityChangeForm:
 
     @override_switch(OPPORTUNITY_CREDENTIALS, active=True)
     @pytest.mark.parametrize(
-        "learn_level,delivery_level",
+        "enable_credentials,learn_level,delivery_level",
         [
-            ("LEARN_PASSED", "25_DELIVERIES"),
-            ("LEARN_PASSED", "1000_DELIVERIES"),
-            ("", "50_DELIVERIES"),
-            ("LEARN_PASSED", ""),
-            ("", ""),
+            (True, "LEARN_PASSED", "25_DELIVERIES"),
+            (True, "LEARN_PASSED", "1000_DELIVERIES"),
+            (True, "", "50_DELIVERIES"),
+            (True, "LEARN_PASSED", ""),
+            (False, "", ""),  # opt-out via toggle
         ],
     )
-    def test_save_credential_issuer(self, valid_opportunity, base_form_data, learn_level, delivery_level):
+    def test_save_credential_issuer(
+        self, valid_opportunity, base_form_data, enable_credentials, learn_level, delivery_level
+    ):
         data = base_form_data.copy()
+        data["enable_credentials"] = enable_credentials
         data["learn_level"] = learn_level
         data["delivery_level"] = delivery_level
 
@@ -238,7 +268,7 @@ class TestOpportunityChangeForm:
         assert form.is_valid(), form.errors
         form.save()
 
-        if learn_level or delivery_level:
+        if enable_credentials:
             credential_issuer = CredentialConfiguration.objects.get(opportunity=valid_opportunity)
             assert credential_issuer.learn_level == (learn_level or None)
             assert credential_issuer.delivery_level == (delivery_level or None)
@@ -256,14 +286,21 @@ class TestOpportunityChangeForm:
         assert "learn_level" in form.errors or "delivery_level" in form.errors
 
     def test_credential_switch(self, valid_opportunity):
+        cache.clear()
         form = OpportunityChangeForm(instance=valid_opportunity)
         assert "learn_level" not in form.fields
         assert "delivery_level" not in form.fields
+        assert "enable_credentials" not in form.fields
 
         with override_switch(OPPORTUNITY_CREDENTIALS, active=True):
             form = OpportunityChangeForm(instance=valid_opportunity)
             assert "learn_level" in form.fields
             assert "delivery_level" in form.fields
+            assert "enable_credentials" in form.fields
+            # No credential config exists for valid_opportunity → toggle defaults to False (opted out)
+            assert form.fields["enable_credentials"].initial is False
+            assert form.fields["learn_level"].initial == ""
+            assert form.fields["delivery_level"].initial == ""
 
 
 @pytest.mark.django_db
@@ -271,6 +308,12 @@ class TestOpportunityInitUpdateForm:
     @pytest.fixture
     def opportunity(self, organization):
         opportunity = OpportunityFactory(organization=organization)
+
+        ProgramApplicationFactory(
+            organization=organization,
+            program=opportunity.program,
+            status=ProgramApplicationStatus.ACCEPTED,
+        )
 
         learn_app = CommCareAppFactory(
             organization=organization,
@@ -314,6 +357,7 @@ class TestOpportunityInitUpdateForm:
             "short_description": "updated short description",
             "currency": currency_code,
             "country": opportunity.country,
+            "organization": opportunity.organization.pk,
             "learn_app_description": learn_description,
             "learn_app_passing_score": learn_score,
         }
@@ -338,6 +382,7 @@ class TestOpportunityInitUpdateForm:
             instance=opportunity,
             user=opportunity.api_key.user,
             org_slug=opportunity.organization.slug,
+            program=opportunity.program,
         )
 
     def test_updates_existing_linked_apps(self, opportunity):
@@ -370,7 +415,8 @@ class TestOpportunityInitUpdateForm:
         assert updated_opportunity.deliver_app_id == deliver_app.id
         assert deliver_app.name == "updated deliver app"
 
-        assert updated_opportunity.currency.code == "EUR"
+        # currency is always taken from the program, ignoring the submitted "EUR" value
+        assert updated_opportunity.currency == opportunity.program.currency
 
     def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
         original_learn_app = opportunity.learn_app
@@ -469,6 +515,76 @@ class TestOpportunityInitUpdateForm:
         assert learn_app.passing_score == 91
 
 
+@pytest.mark.django_db
+class TestOpportunityInitForm:
+    @pytest.fixture(autouse=True)
+    def program_application(self, opportunity):
+        return ProgramApplicationFactory(
+            organization=opportunity.organization,
+            program=opportunity.program,
+            status=ProgramApplicationStatus.ACCEPTED,
+        )
+
+    def _build_data(self, opportunity):
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+        return {
+            "hq_server": opportunity.hq_server.id,
+            "api_key": str(opportunity.api_key.id),
+            "learn_app_domain": learn_app.cc_domain,
+            "learn_app": json.dumps({"id": learn_app.cc_app_id, "name": learn_app.name}),
+            "learn_app_description": "Learn description",
+            "learn_app_passing_score": 70,
+            "deliver_app_domain": deliver_app.cc_domain,
+            "deliver_app": json.dumps({"id": deliver_app.cc_app_id, "name": deliver_app.name}),
+            "organization": opportunity.organization.pk,
+        }
+
+    def _build_form(self, opportunity, extra_data=None):
+        data = {
+            "name": "Brand new opportunity",
+            "description": "Description",
+            "short_description": "Short",
+            **self._build_data(opportunity),
+            **(extra_data or {}),
+        }
+        return OpportunityInitForm(
+            data=data,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+    @pytest.mark.parametrize("switch_active", [True, False])
+    def test_init_form_sets_automatic_visit_verification_from_global_switch(self, opportunity, switch_active):
+        cache.clear()
+        form = self._build_form(opportunity)
+        assert form.is_valid(), form.errors
+
+        with override_switch(AUTOMATIC_VISIT_VERIFICATION, active=switch_active):
+            new_opportunity = form.save()
+        new_opportunity.refresh_from_db()
+        assert new_opportunity.pk != opportunity.pk
+        assert new_opportunity.automatic_visit_verification is switch_active
+
+    @pytest.mark.parametrize("switch_active", [True, False])
+    def test_default_credential_config_on_new_opportunity(self, opportunity, switch_active):
+        cache.clear()
+        form = self._build_form(opportunity, extra_data={"name": "New opportunity with credentials"})
+        assert form.is_valid(), form.errors
+
+        with override_switch(OPPORTUNITY_CREDENTIALS, active=switch_active):
+            new_opportunity = form.save()
+
+        credential_config = CredentialConfiguration.objects.filter(opportunity=new_opportunity).first()
+        if switch_active:
+            assert credential_config is not None
+            assert credential_config.learn_level == UserCredential.LearnLevel.LEARN_PASSED
+            assert credential_config.delivery_level == UserCredential.DeliveryLevel.TWENTY_FIVE
+        else:
+            assert credential_config is None
+
+
 class TestAddBudgetNewUsersForm:
     @pytest.fixture(
         params=[
@@ -482,11 +598,10 @@ class TestAddBudgetNewUsersForm:
         self.opp_total_budget_initially = total_user * self.budget_per_user  # 24
 
         self.program = ProgramFactory(organization=program_manager_org, budget=program_budget)
-        self.opportunity = ManagedOpportunityFactory(
+        self.opportunity = OpportunityFactory(
             program=self.program,
             organization=organization,
             total_budget=self.opp_total_budget_initially,
-            managed=True,
         )
         PaymentUnitFactory(opportunity=self.opportunity, max_total=max_total, amount=amount, org_amount=org_pay)
 
@@ -774,27 +889,279 @@ class TestAutomatedPaymentInvoiceForm:
 @pytest.mark.django_db
 class TestCreateTaskForm:
     @pytest.fixture
-    def task(self, opportunity):
-        return TaskFactory(app=opportunity.deliver_app)
+    def task_type(self, opportunity):
+        return TaskTypeFactory(app=opportunity.deliver_app)
 
-    def test_invalid_past_date(self, opportunity, task):
+    def test_invalid_past_date(self, opportunity, task_type):
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
         data = {
-            "task": task.pk,
-            "connect_worker": access.user.pk,
+            "task": task_type.pk,
+            "access": access.pk,
             "due_date": (datetime.date.today() - datetime.timedelta(days=1)).isoformat(),
         }
         form = CreateTaskForm(data, opportunity=opportunity)
         assert not form.is_valid()
         assert "due_date" in form.errors
 
-    def test_flw_queryset_filtering(self, opportunity):
-        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False).user
-        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False).user
-        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True).user
+    def test_valid_form(self, opportunity, task_type):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        due_date = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+        data = {
+            "task": task_type.pk,
+            "access": access.pk,
+            "due_date": due_date,
+        }
+        form = CreateTaskForm(data, opportunity=opportunity)
+        assert form.is_valid()
+        assert form.cleaned_data["task"] == task_type
+        assert form.cleaned_data["access"] == access
 
-        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["connect_worker"].queryset
+    @pytest.mark.parametrize(
+        "task_status, provide_access, in_queryset",
+        [
+            (AssignedTaskStatus.ASSIGNED, True, False),
+            (AssignedTaskStatus.COMPLETED, True, True),
+            (AssignedTaskStatus.ASSIGNED, False, True),
+        ],
+        ids=["assigned-excluded", "completed-included", "no-access-unfiltered"],
+    )
+    def test_task_queryset_filtering(self, opportunity, task_type, task_status, provide_access, in_queryset):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        if task_status is not None:
+            AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=task_status)
+        task_queryset = (
+            CreateTaskForm(opportunity=opportunity, access=access if provide_access else None).fields["task"].queryset
+        )
+        assert (task_type in task_queryset) == in_queryset
+
+    def test_task_queryset_excludes_only_assigned_to_worker(self, opportunity, task_type):
+        """Worker B's completed tasks should not hide a task type when another worker currently has it assigned."""
+        worker_b_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        worker_a_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        AssignedTaskFactory(
+            task_type=task_type, opportunity_access=worker_b_access, status=AssignedTaskStatus.COMPLETED
+        )
+        AssignedTaskFactory(
+            task_type=task_type, opportunity_access=worker_a_access, status=AssignedTaskStatus.ASSIGNED
+        )
+
+        task_queryset = CreateTaskForm(opportunity=opportunity, access=worker_b_access).fields["task"].queryset
+        assert task_type in task_queryset
+
+    def test_flw_queryset_filtering(self, opportunity):
+        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False)
+        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True)
+
+        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["access"].queryset
 
         assert active in flw_queryset
         assert unaccepted not in flw_queryset
         assert suspended not in flw_queryset
+
+
+@pytest.mark.django_db
+def test_invite_form_rejects_ended_opportunity():
+    opportunity = OpportunityFactory(end_date=datetime.date.today() - datetime.timedelta(days=1))
+    form = OpportunityUserInviteForm(
+        data={"users": "+15555555555"},
+        opportunity=opportunity,
+    )
+    assert not form.is_valid()
+    assert "This opportunity has ended. You cannot invite more workers." in str(form.errors["users"])
+
+
+@pytest.mark.django_db
+class TestAddTaskTypeForm:
+    @pytest.fixture
+    def task_units(self):
+        return [
+            TaskUnit(id="task_1", name="Task One", description="Desc one"),
+            TaskUnit(id="task_2", name="Task Two", description="Desc two"),
+            TaskUnit(id="task_3", name="Task Three", description="Desc three"),
+        ]
+
+    def test_task_unit_choices_populated(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(opportunity=opportunity)
+        choices = form.fields["task_unit_id"].choices
+        assert choices[0] == ("", "Select a task unit")
+        assert ("task_1", "Task One") in choices
+        assert ("task_2", "Task Two") in choices
+
+    def test_already_used_slugs_excluded(self, opportunity, task_units):
+        TaskTypeFactory(app=opportunity.deliver_app, slug="task_1")
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(opportunity=opportunity)
+        choice_ids = [c[0] for c in form.fields["task_unit_id"].choices]
+        assert "task_1" not in choice_ids
+        assert "task_2" in choice_ids
+        assert "task_3" in choice_ids
+
+    def test_valid_form(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={
+                    "task_unit_id": "task_1",
+                    "name": "My Task",
+                    "description": "A description",
+                    "case_property": "some_property",
+                },
+                opportunity=opportunity,
+            )
+        assert form.is_valid(), form.errors
+
+    def test_missing_required_fields(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(data={}, opportunity=opportunity)
+        assert not form.is_valid()
+        assert "task_unit_id" in form.errors
+        assert "name" in form.errors
+        assert "description" in form.errors
+
+    def test_save_sets_slug_and_app(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={
+                    "task_unit_id": "task_1",
+                    "name": "My Task",
+                    "description": "A description",
+                },
+                opportunity=opportunity,
+            )
+        assert form.is_valid(), form.errors
+        task_type = form.save()
+        assert task_type.slug == "task_1"
+        assert task_type.app == opportunity.deliver_app
+        assert task_type.opportunity == opportunity
+
+
+@pytest.mark.django_db
+class TestEditTaskTypeForm:
+    def test_updates_name_and_description(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, name="Old Name", description="Old Desc")
+        form = EditTaskTypeForm(
+            data={"name": "New Name", "description": "New Desc"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.name == "New Name"
+        assert saved.description == "New Desc"
+
+    def test_requires_name(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
+        form = EditTaskTypeForm(
+            data={"name": "", "description": "Desc"},
+            instance=task_type,
+        )
+        assert not form.is_valid()
+        assert "name" in form.errors
+
+    def test_archive_sets_archived(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
+        assert task_type.archived is None
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description, "is_archived": True},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.archived is not None
+
+    def test_unarchive_clears_archived(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, archived=now())
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.archived is None
+
+    def test_archive_preserves_existing_timestamp(self, opportunity):
+        original_time = now()
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, archived=original_time)
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description, "is_archived": True},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.archived == original_time
+
+    def test_excludes_non_editable_fields(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, slug="original-slug", case_property="original_prop")
+        form = EditTaskTypeForm(
+            data={
+                "name": "New Name",
+                "description": "New Desc",
+                "slug": "hacked-slug",
+                "case_property": "hacked_prop",
+            },
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.slug == "original-slug"
+        assert saved.case_property == "original_prop"
+
+
+@pytest.mark.django_db
+class TestPaymentUnitFormBudgetValidation:
+    """The per-user delivery limit is allocated from a shared budget pool per payment unit.
+
+    Adding or enlarging a payment unit lowers the derived ``number_of_users``; if it drops
+    below the count of workers who have already claimed, some workers silently receive a
+    reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
+    """
+
+    def _form(self, opportunity, data, instance=None):
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        return PaymentUnitForm(
+            data={
+                "name": "Bonus",
+                "description": "Bonus payment unit",
+                "max_daily": 10,
+                "amount": 5,
+                "org_amount": 0,
+                "required_deliver_units": [str(deliver_unit.id)],
+                **data,
+            },
+            deliver_units=[deliver_unit],
+            payment_units=[],
+            org_slug=opportunity.organization.slug,
+            opportunity=opportunity,
+            instance=instance,
+        )
+
+    @pytest.mark.parametrize(
+        "num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid",
+        [
+            # Budget covers 3 users with only the existing unit; adding a second unit needs double.
+            pytest.param(1, 1500, 3, False, 100, False, id="reject_new_over_budget"),
+            pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
+            # Budget that would fail with claimants, proving the no-claimants early return fires.
+            pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
+            # Doubling an existing unit's max_total pushes number_of_users below the 3 claimants.
+            pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
+        ],
+    )
+    def test_budget_validation(
+        self, opportunity, num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid
+    ):
+        units = PaymentUnitFactory.create_batch(
+            num_existing, opportunity=opportunity, max_total=100, amount=5, org_amount=0
+        )
+        opportunity.total_budget = total_budget
+        opportunity.save()
+        OpportunityClaimFactory.create_batch(
+            num_claimants, opportunity_access__opportunity=opportunity, opportunity_access__accepted=True
+        )
+
+        instance = units[0] if edit_existing else None
+        form = self._form(opportunity, {"max_total": new_max_total}, instance=instance)
+
+        assert form.is_valid() == expect_valid
+        if not expect_valid:
+            assert any("budget cannot give the full limit" in e for e in form.non_field_errors())

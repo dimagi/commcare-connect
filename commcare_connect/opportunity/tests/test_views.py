@@ -1,36 +1,54 @@
 import inspect
+import json
 from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 from unittest import mock
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core.files.base import ContentFile
+from django.core.files.storage import storages
 from django.core.files.storage.handler import StorageHandler
+from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
+from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
+from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
+from commcare_connect.flags.models import Flag
+from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
+from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
+from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
+    CompletedWorkStatus,
     FormJsonValidationRules,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
+    OpportunityActiveEvent,
     OpportunityClaimLimit,
     Payment,
     PaymentUnit,
+    TaskType,
     UserInvite,
     UserInviteStatus,
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.tables import TaskTable
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
+    AudioAttachmentFactory,
     BlobMetaFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -44,12 +62,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    TaskTypeFactory,
     UserInviteFactory,
     UserVisitFactory,
 )
 from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
@@ -57,6 +76,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
 @pytest.mark.django_db
@@ -65,7 +85,7 @@ def test_add_budget_existing_users(
 ):
     # access = OpportunityAccessFactory(user=user, opportunity=opportunity, accepted=True)
     # claim = OpportunityClaimFactory(end_date=opportunity.end_date, opportunity_access=access)
-    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100, org_amount=0)
     budget_per_user = sum([p.max_total * p.amount for p in payment_units])
     opportunity.total_budget = budget_per_user
 
@@ -91,7 +111,7 @@ def test_add_budget_existing_users(
     )
     assert response.status_code == 302
     opportunity = Opportunity.objects.get(pk=opportunity.pk)
-    assert opportunity.total_budget == 205
+    assert opportunity.total_budget == 200
     assert opportunity.claimed_budget == 15
     limit = OpportunityClaimLimit.objects.get(pk=ocl.pk)
     assert limit.max_visits == 15
@@ -110,7 +130,7 @@ def test_add_budget_existing_users_for_managed_opportunity(
     initial_total_budget = budget_per_user * 2
 
     program = ProgramFactory(organization=program_manager_org, budget=200)
-    opportunity = ManagedOpportunityFactory(
+    opportunity = OpportunityFactory(
         program=program,
         organization=organization,
         total_budget=initial_total_budget,
@@ -171,10 +191,33 @@ def test_add_budget_existing_users_for_managed_opportunity(
 
 
 @pytest.mark.django_db
+def test_add_budget_existing_users_per_visit_cost_includes_org_amount(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_unit_1 = PaymentUnitFactory(opportunity=opportunity, amount=3000, org_amount=30984, max_total=12)
+    payment_unit_2 = PaymentUnitFactory(opportunity=opportunity, amount=0, org_amount=0, max_total=12)
+    opportunity.organization = organization
+    opportunity.total_budget = 1_000_000
+    opportunity.save()
+
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit_1, max_visits=12)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit_2, max_visits=12)
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    per_visit_costs = json.loads(response.context["per_visit_costs_json"])
+    assert per_visit_costs[str(claim.id)] == 33984
+
+
+@pytest.mark.django_db
 def test_decrease_budget_existing_users(
     organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
 ):
-    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100, org_amount=0)
     budget_per_user = sum([p.max_total * p.amount for p in payment_units])
     opportunity.total_budget = budget_per_user
 
@@ -200,7 +243,7 @@ def test_decrease_budget_existing_users(
     )
     assert response.status_code == 302
     opportunity = Opportunity.objects.get(pk=opportunity.pk)
-    assert opportunity.total_budget == 195
+    assert opportunity.total_budget == 200
     assert opportunity.claimed_budget == 5
     limit = OpportunityClaimLimit.objects.get(pk=ocl.pk)
     assert limit.max_visits == 5
@@ -220,7 +263,7 @@ def test_decrease_budget_existing_users_for_managed_opportunity(
     initial_total_budget = budget_per_user * 2
 
     program = ProgramFactory(organization=program_manager_org, budget=200)
-    opportunity = ManagedOpportunityFactory(
+    opportunity = OpportunityFactory(
         program=program,
         organization=organization,
         total_budget=initial_total_budget,
@@ -423,9 +466,54 @@ def test_reject_visit(client: Client, opportunity):
     assert accept_visit.reason is None
 
 
+@pytest.mark.django_db
+def test_approve_previously_rejected_visit_updates_completed_work_status(
+    client: Client, organization, program_manager_org, program_manager_org_user_admin, managed_opportunity
+):
+    # Regression test: approving a previously rejected visit must update CompletedWork.status to approved.
+    # For managed opportunities, admin approval + PM agree are both required.
+    payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
+    deliver_unit = DeliverUnitFactory(payment_unit=payment_unit)
+    access = OpportunityAccessFactory(opportunity=managed_opportunity)
+    completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+    visit = UserVisitFactory.create(
+        opportunity=managed_opportunity,
+        user=access.user,
+        opportunity_access=access,
+        deliver_unit=deliver_unit,
+        completed_work=completed_work,
+        status=VisitValidationStatus.pending,
+    )
+
+    admin_user = MembershipFactory.create(organization=organization).user
+    client.force_login(admin_user)
+    reject_url = reverse("opportunity:reject_visits", args=(organization.slug, managed_opportunity.id))
+    approve_url = reverse("opportunity:approve_visits", args=(organization.slug, managed_opportunity.id))
+
+    client.post(reject_url, {"reason": "wrong data", "visit_ids[]": [visit.id]})
+    visit.refresh_from_db()
+    assert visit.status == VisitValidationStatus.rejected
+    completed_work.refresh_from_db()
+    assert completed_work.status == CompletedWorkStatus.rejected
+
+    client.post(approve_url, {"visit_ids[]": [visit.id]})
+    visit.refresh_from_db()
+    assert visit.status == VisitValidationStatus.approved
+
+    # PM must agree for CompletedWork to be marked approved on managed opportunities
+    client.force_login(program_manager_org_user_admin)
+    review_url = reverse("opportunity:user_visit_review", args=(program_manager_org.slug, managed_opportunity.id))
+    client.post(review_url, {"review_status": "agree", "pk": [visit.id]})
+
+    completed_work.refresh_from_db()
+    assert completed_work.status == CompletedWorkStatus.approved
+
+
 @pytest.mark.parametrize(
     "review_status, new_status, expected_status",
     [
+        ("pending", "agree", "agree"),
+        ("pending", "disagree", "disagree"),
         ("agree", "disagree", "agree"),
         ("disagree", "agree", "agree"),
         ("disagree", "pending", "disagree"),
@@ -438,14 +526,11 @@ def test_user_visit_review(
     client,
     program_manager_org,
     program_manager_org_user_admin,
-    organization,
+    managed_opportunity,
     review_status,
     new_status,
     expected_status,
 ):
-    program = ProgramFactory(organization=program_manager_org)
-    managed_opportunity = ManagedOpportunityFactory(program=program, organization=organization)
-
     access = OpportunityAccessFactory(opportunity=managed_opportunity)
     visit = UserVisitFactory.create(
         opportunity=managed_opportunity, opportunity_access=access, review_status=review_status
@@ -495,7 +580,7 @@ def test_get_opportunity_list_data_all_annotations(organization, filters, expect
     program2 = ProgramFactory(organization=organization, name="Test Program 2", slug="test-program-2")
 
     # Active opportunity (status=0)
-    opportunity = ManagedOpportunityFactory(
+    opportunity = OpportunityFactory(
         program=program1,
         organization=organization,
         end_date=today + timedelta(days=1),
@@ -504,7 +589,7 @@ def test_get_opportunity_list_data_all_annotations(organization, filters, expect
     )
 
     # Active opportunity (status=0)
-    ManagedOpportunityFactory(
+    OpportunityFactory(
         program=program2,
         organization=organization,
         name="test opportunity 2",
@@ -580,7 +665,7 @@ def test_get_opportunity_list_data_all_annotations(organization, filters, expect
     queryset = OpportunityData(organization, False, filters).get_data()
     assert queryset.count() == expected_count
     if not filters:
-        opp = queryset[0]
+        opp = next(item for item in queryset if item.id == opportunity.id)
         assert opp.pending_invites == 3
         assert opp.pending_approvals == 1
         assert opp.total_accrued == total_accrued
@@ -591,9 +676,20 @@ def test_get_opportunity_list_data_all_annotations(organization, filters, expect
 
 
 @pytest.mark.django_db
+def test_opportunity_list_excludes_archived(organization):
+    today = now().date()
+    OpportunityFactory(organization=organization, end_date=today + timedelta(days=1), active=True, archived=False)
+    OpportunityFactory(organization=organization, end_date=today + timedelta(days=1), active=True, archived=True)
+
+    queryset = OpportunityData(organization, False, {}).get_data()
+    assert queryset.count() == 1
+
+
+@pytest.mark.django_db
 def test_tiered_queryset_basic():
     users = [User.objects.create(username=f"user{i}") for i in range(5)]
-    base_qs = User.objects.all()
+    user_ids = [u.id for u in users]
+    base_qs = User.objects.filter(id__in=user_ids).order_by("id")
 
     def data_qs_fn(ids):
         qs = User.objects.filter(id__in=ids)
@@ -791,6 +887,10 @@ class TestResendUserInvites:
         assert self.old_invite.status == UserInviteStatus.invited
         assert self.old_invite.notification_date is not None
 
+        sms_body = mock_send_sms.call_args.args[1]
+        expected_path = reverse("users:invite_redirect", args=(self.access2.opportunity.opportunity_id,))
+        assert expected_path in sms_body
+
     def test_no_user_ids(self, mock_send_event):
         response = self.client.post(self.url, data={})
         assert response.status_code == 400
@@ -912,22 +1012,23 @@ class TestFetchAttachmentView:
         assert response.status_code == 404
         storage_handler_getitem_mock.assert_not_called()
 
-    @mock.patch.object(StorageHandler, "__getitem__")
-    def test_user_can_fetch(self, storage_handler_getitem_mock, org_user_member, organization, client):
+    def test_viewer_can_fetch(self, organization, client):
+        viewer = MembershipFactory(organization=organization, role="viewer").user
         visit = UserVisitFactory(opportunity__organization=organization)
-        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
 
         url = reverse(
             "opportunity:fetch_attachment", args=(organization.slug, visit.opportunity.id, blob_meta.blob_id)
         )
-        client.force_login(org_user_member)
+        client.force_login(viewer)
 
         response = client.get(url)
         assert response.status_code == 200
-        storage_handler_getitem_mock.assert_called_once()
+        assert b"".join(response.streaming_content) == b"imagebytes"
 
     def test_user_cannot_fetch_managed_opp(self, org_user_member, organization, client):
-        opp = ManagedOpportunityFactory()
+        opp = OpportunityFactory()
         opp.program.organization = opp.organization
         opp.program.save()
 
@@ -942,7 +1043,7 @@ class TestFetchAttachmentView:
 
     @mock.patch.object(StorageHandler, "__getitem__")
     def test_user_can_fetch_managed_opp(self, storage_handler_getitem_mock, org_user_member, organization, client):
-        opp = ManagedOpportunityFactory(organization=organization)
+        opp = OpportunityFactory(organization=organization)
         opp.program.organization = organization
         opp.program.save()
 
@@ -955,6 +1056,43 @@ class TestFetchAttachmentView:
         response = client.get(url)
         assert response.status_code == 200
         storage_handler_getitem_mock.assert_called_once()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_user_can_fetch_blob_from_inaccessibility_request(
+        self, storage_handler_getitem_mock, org_user_member, organization, client, opportunity
+    ):
+        inacc_request = WorkAreaInaccessibilityRequestFactory(
+            work_area__opportunity=opportunity,
+        )
+        blob_meta = BlobMetaFactory(parent_id=inacc_request.xform_id)
+
+        url = reverse(
+            "opportunity:fetch_attachment",
+            args=(organization.slug, opportunity.id, blob_meta.blob_id),
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 200
+        storage_handler_getitem_mock.assert_called_once()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_cannot_fetch_inaccessibility_blob_for_different_opportunity(
+        self, storage_handler_getitem_mock, org_user_member, organization, client
+    ):
+        other_opp_inacc_request = WorkAreaInaccessibilityRequestFactory()
+        blob_meta = BlobMetaFactory(parent_id=other_opp_inacc_request.xform_id)
+
+        my_opportunity = OpportunityFactory(organization=organization)
+        url = reverse(
+            "opportunity:fetch_attachment",
+            args=(organization.slug, my_opportunity.id, blob_meta.blob_id),
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+        storage_handler_getitem_mock.assert_not_called()
 
 
 def test_views_use_opportunity_decorator_or_mixin():
@@ -1031,6 +1169,7 @@ def test_views_use_opportunity_decorator_or_mixin():
     class_excluded = {
         "OpportunityList",  # OpportunityList - lists all opportunities, doesn't operate on specific one
         "OpportunityInit",  # OpportunityInit - creates new opportunity, no existing opportunity context
+        "PaymentNumberReport",
     }
 
     function_views, class_views = collect_views()
@@ -1085,10 +1224,9 @@ class BaseTestInvoiceView:
     @pytest.fixture
     def setup_invoice(self, organization, org_user_member):
         program = ProgramFactory(organization=organization, budget=10000)
-        opportunity = ManagedOpportunityFactory(
+        opportunity = OpportunityFactory(
             program=program,
             organization=organization,
-            managed=True,
         )
         invoice = PaymentInvoiceFactory(
             opportunity=opportunity,
@@ -1110,22 +1248,6 @@ class BaseTestInvoiceView:
 
 @pytest.mark.django_db
 class TestInvoiceReviewView(BaseTestInvoiceView):
-    def test_switch_not_active(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        client.force_login(user)
-        url = reverse(
-            "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-        )
-        with override_switch(INVOICE_REVIEW, active=False):
-            response = client.get(url)
-        assert response.status_code == 404
-        assert b"Invoice review feature is not available" in response.content
-
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_get_invoice_review_view_success(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1150,7 +1272,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert path[2]["title"] == "Invoices"
         assert path[3]["title"] == "Review Service Delivery Invoice"
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_invoice_not_found(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1163,13 +1284,12 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         response = client.get(url)
         assert response.status_code == 404
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_invoice_wrong_opportunity(self, client, setup_invoice, organization):
         invoice = setup_invoice["invoice"]
         user = setup_invoice["user"]
 
         program = ProgramFactory(organization=organization, budget=10000)
-        other_opportunity = ManagedOpportunityFactory(
+        other_opportunity = OpportunityFactory(
             program=program,
             organization=organization,
         )
@@ -1184,7 +1304,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         assert response.status_code == 404
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_form_is_readonly(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1207,7 +1326,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         response = client.get(url)
         assert_readonly_form(response)
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_custom_invoice_no_line_items(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1229,7 +1347,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         form = response.context["form"]
         assert form.line_items_table is None
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1245,8 +1362,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         # Should redirect (permission denied) or return 403/404
         assert response.status_code in [302, 403, 404]
 
-    @override_switch(INVOICE_REVIEW, active=True)
-    def test_automated_form_when_switch_active(self, client, setup_invoice):
+    def test_uses_automated_payment_invoice_form(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1275,17 +1391,6 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
         url = self._url(opportunity, invoice_id)
         return client.get(url)
 
-    def test_switch_inactive(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
-
-        assert response.status_code == 404
-        assert "Invoice download feature is not available" in str(response.content)
-
-    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
     def test_successful_download(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1299,7 +1404,6 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
             invoice.payment_invoice_id
         )
 
-    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
     def test_missing_invoice(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1312,7 +1416,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
 class TestAddPaymentUnitView:
     def test_org_amount_field_visible_for_managed_opportunity(self, client):
-        managed_opportunity = ManagedOpportunityFactory()
+        managed_opportunity = OpportunityFactory()
         organization = managed_opportunity.organization
         organization.program_manager = True
         organization.save()
@@ -1330,25 +1434,8 @@ class TestAddPaymentUnitView:
         assert "org_amount" in content
         assert 'name="org_amount"' in content
 
-    def test_org_amount_field_hidden_for_regular_opportunity(self, client):
-        opportunity = OpportunityFactory()
-        organization = opportunity.organization
-        organization.program_manager = False
-        organization.save()
-
-        user = UserFactory()
-        MembershipFactory(user=user, organization=organization, role="admin")
-
-        client.force_login(user)
-        url = reverse("opportunity:add_payment_unit", args=(organization.slug, opportunity.id))
-        response = client.get(url)
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'name="org_amount"' not in content
-
     def test_add_payment_unit_form_with_managed_opportunity(self, client):
-        managed_opportunity = ManagedOpportunityFactory()
+        managed_opportunity = OpportunityFactory()
         organization = managed_opportunity.organization
         organization.program_manager = True
         organization.save()
@@ -1377,60 +1464,37 @@ class TestAddPaymentUnitView:
         payment_unit = PaymentUnit.objects.get(opportunity=managed_opportunity, name="Test Payment Unit")
         assert payment_unit.org_amount == 50
 
-    def test_add_payment_unit_form_with_regular_opportunity(self, client):
-        opportunity = OpportunityFactory()
-        opportunity.managed = False
-        opportunity.save()
 
-        organization = opportunity.organization
-        organization.program_manager = False
-        organization.save()
+@pytest.mark.django_db
+class TestEditPaymentUnit:
+    def _url(self, org_slug, opp_id, payment_unit_id):
+        return reverse("opportunity:edit_payment_unit", args=(org_slug, opp_id, payment_unit_id))
 
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-
-        deliver_units = [deliver_unit]
-        payment_units = []
-        org_slug = organization.slug
-
-        form = PaymentUnitForm(
-            deliver_units=deliver_units, payment_units=payment_units, org_slug=org_slug, opportunity=opportunity
+    def test_edit_payment_unit_managed_as_non_pm_redirects(
+        self, client, organization, org_user_member, managed_opportunity
+    ):
+        payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
+        DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
+        client.force_login(org_user_member)
+        url = self._url(organization.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse(
+            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
         )
 
-        amounts_div = form.get_amounts_div()
-        amount_fields = amounts_div.fields
-        assert len(amount_fields) == 1
-        first_field = amount_fields[0]
-        assert hasattr(first_field, "fields") and first_field.fields[0] == "amount"
-
-        payment_unit = PaymentUnit(
-            opportunity=opportunity,
-            name="Test Payment Unit",
-            description="Test Description",
-            amount=100,
-            max_total=10,
-            max_daily=2,
-        )
-        assert payment_unit.org_amount == 0
-
-        managed_opportunity = opportunity
-        managed_opportunity.managed = True
-        managed_opportunity.save()
-
-        managed_form = PaymentUnitForm(
-            deliver_units=deliver_units,
-            payment_units=payment_units,
-            org_slug=org_slug,
-            opportunity=managed_opportunity,
-        )
-
-        managed_amounts_div = managed_form.get_amounts_div()
-        managed_amount_fields = managed_amounts_div.fields
-
-        assert len(managed_amount_fields) == 2
+    def test_edit_payment_unit_managed_as_pm(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
+        DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
+        client.force_login(program_manager_org_user_admin)
+        url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db
-@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_restricted_access(
     client, program_manager_org, program_manager_org_user_member
 ):
@@ -1448,7 +1512,6 @@ def test_update_invoice_invoice_ticket_link_restricted_access(
 
 
 @pytest.mark.django_db
-@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, program_manager_org_user_admin):
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     assert invoice.invoice_ticket_link is None
@@ -1468,22 +1531,6 @@ def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, 
 
 
 @pytest.mark.django_db
-def test_update_invoice_invoice_ticket_link_switch_check(client, program_manager_org, program_manager_org_user_admin):
-    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
-    assert invoice.invoice_ticket_link is None
-
-    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
-
-    client.force_login(program_manager_org_user_admin)
-    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
-    assert response.status_code == HTTPStatus.NOT_FOUND
-
-    invoice.refresh_from_db()
-    assert invoice.invoice_ticket_link is None
-
-
-@pytest.mark.django_db
-@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org, program_manager_org_user_admin):
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
@@ -1499,10 +1546,9 @@ def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org,
 
 def _setup_data_for_invoice_ticket_link_update(program_manager_org):
     program = ProgramFactory(organization=program_manager_org, budget=10000)
-    program_manager_org_opportunity = ManagedOpportunityFactory(
+    program_manager_org_opportunity = OpportunityFactory(
         program=program,
         organization=program_manager_org,
-        managed=True,
     )
     return (
         PaymentInvoiceFactory(
@@ -1550,10 +1596,9 @@ class TestInvoiceUpdateStatus:
         Creates a Program (by PM org) with an Opportunity managed by NM org.
         """
         program = ProgramFactory(organization=pm_organization, budget=10000)
-        opportunity = ManagedOpportunityFactory(
+        opportunity = OpportunityFactory(
             program=program,
             organization=nm_organization,
-            managed=True,
         )
         invoice = PaymentInvoiceFactory(
             opportunity=opportunity,
@@ -1753,70 +1798,34 @@ class TestVerificationFlagsConfig:
             "form_json-MAX_NUM_FORMS": 1000,
         }
 
-    def test_get_unmanaged_opportunity(self, client, organization, opportunity, org_user_member):
-        client.force_login(org_user_member)
-        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
-        assert response.status_code == HTTPStatus.OK
-
-    def test_post_unmanaged_opportunity_saves(self, client, organization, opportunity, org_user_member):
-        client.force_login(org_user_member)
-        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
-        assert response.status_code == HTTPStatus.OK
-        messages = [m.message for m in get_messages(response.wsgi_request)]
-        assert "Verification flags saved successfully." in messages
-
     def test_get_managed_opportunity_as_non_pm_redirects(
-        self, client, organization, org_user_member, program_manager_org
+        self, client, organization, org_user_member, managed_opportunity
     ):
-        program = ProgramFactory(organization=program_manager_org)
-        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
         client.force_login(org_user_member)
-        response = client.get(self.url(organization.slug, managed_opp.opportunity_id))
+        response = client.get(self.url(organization.slug, managed_opportunity.opportunity_id))
         assert response.status_code == HTTPStatus.FOUND
-        assert response.url == reverse("opportunity:detail", args=(organization.slug, managed_opp.opportunity_id))
+        assert response.url == reverse(
+            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
+        )
 
     def test_get_managed_opportunity_as_pm(
-        self, client, organization, program_manager_org, program_manager_org_user_admin
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
-        program = ProgramFactory(organization=program_manager_org)
-        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
         client.force_login(program_manager_org_user_admin)
-        response = client.get(self.url(program_manager_org.slug, managed_opp.opportunity_id))
+        response = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id))
         assert response.status_code == HTTPStatus.OK
 
     def test_post_managed_opportunity_as_pm_saves(
-        self, client, organization, program_manager_org, program_manager_org_user_admin
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
-        program = ProgramFactory(organization=program_manager_org)
-        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
-        OpportunityVerificationFlagsFactory(opportunity=managed_opp)
+        OpportunityVerificationFlagsFactory(opportunity=managed_opportunity)
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opp.opportunity_id), data=self.base_post_data()
+            self.url(program_manager_org.slug, managed_opportunity.opportunity_id), data=self.base_post_data()
         )
         assert response.status_code == HTTPStatus.OK
         messages = [m.message for m in get_messages(response.wsgi_request)]
         assert "Verification flags saved successfully." in messages
-
-    def test_post_creates_form_json_rule(self, client, organization, opportunity, org_user_member):
-        client.force_login(org_user_member)
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        data = self.base_post_data()
-        data.update(
-            {
-                "form_json-0-name": "Rule 1",
-                "form_json-0-question_path": "data/answer",
-                "form_json-0-question_value": "yes",
-                "form_json-0-deliver_unit": [deliver_unit.pk],
-            }
-        )
-        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=data)
-        assert response.status_code == HTTPStatus.OK
-        rule = FormJsonValidationRules.objects.get(opportunity=opportunity)
-        assert rule.name == "Rule 1"
-        assert rule.question_path == "data/answer"
-        assert rule.question_value == "yes"
-        assert list(rule.deliver_unit.all()) == [deliver_unit]
 
     def test_post_creates_form_json_rule_for_managed_opp(
         self, client, program_manager_org, program_manager_org_user_admin
@@ -1825,7 +1834,7 @@ class TestVerificationFlagsConfig:
 
         program = ProgramFactory(organization=program_manager_org)
         nm_org = OrganizationFactory()
-        opportunity = ManagedOpportunityFactory(organization=nm_org, program=program)
+        opportunity = OpportunityFactory(organization=nm_org, program=program)
 
         deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
         data = self.base_post_data()
@@ -1846,54 +1855,35 @@ class TestVerificationFlagsConfig:
         assert rule.question_value == "yes"
         assert list(rule.deliver_unit.all()) == [deliver_unit]
 
-    def test_post_empty_form_json_does_not_create_rule(self, client, organization, opportunity, org_user_member):
-        client.force_login(org_user_member)
-        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
-        assert response.status_code == HTTPStatus.OK
-        assert not FormJsonValidationRules.objects.filter(opportunity=opportunity).exists()
-
 
 @pytest.mark.django_db
 class TestDeleteFormJsonRule:
     def url(self, org_slug, opp_id, pk):
         return reverse("opportunity:delete_form_json_rule", args=(org_slug, opp_id, pk))
 
-    def test_delete_form_json_rule_success(self, client, organization, opportunity, org_user_member):
-        rule = FormJsonValidationRulesFactory(opportunity=opportunity)
-        client.force_login(org_user_member)
-        response = client.delete(
-            self.url(organization.slug, opportunity.opportunity_id, rule.form_json_validation_rules_id)
-        )
-        assert response.status_code == HTTPStatus.OK
-        assert not FormJsonValidationRules.objects.filter(
-            form_json_validation_rules_id=rule.form_json_validation_rules_id
-        ).exists()
-
     def test_delete_form_json_rule_managed_opp_as_non_pm(
-        self, client, organization, org_user_member, program_manager_org
+        self, client, organization, org_user_member, managed_opportunity
     ):
-        program = ProgramFactory(organization=program_manager_org)
-        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
-        rule = FormJsonValidationRulesFactory(opportunity=managed_opp)
+        rule = FormJsonValidationRulesFactory(opportunity=managed_opportunity)
         client.force_login(org_user_member)
         response = client.delete(
-            self.url(organization.slug, managed_opp.opportunity_id, rule.form_json_validation_rules_id)
+            self.url(organization.slug, managed_opportunity.opportunity_id, rule.form_json_validation_rules_id)
         )
         assert response.status_code == HTTPStatus.FOUND
-        assert response.url == reverse("opportunity:detail", args=(organization.slug, managed_opp.opportunity_id))
+        assert response.url == reverse(
+            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
+        )
         assert FormJsonValidationRules.objects.filter(
             form_json_validation_rules_id=rule.form_json_validation_rules_id
         ).exists()
 
     def test_delete_form_json_rule_managed_opp_as_pm(
-        self, client, organization, program_manager_org, program_manager_org_user_admin
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
-        program = ProgramFactory(organization=program_manager_org)
-        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
-        rule = FormJsonValidationRulesFactory(opportunity=managed_opp)
+        rule = FormJsonValidationRulesFactory(opportunity=managed_opportunity)
         client.force_login(program_manager_org_user_admin)
         response = client.delete(
-            self.url(program_manager_org.slug, managed_opp.opportunity_id, rule.form_json_validation_rules_id)
+            self.url(program_manager_org.slug, managed_opportunity.opportunity_id, rule.form_json_validation_rules_id)
         )
         assert response.status_code == HTTPStatus.OK
         assert not FormJsonValidationRules.objects.filter(
@@ -1946,6 +1936,114 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
 
 
 @pytest.mark.django_db
+class TestSuspendUser:
+    def url(self, org_slug, opp_id, pk):
+        return reverse("opportunity:suspend_user", args=(org_slug, opp_id, pk))
+
+    def test_suspend_as_pm(
+        self, client, mobile_user, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        access = OpportunityAccessFactory(
+            opportunity=managed_opportunity, user=mobile_user, accepted=True, suspended=False
+        )
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, managed_opportunity.opportunity_id, access.opportunity_access_id),
+            data={"reason": "test"},
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        access.refresh_from_db()
+        assert access.suspended is True
+
+    def test_suspend_as_nm_org_admin_returns_404(
+        self, client, organization, org_user_admin, mobile_user, managed_opportunity
+    ):
+        access = OpportunityAccessFactory(
+            opportunity=managed_opportunity, user=mobile_user, accepted=True, suspended=False
+        )
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(organization.slug, managed_opportunity.opportunity_id, access.opportunity_access_id),
+            data={"reason": "test"},
+        )
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        access.refresh_from_db()
+        assert access.suspended is False
+
+    def test_suspend_as_nm_org_promoted_to_pm_returns_404(
+        self, client, organization, org_user_admin, mobile_user, managed_opportunity
+    ):
+        # NM org later promoted to a global PM org — must still be blocked on another org's managed opp
+        organization.program_manager = True
+        organization.save()
+        access = OpportunityAccessFactory(
+            opportunity=managed_opportunity, user=mobile_user, accepted=True, suspended=False
+        )
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(organization.slug, managed_opportunity.opportunity_id, access.opportunity_access_id),
+            data={"reason": "test"},
+        )
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        access.refresh_from_db()
+        assert access.suspended is False
+
+
+@pytest.mark.django_db
+class TestRevokeUserSuspension:
+    def url(self, org_slug, opp_id, pk):
+        return reverse("opportunity:revoke_user_suspension", args=(org_slug, opp_id, pk))
+
+    def test_revoke_as_pm(
+        self, client, mobile_user, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        access = OpportunityAccessFactory(
+            opportunity=managed_opportunity, user=mobile_user, accepted=True, suspended=True
+        )
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, managed_opportunity.opportunity_id, access.opportunity_access_id),
+            data={"next": "/"},
+        )
+        assert response.status_code == HTTPStatus.OK
+        access.refresh_from_db()
+        assert access.suspended is False
+
+    def test_revoke_as_nm_org_admin_returns_404(
+        self, client, organization, org_user_admin, mobile_user, managed_opportunity
+    ):
+        access = OpportunityAccessFactory(
+            opportunity=managed_opportunity, user=mobile_user, accepted=True, suspended=True
+        )
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(organization.slug, managed_opportunity.opportunity_id, access.opportunity_access_id),
+            data={"next": "/"},
+        )
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        access.refresh_from_db()
+        assert access.suspended is True
+
+    def test_revoke_as_nm_org_promoted_to_pm_returns_404(
+        self, client, organization, org_user_admin, mobile_user, managed_opportunity
+    ):
+        # NM org later promoted to a global PM org — must still be blocked on another org's managed opp
+        organization.program_manager = True
+        organization.save()
+        access = OpportunityAccessFactory(
+            opportunity=managed_opportunity, user=mobile_user, accepted=True, suspended=True
+        )
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(organization.slug, managed_opportunity.opportunity_id, access.opportunity_access_id),
+            data={"next": "/"},
+        )
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        access.refresh_from_db()
+        assert access.suspended is True
+
+
+@pytest.mark.django_db
 def test_visit_export_count_boundary_dates(
     organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
 ):
@@ -1974,3 +2072,962 @@ def test_visit_export_count_boundary_dates(
 
     assert response.status_code == HTTPStatus.OK
     assert "2 visits match your filters." in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestOpportunityEditActiveHistory:
+    def test_edit_context_includes_active_events(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        opportunity.active = False
+        opportunity.save()
+
+        url = reverse(
+            "opportunity:edit",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert "active_events" in response.context
+        assert len(response.context["active_events"]) == 1
+        event_toggling_inactive = response.context["active_events"].filter(active=False).first()
+        assert event_toggling_inactive is not None
+
+    def test_edit_active_toggle_records_user_in_context(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+
+        url = reverse(
+            "opportunity:edit",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        post_data = {
+            "name": opportunity.name,
+            "description": opportunity.description,
+            "short_description": opportunity.short_description,
+            "active": False,
+            "currency": opportunity.currency_id,
+            "country": opportunity.country_id,
+            "delivery_type": opportunity.delivery_type_id,
+            "is_test": opportunity.is_test,
+            "users": "",
+        }
+        assert opportunity.active
+        client.post(url, post_data)
+
+        opportunity.refresh_from_db()
+        assert not opportunity.active
+
+        event_toggling_inactive = OpportunityActiveEvent.objects.filter(pgh_obj=opportunity, active=False).first()
+        assert event_toggling_inactive is not None
+        assert event_toggling_inactive.pgh_context is not None
+        assert event_toggling_inactive.pgh_context.metadata["username"] == org_user_admin.username
+
+
+def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
+    opportunity = OpportunityFactory(
+        organization=organization,
+        end_date=date.today() - timedelta(days=1),
+    )
+    client.force_login(org_user_member)
+    url = reverse("opportunity:user_invite", args=[organization.slug, opportunity.opportunity_id])
+    response = client.get(url)
+    assert response.status_code == 302
+    assert reverse("opportunity:detail", args=[organization.slug, opportunity.opportunity_id]) in response.url
+
+    # POST should also redirect, not process the invite
+    response = client.post(url, data={"users": "+15555555555"})
+    assert response.status_code == 302
+    assert reverse("opportunity:detail", args=[organization.slug, opportunity.opportunity_id]) in response.url
+
+
+@pytest.mark.django_db
+def test_resend_invites_redirects_for_ended_opportunity(client, org_user_member, organization):
+    opportunity = OpportunityFactory(
+        organization=organization,
+        end_date=date.today() - timedelta(days=1),
+    )
+    client.force_login(org_user_member)
+    url = reverse("opportunity:resend_user_invites", args=[organization.slug, opportunity.opportunity_id])
+    response = client.post(url, data={"user_invite_ids": [1]})
+    assert response.status_code == 200
+    assert (
+        reverse("opportunity:detail", args=[organization.slug, opportunity.opportunity_id])
+        in response.headers["HX-Redirect"]
+    )
+
+
+@pytest.mark.django_db
+class TestAssignedTaskListView:
+    def test_page_loads_with_no_tasks(
+        self, organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
+    ):
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["total_tasks"] == 0
+        assert response.context["open_tasks"] == 0
+        assert response.context["complete_tasks"] == 0
+
+    def test_page_shows_correct_metrics(
+        self, organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
+    ):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        AssignedTaskFactory(opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        AssignedTaskFactory(opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        AssignedTaskFactory(opportunity_access=access, status=AssignedTaskStatus.COMPLETED)
+
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["total_tasks"] == 3
+        assert response.context["open_tasks"] == 2
+        assert response.context["complete_tasks"] == 1
+
+    @pytest.fixture
+    def two_tasks(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        at_assigned = AssignedTaskFactory(
+            task_type=task, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED
+        )
+        at_completed = AssignedTaskFactory(
+            task_type=task, opportunity_access=access, status=AssignedTaskStatus.COMPLETED
+        )
+        return [at_assigned, at_completed]
+
+    def test_filter_by_status_returns_filtered_table(
+        self, two_tasks, organization, org_user_member, opportunity, client
+    ):
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"task_status": AssignedTaskStatus.ASSIGNED})
+        assert response.status_code == 200
+
+        # Returns filtered table with only assigned tasks
+        assert len(response.context["table"].rows) == 1
+
+        # Filters applied count in context is correct
+        assert response.context["filters_applied_count"] == 1
+
+        # Metric counts in context are unaffected by filters
+        assert response.context["total_tasks"] == 2
+        assert response.context["open_tasks"] == 1
+        assert response.context["complete_tasks"] == 1
+
+    def test_page_size_param_is_respected(self, organization, org_user_member, opportunity, client):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        for _ in range(30):
+            AssignedTaskFactory(opportunity_access=access)
+
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"page_size": 30})
+        assert response.context["table"].page.paginator.per_page == 30
+
+
+@pytest.mark.django_db
+class TestTaskTypesConfig:
+    MOCK_TASK_UNITS_PATH = "commcare_connect.opportunity.forms.get_task_units_for_app"
+
+    @pytest.fixture
+    def opp(self, program_manager_org):
+        program = ProgramFactory(organization=program_manager_org)
+        return OpportunityFactory(program=program, organization=program_manager_org)
+
+    @pytest.fixture
+    def task_units(self):
+        from commcare_connect.opportunity.app_xml import TaskUnit
+
+        return [
+            TaskUnit(id="task_1", name="Task One", description="Desc one"),
+            TaskUnit(id="task_2", name="Task Two", description="Desc two"),
+        ]
+
+    def _url(self, opp):
+        return reverse("opportunity:task_types_config", args=(opp.organization.slug, opp.opportunity_id))
+
+    def test_unauthenticated_redirects(self, client, opportunity, task_units):
+        url = self._url(opportunity)
+        with mock.patch(self.MOCK_TASK_UNITS_PATH, return_value=task_units):
+            response = client.get(url)
+        assert response.status_code == HTTPStatus.FOUND
+        assert "/accounts/login/" in response["Location"] or "login" in response["Location"]
+
+    def test_managed_opp_non_pm_not_found(self, client, organization, org_user_admin, program_manager_org):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = OpportunityFactory(program=program, organization=organization)
+        url = reverse("opportunity:task_types_config", args=(organization.slug, managed_opp.opportunity_id))
+        client.force_login(org_user_admin)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_managed_opp_pm_success(
+        self, client, organization, program_manager_org, program_manager_org_user_admin, task_units
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = OpportunityFactory(program=program, organization=organization)
+        url = reverse("opportunity:task_types_config", args=(program_manager_org.slug, managed_opp.opportunity_id))
+        client.force_login(program_manager_org_user_admin)
+        with mock.patch(self.MOCK_TASK_UNITS_PATH, return_value=task_units):
+            response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
+
+    def test_post_valid_data_creates_task_and_redirects(self, client, program_manager_org_user_admin, opp, task_units):
+        client.force_login(program_manager_org_user_admin)
+        with mock.patch(self.MOCK_TASK_UNITS_PATH, return_value=task_units):
+            response = client.post(
+                self._url(opp),
+                data={
+                    "task_unit_id": "task_1",
+                    "name": "My Task",
+                    "description": "A useful task description.",
+                    "case_property": "",
+                },
+            )
+        assert response.status_code == HTTPStatus.FOUND
+        assert response["Location"] == self._url(opp)
+        task_type = TaskType.objects.get(app=opp.deliver_app, name="My Task")
+        assert task_type.slug == "task_1"
+
+    def test_post_missing_data_rerenders_form_with_errors(
+        self, client, program_manager_org_user_admin, opp, task_units
+    ):
+        client.force_login(program_manager_org_user_admin)
+        with mock.patch(self.MOCK_TASK_UNITS_PATH, return_value=task_units):
+            response = client.post(
+                self._url(opp),
+                data={
+                    "name": "",
+                    "description": "A useful task description.",
+                    "task_unit_id": "",
+                },
+            )
+        assert response.status_code == HTTPStatus.OK
+        assert not TaskType.objects.filter(app=opp.deliver_app).exists()
+        assert response.context["form"].errors
+
+    # --- Edit task type tests ---
+
+    @pytest.fixture
+    def task_type(self, opp):
+        return TaskTypeFactory(app=opp.deliver_app)
+
+    def _edit_url(self, opp, task_type):
+        return reverse("opportunity:edit_task_type", args=(opp.organization.slug, opp.opportunity_id, task_type.pk))
+
+    def test_edit_task_type_get_returns_form(self, client, program_manager_org_user_admin, opp, task_type):
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self._edit_url(opp, task_type))
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["form"].instance == task_type
+
+    @pytest.mark.parametrize(
+        "data, is_valid",
+        [
+            ({"name": "Updated Name", "description": "Updated Desc"}, True),
+            ({"name": "", "description": "Desc"}, False),
+        ],
+    )
+    def test_edit_task_type_post(self, client, program_manager_org_user_admin, opp, task_type, data, is_valid):
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(self._edit_url(opp, task_type), data=data)
+        assert response.status_code == HTTPStatus.OK
+        if is_valid:
+            assert response["HX-Redirect"] == self._url(opp)
+            task_type.refresh_from_db()
+            assert task_type.name == data["name"]
+            assert task_type.description == data["description"]
+        else:
+            assert "HX-Redirect" not in response
+            assert response.context["form"].errors
+
+    def test_edit_task_type_requires_org_membership(self, client, user, opp, task_type):
+        client.force_login(user)
+        response = client.get(self._edit_url(opp, task_type))
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_edit_task_type_managed_opp_requires_pm_role(
+        self, client, organization, org_user_admin, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = OpportunityFactory(program=program, organization=organization)
+        task_type = TaskTypeFactory(app=managed_opp.deliver_app)
+        url = reverse("opportunity:edit_task_type", args=(organization.slug, managed_opp.opportunity_id, task_type.pk))
+        client.force_login(org_user_admin)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_edit_task_type_scoped_to_opportunity_app(self, client, program_manager_org_user_admin, opp):
+        other_task_type = TaskTypeFactory()  # different app
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self._edit_url(opp, other_task_type))
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.django_db
+class TestTaskTable:
+    def test_edit_button_renders_htmx_attributes(self, rf, opportunity, organization):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
+        request = rf.get("/")
+        table = TaskTable(
+            TaskType.objects.filter(app=opportunity.deliver_app),
+            org_slug=organization.slug,
+            opp_id=opportunity.opportunity_id,
+        )
+        RequestConfig(request).configure(table)
+        table.context = Context({"table": table})
+        html = table.rows[0].get_cell("actions")
+        expected_url = reverse(
+            "opportunity:edit_task_type", args=(organization.slug, opportunity.opportunity_id, task_type.pk)
+        )
+        assert f'hx-get="{expected_url}"' in html
+        assert 'hx-target="#edit-task-form"' in html
+
+
+@pytest.mark.django_db
+class TestWorkerTasksView:
+    def _url(self, organization, opportunity):
+        return reverse("opportunity:worker_tasks", args=(organization.slug, opportunity.opportunity_id))
+
+    def test_unauthenticated_redirects(self, client, organization, opportunity):
+        response = client.get(self._url(organization, opportunity))
+        assert response.status_code == 302
+
+    def test_empty_table(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+        assert response.status_code == 200
+
+    def test_with_data(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
+        AssignedTaskFactory(opportunity_access=access)
+        AssignedTaskFactory(opportunity_access=access)
+
+        url = self._url(organization, opportunity)
+
+        response = client.get(url)
+        assert response.status_code == 200
+
+        # htmx tab load should return the table fragment
+        response = client.get(url, HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        assert b"Task Name" in response.content
+
+
+@pytest.mark.django_db
+class TestWorkerCompletedTaskTableView:
+    def _url(self, organization, opportunity):
+        return reverse("opportunity:user_tasks_table", args=(organization.slug, opportunity.opportunity_id))
+
+    @override_switch(WORKER_VISITS_TASKS, active=True)
+    def test_filters_tasks_by_user(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        access1 = OpportunityAccessFactory(opportunity=opportunity)
+        access2 = OpportunityAccessFactory(opportunity=opportunity)
+        task1 = AssignedTaskFactory(opportunity_access=access1)
+        AssignedTaskFactory(opportunity_access=access2)
+
+        response = client.get(self._url(organization, opportunity), {"user": access1.user.user_id})
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert list(table.data.data.values_list("pk", flat=True)) == [task1.pk]
+
+
+@pytest.mark.django_db
+class TestEditAssignedTask:
+    @pytest.fixture
+    def opp(self, program_manager_org):
+        program = ProgramFactory(organization=program_manager_org)
+        return OpportunityFactory(program=program, organization=program_manager_org)
+
+    @pytest.fixture
+    def assigned_task(self, opp, user):
+        access = OpportunityAccessFactory(opportunity=opp, user=user)
+        return AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=TaskTypeFactory(app=opp.deliver_app),
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=date.today() + timedelta(days=7),
+        )
+
+    def _edit_url(self, opp, task):
+        return reverse("opportunity:edit_assigned_task", args=(opp.organization.slug, opp.opportunity_id, task.pk))
+
+    def test_list_page_renders_edit_button(self, client, program_manager_org_user_admin, opp, assigned_task):
+        client.force_login(program_manager_org_user_admin)
+        url = reverse("opportunity:assigned_task_list", args=(opp.organization.slug, opp.opportunity_id))
+        response = client.get(url)
+        content = response.content.decode()
+        edit_url = self._edit_url(opp, assigned_task)
+        # Check button renders with correct hx-get
+        assert f'hx-get="{edit_url}"' in content, f'Edit button hx-get not found. Looking for: hx-get="{edit_url}"'
+        assert 'hx-target="#edit-assigned-task-form"' in content
+
+    def test_get_returns_form(self, client, program_manager_org_user_admin, opp, assigned_task):
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self._edit_url(opp, assigned_task))
+        assert response.status_code == HTTPStatus.OK
+        assert "form" in response.context
+
+    def test_post_valid_future_date(self, client, program_manager_org_user_admin, opp, assigned_task):
+        client.force_login(program_manager_org_user_admin)
+        future_date = date.today() + timedelta(days=14)
+        response = client.post(
+            self._edit_url(opp, assigned_task),
+            data={"due_date": future_date.isoformat(), "reason": "Extended deadline"},
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assigned_task.refresh_from_db()
+        assert assigned_task.due_date == future_date
+
+    def test_post_past_date_rejected(self, client, program_manager_org_user_admin, opp, assigned_task):
+        client.force_login(program_manager_org_user_admin)
+        past_date = date.today() - timedelta(days=1)
+        response = client.post(
+            self._edit_url(opp, assigned_task),
+            data={"due_date": past_date.isoformat()},
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["form"].errors
+
+    def test_cannot_edit_completed_task(self, client, program_manager_org_user_admin, opp, user):
+        access = OpportunityAccessFactory(opportunity=opp, user=user)
+        completed_task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=TaskTypeFactory(app=opp.deliver_app),
+            status=AssignedTaskStatus.COMPLETED,
+        )
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self._edit_url(opp, completed_task))
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_requires_org_membership(self, client, user, opp, assigned_task):
+        client.force_login(user)
+        response = client.get(self._edit_url(opp, assigned_task))
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_managed_opp_allows_nm_and_pm_org_members(
+        self, client, organization, org_user_admin, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = OpportunityFactory(program=program, organization=organization)
+        access = OpportunityAccessFactory(opportunity=managed_opp)
+        task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=TaskTypeFactory(app=managed_opp.deliver_app),
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+
+        # NM org member (the opportunity's own org) can edit.
+        nm_url = reverse(
+            "opportunity:edit_assigned_task",
+            args=(organization.slug, managed_opp.opportunity_id, task.pk),
+        )
+        client.force_login(org_user_admin)
+        assert client.get(nm_url).status_code == HTTPStatus.OK
+
+        # PM org member (the program's managing org) can also edit.
+        pm_url = reverse(
+            "opportunity:edit_assigned_task",
+            args=(program_manager_org.slug, managed_opp.opportunity_id, task.pk),
+        )
+        client.force_login(program_manager_org_user_admin)
+        assert client.get(pm_url).status_code == HTTPStatus.OK
+
+
+@pytest.mark.django_db
+class TestCreateTask:
+    @pytest.fixture
+    def opportunity(self, program_manager_org):
+        program = ProgramFactory(organization=program_manager_org)
+        return OpportunityFactory(program=program, organization=program_manager_org)
+
+    @pytest.fixture
+    def access(self, opportunity):
+        return OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+
+    def _url(self, opportunity):
+        return reverse("opportunity:create_task", args=(opportunity.organization.slug, opportunity.opportunity_id))
+
+    def test_create_task_success(self, client, program_manager_org_user_admin, opportunity, access):
+        client.force_login(program_manager_org_user_admin)
+        task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
+        assert assigned.due_date == due_date
+        assert assigned.status == AssignedTaskStatus.ASSIGNED
+        assert assigned.assigned_by == program_manager_org_user_admin
+        mock_update.assert_called_once_with({access: {"properties": {"some_prop": "1"}}})
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("successfully" in str(m) for m in msgs)
+
+    def test_create_task_already_assigned_shows_error(
+        self, client, program_manager_org_user_admin, opportunity, access
+    ):
+        client.force_login(program_manager_org_user_admin)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch.object(AssignedTask, "assign", side_effect=TaskAlreadyAssignedError):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("already assigned" in str(m) for m in msgs)
+
+    def test_create_task_hq_failure_shows_error_and_no_row(
+        self, client, program_manager_org_user_admin, opportunity, access
+    ):
+        client.force_login(program_manager_org_user_admin)
+        task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assert not AssignedTask.objects.filter(task_type=task, opportunity_access=access).exists()
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("CommCare HQ" in str(m) for m in msgs)
+
+    def test_create_task_invalid_form(self, client, program_manager_org_user_admin, opportunity):
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(self._url(opportunity), data={})
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["form"].errors
+        assert AssignedTask.objects.count() == 0
+
+    @pytest.mark.django_db(transaction=True)
+    def test_create_task_schedules_push_notification(
+        self, client, program_manager_org_user_admin, opportunity, access
+    ):
+        client.force_login(program_manager_org_user_admin)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch:
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
+        delay_patch.assert_called_once_with(assigned.pk)
+
+    @pytest.mark.parametrize(
+        "user_fixture, opportunity_fixture",
+        [
+            ("user", "opportunity"),
+            ("org_user_admin", "managed_opportunity"),
+        ],
+        ids=["no_org_membership", "no_pm_role"],
+    )
+    def test_permission_denied(self, client, request, user_fixture, opportunity_fixture):
+        user = request.getfixturevalue(user_fixture)
+        opp = request.getfixturevalue(opportunity_fixture)
+        client.force_login(user)
+        response = client.post(self._url(opp), data={})
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.django_db
+class TestDeleteTasks:
+    @pytest.fixture
+    def opportunity(self, program_manager_org):
+        program = ProgramFactory(organization=program_manager_org)
+        return OpportunityFactory(program=program, organization=program_manager_org)
+
+    @pytest.fixture
+    def assigned_tasks(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        return AssignedTaskFactory.create_batch(3, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+
+    def _url(self, opportunity):
+        return reverse("opportunity:delete_tasks", args=(opportunity.organization.slug, opportunity.opportunity_id))
+
+    def test_delete_tasks_success(self, client, program_manager_org_user_admin, opportunity, assigned_tasks):
+        client.force_login(program_manager_org_user_admin)
+        task_ids = [t.pk for t in assigned_tasks[:2]]
+        response = client.post(self._url(opportunity), data={"task_ids": task_ids})
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assert AssignedTask.objects.filter(pk__in=task_ids).count() == 0
+        assert AssignedTask.objects.filter(pk=assigned_tasks[2].pk).exists()
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("2 task(s)" in str(m) for m in msgs)
+
+    def test_cannot_delete_completed_tasks(self, client, program_manager_org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        completed = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=TaskTypeFactory(app=opportunity.deliver_app),
+            status=AssignedTaskStatus.COMPLETED,
+        )
+        assigned = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=TaskTypeFactory(app=opportunity.deliver_app),
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(self._url(opportunity), data={"task_ids": [completed.pk, assigned.pk]})
+        assert response.status_code == HTTPStatus.OK
+        assert AssignedTask.objects.filter(pk=completed.pk).exists()
+        assert not AssignedTask.objects.filter(pk=assigned.pk).exists()
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {},
+            {"task_ids": ["abc"]},
+            {"task_ids": ["1", "xyz"]},
+        ],
+        ids=["empty", "non_integer", "mixed"],
+    )
+    def test_invalid_task_ids(self, client, program_manager_org_user_admin, opportunity, data):
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(self._url(opportunity), data=data)
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    def test_only_deletes_tasks_for_opportunity(
+        self,
+        client,
+        program_manager_org_user_admin,
+        opportunity,
+    ):
+        other_opp = OpportunityFactory(organization=opportunity.organization)
+        other_access = OpportunityAccessFactory(opportunity=other_opp)
+        other_task = AssignedTaskFactory(
+            opportunity_access=other_access,
+            task_type=TaskTypeFactory(app=other_opp.deliver_app),
+        )
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(self._url(opportunity), data={"task_ids": [other_task.pk]})
+        assert response.status_code == HTTPStatus.OK
+        assert AssignedTask.objects.filter(pk=other_task.pk).exists()
+
+    @pytest.mark.parametrize(
+        "user_fixture, opportunity_fixture",
+        [
+            ("user", "opportunity"),
+            ("org_user_admin", "managed_opportunity"),
+        ],
+        ids=["no_org_membership", "no_pm_role"],
+    )
+    def test_permission_denied(self, client, request, user_fixture, opportunity_fixture):
+        user = request.getfixturevalue(user_fixture)
+        opp = request.getfixturevalue(opportunity_fixture)
+        client.force_login(user)
+        response = client.post(self._url(opp), data={"task_ids": [1]})
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_delete_tasks_resets_hq_case_property(self, client, program_manager_org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="needs_assessment")
+        task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=task_type,
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        client.force_login(program_manager_org_user_admin)
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            response = client.post(self._url(opportunity), data={"task_ids": [task.pk]})
+
+        assert response.status_code == HTTPStatus.OK
+        assert not AssignedTask.objects.filter(pk=task.pk).exists()
+        mock_update.assert_called_once_with({access: {"properties": {"needs_assessment": ""}}})
+
+    def test_delete_tasks_hq_failure_shows_error_and_keeps_tasks(
+        self, client, program_manager_org_user_admin, opportunity
+    ):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="needs_assessment")
+        task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=task_type,
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        client.force_login(program_manager_org_user_admin)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            response = client.post(self._url(opportunity), data={"task_ids": [task.pk]})
+
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assert AssignedTask.objects.filter(pk=task.pk).exists()
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("could not update CommCare HQ" in str(m) for m in msgs)
+
+
+@pytest.mark.django_db
+def test_fetch_audio_attachment_returns_file(client, organization, opportunity):
+    viewer = MembershipFactory(organization=organization, role="viewer").user
+    visit = UserVisitFactory.create(opportunity=opportunity)
+    audio = AudioAttachmentFactory.create(user_visit=visit, content_type="audio/mp4")
+    storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
+
+    url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.id, audio.pk),
+    )
+    client.force_login(viewer)
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "audio/mp4"
+    assert b"".join(response.streaming_content) == b"audiobytes"
+
+
+@pytest.mark.django_db
+def test_fetch_audio_attachment_wrong_opportunity_returns_404(client, organization, org_user_member, opportunity):
+    other_visit = UserVisitFactory.create()  # belongs to a different opportunity
+    audio = AudioAttachmentFactory.create(user_visit=other_visit)
+    storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
+
+    url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.id, audio.pk),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_user_visit_details_renders_audio_player(client, organization, org_user_member, opportunity):
+    form_json = {
+        "domain": "test",
+        "id": "xform-123",
+        "app_id": "app-1",
+        "build_id": "build-1",
+        "received_on": "2026-06-30T00:00:00Z",
+        "form": {"@xmlns": "http://example.com/form"},
+        "metadata": {
+            "timeStart": "2026-06-30T00:00:00Z",
+            "timeEnd": "2026-06-30T00:05:00Z",
+            "app_build_version": "1",
+            "username": "worker",
+            "location": None,
+        },
+        "attachments": {},
+    }
+    visit = UserVisitFactory.create(opportunity=opportunity, form_json=form_json)
+    audio = AudioAttachmentFactory.create(user_visit=visit, transcript="hello world")
+
+    url = reverse(
+        "opportunity:user_visit_details",
+        args=(organization.slug, opportunity.opportunity_id, visit.user_visit_id),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 200
+    audio_url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.opportunity_id, audio.pk),
+    )
+    assert audio_url.encode() in response.content
+    assert b"hello world" in response.content
+
+
+@pytest.mark.django_db
+class TestAudioAttachmentTranscribe:
+    def _url(self, organization, opportunity, audio):
+        return reverse(
+            "opportunity:audio_attachment_transcribe",
+            args=(organization.slug, opportunity.opportunity_id, audio.pk),
+        )
+
+    def test_get_renders_form(self, client, organization, org_user_member, opportunity):
+        worker = UserFactory(name="Gabriella Nelson")
+        visit = UserVisitFactory.create(opportunity=opportunity, user=worker)
+        audio = AudioAttachmentFactory.create(user_visit=visit)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, audio))
+
+        assert response.status_code == 200
+        assert opportunity.program.name.encode() in response.content
+        assert b"Connect Workers" in response.content
+        assert b"Gabriella Nelson" in response.content
+
+    def test_post_saves_transcript_and_translation(self, client, organization, org_user_member, opportunity):
+        visit = UserVisitFactory.create(opportunity=opportunity)
+        audio = AudioAttachmentFactory.create(user_visit=visit)
+
+        client.force_login(org_user_member)
+        response = client.post(
+            self._url(organization, opportunity, audio),
+            data={"transcript": "hello", "translation": "bonjour"},
+        )
+
+        audio.refresh_from_db()
+        assert audio.transcript == "hello"
+        assert audio.translation == "bonjour"
+        assert response.status_code == 302
+        assert response.url == (
+            f"{reverse('opportunity:user_visits_list', args=(organization.slug, opportunity.opportunity_id))}"
+            f"?{urlencode({'user': visit.user.user_id})}"
+        )
+
+    def test_program_manager_cannot_access(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = OpportunityFactory(program=program, organization=organization)
+        visit = UserVisitFactory.create(opportunity=managed_opp)
+        audio = AudioAttachmentFactory.create(user_visit=visit)
+
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self._url(program_manager_org, managed_opp, audio))
+
+        assert response.status_code == 404
+
+    def test_wrong_opportunity_returns_404(self, client, organization, org_user_member, opportunity):
+        other_visit = UserVisitFactory.create()  # belongs to a different opportunity
+        audio = AudioAttachmentFactory.create(user_visit=other_visit)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, audio))
+
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestUserVisitsListVisitIdParam:
+    def _make_visits(self, opportunity, mobile_user):
+        access = mobile_user.opportunityaccess_set.first()
+        return [
+            UserVisitFactory(
+                opportunity=opportunity,
+                user=mobile_user,
+                opportunity_access=access,
+                visit_date=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+            )
+            for i in range(25)
+        ]
+
+    def test_visit_id_jumps_to_containing_page(self, client, organization, org_user_member, opportunity, mobile_user):
+        visits = self._make_visits(opportunity, mobile_user)
+        target = visits[20]  # 21st visit in date order -> page 2 at the default page size of 20
+
+        client.force_login(org_user_member)
+        url = reverse(
+            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
+        )
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}")
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert table.page.number == 2
+        assert any(row.record.pk == target.pk for row in table.page.object_list)
+
+    def test_explicit_page_param_is_not_overridden(
+        self, client, organization, org_user_member, opportunity, mobile_user
+    ):
+        visits = self._make_visits(opportunity, mobile_user)
+        target = visits[20]
+
+        client.force_login(org_user_member)
+        url = reverse(
+            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
+        )
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}&page=1")
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert table.page.number == 1
+
+
+@pytest.mark.django_db
+class TestOpportunityDeliveryStatsTiles:
+    def _url(self, organization, opportunity):
+        return reverse("opportunity:delivery_stats", args=(organization.slug, opportunity.opportunity_id))
+
+    def test_tiles_hidden_by_default(self, client, organization, org_user_member, opportunity):
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+
+        assert response.status_code == 200
+        assert b"View Progress Map" not in response.content
+        assert b"Audit Opportunity" not in response.content
+        assert b"Tasks Assigned to Connect Workers" not in response.content
+
+    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+    def test_progress_map_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
+        flag = Flag.objects.create(name=MICROPLANNING)
+        if scope == "opportunity":
+            flag.opportunities.add(opportunity)
+        elif scope == "program":
+            program = ProgramFactory(organization=organization)
+            opportunity.program = program
+            opportunity.save(update_fields=["program"])
+            flag.programs.add(program)
+        elif scope == "organization":
+            flag.organizations.add(organization)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+
+        assert b"View Progress Map" in response.content
+
+    def test_audit_tile_shown_only_when_flag_scoped_to_opportunity(
+        self, client, organization, org_user_member, opportunity
+    ):
+        program = ProgramFactory(organization=organization)
+        opportunity.program = program
+        opportunity.save(update_fields=["program"])
+        Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT).programs.add(program)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+        assert b"Audit Opportunity" not in response.content
+
+        Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT).opportunities.add(opportunity)
+        response = client.get(self._url(organization, opportunity))
+        assert b"Audit Opportunity" in response.content
+
+    def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
+        self, client, organization, org_user_member, opportunity
+    ):
+        client.force_login(org_user_member)
+
+        with override_switch(WORKER_VISITS_TASKS, active=True):
+            response = client.get(self._url(organization, opportunity))
+        assert b"Tasks Assigned to Connect Workers" not in response.content
+
+        TaskTypeFactory(opportunity=opportunity, is_active=True)
+        with override_switch(WORKER_VISITS_TASKS, active=True):
+            response = client.get(self._url(organization, opportunity))
+        assert b"Tasks Assigned to Connect Workers" in response.content

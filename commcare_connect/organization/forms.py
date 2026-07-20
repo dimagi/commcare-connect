@@ -1,14 +1,24 @@
+from allauth.account.forms import SetPasswordForm
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
+from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    LLOEntity,
+    Organization,
+    OrganizationInvite,
+)
 from commcare_connect.users.models import User
-from commcare_connect.utils.forms import CreatableModelChoiceField
+from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+
+LLO_ENTITY_SHORT_NAME_HELP_TEXT = gettext_lazy(
+    "A brief abbreviation for the entity. This will be used to reference the organization in the Connect application."
+)
 
 
 class OrganizationChangeForm(forms.ModelForm):
@@ -41,22 +51,37 @@ class OrganizationChangeForm(forms.ModelForm):
         else:
             del self.fields["program_manager"]
 
+        layout_fields.append(layout.Field("llo_entity"))
         instance_llo = getattr(self.instance, "llo_entity", None)
         if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             self.fields["llo_entity"] = CreatableModelChoiceField(
                 label=gettext("LLO Entity"),
                 queryset=LLOEntity.objects.order_by("name"),
-                widget=forms.Select(),
+                widget=forms.Select(attrs={"x-ref": "llo_entity"}),
                 empty_label=gettext("Select a LLO Entity"),
                 required=False,
                 create_key_name="name",
             )
             self.fields["llo_entity"].initial = instance_llo
+            self.fields["llo_entity_short_name"] = forms.CharField(
+                label=format_html(
+                    '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
+                    gettext("LLO Entity Short Name"),
+                ),
+                max_length=40,
+                required=False,
+                widget=forms.TextInput(attrs={"x-ref": "llo_entity_short_name", ":required": "isNewEntity"}),
+                help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
+            )
+            layout_fields.append(
+                layout.Div(
+                    layout.Field("llo_entity_short_name"),
+                    **{"x-show": "isNewEntity", "x-cloak": True, "x-transition": True},
+                )
+            )
         else:
             if instance_llo:
                 self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
-
-        layout_fields.append(layout.Field("llo_entity"))
 
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
@@ -72,20 +97,32 @@ class OrganizationChangeForm(forms.ModelForm):
             return self.cleaned_data["llo_entity"]
         return self.instance.llo_entity
 
+    def clean(self):
+        cleaned_data = super().clean()
+        llo_entity = cleaned_data.get("llo_entity")
+        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
+            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
+        return cleaned_data
+
     def save(self, commit=True):
         org = super().save(commit=False)
         llo_entity = self.cleaned_data.get("llo_entity")
+        short_name = self.cleaned_data.get("llo_entity_short_name") or None
 
-        org.llo_entity = llo_entity
-        if commit:
+        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             if llo_entity and not llo_entity.pk:
-                llo_entity.save()
+                llo_entity.short_name = short_name
+                if commit:
+                    llo_entity.save()
+            org.llo_entity = llo_entity
+
+        if commit:
             org.save()
         return org
 
 
-class MembershipForm(forms.ModelForm):
-    email = forms.CharField(
+class OrganizationInviteForm(forms.ModelForm):
+    email = forms.EmailField(
         max_length=254,
         required=True,
         label="",
@@ -93,8 +130,8 @@ class MembershipForm(forms.ModelForm):
     )
 
     class Meta:
-        model = UserOrganizationMembership
-        fields = ("role",)
+        model = OrganizationInvite
+        fields = ("email", "role")
         labels = {"role": ""}
 
     def __init__(self, *args, **kwargs):
@@ -102,6 +139,7 @@ class MembershipForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = layout.Layout(
             layout.Row(
                 layout.Field("email", wrapper_class="col-md-5"),
@@ -114,14 +152,26 @@ class MembershipForm(forms.ModelForm):
         )
 
     def clean_email(self):
-        email = self.cleaned_data["email"]
-        user = User.objects.filter(email=email).exclude(memberships__organization=self.organization).first()
+        email = self.cleaned_data["email"].strip().lower()
 
-        if not user:
-            raise ValidationError("User with this email does not exist or is already a member")
+        if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
+            raise ValidationError(gettext("This person is already a member of this workspace."))
 
-        self.instance.user = user
+        existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
+        if existing and existing.status == OrganizationInvite.Status.INVITED and not existing.is_expired:
+            raise ValidationError(gettext("An invite has already been sent to this email."))
+
         return email
+
+
+class InviteAcceptForm(SetPasswordForm):
+    """Sets a password for a brand-new user accepting an organization invite."""
+
+    agree = forms.BooleanField(
+        required=True,
+        label=gettext_lazy("I agree to the Acceptable Use Policy"),
+        error_messages={"required": gettext_lazy("You must agree to the Acceptable Use Policy to continue.")},
+    )
 
 
 class AddCredentialForm(forms.Form):
@@ -167,20 +217,25 @@ class OrganizationSelectOrCreateForm(forms.Form):
         empty_label=gettext_lazy("Select a LLO Entity"),
         create_key_name="name",
     )
-    org = forms.CharField(
-        max_length=255,
-        label=gettext_lazy("Workspace Name"),
-        widget=forms.Select(
-            attrs={"x-ref": "org", "data-tomselect": "1", "data-tomselect:settings": '{"create": true}'}
+    llo_entity_short_name = forms.CharField(
+        label=format_html(
+            '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
+            gettext_lazy("LLO Entity Short Name"),
         ),
+        max_length=40,
+        required=False,
+        widget=forms.TextInput(attrs={":required": "isNewEntity"}),
+        help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
+    )
+    org = DynamicCreatableChoiceField(
+        queryset=Organization.objects.order_by("name"),
+        create_key_name="name",
+        widget=forms.Select(attrs={"x-ref": "org"}),
+        label=gettext_lazy("Workspace Name"),
         help_text=gettext_lazy(
             "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
         ),
     )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._is_new_org = False
 
     def get_entity_wise_orgs(self):
         data = {}
@@ -200,16 +255,6 @@ class OrganizationSelectOrCreateForm(forms.Form):
             }
         return data
 
-    def clean_org(self):
-        value = self.cleaned_data["org"]
-        # Existing org selected (id)
-        if value.isdigit():
-            org = Organization.objects.filter(pk=value).first()
-            if org:
-                return org
-        self._is_new_org = True
-        return Organization(name=value)
-
     def clean(self):
         cleaned_data = super().clean()
         org = cleaned_data.get("org")
@@ -223,15 +268,20 @@ class OrganizationSelectOrCreateForm(forms.Form):
                         )
                     }
                 )
+        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
+            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
         return cleaned_data
 
     def save(self, commit=True):
         org = self.cleaned_data["org"]
         llo_entity = self.cleaned_data["llo_entity"]
+        is_new_org = not org.pk
         org.llo_entity = llo_entity
         if commit:
             if llo_entity and not llo_entity.pk:
+                if short_name := self.cleaned_data.get("llo_entity_short_name") or None:
+                    llo_entity.short_name = short_name
                 llo_entity.save()
-            if not org.pk:
+            if is_new_org:
                 org.save()
-        return org, self._is_new_org
+        return org, is_new_org

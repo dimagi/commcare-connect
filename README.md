@@ -3,7 +3,7 @@
 CommCare Connect
 
 [![Built with Cookiecutter Django](https://img.shields.io/badge/built%20with-Cookiecutter%20Django-ff69b4.svg?logo=cookiecutter)](https://github.com/cookiecutter/cookiecutter-django/)
-[![Black code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dimagi/commcare-connect)
 
 ## Local setup
@@ -11,18 +11,34 @@ CommCare Connect
 This assumes you will use the docker compose file in this repo to run services. If that is not the case you may
 need to edit some settings.
 
-    # create and active a python vertual environment using Python 3.11
-    $ python3.11 -m venv <virtual env path>
+    # install uv to manage python versions and dependencies
+    # https://docs.astral.sh/uv/getting-started/installation/
+    $ curl -LsSf https://astral.sh/uv/install.sh | sh
 
-    # install requirements
-    $ pip install -r requirements-dev.txt
+    # create a venv and install requirements
+    $ uv sync
+
+    # This will also create a virtual environment in .venv if
+    # one does not already exist. To activate the environment:
+    source .venv/bin/activate
+
+    # For convenience, you can create an alias to activate
+    # virtual environments in ".venv" and "venv" directories.
+    # To do that, add the following to your .bashrc or .zshrc file (optional):
+    alias venv='if [[ -d .venv ]] ; then source .venv/bin/activate ; elif [[ -d venv ]] ; then source venv/bin/activate ; fi'
+
+    # Then you can activate virtual environments with
+    venv
 
     # install git hooks
-    $ pre-commit install
-    $ pre-commit run -a
+    $ prek install
+    $ prek run -a
 
     # create env file and edit the settings as needed (or export settings directly)
     $ cp .env_template .env
+
+    # command for installing new python dependencies
+    $ uv add <pkg>
 
 ### GeoDjango / PostGIS Setup
 

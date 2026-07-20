@@ -3,7 +3,8 @@ import datetime
 import pytest
 from rest_framework.test import APIClient
 
-from commcare_connect.opportunity.api.serializers import (
+from commcare_connect.opportunity.api.serializers.mobile import (
+    AssignedTaskSerializer,
     CommCareAppSerializer,
     CompletedWorkSerializer,
     DeliveryProgressSerializer,
@@ -22,6 +23,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
+    AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     LearnModuleFactory,
@@ -41,7 +43,7 @@ def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, bud
         total_budget=total_budget,
         end_date=end_date,
     )
-    PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100)
+    PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100, org_amount=0)
     opportunity_access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     ConnectIdUserLinkFactory(
         user=mobile_user,
@@ -68,8 +70,7 @@ def test_claim_endpoint_success(mobile_user: User, api_client: APIClient):
 def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: APIClient):
     pu = PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
     opportunity.total_budget = 10 * 100
-    if opportunity.managed:
-        opportunity.total_budget += 100 * pu.org_amount
+    opportunity.total_budget += 100 * pu.org_amount
     opportunity.end_date = datetime.date.today() + datetime.timedelta(days=100)
     opportunity.save()
 
@@ -223,6 +224,20 @@ def test_opportunity_list_endpoint(
     assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
 
 
+@pytest.mark.django_db
+def test_opportunity_list_endpoint_excludes_archived(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+):
+    opportunity.archived = True
+    opportunity.save()
+    api_client.force_authenticate(mobile_user_with_connect_link)
+    response = api_client.get("/api/opportunity/")
+    assert response.status_code == 200
+    assert len(response.data) == 0
+
+
 def test_delivery_progress_endpoint(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
@@ -259,6 +274,42 @@ def test_delivery_progress_endpoint(
     assert response.status_code == 200
     assert len(response.data["payments"]) == 1
     assert response.data["payments"][0].keys() == PaymentSerializer().get_fields().keys()
+
+
+def test_delivery_progress_no_assigned_tasks(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    api_client.force_authenticate(mobile_user_with_connect_link)
+    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+    assert response.status_code == 200
+    assert response.data["assigned_tasks"] == []
+
+
+def test_delivery_progress_assigned_tasks_filtered_by_user(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    assigned_tasks = AssignedTaskFactory.create_batch(3, opportunity_access=access, task_type__opportunity=opportunity)
+    # OpportunityAccessFactory creates a new auto-generated mobile user via MobileUserFactory,
+    # so other_access belongs to a different user than mobile_user_with_connect_link.
+    other_access = OpportunityAccessFactory(opportunity=opportunity)
+    AssignedTaskFactory.create_batch(2, opportunity_access=other_access, task_type__opportunity=opportunity)
+
+    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+    assert response.status_code == 200
+    assert len(response.data["assigned_tasks"]) == 3
+    assigned_tasks_by_id = {str(at.assigned_task_id): at for at in assigned_tasks}
+    for assigned_task_data in response.data["assigned_tasks"]:
+        assert assigned_task_data.keys() == AssignedTaskSerializer().get_fields().keys()
+        assigned_task = assigned_tasks_by_id[assigned_task_data["assigned_task_id"]]
+        assert assigned_task_data["task_name"] == assigned_task.task_type.name
+        assert assigned_task_data["task_description"] == assigned_task.task_type.description
+        assert assigned_task_data["task_mode"] == assigned_task.task_type.mode
+        assert assigned_task_data["slug"] == assigned_task.task_type.slug
+        assert assigned_task_data["status"] == assigned_task.status
+        assert assigned_task_data["due_date"] == str(assigned_task.due_date)
 
 
 @pytest.mark.django_db

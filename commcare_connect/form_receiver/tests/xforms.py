@@ -52,6 +52,17 @@ MODULE_XML_TEMPLATE = (
     % CCC_LEARN_XMLNS
 )
 
+TASK_XML_TEMPLATE = (
+    """<data>
+<task xmlns="%s" id="{id}">
+    <name>{name}</name>
+    <description>{description}</description>
+</task>
+</data>
+"""
+    % CCC_LEARN_XMLNS
+)
+
 ASSESSMENT_XML_TEMPLATE = (
     """<data>
 <assessment xmlns="%s" id="{id}">
@@ -69,6 +80,19 @@ DELIVER_UNIT_XML_TEMPLATE = (
     <entity_name>{entity_name}</entity_name>
     <work_area_id>{work_area_id}</work_area_id>
 </deliver>
+</data>"""
+    % CCC_LEARN_XMLNS
+)
+
+WORK_AREA_UPDATE_XML_TEMPLATE = (
+    """<data>
+<work_area_update xmlns="%s" id="{id}">
+    <work_area_id>{work_area_id}</work_area_id>
+    <status>{status}</status>
+    <reason>{reason}</reason>
+    <photo_evidence>{photo_evidence}</photo_evidence>
+    <additional_details>{additional_details}</additional_details>
+</work_area_update>
 </data>"""
     % CCC_LEARN_XMLNS
 )
@@ -105,6 +129,18 @@ class LearnModuleJsonFactory(factory.StubFactory):
         return module
 
 
+class TaskJsonFactory(factory.StubFactory):
+    id = factory.Faker("slug")
+    name = factory.Faker("name")
+    description = factory.Faker("text")
+
+    @factory.lazy_attribute
+    def json(self):
+        xml = TASK_XML_TEMPLATE.format(id=self.id, name=self.name, description=self.description)
+        _, task = xml2json(xml)
+        return task
+
+
 class AssessmentStubFactory(factory.StubFactory):
     id = factory.Faker("slug")
     score = factory.Faker("pyint", min_value=0, max_value=100)
@@ -134,3 +170,25 @@ class DeliverUnitStubFactory(factory.StubFactory):
         )
         _, module = xml2json(xml)
         return module
+
+
+class WorkAreaUpdateStubFactory(factory.StubFactory):
+    id = factory.Faker("slug")
+    work_area_id = factory.Faker("uuid4")
+    status = "request_for_inaccessible"
+    reason = factory.Faker("sentence", nb_words=3)
+    photo_evidence = "photo.jpg"
+    additional_details = ""
+
+    @factory.lazy_attribute
+    def json(self):
+        xml = WORK_AREA_UPDATE_XML_TEMPLATE.format(
+            id=self.id,
+            work_area_id=self.work_area_id,
+            status=self.status,
+            reason=self.reason,
+            photo_evidence=self.photo_evidence,
+            additional_details=self.additional_details,
+        )
+        _, block = xml2json(xml)
+        return block

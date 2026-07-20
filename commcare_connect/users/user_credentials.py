@@ -116,19 +116,22 @@ class UserCredentialIssuer:
             """
             for i in range(0, len(users_credential["usernames"]), cls.USERNAME_CHUNK_SIZE):
                 i_chunk = i + cls.USERNAME_CHUNK_SIZE
-                yield {
-                    "usernames": users_credential["usernames"][i:i_chunk],
-                    "title": UserCredential.get_title(
-                        credential_type=users_credential["credential_type"],
-                        level=users_credential["level"],
-                        delivery_type_name=users_credential["delivery_type__name"]
-                        or users_credential["opportunity__name"],
-                    ),
-                    "type": users_credential["credential_type"],
-                    "level": users_credential["level"],
-                    "slug": users_credential["opportunity__id"],
-                    "opportunity_id": users_credential["opportunity__id"],
-                }, users_credential["credential_ids"][i:i_chunk]
+                yield (
+                    {
+                        "usernames": users_credential["usernames"][i:i_chunk],
+                        "title": UserCredential.get_title(
+                            credential_type=users_credential["credential_type"],
+                            level=users_credential["level"],
+                            delivery_type_name=users_credential["delivery_type__name"]
+                            or users_credential["opportunity__name"],
+                        ),
+                        "type": users_credential["credential_type"],
+                        "level": users_credential["level"],
+                        "slug": users_credential["opportunity__id"],
+                        "opportunity_id": users_credential["opportunity__id"],
+                    },
+                    users_credential["credential_ids"][i:i_chunk],
+                )
 
         unissued_credentials_qs = cls._get_unissued_user_credentials_queryset()
         index_in_chunk = 0

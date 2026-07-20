@@ -1,24 +1,28 @@
+from __future__ import annotations
+
 import datetime
 from collections import Counter, defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
 import pghistory
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
-from django.db.models.expressions import RawSQL
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext, gettext_lazy
-from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
+
+# Max length for CharFields backed by a TextChoices enum.
+CHOICE_FIELD_MAX_LENGTH = 50
 
 
 class CommCareApp(BaseModel):
@@ -79,6 +83,7 @@ class Country(models.Model):
         return self.name
 
 
+@pghistory.track(pghistory.UpdateEvent(), fields=["active"])
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     organization = models.ForeignKey(
@@ -112,9 +117,12 @@ class Opportunity(BaseModel):
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     auto_approve_visits = models.BooleanField(default=True)
     auto_approve_payments = models.BooleanField(default=True)
+    automatic_visit_verification = models.BooleanField(default=False)
     is_test = models.BooleanField(default=True)
+    archived = models.BooleanField(default=False)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
     managed = models.BooleanField(default=False)
+    program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING, null=True)
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def __str__(self):
@@ -129,7 +137,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_setup_complete(self):
-        if not (self.paymentunit_set.count() > 0 and self.total_budget and self.start_date and self.end_date):
+        if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
             if not (pu.max_total and pu.max_daily):
@@ -160,7 +168,7 @@ class Opportunity(BaseModel):
         for count in payment_unit_counts:
             visits_count = count["visits_count"]
             amount = count["amount"]
-            org_amount = count["org_amount"] if self.managed else 0
+            org_amount = count["org_amount"]
             claimed += visits_count * (amount + org_amount)
 
         return claimed
@@ -182,19 +190,44 @@ class Opportunity(BaseModel):
             opportunity_access__opportunity=self, status=CompletedWorkStatus.approved
         ).count()
 
+    @staticmethod
+    def budget_per_user_for_units(payment_units):
+        """Total budget consumed per user (worker + org pay) across the given payment units."""
+        return sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
+
+    def validate_budget_for_payment_units(self, payment_units):
+        """Validate that ``total_budget`` can give every existing claimant the full per-user
+        limit for ``payment_units``, raising ``ValidationError`` if it can't.
+
+        ``payment_units`` is the complete set of units that would exist after the proposed
+        change (each exposing ``max_total``/``amount``/``org_amount``; unsaved instances are
+        fine).
+        """
+        if not self.total_budget:
+            return
+        claimant_count = OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
+        if not claimant_count:
+            return
+
+        required_budget = self.budget_per_user_for_units(payment_units) * claimant_count
+        if self.total_budget < required_budget:
+            raise ValidationError(
+                gettext_lazy(
+                    "The opportunity budget cannot give the full limit to all %(claimants)d workers "
+                    "who have already claimed. Increase it to at least %(required)d %(currency)s."
+                )
+                % {
+                    "claimants": claimant_count,
+                    "required": required_budget,
+                    "currency": self.currency_code or "",
+                }
+            )
+
     @property
     def number_of_users(self):
         if not self.total_budget:
             return 0
-        if not self.managed:
-            return self.total_budget / self.budget_per_user
-
-        budget_per_user = 0
-        payment_units = self.paymentunit_set.all()
-        for pu in payment_units:
-            budget_per_user += pu.max_total * (pu.amount + pu.org_amount)
-
-        return self.total_budget / budget_per_user
+        return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
 
     @property
     def allotted_visits(self):
@@ -223,11 +256,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_active(self):
-        return bool(self.active and self.end_date and self.end_date >= now().date())
-
-    @property
-    def program_name(self):
-        return self.managedopportunity.program.name if self.managed else None
+        return bool(not self.archived and self.active and self.end_date and self.end_date >= now().date())
 
     @property
     def has_ended(self):
@@ -237,9 +266,9 @@ class Opportunity(BaseModel):
 class OpportunityVerificationFlags(models.Model):
     opportunity = models.OneToOneField(Opportunity, on_delete=models.CASCADE)
     duration = models.PositiveIntegerField(default=1)
-    gps = models.BooleanField(default=True)
-    duplicate = models.BooleanField(default=True)
-    location = models.PositiveIntegerField(default=10)
+    gps = models.BooleanField(default=False)
+    duplicate = models.BooleanField(default=False)
+    location = models.PositiveIntegerField(default=0)
     form_submission_start = models.TimeField(null=True, blank=True)
     form_submission_end = models.TimeField(null=True, blank=True)
     catchment_areas = models.BooleanField(default=False)
@@ -260,18 +289,37 @@ class LearnModule(models.Model):
         return self.name
 
 
-class Task(models.Model):
+class TaskTypeModeChoices(models.TextChoices):
+    RELEARN = "relearn", gettext("relearn")
+    OCS = "ocs", gettext("ocs")
+
+
+class TaskType(models.Model):
+    task_type_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, null=True, blank=True)
     slug = models.SlugField()
+    unit_name = models.CharField(max_length=255, null=True, blank=True)
     name = models.CharField(max_length=255)
     description = models.TextField()
-    time_estimate = models.IntegerField(help_text="Estimated hours to complete the task")
+    case_property = models.CharField(max_length=255, null=True, blank=True)
+    archived = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    duration = models.IntegerField(null=True, blank=True)
+    mode = models.CharField(
+        choices=TaskTypeModeChoices.choices,
+        default=TaskTypeModeChoices.RELEARN,
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+    )
+    ocs_chatbot_id = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return self.name
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app")]
+        constraints = [
+            models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_type_per_app"),
+        ]
 
 
 class XFormBaseModel(models.Model):
@@ -304,15 +352,6 @@ class OpportunityAccess(models.Model):
             models.Index(fields=["opportunity", "date_learn_started"]),
         ]
         unique_together = ("user", "opportunity")
-
-    @cached_property
-    def managed_opportunity(self):
-        from commcare_connect.program.models import ManagedOpportunity
-
-        if self.opportunity.managed:
-            return ManagedOpportunity.objects.get(id=self.opportunity.id)
-
-        return None
 
     # TODO: Convert to a field and calculate this property CompletedModule is saved
     @property
@@ -412,29 +451,115 @@ class CompletedModule(XFormBaseModel):
         ]
 
 
-class CompletedTaskStatus(models.TextChoices):
+class AssignedTaskStatus(models.TextChoices):
     ASSIGNED = "assigned", gettext("assigned")
     COMPLETED = "completed", gettext("completed")
 
 
-class CompletedTask(XFormBaseModel):
-    task = models.ForeignKey(Task, on_delete=models.PROTECT)
+@pghistory.track(pghistory.UpdateEvent(), fields=["due_date"])
+class AssignedTask(XFormBaseModel):
+    assigned_task_id = models.UUIDField(editable=False, default=uuid4, unique=True)
+    task_type = models.ForeignKey(TaskType, on_delete=models.PROTECT)
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
-    date = models.DateTimeField()
-    duration = models.DurationField()
+    completed_at = models.DateTimeField(null=True)
+    duration = models.DurationField(null=True)
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
-        choices=CompletedTaskStatus.choices,
-        default=CompletedTaskStatus.ASSIGNED,
-        max_length=50,
+        choices=AssignedTaskStatus.choices,
+        default=AssignedTaskStatus.ASSIGNED,
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+    )
+    due_date = models.DateField()
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
+    connect_channel_id = models.CharField(max_length=255, null=True, blank=True)
+    ocs_session_id = models.CharField(max_length=255, null=True, blank=True)
+    assigned_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_tasks",
     )
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["xform_id", "task", "opportunity_access"], name="unique_xform_completed_task"
-            )
+                fields=["xform_id", "task_type", "opportunity_access"], name="unique_xform_assigned_task"
+            ),
+            models.UniqueConstraint(
+                fields=["task_type", "opportunity_access"],
+                condition=Q(status=AssignedTaskStatus.ASSIGNED),
+                name="unique_assigned_task_type_per_access",
+            ),
         ]
+
+    @classmethod
+    def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> AssignedTask:
+        from commcare_connect.commcarehq.api import bulk_update_usercases
+        from commcare_connect.opportunity.tasks import send_task_assignment_notification
+
+        with transaction.atomic():
+            try:
+                assigned_task = cls.objects.create(
+                    task_type=task_type,
+                    opportunity_access=opportunity_access,
+                    status=AssignedTaskStatus.ASSIGNED,
+                    due_date=due_date,
+                    assigned_by=assigned_by,
+                )
+            except IntegrityError:
+                raise TaskAlreadyAssignedError(f"Task type '{task_type}' could not be assigned.")
+            case_property = task_type.case_property
+            if case_property:
+                bulk_update_usercases({opportunity_access: {"properties": {case_property: "1"}}})
+            transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
+        return assigned_task
+
+    @classmethod
+    def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
+        from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_update_usercases
+
+        tasks = list(
+            cls.objects.filter(
+                pk__in=task_ids,
+                opportunity_access__opportunity=opportunity,
+            )
+            .exclude(status=AssignedTaskStatus.COMPLETED)
+            .select_related("task_type", "opportunity_access")
+        )
+        if not tasks:
+            return 0
+
+        hq_updates: dict[tuple[int, str], OpportunityAccess] = {}
+        for task in tasks:
+            if prop := task.task_type.case_property:
+                hq_updates.setdefault((task.opportunity_access_id, prop), task.opportunity_access)
+
+        with transaction.atomic():
+            deleted_count, _ = (
+                cls.objects.filter(pk__in=[t.pk for t in tasks]).exclude(status=AssignedTaskStatus.COMPLETED).delete()
+            )
+            if hq_updates:
+                still_assigned = set(
+                    cls.objects.filter(
+                        opportunity_access_id__in={access_id for access_id, _ in hq_updates},
+                        status=AssignedTaskStatus.ASSIGNED,
+                        task_type__case_property__in={p for _, p in hq_updates},
+                    ).values_list("opportunity_access_id", "task_type__case_property")
+                )
+                to_reset: dict[OpportunityAccess, dict] = {}
+                for access_id, prop in hq_updates.keys() - still_assigned:
+                    access = hq_updates[access_id, prop]
+                    to_reset.setdefault(access, {"properties": {}})["properties"][prop] = ""
+                if len(to_reset) > HQ_CASE_BULK_CHUNK_SIZE:
+                    raise ListTooLongError(
+                        f"Too many HQ case property resets ({len(to_reset)}); split the delete into smaller batches."
+                    )
+                if to_reset:
+                    bulk_update_usercases(to_reset)
+
+        return deleted_count
 
 
 class Assessment(XFormBaseModel):
@@ -537,37 +662,12 @@ class InvoiceStatus(models.TextChoices):
     PAID = "paid", gettext("Paid")
     ARCHIVED = "archived", gettext("Archived")
 
-    @staticmethod
-    def old_labels_map():
-        # Uses the new statuses, but returns the relevant label:
-        # either the one used previously or else the new label for statuses added later.
-        return {
-            "pending_nm_review": gettext("Pending"),
-            "pending_pm_review": gettext("Submitted"),
-            "ready_to_pay": gettext("Ready to Pay"),
-            "cancelled_by_nm": gettext("Cancelled by Network Manager"),
-            "rejected_by_pm": gettext("Rejected by Program Manager"),
-            "paid": gettext("Approved"),
-            "archived": gettext("Archived"),
-        }
-
     @classmethod
     def get_label(cls, status):
-        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            return cls.old_labels_map()[status]
         return cls(status).label
 
     @classmethod
     def get_choices(cls):
-        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            old_labels = cls.old_labels_map()
-            allowed_statuses = [
-                cls.PENDING_NM_REVIEW,
-                cls.PENDING_PM_REVIEW,
-                cls.PAID,
-                cls.ARCHIVED,
-            ]
-            return [(status.value, old_labels.get(status.value, status.label)) for status in allowed_statuses]
         return cls.choices
 
 
@@ -590,7 +690,9 @@ class PaymentInvoice(models.Model):
     title = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
-    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
+    status = models.CharField(
+        choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
+    )
     archived_date = models.DateTimeField(null=True, blank=True)
     invoice_ticket_link = models.URLField(null=True, blank=True)
 
@@ -650,7 +752,7 @@ class CompletedWork(models.Model):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
     status = models.CharField(
-        max_length=50, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
     )
     last_modified = models.DateTimeField(auto_now=True)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
@@ -701,12 +803,18 @@ class CompletedWork(models.Model):
 
     @property
     def approved_count(self):
-        visits = self.uservisit_set.filter(status=VisitValidationStatus.approved).values_list(
-            "deliver_unit_id", flat=True
-        )
+        qs = self.uservisit_set.filter(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
+        visits = qs.values_list("deliver_unit_id", flat=True)
         return self.calculate_completed(visits, approved=True)
 
     def calculate_completed(self, visits, approved=False):
+        """Count completed deliveries for this entity by taking the minimum across required deliver units.
+
+        A delivery is "complete" when all required deliver unit forms have been submitted.
+        The count is the minimum across required units (all must be done), capped by the
+        total of optional units if any exist, and further constrained by child payment
+        unit completion counts.
+        """
         unit_counts = Counter(visits)
         deliver_units = self.payment_unit.deliver_units.values("id", "optional")
         required_deliver_units = list(
@@ -774,37 +882,7 @@ class VisitReviewStatus(models.TextChoices):
     disagree = "disagree", gettext("Disagree")
 
 
-class UserVisitQuerySet(models.QuerySet):
-    def with_any_flags(self, flags):
-        from commcare_connect.utils.flags import Flags
-
-        # flags should be a subset of Flags
-        allowed_flags = {flag.value for flag in Flags}
-        flags = list(set(flags) & allowed_flags)
-
-        if not flags:
-            return self
-
-        conditions = " || ".join([f"@[0] == $f{i}" for i in range(len(flags))])
-
-        params = []
-        for i, f in enumerate(flags):
-            params.extend([f"f{i}", f])
-
-        sql = f"""
-            jsonb_path_exists(
-                flag_reason,
-                '$.flags[*] ? ({conditions})',
-                jsonb_build_object({', '.join(['%s'] * len(params))})
-            )
-        """
-
-        return self.annotate(has_flag=RawSQL(sql, params)).filter(has_flag=True)
-
-
 class UserVisit(XFormBaseModel):
-    objects = UserVisitQuerySet.as_manager()
-
     user_visit_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(
         Opportunity,
@@ -820,7 +898,9 @@ class UserVisit(XFormBaseModel):
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     visit_date = models.DateTimeField()
     status = models.CharField(
-        max_length=50, choices=VisitValidationStatus.choices, default=VisitValidationStatus.pending
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+        choices=VisitValidationStatus.choices,
+        default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
     reason = models.CharField(max_length=300, null=True, blank=True)
@@ -836,7 +916,7 @@ class UserVisit(XFormBaseModel):
     )
     status_modified_date = models.DateTimeField(null=True)
     review_status = models.CharField(
-        max_length=50, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
     )
     review_created_on = models.DateTimeField(blank=True, null=True)
     justification = models.CharField(max_length=300, null=True, blank=True)
@@ -858,10 +938,14 @@ class UserVisit(XFormBaseModel):
         return BlobMeta.objects.filter(parent_id=self.xform_id, content_type__startswith="image/")
 
     @property
+    def audio(self):
+        return self.audio_attachments.all()
+
+    @property
     def duration(self):
         duration = None
         start = self.form_json["metadata"].get("timeStart")
-        end = self.form_json["metatdata"].get("timeEnd")
+        end = self.form_json["metadata"].get("timeEnd")
         if start and end:
             try:
                 duration = parse_datetime(end) - parse_datetime(start)
@@ -916,6 +1000,12 @@ class OpportunityClaimLimit(models.Model):
 
     @classmethod
     def create_claim_limits(cls, opportunity: Opportunity, claim: OpportunityClaim):
+        """Allocate visit limits for a new claim based on remaining budget.
+
+        For each payment unit, calculates how many visits are still available
+        (total capacity minus already-claimed visits) and creates a claim limit
+        with the lesser of the remaining visits or the per-user max.
+        """
         claim_limits_by_payment_unit = defaultdict(list)
         claim_limits = OpportunityClaimLimit.objects.filter(
             opportunity_claim__opportunity_access__opportunity=opportunity
@@ -960,6 +1050,26 @@ class BlobMeta(models.Model):
         indexes = [models.Index(fields=["blob_id"])]
 
 
+class AudioAttachment(models.Model):
+    user_visit = models.ForeignKey(
+        UserVisit,
+        on_delete=models.CASCADE,
+        related_name="audio_attachments",
+    )
+    blob_id = models.CharField(max_length=255, default=uuid4, unique=True)
+    name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=255, null=True)
+    content_length = models.IntegerField()
+    transcript = models.TextField(blank=True, default="")
+    translation = models.TextField(blank=True, default="")
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [
+            ("user_visit", "name"),
+        ]
+
+
 class UserInviteStatus(models.TextChoices):
     sms_delivered = "sms_delivered", gettext("SMS Delivered")
     sms_not_delivered = "sms_not_delivered", gettext("SMS Not Delivered")
@@ -973,7 +1083,9 @@ class UserInvite(models.Model):
     phone_number = models.CharField(max_length=15)
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
-    status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+    status = models.CharField(
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus.choices, default=UserInviteStatus.invited
+    )
     notification_date = models.DateTimeField(null=True)
 
 

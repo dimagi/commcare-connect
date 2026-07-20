@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 167" width="464" height="167">
+  <!-- pale teal background -->
+  <rect width="464" height="167" fill="#CCECEE"/>
+
+  <!-- soft ground -->
+  <path d="M 0 158 C 120 152, 344 152, 464 158 L 464 167 L 0 167 Z" fill="#01A2A9" opacity="0.4"/>
+
+  <!-- decorative dots (water-droplet themed) -->
+  <g fill="#01A2A9">
+    <circle cx="22" cy="22" r="2.2" opacity="0.45"/>
+    <circle cx="48" cy="50" r="1.6" opacity="0.4"/>
+    <circle cx="200" cy="18" r="1.8" opacity="0.4"/>
+    <circle cx="380" cy="22" r="2" opacity="0.45"/>
+    <circle cx="448" cy="100" r="2" opacity="0.4"/>
+    <circle cx="438" cy="58" r="1.6" opacity="0.4"/>
+    <circle cx="40" cy="125" r="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- sun -->
+  <g transform="translate(420,28)">
+    <circle r="14" fill="#FEAF31"/>
+    <circle r="10" fill="#FFC571"/>
+    <circle r="5" fill="#FFE4B0"/>
+  </g>
+
+  <!-- ============ PERSON ============ -->
+  <!-- shoes -->
+  <ellipse cx="100" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <ellipse cx="130" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <ellipse cx="97" cy="159.5" rx="6" ry="1.2" fill="#3a3f5a" opacity="0.7"/>
+  <ellipse cx="127" cy="159.5" rx="6" ry="1.2" fill="#3a3f5a" opacity="0.7"/>
+
+  <!-- pants -->
+  <path d="M 86 110 C 86 130, 84 152, 88 158 Q 100 162, 112 158 L 114 110 Z" fill="#252D54"/>
+  <path d="M 116 110 L 118 158 Q 130 162, 142 158 C 146 152, 144 130, 144 110 Z" fill="#252D54"/>
+
+  <!-- belt -->
+  <rect x="84" y="106" width="62" height="5" rx="1.5" fill="#13162A"/>
+
+  <!-- shirt (teal) -->
+  <path d="M 88 60 C 88 54, 96 50, 108 50 L 116 50 C 128 50, 136 54, 136 60 Q 142 80, 144 110 L 86 110 Q 88 80, 88 60 Z" fill="#01A2A9"/>
+  <path d="M 88 60 C 88 54, 96 50, 106 50 L 106 110 L 86 110 Q 88 80, 88 60 Z" fill="#015e62" opacity="0.3"/>
+  <!-- collar -->
+  <path d="M 102 50 L 112 64 L 122 50 L 118 50 L 112 60 L 106 50 Z" fill="#fff" opacity="0.85"/>
+
+  <!-- left arm hanging at side -->
+  <path d="M 84 62 C 76 80, 76 100, 80 110 L 92 110 Q 94 80, 92 62 Z" fill="#01A2A9"/>
+  <path d="M 84 62 C 76 80, 76 100, 80 110 L 84 110 Q 84 80, 86 62 Z" fill="#015e62" opacity="0.3"/>
+  <ellipse cx="85" cy="111" rx="6" ry="3" fill="#015e62"/>
+  <circle cx="84" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- right arm hanging at side (mirror) -->
+  <path d="M 144 62 C 152 80, 152 100, 148 110 L 136 110 Q 134 80, 136 62 Z" fill="#01A2A9"/>
+  <path d="M 144 62 C 152 80, 152 100, 148 110 L 144 110 Q 142 80, 142 62 Z" fill="#015e62" opacity="0.3"/>
+  <ellipse cx="143" cy="111" rx="6" ry="3" fill="#015e62"/>
+  <circle cx="144" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- neck (centered on body at x=112) -->
+  <rect x="107" y="48" width="10" height="8" fill="#B5825D"/>
+  <rect x="107" y="48" width="4" height="8" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head (centered on body at x=112) -->
+  <circle cx="112" cy="32" r="18" fill="#B5825D"/>
+  <path d="M 94 32 A 18 18 0 0 1 112 14 L 112 50 A 18 18 0 0 1 94 32 Z" fill="#9c6b48" opacity="0.3"/>
+  <ellipse cx="95" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+  <ellipse cx="129" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+
+  <!-- hair -->
+  <path d="M 94 28 C 94 12, 102 8, 112 8 C 122 8, 130 12, 130 28 C 128 22, 122 20, 118 22 C 114 16, 106 16, 102 22 C 98 20, 96 22, 94 28 Z" fill="#2D2825"/>
+  <path d="M 100 16 C 106 12, 118 12, 124 16 C 118 14, 106 14, 100 16 Z" fill="#4d4541" opacity="0.7"/>
+
+  <!-- ============ CHLORINE DISPENSER ============ -->
+  <!-- mounting post -->
+  <rect x="278" y="100" width="6" height="60" fill="#6c757d"/>
+  <rect x="278" y="100" width="2.5" height="60" fill="#495057"/>
+
+  <!-- post base/anchor -->
+  <rect x="270" y="158" width="22" height="4" rx="1" fill="#495057"/>
+
+  <!-- main tank -->
+  <path d="M 250 38
+           C 250 32, 256 28, 280 28
+           C 304 28, 310 32, 310 38
+           L 310 100
+           Q 308 106, 280 106
+           Q 252 106, 250 100
+           Z" fill="#7D8DDB"/>
+  <!-- tank shadow on left -->
+  <path d="M 250 38 C 250 32, 256 28, 270 28 L 270 106 Q 252 106, 250 100 Z" fill="#4A5AA8" opacity="0.3"/>
+  <!-- tank highlight -->
+  <ellipse cx="260" cy="50" rx="4" ry="14" fill="#fff" opacity="0.4"/>
+
+  <!-- tank cap -->
+  <rect x="268" y="22" width="24" height="8" rx="2" fill="#4A5AA8"/>
+  <rect x="270" y="20" width="20" height="3" rx="1" fill="#252D54"/>
+
+  <!-- chlorine label (white square with cross) -->
+  <rect x="266" y="60" width="28" height="22" rx="2" fill="#fff"/>
+  <rect x="270" y="68" width="20" height="4" fill="#01A2A9"/>
+  <rect x="278" y="60" width="4" height="20" fill="#01A2A9"/>
+
+  <!-- dispenser tap (lower side of tank) -->
+  <rect x="306" y="92" width="14" height="6" rx="1" fill="#495057"/>
+  <rect x="318" y="94" width="4" height="3" fill="#252D54"/>
+  <!-- tap handle -->
+  <rect x="312" y="86" width="4" height="6" rx="1" fill="#495057"/>
+  <circle cx="314" cy="84" r="3" fill="#FEAF31"/>
+
+  <!-- water drops from tap -->
+  <g fill="#5D70D2">
+    <ellipse cx="320" cy="105" rx="2" ry="3.5"/>
+    <ellipse cx="319" cy="115" rx="1.8" ry="3" opacity="0.85"/>
+    <ellipse cx="318" cy="125" rx="1.6" ry="2.5" opacity="0.7"/>
+  </g>
+
+  <!-- ============ JERRYCAN ============ -->
+  <!-- main body of jerrycan -->
+  <path d="M 296 130
+           C 296 126, 300 122, 308 122
+           L 332 122
+           C 340 122, 344 126, 344 130
+           L 344 160
+           Q 344 162, 340 162
+           L 300 162
+           Q 296 162, 296 160 Z" fill="#FEAF31"/>
+  <!-- jerrycan shadow -->
+  <path d="M 296 130 C 296 126, 300 122, 306 122 L 306 162 L 300 162 Q 296 162, 296 160 Z" fill="#cb585d" opacity="0.3"/>
+  <!-- jerrycan handle -->
+  <path d="M 312 122 L 312 116 Q 312 112, 318 112 L 322 112 Q 328 112, 328 116 L 328 122" stroke="#cb585d" stroke-width="2.5" fill="none"/>
+  <!-- jerrycan cap -->
+  <rect x="332" y="116" width="8" height="6" rx="1" fill="#cb585d"/>
+  <!-- jerrycan body indents (lines for shape) -->
+  <line x1="304" y1="138" x2="338" y2="138" stroke="#cb585d" stroke-width="1" opacity="0.4"/>
+  <line x1="304" y1="148" x2="338" y2="148" stroke="#cb585d" stroke-width="1" opacity="0.4"/>
+
+  <!-- subtle water ripple in jerrycan opening (visible water level) -->
+  <ellipse cx="320" cy="130" rx="14" ry="2" fill="#5D70D2" opacity="0.5"/>
+
+  <!-- floating water drop accents -->
+  <g fill="#5D70D2" opacity="0.6">
+    <ellipse cx="240" cy="50" rx="2.5" ry="4"/>
+    <ellipse cx="370" cy="50" rx="2" ry="3"/>
+    <ellipse cx="220" cy="100" rx="2" ry="3"/>
+  </g>
+</svg>

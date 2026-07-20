@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load django_tables2 %}
+{% load crispy_forms_tags %}
+{% block content %}
+  {% include 'components/breadcrumbs.html' with path=path %}
+  <div class="w-full space-y-4"
+       x-data="{ showCreateTaskModal: false, showEditTaskModal: false, editTaskError: false, ...resetFilterModalState('userTaskFilterForm'), ...selectableTable() }">
+    <div x-show="editTaskError"
+         x-cloak
+         role="alert"
+         class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>{% trans "Failed to load task. Please try again." %}</span>
+      </div>
+      <button type="button"
+              class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+              aria-label="{% trans "Close" %}"
+              @click="editTaskError = false">&times;</button>
+    </div>
+    {% include "components/worker_page/worker_profile_kpi.html" %}
+    <div class="relative">
+      {% include 'components/worker_page/visit_task_tabs.html' %}
+      <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+        {% if can_manage_tasks %}
+          <button type="button"
+                  class="button-icon shadow-sm"
+                  aria-label="{% trans 'Create Task' %}"
+                  @click.stop="showCreateTaskModal = true"
+                  x-tooltip.raw="{% trans 'Create Task' %}">
+            <i class="fa-solid fa-plus text-brand-deep-purple"></i>
+          </button>
+          <button type="button"
+                  class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
+                  aria-label="{% trans 'Delete Task(s)' %}"
+                  @click="$store.confirmModal.show({ title: '{% trans "Delete Tasks" %}', message: `{% blocktrans %}Are you sure you want to delete __count__ task(s)? This action can not be undone.{% endblocktrans %}`.replace('__count__', selected.length), confirmBtnText: '{% trans "Delete" %}', confirmBtnRed: true, formRef: $refs.deleteTasksForm })"
+                  :disabled="selected.length === 0"
+                  x-tooltip.raw="{% trans 'Delete Task(s)' %}">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        {% endif %}
+        <button type="button"
+                @click="showFilterModal = true"
+                class="relative button-icon shadow-sm">
+          <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+          {% if filters_applied_count %}
+            <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+              {{ filters_applied_count }}
+            </span>
+          {% endif %}
+        </button>
+      </div>
+    </div>
+    {% if can_manage_tasks %}
+      <form x-ref="deleteTasksForm"
+            hx-post="{{ delete_tasks_url }}"
+            hx-trigger="submit"
+            class="hidden">
+        {% csrf_token %}
+        <template x-for="id in selected">
+          <input type="hidden" name="task_ids" :value="id">
+        </template>
+      </form>
+    {% endif %}
+    <div x-show="showFilterModal" x-cloak class="modal-backdrop">
+      <div class="modal">
+        <div class="header text-lg font-semibold text-brand-deep-purple">
+          <h1>{% trans "Filters" %}</h1>
+          <button @click="closeFilter()">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+        <form id="userTaskFilterForm" method="get" action="." class="content">
+          <input type="hidden" name="user" value="{{ request.GET.user }}">
+          <div class="modal-body">{% crispy filter_form %}</div>
+          <div class="footer">
+            <button type="button"
+                    @click="closeFilter()"
+                    class="button button-md outline-style">{% trans "Close" %}</button>
+            <button form="userTaskFilterForm"
+                    type="submit"
+                    @click="showFilterModal = false"
+                    class="button button-md primary-dark">{% trans "Apply" %}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% include "components/tomselect_init.html" %}
+    <div class="w-full grid grid-cols-10 gap-2 min-h-[600px]">
+      <div class="col-span-6" hx-indicator="#loading-spinner">
+        <div class="w-full"
+             hx-get="{% url 'opportunity:user_tasks_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+          <div class="table-container flex flex-col gap-2 mb-1">
+            <div class="w-full overflow-x-auto block">
+              <table class="base-table animate-pulse">
+                <thead>
+                  <tr>
+                    <th>
+                      <div class="h-3 w-4 rounded bg-gray-300"></div>
+                    </th>
+                    <th>
+                      <div class="h-3 w-28 rounded bg-gray-300"></div>
+                    </th>
+                    <th>
+                      <div class="h-3 w-24 rounded bg-gray-300"></div>
+                    </th>
+                    <th>
+                      <div class="h-3 w-24 rounded bg-gray-300"></div>
+                    </th>
+                    <th>
+                      <div class="h-3 w-20 rounded bg-gray-300"></div>
+                    </th>
+                    <th>
+                      <div class="h-3 w-16 rounded bg-gray-300"></div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for _ in "xxx" %}
+                    <tr>
+                      <td>
+                        <div class="h-3 w-4 rounded bg-gray-200"></div>
+                      </td>
+                      <td>
+                        <div class="h-3 w-40 rounded bg-gray-200"></div>
+                      </td>
+                      <td>
+                        <div class="h-3 w-28 rounded bg-gray-200"></div>
+                      </td>
+                      <td>
+                        <div class="h-3 w-24 rounded bg-gray-200"></div>
+                      </td>
+                      <td>
+                        <div class="h-3 w-24 rounded bg-gray-200"></div>
+                      </td>
+                      <td>
+                        <div class="h-3 w-16 rounded bg-gray-200"></div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-span-4 relative" hx-indicator="#task-loading-indicator">
+        <div class="absolute inset-0">
+          <div class="flex flex-col gap-2 h-full">
+            <div class="flex items-center justify-between px-4 bg-white rounded-lg shadow-sm h-14">
+              <p class="text-sm font-normal text-brand-deep-purple">{% translate "Details" %}</p>
+            </div>
+            <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
+              <div id="task-details">
+                <div class="flex justify-items-center align-items-center">
+                  <span>{% translate "Please select a task to load details." %}</span>
+                </div>
+              </div>
+              <div id="task-loading-indicator"
+                   role="status"
+                   x-cloak
+                   class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+                <span class="sr-only">{% translate "Loading..." %}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% if can_manage_tasks %}
+      {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
+    {% endif %}
+    {% include 'components/confirm_modal.html' %}
+    {% include 'opportunity/edit_assigned_task_modal.html' %}
+  </div>
+{% endblock %}
+{% block inline_javascript %}
+  {% include "components/tables/selectable_table.html" %}
+{% endblock %}

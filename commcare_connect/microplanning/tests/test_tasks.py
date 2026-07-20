@@ -1,11 +1,21 @@
 import csv
 import io
+from unittest import mock
 
 import pytest
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
+from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import WorkArea
-from commcare_connect.microplanning.tasks import WorkAreaCSVImporter
+from commcare_connect.microplanning.tasks import (
+    WorkAreaCSVImporter,
+    cluster_work_areas_task,
+    import_work_areas_task,
+    send_work_area_assignment_notification,
+)
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
 
 @pytest.fixture
@@ -24,8 +34,7 @@ class TestWorkAreaCSVImporter:
         "Boundary",
         "Building Count",
         "Expected Visit Count",
-        "Max WAG",
-        "WAG Serial Number",
+        "Target Population",
         "LGA",
         "State",
     ]
@@ -50,8 +59,7 @@ class TestWorkAreaCSVImporter:
                     self.POLYGON,
                     5,
                     "6",
-                    "3",
-                    "WAG123",
+                    "100",
                     "LGA1",
                     "State1",
                 ]
@@ -140,8 +148,7 @@ class TestWorkAreaCSVImporter:
             "Centroid",
             "Ward",
             "Building Count",
-            "Max WAG",
-            "WAG Serial Number",
+            "Target Population",
             "State",
             "LGA",
         ]
@@ -153,8 +160,7 @@ class TestWorkAreaCSVImporter:
             self.CENTROID,
             "ward-1",
             "5",
-            "7",
-            "WAG456",
+            "50",
             "State2",
             "LGA2",
         ]
@@ -163,6 +169,36 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
 
         assert result["created"] == 1
+
+    def test_case_insensitive_headers(self, opportunity):
+        headers = [
+            "area slug",
+            "WARD",
+            "Centroid",
+            "boundary",
+            "Building count",
+            "expected VISIT count",
+            "target population",
+            "lga",
+            "STATE",
+        ]
+        row = [
+            "area-case",
+            "ward",
+            self.CENTROID,
+            self.POLYGON,
+            5,
+            "6",
+            "100",
+            "LGA1",
+            "State1",
+        ]
+
+        csv_data = self.build_csv([row], headers=headers)
+        result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
+
+        assert result["created"] == 1
+        assert WorkArea.objects.filter(slug="area-case", target_population=100).exists()
 
     def test_missing_extra_properties(self, opportunity):
         row = [
@@ -177,5 +213,54 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, csv).run()
         assert "errors" in result
         error_keys = " ".join(result["errors"].keys()).lower()
-        expected_error = "Missing values for properties: max_wag, wag_serial_number, lga, state"
+        expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
+
+
+@pytest.mark.django_db
+def test_import_work_areas_task_bom_csv(opportunity):
+    CENTROID = "77.1 28.6"
+    POLYGON = "POLYGON((77 28, 78 28, 78 29, 77 29, 77 28))"
+    headers = "Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State\r\n"
+    row = f'area-bom,ward,{CENTROID},"{POLYGON}",5,6,100,LGA1,State1\r\n'
+    bom_bytes = ("\ufeff" + headers + row).encode("utf-8")
+
+    file_name = "test-bom-upload.csv"
+    default_storage.save(file_name, ContentFile(bom_bytes))
+    result = import_work_areas_task.apply(args=[opportunity.id, file_name]).get()
+
+    assert result["created"] == 1
+    assert WorkArea.objects.filter(slug="area-bom").exists()
+
+
+@pytest.mark.django_db
+def test_send_work_area_assignment_notification(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    with mock.patch("commcare_connect.microplanning.tasks.send_message") as send_message_mock:
+        send_work_area_assignment_notification(access.pk)
+
+    send_message_mock.assert_called_once()
+    message = send_message_mock.call_args.args[0]
+    assert message.usernames == [access.user.username]
+    assert message.data["key"] == "work_area_assignment"
+    assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
+    assert message.data["title"]
+    assert message.data["body"]
+
+
+@mock.patch("commcare_connect.microplanning.tasks.cache")
+@mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
+def test_cluster_work_areas_task_forwards_max_buildings(mock_grouper, mock_cache):
+    cluster_work_areas_task(opp_id=1, max_buildings=250)
+
+    mock_grouper.assert_called_once_with(1, max_buildings=250)
+    mock_grouper.return_value.cluster_work_areas.assert_called_once()
+
+
+@mock.patch("commcare_connect.microplanning.tasks.cache")
+@mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
+def test_cluster_work_areas_task_defaults_max_buildings(mock_grouper, mock_cache):
+
+    cluster_work_areas_task(opp_id=1)
+
+    mock_grouper.assert_called_once_with(1, max_buildings=DEFAULT_BUILDING_COUNT)

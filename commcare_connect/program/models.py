@@ -38,7 +38,7 @@ class Program(BaseModel):
 
 
 class ManagedOpportunity(Opportunity):
-    program = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
+    program_old = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
     claimed = models.BooleanField(default=False)
 
     def __init__(self, *args, **kwargs):

@@ -25,7 +25,6 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 from commcare_connect.users.tests.factories import MobileUserFactory
 
 
@@ -61,10 +60,46 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
 
     assert dataset.export("csv") == (
         "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
-        "Duration,Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
-        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,test_form1,\r\n"
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,abc,A B C,,test_form2,b\r\n"
+        "Justification,Duration,Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
+        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,test_form1,\r\n"
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,abc,A B C,,test_form2,b\r\n"
     )
+
+
+def test_export_user_visit_data_disjoint_fields(mobile_user_with_connect_link):
+    opportunity = OpportunityFactory()
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+    date1 = now()
+    date2 = date1 + timedelta(minutes=10)
+    UserVisit.objects.bulk_create(
+        [
+            UserVisit(
+                opportunity=opportunity,
+                user=mobile_user_with_connect_link,
+                visit_date=date1,
+                deliver_unit=deliver_unit,
+                form_json={"form": {"field_a": "value_a"}},
+            ),
+            UserVisit(
+                opportunity=opportunity,
+                user=mobile_user_with_connect_link,
+                visit_date=date2,
+                deliver_unit=deliver_unit,
+                form_json={"form": {"field_b": "value_b"}},
+            ),
+        ]
+    )
+    exporter = UserVisitExporter(opportunity, True)
+    dataset = exporter.get_dataset(date1, date2, [])
+
+    assert "form.field_a" in dataset.headers
+    assert "form.field_b" in dataset.headers
+
+    rows = dataset.dict
+    row1 = next(r for r in rows if r["form.field_a"] == "value_a")
+    row2 = next(r for r in rows if r["form.field_b"] == "value_b")
+    assert row1["form.field_b"] == ""
+    assert row2["form.field_a"] == ""
 
 
 def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
@@ -102,9 +137,9 @@ def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
     name = mobile_user_with_connect_link.name
     assert dataset.export("csv") == (
         "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
-        "Duration,Entity ID,Entity Name,Flags,form_json\r\n"
-        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,"{form_json_1_string}"\r\n'
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,abc,A B C,,"
+        "Justification,Duration,Entity ID,Entity Name,Flags,form_json\r\n"
+        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,"{form_json_1_string}"\r\n'
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,abc,A B C,,"
         f'"{form_json_2_string}"\r\n'
     )
 
@@ -282,9 +317,9 @@ def test_export_catchment_area_table_data(opportunity: Opportunity):
 
     data_set = export_catchment_area_table(opportunity)
 
-    assert set(expected_headers).issubset(
-        set(data_set.headers)
-    ), f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
+    assert set(expected_headers).issubset(set(data_set.headers)), (
+        f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
+    )
 
     assert len(data_set) == len(catchments), f"Expected {len(catchments)} catchments, but got {len(data_set)}"
 
@@ -323,7 +358,7 @@ def test_export_user_visit_review_data(organization, from_date, to_date, expecte
         "Review Requested On",
         "Visit ID",
     ]
-    opp = ManagedOpportunityFactory(organization=organization)
+    opp = OpportunityFactory(organization=organization)
     now_time = now()
     pending_date = now_time - timedelta(days=3)
     agree_date = now_time - timedelta(days=10)
@@ -364,7 +399,7 @@ def test_export_user_visit_review_data(organization, from_date, to_date, expecte
 
 @pytest.mark.django_db
 def test_export_user_visit_review_data_boundary_dates(organization):
-    opp = ManagedOpportunityFactory(organization=organization)
+    opp = OpportunityFactory(organization=organization)
 
     from_date = datetime.date.today() - datetime.timedelta(days=4)
     to_date = datetime.date.today() - datetime.timedelta(days=1)

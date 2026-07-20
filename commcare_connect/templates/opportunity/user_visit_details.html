@@ -1,133 +1,50 @@
 {% load duration_minutes %}
 {% load static %}
 {% load i18n %}
-
-<div class="flex flex-col gap-6" x-data="{
-    slides: [
-      {% for image in user_visit.images %}
-        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id blob_id=image.blob_id %}' },
-      {% endfor %}
-    ],
-    currentIndex: 0,
-    modalCurrentIndex: 0,
-    visibleSlides: 3,
-    modalVisibleSlides: 5,
-    popupOpen: false,
-    messages: [{ expanded: false }],
-
-    get visibleImages() {
-        const start = this.currentIndex;
-        return this.slides.slice(start, start + this.visibleSlides);
-    },
-
-    get modalThumbnails() {
-        const totalSlides = this.slides.length;
-        const halfVisible = Math.floor(this.modalVisibleSlides / 2);
-        let start = this.modalCurrentIndex - halfVisible;
-
-        if (start < 0) start = 0;
-        if (start + this.modalVisibleSlides > totalSlides) {
-            start = Math.max(0, totalSlides - this.modalVisibleSlides);
-        }
-
-        return this.slides.slice(start, Math.min(start + this.modalVisibleSlides, totalSlides));
-    },
-
-    // Carousel navigation
-    nextSlide() {
-        if (this.currentIndex + this.visibleSlides < this.slides.length) {
-            this.currentIndex++;
-        }
-    },
-
-    prevSlide() {
-        if (this.currentIndex > 0) {
-            this.currentIndex--;
-        }
-    },
-
-    // Modal navigation
-    nextModal() {
-        if (this.modalCurrentIndex < this.slides.length - 1) {
-            this.modalCurrentIndex++;
-        }
-    },
-
-    prevModal() {
-        if (this.modalCurrentIndex > 0) {
-            this.modalCurrentIndex--;
-        }
-    },
-
-    openPopup(index) {
-        this.modalCurrentIndex = index;
-        this.popupOpen = true;
-    },
-
-    closePopup() {
-        this.popupOpen = false;
-    },
-
-    setModalImage(index) {
-        this.modalCurrentIndex = index;
-    }
-}"
-  hx-get="{% url "opportunity:user_visit_details" request.org.slug user_visit.opportunity.opportunity_id user_visit.user_visit_id %}"
-  hx-swap="outerHTML"
-  hx-trigger="reload_table from:body"
-  hx-indicator="#visit-loading-indicator"
-  hx-on:before-swap="removeMap()"
-  hx-on::after-settle="loadMap()">
+<div class="flex flex-col gap-6" x-data="{ slides: [
+  {% for image in user_visit.images %}
+    { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id blob_id=image.blob_id %}' },
+  {% endfor %}
+  ], currentIndex: 0, modalCurrentIndex: 0, visibleSlides: 3, modalVisibleSlides: 5, popupOpen: false, get visibleImages() { const start = this.currentIndex; return this.slides.slice(start, start + this.visibleSlides); },  get modalThumbnails() { const totalSlides = this.slides.length; const halfVisible = Math.floor(this.modalVisibleSlides / 2); let start = this.modalCurrentIndex - halfVisible;  if (start < 0) start = 0; if (start + this.modalVisibleSlides > totalSlides) { start = Math.max(0, totalSlides - this.modalVisibleSlides); }  return this.slides.slice(start, Math.min(start + this.modalVisibleSlides, totalSlides)); },   nextSlide() { if (this.currentIndex + this.visibleSlides < this.slides.length) { this.currentIndex++; } },  prevSlide() { if (this.currentIndex > 0) { this.currentIndex--; } },  nextModal() { if (this.modalCurrentIndex < this.slides.length - 1) { this.modalCurrentIndex++; } },  prevModal() { if (this.modalCurrentIndex > 0) { this.modalCurrentIndex--; } },  openPopup(index) { this.modalCurrentIndex = index; this.popupOpen = true; },  closePopup() { this.popupOpen = false; },  setModalImage(index) { this.modalCurrentIndex = index; } }" hx-get="{% url "opportunity:user_visit_details" request.org.slug user_visit.opportunity.opportunity_id user_visit.user_visit_id %}" hx-swap="outerHTML" hx-trigger="reload_table from:body" hx-indicator="#visit-loading-indicator" hx-on:before-swap="removeMap()" hx-on::after-settle="loadMap()">
   <!-- Message Section -->
-
   {% if user_visit.reason %}
-  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
-    <div class="flex items-center gap-4">
-      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
-      <div class="flex items-center gap-1">
-        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
-        <span class="flex items-center text-xs text-brand-blue-light">
-          <span class="mr-1 text-2xl text-brand-indigo">•</span>
-          {{ user_visit.opportunity.organization.name }}
-        </span>
+    <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+      <div class="flex items-center gap-4">
+        <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
+        <div class="flex items-center gap-1">
+          <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+          <span class="flex items-center text-xs text-brand-blue-light">
+            <span class="mr-1 text-2xl text-brand-indigo">•</span>
+            {{ user_visit.opportunity.organization.name }}
+          </span>
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center gap-4 mt-2">
+          <p class="text-xs text-brand-deep-purple">{{ user_visit.reason }}</p>
+        </div>
       </div>
     </div>
-    <div>
-      <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
-           @click="message.expanded = !message.expanded"></i>
-        <p class="text-xs text-brand-deep-purple">
-          {{ user_visit.reason }}
-        </p>
-      </div>
-    </div>
-  </div>
   {% endif %}
-
   {% if user_visit.justification %}
-  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
-    <div class="flex items-center gap-4">
-      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
-      <div class="flex items-center gap-1">
-        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
-        <span class="flex items-center text-xs text-brand-blue-light">
-          <span class="mr-1 text-2xl text-brand-indigo">•</span>
-          {{ user_visit.opportunity.organization.name }}
-        </span>
+    <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+      <div class="flex items-center gap-4">
+        <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
+        <div class="flex items-center gap-1">
+          <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+          <span class="flex items-center text-xs text-brand-blue-light">
+            <span class="mr-1 text-2xl text-brand-indigo">•</span>
+            {{ user_visit.opportunity.organization.name }}
+          </span>
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center gap-4 mt-2">
+          <p class="text-xs text-brand-deep-purple">{{ user_visit.justification }}</p>
+        </div>
       </div>
     </div>
-    <div>
-      <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
-           @click="message.expanded = !message.expanded"></i>
-        <p class="text-xs text-brand-deep-purple">
-          {{ user_visit.justification }}
-        </p>
-      </div>
-    </div>
-  </div>
   {% endif %}
-
   <!-- Information -->
   <div class="grid grid-cols-3 gap-4">
     <p class="text-sm font-medium text-brand-deep-purple col-span-3">{% translate "Information" %}</p>
@@ -144,46 +61,102 @@
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_id }}</div>
     </div>
   </div>
-
   <hr class="h-px bg-gray-200 border-0">
-
   <!-- Media Section -->
   {% if user_visit.images %}
-  <div class="flex justify-between">
-    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
-    <div class="flex gap-2">
-      <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
-        <i class="cursor-pointer fa-solid fa-arrow-left"
-           :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
-      </button>
-      <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
-        <i class="cursor-pointer fa-solid fa-arrow-right"
-           :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
-      </button>
+    <div class="flex justify-between">
+      <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
+      <div class="flex gap-2">
+        <button class="button-icon"
+                @click="prevSlide()"
+                :disabled="currentIndex === 0">
+          <i class="cursor-pointer fa-solid fa-arrow-left"
+             :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+        </button>
+        <button class="button-icon"
+                @click="nextSlide()"
+                :disabled="currentIndex + visibleSlides >= slides.length">
+          <i class="cursor-pointer fa-solid fa-arrow-right"
+             :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+        </button>
+      </div>
     </div>
-  </div>
-
-  <div class="grid grid-cols-9 gap-4 cursor-pointer values">
-    <template x-for="(slide, index) in visibleImages" :key="index">
-      <img :src="slide.src"
-           :alt="slide.alt"
-           class="object-cover col-span-3 imageopen rounded-2xl aspect-square hover:opacity-90 transition-opacity"
-           @click="openPopup(index + currentIndex)"/>
-    </template>
-  </div>
-
-  <hr class="h-px bg-gray-200 border-0">
+    <div class="grid grid-cols-9 gap-4 cursor-pointer values">
+      <template x-for="(slide, index) in visibleImages" :key="index">
+        <img :src="slide.src"
+             :alt="slide.alt"
+             class="object-cover col-span-3 imageopen rounded-2xl aspect-square hover:opacity-90 transition-opacity"
+             @click="openPopup(index + currentIndex)" />
+      </template>
+    </div>
+    <hr class="h-px bg-gray-200 border-0">
   {% endif %}
-
+  <!-- Audio Section -->
+  {% if user_visit.audio %}
+    <div class="flex flex-col gap-4">
+      <p class="text-sm font-medium text-brand-deep-purple">{% translate "Audio" %}</p>
+      {% for audio in user_visit.audio %}
+        <div class="flex flex-col gap-2">
+          <audio controls preload="none" class="w-full">
+            <source src="{% url 'opportunity:fetch_audio_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}">
+            {% translate "Your browser does not support the audio element." %}
+          </audio>
+          {% if audio.transcript %}
+            <div x-data="{ expanded: false, overflowing: false }"
+                 x-init="$nextTick(() => overflowing = $refs.transcriptText.scrollHeight > $refs.transcriptText.clientHeight)">
+              <p class="text-sm font-medium text-brand-blue-light">{% translate "Transcript" %}</p>
+              <p x-ref="transcriptText"
+                 class="text-sm font-normal text-brand-deep-purple"
+                 :class="expanded ? '' : 'line-clamp-3'">{{ audio.transcript }}</p>
+              <button type="button"
+                      x-show="overflowing"
+                      x-cloak
+                      @click="expanded = !expanded"
+                      class="block w-fit ml-auto text-sm font-medium text-brand-blue-light hover:underline"
+                      x-text="expanded ? '{% translate 'Show less' %}' : '{% translate 'Show more' %}'"></button>
+            </div>
+          {% endif %}
+          {% if audio.translation %}
+            <div x-data="{ expanded: false, overflowing: false }"
+                 x-init="$nextTick(() => overflowing = $refs.translationText.scrollHeight > $refs.translationText.clientHeight)">
+              <p class="text-sm font-medium text-brand-blue-light">{% translate "Translation" %}</p>
+              <p x-ref="translationText"
+                 class="text-sm font-normal text-brand-deep-purple"
+                 :class="expanded ? '' : 'line-clamp-3'">{{ audio.translation }}</p>
+              <button type="button"
+                      x-show="overflowing"
+                      x-cloak
+                      @click="expanded = !expanded"
+                      class="block w-fit ml-auto text-sm font-medium text-brand-blue-light hover:underline"
+                      x-text="expanded ? '{% translate 'Show less' %}' : '{% translate 'Show more' %}'"></button>
+            </div>
+          {% endif %}
+          {% if not request.is_opportunity_pm %}
+            <a href="{% url 'opportunity:audio_attachment_transcribe' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}"
+               class="button button-sm outline-style w-fit">
+              {% if audio.transcript or audio.translation %}
+                <i class="fa-regular fa-pen-to-square mr-1"></i>{% translate "Edit Transcript" %}
+              {% else %}
+                <i class="fa-solid fa-plus mr-1"></i>{% translate "Add Transcript" %}
+              {% endif %}
+            </a>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <hr class="h-px bg-gray-200 border-0">
+  {% endif %}
   <!-- Verification Flags -->
   <div class="flex flex-col gap-4">
     <p class="text-sm font-medium text-brand-deep-purple">{% translate "Verification Parameters" %}</p>
     <div class="grid grid-cols-3 gap-4">
       {% if user_visit.location %}
-      <div>
-        <div class="text-sm text-brand-blue-light">{% translate "Location" %}</div>
-        <div class="text-sm font-normal text-brand-deep-purple">{% translate "Less than" %} {{ min_allowed_distance }} {% translate "metres from another visit" %}</div>
-      </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">{% translate "Location" %}</div>
+          <div class="text-sm font-normal text-brand-deep-purple">
+            {% translate "Less than" %} {{ min_allowed_distance }} {% translate "metres from another visit" %}
+          </div>
+        </div>
       {% endif %}
       <div>
         <div class="text-sm text-brand-blue-light">{% translate "Form Duration" %}</div>
@@ -191,12 +164,15 @@
       </div>
     </div>
     <div x-data="{visible: false}">
-      <div class="flex flex-row gap-4 rounded border border-brand-marigold bg-brand-marigold/15 items-center text-brand-marigold" @click="visible = !visible">
+      <div class="flex flex-row gap-4 rounded border border-brand-marigold bg-brand-marigold/15 items-center text-brand-marigold"
+           @click="visible = !visible">
         <i class="fa-solid fa-triangle-exclamation ml-2"></i>
-        <span class="flex-1" class="">{{ flag_count }} {% translate "issues detected" %}</span>
-        <i :class="visible ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all mr-2"></i>
+        <span class="flex-1">{{ flag_count }} {% translate "issues detected" %}</span>
+        <i :class="visible ? 'rotate-180' : ''"
+           class="fa-solid fa-chevron-down transition-all mr-2"></i>
       </div>
-      <div class="border border-brand-border-light rounded-b grid grid-cols-3 gap-4 px-3 py-2" x-show="visible">
+      <div class="border border-brand-border-light rounded-b grid grid-cols-3 gap-4 px-3 py-2"
+           x-show="visible">
         {% if user_visit.flagged %}
           {% for flag in flags %}
             <div>
@@ -206,51 +182,56 @@
           {% endfor %}
         {% endif %}
         {% if attachment_flagged %}
-        <div>
-          <div class="text-sm text-brand-blue-light">{% translate "Photos" %}</div>
-          <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
-        </div>
+          <div>
+            <div class="text-sm text-brand-blue-light">{% translate "Photos" %}</div>
+            <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
+          </div>
         {% endif %}
       </div>
     </div>
   </div>
-
   <hr class="h-px bg-gray-200 border-0">
-
   <!-- Map -->
   {% if user_visit.location %}
-  <div>
-    <p class="mb-3 text-sm font-medium text-brand-deep-purple">{% translate "Map" %}</p>
-    <div class="relative">
-      <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
-      <div id="mapbox-menu" class="absolute top-0 left-0 m-1 inline-flex primary-light rounded-lg">
-        <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
-          <input class="hidden" type="radio" name="options" id="streets-v12" checked> {% translate "Streets" %}
-        </label>
-        <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
-          <input class="hidden" type="radio" name="options" id="satellite-streets-v12"> {% translate "Satellite" %}
-        </label>
-      </div>
-
-      <div id="legend" class="absolute right-0 top-0 bg-white/75 p-2 rounded-lg m-1">
-        <h4 class="text-sm font-bold">Service Records</h4>
-        <div class="text-sm"><i class="fa-solid fa-location-dot text-green-600"></i> {% translate "Under review" %}</div>
-        <div class="text-sm"><i class="fa-solid fa-location-dot text-sky-600"></i> {% translate "Closest from this user" %}</div>
-        <div class="text-sm"><i class="fa-solid fa-location-dot text-red-600"></i> {% translate "Closest from others" %}</div>
+    <div>
+      <p class="mb-3 text-sm font-medium text-brand-deep-purple">{% translate "Map" %}</p>
+      <div class="relative">
+        <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
+        <div id="mapbox-menu"
+             class="absolute top-0 left-0 m-1 inline-flex primary-light rounded-lg">
+          <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
+            <input class="hidden" type="radio" name="options" id="streets-v12" checked>
+            {% translate "Streets" %}
+          </label>
+          <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
+            <input class="hidden" type="radio" name="options" id="satellite-streets-v12">
+            {% translate "Satellite" %}
+          </label>
+        </div>
+        <div id="legend"
+             class="absolute right-0 top-0 bg-white/75 p-2 rounded-lg m-1">
+          <h4 class="text-sm font-bold">Service Records</h4>
+          <div class="text-sm">
+            <i class="fa-solid fa-location-dot text-green-600"></i> {% translate "Under review" %}
+          </div>
+          <div class="text-sm">
+            <i class="fa-solid fa-location-dot text-sky-600"></i> {% translate "Closest from this user" %}
+          </div>
+          <div class="text-sm">
+            <i class="fa-solid fa-location-dot text-red-600"></i> {% translate "Closest from others" %}
+          </div>
+        </div>
       </div>
     </div>
-  </div>
   {% endif %}
-
   {% if perms.users.view_commcarehq_form_link %}
-  <hr class="h-px bg-gray-200 border-0">
-
-  <p class="text-sm font-medium text-brand-deep-purple">{% translate "Further Information" %}</p>
-  <div class="flex">
-    <a class="button button-md button-outline-rounded" href="{{ user_visit.hq_link }}">{% translate "View Form in CommCareHQ" %} <i class="fa-solid fa-arrow-right"></i></a>
-  </div>
+    <hr class="h-px bg-gray-200 border-0">
+    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Further Information" %}</p>
+    <div class="flex">
+      <a class="button button-md button-outline-rounded"
+         href="{{ user_visit.hq_link }}">{% translate "View Form in CommCareHQ" %} <i class="fa-solid fa-arrow-right"></i></a>
+    </div>
   {% endif %}
-
   <!-- Popup Modal -->
   <div x-cloak
        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -264,14 +245,12 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-
       <!-- Main Image -->
       <div class="relative">
         <img :src="slides[modalCurrentIndex].src"
              :alt="slides[modalCurrentIndex].alt"
-             class="object-contain w-full rounded-lg max-h-[60vh]"/>
-        <button
-          class="absolute bottom-2 right-2 button-icon">
+             class="object-contain w-full rounded-lg max-h-[60vh]" />
+        <button class="absolute bottom-2 right-2 button-icon">
           <a :href="slides[modalCurrentIndex].src"
              download="downloaded-image.jpg"
              aria-label="Download Image">
@@ -279,7 +258,6 @@
           </a>
         </button>
       </div>
-
       <!-- Thumbnails -->
       <div class="relative w-full flex items-center justify-center gap-4 mt-4">
         <button class="absolute -left-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
@@ -288,24 +266,19 @@
                 :class="{'opacity-50': modalCurrentIndex === 0}">
           <i class="fa-solid fa-arrow-left"></i>
         </button>
-
         <div class="flex justify-center gap-2 px-16 overflow-hidden">
           <template x-for="(slide, idx) in modalThumbnails" :key="idx">
-            <div class="relative w-16 h-16 flex-shrink-0 cursor-pointer" @click="setModalImage(slides.indexOf(slide))">
-              <img
-                :src="slide.src"
-                :alt="slide.alt"
-                class="object-cover w-full h-full rounded-lg"
-              />
-              <div
-                x-show="slides.indexOf(slide) === modalCurrentIndex"
-                class="absolute inset-0 bg-black/40 rounded-lg pointer-events-none transition-all duration-300">
+            <div class="relative w-16 h-16 flex-shrink-0 cursor-pointer"
+                 @click="setModalImage(slides.indexOf(slide))">
+              <img :src="slide.src"
+                   :alt="slide.alt"
+                   class="object-cover w-full h-full rounded-lg" />
+              <div x-show="slides.indexOf(slide) === modalCurrentIndex"
+                   class="absolute inset-0 bg-black/40 rounded-lg pointer-events-none transition-all duration-300">
               </div>
             </div>
           </template>
         </div>
-
-
         <button class="absolute -right-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
                 @click="nextModal()"
                 :disabled="modalCurrentIndex >= slides.length - 1"
@@ -316,120 +289,108 @@
     </div>
   </div>
 </div>
-
 <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm pe-2"
-  x-data="{showRejectModal: false, showApproveModal: false}"
-  id="visit-actions"
-  hx-swap-oob="true">
-{% if request.is_opportunity_pm %}
-  {% if user_visit.review_created_on %}
-  <div class="flex gap-4">
-    <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity.opportunity_id %}"
-      hx-swap="none">
-      <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
-      <button class="button button-md outline-style"
-        {% if user_visit.review_status == "pending" %}value="disagree"{% else %}disabled{% endif %}
-        name="review_status">
-        {% translate "Disagree" %}
-      </button>
-      <button class="button button-md primary-dark"
-        {% if user_visit.review_status != "agree" %}value="agree"{% else %}disabled{% endif %}
-        name="review_status">
-        {% translate "Agree" %}
-      </button>
-    </form>
-  </div>
-  {% endif %}
-{% else %}
-  <div>
-    <button class="button button-md negative-light"
-    {% if request.org_membership.is_viewer %} disabled {% else %}
-    {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %}
-      disabled
-    {% else %}
-      @click="showRejectModal = true; showApproveModal = false;"
-    {% endif %}
-    {% endif %}>
-      {% translate "Reject" %}
-    </button>
-    <button class="button button-md positive-light"
-    {% if request.org_membership.is_viewer %} disabled {% else %}
-    {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %}
-      {% if user_visit.opportunity.managed %}
-      @click="showRejectModal = false; showApproveModal = true;"
-      {% else %}
-      hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
-      hx-vals='{"visit_ids[]": "{{ user_visit.id }}"}'
-      hx-swap="none"
+     x-data="{showRejectModal: false, showApproveModal: false}"
+     id="visit-actions"
+     hx-swap-oob="true">
+  {% if not user_visit.opportunity.automatic_visit_verification %}
+    {% if request.is_opportunity_pm %}
+      {% if user_visit.review_created_on %}
+        <div class="flex gap-4">
+          <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity.opportunity_id %}"
+                hx-swap="none">
+            <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
+            <button class="button button-md outline-style"
+                    {% if user_visit.review_status == "pending" %}value="disagree"{% else %}disabled{% endif %}
+                    name="review_status">{% translate "Disagree" %}</button>
+            <button class="button button-md primary-dark"
+                    {% if user_visit.review_status != "agree" %}value="agree"{% else %}disabled{% endif %}
+                    name="review_status">{% translate "Agree" %}</button>
+          </form>
+        </div>
       {% endif %}
     {% else %}
-      disabled
+      <div>
+        <button class="button button-md negative-light"
+                {% if request.org_membership.is_viewer %} disabled {% else %} {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %} disabled {% else %} @click="showRejectModal = true; showApproveModal = false;" {% endif %}
+                {% endif %}>{% translate "Reject" %}</button>
+        <button class="button button-md positive-light"
+                {% if request.org_membership.is_viewer %} disabled {% else %} {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %} @click="showRejectModal = false; showApproveModal = true;" {% else %} disabled {% endif %}
+                {% endif %}>{% translate "Approve" %}</button>
+      </div>
+      <div x-cloak
+           x-show="showRejectModal"
+           x-transition.opacity
+           class="modal-backdrop">
+        <div @click.away="showRejectModal = false" x-transition class="modal">
+          <div class="header flex justify-between items-center">
+            <h2 class="title">{% translate "Reason for Rejection" %}</h2>
+            <button @click="showRejectModal = false"
+                    class="button-icon"
+                    aria-label="Close">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
+                hx-swap="none"
+                @submit="showRejectModal = false">
+            {% csrf_token %}
+            <div class="py-4">
+              <textarea class="base-textarea"
+                        id="rejection-reason"
+                        rows="3"
+                        name="reason"
+                        id="reason"
+                        placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
+            </div>
+            <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
+            <div class="footer flex justify-end">
+              <button @click="showRejectModal = false"
+                      type="button"
+                      class="button button-md outline-style">{% translate "Close" %}</button>
+              <button type="submit" class="button button-md negative-dark">{% translate "Reject" %}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div x-cloak
+           x-show="showApproveModal"
+           x-transition.opacity
+           class="modal-backdrop">
+        <div @click.away="showApproveModal = false" x-transition class="modal">
+          <div class="header flex justify-between items-center">
+            <h2 class="title">{% translate "Justification for Approval" %}</h2>
+            <button @click="showApproveModal = false"
+                    class="button-icon"
+                    aria-label="Close">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <form hx-post="{% url 'opportunity:approve_visits' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
+                hx-swap="none"
+                @submit="showApproveModal = false">
+            {% csrf_token %}
+            <div class="py-4">
+              <textarea required
+                        class="base-textarea"
+                        id="justification"
+                        rows="3"
+                        name="justification"
+                        placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
+            </div>
+            <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
+            <div class="footer flex justify-end">
+              <button @click="showApproveModal = false"
+                      type="button"
+                      class="button button-md outline-style">{% translate "Close" %}</button>
+              <button type="submit" class="button button-md positive-dark">{% translate "Approve" %}</button>
+            </div>
+          </form>
+        </div>
+      </div>
     {% endif %}
-    {% endif %}>
-      {% translate "Approve" %}
-    </button>
-  </div>
-
-  <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
-    <div @click.away="showRejectModal = false" x-transition class="modal">
-      <div class="header flex justify-between items-center">
-        <h2 class="title">{% translate "Reason for Rejection" %}</h2>
-        <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id  %}"
-        hx-swap="none"
-        @submit="showRejectModal = false">
-        {% csrf_token %}
-        <div class="py-4">
-          <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
-            placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
-        </div>
-        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
-        <div class="footer flex justify-end">
-          <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
-            {% translate "Close" %}
-          </button>
-          <button type="submit" class="button button-md negative-dark">
-            {% translate "Reject" %}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  {% if user_visit.opportunity.managed %}
-  <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
-    <div @click.away="showApproveModal = false" x-transition class="modal">
-      <div class="header flex justify-between items-center">
-        <h2 class="title">{% translate "Justification for Approval" %}</h2>
-        <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
-        hx-swap="none"
-        @submit="showApproveModal = false">
-        {% csrf_token %}
-        <div class="py-4">
-          <textarea required class="base-textarea" id="justification" rows="3" name="justification"
-            placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
-        </div>
-        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
-        <div class="footer flex justify-end">
-          <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
-            {% translate "Close" %}
-          </button>
-          <button type="submit" class="button button-md positive-dark">{% translate "Approve" %}</button>
-        </div>
-      </form>
-    </div>
-  </div>
   {% endif %}
-{% endif %}
 </div>
-
 {{ visit_data|json_script:"visit_data" }}
 {{ user_forms|json_script:"user_forms" }}
 {{ other_forms|json_script:"other_forms" }}

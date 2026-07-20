@@ -127,6 +127,7 @@ window.addCatchmentAreas = addCatchmentAreas;
 const MapboxUtils = {
   setAccessToken(token) {
     if (!token) {
+      // eslint-disable-next-line no-console -- legitimate diagnostic for a misconfigured token
       console.error('Mapbox access token is not provided.');
       return false;
     }

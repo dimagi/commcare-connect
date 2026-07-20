@@ -1,16 +1,15 @@
 import pytest
 
-from commcare_connect.opportunity.tests.factories import PaymentUnitFactory
-from commcare_connect.program.models import ManagedOpportunity
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory
+from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.tests.factories import OpportunityFactory, PaymentUnitFactory
 
 
 @pytest.mark.django_db
 def test_managed_opportunity_stats():
-    opportunity = ManagedOpportunityFactory(total_budget=3600000)
+    opportunity = OpportunityFactory(total_budget=3600000)
     PaymentUnitFactory(opportunity=opportunity, max_total=600, max_daily=5, amount=750, org_amount=450)
 
-    opportunity = ManagedOpportunity.objects.get(id=opportunity.id)
+    opportunity = Opportunity.objects.get(id=opportunity.id)
 
     assert opportunity.budget_per_user == 450000
     assert opportunity.allotted_visits == 3000

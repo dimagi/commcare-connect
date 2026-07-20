@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 167" width="464" height="167">
+  <!-- pale green background -->
+  <rect width="464" height="167" fill="#D9ECD4"/>
+
+  <!-- soft ground -->
+  <path d="M 0 158 C 120 152, 344 152, 464 158 L 464 167 L 0 167 Z" fill="#358623" opacity="0.35"/>
+
+  <!-- decorative dots -->
+  <g fill="#358623">
+    <circle cx="22" cy="22" r="2.2" opacity="0.5"/>
+    <circle cx="48" cy="50" r="1.6" opacity="0.4"/>
+    <circle cx="290" cy="18" r="1.8" opacity="0.45"/>
+    <circle cx="382" cy="22" r="2" opacity="0.45"/>
+    <circle cx="448" cy="100" r="2" opacity="0.4"/>
+    <circle cx="438" cy="58" r="1.6" opacity="0.4"/>
+    <circle cx="40" cy="125" r="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- sun -->
+  <g transform="translate(420,28)">
+    <circle r="14" fill="#FEAF31"/>
+    <circle r="10" fill="#FFC571"/>
+    <circle r="5" fill="#FFE4B0"/>
+  </g>
+
+  <!-- ============ CHW (left) ============ -->
+  <ellipse cx="116" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <ellipse cx="146" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+
+  <path d="M 102 110 C 102 130, 100 152, 104 158 Q 116 162, 128 158 L 130 110 Z" fill="#252D54"/>
+  <path d="M 132 110 L 134 158 Q 146 162, 158 158 C 162 152, 160 130, 160 110 Z" fill="#252D54"/>
+
+  <rect x="100" y="106" width="62" height="5" rx="1.5" fill="#13162A"/>
+
+  <!-- shirt (green CHW) -->
+  <path d="M 104 60 C 104 54, 112 50, 124 50 L 132 50 C 144 50, 152 54, 152 60 Q 158 80, 160 110 L 102 110 Q 104 80, 104 60 Z" fill="#358623"/>
+  <path d="M 104 60 C 104 54, 112 50, 122 50 L 122 110 L 102 110 Q 104 80, 104 60 Z" fill="#1f5215" opacity="0.3"/>
+  <path d="M 118 50 L 128 64 L 138 50 L 134 50 L 128 60 L 122 50 Z" fill="#fff" opacity="0.85"/>
+
+  <!-- left arm at side -->
+  <path d="M 100 62 C 92 80, 92 100, 96 110 L 108 110 Q 110 80, 108 62 Z" fill="#358623"/>
+  <ellipse cx="101" cy="111" rx="6" ry="3" fill="#1f5215"/>
+  <circle cx="100" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- right arm bent forward holding RUTF packet -->
+  <path d="M 152 62 C 162 70, 170 80, 168 94 Q 162 98, 156 94 C 156 80, 152 70, 148 64 Z" fill="#358623"/>
+  <ellipse cx="164" cy="94" rx="7" ry="4" fill="#1f5215" transform="rotate(20 164 94)"/>
+  <path d="M 158 92 Q 162 100, 172 102 Q 178 100, 178 96 Q 174 90, 162 88 Z" fill="#B5825D"/>
+  <circle cx="176" cy="100" r="6" fill="#B5825D"/>
+
+  <!-- neck -->
+  <rect x="123" y="48" width="10" height="8" fill="#B5825D"/>
+  <rect x="123" y="48" width="4" height="8" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head -->
+  <circle cx="128" cy="32" r="18" fill="#B5825D"/>
+  <path d="M 110 32 A 18 18 0 0 1 128 14 L 128 50 A 18 18 0 0 1 110 32 Z" fill="#9c6b48" opacity="0.3"/>
+  <ellipse cx="111" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+  <ellipse cx="145" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+
+  <!-- hair -->
+  <path d="M 110 28 C 110 12, 118 8, 128 8 C 138 8, 146 12, 146 28 C 144 22, 138 20, 134 22 C 130 16, 122 16, 118 22 C 114 20, 112 22, 110 28 Z" fill="#2D2825"/>
+
+  <!-- shoulder bag with cross -->
+  <path d="M 108 60 Q 130 88, 168 130" stroke="#13162A" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <g transform="translate(176,138)">
+    <rect x="-13" y="-14" width="26" height="26" rx="6" fill="#FEAF31"/>
+    <rect x="-9" y="-2" width="18" height="4" rx="2" fill="#fff"/>
+    <rect x="-2" y="-9" width="4" height="18" rx="2" fill="#fff"/>
+  </g>
+
+  <!-- ============ RUTF PACKET (held in CHW's hand) ============ -->
+  <g transform="translate(178,98) rotate(-10)">
+    <!-- shadow -->
+    <ellipse cx="0" cy="22" rx="14" ry="2.5" fill="#1f5215" opacity="0.2"/>
+    <!-- packet body (silver foil) -->
+    <path d="M -12 -16
+             L 12 -16
+             L 12 18
+             Q 12 20, 10 20
+             L -10 20
+             Q -12 20, -12 18 Z" fill="#dee2e6" stroke="#495057" stroke-width="0.6"/>
+    <!-- foil twist top -->
+    <path d="M -12 -16 L 12 -16 L 10 -19 L -10 -19 Z" fill="#adb5bd"/>
+    <path d="M -8 -19 L -6 -16 M -2 -19 L 0 -16 M 4 -19 L 6 -16" stroke="#495057" stroke-width="0.6"/>
+    <!-- green label -->
+    <rect x="-9" y="-5" width="18" height="14" rx="1" fill="#358623"/>
+    <!-- white cross on label -->
+    <rect x="-5" y="0" width="10" height="2" fill="#fff"/>
+    <rect x="-1" y="-4" width="2" height="10" fill="#fff"/>
+    <!-- highlight -->
+    <rect x="-10" y="-14" width="3" height="32" fill="#fff" opacity="0.5"/>
+  </g>
+
+  <!-- ============ CHILD (right) ============ -->
+  <ellipse cx="220" cy="161" rx="9" ry="2.8" fill="#291213"/>
+  <ellipse cx="242" cy="161" rx="9" ry="2.8" fill="#291213"/>
+  <ellipse cx="218" cy="159.5" rx="4" ry="1" fill="#5c2d2d" opacity="0.7"/>
+  <ellipse cx="240" cy="159.5" rx="4" ry="1" fill="#5c2d2d" opacity="0.7"/>
+
+  <path d="M 210 132 C 210 148, 210 158, 212 160 Q 220 162, 228 160 L 230 132 Z" fill="#7a3538"/>
+  <path d="M 232 132 L 234 160 Q 242 162, 250 160 C 252 158, 252 148, 252 132 Z" fill="#7a3538"/>
+  <path d="M 213 136 L 216 158 Q 217 159 219 159 L 217 136 Z" fill="#291213" opacity="0.5"/>
+  <path d="M 235 136 L 237 158 Q 238 159 240 159 L 239 136 Z" fill="#291213" opacity="0.5"/>
+
+  <!-- shirt -->
+  <path d="M 213 100 C 213 96, 220 94, 228 94 L 234 94 C 242 94, 249 96, 249 100 Q 252 116, 252 132 L 210 132 Q 210 116, 213 100 Z" fill="#cb585d"/>
+  <path d="M 213 100 C 213 96, 220 94, 226 94 L 226 132 L 210 132 Q 210 116, 213 100 Z" fill="#7a3538" opacity="0.3"/>
+  <path d="M 224 94 L 231 102 L 238 94 L 236 94 L 231 100 L 226 94 Z" fill="#fff" opacity="0.8"/>
+
+  <!-- arms -->
+  <path d="M 209 102 Q 207 116, 209 132 L 213 132 Q 213 116, 213 102 Z" fill="#cb585d"/>
+  <path d="M 249 102 Q 251 116, 249 132 L 252 132 Q 255 116, 253 102 Z" fill="#cb585d"/>
+  <circle cx="210" cy="138" r="3.5" fill="#C99B7A"/>
+  <circle cx="251" cy="138" r="3.5" fill="#C99B7A"/>
+
+  <rect x="227" y="92" width="8" height="6" fill="#C99B7A"/>
+  <rect x="227" y="92" width="3" height="6" fill="#9c6b48" opacity="0.4"/>
+
+  <circle cx="231" cy="80" r="13" fill="#C99B7A"/>
+  <path d="M 218 80 A 13 13 0 0 1 231 67 L 231 93 A 13 13 0 0 1 218 80 Z" fill="#9c6b48" opacity="0.3"/>
+  <ellipse cx="219" cy="81" rx="1.5" ry="2.2" fill="#9c6b48"/>
+  <ellipse cx="243" cy="81" rx="1.5" ry="2.2" fill="#9c6b48"/>
+
+  <path d="M 220 77 C 220 65, 226 62, 231 62 C 236 62, 242 65, 242 77 C 240 73, 237 71, 234 72 C 232 68, 228 68, 226 72 C 224 71, 222 73, 220 77 Z" fill="#2D2825"/>
+
+  <!-- ============ MEASURING TAPE / nutrition cue ============ -->
+  <g transform="translate(360,100)">
+    <!-- tape with color zones (red/yellow/green for MUAC) -->
+    <rect x="-30" y="-5" width="60" height="10" rx="2" fill="#fff" stroke="#495057" stroke-width="0.8"/>
+    <rect x="-29" y="-4" width="20" height="8" fill="#E13019"/>
+    <rect x="-9" y="-4" width="20" height="8" fill="#EEAE00"/>
+    <rect x="11" y="-4" width="18" height="8" fill="#358623"/>
+    <!-- tape rolled end -->
+    <circle cx="-32" cy="0" r="6" fill="#dee2e6" stroke="#495057" stroke-width="0.8"/>
+    <circle cx="-32" cy="0" r="2" fill="#495057"/>
+  </g>
+
+  <!-- small bowl/spoon accent -->
+  <g transform="translate(50,120)">
+    <ellipse cx="0" cy="0" rx="14" ry="4" fill="#fff" stroke="#495057" stroke-width="0.8"/>
+    <path d="M -12 0 Q 0 8, 12 0" fill="#358623" opacity="0.7"/>
+  </g>
+</svg>

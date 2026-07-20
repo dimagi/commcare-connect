@@ -6,6 +6,7 @@ import zipfile
 from dataclasses import dataclass
 
 import httpx
+from django.core.cache import cache
 
 from commcare_connect.opportunity.models import CommCareApp
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -28,6 +29,13 @@ class DeliverUnit:
     name: str
 
 
+@dataclass
+class TaskUnit:
+    id: str
+    name: str
+    description: str
+
+
 class AppNoBuildException(CommCareHQAPIException):
     pass
 
@@ -40,6 +48,18 @@ def get_connect_blocks_for_app(learn_app) -> list[Module]:
 def get_deliver_units_for_app(deliver_app) -> list[DeliverUnit]:
     form_xmls = get_form_xml_for_app(deliver_app)
     return list(itertools.chain.from_iterable(extract_deliver_units(form_xml) for form_xml in form_xmls))
+
+
+def get_task_units_for_app(deliver_app) -> list[TaskUnit]:
+    cache_key = f"task_units_{deliver_app.cc_app_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    form_xmls = get_form_xml_for_app(deliver_app)
+    task_units = list(itertools.chain.from_iterable(extract_task_units(form_xml) for form_xml in form_xmls))
+    cache.set(cache_key, task_units, timeout=60 * 60)
+    return task_units
 
 
 def get_form_xml_for_app(app: CommCareApp) -> list[str]:
@@ -98,6 +118,19 @@ def extract_deliver_unit(xml: ET.Element):
         slug = block.get("id")
         name = get_element_text(block, "name")
         yield DeliverUnit(slug, name)
+
+
+def extract_task_units(form_xml):
+    xml = ET.fromstring(form_xml)
+    yield from extract_task_unit(xml)
+
+
+def extract_task_unit(xml: ET.Element):
+    for block in xml.findall(f".//{XMLNS_PREFIX}task"):
+        slug = block.get("id")
+        name = get_element_text(block, "name")
+        description = get_element_text(block, "description")
+        yield TaskUnit(slug, name, description)
 
 
 def get_element_text(parent, name) -> str | None:

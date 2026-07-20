@@ -1,16 +1,25 @@
 import datetime
+from datetime import date, timedelta
+from unittest import mock
 
 import pytest
+from django.db.utils import IntegrityError
 
-from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
+from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
+    AudioAttachment,
     InvoiceStatus,
     Opportunity,
+    OpportunityActiveEvent,  # added via pghistory
     OpportunityClaimLimit,
     PaymentInvoice,
-    UserVisit,
+    PaymentInvoiceStatusEvent,  # added via pghistory
+    TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -21,13 +30,14 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    TaskTypeFactory,
     UserVisitFactory,
 )
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
-from commcare_connect.utils.flags import Flags
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
 @pytest.mark.django_db
@@ -133,10 +143,7 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
         payment_unit_sub.id,
     }
     payment_units = [payment_unit_sub, payment_unit1, payment_unit2]
-    budget_per_user = sum(pu.max_total * pu.amount for pu in payment_units)
-
-    if opportunity.managed:
-        budget_per_user += sum(pu.max_total * pu.org_amount for pu in payment_units)
+    budget_per_user = sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
     opportunity.total_budget = budget_per_user * 3
 
     payment_units = [payment_unit1, payment_unit2, payment_unit_sub]
@@ -153,18 +160,18 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     ocl1 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit1)
     ocl2 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit2)
 
-    assert opportunity.claimed_budget == (
-        ocl1.max_visits * (payment_unit1.amount + (payment_unit1.org_amount if opportunity.managed else 0))
-    ) + (ocl2.max_visits * (payment_unit2.amount + (payment_unit2.org_amount if opportunity.managed else 0)))
+    assert opportunity.claimed_budget == (ocl1.max_visits * (payment_unit1.amount + payment_unit1.org_amount)) + (
+        ocl2.max_visits * (payment_unit2.amount + payment_unit2.org_amount)
+    )
     assert opportunity.remaining_budget == opportunity.total_budget - opportunity.claimed_budget
 
 
 @pytest.mark.django_db
 def test_claim_limits(opportunity: Opportunity):
-    payment_unit_sub = PaymentUnitFactory(opportunity=opportunity, parent_payment_unit=None)
-    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, parent_payment_unit=None) + [
-        payment_unit_sub
-    ]
+    payment_unit_sub = PaymentUnitFactory(opportunity=opportunity, parent_payment_unit=None, org_amount=0)
+    payment_units = PaymentUnitFactory.create_batch(
+        2, opportunity=opportunity, parent_payment_unit=None, org_amount=0
+    ) + [payment_unit_sub]
     payment_unit_sub.parent_payment_unit = payment_units[0]
     budget_per_user = sum([p.max_total * p.amount for p in payment_units])
     # budget not enough for more than 2 users
@@ -206,32 +213,269 @@ def test_access_visit_count(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "query_flags, expected_keys",
-    [
-        ([Flags.DUPLICATE.value], {"duplicate"}),
-        ([Flags.DUPLICATE.value, Flags.GPS.value], {"duplicate", "gps"}),
-        ([], {"duplicate", "gps", "clean"}),
-    ],
-)
-def test_uservisit_queryset_with_any_flags(query_flags, expected_keys):
-    visits = {
-        "duplicate": UserVisitFactory(
-            flagged=True,
-            flag_reason={"flags": [(Flags.DUPLICATE.value, "Duplicate submission")]},
-        ),
-        "gps": UserVisitFactory(
-            flagged=True,
-            flag_reason={"flags": [(Flags.GPS.value, "GPS missing")]},
-        ),
-        "clean": UserVisitFactory(
-            flagged=False,
-            flag_reason=None,
-        ),
-    }
+class TestOpportunityActiveTracking:
+    def test_pghistory_records_manual_deactivation(self):
+        opp = OpportunityFactory()
+        opp.active = False
+        opp.save()
+        events = OpportunityActiveEvent.objects.filter(pgh_obj=opp).order_by("pgh_id")
+        assert events.count() == 1
+        assert events.last().active is False
+        # No request context in tests — both events should have no context
+        assert events.first().pgh_context is None
+        assert events.last().pgh_context is None
 
-    queryset = UserVisit.objects.with_any_flags(query_flags)
-    result_ids = {visit_id for visit_id in queryset.values_list("id", flat=True)}
-    expected_ids = {visits[key].id for key in expected_keys}
 
-    assert result_ids == expected_ids
+@pytest.mark.django_db
+class TestAssignedTaskAssign:
+    def test_creates_row_and_pushes_to_hq(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        due_date = date.today() + timedelta(days=7)
+        assigner = access.user
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=assigner,
+            )
+
+        mock_update.assert_called_once_with({access: {"properties": {"needs_assessment": "1"}}})
+        assert isinstance(assigned, AssignedTask)
+        assert assigned.task_type == task_type
+        assert assigned.opportunity_access == access
+        assert assigned.due_date == due_date
+        assert assigned.status == AssignedTaskStatus.ASSIGNED
+        assert assigned.assigned_by == assigner
+
+    @pytest.mark.parametrize("case_property", [None, ""])
+    def test_skips_hq_when_case_property_missing(self, case_property):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property=case_property)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+            )
+
+        mock_update.assert_not_called()
+        assert AssignedTask.objects.filter(pk=assigned.pk).exists()
+
+    def test_raises_when_task_type_already_assigned(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+
+        with pytest.raises(TaskAlreadyAssignedError):
+            AssignedTask.assign(task_type=task_type, opportunity_access=access, due_date=due_date)
+
+        assert AssignedTask.objects.filter(task_type=task_type, opportunity_access=access).count() == 1
+
+    def test_allows_reassign_after_completion(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.COMPLETED)
+
+        assigned = AssignedTask.assign(task_type=task_type, opportunity_access=access, due_date=due_date)
+
+        assert AssignedTask.objects.filter(task_type=task_type, opportunity_access=access).count() == 2
+        assert assigned.status == AssignedTaskStatus.ASSIGNED
+
+    def test_does_not_create_row_when_hq_call_fails(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            with pytest.raises(CommCareHQAPIException):
+                AssignedTask.assign(
+                    task_type=task_type,
+                    opportunity_access=access,
+                    due_date=due_date,
+                )
+
+        assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+
+
+@pytest.mark.django_db
+class TestAssignedTaskDeleteAndResetHQ:
+    def test_deletes_rows_and_resets_hq(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        due_date = date.today() + timedelta(days=7)
+        task = AssignedTaskFactory(
+            task_type=task_type,
+            opportunity_access=access,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=due_date,
+        )
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            deleted = AssignedTask.bulk_delete([task.pk], access.opportunity)
+
+        assert deleted == 1
+        assert not AssignedTask.objects.filter(pk=task.pk).exists()
+        mock_update.assert_called_once_with({access: {"properties": {"needs_assessment": ""}}})
+
+    @pytest.mark.parametrize("case_property", [None, ""])
+    def test_skips_hq_when_no_case_property(self, case_property):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property=case_property)
+        task = AssignedTaskFactory(
+            task_type=task_type,
+            opportunity_access=access,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=date.today() + timedelta(days=7),
+        )
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            deleted = AssignedTask.bulk_delete([task.pk], access.opportunity)
+
+        assert deleted == 1
+        mock_update.assert_not_called()
+
+    def test_does_not_delete_when_hq_fails(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        task = AssignedTaskFactory(
+            task_type=task_type,
+            opportunity_access=access,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=date.today() + timedelta(days=7),
+        )
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            with pytest.raises(CommCareHQAPIException):
+                AssignedTask.bulk_delete([task.pk], access.opportunity)
+
+        assert AssignedTask.objects.filter(pk=task.pk).exists()
+
+    def test_skips_completed_tasks(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        completed = AssignedTaskFactory(
+            task_type=task_type,
+            opportunity_access=access,
+            status=AssignedTaskStatus.COMPLETED,
+            due_date=date.today() + timedelta(days=7),
+        )
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            deleted = AssignedTask.bulk_delete([completed.pk], access.opportunity)
+
+        assert deleted == 0
+        assert AssignedTask.objects.filter(pk=completed.pk).exists()
+        mock_update.assert_not_called()
+
+    def test_skips_hq_when_other_assigned_task_remains(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        task_type2 = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        task_to_delete = AssignedTaskFactory(
+            task_type=task_type,
+            opportunity_access=access,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=date.today() + timedelta(days=7),
+        )
+        AssignedTaskFactory(
+            task_type=task_type2,
+            opportunity_access=access,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=date.today() + timedelta(days=7),
+        )
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            deleted = AssignedTask.bulk_delete([task_to_delete.pk], access.opportunity)
+
+        assert deleted == 1
+        assert not AssignedTask.objects.filter(pk=task_to_delete.pk).exists()
+        mock_update.assert_not_called()
+
+    def test_deduplicates_hq_calls(self):
+        access = OpportunityAccessFactory()
+        due_date = date.today() + timedelta(days=7)
+        tasks = AssignedTaskFactory.create_batch(
+            2,
+            task_type__app=access.opportunity.deliver_app,
+            task_type__case_property="needs_assessment",
+            opportunity_access=access,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=due_date,
+        )
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            AssignedTask.bulk_delete([t.pk for t in tasks], access.opportunity)
+
+        mock_update.assert_called_once_with({access: {"properties": {"needs_assessment": ""}}})
+
+    def test_merges_multiple_properties_per_user(self):
+        access = OpportunityAccessFactory()
+        due_date = date.today() + timedelta(days=7)
+        task_type_a = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="prop_a")
+        task_type_b = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="prop_b")
+        task_a = AssignedTaskFactory(
+            task_type=task_type_a, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED, due_date=due_date
+        )
+        task_b = AssignedTaskFactory(
+            task_type=task_type_b, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED, due_date=due_date
+        )
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            AssignedTask.bulk_delete([task_a.pk, task_b.pk], access.opportunity)
+
+        mock_update.assert_called_once_with({access: {"properties": {"prop_a": "", "prop_b": ""}}})
+
+
+@pytest.mark.django_db
+def test_audio_attachment_unique_per_visit_and_name():
+    visit = UserVisitFactory.create()
+    AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
+    with pytest.raises(IntegrityError):
+        AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
+
+
+@pytest.mark.django_db
+class TestTaskFields:
+    def test_task_type_mode_defaults_to_relearn(self):
+        task_type = TaskTypeFactory()
+        task_type.refresh_from_db()
+        assert task_type.mode == TaskTypeModeChoices.RELEARN
+
+    def test_task_type_stores_ocs_fields(self):
+        task_type = TaskTypeFactory(mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="chatbot-123")
+        task_type.refresh_from_db()
+        assert task_type.mode == TaskTypeModeChoices.OCS
+        assert task_type.ocs_chatbot_id == "chatbot-123"
+
+    def test_assigned_task_stores_ocs_fields(self):
+        task = AssignedTaskFactory(connect_channel_id="channel-1", ocs_session_id="session-1")
+        task.refresh_from_db()
+        assert task.connect_channel_id == "channel-1"
+        assert task.ocs_session_id == "session-1"
+
+    def test_assigned_task_date_modified_updates_on_save(self):
+        created_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+        updated_at = datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC)
+
+        with mock.patch("django.utils.timezone.now", return_value=created_at):
+            task = AssignedTaskFactory()
+        assert task.date_modified == created_at
+
+        with mock.patch("django.utils.timezone.now", return_value=updated_at):
+            task.status = AssignedTaskStatus.COMPLETED
+            task.save()
+        task.refresh_from_db()
+        assert task.date_modified == updated_at

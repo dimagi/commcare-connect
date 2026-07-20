@@ -3,7 +3,12 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from commcare_connect.form_receiver.views import FormReceiver
-from commcare_connect.opportunity.api.views import (
+from commcare_connect.opportunity.api.views.automation import (
+    InviteUsersView,
+    OpportunityActivateView,
+    PaymentUnitCreateView,
+)
+from commcare_connect.opportunity.api.views.mobile import (
     ClaimOpportunityView,
     ConfirmPaymentsView,
     ConfirmPaymentView,
@@ -11,6 +16,12 @@ from commcare_connect.opportunity.api.views import (
     OpportunityViewSet,
     UserLearnProgressView,
     UserVisitViewSet,
+)
+from commcare_connect.program.api.views import (
+    ManagedOpportunityCreateView,
+    ProgramApplicationAcceptView,
+    ProgramApplicationCreateView,
+    ProgramCreateView,
 )
 from commcare_connect.users.api.views import UserViewSet
 
@@ -32,4 +43,36 @@ urlpatterns = [
     path("opportunity/<slug:pk>/delivery_progress", DeliveryProgressView.as_view(), name="deliver_progress"),
     path("payment/<slug:pk>/confirm", ConfirmPaymentView.as_view(), name="confirm_payment"),
     path("payment/confirm", ConfirmPaymentsView.as_view(), name="confirm_payments"),
+    # Automation API (programs, managed opportunities, payment units, user invites)
+    path("programs/", ProgramCreateView.as_view(), name="program_create"),
+    path(
+        "programs/<uuid:program_id>/applications/",
+        ProgramApplicationCreateView.as_view(),
+        name="program_application_create",
+    ),
+    path(
+        "programs/<uuid:program_id>/applications/<uuid:application_id>/accept/",
+        ProgramApplicationAcceptView.as_view(),
+        name="program_application_accept",
+    ),
+    path(
+        "programs/<uuid:program_id>/opportunities/",
+        ManagedOpportunityCreateView.as_view(),
+        name="managed_opportunity_create",
+    ),
+    path(
+        "opportunities/<uuid:opportunity_id>/payment_units/",
+        PaymentUnitCreateView.as_view(),
+        name="payment_unit_create",
+    ),
+    path(
+        "opportunities/<uuid:opportunity_id>/activate/",
+        OpportunityActivateView.as_view(),
+        name="opportunity_activate",
+    ),
+    path(
+        "opportunities/<uuid:opportunity_id>/invite_users/",
+        InviteUsersView.as_view(),
+        name="invite_users",
+    ),
 ]

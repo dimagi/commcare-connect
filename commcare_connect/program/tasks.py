@@ -1,18 +1,23 @@
+import datetime
+from collections import defaultdict
+
 from allauth.utils import build_absolute_uri
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from commcare_connect.opportunity.models import (
-    CompletedWork,
     CompletedWorkStatus,
+    InvoiceStatus,
     Opportunity,
+    PaymentInvoice,
     VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
-from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
+from commcare_connect.program.models import ProgramApplication
 from commcare_connect.utils.tasks import send_mail_async
 from config import celery_app
 
@@ -66,7 +71,7 @@ def send_program_invite_email(application_id):
 
 
 def send_opportunity_created_email(opportunity_id):
-    opportunity = ManagedOpportunity.objects.select_related("program", "organization").get(pk=opportunity_id)
+    opportunity = Opportunity.objects.select_related("program", "organization").get(pk=opportunity_id)
     nm_org = opportunity.organization
     recipient_emails = _get_membership_users_emails(nm_org)
     if not recipient_emails:
@@ -110,22 +115,18 @@ def send_monthly_delivery_reminder_email():
     organizations_with_pending_deliveries = Organization.objects.filter(
         Q(opportunity__opportunityaccess__completedwork__status=CompletedWorkStatus.pending)
         | Q(
-            program__managedopportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending  # noqa:E501
+            program__opportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending  # noqa:E501
         ),
     ).distinct()
 
     for organization in organizations_with_pending_deliveries.iterator(chunk_size=50):
-        opps_ids = get_org_opps_ids_for_review(organization)
+        opportunities = get_org_opps_for_review(organization)
 
         if organization.program_manager:
-            opps_ids.extend(get_org_managed_opps_ids_for_review(organization))
+            opportunities.extend(get_org_managed_opps_for_review(organization))
 
-        if not opps_ids:
+        if not opportunities:
             continue
-
-        opportunities = Opportunity.objects.filter(
-            id__in=opps_ids,
-        ).only("name", "id")
 
         _send_org_email_for_opportunities(
             organization=organization,
@@ -134,27 +135,28 @@ def send_monthly_delivery_reminder_email():
         )
 
 
-def get_org_opps_ids_for_review(organization):
+def get_org_opps_for_review(organization):
     return list(
-        CompletedWork.objects.filter(
-            opportunity_access__opportunity__organization=organization,
-            uservisit__status=VisitValidationStatus.pending,
+        Opportunity.objects.filter(
+            organization=organization,
+            opportunityaccess__completedwork__uservisit__status=VisitValidationStatus.pending,
+            is_test=False,
         )
-        .values_list("opportunity_access__opportunity_id", flat=True)
         .distinct()
+        .only("name", "id")
     )
 
 
-def get_org_managed_opps_ids_for_review(organization):
+def get_org_managed_opps_for_review(organization):
     return list(
-        CompletedWork.objects.filter(
-            opportunity_access__opportunity__managed=True,
-            opportunity_access__opportunity__managedopportunity__program__organization=organization,
-            uservisit__review_status=VisitReviewStatus.pending,
-            uservisit__status=VisitValidationStatus.approved,
+        Opportunity.objects.filter(
+            program__organization=organization,
+            opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending,
+            opportunityaccess__completedwork__uservisit__status=VisitValidationStatus.approved,
+            is_test=False,
         )
-        .values_list("opportunity_access__opportunity_id", flat=True)
         .distinct()
+        .only("id", "name")
     )
 
 
@@ -180,6 +182,146 @@ def _send_org_email_for_opportunities(organization, opportunities, recipient_ema
 
     send_mail_async.delay(
         subject=_("Reminder: Please Review Pending Deliveries"),
+        message=message,
+        recipient_list=recipient_emails,
+        html_message=html_message,
+    )
+
+
+def send_opportunity_expiry_reminder_emails(days_before: int):
+    target_date = datetime.date.today() + datetime.timedelta(days=days_before)
+    opportunities = Opportunity.objects.filter(end_date=target_date, active=True).select_related(
+        "program__organization", "organization"
+    )
+
+    # Group by PM org
+    pm_orgs = {}
+    pm_org_opportunities = defaultdict(list)
+    for opp in opportunities:
+        pm_org = opp.program.organization
+        pm_orgs[pm_org.id] = pm_org
+        opportunity_url = build_absolute_uri(
+            None,
+            reverse(
+                "opportunity:detail",
+                kwargs={"org_slug": pm_org.slug, "opp_id": opp.id},
+            ),
+        )
+        pm_org_opportunities[pm_org.id].append(
+            {
+                "name": opp.name,
+                "end_date": opp.end_date,
+                "program_name": opp.program.name,
+                "org_name": opp.organization.name,
+                "opportunity_url": opportunity_url,
+            }
+        )
+
+    if not pm_org_opportunities:
+        return
+
+    # Fetch all membership emails in a single query
+    org_emails = defaultdict(list)
+    for org_id, email in UserOrganizationMembership.objects.filter(
+        organization_id__in=pm_org_opportunities.keys()
+    ).values_list("organization_id", "user__email"):
+        if email:
+            org_emails[org_id].append(email)
+
+    for org_id, opps in pm_org_opportunities.items():
+        pm_org = pm_orgs[org_id]
+        recipient_emails = org_emails[org_id]
+        if not recipient_emails:
+            continue
+
+        opp_count = len(opps)
+        date_str = target_date.strftime("%d %b %Y")
+        subject = ngettext(
+            "Reminder: %(count)d opportunity ending on %(date)s",
+            "Reminder: %(count)d opportunities ending on %(date)s",
+            opp_count,
+        ) % {"count": opp_count, "date": date_str}
+        context = {
+            "target_date": target_date,
+            "opportunities": opps,
+            "organization": pm_org,
+        }
+
+        message = render_to_string("program/email/opportunity_expiry_reminder.txt", context)
+        html_message = render_to_string("program/email/opportunity_expiry_reminder.html", context)
+
+        send_mail_async.delay(
+            subject=subject,
+            message=message,
+            recipient_list=recipient_emails,
+            html_message=html_message,
+        )
+
+
+@celery_app.task()
+def send_opportunity_expiry_reminders():
+    send_opportunity_expiry_reminder_emails(7)
+    send_opportunity_expiry_reminder_emails(3)
+
+
+@celery_app.task()
+def send_pm_invoice_review_reminder():
+    invoices = PaymentInvoice.objects.filter(
+        status__in=[InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.READY_TO_PAY],
+        opportunity__is_test=False,
+    ).select_related(
+        "opportunity",
+        "opportunity__program__organization",
+        "opportunity__program",
+    )
+
+    pm_org_invoices = defaultdict(lambda: {"organization": None, "invoices": []})
+    for invoice in invoices:
+        pm_org = invoice.opportunity.program.organization
+        pm_org_invoices[pm_org.id]["organization"] = pm_org
+        pm_org_invoices[pm_org.id]["invoices"].append(invoice)
+
+    for org_data in pm_org_invoices.values():
+        _send_pm_invoice_review_reminder_email(org_data["organization"], org_data["invoices"])
+
+
+def _send_pm_invoice_review_reminder_email(pm_org, invoices):
+    recipient_emails = pm_org.get_member_emails()
+    if not recipient_emails:
+        return
+
+    invoice_items = []
+    for invoice in invoices:
+        invoice_url = build_absolute_uri(
+            None,
+            reverse(
+                "opportunity:invoice_review",
+                kwargs={
+                    "org_slug": pm_org.slug,
+                    "opp_id": invoice.opportunity.opportunity_id,
+                    "pk": invoice.payment_invoice_id,
+                },
+            ),
+        )
+        invoice_items.append(
+            {
+                "invoice": invoice,
+                "opportunity": invoice.opportunity,
+                "program": invoice.opportunity.program,
+                "status_label": invoice.get_status_display(),
+                "invoice_url": invoice_url,
+            }
+        )
+
+    context = {
+        "organization": pm_org,
+        "invoice_items": invoice_items,
+    }
+    message = render_to_string("program/email/pm_invoice_review_reminder.txt", context)
+    html_message = render_to_string("program/email/pm_invoice_review_reminder.html", context)
+
+    send_mail_async.delay(
+        subject=_("[%(org)s] Action Required: Program Invoices Awaiting Review") % {"org": pm_org.name},
         message=message,
         recipient_list=recipient_emails,
         html_message=html_message,

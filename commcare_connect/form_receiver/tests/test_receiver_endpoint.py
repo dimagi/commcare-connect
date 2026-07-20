@@ -36,7 +36,9 @@ def test_process_xform_error(user: User, api_client: APIClient):
     hq_server = HQServerFactory()
     oauth_application = hq_server.oauth_application
     add_credentials(api_client, user, oauth_application=oauth_application)
-    with (mock.patch("commcare_connect.form_receiver.views.process_xform") as process_xform,):
+    with (
+        mock.patch("commcare_connect.form_receiver.views.process_xform") as process_xform,
+    ):
         process_xform.side_effect = ProcessingError("oops, something went wrong")
         response = api_client.post("/api/receiver/", data=get_form_json(), format="json")
     assert response.status_code == 400, response.data

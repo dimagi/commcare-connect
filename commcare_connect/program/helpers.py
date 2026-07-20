@@ -16,8 +16,8 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast, Coalesce, Round
 
-from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
-from commcare_connect.program.models import ManagedOpportunity, Program
+from commcare_connect.opportunity.models import Opportunity, UserVisit, VisitValidationStatus
+from commcare_connect.program.models import Program
 
 EXCLUDED_STATUS = [
     VisitValidationStatus.over_limit,
@@ -47,7 +47,7 @@ def get_annotated_managed_opportunity(program: Program):
     )
 
     managed_opportunities = (
-        ManagedOpportunity.objects.filter(program=program)
+        Opportunity.objects.filter(program=program)
         .order_by("start_date")
         .annotate(
             workers_invited=Count("opportunityaccess", distinct=True),
@@ -97,7 +97,7 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
     )
 
     managed_opportunities = (
-        ManagedOpportunity.objects.filter(program=program)
+        Opportunity.objects.filter(program=program)
         .order_by("start_date")
         .annotate(
             total_workers_starting_delivery=Count(

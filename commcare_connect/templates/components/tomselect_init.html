@@ -1,0 +1,15 @@
+<!--
+    Initialize tom-select on elements with [data-tomselect] attribute.
+    Include this partial in htmx-swapped content where tom-select
+    elements arrive after DOMContentLoaded has already fired.
+-->
+<script>
+    document.querySelectorAll('[data-tomselect]').forEach(function (el) {
+        if (el.tomselect) return;
+        el.removeAttribute('class');
+        var plugins = el.hasAttribute('data-tomselect:no-remove-button')
+            ? []
+            : ['remove_button'];
+        new TomSelect(el, { plugins: plugins });
+    });
+</script>

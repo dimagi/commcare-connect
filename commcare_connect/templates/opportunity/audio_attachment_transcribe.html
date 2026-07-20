@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+{% load i18n %}
+{% block title %}
+  {{ request.org }} - {% translate "Transcribe Audio" %}
+{% endblock title %}
+{% block content %}
+  {% include "components/breadcrumbs.html" with path=path %}
+  <div class="card_bg md:max-w-screen-md mx-auto flex flex-col gap-6">
+    <h1 class="card_title">{% translate "Transcribe Audio" %}</h1>
+    <audio controls preload="metadata" class="w-full">
+      <source src="{% url 'opportunity:fetch_audio_attachment' org_slug=request.org.slug opp_id=object.user_visit.opportunity.opportunity_id pk=object.pk %}"
+              type="{{ object.content_type }}">
+      {% translate "Your browser does not support the audio element." %}
+    </audio>
+    <form method="post" class="flex flex-col gap-4">
+      {% csrf_token %}
+      {% crispy form %}
+      <div class="flex justify-end gap-3">
+        <a href="{{ visit_details_url }}" class="button button-md outline-style">{% translate "Cancel" %}</a>
+        <button type="submit" class="button button-md primary-dark">{% translate "Save" %}</button>
+      </div>
+    </form>
+  </div>
+{% endblock content %}
