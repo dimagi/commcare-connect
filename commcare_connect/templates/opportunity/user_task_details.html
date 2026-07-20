@@ -44,7 +44,7 @@
       <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.completed_at }}</div>
     </div>
   </div>
-  {% if can_manage_tasks and completed_task.status == "assigned" %}
+  {% if can_edit_tasks and completed_task.status == "assigned" %}
     <div class="flex justify-end">
       <button type="button"
               class="button button-md outline-style"

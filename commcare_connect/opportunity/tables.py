@@ -3,6 +3,8 @@ from urllib.parse import urlencode
 
 import django_tables2 as tables
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.db.models import CharField, Value
+from django.db.models.functions import Coalesce, NullIf
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -1840,24 +1842,42 @@ _task_select_td_extra = {
 }
 
 
-class AssignedTaskListTable(OpportunityContextTable):
+class BaseAssignedTaskTable(tables.Table):
     select = select_column(td_extra=_task_select_td_extra)
-    connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
     status = TaskStatusColumn(verbose_name=gettext_lazy("Status"), accessor="status")
-    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     assigned_date = DMYTColumn(verbose_name=gettext_lazy("Assigned Date"), accessor="date_created")
     due_date = DMYTColumn(verbose_name=gettext_lazy("Due Date"), accessor="due_date")
     assigned_by = tables.Column(
         verbose_name=gettext_lazy("Assigned By"),
-        accessor="assigned_by__name",
+        accessor="assigned_by",
         empty_values=(None,),
         default=gettext_lazy("Deleted user"),
     )
+
+    def render_assigned_by(self, value):
+        return value.name or value.email
+
+    def order_assigned_by(self, queryset, is_descending):
+        expression = Coalesce(NullIf("assigned_by__name", Value("")), "assigned_by__email", output_field=CharField())
+        queryset = queryset.order_by(expression.desc() if is_descending else expression.asc())
+        return queryset, True
+
+
+class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
+    connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
+    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
         template_name="opportunity/assigned_task_edit_button.html",
     )
+
+    def __init__(self, *args, can_edit_tasks=False, can_delete_tasks=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not can_edit_tasks:
+            self.columns.hide("action")
+        if not can_delete_tasks:
+            self.columns.hide("select")
 
     class Meta:
         model = AssignedTask
@@ -1887,20 +1907,10 @@ class AssignedTaskListTable(OpportunityContextTable):
         )
 
 
-class WorkerCompletedTaskTable(tables.Table):
+class WorkerCompletedTaskTable(BaseAssignedTaskTable):
     use_view_url = True
 
-    select = select_column(td_extra=_task_select_td_extra)
     task_type = tables.Column(verbose_name=_("Task Type"), accessor="task_type", orderable=False)
-    assigned_by = tables.Column(
-        verbose_name=_("Assigned By"),
-        accessor="assigned_by__name",
-        empty_values=(None,),
-        default=gettext_lazy("Deleted user"),
-    )
-    assigned_date = DMYTColumn(verbose_name=_("Assigned Date"), accessor="date_created")
-    due_date = DMYTColumn(verbose_name=_("Due Date"))
-    status = TaskStatusColumn(verbose_name=_("Status"), accessor="status")
 
     class Meta:
         model = AssignedTask
