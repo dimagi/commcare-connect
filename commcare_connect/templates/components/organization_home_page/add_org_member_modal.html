@@ -16,7 +16,7 @@
     <form action="{% url 'organization:add_members' request.org.slug %}"
           method="post">
       {% csrf_token %}
-      <div class="mb-4">{% crispy membership_form %}</div>
+      <div class="mb-4">{% crispy invite_form %}</div>
     </form>
   </div>
 </div>

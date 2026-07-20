@@ -15,6 +15,7 @@ from commcare_connect.opportunity.models import OpportunityAccess
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
+from .const import DEFAULT_BUILDING_COUNT
 from .models import SRID, WorkArea
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ class WorkAreaCSVImporter:
     def _validate_all_rows(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         if not self._validate_headers(reader):
             return False
 
@@ -65,6 +67,7 @@ class WorkAreaCSVImporter:
     def _stream_and_insert(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         batch = []
         batch_size = 5000
 
@@ -111,6 +114,10 @@ class WorkAreaCSVImporter:
         if self.errors:
             return {"errors": self.errors}
         return {"created": self.created_count}
+
+    def _normalize_headers(self, reader):
+        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
+        reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
         headers = set(reader.fieldnames or [])
@@ -326,7 +333,7 @@ def send_work_area_assignment_notification(opportunity_access_id: int):
 
 
 @celery_app.task()
-def cluster_work_areas_task(opp_id):
+def cluster_work_areas_task(opp_id, max_buildings=DEFAULT_BUILDING_COUNT):
     lock_key = get_cluster_area_cache_lock_key(opp_id)
     with cache.lock(lock_key, timeout=1200):
-        WorkAreaGrouper(opp_id).cluster_work_areas()
+        WorkAreaGrouper(opp_id, max_buildings=max_buildings).cluster_work_areas()

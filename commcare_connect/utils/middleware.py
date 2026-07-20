@@ -15,8 +15,8 @@ API_KEY_ERROR = """
 """
 
 TOKEN_REFRESH_ERROR = _(
-    "We couldn't verify one of your connected accounts (it may have been disconnected "
-    "or its session expired). Please reconnect the account and try again."
+    "We couldn't verify your (connected) account (it may have been disconnected "
+    "or its session expired). Please log in again and then try again."
 )
 
 

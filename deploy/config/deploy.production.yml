@@ -1,8 +1,19 @@
+logging:
+  options:
+    awslogs-region: 'eu-west-1'
+
+traefik:
+  options:
+    log-driver: awslogs
+    log-opt:
+      - awslogs-region=eu-west-1
+      - awslogs-group=commcare-connect-traefik
+
 servers:
   web:
     hosts:
-      - i-0901d8af0c29c69cf
-      - i-0a766713cb0d2fe96
+      - i-0061917b7240cfaef
+      - i-0006273d9b40ce3e0
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
@@ -16,7 +27,7 @@ servers:
 
   celery:
     hosts:
-      - i-0816b5db3a153135e
+      - i-0517c5593d6eb861e
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'

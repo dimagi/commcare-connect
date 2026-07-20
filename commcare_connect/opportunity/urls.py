@@ -97,6 +97,7 @@ urlpatterns = [
         name="user_visit_verification_table",
     ),
     path("<slug:opp_id>/user_visit_details/<slug:pk>/", view=views.user_visit_details, name="user_visit_details"),
+    path("<slug:opp_id>/user_visit_data/<slug:pk>/", view=views.user_visit_data, name="user_visit_data"),
     path("<slug:opp_id>/user_task_details/<slug:pk>/", view=views.user_task_details, name="user_task_details"),
     path("<slug:opp_id>/payment/<slug:access_id>/delete/<slug:pk>/", view=payment_delete, name="payment_delete"),
     path("<slug:opp_id>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
