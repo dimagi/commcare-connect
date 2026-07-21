@@ -10,10 +10,10 @@ from django.conf import settings
 from django.contrib import messages
 from django.http import HttpRequest
 from django.shortcuts import redirect
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 
 from commcare_connect.commcarehq_provider.provider import CommcareHQProvider
+from commcare_connect.utils.middleware import is_safe_redirect_url
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -43,9 +43,7 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if not oauth_state:
             return None
         next_url = oauth_state[0].get("next")
-        if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-            return next_url
-        return None
+        return next_url if is_safe_redirect_url(request, next_url) else None
 
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin):
         if sociallogin.is_existing:
