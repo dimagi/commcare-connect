@@ -114,9 +114,15 @@ class PaymentImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
+        count = len(self.missing_users)
+        summary = ngettext(
+            "%(count)d username was not found:",
+            "%(count)d usernames were not found:",
+            count,
+        ) % {"count": count}
         return format_html(
-            "<br>{} usernames were not found:<br>{}",
-            len(self.missing_users),
+            "<br>{}<br>{}",
+            summary,
             format_html_join(
                 "<br>",
                 "{}",
