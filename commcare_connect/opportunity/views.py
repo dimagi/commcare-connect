@@ -845,7 +845,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
             parent_payment_unit=form.instance.id
         )
-        messages.success(request, f"Payment unit {form.instance.name} created.")
+        messages.success(request, _("Payment unit %(name)s created.") % {"name": form.instance.name})
         claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=request.opportunity)
         for claim in claims:
             OpportunityClaimLimit.create_claim_limits(request.opportunity, claim)
@@ -853,19 +853,25 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
             "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
         )
     elif request.POST:
-        messages.error(request, "Invalid Data")
-        return redirect(
-            "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+        return render(
+            request,
+            "opportunity/add_payment_units.html",
+            dict(
+                opportunity=request.opportunity,
+                paymentunit_count=PaymentUnit.objects.filter(opportunity=request.opportunity).count(),
+                form=form,
+                form_title=_("Payment Unit Create"),
+            ),
         )
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(request.org.slug,))},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
         },
         {
-            "title": "Payment unit",
+            "title": _("Payment unit"),
         },
     ]
     return render(
@@ -873,7 +879,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title="Payment Unit Create",
+            form_title=_("Payment Unit Create"),
             form=form,
             path=path,
         ),
@@ -2194,7 +2200,12 @@ class UserVisitVerificationView(WorkerPageView):
 
 
 def _can_manage_tasks(request, opportunity):
+    """Permission to create, edit, or delete tasks."""
     return _request_user_is_member(request) and request.is_opportunity_pm
+
+
+def _can_edit_tasks(request):
+    return _request_user_is_member(request) or request.is_opportunity_pm
 
 
 def _task_redirect_url(request, org_slug, opp_id):
@@ -2624,7 +2635,7 @@ def user_task_details(request, org_slug, opp_id, pk):
             completed_task=completed_task,
             images=images,
             hq_link=hq_link,
-            can_manage_tasks=_can_manage_tasks(request, request.opportunity),
+            can_edit_tasks=_can_edit_tasks(request),
         ),
     )
 
@@ -3516,6 +3527,8 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["opp_id"] = self.get_opportunity().opportunity_id
+        kwargs["can_edit_tasks"] = _can_edit_tasks(self.request)
+        kwargs["can_delete_tasks"] = _can_manage_tasks(self.request, self.get_opportunity())
         return kwargs
 
     def get_table_data(self):
@@ -3563,7 +3576,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         return context
 
 
-class EditAssignedTask(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
     template_name = "opportunity/edit_assigned_task_form.html"
     form_class = EditAssignedTaskForm
     model = AssignedTask

@@ -44,6 +44,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tasks import bulk_approve_completed_work
 from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
     CatchmentAreaFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -458,6 +459,54 @@ def test_automatic_visit_verification_preserves_existing_status(
     visit = trigger_visit(opportunity, user_with_connectid_link, api_client)
     assert visit.flagged
     assert visit.status == expected_status
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "same_app, archived, active, expected_status, expected_flagged",
+    [
+        # A task for the deliver app blocks delivery: the visit is rejected even though
+        # auto_approve_visits would otherwise approve it.
+        pytest.param(True, False, True, VisitValidationStatus.rejected, True, id="same_app_blocks"),
+        # A task for an unrelated app must not block this opportunity's delivery.
+        pytest.param(False, False, True, VisitValidationStatus.approved, False, id="other_app_allows"),
+        # An archived task type must not block delivery even on the same app.
+        pytest.param(True, True, True, VisitValidationStatus.approved, False, id="archived_same_app_allows"),
+        # An inactive task type must not block delivery even on the same app.
+        pytest.param(True, False, False, VisitValidationStatus.approved, False, id="inactive_same_app_allows"),
+    ],
+)
+def test_pending_task_delivery_gating(
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    same_app,
+    archived,
+    active,
+    expected_status,
+    expected_flagged,
+):
+    opportunity.auto_approve_visits = True
+    opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
+    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
+    # Without task_type__app the factory creates a task for an unrelated app.
+    task_kwargs = {"task_type__app": opportunity.deliver_app} if same_app else {}
+    if archived:
+        task_kwargs["task_type__archived"] = now()
+    task_kwargs["task_type__is_active"] = active
+    AssignedTaskFactory(opportunity_access=access, **task_kwargs)
+
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.status == expected_status
+    assert visit.flagged == expected_flagged
+    if expected_flagged:
+        assert "pending_task" in {flag for flag, _ in visit.flag_reason["flags"]}
+        assert visit.completed_work.status == CompletedWorkStatus.rejected
 
 
 def test_auto_approve_payments_flagged_visit(
