@@ -58,7 +58,7 @@ def trigger_bot(
     Initiate the conversation by starting with "Greetings! You've been assigned training ..."
     """
 
-    payload = {"identifier": identifier, "experiment": experiment, "platform": "telegram"}
+    payload = {"identifier": "8796856837", "experiment": experiment, "platform": "telegram"}
     optionals = {
         "start_new_session": start_new_session,
         "session_data": session_data,
