@@ -124,7 +124,7 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
         label=_("Payment Unit"),
         field_name="uservisit__deliver_unit__payment_unit",
         queryset=PaymentUnit.objects.none(),
-        widget=forms.Select(attrs={"data-tomselect": "1", "class": INPUT_CSS}),
+        widget=forms.Select(attrs={"class": INPUT_CSS}),
     )
 
     start_date = django_filters.DateFilter(
