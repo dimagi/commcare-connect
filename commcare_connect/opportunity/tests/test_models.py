@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 from django.db.utils import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
@@ -38,6 +39,7 @@ from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import OcsApiError
 
 
 @pytest.mark.django_db
@@ -305,6 +307,191 @@ class TestAssignedTaskAssign:
                 )
 
         assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+
+    def test_triggers_ocs_bot_and_persists_session_for_ocs_mode(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+        )
+        due_date = date.today() + timedelta(days=7)
+        assigner = access.user
+
+        with mock.patch(
+            "commcare_connect.utils.ocs_api.trigger_bot",
+            return_value={"session_id": "sess-1", "channel": "chan-1"},
+        ) as mock_trigger:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=assigner,
+            )
+
+        mock_trigger.assert_called_once_with(
+            assigner,
+            identifier=access.user.username,
+            experiment="exp-uuid",
+            participant_data={"connectTaskId": str(assigned.assigned_task_id)},
+        )
+        assigned.refresh_from_db()
+        assert assigned.ocs_session_id == "sess-1"
+        assert assigned.connect_channel_id == "chan-1"
+
+    def test_does_not_trigger_ocs_bot_for_non_ocs_mode(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, mode=TaskTypeModeChoices.RELEARN)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.utils.ocs_api.trigger_bot") as mock_trigger:
+            AssignedTask.assign(task_type=task_type, opportunity_access=access, due_date=due_date)
+
+        mock_trigger.assert_not_called()
+
+    def test_does_not_create_row_when_ocs_trigger_fails(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+            case_property="needs_assessment",
+        )
+        due_date = date.today() + timedelta(days=7)
+
+        with (
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                side_effect=OcsApiError("boom"),
+            ),
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update,
+        ):
+            with pytest.raises(OcsApiError):
+                AssignedTask.assign(
+                    task_type=task_type,
+                    opportunity_access=access,
+                    due_date=due_date,
+                    assigned_by=access.user,
+                )
+
+        assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+        mock_update.assert_not_called()
+
+    def test_ocs_mode_skips_hq_even_with_case_property(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+            case_property="needs_assessment",
+        )
+        due_date = date.today() + timedelta(days=7)
+
+        with (
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                return_value={"session_id": "s", "channel": "c"},
+            ) as mock_trigger,
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq,
+        ):
+            AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=access.user,
+            )
+
+        mock_trigger.assert_called_once()
+        mock_hq.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestAssignedTaskMarkCompleted:
+    def test_transitions_to_completed_and_notifies(self, django_capture_on_commit_callbacks):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+        completed_at = now()
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=completed_at)
+
+        task.refresh_from_db()
+        assert task.status == AssignedTaskStatus.COMPLETED
+        assert task.completed_at == completed_at
+        notify.delay.assert_called_once_with(task.pk)
+
+    def test_send_notification_false_suppresses_email(self, django_capture_on_commit_callbacks):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=now(), send_notification=False)
+
+        task.refresh_from_db()
+        assert task.status == AssignedTaskStatus.COMPLETED
+        notify.delay.assert_not_called()
+
+    def test_defaults_completed_at_to_now(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED, completed_at=None)
+        before = now()
+
+        task.mark_completed()
+
+        task.refresh_from_db()
+        assert task.completed_at >= before
+
+    def test_stores_optional_form_fields(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+
+        task.mark_completed(
+            completed_at=now(),
+            xform_id="form-1",
+            duration=timedelta(minutes=3),
+            app_build_id="build-1",
+            app_build_version=7,
+        )
+
+        task.refresh_from_db()
+        assert task.xform_id == "form-1"
+        assert task.duration == timedelta(minutes=3)
+        assert task.app_build_id == "build-1"
+        assert task.app_build_version == 7
+
+    def test_bumps_last_active_when_newer(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+        access = task.opportunity_access
+        access.last_active = now() - timedelta(days=2)
+        access.save(update_fields=["last_active"])
+        completed_at = now()
+
+        task.mark_completed(completed_at=completed_at)
+
+        access.refresh_from_db()
+        assert access.last_active == completed_at
+
+    def test_is_idempotent_when_already_completed(self, django_capture_on_commit_callbacks):
+        original = now() - timedelta(days=1)
+        task = AssignedTaskFactory(status=AssignedTaskStatus.COMPLETED, completed_at=original)
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=now())
+
+        task.refresh_from_db()
+        assert task.completed_at == original
+        notify.delay.assert_not_called()
 
 
 @pytest.mark.django_db
