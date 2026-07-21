@@ -44,10 +44,8 @@ class BaseAreaCSVImporter:
         self.created_count = 0
 
     def run(self):
-        # --- First pass: validation only ---
         if not self._validate_all_rows(self.csv_source):
-            return self._result()  # abort if any row is invalid
-        # --- Second pass: streaming batch insert ---
+            return self._result()
         self._stream_and_insert(self.csv_source)
         self._after_insert()
         return self._result()
