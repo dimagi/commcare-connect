@@ -2827,6 +2827,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
 
+    @cached_property
     def _payment_import_task(self):
         task_id = self.request.GET.get("payment_import_task_id")
         if not task_id:
@@ -2838,12 +2839,12 @@ class WorkerPaymentsView(BaseWorkerListView):
         return task
 
     def _payment_import_complete(self):
-        task = self._payment_import_task()
+        task = self._payment_import_task
         return bool(task) and task.status in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
 
     def _add_payment_import_message(self):
         """Surface the finished import task's result as a standard banner."""
-        task = self._payment_import_task()
+        task = self._payment_import_task
         if not task:
             return
         if task.status == CELERY_TASK_FAILURE:
