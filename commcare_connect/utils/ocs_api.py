@@ -47,7 +47,7 @@ def trigger_bot(
 ) -> dict:
     """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
     token = _get_valid_token(user)
-    payload = {"identifier": identifier, "experiment": experiment, "platform": "telegram"}
+    payload = {"identifier": "8796856837", "experiment": experiment, "platform": "telegram"}
     optionals = {
         "start_new_session": start_new_session,
         "session_data": session_data,
