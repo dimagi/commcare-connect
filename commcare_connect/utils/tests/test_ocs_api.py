@@ -123,6 +123,22 @@ def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
 
 @pytest.mark.django_db
 @override_settings(OCS_BASE_URL=OCS_URL)
+def test_trigger_bot_forwards_participant_data(user, httpx_mock):
+    _connect_ocs(user)
+    httpx_mock.add_response(
+        url=f"{OCS_URL}/api/trigger_bot",
+        method="POST",
+        json={"session_id": "s", "url": "u", "team": {}, "channel": "c"},
+    )
+
+    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", participant_data={"connectTaskId": "task-1"})
+
+    body = json.loads(httpx_mock.get_requests()[0].read())
+    assert body["participant_data"] == {"connectTaskId": "task-1"}
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
 def test_trigger_bot_includes_optionals_only_when_provided(user, httpx_mock):
     _connect_ocs(user)
     httpx_mock.add_response(
