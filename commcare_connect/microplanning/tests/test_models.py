@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import pytest
-from django.contrib.gis.geos import Point, Polygon
-from django.db import IntegrityError
 
-from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkAreaStatus
+from commcare_connect.microplanning.models import WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import (
-    ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
 )
@@ -47,32 +44,3 @@ class TestWorkAreaGroupBuildingCount:
             )
 
         assert group.building_count == expected_count
-
-
-@pytest.mark.django_db
-def test_implementation_area_creation(opportunity):
-    ia = ImplementationArea.objects.create(
-        opportunity=opportunity,
-        name="Ward 1",
-        centroid=Point(77.1, 28.6, srid=SRID),
-        boundary=Polygon(((77, 28), (78, 28), (78, 29), (77, 29), (77, 28)), srid=SRID),
-    )
-    assert ia.pk is not None
-    assert str(ia) == f"Ward 1-{opportunity.id}"
-
-
-@pytest.mark.django_db
-def test_implementation_area_name_unique_per_opportunity(opportunity):
-    ImplementationAreaFactory(opportunity=opportunity, name="Ward 1")
-    with pytest.raises(IntegrityError):
-        ImplementationAreaFactory(opportunity=opportunity, name="Ward 1")
-
-
-@pytest.mark.django_db
-def test_work_area_links_to_implementation_area(opportunity):
-    ia = ImplementationAreaFactory(opportunity=opportunity)
-    wa = WorkAreaFactory(opportunity=opportunity, implementation_area=ia)
-    assert wa.implementation_area == ia
-    ia.delete()
-    wa.refresh_from_db()
-    assert wa.implementation_area is None
