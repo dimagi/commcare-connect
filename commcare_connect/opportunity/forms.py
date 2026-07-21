@@ -2058,7 +2058,7 @@ class AddTaskTypeForm(forms.ModelForm):
         choices=TaskTypeModeChoices.choices,
         initial=TaskTypeModeChoices.RELEARN,
         required=False,
-        widget=forms.RadioSelect(attrs={"x-model": "taskMode"}),
+        widget=forms.Select(attrs={"x-model": "taskMode"}),
     )
 
     class Meta:
