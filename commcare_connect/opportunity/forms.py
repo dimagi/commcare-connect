@@ -60,6 +60,7 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
 
@@ -1974,7 +1975,12 @@ class CreateTaskForm(forms.Form):
         label=_("Task"),
         queryset=TaskType.objects.none(),
         empty_label=_("Select a task"),
-        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        widget=forms.Select(
+            attrs={
+                "data-tomselect": "1",
+                "@change": "selectedTaskIsOcs = ocsTaskIds.includes($event.target.value)",
+            }
+        ),
     )
     access = forms.ModelChoiceField(
         label=_("Connect Worker"),
@@ -1987,8 +1993,11 @@ class CreateTaskForm(forms.Form):
         widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
 
-    def __init__(self, *args, opportunity=None, access=None, **kwargs):
+    def __init__(self, *args, opportunity=None, access=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
+        self.ocs_connected = user_has_connected_ocs(user)
+        self.ocs_task_ids_json = "[]"
         if opportunity is not None:
             task_qs = TaskType.objects.filter(app=opportunity.deliver_app, is_active=True)
             if access is not None:
@@ -2004,6 +2013,10 @@ class CreateTaskForm(forms.Form):
                 suspended=False,
             ).select_related("user")
             self.fields["access"].label_from_instance = lambda obj: obj.user.display_name_with_username()
+
+            ocs_task_pks = task_qs.filter(mode=TaskTypeModeChoices.OCS).values_list("pk", flat=True)
+            # Option <select> values are strings, so stringify the pks to match.
+            self.ocs_task_ids_json = json.dumps([str(pk) for pk in ocs_task_pks])
 
         if access is not None:
             self.fields["access"].initial = access.pk
@@ -2024,6 +2037,13 @@ class CreateTaskForm(forms.Form):
         if due_date < datetime.date.today():
             raise ValidationError(_("Due date cannot be in the past."))
         return due_date
+
+    def clean(self):
+        cleaned_data = super().clean()
+        task = cleaned_data.get("task")
+        if task and task.mode == TaskTypeModeChoices.OCS and not self.ocs_connected:
+            raise ValidationError(_("Connect your Open Chat Studio account to assign OCS tasks."))
+        return cleaned_data
 
 
 class AddTaskTypeForm(forms.ModelForm):

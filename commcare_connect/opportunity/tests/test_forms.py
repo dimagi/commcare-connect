@@ -3,6 +3,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+from allauth.socialaccount.models import SocialAccount
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
 from django.utils.timezone import now
@@ -28,6 +29,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     CredentialConfiguration,
     PaymentUnit,
+    TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -915,6 +917,43 @@ class TestCreateTaskForm:
         assert form.is_valid()
         assert form.cleaned_data["task"] == task_type
         assert form.cleaned_data["access"] == access
+
+    @pytest.fixture
+    def ocs_task_type(self, opportunity):
+        return TaskTypeFactory(
+            app=opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="bot-1",
+        )
+
+    def _task_form_data(self, task_type, access):
+        return {
+            "task": task_type.pk,
+            "access": access.pk,
+            "due_date": (datetime.date.today() + datetime.timedelta(days=7)).isoformat(),
+        }
+
+    def test_ocs_connected_reflects_account(self, opportunity, user):
+        assert CreateTaskForm(opportunity=opportunity, user=user).ocs_connected is False
+        SocialAccount.objects.create(user=user, provider="ocs", uid="uid-ocs")
+        assert CreateTaskForm(opportunity=opportunity, user=user).ocs_connected is True
+
+    def test_ocs_task_rejected_when_user_not_connected(self, opportunity, ocs_task_type, user):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        form = CreateTaskForm(self._task_form_data(ocs_task_type, access), opportunity=opportunity, user=user)
+        assert not form.is_valid()
+        assert form.non_field_errors()
+
+    def test_ocs_task_allowed_when_user_connected(self, opportunity, ocs_task_type, user):
+        SocialAccount.objects.create(user=user, provider="ocs", uid="uid-ocs")
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        form = CreateTaskForm(self._task_form_data(ocs_task_type, access), opportunity=opportunity, user=user)
+        assert form.is_valid()
+
+    def test_non_ocs_task_unaffected_when_user_not_connected(self, opportunity, task_type, user):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        form = CreateTaskForm(self._task_form_data(task_type, access), opportunity=opportunity, user=user)
+        assert form.is_valid()
 
     @pytest.mark.parametrize(
         "task_status, provide_access, in_queryset",

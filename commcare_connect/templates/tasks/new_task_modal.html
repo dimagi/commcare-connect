@@ -37,7 +37,11 @@
           <i class="fa-solid fa-xmark cursor-pointer" aria-hidden="true"></i>
         </button>
       </div>
-      <div id="create-task-form-wrapper">
+      <form id="ocs-connect-form" method="post">
+        {% csrf_token %}
+      </form>
+      <div id="create-task-form-wrapper"
+           x-data='{ ocsTaskIds: {{ form.ocs_task_ids_json|safe }}, selectedTaskIsOcs: false, ocsConnected: {{ form.ocs_connected|yesno:"true,false" }} }'>
         <form id="create-task-form"
               method="post"
               action="{{ create_task_url }}"
@@ -47,11 +51,16 @@
               hx-swap="outerHTML">
           {% csrf_token %}
           {% crispy form %}
+          <div x-show="selectedTaskIsOcs && !ocsConnected" x-cloak class="my-3">
+            {% include 'ocs/_connect_prompt.html' with next_url=request.get_full_path %}
+          </div>
           <div class="flex justify-between gap-3 pt-2">
             <button type="button"
                     @click="{{ modal_name }} = false"
                     class="button button-md outline-style flex-1">{% trans "Cancel" %}</button>
-            <button type="submit" class="button button-md primary-dark flex-1">{% trans "Save Changes" %}</button>
+            <button type="submit"
+                    class="button button-md primary-dark flex-1"
+                    :disabled="selectedTaskIsOcs && !ocsConnected">{% trans "Save Changes" %}</button>
           </div>
         </form>
         {% include "components/tomselect_init.html" %}

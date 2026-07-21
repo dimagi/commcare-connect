@@ -2282,7 +2282,9 @@ class UserTasksView(WorkerPageView, FilterMixin):
         context["can_manage_tasks"] = can_manage_tasks
         context.update(self.get_filter_context())
         if can_manage_tasks:
-            context["create_task_form"] = CreateTaskForm(opportunity=self.opportunity, access=self.opportunity_access)
+            context["create_task_form"] = CreateTaskForm(
+                opportunity=self.opportunity, access=self.opportunity_access, user=self.request.user
+            )
             create_url = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, self.opportunity.opportunity_id)
             )
@@ -3616,7 +3618,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         can_manage_tasks = _can_manage_tasks(self.request, opportunity)
         context["can_manage_tasks"] = can_manage_tasks
         if can_manage_tasks:
-            context["create_task_form"] = CreateTaskForm(opportunity=opportunity)
+            context["create_task_form"] = CreateTaskForm(opportunity=opportunity, user=self.request.user)
             context["create_task_url"] = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, opportunity.opportunity_id)
             )
@@ -3674,7 +3676,7 @@ def create_task(request, org_slug, opp_id):
         user_id = request.GET.get("user")
         if user_id:
             access = OpportunityAccess.objects.filter(opportunity=opportunity, user__user_id=user_id).first()
-    form = CreateTaskForm(request.POST, opportunity=opportunity, access=access)
+    form = CreateTaskForm(request.POST, opportunity=opportunity, access=access, user=request.user)
     if not form.is_valid():
         return render(
             request,
