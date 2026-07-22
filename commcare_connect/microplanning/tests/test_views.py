@@ -844,7 +844,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
         self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
@@ -1106,7 +1106,7 @@ class TestSaveAssignment:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_assigns_work_areas_and_syncs_to_hq(
         self,
         mock_hq_sync,
@@ -1136,7 +1136,7 @@ class TestSaveAssignment:
             wa.refresh_from_db()
             assert wa.opportunity_access_id == access.id
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_rolls_back_db(
         self,
         mock_hq_sync,
@@ -1161,6 +1161,56 @@ class TestSaveAssignment:
         assert response.status_code == 502
         wa.refresh_from_db()
         assert wa.opportunity_access_id is None
+
+    @patch("commcare_connect.microplanning.helpers.HQ_ASSIGN_BULK_CHUNK_SIZE", 1)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_partial_hq_failure_commits_good_chunks_only(
+        self,
+        mock_hq_sync,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+        django_capture_on_commit_callbacks,
+    ):
+        """A failed HQ chunk rolls back only its own DB rows; the chunks that synced commit,
+        and only their assignees are notified. This is the divergence the fix prevents."""
+        access_a = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access_b = OpportunityAccessFactory(opportunity=managed_opportunity)
+        wa_ok = WorkAreaFactory(opportunity=managed_opportunity)
+        wa_fail = WorkAreaFactory(opportunity=managed_opportunity)
+        client.force_login(program_manager_org_user_admin)
+
+        # Chunk size 1 => one HQ call per work area; fail only the chunk holding wa_fail.
+        def sync(chunk, opportunity):
+            if any(wa.id == wa_fail.id for wa in chunk):
+                raise CommCareHQAPIException("HQ unavailable")
+
+        mock_hq_sync.side_effect = sync
+
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            response = self._post(
+                client,
+                program_manager_org.slug,
+                managed_opportunity.opportunity_id,
+                [
+                    {"assignee_id": access_a.id, "work_area_ids": [wa_ok.id]},
+                    {"assignee_id": access_b.id, "work_area_ids": [wa_fail.id]},
+                ],
+            )
+
+        assert response.status_code == 502
+        wa_ok.refresh_from_db()
+        wa_fail.refresh_from_db()
+        assert wa_ok.opportunity_access_id == access_a.id  # synced chunk committed
+        assert wa_fail.opportunity_access_id is None  # failed chunk rolled back
+        notified = [call.args[0] for call in delay_patch.call_args_list]
+        assert notified == [access_a.id]  # only the committed assignee is notified
 
     @pytest.mark.parametrize(
         "payload, expected_status",
