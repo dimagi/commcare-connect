@@ -44,10 +44,8 @@ class BaseAreaCSVImporter:
         self.created_count = 0
 
     def run(self):
-        # --- First pass: validation only ---
         if not self._validate_all_rows(self.csv_source):
-            return self._result()  # abort if any row is invalid
-        # --- Second pass: streaming batch insert ---
+            return self._result()
         self._stream_and_insert(self.csv_source)
         self._after_insert()
         return self._result()
@@ -60,6 +58,7 @@ class BaseAreaCSVImporter:
     def _validate_all_rows(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         if not self._validate_headers(reader):
             return False
         self._load_existing()
@@ -71,6 +70,7 @@ class BaseAreaCSVImporter:
     def _stream_and_insert(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         self._prepare_insert()
         batch = []
         batch_size = 5000
@@ -83,6 +83,10 @@ class BaseAreaCSVImporter:
         if batch:
             self.model.objects.bulk_create(batch)
             self.created_count += len(batch)
+
+    def _normalize_headers(self, reader):
+        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
+        reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
         headers = set(reader.fieldnames or [])

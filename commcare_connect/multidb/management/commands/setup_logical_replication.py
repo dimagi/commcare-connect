@@ -14,6 +14,26 @@ SUBSCRIPTION_NAME = "tables_for_superset_sub"
 class Command(BaseCommand):
     help = "Create a publication for the default database and a subscription for the secondary database alias."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--recreate",
+            action="store_true",
+            help=(
+                "Drop any existing publication/subscription before creating them. Use this after restoring from "
+                "snapshots, where stale replication objects carry over pointing at the original primary."
+            ),
+        )
+        parser.add_argument(
+            "--no-copy-data",
+            action="store_true",
+            help=(
+                "Skip the initial data copy when creating or refreshing the subscription. Use when the secondary "
+                "already holds the existing rows (e.g. restored from a snapshot) and only ongoing changes are "
+                "needed. WARNING: existing rows are not verified against the primary, and any writes made on the "
+                "primary between the snapshot and this run will be missed."
+            ),
+        )
+
     def get_table_list(self):
         table_list = []
         for model in REPLICATION_ALLOWED_MODELS:
@@ -65,6 +85,13 @@ class Command(BaseCommand):
             cursor.execute("SELECT pubname FROM pg_publication WHERE pubname = %s;", [PUBLICATION_NAME])
             publication_exists = cursor.fetchone()
 
+            if publication_exists and options["recreate"]:
+                self.stdout.write(
+                    self.style.WARNING(f"--recreate: dropping existing publication '{PUBLICATION_NAME}'.")
+                )
+                cursor.execute(f"DROP PUBLICATION IF EXISTS {PUBLICATION_NAME};")
+                publication_exists = False
+
             tables = ", ".join([f'"{table}"' for table in table_list])
             if publication_exists:
                 self.stdout.write(f"Publication '{PUBLICATION_NAME}' already exists, refreshing it.")
@@ -76,6 +103,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"Publication '{PUBLICATION_NAME}' created successfully."))
 
         self.stdout.write("Setting up subscription in the secondary database...")
+        copy_data = "false" if options["no_copy_data"] else "true"
 
         secondary_db_settings = connections[secondary_db_alias].settings_dict
         self.stdout.write(self.style.SUCCESS("Enter superuser credentials for the secondary (subscriber) database:"))
@@ -89,6 +117,7 @@ class Command(BaseCommand):
                 dbname=secondary_db_settings["NAME"],
                 user=secondary_user,
                 password=secondary_password,
+                sslmode="require",
             )
             secondary_conn.autocommit = True
         except Exception as e:
@@ -96,11 +125,24 @@ class Command(BaseCommand):
 
         with secondary_conn.cursor() as cursor:
             cursor.execute("SELECT subname FROM pg_subscription WHERE subname = %s;", [SUBSCRIPTION_NAME])
-            if cursor.fetchone():
+            subscription_exists = cursor.fetchone()
+
+            if subscription_exists and options["recreate"]:
+                self.stdout.write(
+                    self.style.WARNING(f"--recreate: dropping existing subscription '{SUBSCRIPTION_NAME}'.")
+                )
+                cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} DISABLE;")
+                cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} SET (slot_name = NONE);")
+                cursor.execute(f"DROP SUBSCRIPTION {SUBSCRIPTION_NAME};")
+                subscription_exists = False
+
+            if subscription_exists:
                 self.stdout.write(
                     self.style.WARNING(f"Subscription '{SUBSCRIPTION_NAME}' already exists. Refreshing it.")
                 )
-                cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} REFRESH PUBLICATION;")
+                cursor.execute(
+                    f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} REFRESH PUBLICATION WITH (copy_data = {copy_data});"
+                )
                 self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' refreshed successfully."))
             else:
                 # Create new subscription
@@ -113,13 +155,15 @@ class Command(BaseCommand):
                     f"port={default_db_settings['PORT']} "
                     f"dbname={default_db_settings['NAME']} "
                     f"user={username} "
-                    f"password={password}"
+                    f"password={password} "
+                    f"sslmode=require"
                 )
                 cursor.execute(
                     f"""
                     CREATE SUBSCRIPTION {SUBSCRIPTION_NAME}
                     CONNECTION '{primary_conn_info}'
-                    PUBLICATION {PUBLICATION_NAME};
+                    PUBLICATION {PUBLICATION_NAME}
+                    WITH (copy_data = {copy_data});
                     """
                 )
                 self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' created successfully."))

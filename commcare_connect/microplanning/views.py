@@ -407,6 +407,11 @@ class WorkAreaImport(View):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
+        csv_file = request.FILES.get("csv_file")
+        if not csv_file or get_file_extension(csv_file).lower() != "csv":
+            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
+            return redirect(redirect_url)
+
         if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
             messages.error(request, _("Work Areas already exist for this opportunity."))
             return redirect(redirect_url)
@@ -415,11 +420,6 @@ class WorkAreaImport(View):
 
         if cache.get(lock_key):
             messages.error(request, _("An import for this opportunity is already in progress."))
-            return redirect(redirect_url)
-
-        csv_file = request.FILES.get("csv_file")
-        if not csv_file or get_file_extension(csv_file).lower() != "csv":
-            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
             return redirect(redirect_url)
 
         file_name = f"work_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
