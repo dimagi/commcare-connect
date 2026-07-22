@@ -776,6 +776,10 @@ class CompletedWork(models.Model):
     saved_org_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
     )
+    invoiced_approved_count = models.IntegerField(
+        default=0,
+        help_text=gettext_lazy("Approved units already billed on a live invoice (billing watermark)."),
+    )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
@@ -872,6 +876,46 @@ class CompletedWork(models.Model):
     def completion_date(self):
         visit = self.uservisit_set.order_by("visit_date").last()
         return visit.visit_date if visit else None
+
+
+class CompletedWorkInvoice(BaseModel):
+    """Frozen per-work billing record: how much of one CompletedWork was billed on one PaymentInvoice.
+
+    One row per (invoice, completed_work). Snapshotted at invoice creation (and backfilled for legacy
+    invoices) so invoice line items are read from frozen rows instead of recomputed from
+    CompletedWork.saved_* on every view. Stores both FLW pay and org (workspace) pay.
+    """
+
+    invoice = models.ForeignKey(
+        PaymentInvoice,
+        on_delete=models.PROTECT,
+        related_name="work_items",
+    )
+    completed_work = models.ForeignKey(
+        CompletedWork,
+        on_delete=models.PROTECT,
+        related_name="invoice_items",
+    )
+    month = models.DateField(
+        help_text=gettext_lazy("First of the month the billed units are attributed to (period attribution).")
+    )
+    billed_count = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text=gettext_lazy("Approved units billed on THIS invoice (delta)."),
+    )
+    flw_amount_local = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    flw_amount_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    org_amount_local = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    org_amount_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    exchange_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        default=1,
+        help_text=gettext_lazy("Local-currency-per-USD rate used for this row's month; 1 for USD."),
+    )
+
+    class Meta:
+        unique_together = ("invoice", "completed_work")
 
 
 class VisitReviewStatus(models.TextChoices):
