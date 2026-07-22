@@ -266,6 +266,41 @@
                 this.updateFlwSummary();
             },
 
+            // Selects/deselects an entire Work Area Group with one click.
+            async toggleGroupSelection(groupId, fallbackId, fallbackProperties) {
+                if (groupId == null) {
+                    this.toggleWorkAreaSelection(fallbackId, fallbackProperties);
+                    return;
+                }
+
+                let workAreas;
+                try {
+                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    workAreas = data.work_areas;
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
+                    return;
+                }
+
+                // Any member already selected (even after a shift+click removed one) counts
+                // as "this group is selected" - a plain click anywhere in it deselects the
+                // whole group rather than just filling in the missing member.
+                const hasAnySelected = workAreas.some(wa => this.selectedWorkAreas.has(wa.id));
+
+                for (const wa of workAreas) {
+                    this.workAreaProperties.set(wa.id, wa);
+                    if (hasAnySelected) {
+                        this.selectedWorkAreas.delete(wa.id);
+                    } else {
+                        this.selectedWorkAreas.add(wa.id);
+                    }
+                    this.setWorkAreaState(wa.id, { assignment_selected: !hasAnySelected });
+                }
+                this.updateFlwSummary();
+            },
+
             selectGroup(groupId) {
                 this.selectedGroupId = groupId || null;
                 return this.replaceFilterSelection({
@@ -686,6 +721,10 @@
                 // navigation ui on left of the map
                 MapboxUtils.addNavigation(this.map, 'top-left');
 
+                // Mapbox binds shift+drag to box-zoom by default, which intercepts the
+                // mousedown/click sequence before our shift+click work-area handler sees it.
+                this.map.boxZoom.disable();
+
                 await new Promise(resolve => this.map.once('load', resolve));
 
                 // Workareas are served using django-vectortiles,
@@ -945,9 +984,14 @@
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
 
-                    // In assignment mode, toggle multi-select instead of single-select
+                    // In assignment mode: plain click selects/deselects the whole Work Area
+                    // Group by default; shift+click targets just this one work area.
                     if (this.assignmentMode) {
-                        this.toggleWorkAreaSelection(id, feature.properties);
+                        if (e.originalEvent.shiftKey) {
+                            this.toggleWorkAreaSelection(id, feature.properties);
+                        } else {
+                            this.toggleGroupSelection(feature.properties.group_id, id, feature.properties);
+                        }
                         return;
                     }
 
