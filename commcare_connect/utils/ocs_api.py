@@ -45,8 +45,7 @@ def trigger_bot(
     start_new_session: bool = True,
     session_data: dict | None = None,
     participant_data: dict | None = None,
-) -> dict:
-    """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
+) -> tuple[str, str]:
     token = _get_valid_token(user)
     payload = {"identifier": identifier, "experiment": experiment, "platform": "commcare_connect"}
     # prompt_text is not shown in the conversation and is only for getting the bot
@@ -75,7 +74,16 @@ def trigger_bot(
         raise OcsApiError(f"Failed to trigger bot: {response.text}")
     except httpx.RequestError as e:
         raise OcsApiError(f"Failed to trigger bot: {e}")
-    return response.json()
+
+    return _parse_trigger_bot_response(response.json())
+
+
+def _parse_trigger_bot_response(result: dict) -> tuple[str, str]:
+    session_id = result.get("session_id")
+    channel_id = result.get("channel", {}).get("data", {}).get("external_channel_id")
+    if not (session_id and channel_id):
+        raise OcsApiError("Failed to trigger bot: Missing session_id or channel_id")
+    return session_id, channel_id
 
 
 def _get_valid_token(user):

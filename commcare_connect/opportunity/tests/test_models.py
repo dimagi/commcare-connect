@@ -322,7 +322,7 @@ class TestAssignedTaskAssign:
 
         with mock.patch(
             "commcare_connect.utils.ocs_api.trigger_bot",
-            return_value={"session_id": "sess-1", "channel": "chan-1"},
+            return_value=("sess-1", "chan-1"),
         ) as mock_trigger:
             assigned = AssignedTask.assign(
                 task_type=task_type,
@@ -396,7 +396,7 @@ class TestAssignedTaskAssign:
         with (
             mock.patch(
                 "commcare_connect.utils.ocs_api.trigger_bot",
-                return_value={"session_id": "s", "channel": "c"},
+                return_value=("s", "c"),
             ) as mock_trigger,
             mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq,
         ):

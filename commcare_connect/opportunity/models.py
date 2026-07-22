@@ -520,14 +520,14 @@ class AssignedTask(XFormBaseModel):
     def trigger_ocs_bot(self, assigned_by):
         task_user = self.opportunity_access.user
 
-        response = ocs_api.trigger_bot(
+        session_id, channel_id = ocs_api.trigger_bot(
             assigned_by,
             identifier=task_user.username or task_user.phone_number,
             experiment=self.task_type.ocs_chatbot_id,
             participant_data={"connectTaskId": str(self.assigned_task_id)},
         )
-        self.ocs_session_id = response.get("session_id")
-        self.connect_channel_id = response.get("channel")
+        self.ocs_session_id = session_id
+        self.connect_channel_id = channel_id
         self.save(update_fields=["ocs_session_id", "connect_channel_id"])
 
     def mark_completed(
