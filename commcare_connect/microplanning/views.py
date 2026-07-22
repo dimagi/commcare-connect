@@ -888,7 +888,15 @@ def save_assignment(request, org_slug, opp_id):
         bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
     except CommCareHQAPIException:
         transaction.set_rollback(True)
-        return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
+        logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
+        return JsonResponse(
+            {
+                "error": _(
+                    "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact support."
+                )
+            },
+            status=502,
+        )
 
     notified_access_ids = {access.id for access in work_area_to_access.values()}
     for access_id in notified_access_ids:
