@@ -9,8 +9,11 @@ CELERY_TASK_PENDING = "PENDING"
 CELERY_TASK_FAILURE = "FAILURE"
 
 
-def set_task_progress(task, message, is_complete=False):
-    task.update_state(state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS, meta={"message": message})
+def set_task_progress(task, message, is_complete=False, is_error=False):
+    task.update_state(
+        state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS,
+        meta={"message": message, "is_error": is_error},
+    )
 
 
 def get_task_progress_message(task):
@@ -18,19 +21,12 @@ def get_task_progress_message(task):
         return task.info["message"]
 
 
-def render_export_status(
-    request,
-    task_id,
-    download_url,
-    export_status_url,
-    ownership_check=None,
-):
+def get_task_progress(request, task_id, ownership_check=None):
     """
-    Generic export status renderer.
+    Build the progress dict for a Celery task, running an optional ownership check.
     ownership_check: callable(request, task_meta) -> None
-        Should raise 404 / PermissionDenied if invalid.
+        Should raise 404 / PermissionDenied if the requester may not view this task.
     """
-
     task = AsyncResult(task_id)
     task_meta = task._get_task_meta()
     status = task_meta.get("status")
@@ -42,10 +38,20 @@ def render_export_status(
         "complete": status == CELERY_TASK_SUCCESS,
         "message": get_task_progress_message(task),
     }
-
     if status == CELERY_TASK_FAILURE:
         progress["error"] = task_meta.get("result")
+    return progress
 
+
+def render_export_status(
+    request,
+    task_id,
+    download_url,
+    export_status_url,
+    ownership_check=None,
+):
+    """Generic export status renderer."""
+    progress = get_task_progress(request, task_id, ownership_check)
     return render(
         request,
         "components/upload_progress_bar.html",

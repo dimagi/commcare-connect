@@ -215,7 +215,14 @@ from commcare_connect.organization.decorators import (
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
-from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.celery import (
+    CELERY_TASK_FAILURE,
+    CELERY_TASK_SUCCESS,
+    download_export_file,
+    get_task_progress,
+    get_task_progress_message,
+    render_export_status,
+)
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
@@ -800,7 +807,25 @@ def payment_import(request, org_slug=None, opp_id=None):
     saved_path = default_storage.save(file_path, file)
 
     result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
+
+
+@org_member_required
+@require_GET
+def render_payment_import_progress(request, org_slug, task_id):
+    """Polled by the payments page while a payment import runs; on completion it shows a
+    'View status' link that reloads the page so the result appears as a standard banner."""
+
+    def ownership_check(request, task_meta):
+        get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
+
+    progress = get_task_progress(request, task_id, ownership_check)
+    context = {
+        "task_id": task_id,
+        "progress": progress,
+        "status_url": reverse("opportunity:payment_import_status", args=(org_slug, task_id)),
+    }
+    return render(request, "opportunity/payment_import_progress.html", context)
 
 
 @org_member_required
@@ -2852,8 +2877,53 @@ class WorkerPaymentsView(BaseWorkerListView):
     hx_template_name = "opportunity/payments.html"
     active_tab = "payments"
 
+    def get(self, request, org_slug, opp_id):
+        # A finished import surfaces its result as a banner; a running one keeps the
+        # polling progress bar (added to context in get_extra_context).
+        if not request.htmx and self._payment_import_complete():
+            self._add_payment_import_message()
+        return super().get(request, org_slug, opp_id)
+
+    @cached_property
+    def _payment_import_task(self):
+        task_id = self.request.GET.get("payment_import_task_id")
+        if not task_id:
+            return None
+        task = AsyncResult(task_id)
+        args = task.args or []
+        if not args or args[0] != self.get_opportunity().pk:
+            return None
+        return task
+
+    def _payment_import_complete(self):
+        task = self._payment_import_task
+        return bool(task) and task.status in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
+
+    def _add_payment_import_message(self):
+        """Surface the finished import task's result as a standard banner."""
+        task = self._payment_import_task
+        if not task:
+            return
+        if task.status == CELERY_TASK_FAILURE:
+            messages.error(self.request, _("The payment import failed. Please try again."))
+            return
+        message = get_task_progress_message(task)
+        if not message:
+            return
+        is_error = (task.result or {}).get("is_error")
+        add_message = messages.error if is_error else messages.success
+        add_message(self.request, mark_safe(message))
+
     def get_extra_context(self, opportunity, org_slug):
-        return {"export_form": PaymentExportForm()}
+        # Only keep polling while the import is still running; once complete the result
+        # is shown as a banner instead of the progress bar.
+        task_id = self.request.GET.get("payment_import_task_id")
+        if task_id and self._payment_import_complete():
+            task_id = None
+        return {
+            "export_form": PaymentExportForm(),
+            "payment_import_task_id": task_id,
+        }
 
     def get_table(self, opportunity, org_slug):
         def get_payment_subquery(confirmed: bool = False) -> Subquery:
