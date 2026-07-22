@@ -64,7 +64,7 @@ def trigger_bot(
 
     try:
         response = httpx.post(
-            f"{settings.OCS_BASE_URL}/api/trigger_bot",
+            f"{settings.OCS_BASE_URL}/api/v2/trigger_bot/",
             json=payload,
             headers={"Authorization": f"Bearer {token.token}"},
             timeout=OCS_HTTP_TIMEOUT,

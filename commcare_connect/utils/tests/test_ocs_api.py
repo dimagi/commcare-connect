@@ -101,7 +101,7 @@ def test_list_chatbots_raises_when_not_connected(user):
 def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
     _connect_ocs(user)
     httpx_mock.add_response(
-        url=f"{OCS_URL}/api/trigger_bot",
+        url=f"{OCS_URL}/api/v2/trigger_bot/",
         method="POST",
         json={
             "session_id": "s1",
@@ -131,7 +131,7 @@ def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
 def test_trigger_bot_forwards_participant_data(user, httpx_mock):
     _connect_ocs(user)
     httpx_mock.add_response(
-        url=f"{OCS_URL}/api/trigger_bot",
+        url=f"{OCS_URL}/api/v2/trigger_bot/",
         method="POST",
         json={"session_id": "s", "url": "u", "team": {}, "channel": {"data": {"external_channel_id": "c"}}},
     )
@@ -147,7 +147,7 @@ def test_trigger_bot_forwards_participant_data(user, httpx_mock):
 def test_trigger_bot_includes_optionals_only_when_provided(user, httpx_mock):
     _connect_ocs(user)
     httpx_mock.add_response(
-        url=f"{OCS_URL}/api/trigger_bot",
+        url=f"{OCS_URL}/api/v2/trigger_bot/",
         method="POST",
         json={"session_id": "s", "url": "u", "team": {}, "channel": {"data": {"external_channel_id": "c"}}},
     )
@@ -164,7 +164,7 @@ def test_trigger_bot_includes_falsey_optionals_when_provided(user, httpx_mock):
     """A falsey-but-not-None optional (e.g. start_new_session=False) must survive into the payload."""
     _connect_ocs(user)
     httpx_mock.add_response(
-        url=f"{OCS_URL}/api/trigger_bot",
+        url=f"{OCS_URL}/api/v2/trigger_bot/",
         method="POST",
         json={"session_id": "s", "url": "u", "team": {}, "channel": {"data": {"external_channel_id": "c"}}},
     )
@@ -188,7 +188,7 @@ def test_trigger_bot_includes_falsey_optionals_when_provided(user, httpx_mock):
 )
 def test_trigger_bot_raises_when_session_or_channel_missing(user, httpx_mock, response_json):
     _connect_ocs(user)
-    httpx_mock.add_response(url=f"{OCS_URL}/api/trigger_bot", method="POST", json=response_json)
+    httpx_mock.add_response(url=f"{OCS_URL}/api/v2/trigger_bot/", method="POST", json=response_json)
 
     with pytest.raises(ocs_api.OcsApiError):
         ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
@@ -198,7 +198,7 @@ def test_trigger_bot_raises_when_session_or_channel_missing(user, httpx_mock, re
 @override_settings(OCS_BASE_URL=OCS_URL)
 def test_trigger_bot_raises_ocs_api_error_on_non_2xx(user, httpx_mock):
     _connect_ocs(user)
-    httpx_mock.add_response(url=f"{OCS_URL}/api/trigger_bot", method="POST", status_code=400, text="bad")
+    httpx_mock.add_response(url=f"{OCS_URL}/api/v2/trigger_bot/", method="POST", status_code=400, text="bad")
 
     with pytest.raises(ocs_api.OcsApiError):
         ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
@@ -208,6 +208,6 @@ def test_trigger_bot_raises_ocs_api_error_on_non_2xx(user, httpx_mock):
 @override_settings(OCS_BASE_URL=OCS_URL)
 def test_trigger_bot_raises_ocs_api_error_on_network_error(user, httpx_mock):
     _connect_ocs(user)
-    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/trigger_bot", method="POST")
+    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/v2/trigger_bot/", method="POST")
     with pytest.raises(ocs_api.OcsApiError):
         ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
