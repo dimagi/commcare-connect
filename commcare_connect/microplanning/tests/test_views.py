@@ -105,6 +105,17 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert response.status_code == 404
         assert mock_delay.call_count == 0
 
+    def test_download_template_row_matches_headers(self, client, org_user_admin, opportunity):
+        url = self.get_url(opportunity.organization.slug, opportunity.opportunity_id)
+        client.force_login(org_user_admin)
+
+        response = client.get(url)
+
+        rows = list(csv_mod.reader(io.StringIO(response.content.decode())))
+        header_row, sample_row = rows[0], rows[1]
+        assert header_row[-1] == "Work Area Group Name"
+        assert len(sample_row) == len(header_row)
+
 
 @pytest.mark.django_db
 class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
