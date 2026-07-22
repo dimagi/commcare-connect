@@ -261,6 +261,7 @@ class TestWorkAreaCSVImporter:
         assert result["created"] == 2
         assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
         assert WorkArea.objects.get(slug="area-1").work_area_group is None
+        assert WorkArea.objects.get(slug="area-2").work_area_group is None
 
     def test_import_errors_when_only_some_rows_have_a_group(self, opportunity):
         rows = [
