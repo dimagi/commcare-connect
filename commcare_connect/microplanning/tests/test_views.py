@@ -6,9 +6,10 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import OperationalError
 from django.test import Client
@@ -18,9 +19,16 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
+from commcare_connect.microplanning.models import (
+    ImplementationArea,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaStatus,
+)
+from commcare_connect.microplanning.tasks import WorkAreaCSVExporter, get_implementation_area_import_cache_key
 from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
@@ -107,6 +115,128 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
+class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
+    CSV_CONTENT = (
+        b"Implementation Area Name,Centroid,Boundary\nWard North,77.1 28.6,POLYGON((77 28,78 28,78 29,77 29,77 28))\n"
+    )
+
+    @pytest.fixture
+    def csv_file(self):
+        return SimpleUploadedFile("ia.csv", self.CSV_CONTENT, content_type="text/csv")
+
+    def get_url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:upload_implementation_areas",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    @patch("commcare_connect.microplanning.views.import_implementation_areas_task.delay")
+    def test_locking_and_redirect(self, mock_delay, client, org_user_admin, organization, opportunity, csv_file):
+        mock_delay.return_value = Mock(id="00000000-0000-0000-0000-000000000000")
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"csv_file": csv_file})
+        assert response.status_code == 302
+        assert "task_id=" in response.url
+        assert "area_type=implementation_area" in response.url
+        mock_delay.assert_called_once()
+        assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None
+
+    def test_template_download(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response["Content-Disposition"] == 'attachment; filename="implementation_area_template.csv"'
+        assert b"Implementation Area Name" in response.content
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        assert client.get(url).status_code == 404
+
+    def test_status_modal_renders_implementation_area_title(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:implementation_area_import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        response = client.get(url)
+        assert response.status_code == 200
+        assert b"Upload Implementation Area" in response.content
+        assert (
+            reverse(
+                "microplanning:upload_implementation_areas",
+                kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+            ).encode()
+            in response.content
+        )
+
+    def test_clear_deletes_areas_and_keeps_work_area_names(self, client, org_user_admin, organization, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+        work_area = WorkAreaFactory(
+            opportunity=opportunity, implementation_area=area, implementation_area_name="Ward North"
+        )
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:clear_implementation_areas",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        response = client.post(url)
+
+        assert response.status_code == 200
+        assert response["HX-Redirect"]
+        assert not ImplementationArea.objects.filter(opportunity=opportunity).exists()
+        work_area.refresh_from_db()
+        assert work_area.implementation_area_id is None
+        assert work_area.implementation_area_name == "Ward North"
+
+
+@pytest.mark.django_db
+class TestImplementationAreasGeojson(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:implementation_areas_geojson",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_feature_per_area(self, client, org_user_admin, organization, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == 200
+        features = response.json()["implementation_area_features"]
+        assert len(features) == 1
+        feature = features[0]
+        assert feature["type"] == "Feature"
+        assert feature["properties"]["name"] == "Ward North"
+        assert feature["geometry"]["type"] == "Polygon"
+        assert feature["geometry"]["coordinates"]
+
+    def test_empty_when_none(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == 200
+        assert response.json() == {"implementation_area_features": []}
+
+    def test_scoped_to_opportunity(self, client, org_user_admin, organization, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="Mine")
+        other_opp = OpportunityFactory(organization=organization)
+        ImplementationAreaFactory(opportunity=other_opp, name="Theirs")
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        names = [f["properties"]["name"] for f in response.json()["implementation_area_features"]]
+        assert names == ["Mine"]
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        assert client.get(self.url(organization.slug, opportunity.opportunity_id)).status_code == 404
+
+
+@pytest.mark.django_db
 class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
     def url(self, org_slug: str, opp_id: str):
         return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
@@ -119,6 +249,37 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.status_code == 200
         assert any(t.name == "microplanning/home.html" for t in response.templates)
 
+    def test_sidebar_shows_implementation_area_label(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # The "Select Work Area" sidebar detail panel labels the selected area's Implementation Area.
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"Implementation Area" in response.content
+        assert b"selectedFeature.implementation_area_name" in response.content
+
+    def test_map_wires_implementation_area_hover(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # The map registers a hover handler on the Implementation Area outline layer
+        # (highlight + name tooltip).
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"'mousemove', 'implementation-areas-outline'" in response.content
+        assert b"implementationAreaPopup" in response.content
+
+    def test_map_has_implementation_area_layer_toggle(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # The filter sidebar exposes a switch to show/hide the Implementation Area layer.
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"Show Implementation Areas" in response.content
+        assert b"showImplementationAreas" in response.content
+
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_flag_disabled(self, client: Client, organization, org_user_admin, opportunity):
         client.force_login(org_user_admin)
@@ -129,6 +290,49 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         client.force_login(org_user_member)
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert response.status_code == 404
+
+    def test_upload_and_clear_buttons_toggle_on_implementation_areas(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        url = self.url(organization.slug, str(opportunity.opportunity_id))
+
+        response = client.get(url)
+        assert response.context["show_implementation_area_btn"] is True
+        assert response.context["implementation_areas_present"] is False
+        assert b"Upload Implementation Area" in response.content
+        assert b"Clear Implementation Areas" not in response.content
+
+        ImplementationAreaFactory(opportunity=opportunity)
+
+        response = client.get(url)
+        assert response.context["show_implementation_area_btn"] is False
+        assert response.context["implementation_areas_present"] is True
+        assert b"Upload Implementation Area" not in response.content
+        assert b"Clear Implementation Areas" in response.content
+
+    def test_auto_poll_targets_matching_status_endpoint(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        base = self.url(organization.slug, str(opportunity.opportunity_id))
+        wa_status = reverse(
+            "microplanning:import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        ia_status = reverse(
+            "microplanning:implementation_area_import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        wa_response = client.get(f"{base}?task_id=abc")
+        assert wa_response.context["import_status_url"] == wa_status
+
+        ia_response = client.get(f"{base}?task_id=abc&area_type=implementation_area")
+        assert ia_response.context["import_status_url"] == ia_status
+        assert ia_status.encode() in ia_response.content
 
     def test_rerun_and_clear_buttons_shown_post_clustering(self, client, org_user_admin, opportunity):
         """After clustering (groups exist) with no FLW assignments, rerun/clear controls are offered."""
@@ -441,6 +645,10 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert response.status_code in (200, 204)
         assert len(captured_qs) == 1
         return captured_qs[0]
+
+    def test_implementation_area_name_is_a_tile_field(self):
+        # Exposed in the vector tile so the map sidebar can show it for the selected work area.
+        assert "implementation_area_name" in microplanning_views.WorkAreaVectorLayer.tile_fields
 
     def test_unfiltered_returns_all_work_areas(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
@@ -781,6 +989,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
             "0",
             "LGA1",
             "State1",
+            "",
             wa.work_area_group.name,
         ]
 
@@ -802,7 +1011,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         WorkAreaFactory(opportunity=opportunity, case_properties=None, work_area_group=None)
         client.force_login(org_user_admin)
         row = self._parse_csv(client.get(self.url(opportunity)))[1]
-        assert row[6:] == ["0", "", "", ""]
+        assert row[6:] == ["0", "", "", "", ""]
 
     @pytest.mark.parametrize(
         "login_as, method, expected_status",

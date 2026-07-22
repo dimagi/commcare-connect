@@ -8,6 +8,7 @@
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
             showVisits: false,
+            showImplementationAreas: true,
             filterQuery: '',
 
             // Assignment mode state
@@ -930,6 +931,121 @@
 
                     })
                     .catch(err => console.error(err));
+
+                // Implementation Area outlines — a standalone visual layer (black line),
+                // independent of Work Areas. It is a line-only layer with hover handlers
+                // scoped to the outline itself, so it never adds a surface over (and never
+                // interferes with) the Work Area boxes. Hovering an outline bolds it and
+                // shows the area's name in a tooltip. A future ticket will let users toggle
+                // this layer on/off. Cleared uploads reload the page, so an empty response
+                // here simply renders no outlines.
+                const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
+
+                // generateId gives each feature a stable id so hover can be tracked per
+                // area via setFeatureState.
+                this.map.addSource('implementation-areas', {
+                    type: 'geojson',
+                    generateId: true,
+                    data: { type: 'FeatureCollection', features: [] }
+                });
+
+                this.map.addLayer({
+                    id: 'implementation-areas-outline',
+                    type: 'line',
+                    source: 'implementation-areas',
+                    paint: {
+                        'line-color': '#000000',
+                        // Bolder line while hovered so the highlighted area stands out.
+                        'line-width': [
+                            'case',
+                            ['boolean', ['feature-state', 'hovered'], false],
+                            4,
+                            2
+                        ],
+                        'line-opacity': 1
+                    }
+                });
+
+                fetch(implementationAreasUrl)
+                    .then(res => {
+                        if (!res.ok) throw new Error("Failed to fetch implementation areas");
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.implementation_area_features?.length) {
+                            this.map.getSource('implementation-areas').setData({
+                                type: "FeatureCollection",
+                                features: data.implementation_area_features
+                            });
+                        }
+                    })
+                    .catch(err => console.error(err));
+
+                // Hover indicator for Implementation Areas: highlight the hovered outline
+                // and show its name in a tooltip. Handlers are scoped to the outline layer,
+                // so they only fire over the boundary line — never over the Work Area boxes.
+                // setText (not setHTML) is used because area names come from user uploads.
+                let hoveredImplementationAreaId = null;
+                const implementationAreaPopup = new mapboxgl.Popup({
+                    closeButton: false,
+                    closeOnClick: false
+                });
+
+                const clearImplementationAreaHover = () => {
+                    if (hoveredImplementationAreaId !== null) {
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: false }
+                        );
+                        hoveredImplementationAreaId = null;
+                    }
+                    implementationAreaPopup.remove();
+                };
+
+                this.map.on('mousemove', 'implementation-areas-outline', (e) => {
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    this.map.getCanvasContainer().style.cursor = 'pointer';
+
+                    if (feature.id !== hoveredImplementationAreaId) {
+                        if (hoveredImplementationAreaId !== null) {
+                            this.map.setFeatureState(
+                                { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                                { hovered: false }
+                            );
+                        }
+                        hoveredImplementationAreaId = feature.id;
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: true }
+                        );
+                    }
+
+                    implementationAreaPopup
+                        .setLngLat(e.lngLat)
+                        .setText(feature.properties?.name ?? '')
+                        .addTo(this.map);
+                });
+
+                this.map.on('mouseleave', 'implementation-areas-outline', () => {
+                    this.map.getCanvasContainer().style.cursor = '';
+                    clearImplementationAreaHover();
+                });
+
+                // Layer toggle: show/hide the Implementation Area outlines. Clears any active
+                // hover state when hiding so a tooltip can't linger over the hidden layer.
+                this.$watch('showImplementationAreas', (visible) => {
+                    if (!this.map.getLayer('implementation-areas-outline')) return;
+                    this.map.setLayoutProperty(
+                        'implementation-areas-outline',
+                        'visibility',
+                        visible ? 'visible' : 'none'
+                    );
+                    if (!visible) {
+                        this.map.getCanvasContainer().style.cursor = '';
+                        clearImplementationAreaHover();
+                    }
+                });
 
 
                 // When the user clicks on the map, Mapbox returns the geographic object
