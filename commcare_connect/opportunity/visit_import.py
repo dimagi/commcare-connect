@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
+from django.utils.translation import ngettext
 from tablib import Dataset
 
 from commcare_connect.opportunity.models import (
@@ -113,9 +114,15 @@ class PaymentImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
+        count = len(self.missing_users)
+        summary = ngettext(
+            "%(count)d username was not found:",
+            "%(count)d usernames were not found:",
+            count,
+        ) % {"count": count}
         return format_html(
-            "<br>{} usernames were not found:<br>{}",
-            len(self.missing_users),
+            "<br>{}<br>{}",
+            summary,
             format_html_join(
                 "<br>",
                 "{}",
@@ -385,7 +392,10 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         payments_by_user[username].append(payment_row)
 
     if invalid_rows:
-        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join([str(r) for r in invalid_rows]))
+        error_details = [f"{reason}: {', '.join(cells)}" for cells, reason in invalid_rows]
+        count = len(invalid_rows)
+        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
+        raise ImportException(summary, "<br>".join(error_details))
 
     seen_users = set()
     payment_ids = []

@@ -41,6 +41,7 @@ from commcare_connect.opportunity.visit_import import (
     REVIEW_STATUS_COL,
     VISIT_ID_COL,
     ImportException,
+    PaymentImportStatus,
     ReviewVisitRowData,
     VisitData,
     _bulk_update_catchments,
@@ -421,11 +422,12 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
     with pytest.raises(ImportException) as excinfo:
         bulk_update_payments(opportunity.pk, dataset_headers, duplicate_dataset_rows)
 
-    assert "1 rows have errors" in str(excinfo.value.message)
+    assert "1 row has errors" in str(excinfo.value.message)
 
     error_details = excinfo.value.rows
     expected_error_substring = "A payment for this user with the same amount and date already exists."
     assert expected_error_substring in error_details
+    assert "(['" not in error_details  # readable "reason: cells", not a raw Python tuple
     assert Payment.objects.count() == 1
 
 
@@ -1029,3 +1031,20 @@ class TestBulkReviewVisitImport:
             assert visit.review_status_modified_date >= before_update
         for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in locked_visits]):
             assert visit.review_status_modified_date == locked_modified_dates[visit.xform_id]
+
+
+@pytest.mark.parametrize(
+    ("missing_users", "expected"),
+    [
+        ({"ghost"}, "1 username was not found:"),
+        ({"ghost1", "ghost2"}, "2 usernames were not found:"),
+    ],
+)
+def test_payment_import_missing_message_pluralization(missing_users, expected):
+    status = PaymentImportStatus(seen_users={"alice"}, missing_users=missing_users)
+
+    message = status.get_missing_message()
+
+    assert expected in message
+    for user in missing_users:
+        assert user in message

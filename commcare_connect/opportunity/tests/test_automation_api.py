@@ -10,6 +10,7 @@ from commcare_connect.opportunity.tests.factories import (
     DeliverUnitFactory,
     DeliveryTypeFactory,
     HQApiKeyFactory,
+    OpportunityClaimFactory,
     OpportunityFactory,
     PaymentUnitFactory,
 )
@@ -215,6 +216,47 @@ class TestPaymentUnits:
             format="json",
         )
         assert response.status_code == 400
+
+    def test_payment_units_rejected_when_budget_cannot_cover_claimants(
+        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+    ):
+        """Adding payment units the budget can't fund for existing claimants is rejected."""
+        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity.total_budget = 1500
+        opportunity.save()
+        # 3 workers have already claimed; a single 100 * (5 + 0) unit needs 500 * 3 = 1500 (ok),
+        # but the request below adds a second unit, doubling the per-user cost beyond the budget.
+        OpportunityClaimFactory.create_batch(
+            3, opportunity_access__opportunity=opportunity, opportunity_access__accepted=True
+        )
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
+            {
+                "payment_units": [
+                    {
+                        "name": "Visit A",
+                        "amount": 5,
+                        "org_amount": 0,
+                        "max_total": 100,
+                        "max_daily": 10,
+                        "required_deliver_units": [du1.id],
+                    },
+                    {
+                        "name": "Visit B",
+                        "amount": 5,
+                        "org_amount": 0,
+                        "max_total": 100,
+                        "max_daily": 10,
+                        "required_deliver_units": [du2.id],
+                    },
+                ]
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "budget cannot give the full limit" in str(response.data)
+        assert not PaymentUnit.objects.filter(opportunity=opportunity).exists()
 
     def test_payment_units_cross_tenant_rejected(self, api_client, managed_opp_with_deliver_units):
         """Admin of a different program manager org cannot add payment units to someone else's opportunity."""

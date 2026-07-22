@@ -18,7 +18,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.text import slugify
 from django.utils.timezone import now
-from django.utils.translation import gettext
+from django.utils.translation import gettext, ngettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
@@ -481,6 +481,28 @@ def get_payment_upload_key(opp_id):
     return f"bulk_update_payments_opportunity_{opp_id}"
 
 
+def get_payment_import_result_message(status):
+    """Build the (message, is_error) shown after a payment import completes.
+
+    No payments uploaded is treated as an error so it surfaces as a red banner.
+    """
+    count = len(status)
+    if count:
+        message = ngettext(
+            "Payment status uploaded successfully for %(count)d user.",
+            "Payment status uploaded successfully for %(count)d users.",
+            count,
+        ) % {"count": count}
+        lines = [message]
+        is_error = False
+    else:
+        lines = ["No payments were uploaded."]
+        is_error = True
+    if status.missing_users:
+        lines.append(status.get_missing_message())
+    return "<br>".join(lines), is_error
+
+
 @celery_app.task(bind=True)
 def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_format: str):
     from commcare_connect.opportunity.visit_import import ImportException, bulk_update_payments, get_imported_dataset
@@ -494,18 +516,19 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
                 rows = list(dataset)
 
             status = bulk_update_payments(opportunity_id, headers, rows)
-            messages = [f"Payment status updated successfully for {len(status)} users."]
-            if status.missing_users:
-                messages.append(status.get_missing_message())
-
+            message, is_error = get_payment_import_result_message(status)
         except ImportException as e:
-            messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
+            message = f"Payment Import failed: {e.message}"
+            if e.rows:
+                message += f"<br>{e.rows}"
+            is_error = True
         except Exception as e:
-            messages = [f"Unexpected error during payment import: {e}"]
+            message = f"Unexpected error during payment import: {e}"
+            is_error = True
         finally:
             default_storage.delete(file_path)
 
-        set_task_progress(self, "<br>".join(messages), is_complete=True)
+        set_task_progress(self, message, is_complete=True, is_error=is_error)
 
 
 @celery_app.task(bind=True)

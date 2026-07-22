@@ -53,6 +53,7 @@ class WorkAreaCSVImporter:
     def _validate_all_rows(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         if not self._validate_headers(reader):
             return False
 
@@ -66,6 +67,7 @@ class WorkAreaCSVImporter:
     def _stream_and_insert(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
+        self._normalize_headers(reader)
         batch = []
         batch_size = 5000
 
@@ -112,6 +114,10 @@ class WorkAreaCSVImporter:
         if self.errors:
             return {"errors": self.errors}
         return {"created": self.created_count}
+
+    def _normalize_headers(self, reader):
+        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
+        reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
         headers = set(reader.fieldnames or [])

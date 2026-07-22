@@ -11,6 +11,7 @@ from django.contrib.messages import get_messages
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.core.files.storage.handler import StorageHandler
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
@@ -1208,6 +1209,7 @@ def test_views_use_opportunity_decorator_or_mixin():
     function_excluded = {
         "export_status",  # Uses task_id parameter, and similar check is applied directly in code.
         "download_export",  # Uses task_id parameter, and similar check is applied directly in code.
+        "render_payment_import_progress",  # Uses task_id parameter, and similar check is applied directly in code.
         "add_api_key",  # API key management, no opportunity context needed
     }
 
@@ -2557,7 +2559,9 @@ class TestEditAssignedTask:
         response = client.get(self._edit_url(opp, assigned_task))
         assert response.status_code == HTTPStatus.NOT_FOUND
 
-    def test_managed_opp_requires_pm_role(self, client, organization, org_user_admin, program_manager_org):
+    def test_managed_opp_allows_nm_and_pm_org_members(
+        self, client, organization, org_user_admin, program_manager_org, program_manager_org_user_admin
+    ):
         program = ProgramFactory(organization=program_manager_org)
         managed_opp = OpportunityFactory(program=program, organization=organization)
         access = OpportunityAccessFactory(opportunity=managed_opp)
@@ -2566,13 +2570,22 @@ class TestEditAssignedTask:
             task_type=TaskTypeFactory(app=managed_opp.deliver_app),
             status=AssignedTaskStatus.ASSIGNED,
         )
-        url = reverse(
+
+        # NM org member (the opportunity's own org) can edit.
+        nm_url = reverse(
             "opportunity:edit_assigned_task",
             args=(organization.slug, managed_opp.opportunity_id, task.pk),
         )
         client.force_login(org_user_admin)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert client.get(nm_url).status_code == HTTPStatus.OK
+
+        # PM org member (the program's managing org) can also edit.
+        pm_url = reverse(
+            "opportunity:edit_assigned_task",
+            args=(program_manager_org.slug, managed_opp.opportunity_id, task.pk),
+        )
+        client.force_login(program_manager_org_user_admin)
+        assert client.get(pm_url).status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db
@@ -3064,3 +3077,77 @@ class TestOpportunityDeliveryStatsTiles:
         with override_switch(WORKER_VISITS_TASKS, active=True):
             response = client.get(self._url(organization, opportunity))
         assert b"Tasks Assigned to Connect Workers" in response.content
+
+
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_redirects_with_payment_task_id(mock_delay, client, organization, opportunity, org_user_member):
+    mock_delay.return_value.id = "task-123"
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    csv_bytes = b"username,payment amount,payment date (yyyy-mm-dd),payment method,payment operator\n"
+    upload = SimpleUploadedFile("payments.csv", csv_bytes, content_type="text/csv")
+
+    response = client.post(url, {"payments": upload})
+
+    assert response.status_code == 302
+    assert "payment_import_task_id=task-123" in response.url
+    assert "export_task_id=" not in response.url
+
+
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "PROGRESS", "args": [opportunity.id]}
+    task.info = {"message": "Payment Record Import is in progress."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Payment Record Import is in progress." in content
+    assert "hx-get" in content  # keeps polling while not complete
+
+
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_payment_import_status_complete_shows_reload_link(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task.info = {"message": "done"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
+    content = response.content.decode()
+    assert "All done! View status." in content
+    assert "payment_import_task_id=task-xyz" in content
+    assert "hx-get" not in content  # polling stops once complete
+
+
+@pytest.mark.parametrize(
+    ("is_error", "expected_class"),
+    [(False, "bg-message-success"), (True, "bg-message-error")],
+)
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_shows_import_banner_on_reload(
+    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
+):
+    message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": message, "is_error": is_error}
+    task.info = {"message": message}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert message in content
+    assert expected_class in content  # success -> green banner, error -> red banner
