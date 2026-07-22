@@ -5,7 +5,7 @@ from django.db import transaction
 
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
@@ -44,6 +44,8 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
 
     work_areas_map = {wa.id: wa for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=opportunity)}
 
+    wa_to_wag_id_map = {wa.id: wa.work_area_group_id for wa in work_areas_map.values()}
+
     api_key = opportunity.api_key
     domain = opportunity.deliver_app.cc_domain if opportunity.deliver_app else None
 
@@ -81,6 +83,12 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
         with transaction.atomic(), pghistory.context(**pghistory_ctx):
             _bulk_exclude(db_only, user, exclusion_reason)
         excluded_ids.extend(wa.id for wa in db_only)
+
+    work_area_group_ids = {wa_to_wag_id_map[wa_id] for wa_id in excluded_ids}
+    work_area_groups = list(WorkAreaGroup.objects.filter(id__in=work_area_group_ids))
+    for wag in work_area_groups:
+        wag.update_centroid(commit=False)
+    WorkAreaGroup.objects.bulk_update(work_area_groups, fields=["centroid"])
 
     logger.info(
         "exclude_work_areas_for_opportunity finished opp=%s requested=%d excluded=%d skipped=%d failed=%d",

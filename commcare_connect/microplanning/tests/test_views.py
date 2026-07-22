@@ -28,6 +28,7 @@ from commcare_connect.microplanning.tests.factories import (
 from commcare_connect.microplanning.views import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
+    InaccessibilityReviewAction,
     UserVisitVectorLayer,
     get_metrics_for_microplanning,
 )
@@ -229,6 +230,10 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
         assert event.expected_visit_count == new_expected_visit_count
         assert event.work_area_group == group
+        assert group.centroid is None
+        group.refresh_from_db()
+        assert group.centroid.x == 77.5
+        assert group.centroid.y == 28.5
 
     @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
@@ -346,6 +351,66 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
 
         work_area.refresh_from_db()
         assert work_area.status == expected_status
+
+    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    def test_successful_group_field_update_for_centroid_recalculation(
+        self, mock_sync, client, org_user_admin, opportunity
+    ):
+        group_1 = WorkAreaGroupFactory(opportunity=opportunity, name="group_1")
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity,
+            expected_visit_count=10,
+            opportunity_access=access,
+            work_area_group=group_1,
+        )
+        work_area.work_area_group.update_centroid()
+
+        initial_event_count = (
+            work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
+        )
+        assert work_area.work_area_group
+
+        group_2 = WorkAreaGroupFactory(opportunity=opportunity, name="group_2")
+
+        new_expected_visit_count = 25
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
+            {
+                "expected_visit_count": new_expected_visit_count,
+                "work_area_group": group_2.id,
+                "reason": "Boundary adjusted",
+            },
+        )
+        assert response.status_code == 204
+        trigger = json.loads(response["HX-Trigger"])
+        assert "workAreaUpdated" in trigger
+        assert trigger["workAreaUpdated"]["expected_visit_count"] == new_expected_visit_count
+        assert trigger["workAreaUpdated"]["group_id"] == group_2.id
+        assert trigger["workAreaUpdated"]["group_name"] == group_2.name
+        assert mock_sync.call_count == 1
+
+        work_area.refresh_from_db()
+        assert work_area.expected_visit_count == new_expected_visit_count
+        assert work_area.work_area_group == group_2
+
+        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
+        assert events.count() == initial_event_count + 1
+        event = events.last()
+        assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
+        assert event.expected_visit_count == new_expected_visit_count
+        assert event.work_area_group == group_2
+
+        assert group_1.centroid.x == 77.5
+        assert group_1.centroid.y == 28.5
+        group_1.refresh_from_db()
+        assert group_1.centroid is None
+
+        assert group_2.centroid is None
+        group_2.refresh_from_db()
+        assert group_2.centroid.x == 77.5
+        assert group_2.centroid.y == 28.5
 
 
 @pytest.mark.django_db
@@ -993,6 +1058,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
 
+        old_wag_centroid_value = work_area.work_area_group.centroid
+
         with (
             patch("commcare_connect.microplanning.views.send_push_notification_task") as mock_notif,
             patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area"),
@@ -1012,6 +1079,12 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         event = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.last()
         assert event.pgh_context.metadata["username"] == org_user_admin.username
         assert event.pgh_context.metadata["user_email"] == org_user_admin.email
+
+        if action == InaccessibilityReviewAction.APPROVE.value:
+            assert work_area.work_area_group.centroid is None
+
+        if action == InaccessibilityReviewAction.DENY.value:
+            assert work_area.work_area_group.centroid == old_wag_centroid_value
 
         if expect_notify:
             mock_notif.delay.assert_called_once()
