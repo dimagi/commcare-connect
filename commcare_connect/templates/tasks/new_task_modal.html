@@ -41,7 +41,7 @@
         {% csrf_token %}
       </form>
       <div id="create-task-form-wrapper"
-           x-data='{ ocsTaskIds: {{ form.ocs_task_ids_json|safe }}, selectedTaskIsOcs: false, ocsConnected: {{ form.ocs_connected|yesno:"true,false" }} }'>
+           x-data='{ ocsTaskIds: {{ form.ocs_task_ids_json|safe }}, selectedTaskIsOcs: {{ form.selected_task_is_ocs|yesno:"true,false" }}, ocsConnected: {{ form.ocs_connected|yesno:"true,false" }} }'>
         <form id="create-task-form"
               method="post"
               action="{{ create_task_url }}"

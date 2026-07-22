@@ -955,6 +955,20 @@ class TestCreateTaskForm:
         form = CreateTaskForm(self._task_form_data(task_type, access), opportunity=opportunity, user=user)
         assert form.is_valid()
 
+    def test_selected_task_is_ocs_restored_on_bound_form(self, opportunity, ocs_task_type, task_type, user):
+        """A re-rendered (validation-error) modal must know an OCS task is selected so the connect
+        prompt stays visible and Save stays disabled."""
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+
+        unbound = CreateTaskForm(opportunity=opportunity, user=user)
+        assert unbound.selected_task_is_ocs is False
+
+        ocs_bound = CreateTaskForm(self._task_form_data(ocs_task_type, access), opportunity=opportunity, user=user)
+        assert ocs_bound.selected_task_is_ocs is True
+
+        relearn_bound = CreateTaskForm(self._task_form_data(task_type, access), opportunity=opportunity, user=user)
+        assert relearn_bound.selected_task_is_ocs is False
+
     @pytest.mark.parametrize(
         "task_status, provide_access, in_queryset",
         [

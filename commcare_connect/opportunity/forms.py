@@ -1998,6 +1998,7 @@ class CreateTaskForm(forms.Form):
         self.user = user
         self.ocs_connected = user_has_connected_ocs(user)
         self.ocs_task_ids_json = "[]"
+        ocs_task_id_strings = []
         if opportunity is not None:
             task_qs = TaskType.objects.filter(app=opportunity.deliver_app, is_active=True)
             if access is not None:
@@ -2016,7 +2017,11 @@ class CreateTaskForm(forms.Form):
 
             ocs_task_pks = task_qs.filter(mode=TaskTypeModeChoices.OCS).values_list("pk", flat=True)
             # Option <select> values are strings, so stringify the pks to match.
-            self.ocs_task_ids_json = json.dumps([str(pk) for pk in ocs_task_pks])
+            ocs_task_id_strings = [str(pk) for pk in ocs_task_pks]
+            self.ocs_task_ids_json = json.dumps(ocs_task_id_strings)
+
+        selected_task_id = self.data.get("task")
+        self.selected_task_is_ocs = self.is_bound and str(selected_task_id) in ocs_task_id_strings
 
         if access is not None:
             self.fields["access"].initial = access.pk
