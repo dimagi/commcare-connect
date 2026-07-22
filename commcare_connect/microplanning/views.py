@@ -349,7 +349,7 @@ class WorkAreaImport(View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(WorkAreaCSVImporter.HEADERS.values())
+        writer.writerow([*WorkAreaCSVImporter.HEADERS.values(), WorkAreaCSVImporter.GROUP_NAME_HEADER])
         writer.writerow(
             [
                 "Work-Area-1",
@@ -359,9 +359,9 @@ class WorkAreaImport(View):
                 10,
                 12,
                 7,
-                2,
                 "LGA1",
                 "State1",
+                "Work-Area-Group-1",
             ]
         )
         return response
