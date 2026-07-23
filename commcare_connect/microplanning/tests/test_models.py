@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 
 from commcare_connect.microplanning.models import WorkAreaStatus
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
+from commcare_connect.microplanning.tests.factories import (
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+)
 from commcare_connect.opportunity.tests.factories import OpportunityFactory
 
 

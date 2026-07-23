@@ -71,6 +71,7 @@ from commcare_connect.microplanning.helpers import (
     unassign_work_areas_for_opportunity,
 )
 from commcare_connect.microplanning.models import (
+    ImplementationArea,
     InaccessibilityRequestStatus,
     WorkArea,
     WorkAreaGroup,
@@ -91,11 +92,14 @@ from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.file import get_file_extension
 
 from .tasks import (
+    ImplementationAreaCSVImporter,
     WorkAreaCSVExporter,
     WorkAreaCSVImporter,
     cluster_work_areas_task,
     get_cluster_area_cache_lock_key,
+    get_implementation_area_import_cache_key,
     get_import_area_cache_key,
+    import_implementation_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
 )
@@ -114,13 +118,17 @@ PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a 
 @waffle_flag(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
-    areas_present = WorkArea.objects.filter(opportunity_id=opportunity.id).exists()
+    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
+    implementation_areas_present = ImplementationArea.objects.filter(opportunity_id=opportunity.id).exists()
     areas_assigned = WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
     work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
 
     show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
     show_workarea_groups_btn = areas_present and not work_area_groups_present
     show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
+    show_implementation_area_btn = not (
+        cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None or implementation_areas_present
+    )
 
     tiles_url = reverse(
         "microplanning:workareas_tiles",
@@ -168,6 +176,19 @@ def microplanning_home(request, *args, **kwargs):
         for status in WorkAreaStatus
     }
 
+    # After an upload the view redirects here with ?task_id=&area_type=; the auto-poll must
+    # hit the status endpoint matching the area that was uploaded so the modal shows the right labels.
+    area_type = request.GET.get("area_type", "work_area")
+    status_url_name = (
+        "microplanning:implementation_area_import_status"
+        if area_type == "implementation_area"
+        else "microplanning:import_status"
+    )
+    import_status_url = reverse(
+        status_url_name,
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
+    )
+
     is_program_manager = request_user_is_program_manager(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
 
@@ -178,11 +199,14 @@ def microplanning_home(request, *args, **kwargs):
 
     context = {
         "show_area_btn": show_area_btn,
+        "show_implementation_area_btn": show_implementation_area_btn,
+        "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
+        "import_status_url": import_status_url,
         "opportunity": opportunity,
         "path": [
             {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
@@ -349,7 +373,9 @@ class WorkAreaImport(View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(WorkAreaCSVImporter.HEADERS.values())
+        writer.writerow(
+            [*WorkAreaCSVImporter.HEADERS.values(), WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"]]
+        )
         writer.writerow(
             [
                 "Work-Area-1",
@@ -359,9 +385,9 @@ class WorkAreaImport(View):
                 10,
                 12,
                 7,
-                2,
                 "LGA1",
                 "State1",
+                "Ward North",
             ]
         )
         return response
@@ -371,6 +397,11 @@ class WorkAreaImport(View):
             "microplanning:microplanning_home",
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
+
+        csv_file = request.FILES.get("csv_file")
+        if not csv_file or get_file_extension(csv_file).lower() != "csv":
+            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
+            return redirect(redirect_url)
 
         if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
             messages.error(request, _("Work Areas already exist for this opportunity."))
@@ -382,11 +413,6 @@ class WorkAreaImport(View):
             messages.error(request, _("An import for this opportunity is already in progress."))
             return redirect(redirect_url)
 
-        csv_file = request.FILES.get("csv_file")
-        if not csv_file or get_file_extension(csv_file).lower() != "csv":
-            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
-            return redirect(redirect_url)
-
         file_name = f"work_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
         default_storage.save(file_name, ContentFile(csv_file.read()))
         task = import_work_areas_task.delay(request.opportunity.id, file_name)
@@ -396,12 +422,101 @@ class WorkAreaImport(View):
         return redirect(redirect_url)
 
 
+@method_decorator([org_admin_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
+class ImplementationAreaImport(View):
+    def get(self, request, *args, **kwargs):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="implementation_area_template.csv"'
+        writer = csv.writer(response)
+        writer.writerow(ImplementationAreaCSVImporter.HEADERS.values())
+        writer.writerow(["Ward North", "77.1 28.6", "POLYGON((77 28,78 28,78 29,77 29,77 28))"])
+        return response
+
+    def post(self, request, org_slug, opp_id):
+        redirect_url = reverse(
+            "microplanning:microplanning_home",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+        if ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).exists():
+            messages.error(request, _("Implementation Areas already exist for this opportunity."))
+            return redirect(redirect_url)
+
+        lock_key = get_implementation_area_import_cache_key(request.opportunity.id)
+        if cache.get(lock_key):
+            messages.error(request, _("An import for this opportunity is already in progress."))
+            return redirect(redirect_url)
+
+        csv_file = request.FILES.get("csv_file")
+        if not csv_file or get_file_extension(csv_file).lower() != "csv":
+            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
+            return redirect(redirect_url)
+
+        file_name = f"implementation_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
+        default_storage.save(file_name, ContentFile(csv_file.read()))
+        task = import_implementation_areas_task.delay(request.opportunity.id, file_name)
+        cache.set(lock_key, task.id, timeout=1200)
+        messages.info(request, _("Implementation Area upload has been started."))
+        redirect_url += f"?task_id={task.id}&area_type=implementation_area"
+        return redirect(redirect_url)
+
+
+@require_POST
 @org_admin_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
-def import_status(request, org_slug, opp_id):
-    task_id = request.GET.get("task_id", None)
+def clear_implementation_areas(request, org_slug, opp_id):
+    # Delete the opportunity's Implementation Areas so a fresh set can be uploaded. Work Areas
+    # keep their implementation_area_name (the FK is set null via SET_NULL) and re-link on the
+    # next Implementation Area upload.
+    ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).delete()
+    messages.success(request, _("Implementation Areas cleared. You can now upload a new file."))
+    redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
+
+def _area_modal_context(org_slug, opp_id, area_type):
+    if area_type == "implementation_area":
+        return {
+            "modal_title": _("Upload Implementation Area"),
+            "records_label": _("Implementation Areas"),
+            "success_noun": _("implementation area(s)"),
+            "upload_url": reverse(
+                "microplanning:upload_implementation_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id}
+            ),
+            "status_url": reverse(
+                "microplanning:implementation_area_import_status", kwargs={"org_slug": org_slug, "opp_id": opp_id}
+            ),
+            "column_requirements": [
+                _("Implementation Area Name – unique name of the ward/district"),
+                _("Centroid – longitude and latitude separated by space (e.g. 77.123 28.456)"),
+                _("Boundary – Polygon in WKT format"),
+            ],
+        }
+    return {
+        "modal_title": _("Upload Work Areas"),
+        "records_label": _("Work Areas"),
+        "success_noun": _("work area(s)"),
+        "upload_url": reverse("microplanning:upload_work_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id}),
+        "status_url": reverse("microplanning:import_status", kwargs={"org_slug": org_slug, "opp_id": opp_id}),
+        "column_requirements": [
+            _("Area Slug – unique identifier for each work area should be unique in an opportunity"),
+            _("Ward – name of the ward"),
+            _("Centroid – longitude and latitude separated by space (e.g. 77.123 28.456)"),
+            _("Boundary – Polygon in WKT format"),
+            _("Building Count – positive integer"),
+            _("Expected Visit Count – positive integer"),
+            _("LGA – name of the LGA the work area is in"),
+            _("State – name of the state the work area is in"),
+            _("Implementation Area – (optional) name of the matching Implementation Area"),
+        ],
+    }
+
+
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def import_status(request, org_slug, opp_id, area_type="work_area"):
+    task_id = request.GET.get("task_id", None)
     result_ready = False
     result_data = None
 
@@ -420,9 +535,13 @@ def import_status(request, org_slug, opp_id):
             else:
                 result_data = {"errors": {_("Import failed due to an internal error. Please try again."): [0]}}
 
-    context = {"result_ready": result_ready, "result_data": result_data, "task_id": task_id}
-
-    return render(request, "microplanning/import_work_area_modal.html", context)
+    context = {
+        "result_ready": result_ready,
+        "result_data": result_data,
+        "task_id": task_id,
+        **_area_modal_context(org_slug, opp_id, area_type),
+    }
+    return render(request, "microplanning/import_area_modal.html", context)
 
 
 class WorkAreaVectorLayer(VectorLayer):
