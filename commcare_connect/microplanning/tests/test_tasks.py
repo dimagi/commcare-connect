@@ -7,14 +7,14 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import (
     WorkAreaCSVImporter,
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
 )
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
 
@@ -215,6 +215,75 @@ class TestWorkAreaCSVImporter:
         error_keys = " ".join(result["errors"].keys()).lower()
         expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
+
+    def build_row(self, slug, group_name=None):
+        row = [
+            slug,
+            "ward",
+            self.CENTROID,
+            self.POLYGON,
+            5,
+            "6",
+            "100",
+            "LGA1",
+            "State1",
+        ]
+        if group_name is not None:
+            row.append(group_name)
+        return row
+
+    def build_csv_with_groups(self, rows):
+        headers = self.HEADERS + [WorkAreaCSVImporter.GROUP_NAME_HEADER]
+        return self.build_csv(rows, headers=headers)
+
+    def test_import_assigns_work_area_groups_when_all_rows_have_one(self, opportunity):
+        rows = [
+            self.build_row("area-1", "group-a"),
+            self.build_row("area-2", "group-a"),
+            self.build_row("area-3", "group-b"),
+        ]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert result["created"] == 3
+        groups = {g.name: g for g in WorkAreaGroup.objects.filter(opportunity=opportunity)}
+        assert set(groups) == {"group-a", "group-b"}
+        assert WorkArea.objects.get(slug="area-1").work_area_group == groups["group-a"]
+        assert WorkArea.objects.get(slug="area-2").work_area_group == groups["group-a"]
+        assert WorkArea.objects.get(slug="area-3").work_area_group == groups["group-b"]
+        # centroid should be computed for the newly created groups
+        assert groups["group-a"].centroid is not None
+        assert groups["group-b"].centroid is not None
+
+    def test_import_without_group_column_leaves_work_areas_ungrouped(self, opportunity):
+        rows = [self.build_row("area-1"), self.build_row("area-2")]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result["created"] == 2
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        assert WorkArea.objects.get(slug="area-1").work_area_group is None
+        assert WorkArea.objects.get(slug="area-2").work_area_group is None
+
+    def test_import_errors_when_only_some_rows_have_a_group(self, opportunity):
+        rows = [
+            self.build_row("area-1", "group-a"),
+            self.build_row("area-2", ""),
+        ]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert "errors" in result
+        error_keys = " ".join(result["errors"].keys()).lower()
+        assert "work area group name" in error_keys
+        assert WorkArea.objects.count() == 0
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+
+    def test_import_reuses_existing_work_area_group_with_same_name(self, opportunity):
+        existing_group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="other-ward")
+        rows = [self.build_row("area-1", "group-a")]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert result["created"] == 1
+        assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+        assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
 
 
 @pytest.mark.django_db
