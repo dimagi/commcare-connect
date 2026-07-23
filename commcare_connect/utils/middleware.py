@@ -39,11 +39,13 @@ class CustomErrorHandlingMiddleware:
 
 def _safe_referer(request):
     referer = request.headers.get("referer")
-    if referer and url_has_allowed_host_and_scheme(
-        referer, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    ):
-        return referer
-    return "/"
+    return referer if is_safe_redirect_url(request, referer) else "/"
+
+
+def is_safe_redirect_url(request, url):
+    return bool(url) and url_has_allowed_host_and_scheme(
+        url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    )
 
 
 class CurrentVersionMiddleware:

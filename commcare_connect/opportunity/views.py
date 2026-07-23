@@ -6,7 +6,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from functools import cached_property, partial
 from http import HTTPStatus
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlunsplit
 
 import pghistory
 from celery.result import AsyncResult
@@ -228,6 +228,8 @@ from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
+from commcare_connect.utils.oauth_tokens import TokenRefreshError
+from commcare_connect.utils.ocs_api import OcsApiError, list_chatbots, user_has_connected_ocs
 from commcare_connect.utils.tables import (
     DATE_TIME_FORMAT,
     DEFAULT_PAGE_SIZE,
@@ -1370,7 +1372,7 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
             {
                 "opportunity": opportunity,
                 "table": table,
-                "form": kwargs.get("form", AddTaskTypeForm(opportunity=opportunity)),
+                "form": kwargs.get("form", AddTaskTypeForm(opportunity=opportunity, org_slug=org_slug)),
                 "path": path,
             }
         )
@@ -1381,12 +1383,58 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
 
     def post(self, request, org_slug, opp_id):
         opportunity = self.get_opportunity()
-        form = AddTaskTypeForm(data=request.POST, opportunity=opportunity)
+        form = AddTaskTypeForm(data=request.POST, opportunity=opportunity, org_slug=org_slug)
         if form.is_valid():
             form.save()
             messages.success(request, _("Task type added successfully."))
             return redirect("opportunity:task_types_config", org_slug=org_slug, opp_id=opp_id)
         return self.render_to_response(self.get_context_data(form=form))
+
+
+def get_ocs_task_section_context(request):
+    if not user_has_connected_ocs(request.user):
+        return _ocs_connect_prompt_context(request)
+    try:
+        chatbots = list_chatbots(request.user)
+    except TokenRefreshError:
+        return _ocs_connect_prompt_context(request)
+    except OcsApiError:
+        return {"ocs_connected": True, "ocs_error": True}
+    return {
+        "ocs_connected": True,
+        "chatbots": chatbots,
+        "selected_chatbot_id": request.GET.get("selected"),
+    }
+
+
+def _ocs_connect_prompt_context(request):
+    """
+    Since the OCS connect prompt is loaded as an htmx request we need to make
+    sure the ocs "next" url references the parent page the htmx request came
+    from.
+    """
+    return {
+        "ocs_connected": False,
+        "ocs_next_url": _hx_current_path(request),
+    }
+
+
+def _hx_current_path(request):
+    """
+    Relative path (path + query) of the page the htmx request came from.
+    """
+    hx_current_url = request.headers.get("HX-Current-URL")
+    if not hx_current_url:
+        return request.get_full_path()
+    parsed = urlparse(hx_current_url)
+    return urlunsplit(("", "", parsed.path, parsed.query, ""))
+
+
+class TaskTypeOcsSection(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, View):
+    def get(self, request, org_slug, opp_id):
+        context = get_ocs_task_section_context(request)
+        context["ocs_section_url"] = request.get_full_path()
+        return render(request, "opportunity/_ocs_task_section.html", context)
 
 
 class EditTaskType(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
@@ -2268,7 +2316,9 @@ class UserTasksView(WorkerPageView, FilterMixin):
         context["can_manage_tasks"] = can_manage_tasks
         context.update(self.get_filter_context())
         if can_manage_tasks:
-            context["create_task_form"] = CreateTaskForm(opportunity=self.opportunity, access=self.opportunity_access)
+            context["create_task_form"] = CreateTaskForm(
+                opportunity=self.opportunity, access=self.opportunity_access, user=self.request.user
+            )
             create_url = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, self.opportunity.opportunity_id)
             )
@@ -3647,7 +3697,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         can_manage_tasks = _can_manage_tasks(self.request, opportunity)
         context["can_manage_tasks"] = can_manage_tasks
         if can_manage_tasks:
-            context["create_task_form"] = CreateTaskForm(opportunity=opportunity)
+            context["create_task_form"] = CreateTaskForm(opportunity=opportunity, user=self.request.user)
             context["create_task_url"] = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, opportunity.opportunity_id)
             )
@@ -3705,7 +3755,7 @@ def create_task(request, org_slug, opp_id):
         user_id = request.GET.get("user")
         if user_id:
             access = OpportunityAccess.objects.filter(opportunity=opportunity, user__user_id=user_id).first()
-    form = CreateTaskForm(request.POST, opportunity=opportunity, access=access)
+    form = CreateTaskForm(request.POST, opportunity=opportunity, access=access, user=request.user)
     if not form.is_valid():
         return render(
             request,
