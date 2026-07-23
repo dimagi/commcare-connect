@@ -228,6 +228,7 @@ from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
+from commcare_connect.utils.ocs_api import OcsApiError
 from commcare_connect.utils.tables import (
     DATE_TIME_FORMAT,
     DEFAULT_PAGE_SIZE,
@@ -3732,6 +3733,9 @@ def create_task(request, org_slug, opp_id):
         messages.error(request, _("This task type is already assigned to the selected worker."))
     except CommCareHQAPIException:
         messages.error(request, _("Task creation failed: could not update CommCare HQ. Please try again."))
+    except OcsApiError as e:
+        logger.exception(f"OCS task creation failed: {str(e)}")
+        messages.error(request, _("Task creation failed: could not start the chatbot session. Please try again."))
     else:
         messages.success(request, _("Task created successfully."))
     redirect_url = _task_redirect_url(request, org_slug, opp_id)

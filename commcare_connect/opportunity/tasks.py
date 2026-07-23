@@ -813,6 +813,32 @@ def send_task_assignment_notification(assigned_task_id: int):
 
 
 @celery_app.task()
+def send_task_completion_notification(assigned_task_id: int):
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+        "task_type",
+        "assigned_by",
+    ).get(pk=assigned_task_id)
+    assigner = assigned_task.assigned_by
+    if not assigner or not assigner.email:
+        return
+    access = assigned_task.opportunity_access
+    subject = gettext("[%(opportunity)s] Task completed") % {"opportunity": access.opportunity.name}
+    message = gettext("%(worker)s has completed the task '%(task)s' in %(opportunity)s.") % {
+        "worker": access.user.name,
+        "task": assigned_task.task_type.name,
+        "opportunity": access.opportunity.name,
+    }
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[assigner.email],
+    )
+
+
+@celery_app.task()
 def notify_user_for_scored_assessment(assessment_pk):
     assessment = Assessment.objects.get(pk=assessment_pk)
     user = assessment.user
