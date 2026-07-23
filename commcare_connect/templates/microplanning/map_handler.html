@@ -306,14 +306,17 @@
                     return;
                 }
 
-                // Any member already selected (even after a shift+click removed one) counts
-                // as "this group is selected" - a plain click anywhere in it deselects the
-                // whole group rather than just filling in the missing member.
-                const hasAnySelected = workAreas.some(wa => this.selectedWorkAreas.has(wa.id));
+                // A majority of the group already selected (e.g. all but one, after a
+                // shift+click removed a member) counts as "this group is selected" - a plain
+                // click deselects the rest. A minority selected (e.g. a couple of WAs picked
+                // one at a time via shift+click, starting from none) counts as "not selected" -
+                // a plain click fills in the rest instead of wiping out what's there.
+                const selectedCount = workAreas.filter(wa => this.selectedWorkAreas.has(wa.id)).length;
+                const isMajoritySelected = selectedCount > workAreas.length / 2;
 
                 for (const wa of workAreas) {
                     this.workAreaProperties.set(wa.id, wa);
-                    this.setWorkAreaSelected(wa.id, !hasAnySelected);
+                    this.setWorkAreaSelected(wa.id, !isMajoritySelected);
                 }
                 this.updateFlwSummary();
             },
