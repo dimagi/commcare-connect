@@ -9,6 +9,7 @@ from unittest import mock
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from django import forms
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import OperationalError
@@ -19,6 +20,7 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
+from commcare_connect.microplanning.forms import AssignmentModeForm
 from commcare_connect.microplanning.models import (
     ImplementationArea,
     InaccessibilityRequestStatus,
@@ -41,7 +43,13 @@ from commcare_connect.microplanning.views import (
     get_metrics_for_microplanning,
 )
 from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
+from commcare_connect.opportunity.tests.factories import (
+    DeliverUnitFactory,
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    PaymentUnitFactory,
+    UserVisitFactory,
+)
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -269,6 +277,15 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert b"'mousemove', 'implementation-areas-outline'" in response.content
         assert b"implementationAreaPopup" in response.content
+
+    def test_map_shows_toast_on_implementation_area_fetch_error(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"Failed to load Implementation Areas." in response.content
 
     def test_map_has_implementation_area_layer_toggle(
         self, client: Client, settings, organization, org_user_admin, opportunity
@@ -795,6 +812,44 @@ class TestWorkAreaMapFilterSet:
         empty_qs = WorkArea.objects.none()
         fs = WorkAreaMapFilterSet({}, queryset=empty_qs)
         assert fs.filters["assignee"].queryset.count() == 0
+
+    def test_implementation_area_filter(self, opportunity, work_areas):
+        impl_area = ImplementationAreaFactory(opportunity=opportunity)
+        work_areas.wa_visited.implementation_area = impl_area
+        work_areas.wa_visited.save(update_fields=["implementation_area"])
+
+        result = self._filter_ids({"implementation_area": [impl_area.id]}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_work_area_group_filter(self, opportunity, work_areas):
+        other_group = WorkAreaGroupFactory(opportunity=opportunity)
+        wa_other_group = WorkAreaFactory(opportunity=opportunity, work_area_group=other_group)
+
+        result = self._filter_ids({"work_area_group": [work_areas.group.id]}, opportunity)
+        assert result == {work_areas.wa_not_visited.id, work_areas.wa_visited.id}
+        assert wa_other_group.id not in result
+
+    def test_payment_unit_filter(self, opportunity, work_areas):
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        deliver_unit = DeliverUnitFactory(payment_unit=payment_unit)
+        UserVisitFactory(
+            opportunity=opportunity,
+            user=work_areas.access.user,
+            work_area=work_areas.wa_visited,
+            deliver_unit=deliver_unit,
+        )
+
+        result = self._filter_ids({"payment_unit": payment_unit.id}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_unassigned_only_is_a_checkbox_with_no_unknown_option(self, opportunity):
+        fs = WorkAreaMapFilterSet({}, queryset=WorkArea.objects.none(), opportunity=opportunity)
+        widget = fs.form.fields["unassigned_only"].widget
+        assert isinstance(widget, forms.CheckboxInput)
+
+    def test_unassigned_only_still_filters_when_true(self, opportunity, work_areas):
+        result = self._filter_ids({"unassigned_only": "True"}, opportunity)
+        assert result == {work_areas.wa_unassigned.id}
 
 
 @pytest.mark.django_db
@@ -1368,6 +1423,92 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
+class TestAssignmentModeContext:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    def test_worker_list_url_points_to_work_area_assignments_tab(
+        self, client, settings, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, str(managed_opportunity.opportunity_id)),
+            {"assignment_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        expected_url = reverse(
+            "opportunity:worker_work_areas",
+            args=(program_manager_org.slug, managed_opportunity.opportunity_id),
+        )
+        assert response.context["worker_list_url"] == expected_url
+
+    def test_work_area_group_field_accepts_multiple_groups(self, managed_opportunity):
+        group_a = WorkAreaGroupFactory(opportunity=managed_opportunity)
+        group_b = WorkAreaGroupFactory(opportunity=managed_opportunity)
+
+        form = AssignmentModeForm(
+            data={"work_area_group": [group_a.id, group_b.id]},
+            opportunity=managed_opportunity,
+        )
+
+        assert form.is_valid()
+        assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
+
+
+class TestGetWorkAreasForAssignment:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:get_work_areas_for_assignment",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_union_of_multiple_groups(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        group_a = WorkAreaGroupFactory(opportunity=managed_opportunity)
+        group_b = WorkAreaGroupFactory(opportunity=managed_opportunity)
+        other_group = WorkAreaGroupFactory(opportunity=managed_opportunity)
+        wa_a = WorkAreaFactory(opportunity=managed_opportunity, work_area_group=group_a)
+        wa_b = WorkAreaFactory(opportunity=managed_opportunity, work_area_group=group_b)
+        WorkAreaFactory(opportunity=managed_opportunity, work_area_group=other_group)
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            {"group_id": [group_a.id, group_b.id]},
+        )
+
+        assert response.status_code == 200
+        returned_ids = {wa["id"] for wa in response.json()["work_areas"]}
+        assert returned_ids == {wa_a.id, wa_b.id}
+
+    def test_no_group_ids_returns_empty(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        WorkAreaFactory(opportunity=managed_opportunity)
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id))
+
+        assert response.status_code == 200
+        assert response.json()["work_areas"] == []
+
+
 class TestSaveAssignment:
     @pytest.fixture(autouse=True)
     def setup_flag(self, managed_opportunity):
