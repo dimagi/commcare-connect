@@ -74,7 +74,7 @@
                   hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
                   hx-target="#modal-container"
                   class="button button-md primary-dark">
-            <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
+            <i class="fa-solid fa-upload"></i> {% translate "Upload Work Areas" %}
           </button>
         {% endif %}
         {% if show_implementation_area_btn %}
@@ -83,14 +83,14 @@
                   hx-get="{% url 'microplanning:implementation_area_import_status' request.org.slug request.opportunity.opportunity_id %}"
                   hx-target="#modal-container"
                   class="button button-md primary-dark">
-            <i class="fa-solid fa-upload"></i>{% translate "Upload Implementation Area" %}
+            <i class="fa-solid fa-upload"></i> {% translate "Upload Implementation Area" %}
           </button>
         {% endif %}
         {% if implementation_areas_present %}
           <button type="button"
                   @click="showClearImplementationAreasModal = true"
                   class="button button-md outline-style">
-            <i class="fa-solid fa-trash"></i>{% translate "Clear Implementation Areas" %}
+            <i class="fa-solid fa-trash"></i> {% translate "Clear Implementation Areas" %}
           </button>
         {% endif %}
         {% if show_workarea_groups_btn %}
