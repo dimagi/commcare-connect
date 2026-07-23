@@ -1115,6 +1115,7 @@ def approve_visits(request, org_slug, opp_id):
         visit.review_created_on = today
         if visit.review_status == VisitReviewStatus.disagree:
             visit.review_status = VisitReviewStatus.pending
+            visit.review_status_modified_date = today
         if visit.flagged:
             justification = request.POST.get("justification")
             if not justification:
@@ -1129,7 +1130,15 @@ def approve_visits(request, org_slug, opp_id):
 
     user_ids = list(visits.values_list("user_id", flat=True).distinct())
     approved_count = UserVisit.objects.bulk_update(
-        visits, ["status", "review_created_on", "review_status", "justification"]
+        visits,
+        [
+            "status",
+            "status_modified_date",
+            "review_created_on",
+            "review_status",
+            "review_status_modified_date",
+            "justification",
+        ],
     )
     if user_ids:
         update_payment_accrued(opportunity=request.opportunity, users=user_ids, incremental=True)
@@ -1158,7 +1167,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
 
     updated_count = visits.exclude(
         Q(status=VisitValidationStatus.rejected) | Q(review_status=VisitReviewStatus.agree)
-    ).update(status=VisitValidationStatus.rejected, reason=reason)
+    ).update(status=VisitValidationStatus.rejected, reason=reason, status_modified_date=now())
     if visits.exists():
         user_ids = visits.values_list("user_id", flat=True).distinct()
         update_payment_accrued(opportunity=request.opportunity, users=user_ids)
@@ -1583,7 +1592,7 @@ def user_visit_review(request, org_slug, opp_id):
         user_visits = UserVisit.objects.filter(pk__in=updated_reviews).exclude(review_status=VisitReviewStatus.agree)
         if review_status in [VisitReviewStatus.agree.value, VisitReviewStatus.disagree.value]:
             users = [visit.user for visit in user_visits]
-            user_visits.update(review_status=review_status)
+            user_visits.update(review_status=review_status, review_status_modified_date=now())
             update_payment_accrued(opportunity=request.opportunity, users=users)
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})

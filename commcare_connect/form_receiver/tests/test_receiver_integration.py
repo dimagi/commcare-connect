@@ -246,10 +246,12 @@ def test_receiver_deliver_form_daily_visits_reached(
     oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.status_modified_date >= before_request
 
 
 @pytest.mark.django_db
@@ -261,9 +263,11 @@ def test_over_limit_status_preserved_when_duplicate_flag_disabled(
     # silently accept visits past the per-worker max.
     oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.status_modified_date >= before_request
 
 
 @pytest.mark.django_db
@@ -282,6 +286,7 @@ def test_receiver_deliver_form_max_visits_reached(
     payment_units = opportunity.paymentunit_set.all()
     form_json1 = get_form_json_for_payment_unit(payment_units[0])
     form_json2 = get_form_json_for_payment_unit(payment_units[1])
+    before_requests = now()
     for _ in range(2):
         submit_form_for_random_entity(form_json1)
         submit_form_for_random_entity(form_json2)
@@ -294,6 +299,8 @@ def test_receiver_deliver_form_max_visits_reached(
     assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
+    for visit in user_visits:
+        assert visit.status_modified_date >= before_requests
 
 
 @pytest.mark.django_db
@@ -306,11 +313,13 @@ def test_receiver_deliver_form_end_date_reached(
     )
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
     assert CompletedWork.objects.count() == 0
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     assert CompletedWork.objects.count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.status_modified_date >= before_request
 
 
 @pytest.mark.django_db
@@ -324,10 +333,12 @@ def test_receiver_deliver_form_before_start_date(
         opportunity, user=user_with_connectid_link, end_date=datetime.date.today() + datetime.timedelta(days=100)
     )
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.trial
+    assert visit.status_modified_date >= before_request
     assert CompletedWork.objects.count() == 0
 
 
@@ -337,9 +348,11 @@ def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opp
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.pending
+    assert visit.status_modified_date >= before_request
     assert visit.flagged
     assert len(visit.flag_reason.get("flags", []))
 
@@ -352,10 +365,12 @@ def test_auto_approve_unflagged_visits(
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
     opportunity.auto_approve_visits = True
     opportunity.save()
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_request
 
 
 def test_auto_approve_flagged_visits(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
@@ -365,10 +380,12 @@ def test_auto_approve_flagged_visits(user_with_connectid_link: User, api_client:
     oauth_application = opportunity.hq_server.oauth_application
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert visit.status == VisitValidationStatus.pending
+    assert visit.status_modified_date >= before_request
 
 
 def test_automatic_visit_verification_rejects_flagged_visit(
@@ -380,10 +397,12 @@ def test_automatic_visit_verification_rejects_flagged_visit(
     oauth_application = opportunity.hq_server.oauth_application
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert visit.status == VisitValidationStatus.rejected
+    assert visit.status_modified_date >= before_request
 
 
 def test_automatic_visit_verification_off_leaves_flagged_visit_pending(
@@ -394,10 +413,12 @@ def test_automatic_visit_verification_off_leaves_flagged_visit_pending(
     oauth_application = opportunity.hq_server.oauth_application
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert visit.status == VisitValidationStatus.pending
+    assert visit.status_modified_date >= before_request
 
 
 def test_automatic_visit_verification_does_not_reject_clean_visit(
@@ -409,10 +430,12 @@ def test_automatic_visit_verification_does_not_reject_clean_visit(
     opportunity.auto_approve_visits = True
     opportunity.save()
     oauth_application = opportunity.hq_server.oauth_application
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_request
 
 
 def _trigger_over_limit_visit(opportunity, user, api_client):
@@ -456,9 +479,11 @@ def test_automatic_visit_verification_preserves_existing_status(
 ):
     opportunity.automatic_visit_verification = True
     opportunity.save()
+    before_request = now()
     visit = trigger_visit(opportunity, user_with_connectid_link, api_client)
     assert visit.flagged
     assert visit.status == expected_status
+    assert visit.status_modified_date >= before_request
 
 
 @pytest.mark.django_db
@@ -519,10 +544,12 @@ def test_auto_approve_payments_flagged_visit(
     oauth_application = opportunity.hq_server.oauth_application
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert visit.status == VisitValidationStatus.pending
+    assert visit.status_modified_date >= before_request
 
     # No Payment Approval
     update_payment_accrued(opportunity, users=[user_with_connectid_link])
@@ -542,10 +569,12 @@ def test_auto_approve_payments_unflagged_visit(
     opportunity.auto_approve_visits = False
     opportunity.save()
     oauth_application = opportunity.hq_server.oauth_application
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.pending
+    assert visit.status_modified_date >= before_request
 
     # Payment Approval
     update_payment_accrued(opportunity, users=[user_with_connectid_link])
@@ -643,10 +672,12 @@ def test_auto_approve_visits_and_payments(
     opportunity.auto_approve_payments = True
     opportunity.save()
     oauth_application = opportunity.hq_server.oauth_application
+    before_request = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_request
 
     update_payment_accrued(opportunity, users=[user_with_connectid_link])
     access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
@@ -665,6 +696,7 @@ def test_auto_approve_duplicate_visit_accrues_payment_for_each_visit(
     opportunity.save()
     oauth_application = opportunity.hq_server.oauth_application
 
+    before_requests = now()
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     duplicate_json = deepcopy(form_json)
     duplicate_json["id"] = duplicate_json["metadata"]["instanceID"] = str(uuid4())
@@ -673,6 +705,8 @@ def test_auto_approve_duplicate_visit_accrues_payment_for_each_visit(
     visits = UserVisit.objects.filter(user=user_with_connectid_link).order_by("id")
     assert visits.count() == 2
     assert [v.status for v in visits] == [VisitValidationStatus.approved, VisitValidationStatus.approved]
+    for visit in visits:
+        assert visit.status_modified_date >= before_requests
 
     access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
     completed_work = CompletedWork.objects.get(opportunity_access=access)
@@ -863,12 +897,15 @@ def test_receiver_visit_review_status(
     if visit_status != VisitValidationStatus.approved:
         form_json["metadata"]["location"] = None
     oauth_application = opportunity.hq_server.oauth_application
+    before_request = now()
     make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     if visit_status != VisitValidationStatus.approved:
         assert visit.flagged
     assert visit.status == visit_status
+    assert visit.status_modified_date >= before_request
     assert visit.review_status == review_status
+    assert visit.review_status_modified_date >= before_request
 
 
 @pytest.mark.parametrize(
@@ -890,9 +927,11 @@ def test_receiver_visit_payment_unit_dates(
     form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
     form_json["metadata"]["timeStart"] = now() - datetime.timedelta(minutes=2)
     oauth_application = opportunity.hq_server.oauth_application
+    before_request = now()
     make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     assert visit.status == visit_status
+    assert visit.status_modified_date >= before_request
 
 
 def get_form_json_for_payment_unit(payment_unit):

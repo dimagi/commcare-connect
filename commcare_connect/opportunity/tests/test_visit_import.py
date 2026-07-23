@@ -92,12 +92,14 @@ class TestBulkUpdateVisitStatus:
             user=mobile_user,
             opportunity_access=access,
         )
+        initial_status_modified_date = visit.status_modified_date
         dataset = Dataset(headers=["visit id", "status", "rejected reason"])
         dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, ""]])
         import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
         assert import_status.locked_visits == {visit.xform_id}
         visit.refresh_from_db()
         assert visit.status == VisitValidationStatus.approved.value
+        assert visit.status_modified_date == initial_status_modified_date
 
 
 @pytest.mark.django_db
@@ -133,11 +135,13 @@ def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
     reason = "bad form"
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, reason]])
+    before_update = now()
     import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
     assert not import_status.missing_visits
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
     assert visit.reason == reason
+    assert visit.status_modified_date >= before_update
 
 
 @pytest.mark.django_db
@@ -818,6 +822,7 @@ class TestBulkReviewVisitImport:
         dataset = self._prepare_dataset(agree_visits, "agree")
         dataset.extend(self._prepare_dataset(disagree_visits, "disagree"))
 
+        before_update = now()
         status = _bulk_update_visit_review_status(self.opp, dataset)
 
         assert status.seen_visits == expected_agreed_visits | expected_disagreed_visits
@@ -832,6 +837,10 @@ class TestBulkReviewVisitImport:
                 xform_id__in=expected_disagreed_visits, review_status=VisitReviewStatus.disagree
             ).count()
             == num_disagree
+        )
+        affected_visits = UserVisit.objects.filter(xform_id__in=expected_agreed_visits | expected_disagreed_visits)
+        assert affected_visits.filter(review_status_modified_date__gte=before_update).count() == len(
+            expected_agreed_visits | expected_disagreed_visits
         )
 
     @mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payment_accrued")
@@ -913,19 +922,19 @@ class TestBulkReviewVisitImport:
             5,
             opportunity=self.opp,
             review_created_on=self.now_time - timedelta(days=3),
-            status=initial_status,
+            review_status=initial_status,
         )
+        initial_modified_dates = {v.xform_id: v.review_status_modified_date for v in visits}
 
         dataset = self._prepare_dataset(visits, new_status)
 
         with transaction.atomic():
             status = _bulk_update_visit_review_status(self.opp, dataset)
 
-        assert status.seen_visits == {visit.xform_id for visit in visits}
-        assert (
-            UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits], review_status=initial_status).count()
-            == 5
-        )
+        assert status.seen_visits == set()
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits]):
+            assert visit.review_status == initial_status
+            assert visit.review_status_modified_date == initial_modified_dates[visit.xform_id]
 
     def test_handles_duplicate_entries(self):
         """Ensures that duplicate entries do not cause unintended behavior."""
@@ -942,6 +951,7 @@ class TestBulkReviewVisitImport:
             dataset.append([visit.xform_id, "agree"])
             dataset.append([visit.xform_id, "agree"])
 
+        before_update = now()
         status = _bulk_update_visit_review_status(self.opp, dataset)
 
         assert status.seen_visits == {visit.xform_id for visit in visits}
@@ -951,6 +961,8 @@ class TestBulkReviewVisitImport:
             ).count()
             == 3
         )
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits]):
+            assert visit.review_status_modified_date >= before_update
 
     @pytest.mark.parametrize(
         "headers, row, expected_exception, expected_message",
@@ -1004,15 +1016,21 @@ class TestBulkReviewVisitImport:
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.agree,
         )
+        locked_modified_dates = {v.xform_id: v.review_status_modified_date for v in locked_visits}
         dataset = self._prepare_dataset(agree_visits, VisitReviewStatus.agree.value)
         dataset.extend(self._prepare_dataset(locked_visits, VisitReviewStatus.disagree.value))
 
+        before_update = now()
         status = _bulk_update_visit_review_status(self.opp, dataset)
         assert status.seen_visits == {visit.xform_id for visit in agree_visits}
         assert status.locked_visits == {visit.xform_id for visit in locked_visits}
         assert UserVisit.objects.filter(review_status=VisitReviewStatus.agree).count() == len(agree_visits) + len(
             locked_visits
         )
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in agree_visits]):
+            assert visit.review_status_modified_date >= before_update
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in locked_visits]):
+            assert visit.review_status_modified_date == locked_modified_dates[visit.xform_id]
 
 
 @pytest.mark.parametrize(
