@@ -297,6 +297,10 @@
                 return this.groupWorkAreasCache.get(groupId);
             },
 
+            invalidateGroupWorkAreasCache() {
+                this.groupWorkAreasCache.clear();
+            },
+
             // Selects/deselects an entire Work Area Group with one click.
             async toggleGroupSelection(groupId) {
                 let workAreas;
@@ -564,6 +568,7 @@
                     this.showConfirmModal = false;
                     if (resp.ok) {
                         this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.invalidateGroupWorkAreasCache();
                         this.assignmentQueue = [];
                         this.clearSelection();
                         if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
@@ -612,6 +617,7 @@
                                 props.assignee_name = null;
                             }
                         }
+                        if (unassignedIds.length > 0) this.invalidateGroupWorkAreasCache();
                         this.showUnassignModal = false;
                         // Clear the selection, then re-select any failed areas so they stay highlighted
                         // on the map for the user to inspect and retry.
@@ -715,6 +721,7 @@
                         this.setWorkAreaState(id, { status: 'EXCLUDED' });
                         this.excludedWorkAreaIds.add(id);
                     }
+                    if (excluded.length > 0) this.invalidateGroupWorkAreasCache();
                     this.showExcludeModal = false;
                     this.clearSelection();
                     if (excluded.length > 0 && skipped === 0) {
