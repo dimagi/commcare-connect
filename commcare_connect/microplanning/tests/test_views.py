@@ -277,6 +277,15 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert b"'mousemove', 'implementation-areas-outline'" in response.content
         assert b"implementationAreaPopup" in response.content
 
+    def test_map_shows_toast_on_implementation_area_fetch_error(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert b"Failed to load Implementation Areas." in response.content
+
     def test_map_has_implementation_area_layer_toggle(
         self, client: Client, settings, organization, org_user_admin, opportunity
     ):

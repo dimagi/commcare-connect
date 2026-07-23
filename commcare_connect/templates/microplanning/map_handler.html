@@ -8,7 +8,7 @@
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
             showVisits: false,
-            showImplementationAreas: true,
+            showImplementationAreas: false,
             filterQuery: '',
 
             // Assignment mode state
@@ -934,13 +934,6 @@
                     })
                     .catch(err => console.error(err));
 
-                // Implementation Area outlines — a standalone visual layer (black line),
-                // independent of Work Areas. It is a line-only layer with hover handlers
-                // scoped to the outline itself, so it never adds a surface over (and never
-                // interferes with) the Work Area boxes. Hovering an outline bolds it and
-                // shows the area's name in a tooltip. A future ticket will let users toggle
-                // this layer on/off. Cleared uploads reload the page, so an empty response
-                // here simply renders no outlines.
                 const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
 
                 // generateId gives each feature a stable id so hover can be tracked per
@@ -981,7 +974,10 @@
                             });
                         }
                     })
-                    .catch(err => console.error(err));
+                    .catch(err => {
+                        console.error(err);
+                        this.showToast("{% translate 'Failed to load Implementation Areas.' %}", true);
+                    });
 
                 // Hover indicator for Implementation Areas: highlight the hovered outline
                 // and show its name in a tooltip. Handlers are scoped to the outline layer,
