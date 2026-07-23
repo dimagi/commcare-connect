@@ -278,6 +278,8 @@
             // same group share one in-flight/cached request instead of re-fetching, since
             // group membership doesn't change during a session.
             async fetchGroupWorkAreas(groupId) {
+                // Normalize to string for consistency from different callers
+                groupId = String(groupId);
                 if (!this.groupWorkAreasCache.has(groupId)) {
                     const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
                     const promise = fetch(url)
@@ -326,7 +328,7 @@
                 return this.replaceFilterSelection({
                     trackingSet: this.groupWorkAreaIds,
                     selectionId: groupId,
-                    url: '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId),
+                    fetchWorkAreas: () => this.fetchGroupWorkAreas(groupId),
                     errorMsg: "{% translate 'Failed to load group work areas' %}",
                 });
             },
@@ -336,13 +338,18 @@
                 return this.replaceFilterSelection({
                     trackingSet: this.flwFilterWorkAreaIds,
                     selectionId: assigneeId,
-                    url: '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId),
+                    fetchWorkAreas: () => fetch('{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId))
+                        .then(resp => {
+                            if (!resp.ok) throw new Error(`Failed to load FLW work areas (status ${resp.status})`);
+                            return resp.json();
+                        })
+                        .then(data => data.work_areas),
                     errorMsg: "{% translate 'Failed to load FLW work areas' %}",
                 });
             },
 
             // Replaces the selection contributed by one filter (a group or an FLW).
-            async replaceFilterSelection({ trackingSet, selectionId, url, errorMsg }) {
+            async replaceFilterSelection({ trackingSet, selectionId, fetchWorkAreas, errorMsg }) {
                 for (const id of trackingSet) {
                     this.selectedWorkAreas.delete(id);
                     this.setWorkAreaState(id, { assignment_selected: false });
@@ -359,9 +366,8 @@
                 // count the FLW's own existing areas as "new" and inflate the total.
                 this.flwSummaryLoading = true;
                 try {
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    for (const wa of data.work_areas) {
+                    const workAreas = await fetchWorkAreas();
+                    for (const wa of workAreas) {
                         this.selectedWorkAreas.add(wa.id);
                         trackingSet.add(wa.id);
                         this.workAreaProperties.set(wa.id, wa);
