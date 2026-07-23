@@ -5,6 +5,8 @@
             map: null,
             selectedFeature: null,
             highlightedWorkAreaId: null,
+            isHoveringWorkArea: false,
+            hintTimeout: null,
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
             showVisits: false,
@@ -30,6 +32,7 @@
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
+            groupWorkAreasCache: new Map(),
             assignmentQueue: [],
             excludedWorkAreaIds: new Set(),
 
@@ -237,30 +240,90 @@
 
             // --- Assignment mode methods ---
 
-            toggleWorkAreaSelection(id, properties) {
-                const isDeselecting = this.selectedWorkAreas.has(id);
-                if (isDeselecting) {
+            // Adds/removes a single work area from the assignment selection. Both single-WA
+            // and whole-group selection go through this one place so the group filter
+            // dropdown's own tracked selection can't drift from the actual selection: if this
+            // change breaks coherence with the dropdown-selected group (deselecting one of its
+            // members, or selecting one outside it), the dropdown's tracking is cleared too.
+            setWorkAreaSelected(id, selected) {
+                if (selected) {
+                    this.selectedWorkAreas.add(id);
+                } else {
                     this.selectedWorkAreas.delete(id);
                     this.flwFilterWorkAreaIds.delete(id);
-                } else {
-                    this.selectedWorkAreas.add(id);
-                    if (properties) {
-                        this.workAreaProperties.set(id, properties);
-                    }
                 }
 
-                // Clear group dropdown if the map click breaks the group selection:
-                // either deselecting a WA inside the group, or selecting one outside it
                 if (this.selectedGroupId) {
                     const isGroupWa = this.groupWorkAreaIds.has(id);
-                    if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
+                    if ((!selected && isGroupWa) || (selected && !isGroupWa)) {
                         this.groupWorkAreaIds.clear();
                         this.selectedGroupId = null;
                         if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
                     }
                 }
 
-                this.setWorkAreaState(id, { assignment_selected: this.selectedWorkAreas.has(id) });
+                this.setWorkAreaState(id, { assignment_selected: selected });
+            },
+
+            toggleWorkAreaSelection(id, properties) {
+                const isSelecting = !this.selectedWorkAreas.has(id);
+                if (isSelecting && properties) {
+                    this.workAreaProperties.set(id, properties);
+                }
+                this.setWorkAreaSelected(id, isSelecting);
+                this.updateFlwSummary();
+            },
+
+            // Fetches (and caches) a group's work areas. Concurrent or repeat calls for the
+            // same group share one in-flight/cached request instead of re-fetching, since
+            // group membership doesn't change during a session.
+            async fetchGroupWorkAreas(groupId) {
+                // Normalize to string for consistency from different callers
+                groupId = String(groupId);
+                if (!this.groupWorkAreasCache.has(groupId)) {
+                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
+                    const promise = fetch(url)
+                        .then(resp => {
+                            if (!resp.ok) throw new Error(`Failed to load group work areas (status ${resp.status})`);
+                            return resp.json();
+                        })
+                        .then(data => data.work_areas)
+                        .catch(e => {
+                            this.groupWorkAreasCache.delete(groupId);
+                            throw e;
+                        });
+                    this.groupWorkAreasCache.set(groupId, promise);
+                }
+                return this.groupWorkAreasCache.get(groupId);
+            },
+
+            invalidateGroupWorkAreasCache() {
+                this.groupWorkAreasCache.clear();
+            },
+
+            // Selects/deselects an entire Work Area Group with one click.
+            async toggleGroupSelection(groupId) {
+                let workAreas;
+                try {
+                    workAreas = await this.fetchGroupWorkAreas(groupId);
+                } catch (e) {
+                    console.error(e);
+                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
+                    return;
+                }
+
+                // A majority of the group already selected (e.g. all but one, after a
+                // shift+click removed a member) counts as "this group is selected" - a plain
+                // click deselects the rest. A minority selected (e.g. a couple of WAs picked
+                // one at a time via shift+click, starting from none) counts as "not selected" -
+                // a plain click fills in the rest instead of wiping out what's there.
+                const selectedCount = workAreas.filter(wa => this.selectedWorkAreas.has(wa.id)).length;
+                const isMajoritySelected = selectedCount > workAreas.length / 2;
+
+                for (const wa of workAreas) {
+                    this.workAreaProperties.set(wa.id, wa);
+                    this.setWorkAreaSelected(wa.id, !isMajoritySelected);
+                }
                 this.updateFlwSummary();
             },
 
@@ -269,7 +332,7 @@
                 return this.replaceFilterSelection({
                     trackingSet: this.groupWorkAreaIds,
                     selectionId: groupId,
-                    url: '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId),
+                    fetchWorkAreas: () => this.fetchGroupWorkAreas(groupId),
                     errorMsg: "{% translate 'Failed to load group work areas' %}",
                 });
             },
@@ -279,13 +342,18 @@
                 return this.replaceFilterSelection({
                     trackingSet: this.flwFilterWorkAreaIds,
                     selectionId: assigneeId,
-                    url: '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId),
+                    fetchWorkAreas: () => fetch('{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId))
+                        .then(resp => {
+                            if (!resp.ok) throw new Error(`Failed to load FLW work areas (status ${resp.status})`);
+                            return resp.json();
+                        })
+                        .then(data => data.work_areas),
                     errorMsg: "{% translate 'Failed to load FLW work areas' %}",
                 });
             },
 
             // Replaces the selection contributed by one filter (a group or an FLW).
-            async replaceFilterSelection({ trackingSet, selectionId, url, errorMsg }) {
+            async replaceFilterSelection({ trackingSet, selectionId, fetchWorkAreas, errorMsg }) {
                 for (const id of trackingSet) {
                     this.selectedWorkAreas.delete(id);
                     this.setWorkAreaState(id, { assignment_selected: false });
@@ -302,9 +370,8 @@
                 // count the FLW's own existing areas as "new" and inflate the total.
                 this.flwSummaryLoading = true;
                 try {
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    for (const wa of data.work_areas) {
+                    const workAreas = await fetchWorkAreas();
+                    for (const wa of workAreas) {
                         this.selectedWorkAreas.add(wa.id);
                         trackingSet.add(wa.id);
                         this.workAreaProperties.set(wa.id, wa);
@@ -501,6 +568,7 @@
                     this.showConfirmModal = false;
                     if (resp.ok) {
                         this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.invalidateGroupWorkAreasCache();
                         this.assignmentQueue = [];
                         this.clearSelection();
                         if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
@@ -549,6 +617,7 @@
                                 props.assignee_name = null;
                             }
                         }
+                        if (unassignedIds.length > 0) this.invalidateGroupWorkAreasCache();
                         this.showUnassignModal = false;
                         // Clear the selection, then re-select any failed areas so they stay highlighted
                         // on the map for the user to inspect and retry.
@@ -652,6 +721,7 @@
                         this.setWorkAreaState(id, { status: 'EXCLUDED' });
                         this.excludedWorkAreaIds.add(id);
                     }
+                    if (excluded.length > 0) this.invalidateGroupWorkAreasCache();
                     this.showExcludeModal = false;
                     this.clearSelection();
                     if (excluded.length > 0 && skipped === 0) {
@@ -683,6 +753,13 @@
 
                 // navigation ui on left of the map
                 MapboxUtils.addNavigation(this.map, 'top-left');
+
+                // Mapbox binds shift+drag to box-zoom by default, which intercepts the
+                // mousedown/click sequence before our shift+click work-area handler sees it.
+                // Only assignment mode uses shift+click, so only disable it there.
+                if (this.assignmentMode) {
+                    this.map.boxZoom.disable();
+                }
 
                 await new Promise(resolve => this.map.once('load', resolve));
 
@@ -943,9 +1020,15 @@
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
 
-                    // In assignment mode, toggle multi-select instead of single-select
+                    // In assignment mode: plain click selects/deselects the whole Work Area
+                    // Group by default; shift+click (or a work area with no group) targets
+                    // just this one work area.
                     if (this.assignmentMode) {
-                        this.toggleWorkAreaSelection(id, feature.properties);
+                        if (e.originalEvent.shiftKey || feature.properties.group_id == null) {
+                            this.toggleWorkAreaSelection(id, feature.properties);
+                        } else {
+                            this.toggleGroupSelection(feature.properties.group_id);
+                        }
                         return;
                     }
 
@@ -978,6 +1061,7 @@
                 let hoveredId = null;
                 this.map.on('mousemove', 'workareas-fill', (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
+                    this.isHoveringWorkArea = true;
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const newId = feature.id;
@@ -991,6 +1075,7 @@
 
                 this.map.on('mouseleave', 'workareas-fill', () => {
                     this.map.getCanvasContainer().style.cursor = '';
+                    this.isHoveringWorkArea = false;
                     if (hoveredId !== null) {
                         this.setWorkAreaState(hoveredId, { hovered: false });
                         hoveredId = null;
