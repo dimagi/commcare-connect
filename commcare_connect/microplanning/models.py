@@ -1,6 +1,7 @@
 from functools import cached_property
 
 import pghistory
+import shapely
 from django.conf import settings
 from django.contrib.gis.db import models as geo_models
 from django.db.models import Count, Index, Q, Sum
@@ -27,6 +28,7 @@ class WorkAreaGroup(geo_models.Model):
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
     ward = geo_models.SlugField(max_length=255)
     name = geo_models.CharField(max_length=255)
+    centroid = geo_models.PointField(srid=SRID, null=True, help_text="Centroid of the Work Area Group as a Point.")
 
     def __str__(self):
         return self.name
@@ -40,6 +42,41 @@ class WorkAreaGroup(geo_models.Model):
             self.workarea_set.exclude(status=WorkAreaStatus.EXCLUDED).aggregate(total=Sum("building_count"))["total"]
             or 0
         )
+
+    def update_centroid(self, commit=True):
+        """
+        Calculates the Work Area Group centroid from the Work Area boundaries
+        and saves if the centroid value has changed.
+        The commit parameter (default True) will save the change to database,
+        to save manually set it to False.
+        """
+        work_areas_boundaries = self.workarea_set.exclude(
+            status__in=[WorkAreaStatus.EXCLUDED, WorkAreaStatus.INACCESSIBLE]
+        ).values_list("boundary", flat=True)
+        old_centroid = self.centroid
+        if work_areas_boundaries:
+            self.centroid = shapely.MultiPolygon(work_areas_boundaries).centroid.wkt
+        else:
+            self.centroid = None
+        if commit and old_centroid != self.centroid:
+            self.save()
+
+
+class ImplementationArea(geo_models.Model):
+    opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
+    name = geo_models.CharField(max_length=255)
+    centroid = geo_models.PointField(srid=SRID)
+    boundary = geo_models.PolygonField(srid=SRID)
+
+    class Meta:
+        constraints = [
+            geo_models.UniqueConstraint(
+                fields=["name", "opportunity"], name="unique_implementation_area_name_per_opportunity"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name}-{self.opportunity_id}"
 
 
 @pghistory.track(
@@ -76,6 +113,13 @@ class WorkArea(geo_models.Model):
     )
     case_id = geo_models.CharField(max_length=255, unique=True, null=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
+    implementation_area = geo_models.ForeignKey(
+        ImplementationArea, null=True, blank=True, on_delete=geo_models.SET_NULL
+    )
+    # Name of the Implementation Area from the upload sheet, kept so the FK can be resolved
+    # regardless of upload order (Implementation Areas may be cleared and re-uploaded after
+    # Work Areas exist).
+    implementation_area_name = geo_models.CharField(max_length=255, blank=True, default="")
     excluded_by = geo_models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

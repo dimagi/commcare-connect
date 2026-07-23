@@ -10,6 +10,7 @@
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
             showVisits: false,
+            showImplementationAreas: false,
             filterQuery: '',
 
             // Assignment mode state
@@ -17,7 +18,7 @@
             selectedWorkAreas: new Set(),
             groupWorkAreaIds: new Set(),
             flwFilterWorkAreaIds: new Set(),
-            selectedGroupId: null,
+            selectedGroupIds: [],
             selectedFlwFilterId: null,
             selectedAssigneeId: null,
             flwSummaryAssigneeId: null,
@@ -253,12 +254,12 @@
                     this.flwFilterWorkAreaIds.delete(id);
                 }
 
-                if (this.selectedGroupId) {
+                if (this.selectedGroupIds.length) {
                     const isGroupWa = this.groupWorkAreaIds.has(id);
                     if ((!selected && isGroupWa) || (selected && !isGroupWa)) {
                         this.groupWorkAreaIds.clear();
-                        this.selectedGroupId = null;
-                        if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                        this.selectedGroupIds = [];
+                        if (this.$refs.groupSelect?.tomselect) this.$refs.groupSelect.tomselect.clear();
                     }
                 }
 
@@ -281,7 +282,9 @@
                 // Normalize to string for consistency from different callers
                 groupId = String(groupId);
                 if (!this.groupWorkAreasCache.has(groupId)) {
-                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
+                    // The endpoint takes repeatable ?group_id= query params (to support
+                    // fetching several groups in one call); a single id is just the 1-param case.
+                    const url = `{{ group_work_areas_url|escapejs }}?group_id=${encodeURIComponent(groupId)}`;
                     const promise = fetch(url)
                         .then(resp => {
                             if (!resp.ok) throw new Error(`Failed to load group work areas (status ${resp.status})`);
@@ -327,12 +330,16 @@
                 this.updateFlwSummary();
             },
 
-            selectGroup(groupId) {
-                this.selectedGroupId = groupId || null;
+            selectGroup(groupIds) {
+                this.selectedGroupIds = groupIds || [];
                 return this.replaceFilterSelection({
                     trackingSet: this.groupWorkAreaIds,
-                    selectionId: groupId,
-                    fetchWorkAreas: () => this.fetchGroupWorkAreas(groupId),
+                    selectionId: this.selectedGroupIds,
+                    // Fetch each selected group through the same cached fetcher clicks use,
+                    // so a group picked here and also clicked on the map (or vice versa)
+                    // only ever fetches once, then merge the per-group results together.
+                    fetchWorkAreas: () => Promise.all(this.selectedGroupIds.map(id => this.fetchGroupWorkAreas(id)))
+                        .then(arrays => arrays.flat()),
                     errorMsg: "{% translate 'Failed to load group work areas' %}",
                 });
             },
@@ -360,7 +367,8 @@
                 }
                 trackingSet.clear();
 
-                if (!selectionId) {
+                const hasSelection = Array.isArray(selectionId) ? selectionId.length > 0 : !!selectionId;
+                if (!hasSelection) {
                     this.updateFlwSummary();
                     return;
                 }
@@ -390,8 +398,8 @@
                 this.selectedWorkAreas.clear();
                 this.groupWorkAreaIds.clear();
                 this.flwFilterWorkAreaIds.clear();
-                if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
-                this.selectedGroupId = null;
+                if (this.$refs.groupSelect?.tomselect) this.$refs.groupSelect.tomselect.clear();
+                this.selectedGroupIds = [];
                 this.selectedFlwFilterId = null;
                 this.updateFlwSummary();
             },
@@ -1008,6 +1016,10 @@
                     })
                     .catch(err => console.error(err));
 
+                // Implementation Areas are a standalone, toggleable overlay independent of
+                // Work Areas. Their setup lives in its own method to keep initializeMap focused.
+                this.initImplementationAreas();
+
 
                 // When the user clicks on the map, Mapbox returns the geographic object
                 // under the cursor as a "feature". A feature represents a single polygon
@@ -1079,6 +1091,123 @@
                     if (hoveredId !== null) {
                         this.setWorkAreaState(hoveredId, { hovered: false });
                         hoveredId = null;
+                    }
+                });
+            },
+
+            // Sets up the Implementation Area overlay: a GeoJSON source, a black outline layer,
+            // the data fetch, hover highlight + name tooltip, and the show/hide toggle. Must be
+            // called from initializeMap after the Work Area layers are added, so the outline
+            // draws on top of them. Assumes this.map exists and its style has loaded.
+            initImplementationAreas() {
+                const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
+
+                // generateId gives each feature a stable id so hover can be tracked per
+                // area via setFeatureState.
+                this.map.addSource('implementation-areas', {
+                    type: 'geojson',
+                    generateId: true,
+                    data: { type: 'FeatureCollection', features: [] }
+                });
+
+                this.map.addLayer({
+                    id: 'implementation-areas-outline',
+                    type: 'line',
+                    source: 'implementation-areas',
+                    paint: {
+                        'line-color': '#000000',
+                        // Bolder line while hovered so the highlighted area stands out.
+                        'line-width': [
+                            'case',
+                            ['boolean', ['feature-state', 'hovered'], false],
+                            4,
+                            2
+                        ],
+                        'line-opacity': 1
+                    }
+                });
+
+                fetch(implementationAreasUrl)
+                    .then(res => {
+                        if (!res.ok) throw new Error("Failed to fetch implementation areas");
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.implementation_area_features?.length) {
+                            this.map.getSource('implementation-areas').setData({
+                                type: "FeatureCollection",
+                                features: data.implementation_area_features
+                            });
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        this.showToast("{% translate 'Failed to load Implementation Areas.' %}", true);
+                    });
+
+                // Hover indicator for Implementation Areas: highlight the hovered outline
+                // and show its name in a tooltip. Handlers are scoped to the outline layer,
+                // so they only fire over the boundary line — never over the Work Area boxes.
+                // setText (not setHTML) is used because area names come from user uploads.
+                let hoveredImplementationAreaId = null;
+                const implementationAreaPopup = new mapboxgl.Popup({
+                    closeButton: false,
+                    closeOnClick: false
+                });
+
+                const clearImplementationAreaHover = () => {
+                    if (hoveredImplementationAreaId !== null) {
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: false }
+                        );
+                        hoveredImplementationAreaId = null;
+                    }
+                    implementationAreaPopup.remove();
+                };
+
+                this.map.on('mousemove', 'implementation-areas-outline', (e) => {
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    this.map.getCanvasContainer().style.cursor = 'pointer';
+
+                    if (feature.id !== hoveredImplementationAreaId) {
+                        if (hoveredImplementationAreaId !== null) {
+                            this.map.setFeatureState(
+                                { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                                { hovered: false }
+                            );
+                        }
+                        hoveredImplementationAreaId = feature.id;
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: true }
+                        );
+                    }
+
+                    implementationAreaPopup
+                        .setLngLat(e.lngLat)
+                        .setText(feature.properties?.name ?? '')
+                        .addTo(this.map);
+                });
+
+                this.map.on('mouseleave', 'implementation-areas-outline', () => {
+                    this.map.getCanvasContainer().style.cursor = '';
+                    clearImplementationAreaHover();
+                });
+
+                // Layer toggle: show/hide the Implementation Area outlines. Clears any active
+                // hover state when hiding so a tooltip can't linger over the hidden layer.
+                this.$watch('showImplementationAreas', (visible) => {
+                    if (!this.map.getLayer('implementation-areas-outline')) return;
+                    this.map.setLayoutProperty(
+                        'implementation-areas-outline',
+                        'visibility',
+                        visible ? 'visible' : 'none'
+                    );
+                    if (!visible) {
+                        this.map.getCanvasContainer().style.cursor = '';
+                        clearImplementationAreaHover();
                     }
                 });
             }

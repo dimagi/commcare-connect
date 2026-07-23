@@ -59,11 +59,11 @@
         </div>
       </div>
     </header>
-    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false }"
+    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showImplUploadBtn: {{ show_implementation_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false, showClearImplementationAreasModal: false }"
          class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
       <div class="flex items-end space-x-2 w-full">
         {% if task_id %}
-          <div hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+          <div hx-get="{{ import_status_url }}"
                hx-vals='{"task_id": "{{ task_id }}"}'
                hx-trigger="load"
                hx-target="#modal-container"></div>
@@ -74,7 +74,23 @@
                   hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
                   hx-target="#modal-container"
                   class="button button-md primary-dark">
-            <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
+            <i class="fa-solid fa-upload"></i> {% translate "Upload Work Areas" %}
+          </button>
+        {% endif %}
+        {% if show_implementation_area_btn %}
+          <button x-show="showImplUploadBtn"
+                  type="button"
+                  hx-get="{% url 'microplanning:implementation_area_import_status' request.org.slug request.opportunity.opportunity_id %}"
+                  hx-target="#modal-container"
+                  class="button button-md primary-dark">
+            <i class="fa-solid fa-upload"></i> {% translate "Upload Implementation Area" %}
+          </button>
+        {% endif %}
+        {% if implementation_areas_present %}
+          <button type="button"
+                  @click="showClearImplementationAreasModal = true"
+                  class="button button-md outline-style">
+            <i class="fa-solid fa-trash"></i> {% translate "Clear Implementation Areas" %}
           </button>
         {% endif %}
         {% if show_workarea_groups_btn %}
@@ -125,6 +141,9 @@
       {% if show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/clear_work_area_groups_modal.html" %}
       {% endif %}
+      {% if implementation_areas_present %}
+        {% include "microplanning/clear_implementation_areas_modal.html" %}
+      {% endif %}
     </div>
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]"
          x-data="mapController()">
@@ -171,24 +190,39 @@
             </div>
             <div class="flex items-center justify-between py-2">
               <label for="show-visits-toggle" class="text-sm text-gray-700">{% translate "Show Visits" %}</label>
-              <button id="show-visits-toggle"
-                      type="button"
-                      role="switch"
-                      :aria-checked="showVisits"
-                      @click="showVisits = !showVisits"
-                      :class="showVisits ? 'bg-indigo-600' : 'bg-gray-200'"
-                      class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2">
-                <span :class="showVisits ? 'translate-x-5' : 'translate-x-0'"
-                      class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-              </button>
+              <input id="show-visits-toggle"
+                     type="checkbox"
+                     class="simple-toggle"
+                     x-model="showVisits">
+            </div>
+            <div class="flex items-center justify-between py-2">
+              <label for="show-implementation-areas-toggle" class="text-sm text-gray-700">
+                {% translate "Show Implementation Areas" %}
+              </label>
+              <input id="show-implementation-areas-toggle"
+                     type="checkbox"
+                     class="simple-toggle"
+                     x-model="showImplementationAreas">
             </div>
             <form x-ref="filterForm" @change.debounce.1000ms="applyFilters()">
               {% for field in filter_form %}
-                <div class="mb-3">
-                  <label for="{{ field.id_for_label }}"
-                         class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
-                  {{ field }}
-                </div>
+                {% if field.name == "unassigned_only" %}
+                  <div class="mb-3 flex items-center justify-between py-2">
+                    <label for="{{ field.id_for_label }}"
+                           class="text-sm font-medium text-gray-700">
+                      {{ field.label }}
+                      <i class="fa-solid fa-circle-info text-gray-400"
+                         x-tooltip.raw="{% translate 'Shows only Work Areas that have not been assigned to a Connect Worker.' %}"></i>
+                    </label>
+                    {{ field }}
+                  </div>
+                {% else %}
+                  <div class="mb-3">
+                    <label for="{{ field.id_for_label }}"
+                           class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
+                    {{ field }}
+                  </div>
+                {% endif %}
               {% endfor %}
             </form>
           </aside>
@@ -214,6 +248,11 @@
                     <dt class="text-sm text-gray-500">{% translate "Work Area Group" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
                         x-text="selectedFeature.group_name ?? '—'">
+                    </dd>
+                    <dt class="text-sm text-gray-500">{% translate "Implementation Area" %}</dt>
+                    <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                        x-text="selectedFeature.implementation_area_name || '—'"
+                        x-tooltip="selectedFeature.implementation_area_name || '—'">
                     </dd>
                     <dt class="text-sm text-gray-500">{% translate "Area Slug" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
