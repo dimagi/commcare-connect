@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0138_assignedtask_date_modified"),
+        ("opportunity", "0139_alter_tasktype_mode"),
     ]
 
     operations = [
