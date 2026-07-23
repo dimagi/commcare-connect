@@ -201,18 +201,18 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
-    OrganizationProgramManagerMixin,
     OrganizationUserMemberRoleMixin,
     OrganizationUserMixin,
+    OrgPMRequiredMixin,
     _request_user_is_member,
-    managed_opportunity_pm_required,
+    opportunity_pm_required,
     opportunity_required,
     org_admin_required,
     org_member_required,
-    org_program_manager_required,
+    org_pm_required,
     org_viewer_required,
 )
-from commcare_connect.program.utils import is_program_manager
+from commcare_connect.program.utils import is_org_pm
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import (
@@ -263,7 +263,7 @@ class OpportunityObjectMixin:
         return self.get_opportunity()
 
 
-class ManagedOpportunityPMRequiredMixin(LoginRequiredMixin, OpportunityObjectMixin):
+class OpportunityPMRequiredMixin(LoginRequiredMixin, OpportunityObjectMixin):
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
@@ -310,7 +310,7 @@ class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(OrganizationProgramManagerMixin, CreateView):
+class OpportunityInit(OrgPMRequiredMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -335,7 +335,7 @@ class OpportunityInit(OrganizationProgramManagerMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
+class OpportunityInitUpdate(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -403,7 +403,7 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
         return form_kwargs
 
 
-class OpportunityFinalize(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
+class OpportunityFinalize(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -735,7 +735,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
 @org_member_required
 @opportunity_required
 def add_budget_new_users(request, org_slug=None, opp_id=None):
-    program_manager = is_program_manager(request)
+    program_manager = is_org_pm(request)
 
     form = AddBudgetNewUsersForm(
         opportunity=request.opportunity,
@@ -1347,7 +1347,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     )
 
 
-class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, TemplateView):
+class TaskTypesConfig(OpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, TemplateView):
     template_name = "opportunity/task_types_config.html"
 
     def get_context_data(self, **kwargs):
@@ -1389,7 +1389,7 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
         return self.render_to_response(self.get_context_data(form=form))
 
 
-class EditTaskType(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class EditTaskType(OpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
     template_name = "opportunity/edit_task_type_form.html"
     form_class = EditTaskTypeForm
     model = TaskType
@@ -1860,7 +1860,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         return _("Review Custom Invoice")
 
 
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @require_POST
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
@@ -3697,7 +3697,7 @@ class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OrganizationU
 @require_POST
 @org_member_required
 @opportunity_required
-@managed_opportunity_pm_required
+@opportunity_pm_required
 def create_task(request, org_slug, opp_id):
     opportunity = request.opportunity
     access = None
@@ -3741,7 +3741,7 @@ def create_task(request, org_slug, opp_id):
 @require_POST
 @org_member_required
 @opportunity_required
-@managed_opportunity_pm_required
+@opportunity_pm_required
 def delete_tasks(request, org_slug, opp_id):
     try:
         task_ids = [int(tid) for tid in request.POST.getlist("task_ids")]

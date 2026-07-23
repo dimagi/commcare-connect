@@ -2,7 +2,7 @@ from django.utils.deprecation import MiddlewareMixin
 from django.utils.functional import SimpleLazyObject
 
 from ..organization.models import UserOrganizationMembership as Membership
-from ..program.utils import is_program_manager_of_opportunity
+from ..program.utils import is_opportunity_pm
 from .helpers import get_organization_for_request
 
 
@@ -40,7 +40,7 @@ def _is_opportunity_pm(request, view_kwargs):
         return None
 
     if not hasattr(request, "_cached_opportunity_pm"):
-        request._cached_opportunity_pm = is_program_manager_of_opportunity(request, opp_id)
+        request._cached_opportunity_pm = is_opportunity_pm(request, opp_id)
     return request._cached_opportunity_pm
 
 

@@ -57,7 +57,7 @@ def _request_user_is_admin(request):
     ) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
-def request_user_is_program_manager(request):
+def is_org_pm_or_all_access(request):
     return (
         request.org and request.org_membership and request.org_membership.is_admin and request.org.program_manager
     ) or request.user.has_perm(ALL_ORG_ACCESS)
@@ -79,15 +79,11 @@ def org_viewer_required(view_func):
     return _get_decorated_function(view_func, _request_user_is_viewer)
 
 
-def org_program_manager_required(view_func):
-    return _get_decorated_function(view_func, request_user_is_program_manager)
+def org_pm_required(view_func):
+    return _get_decorated_function(view_func, is_org_pm_or_all_access)
 
 
-def opportunity_program_manager_required(view_func):
-    return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
-
-
-def managed_opportunity_pm_required(view_func):
+def opportunity_pm_required(view_func):
     return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
 
 
@@ -141,10 +137,10 @@ class OrganizationUserMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-class OrganizationProgramManagerMixin:
-    """Mixin version of org_program_manager_required decorator"""
+class OrgPMRequiredMixin:
+    """Mixin version of org_pm_required decorator"""
 
-    @method_decorator(org_program_manager_required)
+    @method_decorator(org_pm_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 
