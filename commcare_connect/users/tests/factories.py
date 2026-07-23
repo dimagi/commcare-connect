@@ -54,6 +54,8 @@ class MobileUserFactory(DjangoModelFactory):
 class LLOEntityFactory(DjangoModelFactory):
     name = Faker("company")
     short_name = Faker("company_suffix")
+    has_used_connect = False
+    verified = False
 
     class Meta:
         model = LLOEntity

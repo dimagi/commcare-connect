@@ -87,5 +87,11 @@ class ConnectIDUserLinkAdmin(admin.ModelAdmin):
 
 @admin.register(LLOEntity)
 class LLOEntityAdmin(admin.ModelAdmin):
-    list_display = ["name"]
-    search_fields = ["name"]
+    list_display = ["name", "short_name", "verified", "has_used_connect", "member_count"]
+    list_filter = ["verified", "has_used_connect"]
+    search_fields = ["name", "short_name"]
+    filter_horizontal = ["members", "countries"]
+
+    @admin.display(description="Members")
+    def member_count(self, obj):
+        return obj.members.count()

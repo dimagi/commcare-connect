@@ -387,9 +387,30 @@ class WorkAreaDataSerializer(serializers.ModelSerializer):
 
 
 class LLOEntityDataSerializer(serializers.ModelSerializer):
+    countries = serializers.SlugRelatedField(many=True, read_only=True, slug_field="code")
+    members = serializers.SlugRelatedField(many=True, read_only=True, slug_field="email")
+
     class Meta:
         model = LLOEntity
-        fields = ["id", "name", "short_name"]
+        fields = [
+            "id",
+            "name",
+            "short_name",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+            "verified",
+            "members",
+        ]
 
 
 class AuditReportDataSerializer(serializers.ModelSerializer):
