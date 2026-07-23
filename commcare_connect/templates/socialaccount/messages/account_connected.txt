@@ -1,0 +1,6 @@
+{% load i18n %}
+{% if sociallogin.account.provider == "ocs" %}
+{% blocktrans %}Your Open Chat Studio account has been connected.{% endblocktrans %}
+{% else %}
+{% blocktrans %}The social account has been connected.{% endblocktrans %}
+{% endif %}
