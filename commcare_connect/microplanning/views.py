@@ -383,7 +383,11 @@ class WorkAreaImport(View):
         response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
         writer = csv.writer(response)
         writer.writerow(
-            [*WorkAreaCSVImporter.HEADERS.values(), WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"]]
+            [
+                *WorkAreaCSVImporter.HEADERS.values(),
+                WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+                WorkAreaCSVImporter.GROUP_NAME_HEADER,
+            ]
         )
         writer.writerow(
             [
@@ -397,6 +401,7 @@ class WorkAreaImport(View):
                 "LGA1",
                 "State1",
                 "Ward North",
+                "Work-Area-Group-1",
             ]
         )
         return response
@@ -517,6 +522,11 @@ def _area_modal_context(org_slug, opp_id, area_type):
             _("LGA – name of the LGA the work area is in"),
             _("State – name of the state the work area is in"),
             _("Implementation Area – (optional) name of the matching Implementation Area"),
+            _(
+                "Work Area Group Name (optional): Enter a group name for every row to assign work areas directly "
+                "and skip automatic clustering. Leave this column blank for every row to use automatic clustering. "
+                "Do not mix blank and filled values."
+            ),
         ],
     }
 
