@@ -138,8 +138,8 @@
           <span id="toast-message"></span>
         </div>
         {% if assignment_mode %}
-          <div x-show="hoveringWorkArea"
-               x-effect="if (hoveringWorkArea) { clearTimeout(hintTimeout); hintTimeout = setTimeout(() => hoveringWorkArea = false, 3000) }"
+          <div x-show="isHoveringWorkArea"
+               x-effect="if (isHoveringWorkArea) { clearTimeout(hintTimeout); hintTimeout = setTimeout(() => isHoveringWorkArea = false, 3000) }"
                x-cloak
                class="absolute top-4 right-2 z-40 pointer-events-none px-2 py-2 rounded-md shadow-lg border border-white/10 text-sm text-white bg-black/50">
             {% translate "Click to select group · Shift+click to select single area" %}

@@ -5,7 +5,7 @@
             map: null,
             selectedFeature: null,
             highlightedWorkAreaId: null,
-            hoveringWorkArea: false,
+            isHoveringWorkArea: false,
             hintTimeout: null,
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
@@ -743,7 +743,10 @@
 
                 // Mapbox binds shift+drag to box-zoom by default, which intercepts the
                 // mousedown/click sequence before our shift+click work-area handler sees it.
-                this.map.boxZoom.disable();
+                // Only assignment mode uses shift+click, so only disable it there.
+                if (this.assignmentMode) {
+                    this.map.boxZoom.disable();
+                }
 
                 await new Promise(resolve => this.map.once('load', resolve));
 
@@ -1045,7 +1048,7 @@
                 let hoveredId = null;
                 this.map.on('mousemove', 'workareas-fill', (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
-                    this.hoveringWorkArea = true;
+                    this.isHoveringWorkArea = true;
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const newId = feature.id;
@@ -1059,7 +1062,7 @@
 
                 this.map.on('mouseleave', 'workareas-fill', () => {
                     this.map.getCanvasContainer().style.cursor = '';
-                    this.hoveringWorkArea = false;
+                    this.isHoveringWorkArea = false;
                     if (hoveredId !== null) {
                         this.setWorkAreaState(hoveredId, { hovered: false });
                         hoveredId = null;
