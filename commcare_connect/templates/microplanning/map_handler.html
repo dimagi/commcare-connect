@@ -32,6 +32,7 @@
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
+            groupWorkAreasCache: new Map(),
             assignmentQueue: [],
             excludedWorkAreaIds: new Set(),
 
@@ -239,47 +240,68 @@
 
             // --- Assignment mode methods ---
 
-            toggleWorkAreaSelection(id, properties) {
-                const isDeselecting = this.selectedWorkAreas.has(id);
-                if (isDeselecting) {
+            // Adds/removes a single work area from the assignment selection. Both single-WA
+            // and whole-group selection go through this one place so the group filter
+            // dropdown's own tracked selection can't drift from the actual selection: if this
+            // change breaks coherence with the dropdown-selected group (deselecting one of its
+            // members, or selecting one outside it), the dropdown's tracking is cleared too.
+            setWorkAreaSelected(id, selected) {
+                if (selected) {
+                    this.selectedWorkAreas.add(id);
+                } else {
                     this.selectedWorkAreas.delete(id);
                     this.flwFilterWorkAreaIds.delete(id);
-                } else {
-                    this.selectedWorkAreas.add(id);
-                    if (properties) {
-                        this.workAreaProperties.set(id, properties);
-                    }
                 }
 
-                // Clear group dropdown if the map click breaks the group selection:
-                // either deselecting a WA inside the group, or selecting one outside it
                 if (this.selectedGroupId) {
                     const isGroupWa = this.groupWorkAreaIds.has(id);
-                    if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
+                    if ((!selected && isGroupWa) || (selected && !isGroupWa)) {
                         this.groupWorkAreaIds.clear();
                         this.selectedGroupId = null;
                         if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
                     }
                 }
 
-                this.setWorkAreaState(id, { assignment_selected: this.selectedWorkAreas.has(id) });
+                this.setWorkAreaState(id, { assignment_selected: selected });
+            },
+
+            toggleWorkAreaSelection(id, properties) {
+                const isSelecting = !this.selectedWorkAreas.has(id);
+                if (isSelecting && properties) {
+                    this.workAreaProperties.set(id, properties);
+                }
+                this.setWorkAreaSelected(id, isSelecting);
                 this.updateFlwSummary();
             },
 
-            // Selects/deselects an entire Work Area Group with one click.
-            async toggleGroupSelection(groupId, fallbackId, fallbackProperties) {
-                if (groupId == null) {
-                    this.toggleWorkAreaSelection(fallbackId, fallbackProperties);
-                    return;
+            // Fetches (and caches) a group's work areas. Concurrent or repeat calls for the
+            // same group share one in-flight/cached request instead of re-fetching, since
+            // group membership doesn't change during a session.
+            async fetchGroupWorkAreas(groupId) {
+                if (!this.groupWorkAreasCache.has(groupId)) {
+                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
+                    const promise = fetch(url)
+                        .then(resp => {
+                            if (!resp.ok) throw new Error(`Failed to load group work areas (status ${resp.status})`);
+                            return resp.json();
+                        })
+                        .then(data => data.work_areas)
+                        .catch(e => {
+                            this.groupWorkAreasCache.delete(groupId);
+                            throw e;
+                        });
+                    this.groupWorkAreasCache.set(groupId, promise);
                 }
+                return this.groupWorkAreasCache.get(groupId);
+            },
 
+            // Selects/deselects an entire Work Area Group with one click.
+            async toggleGroupSelection(groupId) {
                 let workAreas;
                 try {
-                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    workAreas = data.work_areas;
+                    workAreas = await this.fetchGroupWorkAreas(groupId);
                 } catch (e) {
+                    console.error(e);
                     this.showToast("{% translate 'Failed to load group work areas' %}", true);
                     return;
                 }
@@ -291,12 +313,7 @@
 
                 for (const wa of workAreas) {
                     this.workAreaProperties.set(wa.id, wa);
-                    if (hasAnySelected) {
-                        this.selectedWorkAreas.delete(wa.id);
-                    } else {
-                        this.selectedWorkAreas.add(wa.id);
-                    }
-                    this.setWorkAreaState(wa.id, { assignment_selected: !hasAnySelected });
+                    this.setWorkAreaSelected(wa.id, !hasAnySelected);
                 }
                 this.updateFlwSummary();
             },
@@ -985,12 +1002,13 @@
                     const id = feature.id;
 
                     // In assignment mode: plain click selects/deselects the whole Work Area
-                    // Group by default; shift+click targets just this one work area.
+                    // Group by default; shift+click (or a work area with no group) targets
+                    // just this one work area.
                     if (this.assignmentMode) {
-                        if (e.originalEvent.shiftKey) {
+                        if (e.originalEvent.shiftKey || feature.properties.group_id == null) {
                             this.toggleWorkAreaSelection(id, feature.properties);
                         } else {
-                            this.toggleGroupSelection(feature.properties.group_id, id, feature.properties);
+                            this.toggleGroupSelection(feature.properties.group_id);
                         }
                         return;
                     }
