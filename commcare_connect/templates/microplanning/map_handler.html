@@ -934,6 +934,82 @@
                     })
                     .catch(err => console.error(err));
 
+                // Implementation Areas are a standalone, toggleable overlay independent of
+                // Work Areas. Their setup lives in its own method to keep initializeMap focused.
+                this.initImplementationAreas();
+
+
+                // When the user clicks on the map, Mapbox returns the geographic object
+                // under the cursor as a "feature". A feature represents a single polygon
+                // (in our case a workarea) along with its attributes in `properties`.
+                // `feature` → the raw Mapbox object returned from the click event.
+                // `selectedFeature` → our Alpine state that stores the currently selected workarea.
+                // We store its properties and ID so we can toggle the highlight and access its data.
+                this.map.on('click', 'workareas-fill', (e) => {
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    const id = feature.id;
+
+                    // In assignment mode, toggle multi-select instead of single-select
+                    if (this.assignmentMode) {
+                        this.toggleWorkAreaSelection(id, feature.properties);
+                        return;
+                    }
+
+                    if (this.selectedFeature) {
+                        this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                    }
+                    if (this.selectedFeature && this.selectedFeature._id === id) {
+                        this.selectedFeature = null;
+                        return;
+                    }
+
+                    // Merge tile properties with feature-state so sidebar reflects
+                    // any local edits applied via setFeatureState.
+                    const state = this.map.getFeatureState({
+                        source: 'workareas',
+                        sourceLayer: 'workareas',
+                        id
+                    });
+
+                    this.selectedFeature = {
+                        ...e.features[0].properties,
+                        ...state,
+                        _id: id
+                    };
+
+                    this.setWorkAreaState(id, { selected: true });
+                });
+
+                // Tracks the currently hovered feature to apply white fill highlight
+                let hoveredId = null;
+                this.map.on('mousemove', 'workareas-fill', (e) => {
+                    this.map.getCanvasContainer().style.cursor = 'pointer';
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    const newId = feature.id;
+                    if (newId === hoveredId) return;
+                    if (hoveredId !== null) {
+                        this.setWorkAreaState(hoveredId, { hovered: false });
+                    }
+                    hoveredId = newId;
+                    this.setWorkAreaState(hoveredId, { hovered: true });
+                });
+
+                this.map.on('mouseleave', 'workareas-fill', () => {
+                    this.map.getCanvasContainer().style.cursor = '';
+                    if (hoveredId !== null) {
+                        this.setWorkAreaState(hoveredId, { hovered: false });
+                        hoveredId = null;
+                    }
+                });
+            },
+
+            // Sets up the Implementation Area overlay: a GeoJSON source, a black outline layer,
+            // the data fetch, hover highlight + name tooltip, and the show/hide toggle. Must be
+            // called from initializeMap after the Work Area layers are added, so the outline
+            // draws on top of them. Assumes this.map exists and its style has loaded.
+            initImplementationAreas() {
                 const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
 
                 // generateId gives each feature a stable id so hover can be tracked per
@@ -1042,72 +1118,6 @@
                     if (!visible) {
                         this.map.getCanvasContainer().style.cursor = '';
                         clearImplementationAreaHover();
-                    }
-                });
-
-
-                // When the user clicks on the map, Mapbox returns the geographic object
-                // under the cursor as a "feature". A feature represents a single polygon
-                // (in our case a workarea) along with its attributes in `properties`.
-                // `feature` → the raw Mapbox object returned from the click event.
-                // `selectedFeature` → our Alpine state that stores the currently selected workarea.
-                // We store its properties and ID so we can toggle the highlight and access its data.
-                this.map.on('click', 'workareas-fill', (e) => {
-                    const feature = e.features?.[0];
-                    if (!feature || feature.id == null) return;
-                    const id = feature.id;
-
-                    // In assignment mode, toggle multi-select instead of single-select
-                    if (this.assignmentMode) {
-                        this.toggleWorkAreaSelection(id, feature.properties);
-                        return;
-                    }
-
-                    if (this.selectedFeature) {
-                        this.setWorkAreaState(this.selectedFeature._id, { selected: false });
-                    }
-                    if (this.selectedFeature && this.selectedFeature._id === id) {
-                        this.selectedFeature = null;
-                        return;
-                    }
-
-                    // Merge tile properties with feature-state so sidebar reflects
-                    // any local edits applied via setFeatureState.
-                    const state = this.map.getFeatureState({
-                        source: 'workareas',
-                        sourceLayer: 'workareas',
-                        id
-                    });
-
-                    this.selectedFeature = {
-                        ...e.features[0].properties,
-                        ...state,
-                        _id: id
-                    };
-
-                    this.setWorkAreaState(id, { selected: true });
-                });
-
-                // Tracks the currently hovered feature to apply white fill highlight
-                let hoveredId = null;
-                this.map.on('mousemove', 'workareas-fill', (e) => {
-                    this.map.getCanvasContainer().style.cursor = 'pointer';
-                    const feature = e.features?.[0];
-                    if (!feature || feature.id == null) return;
-                    const newId = feature.id;
-                    if (newId === hoveredId) return;
-                    if (hoveredId !== null) {
-                        this.setWorkAreaState(hoveredId, { hovered: false });
-                    }
-                    hoveredId = newId;
-                    this.setWorkAreaState(hoveredId, { hovered: true });
-                });
-
-                this.map.on('mouseleave', 'workareas-fill', () => {
-                    this.map.getCanvasContainer().style.cursor = '';
-                    if (hoveredId !== null) {
-                        this.setWorkAreaState(hoveredId, { hovered: false });
-                        hoveredId = null;
                     }
                 });
             }
