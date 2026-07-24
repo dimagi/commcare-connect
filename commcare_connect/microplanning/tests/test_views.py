@@ -1505,8 +1505,11 @@ class TestGetWorkAreasForAssignment:
         )
 
         assert response.status_code == 200
-        returned_ids = {wa["id"] for wa in response.json()["work_areas"]}
+        work_areas = response.json()["work_areas"]
+        returned_ids = {wa["id"] for wa in work_areas}
         assert returned_ids == {wa_a.id, wa_b.id}
+        group_id_by_wa_id = {wa["id"]: wa["group_id"] for wa in work_areas}
+        assert group_id_by_wa_id == {wa_a.id: group_a.id, wa_b.id: group_b.id}
 
     def test_no_group_ids_returns_empty(
         self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity

@@ -669,8 +669,7 @@
                         // on the map for the user to inspect and retry.
                         this.clearSelection();
                         for (const id of failedIds) {
-                            this.selectedWorkAreas.add(id);
-                            this.setWorkAreaState(id, { assignment_selected: true });
+                            this.setWorkAreaSelected(id, true, this.workAreaProperties.get(id)?.group_id);
                         }
                         const msg = data.skipped || failedIds.length
                             ? "{% translate 'Unassigned' %} " + unassignedIds.length + " " + "{% translate 'work area(s).' %}"
