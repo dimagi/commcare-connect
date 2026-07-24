@@ -242,24 +242,27 @@
             // --- Assignment mode methods ---
 
             // Adds/removes a single work area from the assignment selection. Both single-WA
-            // and whole-group selection go through this one place so the group filter
-            // dropdown's own tracked selection can't drift from the actual selection: if this
-            // change breaks coherence with the dropdown-selected group (deselecting one of its
-            // members, or selecting one outside it), the dropdown's tracking is cleared too.
-            setWorkAreaSelected(id, selected) {
+            // and whole-group selection go through this one place. With multi-select groups,
+            // only deselecting a WA that belongs to one of the dropdown-tracked groups can
+            // break coherence (selecting some unrelated WA doesn't change whether the OTHER
+            // tracked groups are still fully selected) - when that happens, remove just that
+            // one group from the dropdown, not every group it currently has selected.
+            setWorkAreaSelected(id, selected, groupId = null) {
                 if (selected) {
                     this.selectedWorkAreas.add(id);
                 } else {
                     this.selectedWorkAreas.delete(id);
                     this.flwFilterWorkAreaIds.delete(id);
-                }
 
-                if (this.selectedGroupIds.length) {
-                    const isGroupWa = this.groupWorkAreaIds.has(id);
-                    if ((!selected && isGroupWa) || (selected && !isGroupWa)) {
-                        this.groupWorkAreaIds.clear();
-                        this.selectedGroupIds = [];
-                        if (this.$refs.groupSelect?.tomselect) this.$refs.groupSelect.tomselect.clear();
+                    groupId = groupId != null ? String(groupId) : null;
+                    if (groupId && this.selectedGroupIds.includes(groupId) && this.groupWorkAreaIds.has(id)) {
+                        this.selectedGroupIds = this.selectedGroupIds.filter(gid => gid !== groupId);
+                        this.$refs.groupSelect?.tomselect?.removeItem(groupId, true);
+                        // Already cached (this group must have been fetched to be tracked),
+                        // so this resolves immediately without a new network request.
+                        this.fetchGroupWorkAreas(groupId).then(workAreas => {
+                            for (const wa of workAreas) this.groupWorkAreaIds.delete(wa.id);
+                        });
                     }
                 }
 
@@ -271,7 +274,7 @@
                 if (isSelecting && properties) {
                     this.workAreaProperties.set(id, properties);
                 }
-                this.setWorkAreaSelected(id, isSelecting);
+                this.setWorkAreaSelected(id, isSelecting, properties?.group_id);
                 this.updateFlwSummary();
             },
 
@@ -306,6 +309,8 @@
 
             // Selects/deselects an entire Work Area Group with one click.
             async toggleGroupSelection(groupId) {
+                groupId = String(groupId);
+
                 let workAreas;
                 try {
                     workAreas = await this.fetchGroupWorkAreas(groupId);
@@ -322,12 +327,32 @@
                 // a plain click fills in the rest instead of wiping out what's there.
                 const selectedCount = workAreas.filter(wa => this.selectedWorkAreas.has(wa.id)).length;
                 const isMajoritySelected = selectedCount > workAreas.length / 2;
+                const willSelect = !isMajoritySelected;
 
                 for (const wa of workAreas) {
                     this.workAreaProperties.set(wa.id, wa);
-                    this.setWorkAreaSelected(wa.id, !isMajoritySelected);
+                    this.setWorkAreaSelected(wa.id, willSelect);
                 }
+                this.syncGroupDropdown(groupId, willSelect, workAreas);
                 this.updateFlwSummary();
+            },
+
+            // Keeps the group filter dropdown showing the same groups a map click just fully
+            // selected/deselected, so both stay visually in sync. Uses TomSelect's silent
+            // add/remove so this doesn't re-trigger the dropdown's own @change handler (which
+            // would otherwise re-run selectGroup() and re-fetch every currently-selected group).
+            syncGroupDropdown(groupId, selected, workAreas) {
+                if (selected) {
+                    for (const wa of workAreas) this.groupWorkAreaIds.add(wa.id);
+                    if (!this.selectedGroupIds.includes(groupId)) {
+                        this.selectedGroupIds = [...this.selectedGroupIds, groupId];
+                    }
+                    this.$refs.groupSelect?.tomselect?.addItem(groupId, true);
+                } else {
+                    for (const wa of workAreas) this.groupWorkAreaIds.delete(wa.id);
+                    this.selectedGroupIds = this.selectedGroupIds.filter(id => id !== groupId);
+                    this.$refs.groupSelect?.tomselect?.removeItem(groupId, true);
+                }
             },
 
             selectGroup(groupIds) {
