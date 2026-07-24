@@ -36,8 +36,9 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MobileUserFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -446,6 +447,38 @@ class TestAssignedTaskDeleteAndResetHQ:
             AssignedTask.bulk_delete([task_a.pk, task_b.pk], access.opportunity)
 
         mock_update.assert_called_once_with({access: {"properties": {"prop_a": "", "prop_b": ""}}})
+
+
+@pytest.mark.django_db
+class TestSupervisingOrganizationDefault:
+    """Until the UI allows setting it, new opportunities default their supervising organization."""
+
+    def test_defaults_to_program_organization(self):
+        program = ProgramFactory()
+        opp = Opportunity(organization=OrganizationFactory(), program=program, name="opp", description="desc")
+        opp.save()
+        opp.refresh_from_db()
+        assert opp.supervising_organization == program.organization
+
+    def test_defaults_to_own_organization_without_program(self):
+        org = OrganizationFactory()
+        opp = Opportunity(organization=org, program=None, name="opp", description="desc")
+        opp.save()
+        opp.refresh_from_db()
+        assert opp.supervising_organization == org
+
+    def test_does_not_override_explicit_supervisor(self):
+        supervisor = OrganizationFactory()
+        opp = Opportunity(
+            organization=OrganizationFactory(),
+            program=ProgramFactory(),
+            supervising_organization=supervisor,
+            name="opp",
+            description="desc",
+        )
+        opp.save()
+        opp.refresh_from_db()
+        assert opp.supervising_organization == supervisor
 
 
 @pytest.mark.django_db

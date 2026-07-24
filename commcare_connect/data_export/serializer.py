@@ -30,6 +30,7 @@ from commcare_connect.program.models import Program
 
 class OpportunityDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    supervising_organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     program = serializers.SerializerMethodField()
     visit_count = serializers.SerializerMethodField()
 
@@ -40,6 +41,7 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "name",
             "date_created",
             "organization",
+            "supervising_organization",
             "end_date",
             "is_active",
             "program",
@@ -56,17 +58,19 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
-        fields = ["id", "slug", "name"]
+        fields = ["id", "slug", "name", "funder"]
 
 
 class ProgramDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    funder = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    watchers = serializers.SlugRelatedField(read_only=True, slug_field="slug", many=True)
     delivery_type = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     currency = serializers.CharField(source="currency_id", read_only=True)
 
     class Meta:
         model = Program
-        fields = ["id", "name", "delivery_type", "currency", "organization"]
+        fields = ["id", "name", "delivery_type", "currency", "organization", "funder", "watchers"]
 
 
 class OpportunityUserDataSerializer(serializers.Serializer):
