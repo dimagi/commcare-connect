@@ -242,19 +242,32 @@
             // --- Assignment mode methods ---
 
             // Adds/removes a single work area from the assignment selection. Both single-WA
-            // and whole-group selection go through this one place. With multi-select groups,
-            // only deselecting a WA that belongs to one of the dropdown-tracked groups can
-            // break coherence (selecting some unrelated WA doesn't change whether the OTHER
-            // tracked groups are still fully selected) - when that happens, remove just that
-            // one group from the dropdown, not every group it currently has selected.
+            // and whole-group selection go through this one place. With multi-select groups:
+            // selecting a WA that happens to complete its group (the last remaining member)
+            // syncs that group into the dropdown, same as a plain click would; deselecting a
+            // WA that belongs to a dropdown-tracked group breaks just that one group's
+            // coherence and removes only it, not every group currently selected.
             setWorkAreaSelected(id, selected, groupId = null) {
+                groupId = groupId != null ? String(groupId) : null;
+
                 if (selected) {
                     this.selectedWorkAreas.add(id);
+
+                    if (groupId && !this.selectedGroupIds.includes(groupId)) {
+                        // Already cached once this group's been seen before; otherwise this
+                        // is the same fetch a click on it would trigger anyway.
+                        this.fetchGroupWorkAreas(groupId).then(workAreas => {
+                            const isFullySelected = workAreas.length > 0
+                                && workAreas.every(wa => this.selectedWorkAreas.has(wa.id));
+                            if (isFullySelected) {
+                                this.syncGroupDropdown(groupId, true, workAreas);
+                            }
+                        });
+                    }
                 } else {
                     this.selectedWorkAreas.delete(id);
                     this.flwFilterWorkAreaIds.delete(id);
 
-                    groupId = groupId != null ? String(groupId) : null;
                     if (groupId && this.selectedGroupIds.includes(groupId) && this.groupWorkAreaIds.has(id)) {
                         this.selectedGroupIds = this.selectedGroupIds.filter(gid => gid !== groupId);
                         this.$refs.groupSelect?.tomselect?.removeItem(groupId, true);
