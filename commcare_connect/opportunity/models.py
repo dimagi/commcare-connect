@@ -121,7 +121,21 @@ class Opportunity(BaseModel):
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
     managed = models.BooleanField(default=False)
     program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING, null=True)
+    supervising_organization = models.ForeignKey(
+        Organization,
+        on_delete=models.PROTECT,
+        related_name="supervised_opportunities",
+    )
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
+
+    def save(self, *args, **kwargs):
+        # Until the UI allows setting a supervising organization, default it to the program's
+        # owning organization (or the opportunity's own organization when there is no program).
+        if not self.supervising_organization_id:
+            self.supervising_organization_id = (
+                self.program.organization_id if self.program_id else self.organization_id
+            )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
