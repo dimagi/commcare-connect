@@ -168,7 +168,9 @@
 /*-- buttons -------------------------------------*/
 
 .button {
-  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
+  /* Reserve a 1px border on every button so solid variants (e.g. .primary-dark) render the
+     same size as bordered ones (e.g. .outline-style, which overrides the color). */
+  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg border border-transparent text-sm font-medium transition-all duration-300;
 }
 
 .button:not(:disabled):hover::after {
@@ -516,7 +518,7 @@
   }
 
   .simple-toggle:checked {
-    @apply bg-green-600;
+    @apply bg-indigo-600;
   }
 
   .simple-toggle:checked::before {
