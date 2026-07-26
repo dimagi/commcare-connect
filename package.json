@@ -14,7 +14,7 @@
     "babel-loader": "^9.1.2",
     "concurrently": "^8.0.1",
     "css-loader": "^6.5.1",
-    "dotenv-webpack": "^8.0.1",
+    "dotenv-webpack": "^9.0.0",
     "eslint": "^8.57.1",
     "flatpickr": "^4.6.13",
     "gulp-concat": "^2.6.1",
