@@ -11,6 +11,7 @@ from django.contrib.messages import get_messages
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.core.files.storage.handler import StorageHandler
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
@@ -417,6 +418,7 @@ def test_approve_visits(
     user = MembershipFactory.create(organization=opportunity.organization).user
     approve_url = reverse("opportunity:approve_visits", args=(opportunity.organization.slug, opportunity.id))
     client.force_login(user)
+    before_update = now()
 
     response = client.post(
         approve_url,
@@ -433,8 +435,34 @@ def test_approve_visits(
     for v in visits:
         v.refresh_from_db()
         assert v.status == VisitValidationStatus.approved
+        assert v.status_modified_date >= before_update
         if opportunity.managed:
             assert v.justification == justification
+
+
+@pytest.mark.django_db
+def test_approve_visits_resets_disagree_and_sets_status_modified_date(client: Client, organization, opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    visit = UserVisitFactory.create(
+        opportunity=opportunity,
+        opportunity_access=access,
+        status=VisitValidationStatus.pending,
+        review_status=VisitReviewStatus.disagree,
+    )
+
+    user = MembershipFactory.create(organization=opportunity.organization).user
+    client.force_login(user)
+    approve_url = reverse("opportunity:approve_visits", args=(opportunity.organization.slug, opportunity.id))
+    before_update = now()
+
+    response = client.post(approve_url, {"visit_ids[]": [visit.id]}, follow=True)
+
+    assert response.status_code == HTTPStatus.OK
+    visit.refresh_from_db()
+    assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_update
+    assert visit.review_status == VisitReviewStatus.pending
+    assert visit.review_status_modified_date >= before_update
 
 
 @pytest.mark.django_db
@@ -456,10 +484,12 @@ def test_reject_visit(client: Client, opportunity):
     user = MembershipFactory.create(organization=opportunity.organization).user
     client.force_login(user)
     reject_url = reverse("opportunity:reject_visits", args=(opportunity.organization.slug, opportunity.id))
+    before_update = now()
     response = client.post(reject_url, {"reason": reason, "visit_ids[]": [visit.id, accept_visit.id]}, follow=True)
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
     assert visit.reason == reason
+    assert visit.status_modified_date >= before_update
     assert response.status_code == HTTPStatus.OK
 
     accept_visit.refresh_from_db()
@@ -491,33 +521,41 @@ def test_approve_previously_rejected_visit_updates_completed_work_status(
     reject_url = reverse("opportunity:reject_visits", args=(organization.slug, managed_opportunity.id))
     approve_url = reverse("opportunity:approve_visits", args=(organization.slug, managed_opportunity.id))
 
+    before_reject = now()
     client.post(reject_url, {"reason": "wrong data", "visit_ids[]": [visit.id]})
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
+    assert visit.status_modified_date >= before_reject
     completed_work.refresh_from_db()
     assert completed_work.status == CompletedWorkStatus.rejected
 
+    before_approve = now()
     client.post(approve_url, {"visit_ids[]": [visit.id]})
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.approved
+    assert visit.status_modified_date >= before_approve
 
     # PM must agree for CompletedWork to be marked approved on managed opportunities
     client.force_login(program_manager_org_user_admin)
     review_url = reverse("opportunity:user_visit_review", args=(program_manager_org.slug, managed_opportunity.id))
+    before_review = now()
     client.post(review_url, {"review_status": "agree", "pk": [visit.id]})
+    visit.refresh_from_db()
+    assert visit.review_status == VisitReviewStatus.agree
+    assert visit.review_status_modified_date >= before_review
 
     completed_work.refresh_from_db()
     assert completed_work.status == CompletedWorkStatus.approved
 
 
 @pytest.mark.parametrize(
-    "review_status, new_status, expected_status",
+    "review_status, new_status, expected_status, expect_modified_date_set",
     [
-        ("pending", "agree", "agree"),
-        ("pending", "disagree", "disagree"),
-        ("agree", "disagree", "agree"),
-        ("disagree", "agree", "agree"),
-        ("disagree", "pending", "disagree"),
+        ("pending", "agree", "agree", True),
+        ("pending", "disagree", "disagree", True),
+        ("agree", "disagree", "agree", False),
+        ("disagree", "agree", "agree", True),
+        ("disagree", "pending", "disagree", False),
     ],
 )
 @pytest.mark.django_db
@@ -531,11 +569,14 @@ def test_user_visit_review(
     review_status,
     new_status,
     expected_status,
+    expect_modified_date_set,
 ):
     access = OpportunityAccessFactory(opportunity=managed_opportunity)
     visit = UserVisitFactory.create(
         opportunity=managed_opportunity, opportunity_access=access, review_status=review_status
     )
+    initial_modified_date = visit.review_status_modified_date
+    before_update = now()
     client.force_login(program_manager_org_user_admin)
     url = reverse(
         "opportunity:user_visit_review",
@@ -548,6 +589,11 @@ def test_user_visit_review(
     assert response.status_code == 200
     visit.refresh_from_db()
     assert visit.review_status == expected_status
+
+    if expect_modified_date_set:
+        assert visit.review_status_modified_date >= before_update
+    else:
+        assert visit.review_status_modified_date == initial_modified_date
 
     if new_status in ["agree", "disagree"]:
         expected_users = [visit.user] if review_status != "agree" else []
@@ -1164,6 +1210,7 @@ def test_views_use_opportunity_decorator_or_mixin():
     function_excluded = {
         "export_status",  # Uses task_id parameter, and similar check is applied directly in code.
         "download_export",  # Uses task_id parameter, and similar check is applied directly in code.
+        "render_payment_import_progress",  # Uses task_id parameter, and similar check is applied directly in code.
         "add_api_key",  # API key management, no opportunity context needed
     }
 
@@ -3017,20 +3064,22 @@ class TestOpportunityDeliveryStatsTiles:
 
         assert b"View Progress Map" in response.content
 
-    def test_audit_tile_shown_only_when_flag_scoped_to_opportunity(
-        self, client, organization, org_user_member, opportunity
-    ):
-        program = ProgramFactory(organization=organization)
-        opportunity.program = program
-        opportunity.save(update_fields=["program"])
-        Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT).programs.add(program)
+    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+    def test_audit_tile_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
+        flag = Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT)
+        if scope == "opportunity":
+            flag.opportunities.add(opportunity)
+        elif scope == "program":
+            program = ProgramFactory(organization=organization)
+            opportunity.program = program
+            opportunity.save(update_fields=["program"])
+            flag.programs.add(program)
+        elif scope == "organization":
+            flag.organizations.add(organization)
 
         client.force_login(org_user_member)
         response = client.get(self._url(organization, opportunity))
-        assert b"Audit Opportunity" not in response.content
 
-        Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT).opportunities.add(opportunity)
-        response = client.get(self._url(organization, opportunity))
         assert b"Audit Opportunity" in response.content
 
     def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
@@ -3046,3 +3095,77 @@ class TestOpportunityDeliveryStatsTiles:
         with override_switch(WORKER_VISITS_TASKS, active=True):
             response = client.get(self._url(organization, opportunity))
         assert b"Tasks Assigned to Connect Workers" in response.content
+
+
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_redirects_with_payment_task_id(mock_delay, client, organization, opportunity, org_user_member):
+    mock_delay.return_value.id = "task-123"
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    csv_bytes = b"username,payment amount,payment date (yyyy-mm-dd),payment method,payment operator\n"
+    upload = SimpleUploadedFile("payments.csv", csv_bytes, content_type="text/csv")
+
+    response = client.post(url, {"payments": upload})
+
+    assert response.status_code == 302
+    assert "payment_import_task_id=task-123" in response.url
+    assert "export_task_id=" not in response.url
+
+
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "PROGRESS", "args": [opportunity.id]}
+    task.info = {"message": "Payment Record Import is in progress."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Payment Record Import is in progress." in content
+    assert "hx-get" in content  # keeps polling while not complete
+
+
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_payment_import_status_complete_shows_reload_link(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task.info = {"message": "done"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
+    content = response.content.decode()
+    assert "All done! View status." in content
+    assert "payment_import_task_id=task-xyz" in content
+    assert "hx-get" not in content  # polling stops once complete
+
+
+@pytest.mark.parametrize(
+    ("is_error", "expected_class"),
+    [(False, "bg-message-success"), (True, "bg-message-error")],
+)
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_shows_import_banner_on_reload(
+    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
+):
+    message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": message, "is_error": is_error}
+    task.info = {"message": message}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert message in content
+    assert expected_class in content  # success -> green banner, error -> red banner

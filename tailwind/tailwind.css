@@ -117,6 +117,21 @@
   .animate-marquee p {
     @apply truncate text-nowrap hover:overflow-visible;
   }
+
+  @keyframes progress-bar {
+    0% {
+      background-position: 0% 50%;
+    }
+    100% {
+      background-position: 200% 50%;
+    }
+  }
+
+  .animate-progress-bar {
+    background-image: linear-gradient(to right, #8b5cf6, #a78bfa, #8b5cf6);
+    background-size: 200% 100%;
+    animation: progress-bar 2s linear infinite;
+  }
 }
 
 /*-- status ----------------------------------*/

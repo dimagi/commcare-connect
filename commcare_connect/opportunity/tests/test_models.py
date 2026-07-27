@@ -215,6 +215,14 @@ def test_access_visit_count(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+def test_completed_work_sets_status_modified_date_on_creation():
+    before_create = now()
+    completed_work = CompletedWorkFactory.create()
+    assert completed_work.status_modified_date is not None
+    assert completed_work.status_modified_date >= before_create
+
+
+@pytest.mark.django_db
 class TestOpportunityActiveTracking:
     def test_pghistory_records_manual_deactivation(self):
         opp = OpportunityFactory()
