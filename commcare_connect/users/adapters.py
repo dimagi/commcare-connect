@@ -13,8 +13,6 @@ from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.utils.translation import gettext as _
 
-from commcare_connect.ocs_provider.provider import OcsProvider
-
 
 class AccountAdapter(DefaultAccountAdapter):
     def is_open_for_signup(self, request: HttpRequest):
@@ -28,8 +26,8 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin):
         if sociallogin.is_existing:
             return
-        if sociallogin.state.get("process") == AuthProcess.CONNECT and sociallogin.account.provider == OcsProvider.id:
-            return  # OCS account being linked to an already-authenticated user
+        if sociallogin.state.get("process") == AuthProcess.CONNECT:
+            return  # linking a new provider account to an already-authenticated user
         email = user_email(sociallogin.user)
         if not email:
             return
