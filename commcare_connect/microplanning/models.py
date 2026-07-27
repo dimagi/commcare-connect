@@ -1,6 +1,7 @@
 from functools import cached_property
 
 import pghistory
+import shapely
 from django.conf import settings
 from django.contrib.gis.db import models as geo_models
 from django.db.models import Count, Index, Q, Sum
@@ -27,6 +28,7 @@ class WorkAreaGroup(geo_models.Model):
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
     ward = geo_models.SlugField(max_length=255)
     name = geo_models.CharField(max_length=255)
+    centroid = geo_models.PointField(srid=SRID, null=True, help_text="Centroid of the Work Area Group as a Point.")
 
     def __str__(self):
         return self.name
@@ -40,6 +42,24 @@ class WorkAreaGroup(geo_models.Model):
             self.workarea_set.exclude(status=WorkAreaStatus.EXCLUDED).aggregate(total=Sum("building_count"))["total"]
             or 0
         )
+
+    def update_centroid(self, commit=True):
+        """
+        Calculates the Work Area Group centroid from the Work Area boundaries
+        and saves if the centroid value has changed.
+        The commit parameter (default True) will save the change to database,
+        to save manually set it to False.
+        """
+        work_areas_boundaries = self.workarea_set.exclude(
+            status__in=[WorkAreaStatus.EXCLUDED, WorkAreaStatus.INACCESSIBLE]
+        ).values_list("boundary", flat=True)
+        old_centroid = self.centroid
+        if work_areas_boundaries:
+            self.centroid = shapely.MultiPolygon(work_areas_boundaries).centroid.wkt
+        else:
+            self.centroid = None
+        if commit and old_centroid != self.centroid:
+            self.save()
 
 
 @pghistory.track(

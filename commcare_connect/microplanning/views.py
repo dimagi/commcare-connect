@@ -349,7 +349,7 @@ class WorkAreaImport(View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(WorkAreaCSVImporter.HEADERS.values())
+        writer.writerow([*WorkAreaCSVImporter.HEADERS.values(), WorkAreaCSVImporter.GROUP_NAME_HEADER])
         writer.writerow(
             [
                 "Work-Area-1",
@@ -359,9 +359,9 @@ class WorkAreaImport(View):
                 10,
                 12,
                 7,
-                2,
                 "LGA1",
                 "State1",
+                "Work-Area-Group-1",
             ]
         )
         return response
@@ -732,11 +732,18 @@ class ModifyWorkAreaUpdateView(UpdateView):
     def form_valid(self, form):
         work_area = form.save(commit=False)
         reason = form.cleaned_data.pop("reason", "")
+        old_wag_id = form.initial.get("work_area_group")
+        updated_wag = work_area.work_area_group
+        updated_wag_id = getattr(updated_wag, "id", None)
         try:
             with transaction.atomic(), pghistory.context(reason=reason):
                 work_area.save(update_fields=["expected_visit_count", "work_area_group"])
                 if "expected_visit_count" in form.changed_data:
                     work_area.update_status()
+
+                if updated_wag_id != old_wag_id and updated_wag:
+                    updated_wag.update_centroid()
+
                 if form.has_changed() and work_area.opportunity_access_id:
                     # let exception bubble up if case update fails, to avoid saving work area without case sync
                     create_or_update_case_by_work_area(work_area)
@@ -766,6 +773,11 @@ class ModifyWorkAreaUpdateView(UpdateView):
                 }
             }
         )
+
+        if updated_wag_id != old_wag_id and old_wag_id:
+            old_wag = WorkAreaGroup.objects.get(id=old_wag_id)
+            old_wag.update_centroid()
+
         return response
 
 
@@ -1031,8 +1043,11 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
             with pghistory.context(username=request.user.username, user_email=request.user.email):
                 work_area.save(update_fields=["status"])
             inacc_request.save(update_fields=["status"])
+            if work_area.work_area_group and action == InaccessibilityReviewAction.APPROVE:
+                work_area.work_area_group.update_centroid()
             if work_area.opportunity_access_id:
                 create_or_update_case_by_work_area(work_area)
+
     except CommCareHQAPIException as e:
         logger.info(f"Failed to sync work area {work_area.id} to HQ after review action. Error: {e}")
         return HttpResponse(status=500, content=_("Failed to sync work area status. Please try again."))
