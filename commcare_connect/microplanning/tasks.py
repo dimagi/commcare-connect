@@ -6,6 +6,7 @@ from collections import defaultdict
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
@@ -16,7 +17,7 @@ from config import celery_app
 
 from .clustering import WorkAreaGrouper
 from .const import DEFAULT_BUILDING_COUNT
-from .models import SRID, ImplementationArea, WorkArea
+from .models import SRID, ImplementationArea, WorkArea, WorkAreaGroup
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,9 @@ class BaseAreaCSVImporter:
     def run(self):
         if not self._validate_all_rows(self.csv_source):
             return self._result()
-        self._stream_and_insert(self.csv_source)
-        self._after_insert()
+        with transaction.atomic():
+            self._stream_and_insert(self.csv_source)
+            self._after_insert()
         return self._result()
 
     def _result(self):
@@ -64,6 +66,7 @@ class BaseAreaCSVImporter:
         self._load_existing()
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
+        self._after_rows()
         self._clear_existing()
         return len(self.errors) == 0
 
@@ -84,8 +87,11 @@ class BaseAreaCSVImporter:
             self.model.objects.bulk_create(batch)
             self.created_count += len(batch)
 
+    def _canonical_headers(self):
+        return list(self.HEADERS.values())
+
     def _normalize_headers(self, reader):
-        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
+        canonical_by_lower = {header.lower(): header for header in self._canonical_headers()}
         reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
@@ -102,6 +108,9 @@ class BaseAreaCSVImporter:
 
     # --- hooks for subclasses ---
     def _load_existing(self):
+        pass
+
+    def _after_rows(self):
         pass
 
     def _clear_existing(self):
@@ -173,14 +182,43 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
     }
     OPTIONAL_HEADERS = {"implementation_area": "Implementation Area"}
 
+    # Optional column, not part of HEADERS: only "Work Area Group Name" is exempt from
+    # the required-columns check, since a sheet is allowed to omit it entirely.
+    GROUP_NAME_HEADER = "Work Area Group Name"
+
     def __init__(self, opp_id, csv_source):
         super().__init__(opp_id, csv_source)
         self.seen_slugs = set()
         self.existing_slugs = set()
         self.implementation_area_map = {}
+        self.has_group_names = False
+        # Ward to use if a given group name doesn't exist yet: the ward of its first-seen row.
+        self.group_wards = {}
+        self.group_cache = {}
+        self.total_rows = 0
+        self.rows_with_group = 0
+
+    def _canonical_headers(self):
+        return [*super()._canonical_headers(), self.GROUP_NAME_HEADER]
 
     def _load_existing(self):
         self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
+
+    def _process_row(self, line_num, row):
+        super()._process_row(line_num, row)
+        self.total_rows += 1
+        group_name = self.get_group_name(row)
+        if group_name:
+            self.rows_with_group += 1
+            self.group_wards.setdefault(group_name, self.get_ward(row))
+
+    def _after_rows(self):
+        self.has_group_names = self.total_rows > 0 and self.rows_with_group == self.total_rows
+        if 0 < self.rows_with_group < self.total_rows:
+            self._add_error(
+                1,
+                _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
+            )
 
     def _clear_existing(self):
         self.existing_slugs.clear()
@@ -189,6 +227,27 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.implementation_area_map = dict(
             ImplementationArea.objects.filter(opportunity_id=self.opp_id).values_list("name", "id")
         )
+        self.group_cache = self._resolve_work_area_groups() if self.has_group_names else {}
+
+    def _resolve_work_area_groups(self):
+        group_cache = {
+            group.name: group
+            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_wards)
+        }
+        missing = [name for name in self.group_wards if name not in group_cache]
+        if missing:
+            created = WorkAreaGroup.objects.bulk_create(
+                [WorkAreaGroup(opportunity_id=self.opp_id, name=name, ward=self.group_wards[name]) for name in missing]
+            )
+            group_cache.update({group.name: group for group in created})
+        return group_cache
+
+    def _after_insert(self):
+        if not self.group_cache:
+            return
+        for work_area_group in self.group_cache.values():
+            work_area_group.update_centroid(commit=False)
+        WorkAreaGroup.objects.bulk_update(self.group_cache.values(), ["centroid"])
 
     def get_implementation_area_name(self, row):
         header = self.OPTIONAL_HEADERS["implementation_area"]
@@ -219,6 +278,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             building_count=buildings,
             expected_visit_count=visits,
             target_population=self.get_target_population(row),
+            work_area_group=self.group_cache.get(self.get_group_name(row)),
             implementation_area_id=self.get_implementation_area_id(row),
             implementation_area_name=self.get_implementation_area_name(row),
             case_properties={
@@ -234,6 +294,10 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
     def get_slug(self, row):
         slug = (row.get(self.HEADERS.get("slug")) or "").strip()
         return strip_tags(slug)
+
+    def get_group_name(self, row):
+        group_name = (row.get(self.GROUP_NAME_HEADER) or "").strip()
+        return strip_tags(group_name)
 
     def _get_int(self, row, key):
         raw = row.get(self.HEADERS.get(key))
@@ -392,8 +456,8 @@ def import_implementation_areas_task(self, opp_id, file_name):
 class WorkAreaCSVExporter:
     HEADERS = {
         **WorkAreaCSVImporter.HEADERS,
-        "implementation_area": "Implementation Area",
-        "group_name": "Work Area Group Name",
+        "implementation_area": WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+        "group_name": WorkAreaCSVImporter.GROUP_NAME_HEADER,
     }
 
     FIELD_MAP = {
