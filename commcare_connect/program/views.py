@@ -24,7 +24,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
     org_admin_required,
-    org_program_manager_required,
+    org_pm_required,
     org_viewer_required,
 )
 from commcare_connect.organization.models import Organization
@@ -36,7 +36,7 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import is_program_manager
+from .utils import is_org_pm
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -172,7 +172,7 @@ class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, ProgramManagerMi
     form_class = OpportunityInitUpdateForm
 
 
-@org_program_manager_required
+@org_pm_required
 @require_POST
 def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
@@ -202,7 +202,7 @@ def invite_organization(request, org_slug, pk):
     return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
 
-@org_program_manager_required
+@org_pm_required
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
@@ -260,7 +260,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
 @org_viewer_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
-    if is_program_manager(request):
+    if is_org_pm(request):
         return program_manager_home(request, org)
     return network_manager_home(request, org)
 
