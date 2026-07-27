@@ -196,13 +196,18 @@
                      x-model="showVisits">
             </div>
             <div class="flex items-center justify-between py-2">
-              <label for="show-implementation-areas-toggle" class="text-sm text-gray-700">
+              <label for="show-implementation-areas-toggle"
+                     class="text-sm {% if implementation_areas_present %}text-gray-700{% else %}text-gray-400{% endif %}">
                 {% translate "Show Implementation Areas" %}
               </label>
-              <input id="show-implementation-areas-toggle"
-                     type="checkbox"
-                     class="simple-toggle"
-                     x-model="showImplementationAreas">
+              {# A disabled input fires no mouse events, so the tooltip lives on the wrapper. #}
+              <span {% if not implementation_areas_present %}x-tooltip.raw="{% translate 'No Implementation Areas have been uploaded for this opportunity.' %}"{% endif %}>
+                <input id="show-implementation-areas-toggle"
+                       type="checkbox"
+                       class="simple-toggle"
+                       x-model="showImplementationAreas"
+                       {% if not implementation_areas_present %}disabled{% endif %}>
+              </span>
             </div>
             <form x-ref="filterForm" @change.debounce.1000ms="applyFilters()">
               {% for field in filter_form %}
