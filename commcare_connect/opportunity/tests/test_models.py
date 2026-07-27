@@ -428,19 +428,6 @@ class TestAssignedTaskMarkCompleted:
         assert task.completed_at == completed_at
         notify.delay.assert_called_once_with(task.pk)
 
-    def test_send_notification_false_suppresses_email(self, django_capture_on_commit_callbacks):
-        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
-
-        with (
-            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
-            django_capture_on_commit_callbacks(execute=True),
-        ):
-            task.mark_completed(completed_at=now(), send_notification=False)
-
-        task.refresh_from_db()
-        assert task.status == AssignedTaskStatus.COMPLETED
-        notify.delay.assert_not_called()
-
     def test_defaults_completed_at_to_now(self):
         task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED, completed_at=None)
         before = now()

@@ -56,37 +56,6 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import UserFactory
-
-
-@pytest.mark.django_db
-class TestSendTaskCompletionNotification:
-    def test_emails_the_assigner(self, mailoutbox):
-        assigner = UserFactory(email="nm@example.com")
-        task = AssignedTaskFactory(assigned_by=assigner)
-
-        send_task_completion_notification(task.pk)
-
-        assert len(mailoutbox) == 1
-        email = mailoutbox[0]
-        assert email.to == ["nm@example.com"]
-        assert task.opportunity_access.opportunity.name in email.subject
-        assert task.task_type.name in email.body
-        assert task.opportunity_access.user.name in email.body
-
-    def test_skips_when_no_assigner(self, mailoutbox):
-        task = AssignedTaskFactory(assigned_by=None)
-
-        send_task_completion_notification(task.pk)
-
-        assert mailoutbox == []
-
-    def test_skips_when_assigner_has_no_email(self, mailoutbox):
-        task = AssignedTaskFactory(assigned_by=UserFactory(email=None))
-
-        send_task_completion_notification(task.pk)
-
-        assert mailoutbox == []
 
 
 class TestConnectUserCreation:
@@ -665,6 +634,33 @@ def test_send_task_assignment_notification(send_message_patch):
                 "opportunity_uuid": str(opportunity.opportunity_id),
                 "opportunity_status": "delivery",
                 "key": "task_assignment",
+                "session_endpoint_id": "cc_app_home",
+            },
+        )
+    )
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.send_message")
+def test_send_task_completion_notification(send_message_patch):
+    opportunity = OpportunityFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app)
+    assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+
+    send_task_completion_notification(assigned_task.pk)
+
+    assert send_message_patch.call_count == 1
+    send_message_patch.assert_called_with(
+        Message(
+            usernames=[access.user.username],
+            data={
+                "action": "ccc_generic_opportunity",
+                "title": "Task Completed",
+                "body": f"You have completed the task '{task_type.name}'.",
+                "opportunity_uuid": str(opportunity.opportunity_id),
+                "opportunity_status": "delivery",
+                "key": "task_completion",
                 "session_endpoint_id": "cc_app_home",
             },
         )

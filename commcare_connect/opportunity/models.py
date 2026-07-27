@@ -538,9 +538,8 @@ class AssignedTask(XFormBaseModel):
         duration=None,
         app_build_id=None,
         app_build_version=None,
-        send_notification=True,
     ):
-        """Mark this task complete, optionally notifying the assigner."""
+        """Mark this task complete and notify the assignee."""
         from commcare_connect.opportunity.tasks import send_task_completion_notification
 
         if self.status == AssignedTaskStatus.COMPLETED:
@@ -569,8 +568,7 @@ class AssignedTask(XFormBaseModel):
             access.last_active = self.completed_at
             access.save(update_fields=["last_active"])
 
-        if send_notification:
-            transaction.on_commit(lambda: send_task_completion_notification.delay(self.pk))
+        transaction.on_commit(lambda: send_task_completion_notification.delay(self.pk))
 
     @classmethod
     def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:

@@ -795,24 +795,21 @@ def send_task_completion_notification(assigned_task_id: int):
         "opportunity_access__user",
         "opportunity_access__opportunity",
         "task_type",
-        "assigned_by",
     ).get(pk=assigned_task_id)
-    assigner = assigned_task.assigned_by
-    if not assigner or not assigner.email:
-        return
     access = assigned_task.opportunity_access
-    subject = gettext("[%(opportunity)s] Task completed") % {"opportunity": access.opportunity.name}
-    message = gettext("%(worker)s has completed the task '%(task)s' in %(opportunity)s.") % {
-        "worker": access.user.name,
-        "task": assigned_task.task_type.name,
-        "opportunity": access.opportunity.name,
-    }
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[assigner.email],
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "Task Completed",
+            "body": f"You have completed the task '{assigned_task.task_type.name}'.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "task_completion",
+            "session_endpoint_id": "cc_app_home",
+        },
     )
+    send_message(message)
 
 
 @celery_app.task()

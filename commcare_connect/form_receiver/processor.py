@@ -184,7 +184,6 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
                 duration=xform.metadata.duration,
                 app_build_id=xform.build_id,
                 app_build_version=xform.metadata.app_build_version,
-                send_notification=False,
             )
 
 
