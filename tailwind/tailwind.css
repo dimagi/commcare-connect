@@ -509,6 +509,10 @@
   .simple-toggle:checked::before {
     @apply translate-x-5;
   }
+
+  .simple-toggle:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
 }
 
 /*--- simple date picker ------------------------- */
