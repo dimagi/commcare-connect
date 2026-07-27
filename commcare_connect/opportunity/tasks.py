@@ -813,6 +813,29 @@ def send_task_assignment_notification(assigned_task_id: int):
 
 
 @celery_app.task()
+def send_task_completion_notification(assigned_task_id: int):
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+        "task_type",
+    ).get(pk=assigned_task_id)
+    access = assigned_task.opportunity_access
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "Task Completed",
+            "body": f"You have completed the task '{assigned_task.task_type.name}'.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "task_completion",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
+
+
+@celery_app.task()
 def notify_user_for_scored_assessment(assessment_pk):
     assessment = Assessment.objects.get(pk=assessment_pk)
     user = assessment.user

@@ -40,6 +40,7 @@ from commcare_connect.opportunity.tasks import (
     notify_user_for_scored_assessment,
     save_export,
     send_task_assignment_notification,
+    send_task_completion_notification,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
@@ -633,6 +634,33 @@ def test_send_task_assignment_notification(send_message_patch):
                 "opportunity_uuid": str(opportunity.opportunity_id),
                 "opportunity_status": "delivery",
                 "key": "task_assignment",
+                "session_endpoint_id": "cc_app_home",
+            },
+        )
+    )
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.send_message")
+def test_send_task_completion_notification(send_message_patch):
+    opportunity = OpportunityFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app)
+    assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+
+    send_task_completion_notification(assigned_task.pk)
+
+    assert send_message_patch.call_count == 1
+    send_message_patch.assert_called_with(
+        Message(
+            usernames=[access.user.username],
+            data={
+                "action": "ccc_generic_opportunity",
+                "title": "Task Completed",
+                "body": f"You have completed the task '{task_type.name}'.",
+                "opportunity_uuid": str(opportunity.opportunity_id),
+                "opportunity_status": "delivery",
+                "key": "task_completion",
                 "session_endpoint_id": "cc_app_home",
             },
         )
