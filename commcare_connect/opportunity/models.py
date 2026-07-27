@@ -288,8 +288,8 @@ class LearnModule(models.Model):
 
 
 class TaskTypeModeChoices(models.TextChoices):
-    RELEARN = "relearn", gettext("relearn")
-    OCS = "ocs", gettext("ocs")
+    RELEARN = "relearn", gettext("Relearn")
+    OCS = "ocs", gettext("Open Chat Studio")
 
 
 class TaskType(models.Model):
