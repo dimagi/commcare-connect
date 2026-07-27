@@ -62,6 +62,23 @@ class WorkAreaGroup(geo_models.Model):
             self.save()
 
 
+class ImplementationArea(geo_models.Model):
+    opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
+    name = geo_models.CharField(max_length=255)
+    centroid = geo_models.PointField(srid=SRID)
+    boundary = geo_models.PolygonField(srid=SRID)
+
+    class Meta:
+        constraints = [
+            geo_models.UniqueConstraint(
+                fields=["name", "opportunity"], name="unique_implementation_area_name_per_opportunity"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name}-{self.opportunity_id}"
+
+
 @pghistory.track(
     fields=["expected_visit_count", "work_area_group", "status", "opportunity_access", "excluded_reason"],
     meta={
@@ -96,6 +113,13 @@ class WorkArea(geo_models.Model):
     )
     case_id = geo_models.CharField(max_length=255, unique=True, null=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
+    implementation_area = geo_models.ForeignKey(
+        ImplementationArea, null=True, blank=True, on_delete=geo_models.SET_NULL
+    )
+    # Name of the Implementation Area from the upload sheet, kept so the FK can be resolved
+    # regardless of upload order (Implementation Areas may be cleared and re-uploaded after
+    # Work Areas exist).
+    implementation_area_name = geo_models.CharField(max_length=255, blank=True, default="")
     excluded_by = geo_models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

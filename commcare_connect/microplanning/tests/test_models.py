@@ -4,7 +4,10 @@ import pytest
 from django.contrib.gis.geos import Point, Polygon
 
 from commcare_connect.microplanning.models import SRID, WorkAreaStatus
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
+from commcare_connect.microplanning.tests.factories import (
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+)
 
 
 @pytest.mark.django_db
