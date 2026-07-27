@@ -6,6 +6,7 @@ from collections import defaultdict
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
@@ -16,7 +17,7 @@ from config import celery_app
 
 from .clustering import WorkAreaGrouper
 from .const import DEFAULT_BUILDING_COUNT
-from .models import SRID, WorkArea
+from .models import SRID, WorkArea, WorkAreaGroup
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,10 @@ class WorkAreaCSVImporter:
         "state": "State",
     }
 
+    # Optional column, not part of HEADERS: only "Work Area Group Name" is exempt from
+    # the required-columns check, since a sheet is allowed to omit it entirely.
+    GROUP_NAME_HEADER = "Work Area Group Name"
+
     def __init__(self, opp_id, csv_source):
         self.opp_id = opp_id
         self.csv_source = csv_source
@@ -49,6 +54,9 @@ class WorkAreaCSVImporter:
         self.seen_slugs = set()
         self.created_count = 0
         self.existing_slugs = set()
+        self.has_group_names = False
+        # Ward to use if a given group name doesn't exist yet: the ward of its first-seen row.
+        self.group_wards = {}
 
     def _validate_all_rows(self, f):
         f.seek(0)
@@ -58,18 +66,34 @@ class WorkAreaCSVImporter:
             return False
 
         self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
+        total_rows = 0
+        rows_with_group = 0
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
+            total_rows += 1
+            group_name = self.get_group_name(row)
+            if group_name:
+                rows_with_group += 1
+                self.group_wards.setdefault(group_name, self.get_ward(row))
+
+        self.has_group_names = total_rows > 0 and rows_with_group == total_rows
+        if 0 < rows_with_group < total_rows:
+            self._add_error(
+                1,
+                _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
+            )
 
         self.existing_slugs.clear()
         return len(self.errors) == 0
 
+    @transaction.atomic
     def _stream_and_insert(self, f):
         f.seek(0)
         reader = csv.DictReader(f)
         self._normalize_headers(reader)
         batch = []
         batch_size = 5000
+        group_cache = self._resolve_work_area_groups() if self.has_group_names else {}
 
         for row in reader:
             buildings, visits = self.get_building_and_visit(row)
@@ -84,6 +108,7 @@ class WorkAreaCSVImporter:
                     building_count=buildings,
                     expected_visit_count=visits,
                     target_population=self.get_target_population(row),
+                    work_area_group=group_cache.get(self.get_group_name(row)),
                     case_properties={
                         "lga": extra_props.get("lga"),
                         "state": extra_props.get("state"),
@@ -99,6 +124,24 @@ class WorkAreaCSVImporter:
         if batch:
             WorkArea.objects.bulk_create(batch)
             self.created_count += len(batch)
+
+        if group_cache:
+            for work_area_group in group_cache.values():
+                work_area_group.update_centroid(commit=False)
+            WorkAreaGroup.objects.bulk_update(group_cache.values(), ["centroid"])
+
+    def _resolve_work_area_groups(self):
+        group_cache = {
+            group.name: group
+            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_wards)
+        }
+        missing = [name for name in self.group_wards if name not in group_cache]
+        if missing:
+            created = WorkAreaGroup.objects.bulk_create(
+                [WorkAreaGroup(opportunity_id=self.opp_id, name=name, ward=self.group_wards[name]) for name in missing]
+            )
+            group_cache.update({group.name: group for group in created})
+        return group_cache
 
     def run(self):
         # --- First pass: validation only ---
@@ -116,7 +159,8 @@ class WorkAreaCSVImporter:
         return {"created": self.created_count}
 
     def _normalize_headers(self, reader):
-        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
+        canonical_headers = [*self.HEADERS.values(), self.GROUP_NAME_HEADER]
+        canonical_by_lower = {header.lower(): header for header in canonical_headers}
         reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
@@ -161,6 +205,10 @@ class WorkAreaCSVImporter:
     def get_slug(self, row):
         slug = (row.get(self.HEADERS.get("slug")) or "").strip()
         return strip_tags(slug)
+
+    def get_group_name(self, row):
+        group_name = (row.get(self.GROUP_NAME_HEADER) or "").strip()
+        return strip_tags(group_name)
 
     def _get_int(self, row, key):
         raw = row.get(self.HEADERS.get(key))
@@ -276,7 +324,7 @@ def import_work_areas_task(self, opp_id, file_name):
 class WorkAreaCSVExporter:
     HEADERS = {
         **WorkAreaCSVImporter.HEADERS,
-        "group_name": "Work Area Group Name",
+        "group_name": WorkAreaCSVImporter.GROUP_NAME_HEADER,
     }
 
     FIELD_MAP = {

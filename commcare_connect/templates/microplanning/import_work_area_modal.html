@@ -49,7 +49,7 @@
             <p class="mt-3 text-sm text-gray-500 text-center">{% translate "Please fix the rows listed above and re-upload." %}</p>
           </div>
         {% elif result_data.created %}
-          <div class="mt-4 border-t border-gray-100 pt-4 text-green-600 text-center">
+          <div class="mt-4 border-t border-gray-100 pt-4 text-green-600">
             <i class="fa-solid fa-circle-check"></i> {% translate "Successfully created" %} {{ result_data.created }} {% translate "work area(s)" %}
           </div>
         {% endif %}
@@ -96,6 +96,9 @@
                   <li>{% translate "Expected Visit Count – positive integer" %}</li>
                   <li>{% translate "LGA – name of the LGA the work area is in" %}</li>
                   <li>{% translate "State – name of the state the work area is in" %}</li>
+                  <li>
+                    {% translate "Work Area Group Name (optional): Enter a group name for every row to assign work areas directly and skip automatic clustering. Leave this column blank for every row to use automatic clustering. Do not mix blank and filled values." %}
+                  </li>
                 </ul>
               </div>
             </div>
