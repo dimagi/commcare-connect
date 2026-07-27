@@ -17,6 +17,7 @@ from commcare_connect.opportunity.api.views.mobile import (
     UserLearnProgressView,
     UserVisitViewSet,
 )
+from commcare_connect.opportunity.api.views.task_completion import TaskCompletedView
 from commcare_connect.program.api.views import (
     ManagedOpportunityCreateView,
     ProgramApplicationAcceptView,
@@ -38,6 +39,7 @@ app_name = "api"
 urlpatterns = [
     path("", include(router.urls)),
     path("receiver/", FormReceiver.as_view(), name="receiver"),
+    path("task_completed/", TaskCompletedView.as_view(), name="task_completed"),
     path("opportunity/<slug:pk>/learn_progress", UserLearnProgressView.as_view(), name="learn_progress"),
     path("opportunity/<slug:pk>/claim", ClaimOpportunityView.as_view()),
     path("opportunity/<slug:pk>/delivery_progress", DeliveryProgressView.as_view(), name="deliver_progress"),

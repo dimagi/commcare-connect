@@ -1,16 +1,22 @@
 from unittest.mock import patch
 
 import pytest
+from django.contrib.gis.geos import Polygon
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.helpers import (
     exclude_work_areas_for_opportunity,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.models import WorkAreaStatus
+from commcare_connect.microplanning.models import SRID, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+
+def _unit_square(x, y):
+    """A 1x1 square with lower-left corner at (x, y); its centroid is (x + 0.5, y + 0.5)."""
+    return Polygon(((x, y), (x, y + 1), (x + 1, y + 1), (x + 1, y), (x, y)), srid=SRID)
 
 
 @pytest.mark.django_db
@@ -214,6 +220,119 @@ class TestExcludeWorkAreas:
         not_visited = [wa for wa in work_areas if wa.status == WorkAreaStatus.NOT_VISITED]
         assert len(excluded) == 2 * HQ_BULK_CHUNK_SIZE
         assert len(not_visited) == HQ_BULK_CHUNK_SIZE
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_excluding_subset_recomputes_group_centroid(self, mock_bulk_hq, org_user_admin, opportunity):
+        """Excluding some areas recomputes the group centroid from the areas that remain."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        wa_keep = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group,
+            boundary=_unit_square(79, 30),  # centroid (79.5, 30.5)
+        )
+        wa_exclude = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group,
+            boundary=_unit_square(77, 28),  # centroid (77.5, 28.5)
+        )
+        group.update_centroid()
+        old_centroid = group.centroid
+        assert old_centroid is not None
+
+        res = exclude_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa_exclude.id],
+            user=org_user_admin,
+            exclusion_reason="Flooding",
+        )
+        assert res["excluded_ids"] == [wa_exclude.id]
+
+        # The excluded area is dropped from the calculation, so the centroid is now wa_keep's alone.
+        group.refresh_from_db()
+        assert group.centroid != old_centroid
+        assert group.centroid.x == 79.5
+        assert group.centroid.y == 30.5
+        assert wa_keep.work_area_group_id == group.id  # kept area still belongs to the group
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_excluding_all_areas_sets_group_centroid_to_none(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_areas = WorkAreaFactory.create_batch(
+            2,
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group,
+        )
+        group.update_centroid()
+        assert group.centroid is not None
+
+        exclude_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id for wa in work_areas],
+            user=org_user_admin,
+            exclusion_reason="Flooding",
+        )
+
+        group.refresh_from_db()
+        assert group.centroid is None
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_exclusion_recomputes_each_affected_group_independently(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group_a = WorkAreaGroupFactory(opportunity=opportunity, name="group_a")
+        group_b = WorkAreaGroupFactory(opportunity=opportunity, name="group_b")
+
+        a_keep = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group_a,
+            boundary=_unit_square(70, 10),  # (70.5, 10.5)
+        )
+        a_exclude = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group_a,
+            boundary=_unit_square(80, 20),
+        )
+        b_keep = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group_b,
+            boundary=_unit_square(60, 40),  # (60.5, 40.5)
+        )
+        b_exclude = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group_b,
+            boundary=_unit_square(50, 30),
+        )
+        group_a.update_centroid()
+        group_b.update_centroid()
+
+        exclude_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[a_exclude.id, b_exclude.id],
+            user=org_user_admin,
+            exclusion_reason="Flooding",
+        )
+
+        group_a.refresh_from_db()
+        group_b.refresh_from_db()
+        assert (group_a.centroid.x, group_a.centroid.y) == (70.5, 10.5)
+        assert (group_b.centroid.x, group_b.centroid.y) == (60.5, 40.5)
+        assert a_keep.work_area_group_id == group_a.id
+        assert b_keep.work_area_group_id == group_b.id
 
 
 @pytest.mark.django_db

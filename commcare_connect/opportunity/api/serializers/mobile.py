@@ -314,6 +314,7 @@ class AssignedTaskSerializer(serializers.ModelSerializer):
             "due_date",
             "date_created",
             "date_modified",
+            "connect_channel_id",
         ]
 
 

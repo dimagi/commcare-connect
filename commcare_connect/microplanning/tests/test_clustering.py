@@ -62,6 +62,7 @@ class TestWorkAreaGrouper:
 
         assert work_area_groups.exists()
         assert work_area_groups.count() == 1
+        assert work_area_groups[0].centroid is not None
         for work_area in work_areas:
             work_area.refresh_from_db()
             assert work_area.work_area_group_id == work_area_groups[0].id
@@ -80,6 +81,7 @@ class TestWorkAreaGrouper:
         assert work_area_groups.count() == 4
         for group in work_area_groups:
             assert group.building_count <= 150
+            assert group.centroid is not None
 
     def test_cluster_multiple_wards_separately(self, opportunity):
         # Create work areas in two different wards
@@ -134,6 +136,9 @@ class TestWorkAreaGrouper:
         assert work_area_groups.count() == 1
         work_area.refresh_from_db()
         assert work_area.work_area_group == work_area_groups[0]
+        assert work_area_groups[0].centroid is not None
+        assert work_area_groups[0].centroid.x == 77.5
+        assert work_area_groups[0].centroid.y == 28.5
 
     def test_cluster_idempotent(self, opportunity):
         self.create_adjacent_work_areas(opportunity, ward="ward-1")
