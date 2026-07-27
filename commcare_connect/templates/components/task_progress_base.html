@@ -1,0 +1,26 @@
+<div class="flex items-center justify-center"
+     {% if not progress.complete %} hx-get="{% block poll_url %}{% endblock %}" hx-trigger="load delay:2s" hx-target="this" hx-swap="outerHTML" {% endif %}>
+  {% if progress.error %}
+    <div class="rounded-lg bg-red-100 text-red-700 px-4 py-3">
+      <p class="font-medium">
+        {% block error_title %}{% endblock %}
+      </p>
+      <p class="text-sm mt-1">{{ progress.error }}</p>
+    </div>
+  {% elif not progress.complete %}
+    <div class="w-full">
+      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-4">
+        <div class="h-full w-4/5 rounded-full animate-progress-bar"></div>
+      </div>
+      <p class="w-full text-sm text-gray-700">
+        {% if progress.message %}
+          {{ progress.message|safe }}
+        {% else %}
+          {% block in_progress_text %}{% endblock %}
+        {% endif %}
+      </p>
+    </div>
+  {% else %}
+    {% block complete %}{% endblock %}
+  {% endif %}
+</div>

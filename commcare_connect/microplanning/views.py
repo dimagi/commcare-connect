@@ -82,10 +82,10 @@ from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWard
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
+    is_org_pm_or_all_access,
     opportunity_required,
     org_admin_required,
-    org_program_manager_required,
-    request_user_is_program_manager,
+    org_pm_required,
 )
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -148,6 +148,14 @@ def microplanning_home(request, *args, **kwargs):
         },
     )
 
+    implementation_areas_url = reverse(
+        "microplanning:implementation_areas_geojson",
+        kwargs={
+            "org_slug": request.org.slug,
+            "opp_id": opportunity.opportunity_id,
+        },
+    )
+
     edit_work_area_url = reverse(
         "microplanning:modify_work_area",
         args=[request.org.slug, opportunity.opportunity_id, 0],
@@ -189,7 +197,7 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
-    is_program_manager = request_user_is_program_manager(request)
+    is_program_manager = is_org_pm_or_all_access(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
 
     filterset = WorkAreaMapFilterSet(
@@ -220,6 +228,7 @@ def microplanning_home(request, *args, **kwargs):
         "tiles_url": tiles_url,
         "visit_tiles_url": visit_tiles_url,
         "groups_url": groups_url,
+        "implementation_areas_url": implementation_areas_url,
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
@@ -338,8 +347,8 @@ def _get_assignment_mode_context(request, opportunity):
         ),
         "group_work_areas_url": reverse(
             "microplanning:get_work_areas_for_assignment",
-            args=[org_slug, opp_id, 0],
-        ).replace("/0/", "/__group_id__/"),
+            args=[org_slug, opp_id],
+        ),
         "flw_work_areas_url": reverse(
             "microplanning:get_flw_work_areas_for_assignment",
             args=[org_slug, opp_id, 0],
@@ -361,7 +370,7 @@ def _get_assignment_mode_context(request, opportunity):
             args=[org_slug, opp_id],
         ),
         "worker_list_url": reverse(
-            "opportunity:worker_list",
+            "opportunity:worker_work_areas",
             args=[org_slug, opp_id],
         ),
     }
@@ -556,6 +565,7 @@ class WorkAreaVectorLayer(VectorLayer):
         "assignee_name",
         "slug",
         "visits_completed",
+        "implementation_area_name",
     )
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM
@@ -665,6 +675,28 @@ def workareas_group_geojson(request, org_slug, opp_id):
     ]
     extent = qs.aggregate(extent=Extent("boundary"))["extent"]
     return JsonResponse({"group_features": group_features, "workarea_bounds": extent})
+
+
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def implementation_areas_geojson(request, org_slug, opp_id):
+    # Implementation Areas render as a standalone visual layer on the progress map. They are
+    # independent of Work Areas (Work Area boxes may fall outside these boundaries), so this is
+    # kept separate from workareas_group_geojson and does not affect the map's auto-zoom.
+    features = [
+        {
+            "type": "Feature",
+            "geometry": json.loads(ia["geojson"]),
+            "properties": {"name": ia["name"]},
+        }
+        for ia in (
+            ImplementationArea.objects.filter(opportunity_id=request.opportunity.id)
+            .values("name")
+            .annotate(geojson=AsGeoJSON("boundary"))
+        )
+    ]
+    return JsonResponse({"implementation_area_features": features})
 
 
 @org_admin_required
@@ -889,21 +921,22 @@ class ModifyWorkAreaUpdateView(UpdateView):
 
 
 @require_GET
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
-def get_work_areas_for_assignment(request, org_slug, opp_id, group_id):
+def get_work_areas_for_assignment(request, org_slug, opp_id):
+    group_ids = request.GET.getlist("group_id")
     work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
-            work_area_group_id=group_id,
+            work_area_group_id__in=group_ids,
         ).values("id", "building_count", "expected_visit_count", "status")
     )
     return JsonResponse({"work_areas": work_areas})
 
 
 @require_GET
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
@@ -917,7 +950,7 @@ def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
 
 
 @require_GET
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_summary_for_assignment(request, org_slug, opp_id):
@@ -943,7 +976,7 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def save_assignment(request, org_slug, opp_id):
@@ -1007,7 +1040,15 @@ def save_assignment(request, org_slug, opp_id):
         bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
     except CommCareHQAPIException:
         transaction.set_rollback(True)
-        return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
+        logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
+        return JsonResponse(
+            {
+                "error": _(
+                    "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact support."
+                )
+            },
+            status=502,
+        )
 
     notified_access_ids = {access.id for access in work_area_to_access.values()}
     for access_id in notified_access_ids:
@@ -1017,7 +1058,7 @@ def save_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def unassign_work_areas(request, org_slug, opp_id):

@@ -62,7 +62,6 @@ from waffle import flag_is_active, switch_is_active
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
-from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
@@ -201,21 +200,28 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
-    OrganizationProgramManagerMixin,
     OrganizationUserMemberRoleMixin,
     OrganizationUserMixin,
+    OrgPMRequiredMixin,
     _request_user_is_member,
-    managed_opportunity_pm_required,
+    opportunity_pm_required,
     opportunity_required,
     org_admin_required,
     org_member_required,
-    org_program_manager_required,
+    org_pm_required,
     org_viewer_required,
 )
-from commcare_connect.program.utils import is_program_manager
+from commcare_connect.program.utils import is_org_pm
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
-from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.celery import (
+    CELERY_TASK_FAILURE,
+    CELERY_TASK_SUCCESS,
+    download_export_file,
+    get_task_progress,
+    get_task_progress_message,
+    render_export_status,
+)
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
@@ -256,7 +262,7 @@ class OpportunityObjectMixin:
         return self.get_opportunity()
 
 
-class ManagedOpportunityPMRequiredMixin(LoginRequiredMixin, OpportunityObjectMixin):
+class OpportunityPMRequiredMixin(LoginRequiredMixin, OpportunityObjectMixin):
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
@@ -303,7 +309,7 @@ class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(OrganizationProgramManagerMixin, CreateView):
+class OpportunityInit(OrgPMRequiredMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -328,7 +334,7 @@ class OpportunityInit(OrganizationProgramManagerMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
+class OpportunityInitUpdate(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -396,7 +402,7 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
         return form_kwargs
 
 
-class OpportunityFinalize(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
+class OpportunityFinalize(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -728,7 +734,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
 @org_member_required
 @opportunity_required
 def add_budget_new_users(request, org_slug=None, opp_id=None):
-    program_manager = is_program_manager(request)
+    program_manager = is_org_pm(request)
 
     form = AddBudgetNewUsersForm(
         opportunity=request.opportunity,
@@ -800,7 +806,25 @@ def payment_import(request, org_slug=None, opp_id=None):
     saved_path = default_storage.save(file_path, file)
 
     result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
+
+
+@org_member_required
+@require_GET
+def render_payment_import_progress(request, org_slug, task_id):
+    """Polled by the payments page while a payment import runs; on completion it shows a
+    'View status' link that reloads the page so the result appears as a standard banner."""
+
+    def ownership_check(request, task_meta):
+        get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
+
+    progress = get_task_progress(request, task_id, ownership_check)
+    context = {
+        "task_id": task_id,
+        "progress": progress,
+        "status_url": reverse("opportunity:payment_import_status", args=(org_slug, task_id)),
+    }
+    return render(request, "opportunity/payment_import_progress.html", context)
 
 
 @org_member_required
@@ -1090,6 +1114,7 @@ def approve_visits(request, org_slug, opp_id):
         visit.review_created_on = today
         if visit.review_status == VisitReviewStatus.disagree:
             visit.review_status = VisitReviewStatus.pending
+            visit.review_status_modified_date = today
         if visit.flagged:
             justification = request.POST.get("justification")
             if not justification:
@@ -1104,7 +1129,15 @@ def approve_visits(request, org_slug, opp_id):
 
     user_ids = list(visits.values_list("user_id", flat=True).distinct())
     approved_count = UserVisit.objects.bulk_update(
-        visits, ["status", "review_created_on", "review_status", "justification"]
+        visits,
+        [
+            "status",
+            "status_modified_date",
+            "review_created_on",
+            "review_status",
+            "review_status_modified_date",
+            "justification",
+        ],
     )
     if user_ids:
         update_payment_accrued(opportunity=request.opportunity, users=user_ids, incremental=True)
@@ -1133,7 +1166,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
 
     updated_count = visits.exclude(
         Q(status=VisitValidationStatus.rejected) | Q(review_status=VisitReviewStatus.agree)
-    ).update(status=VisitValidationStatus.rejected, reason=reason)
+    ).update(status=VisitValidationStatus.rejected, reason=reason, status_modified_date=now())
     if visits.exists():
         user_ids = visits.values_list("user_id", flat=True).distinct()
         update_payment_accrued(opportunity=request.opportunity, users=user_ids)
@@ -1313,7 +1346,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     )
 
 
-class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, TemplateView):
+class TaskTypesConfig(OpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, TemplateView):
     template_name = "opportunity/task_types_config.html"
 
     def get_context_data(self, **kwargs):
@@ -1355,7 +1388,7 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
         return self.render_to_response(self.get_context_data(form=form))
 
 
-class EditTaskType(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class EditTaskType(OpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
     template_name = "opportunity/edit_task_type_form.html"
     form_class = EditTaskTypeForm
     model = TaskType
@@ -1558,7 +1591,7 @@ def user_visit_review(request, org_slug, opp_id):
         user_visits = UserVisit.objects.filter(pk__in=updated_reviews).exclude(review_status=VisitReviewStatus.agree)
         if review_status in [VisitReviewStatus.agree.value, VisitReviewStatus.disagree.value]:
             users = [visit.user for visit in user_visits]
-            user_visits.update(review_status=review_status)
+            user_visits.update(review_status=review_status, review_status_modified_date=now())
             update_payment_accrued(opportunity=request.opportunity, users=users)
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
@@ -1826,7 +1859,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         return _("Review Custom Invoice")
 
 
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @require_POST
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
@@ -2700,7 +2733,8 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
 
     def get(self, request, org_slug, opp_id):
         opportunity = self.get_opportunity()
-        if is_flag_active(MICROPLANNING, opportunity):
+        request.opportunity = opportunity
+        if flag_is_active(request, MICROPLANNING):
             self.tabs = self.tabs + [
                 {
                     "key": "work_areas",
@@ -2852,8 +2886,53 @@ class WorkerPaymentsView(BaseWorkerListView):
     hx_template_name = "opportunity/payments.html"
     active_tab = "payments"
 
+    def get(self, request, org_slug, opp_id):
+        # A finished import surfaces its result as a banner; a running one keeps the
+        # polling progress bar (added to context in get_extra_context).
+        if not request.htmx and self._payment_import_complete():
+            self._add_payment_import_message()
+        return super().get(request, org_slug, opp_id)
+
+    @cached_property
+    def _payment_import_task(self):
+        task_id = self.request.GET.get("payment_import_task_id")
+        if not task_id:
+            return None
+        task = AsyncResult(task_id)
+        args = task.args or []
+        if not args or args[0] != self.get_opportunity().pk:
+            return None
+        return task
+
+    def _payment_import_complete(self):
+        task = self._payment_import_task
+        return bool(task) and task.status in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
+
+    def _add_payment_import_message(self):
+        """Surface the finished import task's result as a standard banner."""
+        task = self._payment_import_task
+        if not task:
+            return
+        if task.status == CELERY_TASK_FAILURE:
+            messages.error(self.request, _("The payment import failed. Please try again."))
+            return
+        message = get_task_progress_message(task)
+        if not message:
+            return
+        is_error = (task.result or {}).get("is_error")
+        add_message = messages.error if is_error else messages.success
+        add_message(self.request, mark_safe(message))
+
     def get_extra_context(self, opportunity, org_slug):
-        return {"export_form": PaymentExportForm()}
+        # Only keep polling while the import is still running; once complete the result
+        # is shown as a banner instead of the progress bar.
+        task_id = self.request.GET.get("payment_import_task_id")
+        if task_id and self._payment_import_complete():
+            task_id = None
+        return {
+            "export_form": PaymentExportForm(),
+            "payment_import_task_id": task_id,
+        }
 
     def get_table(self, opportunity, org_slug):
         def get_payment_subquery(confirmed: bool = False) -> Subquery:
@@ -2904,7 +2983,8 @@ class WorkerWorkAreaView(BaseWorkerListView):
     active_tab = "work_areas"
 
     def dispatch(self, request, *args, **kwargs):
-        if not is_flag_active(MICROPLANNING, self.get_opportunity()):
+        request.opportunity = self.get_opportunity()
+        if not flag_is_active(request, MICROPLANNING):
             raise Http404
         return super().dispatch(request, *args, **kwargs)
 
@@ -3217,7 +3297,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                 "url": microplanning_url,
             }
         )
-    if is_flag_active(WEEKLY_PERFORMANCE_REPORT, request.opportunity):
+    if flag_is_active(request, WEEKLY_PERFORMANCE_REPORT):
         deliveries_panels.append(
             {
                 "icon": "fa-magnifying-glass",
@@ -3618,7 +3698,7 @@ class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OrganizationU
 @require_POST
 @org_member_required
 @opportunity_required
-@managed_opportunity_pm_required
+@opportunity_pm_required
 def create_task(request, org_slug, opp_id):
     opportunity = request.opportunity
     access = None
@@ -3662,7 +3742,7 @@ def create_task(request, org_slug, opp_id):
 @require_POST
 @org_member_required
 @opportunity_required
-@managed_opportunity_pm_required
+@opportunity_pm_required
 def delete_tasks(request, org_slug, opp_id):
     try:
         task_ids = [int(tid) for tid in request.POST.getlist("task_ids")]
