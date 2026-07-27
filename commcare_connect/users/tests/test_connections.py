@@ -85,7 +85,7 @@ def test_connect_post_redirects_straight_to_provider_instead_of_confirmation_pag
     _create_social_app(provider)
     client.force_login(user)
 
-    response = client.post(f'{reverse(f"{provider}_login")}?process=connect')
+    response = client.post(f"{reverse(f'{provider}_login')}?process=connect")
 
     assert response.status_code == 302
     assert response.url.startswith(authorize_url_prefix)
