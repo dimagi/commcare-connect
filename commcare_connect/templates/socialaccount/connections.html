@@ -5,9 +5,7 @@
 {% block content %}
   <div class="max-w-screen-lg mx-auto py-8 px-4">
     <h2 class="text-xl font-semibold text-brand-deep-purple mb-1">{% translate "Connected Accounts" %}</h2>
-    <p class="card_description mb-6">
-      {% translate "Manage third-party accounts linked to your Connect profile." %}
-    </p>
+    <p class="card_description mb-6">{% translate "Manage third-party accounts linked to your Connect profile." %}</p>
     {% if form.non_field_errors %}
       <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
         <i class="fa-solid fa-circle-exclamation"></i>
@@ -44,12 +42,12 @@
                 <form method="post" action="{% url 'socialaccount_connections' %}">
                   {% csrf_token %}
                   <input type="hidden" name="account" value="{{ account.pk }}">
-                  <button class="button button-md outline-style text-red-600 border-red-300" type="submit">
-                    {% translate "Disconnect" %}
-                  </button>
+                  <button class="button button-md outline-style text-red-600 border-red-300"
+                          type="submit">{% translate "Disconnect" %}</button>
                 </form>
               {% else %}
-                <form method="post" action="{% provider_login_url provider.id process="connect" %}">
+                <form method="post"
+                      action="{% provider_login_url provider.id process="connect" %}">
                   {% csrf_token %}
                   <button class="button button-md primary-dark" type="submit">{% translate "Connect" %}</button>
                 </form>
