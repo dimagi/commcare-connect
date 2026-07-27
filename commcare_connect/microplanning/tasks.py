@@ -66,8 +66,7 @@ class BaseAreaCSVImporter:
         self._load_existing()
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
-            self._on_row_validated(line_num, row)
-        self._finalize_validation()
+        self._after_rows()
         self._clear_existing()
         return len(self.errors) == 0
 
@@ -88,9 +87,11 @@ class BaseAreaCSVImporter:
             self.model.objects.bulk_create(batch)
             self.created_count += len(batch)
 
+    def _canonical_headers(self):
+        return list(self.HEADERS.values())
+
     def _normalize_headers(self, reader):
-        canonical_headers = [*self.HEADERS.values(), *self._extra_headers()]
-        canonical_by_lower = {header.lower(): header for header in canonical_headers}
+        canonical_by_lower = {header.lower(): header for header in self._canonical_headers()}
         reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
 
     def _validate_headers(self, reader):
@@ -106,20 +107,13 @@ class BaseAreaCSVImporter:
             processor(row, line_num)
 
     # --- hooks for subclasses ---
-    def _extra_headers(self):
-        """Optional headers (beyond required HEADERS) that should still be case-normalized."""
-        return []
-
     def _load_existing(self):
         pass
 
+    def _after_rows(self):
+        pass
+
     def _clear_existing(self):
-        pass
-
-    def _on_row_validated(self, line_num, row):
-        pass
-
-    def _finalize_validation(self):
         pass
 
     def _prepare_insert(self):
@@ -197,15 +191,15 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.seen_slugs = set()
         self.existing_slugs = set()
         self.implementation_area_map = {}
-        self.group_cache = {}
         self.has_group_names = False
         # Ward to use if a given group name doesn't exist yet: the ward of its first-seen row.
         self.group_wards = {}
-        self._total_rows = 0
-        self._rows_with_group = 0
+        self.group_cache = {}
+        self.total_rows = 0
+        self.rows_with_group = 0
 
-    def _extra_headers(self):
-        return [self.GROUP_NAME_HEADER, *self.OPTIONAL_HEADERS.values()]
+    def _canonical_headers(self):
+        return [*super()._canonical_headers(), self.GROUP_NAME_HEADER, *self.OPTIONAL_HEADERS.values()]
 
     def _load_existing(self):
         self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
@@ -213,16 +207,17 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
     def _clear_existing(self):
         self.existing_slugs.clear()
 
-    def _on_row_validated(self, line_num, row):
-        self._total_rows += 1
+    def _process_row(self, line_num, row):
+        super()._process_row(line_num, row)
+        self.total_rows += 1
         group_name = self.get_group_name(row)
         if group_name:
-            self._rows_with_group += 1
+            self.rows_with_group += 1
             self.group_wards.setdefault(group_name, self.get_ward(row))
 
-    def _finalize_validation(self):
-        self.has_group_names = self._total_rows > 0 and self._rows_with_group == self._total_rows
-        if 0 < self._rows_with_group < self._total_rows:
+    def _after_rows(self):
+        self.has_group_names = self.total_rows > 0 and self.rows_with_group == self.total_rows
+        if 0 < self.rows_with_group < self.total_rows:
             self._add_error(
                 1,
                 _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
@@ -248,10 +243,11 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         return group_cache
 
     def _after_insert(self):
-        if self.group_cache:
-            for work_area_group in self.group_cache.values():
-                work_area_group.update_centroid(commit=False)
-            WorkAreaGroup.objects.bulk_update(self.group_cache.values(), ["centroid"])
+        if not self.group_cache:
+            return
+        for work_area_group in self.group_cache.values():
+            work_area_group.update_centroid(commit=False)
+        WorkAreaGroup.objects.bulk_update(self.group_cache.values(), ["centroid"])
 
     def get_implementation_area_name(self, row):
         header = self.OPTIONAL_HEADERS["implementation_area"]
@@ -282,9 +278,9 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             building_count=buildings,
             expected_visit_count=visits,
             target_population=self.get_target_population(row),
+            work_area_group=self.group_cache.get(self.get_group_name(row)),
             implementation_area_id=self.get_implementation_area_id(row),
             implementation_area_name=self.get_implementation_area_name(row),
-            work_area_group=self.group_cache.get(self.get_group_name(row)),
             case_properties={
                 "lga": extra_props.get("lga"),
                 "state": extra_props.get("state"),
