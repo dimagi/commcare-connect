@@ -3,6 +3,7 @@ from allauth.account.models import EmailAddress
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
+from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
 from commcare_connect.users.adapters import AccountAdapter, SocialAccountAdapter
@@ -61,3 +62,35 @@ def test_login_process_still_raises_on_existing_email(user, rf, provider):
 
     with pytest.raises(ImmediateHttpResponse):
         SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "provider, has_usable_password, other_provider, expect_raises",
+    [
+        ("ocs", False, None, True),  # default allauth guard: sole account, no password
+        ("commcarehq", False, None, True),  # same default guard applies to HQ too
+        ("commcarehq", False, "ocs", True),  # HQ-specific carve-out: OCS as fallback isn't enough
+        ("commcarehq", True, None, False),  # has a password -> allowed
+        ("ocs", False, "commcarehq", False),  # carve-out must not leak onto other providers
+    ],
+)
+def test_validate_disconnect(user, provider, has_usable_password, other_provider, expect_raises):
+    if has_usable_password:
+        user.set_password("a-usable-password")
+        user.save()
+        EmailAddress.objects.create(user=user, email=user.email, verified=True, primary=True)
+    else:
+        user.set_unusable_password()
+        user.save()
+
+    account = SocialAccount.objects.create(user=user, provider=provider, uid=f"uid-{provider}")
+    accounts = [account]
+    if other_provider:
+        accounts.append(SocialAccount.objects.create(user=user, provider=other_provider, uid=f"uid-{other_provider}"))
+
+    if expect_raises:
+        with pytest.raises(ValidationError):
+            SocialAccountAdapter().validate_disconnect(account, accounts)
+    else:
+        SocialAccountAdapter().validate_disconnect(account, accounts)
