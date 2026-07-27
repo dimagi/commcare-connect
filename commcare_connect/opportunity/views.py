@@ -62,7 +62,6 @@ from waffle import flag_is_active, switch_is_active
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
-from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
@@ -2734,7 +2733,8 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
 
     def get(self, request, org_slug, opp_id):
         opportunity = self.get_opportunity()
-        if is_flag_active(MICROPLANNING, opportunity):
+        request.opportunity = opportunity
+        if flag_is_active(request, MICROPLANNING):
             self.tabs = self.tabs + [
                 {
                     "key": "work_areas",
@@ -2983,7 +2983,8 @@ class WorkerWorkAreaView(BaseWorkerListView):
     active_tab = "work_areas"
 
     def dispatch(self, request, *args, **kwargs):
-        if not is_flag_active(MICROPLANNING, self.get_opportunity()):
+        request.opportunity = self.get_opportunity()
+        if not flag_is_active(request, MICROPLANNING):
             raise Http404
         return super().dispatch(request, *args, **kwargs)
 
@@ -3296,7 +3297,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                 "url": microplanning_url,
             }
         )
-    if is_flag_active(WEEKLY_PERFORMANCE_REPORT, request.opportunity):
+    if flag_is_active(request, WEEKLY_PERFORMANCE_REPORT):
         deliveries_panels.append(
             {
                 "icon": "fa-magnifying-glass",

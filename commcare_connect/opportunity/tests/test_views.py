@@ -3048,20 +3048,22 @@ class TestOpportunityDeliveryStatsTiles:
 
         assert b"View Progress Map" in response.content
 
-    def test_audit_tile_shown_only_when_flag_scoped_to_opportunity(
-        self, client, organization, org_user_member, opportunity
-    ):
-        program = ProgramFactory(organization=organization)
-        opportunity.program = program
-        opportunity.save(update_fields=["program"])
-        Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT).programs.add(program)
+    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+    def test_audit_tile_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
+        flag = Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT)
+        if scope == "opportunity":
+            flag.opportunities.add(opportunity)
+        elif scope == "program":
+            program = ProgramFactory(organization=organization)
+            opportunity.program = program
+            opportunity.save(update_fields=["program"])
+            flag.programs.add(program)
+        elif scope == "organization":
+            flag.organizations.add(organization)
 
         client.force_login(org_user_member)
         response = client.get(self._url(organization, opportunity))
-        assert b"Audit Opportunity" not in response.content
 
-        Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT).opportunities.add(opportunity)
-        response = client.get(self._url(organization, opportunity))
         assert b"Audit Opportunity" in response.content
 
     def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
