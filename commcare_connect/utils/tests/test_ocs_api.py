@@ -70,21 +70,37 @@ def test_list_chatbots_sends_bearer_token(user, httpx_mock):
     assert request.headers["Authorization"] == "Bearer the-access-token"
 
 
-@pytest.mark.django_db
-@override_settings(OCS_BASE_URL=OCS_URL)
-def test_list_chatbots_raises_ocs_api_error_on_non_2xx(user, httpx_mock):
-    _connect_ocs(user)
+def _chatbots_non_2xx(httpx_mock):
     httpx_mock.add_response(url=f"{OCS_URL}/api/v2/chatbots/", status_code=500, text="boom")
 
-    with pytest.raises(ocs_api.OcsApiError):
-        ocs_api.list_chatbots(user)
+
+def _chatbots_network_error(httpx_mock):
+    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/v2/chatbots/")
+
+
+def _chatbots_non_json_body(httpx_mock):
+    httpx_mock.add_response(url=f"{OCS_URL}/api/v2/chatbots/", text="<html>proxy error</html>")
+
+
+def _chatbots_malformed_results(httpx_mock):
+    # 200 OK but a result object is missing the "name" key.
+    httpx_mock.add_response(
+        url=f"{OCS_URL}/api/v2/chatbots/",
+        json={"count": 1, "next": None, "previous": None, "results": [{"id": "id-1"}]},
+    )
 
 
 @pytest.mark.django_db
 @override_settings(OCS_BASE_URL=OCS_URL)
-def test_list_chatbots_raises_ocs_api_error_on_network_error(user, httpx_mock):
+@pytest.mark.parametrize(
+    "configure_response",
+    [_chatbots_non_2xx, _chatbots_network_error, _chatbots_non_json_body, _chatbots_malformed_results],
+    ids=["non_2xx", "network_error", "non_json_body", "malformed_results"],
+)
+def test_list_chatbots_raises_ocs_api_error(user, httpx_mock, configure_response):
     _connect_ocs(user)
-    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/v2/chatbots/")
+    configure_response(httpx_mock)
+
     with pytest.raises(ocs_api.OcsApiError):
         ocs_api.list_chatbots(user)
 
