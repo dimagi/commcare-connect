@@ -1,0 +1,13 @@
+{% extends "components/task_progress_base.html" %}
+{% load i18n %}
+{% block poll_url %}{{ status_url }}{% endblock %}
+{% block error_title %}
+  {% translate "Import Failed" %}
+{% endblock %}
+{% block in_progress_text %}
+  {% translate "Processing payments, hang tight..." %}
+{% endblock %}
+{% block complete %}
+  <a class="w-full text-sm text-gray-700 underline cursor-pointer"
+     href="?payment_import_task_id={{ task_id }}">{% translate "All done! View status." %}</a>
+{% endblock %}

@@ -82,10 +82,10 @@ from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWard
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
+    is_org_pm_or_all_access,
     opportunity_required,
     org_admin_required,
-    org_program_manager_required,
-    request_user_is_program_manager,
+    org_pm_required,
 )
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -197,7 +197,7 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
-    is_program_manager = request_user_is_program_manager(request)
+    is_program_manager = is_org_pm_or_all_access(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
 
     filterset = WorkAreaMapFilterSet(
@@ -921,7 +921,7 @@ class ModifyWorkAreaUpdateView(UpdateView):
 
 
 @require_GET
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_work_areas_for_assignment(request, org_slug, opp_id):
@@ -936,7 +936,7 @@ def get_work_areas_for_assignment(request, org_slug, opp_id):
 
 
 @require_GET
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
@@ -950,7 +950,7 @@ def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
 
 
 @require_GET
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_summary_for_assignment(request, org_slug, opp_id):
@@ -976,7 +976,7 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def save_assignment(request, org_slug, opp_id):
@@ -1040,7 +1040,15 @@ def save_assignment(request, org_slug, opp_id):
         bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
     except CommCareHQAPIException:
         transaction.set_rollback(True)
-        return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
+        logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
+        return JsonResponse(
+            {
+                "error": _(
+                    "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact support."
+                )
+            },
+            status=502,
+        )
 
     notified_access_ids = {access.id for access in work_area_to_access.values()}
     for access_id in notified_access_ids:
@@ -1050,7 +1058,7 @@ def save_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@org_program_manager_required
+@org_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def unassign_work_areas(request, org_slug, opp_id):
