@@ -480,7 +480,7 @@ requires-dist = [
     { name = "django-filter", specifier = ">=24.3" },
     { name = "django-htmx", specifier = ">=1.19.0" },
     { name = "django-model-utils", specifier = ">=4.3.1" },
-    { name = "django-oauth-toolkit", specifier = ">=2.3.0" },
+    { name = "django-oauth-toolkit", specifier = ">=3.3.0" },
     { name = "django-pghistory", specifier = ">=3.9.1" },
     { name = "django-redis", specifier = ">=5.3.0" },
     { name = "django-tables2", specifier = ">=2.6.0" },
@@ -846,7 +846,7 @@ wheels = [
 
 [[package]]
 name = "django-oauth-toolkit"
-version = "2.3.0"
+version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
@@ -854,9 +854,9 @@ dependencies = [
     { name = "oauthlib" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/22/2b/e0353101e242f1fb4e90a9bc5aa43894afd73e2e4650f40c6579e8f39389/django-oauth-toolkit-2.3.0.tar.gz", hash = "sha256:cf1cb1a5744672e6bd7d66b4a110a463bcef9cf5ed4f27e29682cc6a4d0df1ed", size = 89737, upload-time = "2023-05-31T21:04:46.768Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/2b/011f3e964f474b7814828586de0277ad373197096b28274d0ae8bf45d5f9/django_oauth_toolkit-3.3.0.tar.gz", hash = "sha256:2b375d14b1c0ff86e5df5e5de5d1a6d9868873304f54aca37c50158552d5b922", size = 118319, upload-time = "2026-05-29T18:13:57.065Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/d7/0cbac32a14981d96e951c0fe76a113c4d415db2b093bdfdbbbbeea9df0e6/django_oauth_toolkit-2.3.0-py3-none-any.whl", hash = "sha256:47dfeab97ec21496f307c2cf3468e64ca08897fa499bf3104366d32005c9111d", size = 68890, upload-time = "2023-05-31T21:05:34.805Z" },
+    { url = "https://files.pythonhosted.org/packages/26/e4/d05b3d50d0250f2d2f3a5dc9cd21f85e313ee1493ff60b729dccb8e08c46/django_oauth_toolkit-3.3.0-py3-none-any.whl", hash = "sha256:7af1365cd80735211454b0dca810bc9e860c631e61fd17768ad0fa331737954f", size = 88415, upload-time = "2026-05-29T18:13:55.827Z" },
 ]
 
 [[package]]
@@ -1635,11 +1635,11 @@ wheels = [
 
 [[package]]
 name = "oauthlib"
-version = "3.2.2"
+version = "3.3.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6d/fa/fbf4001037904031639e6bfbfc02badfc7e12f137a8afa254df6c4c8a670/oauthlib-3.2.2.tar.gz", hash = "sha256:9859c40929662bec5d64f34d01c99e093149682a3f38915dc0655d5a633dd918", size = 177352, upload-time = "2022-10-17T20:04:27.471Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/80/cab10959dc1faead58dc8384a781dfbf93cb4d33d50988f7a69f1b7c9bbe/oauthlib-3.2.2-py3-none-any.whl", hash = "sha256:8139f29aac13e25d502680e9e19963e83f16838d48a0d71c287fe40e7067fbca", size = 151688, upload-time = "2022-10-17T20:04:24.037Z" },
+    { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
 ]
 
 [[package]]
