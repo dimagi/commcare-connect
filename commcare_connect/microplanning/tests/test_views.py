@@ -12,8 +12,10 @@ import pytest
 from django import forms
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.db.utils import OperationalError
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from commcare_connect.flags.flag_names import MICROPLANNING
@@ -397,29 +399,25 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.context["show_rerun_clear_work_area_groups_btn"] is False
         assert response.context["show_workarea_groups_btn"] is True
 
-    def test_clear_work_areas_button_shown_when_unassigned(self, client, org_user_admin, opportunity):
-        WorkAreaFactory(opportunity=opportunity)
+    @pytest.mark.parametrize(
+        ("has_work_area", "assigned", "expected"),
+        [
+            pytest.param(True, False, True, id="unassigned-areas-present"),
+            pytest.param(True, True, False, id="areas-assigned"),
+            pytest.param(False, False, False, id="no-areas"),
+        ],
+    )
+    def test_clear_work_areas_button_visibility(
+        self, client, org_user_admin, opportunity, has_work_area, assigned, expected
+    ):
+        if has_work_area:
+            access = OpportunityAccessFactory(opportunity=opportunity) if assigned else None
+            WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
         client.force_login(org_user_admin)
 
         response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
 
-        assert response.context["show_clear_work_areas_btn"] is True
-
-    def test_clear_work_areas_button_hidden_when_assigned(self, client, org_user_admin, opportunity):
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
-        client.force_login(org_user_admin)
-
-        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
-
-        assert response.context["show_clear_work_areas_btn"] is False
-
-    def test_clear_work_areas_button_hidden_when_no_work_areas(self, client, org_user_admin, opportunity):
-        client.force_login(org_user_admin)
-
-        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
-
-        assert response.context["show_clear_work_areas_btn"] is False
+        assert response.context["show_clear_work_areas_btn"] is expected
 
 
 @pytest.mark.django_db
@@ -2428,6 +2426,24 @@ class TestClearWorkAreas(BaseMicroplanningFlagTest):
         assert WorkArea.objects.filter(id=work_area.id).exists()
         messages = list(response.wsgi_request._messages)
         assert any("Visits" in str(m) for m in messages)
+
+    def test_locks_work_areas_before_checking_assignments(self, client, org_user_admin, opportunity):
+        """Regression guard: the assignment check must serialize against save_assignment."""
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        with CaptureQueriesContext(connection) as ctx:
+            client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        locking_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "for update" in q["sql"].lower() and "microplanning_workarea" in q["sql"].lower()
+        ]
+        assert locking_queries, (
+            "Expected a 'SELECT ... FOR UPDATE' on the Work Area rows so a concurrent "
+            "save_assignment cannot commit between the assignment check and the delete."
+        )
 
     def test_clear_requires_post(self, client, org_user_admin, opportunity):
         client.force_login(org_user_admin)
