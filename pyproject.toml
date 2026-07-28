@@ -90,8 +90,6 @@ dev = [
     "pytest-django>=4.5.2",
     "pytest-httpx>=0.24.0",
     "ruff>=0.15.17",
-    "watchfiles>=0.19.0",
-    "werkzeug[watchdog]>=2.3.7",
     "xml2json",
 ]
 production = [
