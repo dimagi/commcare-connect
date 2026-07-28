@@ -25,6 +25,7 @@ from django.db.models import (
     Func,
     IntegerField,
     OuterRef,
+    ProtectedError,
     Q,
     Subquery,
     Sum,
@@ -125,6 +126,7 @@ def microplanning_home(request, *args, **kwargs):
 
     show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
     show_workarea_groups_btn = areas_present and not work_area_groups_present
+    show_clear_work_areas_btn = areas_present and not areas_assigned
     show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
     show_implementation_area_btn = not (
         cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None or implementation_areas_present
@@ -210,6 +212,7 @@ def microplanning_home(request, *args, **kwargs):
         "show_implementation_area_btn": show_implementation_area_btn,
         "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
+        "show_clear_work_areas_btn": show_clear_work_areas_btn,
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
@@ -843,9 +846,33 @@ def exclude_work_areas(request, org_slug, opp_id):
     return response
 
 
+@require_POST
 @org_admin_required
 @opportunity_required
+@waffle_flag(MICROPLANNING)
+def clear_work_areas(request, org_slug, opp_id):
+    redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+    work_areas = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
+
+    if work_areas.filter(opportunity_access__isnull=False).exists():
+        messages.error(request, _("Work Areas cannot be cleared as they are assigned to users."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    try:
+        work_areas.delete()
+    except ProtectedError:
+        messages.error(request, _("Visits have been recorded against these Work Areas. They cannot be cleared."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
+    messages.success(request, _("Work Areas and Work Area Groups cleared. You can now upload a new file."))
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+
 @require_POST
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
 def clear_work_area_groups(request, org_slug, opp_id):
     redirect_url = reverse(
         "microplanning:microplanning_home",
