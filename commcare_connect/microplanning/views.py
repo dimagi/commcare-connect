@@ -952,7 +952,7 @@ def get_work_areas_for_assignment(request, org_slug, opp_id):
         WorkArea.objects.filter(
             opportunity=request.opportunity,
             work_area_group_id__in=group_ids,
-        ).values("id", "building_count", "expected_visit_count", "status")
+        ).values("id", "building_count", "expected_visit_count", "status", group_id=F("work_area_group_id"))
     )
     return JsonResponse({"work_areas": work_areas})
 
