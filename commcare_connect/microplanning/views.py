@@ -854,17 +854,22 @@ def clear_work_areas(request, org_slug, opp_id):
     redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
     work_areas = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
 
-    if work_areas.filter(opportunity_access__isnull=False).exists():
-        messages.error(request, _("Work Areas cannot be cleared as they are assigned to users."))
-        return HttpResponse(headers={"HX-Redirect": redirect_url})
+    with transaction.atomic():
+        # Lock the rows before checking, so a save_assignment (which locks the same rows) cannot
+        # commit between the check and the delete and have a freshly assigned area deleted.
+        access_ids = list(work_areas.select_for_update().values_list("opportunity_access_id", flat=True))
+        if any(access_id is not None for access_id in access_ids):
+            messages.error(request, _("Work Areas cannot be cleared as they are assigned to users."))
+            return HttpResponse(headers={"HX-Redirect": redirect_url})
 
-    try:
-        work_areas.delete()
-    except ProtectedError:
-        messages.error(request, _("Visits have been recorded against these Work Areas. They cannot be cleared."))
-        return HttpResponse(headers={"HX-Redirect": redirect_url})
+        try:
+            work_areas.delete()
+        except ProtectedError:
+            messages.error(request, _("Visits have been recorded against these Work Areas. They cannot be cleared."))
+            return HttpResponse(headers={"HX-Redirect": redirect_url})
 
-    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
+        WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
+
     messages.success(request, _("Work Areas and Work Area Groups cleared. You can now upload a new file."))
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
