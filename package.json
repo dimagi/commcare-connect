@@ -23,7 +23,6 @@
     "mini-css-extract-plugin": "^2.4.5",
     "node-sass-tilde-importer": "^1.0.2",
     "open-chat-studio-widget": "^0.5.2",
-    "pixrem": "^5.0.0",
     "postcss": "^8.5.3",
     "postcss-loader": "^7.0.2",
     "postcss-preset-env": "^8.0.1",
