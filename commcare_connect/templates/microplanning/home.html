@@ -86,13 +86,6 @@
             <i class="fa-solid fa-upload"></i> {% translate "Upload Implementation Area" %}
           </button>
         {% endif %}
-        {% if implementation_areas_present %}
-          <button type="button"
-                  @click="showClearImplementationAreasModal = true"
-                  class="button button-md outline-style">
-            <i class="fa-solid fa-trash"></i> {% translate "Clear Implementation Areas" %}
-          </button>
-        {% endif %}
         {% if show_workarea_groups_btn %}
           <button class="button button-md primary-dark"
                   x-show="showCreateGroupBtn"
@@ -109,6 +102,17 @@
                   @click="showCreateWorkAreaGroupsModal = true">
             <i class="fa-solid fa-play"></i> {% translate "Rerun Clustering" %}
           </button>
+        {% endif %}
+        {# Clear controls are grouped after the upload/cluster actions, broadest scope first. #}
+        {% if show_clear_work_areas_btn %}
+          <button class="button button-md outline-style"
+                  type="button"
+                  id="clear-work-areas"
+                  @click="showClearWorkAreasModal = true">
+            <i class="fa-solid fa-trash"></i> {% translate "Clear Work Areas" %}
+          </button>
+        {% endif %}
+        {% if show_rerun_clear_work_area_groups_btn %}
           <button class="button button-md outline-style"
                   type="button"
                   id="clear-work-area-groups"
@@ -116,12 +120,11 @@
             <i class="fa-solid fa-trash"></i> {% translate "Clear Work Area Groups" %}
           </button>
         {% endif %}
-        {% if show_clear_work_areas_btn %}
-          <button class="button button-md outline-style"
-                  type="button"
-                  id="clear-work-areas"
-                  @click="showClearWorkAreasModal = true">
-            <i class="fa-solid fa-trash"></i> {% translate "Clear Work Areas" %}
+        {% if implementation_areas_present %}
+          <button type="button"
+                  @click="showClearImplementationAreasModal = true"
+                  class="button button-md outline-style">
+            <i class="fa-solid fa-trash"></i> {% translate "Clear Implementation Areas" %}
           </button>
         {% endif %}
         {% if is_program_manager and not assignment_mode %}
@@ -146,14 +149,14 @@
       {% if show_workarea_groups_btn or show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/cluster_work_area_modal.html" %}
       {% endif %}
+      {% if show_clear_work_areas_btn %}
+        {% include "microplanning/clear_work_areas_modal.html" %}
+      {% endif %}
       {% if show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/clear_work_area_groups_modal.html" %}
       {% endif %}
       {% if implementation_areas_present %}
         {% include "microplanning/clear_implementation_areas_modal.html" %}
-      {% endif %}
-      {% if show_clear_work_areas_btn %}
-        {% include "microplanning/clear_work_areas_modal.html" %}
       {% endif %}
     </div>
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]"
