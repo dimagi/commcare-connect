@@ -71,36 +71,6 @@ select = ["E", "F", "W", "I"]
 known-first-party = ["commcare_connect", "config"]
 
 
-# ==== PyLint ====
-[tool.pylint.MASTER]
-load-plugins = [
-    "pylint_django",
-    "pylint_celery",
-]
-django-settings-module = "config.settings.local"
-
-[tool.pylint.FORMAT]
-max-line-length = 119
-
-[tool.pylint."MESSAGES CONTROL"]
-disable = [
-    "missing-docstring",
-    "invalid-name",
-]
-
-[tool.pylint.DESIGN]
-max-parents = 13
-
-[tool.pylint.TYPECHECK]
-generated-members = [
-    "REQUEST",
-    "acl_users",
-    "aq_parent",
-    "[a-zA-Z]+_set{1,2}",
-    "save",
-    "delete",
-]
-
 [tool.uv.sources]
 xml2json = { git = "https://github.com/dimagi/xml2json", rev = "041b1ef" }
 git-build-branch = { git = "https://github.com/dimagi/git-build-branch" }
@@ -116,8 +86,6 @@ dev = [
     "ipdb>=0.13.13",
     "prek>=0.4.3",
     "psycopg2-binary>=2.9.6",
-    "pylint-celery>=0.3",
-    "pylint-django>=2.5.3",
     "pytest>=7.4.0",
     "pytest-django>=4.5.2",
     "pytest-httpx>=0.24.0",
