@@ -30,17 +30,29 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if sociallogin.is_existing:
             return
         if sociallogin.state.get("process") == AuthProcess.CONNECT:
-            return  # linking a new provider account to an already-authenticated user
+            return  # linking a new provider account to an already-authenticated user is always allowed
+
+        if sociallogin.account.provider != CommcareHQProvider.id:
+            self._reject_non_hq_login(request)
+        else:
+            self._reject_if_email_already_registered(request, sociallogin)
+
+    def _reject_non_hq_login(self, request: HttpRequest):
+        messages.error(request, _("This account can only be connected, not used to sign in."))
+        raise ImmediateHttpResponse(redirect("account_login"))
+
+    def _reject_if_email_already_registered(self, request: HttpRequest, sociallogin: SocialLogin):
         email = user_email(sociallogin.user)
-        if not email:
-            return
-        if email_address_exists(email):
+        if email and email_address_exists(email):
             messages.error(request, _("Unable to sign in with SSO. Please sign in with your email and password."))
             raise ImmediateHttpResponse(redirect("account_login"))
 
     def validate_disconnect(self, account: SocialAccount, accounts: list[SocialAccount]):
+        if account.provider != CommcareHQProvider.id:
+            return  # non-HQ providers (e.g. OCS) are never used to sign in, so always safe to disconnect
+
         super().validate_disconnect(account, accounts)
         # A user with no usable password almost certainly signed up via HQ, so HQ must stay
         # connected even if another provider (e.g. OCS) is also connected as a fallback.
-        if account.provider == CommcareHQProvider.id and not account.user.has_usable_password():
+        if not account.user.has_usable_password():
             raise ValidationError(_("You can't disconnect your CommCare HQ account because it's your sign-in method."))

@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
 from commcare_connect.users.adapters import AccountAdapter, SocialAccountAdapter
+from commcare_connect.users.models import User
 
 
 class TestAccountAdapter:
@@ -37,11 +38,7 @@ def _attach_messages(request):
 
 @pytest.mark.parametrize("provider", ["ocs", "commcarehq"])
 @pytest.mark.django_db
-def test_connect_bypasses_email_exists_guard_for_any_provider(user, rf, provider):
-    # `user` fixture already exists with an email, so email_address_exists() would be True.
-    # Connecting a new provider account to an already-authenticated user should never be
-    # blocked by that check — it's only meant to guard against SSO *login* hijacking an
-    # existing account.
+def test_existing_user_can_link_new_provider_account(user, rf, provider):
     EmailAddress.objects.create(user=user, email=user.email, verified=True, primary=True)
     request = rf.get("/")
     sociallogin = _sociallogin(user, provider=provider, process=AuthProcess.CONNECT)
@@ -50,11 +47,19 @@ def test_connect_bypasses_email_exists_guard_for_any_provider(user, rf, provider
     SocialAccountAdapter().pre_social_login(request, sociallogin)
 
 
+@pytest.mark.django_db
+def test_new_user_can_signup_via_hq(rf):
+    new_user = User(email="brand-new-hq-user@example.com")
+    request = rf.get("/")
+    sociallogin = _sociallogin(new_user, provider="commcarehq", process=AuthProcess.LOGIN)
+
+    SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+
 @pytest.mark.parametrize("provider", ["ocs", "commcarehq"])
 @pytest.mark.django_db
 def test_login_process_still_raises_on_existing_email(user, rf, provider):
-    # The `user` fixture does not create an allauth EmailAddress row, which is what
-    # email_address_exists() checks. Create one explicitly so the guard is genuinely exercised.
+
     EmailAddress.objects.create(user=user, email=user.email, verified=True, primary=True)
     request = rf.get("/")
     _attach_messages(request)
@@ -68,11 +73,11 @@ def test_login_process_still_raises_on_existing_email(user, rf, provider):
 @pytest.mark.parametrize(
     "provider, has_usable_password, other_provider, expect_raises",
     [
-        ("ocs", False, None, True),  # default allauth guard: sole account, no password
-        ("commcarehq", False, None, True),  # same default guard applies to HQ too
-        ("commcarehq", False, "ocs", True),  # HQ-specific carve-out: OCS as fallback isn't enough
-        ("commcarehq", True, None, False),  # has a password -> allowed
-        ("ocs", False, "commcarehq", False),  # carve-out must not leak onto other providers
+        pytest.param("ocs", False, None, False, id="sole_ocs_account_no_password_can_still_disconnect"),
+        pytest.param("commcarehq", False, None, True, id="hq_only_signup_cannot_disconnect"),
+        pytest.param("commcarehq", False, "ocs", True, id="hq_cannot_disconnect_even_with_ocs_fallback_connected"),
+        pytest.param("commcarehq", True, None, False, id="hq_can_disconnect_when_password_is_set"),
+        pytest.param("ocs", False, "commcarehq", False, id="ocs_can_disconnect_when_hq_is_connected"),
     ],
 )
 def test_validate_disconnect(user, provider, has_usable_password, other_provider, expect_raises):
