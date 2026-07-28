@@ -397,6 +397,30 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.context["show_rerun_clear_work_area_groups_btn"] is False
         assert response.context["show_workarea_groups_btn"] is True
 
+    def test_clear_work_areas_button_shown_when_unassigned(self, client, org_user_admin, opportunity):
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_clear_work_areas_btn"] is True
+
+    def test_clear_work_areas_button_hidden_when_assigned(self, client, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_clear_work_areas_btn"] is False
+
+    def test_clear_work_areas_button_hidden_when_no_work_areas(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_clear_work_areas_btn"] is False
+
 
 @pytest.mark.django_db
 class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
@@ -2320,6 +2344,114 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
         assert mock_delay.call_count == 0
         # Nothing is deleted when assignments exist.
         assert WorkAreaGroup.objects.filter(id=old_group.id).exists()
+
+
+@pytest.mark.django_db
+class TestClearWorkAreas(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:clear_work_areas", args=(org_slug, opp_id))
+
+    def test_clears_work_areas_and_groups(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert response.headers["HX-Redirect"].endswith(
+            reverse(
+                "microplanning:microplanning_home", args=(opportunity.organization.slug, opportunity.opportunity_id)
+            )
+        )
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        # Groups only exist to group Work Areas, so they go too.
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        messages = list(response.wsgi_request._messages)
+        assert any("cleared" in str(m) for m in messages)
+
+    def test_other_opportunities_are_untouched(self, client, org_user_admin, opportunity):
+        other_opportunity = OpportunityFactory(organization=opportunity.organization)
+        other_group = WorkAreaGroupFactory(opportunity=other_opportunity)
+        other_area = WorkAreaFactory(opportunity=other_opportunity, work_area_group=other_group)
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert WorkArea.objects.filter(id=other_area.id).exists()
+        assert WorkAreaGroup.objects.filter(id=other_group.id).exists()
+
+    def test_implementation_areas_are_untouched(self, client, org_user_admin, opportunity):
+        implementation_area = ImplementationAreaFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, implementation_area=implementation_area)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert ImplementationArea.objects.filter(id=implementation_area.id).exists()
+
+    def test_clear_blocked_when_assigned(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
+        unassigned_area = WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        # A single assignment blocks the whole opportunity — nothing is deleted.
+        assert WorkArea.objects.filter(id=work_area.id).exists()
+        assert WorkArea.objects.filter(id=unassigned_area.id).exists()
+        assert WorkAreaGroup.objects.filter(id=group.id).exists()
+        messages = list(response.wsgi_request._messages)
+        assert any("assigned" in str(m) for m in messages)
+
+    def test_clear_blocked_when_visits_recorded(self, client, org_user_admin, opportunity):
+        # UserVisit.work_area is PROTECT. A deleted OpportunityAccess nulls opportunity_access,
+        # so a visited Work Area can look unassigned and slip past the assignment check.
+        work_area = WorkAreaFactory(opportunity=opportunity, opportunity_access=None)
+        UserVisitFactory(opportunity=opportunity, work_area=work_area)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        assert WorkArea.objects.filter(id=work_area.id).exists()
+        messages = list(response.wsgi_request._messages)
+        assert any("Visits" in str(m) for m in messages)
+
+    def test_clear_requires_post(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+        assert response.status_code == 405
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_clear_requires_flag(self, client, org_user_admin, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 404
+        assert WorkArea.objects.filter(id=work_area.id).exists()
+
+    def test_clear_requires_org_admin(self, client, org_user_member, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_member)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 404
+        assert WorkArea.objects.filter(id=work_area.id).exists()
 
 
 @pytest.mark.django_db
