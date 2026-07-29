@@ -5,7 +5,7 @@
      x-show="showClearWorkAreasModal"
      @click.self="showClearWorkAreasModal = false"
      @keydown.escape.window="showClearWorkAreasModal = false">
-  <div class="modal relative p-6" @click.stop>
+  <div class="modal" @click.stop>
     <h3 class="text-lg font-semibold mb-3">{% translate "Clear Work Areas" %}</h3>
     <p class="text-sm mb-4">
       {% translate "This will permanently delete all Work Areas and Work Area Groups for this opportunity so a new file can be uploaded. This action cannot be undone. Are you sure you want to continue?" %}
