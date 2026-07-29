@@ -176,6 +176,39 @@ def get_invoice_line_items(invoice):
     ]
 
 
+def get_invoice_delivery_rows(invoice):
+    """Per-delivery export rows for an issued invoice, read from its frozen snapshot rows."""
+    work_items = invoice.work_items.select_related(
+        "completed_work__payment_unit__opportunity", "completed_work__opportunity_access__user"
+    ).order_by("month", "completed_work__payment_unit__name")
+    return [
+        _delivery_row(
+            completed_work=item.completed_work,
+            billed_count=item.billed_count,
+            flw_amount_local=item.flw_amount_local,
+            org_amount_local=item.org_amount_local,
+            total_amount_local=item.total_amount_local,
+            total_amount_usd=item.total_amount_usd,
+        )
+        for item in work_items
+    ]
+
+
+def get_billable_delivery_rows(opportunity, start_date, end_date):
+    """Per-delivery export rows for a window that has not been invoiced yet, computed from live state."""
+    return [
+        _delivery_row(
+            completed_work=row.completed_work,
+            billed_count=row.billed_count,
+            flw_amount_local=row.flw_amount_local,
+            org_amount_local=row.org_amount_local,
+            total_amount_local=row.total_amount_local,
+            total_amount_usd=row.total_amount_usd,
+        )
+        for row in _build_billable_rows(opportunity, start_date, end_date)
+    ]
+
+
 def bill_invoice(invoice, start_date, end_date):
     """Freeze this invoice's line items and advance each work's invoiced count.
 
@@ -226,6 +259,24 @@ def _billed_month(work, end_date):
 def _to_usd(amount_local: Decimal, exchange_rate: Decimal) -> Decimal:
     """Using the default `ROUND_HALF_EVEN` to match Django's `DecimalField` quantization."""
     return (amount_local / exchange_rate).quantize(CENTS)
+
+
+def _delivery_row(
+    completed_work, billed_count, flw_amount_local, org_amount_local, total_amount_local, total_amount_usd
+):
+    return {
+        "payment_unit": completed_work.payment_unit.name,
+        "opportunity": completed_work.payment_unit.opportunity.name,
+        "entity_name": completed_work.entity_name,
+        "username": completed_work.opportunity_access.user.name,
+        "date_created": completed_work.date_created,
+        "date_approved": completed_work.status_modified_date,
+        "approved_count": billed_count,
+        "flw_amount_local": flw_amount_local,
+        "org_amount_local": org_amount_local,
+        "total_amount_local": total_amount_local,
+        "total_amount_usd": total_amount_usd,
+    }
 
 
 def _line_item(

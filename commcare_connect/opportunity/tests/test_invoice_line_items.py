@@ -22,7 +22,9 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
+    get_billable_delivery_rows,
     get_billable_line_items,
+    get_invoice_delivery_rows,
     get_invoice_line_items,
     group_line_items,
 )

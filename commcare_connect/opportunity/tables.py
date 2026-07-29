@@ -1785,20 +1785,24 @@ class InvoiceLineItemsTable(tables.Table):
 
 
 class InvoiceDeliveriesTable(tables.Table):
-    date_approved = DMYTColumn(verbose_name=gettext_lazy("Date Approved"), accessor="status_modified_date")
-    opportunity = tables.Column(verbose_name=gettext_lazy("Opportunity"), accessor="payment_unit__opportunity__name")
-    approved_count = tables.Column(verbose_name=gettext_lazy("Approved Deliveries"), accessor="saved_approved_count")
-    flw_amount_local = tables.Column(verbose_name=gettext_lazy("FLW Pay"), accessor="saved_payment_accrued")
-    org_amount_local = tables.Column(verbose_name=gettext_lazy("Org Pay"), accessor="saved_org_payment_accrued")
-    total_amount_local = tables.Column(
-        verbose_name=gettext_lazy("Total Pay"), accessor="saved_payment_accrued", empty_values=()
-    )
-    total_amount_usd = tables.Column(
-        verbose_name=gettext_lazy("Total Pay (USD)"), accessor="saved_payment_accrued_usd", empty_values=()
-    )
-    entity_name = tables.Column(verbose_name=gettext_lazy("Beneficiary"), accessor="entity_name")
-    date_created = DMYTColumn(verbose_name=gettext_lazy("Date of Delivery"), accessor="date_created")
-    username = tables.Column(verbose_name=gettext_lazy("Worker"), accessor="opportunity_access__user__name")
+    """Per-delivery rows behind an invoice's line items (CSV export).
+
+    Fed row dicts from utils.invoice_line_items — frozen snapshot rows for an issued invoice, the
+    billable delta for a preview — rather than CompletedWork records, so the export shows what was
+    billed instead of the work's current, possibly-changed, totals.
+    """
+
+    payment_unit = tables.Column(verbose_name=gettext_lazy("Payment Unit"))
+    opportunity = tables.Column(verbose_name=gettext_lazy("Opportunity"))
+    entity_name = tables.Column(verbose_name=gettext_lazy("Beneficiary"))
+    username = tables.Column(verbose_name=gettext_lazy("Worker"))
+    date_created = DMYTColumn(verbose_name=gettext_lazy("Date of Delivery"))
+    date_approved = DMYTColumn(verbose_name=gettext_lazy("Date Approved"))
+    approved_count = tables.Column(verbose_name=gettext_lazy("Approved Deliveries"))
+    flw_amount_local = tables.Column(verbose_name=gettext_lazy("FLW Pay"))
+    org_amount_local = tables.Column(verbose_name=gettext_lazy("Org Pay"))
+    total_amount_local = tables.Column(verbose_name=gettext_lazy("Total Pay"))
+    total_amount_usd = tables.Column(verbose_name=gettext_lazy("Total Pay (USD)"))
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1813,8 +1817,7 @@ class InvoiceDeliveriesTable(tables.Table):
             self.columns["org_amount_local"].column.exclude_from_export = True
 
     class Meta:
-        model = CompletedWork
-        fields = ("payment_unit",)
+        orderable = False
         sequence = (
             "payment_unit",
             "opportunity",
@@ -1828,12 +1831,6 @@ class InvoiceDeliveriesTable(tables.Table):
             "total_amount_local",
             "total_amount_usd",
         )
-
-    def value_total_amount_local(self, record):
-        return (record.saved_payment_accrued or 0) + (record.saved_org_payment_accrued or 0)
-
-    def value_total_amount_usd(self, record):
-        return (record.saved_payment_accrued_usd or 0) + (record.saved_org_payment_accrued_usd or 0)
 
 
 _task_select_td_extra = {

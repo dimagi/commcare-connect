@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from django.test import RequestFactory
 from django_tables2 import RequestConfig
@@ -11,7 +13,6 @@ from commcare_connect.opportunity.tables import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
-    CompletedWorkFactory,
     OpportunityAccessFactory,
     TaskTypeFactory,
     UserInviteFactory,
@@ -41,15 +42,21 @@ def test_invoice_deliveries_table_org_column_visibility(show_org):
     assert "Total Pay (USD)" in headers
 
 
-@pytest.mark.django_db
 def test_invoice_deliveries_table_total_folds_in_org_pay():
-    completed_work = CompletedWorkFactory(
-        saved_payment_accrued=40,
-        saved_org_payment_accrued=10,
-        saved_payment_accrued_usd=4,
-        saved_org_payment_accrued_usd=1,
-    )
-    table = InvoiceDeliveriesTable("KES", [completed_work], show_org=True)
+    delivery = {
+        "payment_unit": "Household visit",
+        "opportunity": "Test opp",
+        "entity_name": "Baby A",
+        "username": "flw",
+        "date_created": datetime.datetime(2026, 1, 10, tzinfo=datetime.UTC),
+        "date_approved": datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
+        "approved_count": 1,
+        "flw_amount_local": 40,
+        "org_amount_local": 10,
+        "total_amount_local": 50,
+        "total_amount_usd": 5,
+    }
+    table = InvoiceDeliveriesTable("KES", [delivery], show_org=True)
 
     rows = list(table.as_values())
     headers, values = rows[0], rows[1]
