@@ -1,7 +1,6 @@
 from collections import defaultdict
 
-from django.db.models import F, Sum
-from django.db.models.functions import TruncMonth
+from django.db.models import Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -291,18 +290,3 @@ def update_work_payment_date(access: OpportunityAccess):
 
     if works_to_update:
         CompletedWork.objects.bulk_update(works_to_update, ["payment_date"])
-
-
-def get_uninvoiced_completed_works_qs(opportunity, start_date=None, end_date=None):
-    query = CompletedWork.objects.filter(
-        opportunity_access__opportunity=opportunity,
-        status=CompletedWorkStatus.approved,
-        invoice__isnull=True,
-    )
-
-    if start_date:
-        query = query.filter(status_modified_date__date__gte=start_date)
-    if end_date:
-        query = query.filter(status_modified_date__date__lte=end_date)
-
-    return query
