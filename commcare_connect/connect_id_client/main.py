@@ -29,7 +29,7 @@ def fetch_demo_user_tokens() -> list[DemoUser]:
 
 def send_message(message: Message):
     """Send a push notification to a user."""
-    response = _make_request(POST, "/messaging/send/", json=message.asdict())
+    response = _make_request(POST, "/messaging/send/", json=message.asdict(), timeout=15)
     data = response.json()
     return MessagingResponse.build(**data)
 
