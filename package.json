@@ -39,7 +39,7 @@
     "webpack-merge": "^5.8.0"
   },
   "engines": {
-    "node": "18"
+    "node": ">=26"
   },
   "browserslist": [
     "last 2 versions"
