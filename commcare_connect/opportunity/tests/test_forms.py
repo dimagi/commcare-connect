@@ -706,7 +706,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
     def test_duplicate_invoice_number(self, valid_opportunity):
-        ExchangeRateFactory()
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
         PaymentInvoiceFactory(opportunity=valid_opportunity, invoice_number="INV-001")
 
         form = AutomatedPaymentInvoiceForm(
@@ -728,7 +728,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert form.errors["invoice_number"][0] == "Please use a different invoice number"
 
     def test_valid_form(self, valid_opportunity):
-        ExchangeRateFactory()
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
 
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
@@ -752,7 +752,7 @@ class TestAutomatedPaymentInvoiceForm:
 
     @patch("commcare_connect.opportunity.forms.create_invoice_line_items")
     def test_non_service_delivery_form(self, mock_create_line_items, valid_opportunity):
-        ExchangeRateFactory()
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
 
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
@@ -780,7 +780,7 @@ class TestAutomatedPaymentInvoiceForm:
 
     @patch("commcare_connect.opportunity.forms.create_invoice_line_items")
     def test_service_delivery_form(self, mock_create_line_items, valid_opportunity):
-        ExchangeRateFactory()
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
 
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
