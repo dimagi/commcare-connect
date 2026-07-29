@@ -12,6 +12,7 @@ from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibili
 from commcare_connect.opportunity.models import (
     AudioAttachment,
     BlobMeta,
+    CompletedWorkInvoice,
     CompletedWorkStatus,
     ExchangeRate,
     InvoiceStatus,
@@ -353,8 +354,8 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         opportunity1 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
         opportunity2 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 12, 1))
 
-        payment_unit1 = PaymentUnitFactory(opportunity=opportunity1, amount=Decimal("100.00"))
-        payment_unit2 = PaymentUnitFactory(opportunity=opportunity2, amount=Decimal("50.00"))
+        payment_unit1 = PaymentUnitFactory(opportunity=opportunity1, amount=Decimal("100.00"), org_amount=0)
+        payment_unit2 = PaymentUnitFactory(opportunity=opportunity2, amount=Decimal("50.00"), org_amount=0)
 
         access1 = OpportunityAccessFactory(opportunity=opportunity1)
         access2 = OpportunityAccessFactory(opportunity=opportunity2)
@@ -364,17 +365,17 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             payment_unit=payment_unit1,
             status=CompletedWorkStatus.approved,
             status_modified_date=datetime.date(2024, 1, 4),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
         )
-        completed_work1.saved_payment_accrued = Decimal("100.00")
-        completed_work1.save()
         completed_work2 = CompletedWorkFactory(
             opportunity_access=access2,
             payment_unit=payment_unit2,
             status=CompletedWorkStatus.approved,
             status_modified_date=datetime.date(2024, 1, 5),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
         )
-        completed_work2.saved_payment_accrued = Decimal("50.00")
-        completed_work2.save()
 
         generate_automated_service_delivery_invoice()
 
@@ -389,7 +390,9 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice1.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice1.start_date == datetime.date(2024, 1, 1)
         assert invoice1.end_date == datetime.date(2024, 1, 31)
-        assert completed_work1.invoice == invoice1
+        assert completed_work1.invoiced_approved_count == 1
+        assert invoice1.work_items.get().completed_work_id == completed_work1.id
+        assert invoice1.work_items.get().billed_count == 1
 
         invoice2 = PaymentInvoice.objects.get(opportunity=opportunity2)
         assert invoice2.amount == Decimal("50.00")
@@ -397,7 +400,9 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice2.start_date == datetime.date(2024, 1, 1)
         assert invoice2.end_date == datetime.date(2024, 1, 31)
         assert {invoice1.invoice_number, invoice2.invoice_number} == {"INV001", "INV002"}
-        assert completed_work2.invoice == invoice2
+        assert completed_work2.invoiced_approved_count == 1
+        assert invoice2.work_items.get().completed_work_id == completed_work2.id
+        assert invoice2.work_items.get().billed_count == 1
 
     def test_no_invoice_for_inactive_opportunities(self):
         inactive_opportunity = OpportunityFactory(active=False, is_test=False, start_date=datetime.date(2026, 1, 1))
@@ -408,16 +413,17 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             status_modified_date=datetime.date(2024, 1, 5),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
         )
-        completed_work.saved_payment_accrued = Decimal("100.00")
-        completed_work.save()
 
         generate_automated_service_delivery_invoice()
 
         completed_work.refresh_from_db()
 
         assert PaymentInvoice.objects.count() == 0
-        assert completed_work.invoice is None
+        assert completed_work.invoiced_approved_count == 0
+        assert not CompletedWorkInvoice.objects.exists()
 
     def test_no_invoice_with_no_approved_work(self):
         opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
@@ -436,16 +442,48 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             status_modified_date=datetime.date(2024, 1, 5),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
         )
-        completed_work.saved_payment_accrued = Decimal("100.00")
-        completed_work.save()
 
         generate_automated_service_delivery_invoice()
 
         completed_work.refresh_from_db()
 
         assert PaymentInvoice.objects.count() == 0
-        assert completed_work.invoice is None
+        assert completed_work.invoiced_approved_count == 0
+        assert not CompletedWorkInvoice.objects.exists()
+
+    def test_late_delta_bills_on_the_next_automated_invoice(self):
+        opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"), org_amount=0)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2023, 11, 15),
+            saved_approved_count=1,
+            invoiced_approved_count=1,
+        )
+
+        generate_automated_service_delivery_invoice()
+        assert PaymentInvoice.objects.count() == 0  # fully billed: no empty invoice is left behind
+
+        work.saved_approved_count = 2
+        work.save(update_fields=["saved_approved_count"])
+
+        generate_automated_service_delivery_invoice()
+
+        invoice = PaymentInvoice.objects.get(opportunity=opportunity)
+        row = invoice.work_items.get()
+        assert row.billed_count == 1
+        assert row.month == datetime.date(2024, 1, 1)  # the billing month, not November 2023
+        assert invoice.start_date == datetime.date(2024, 1, 1)  # the window start, which is the billed month
+        assert invoice.end_date == datetime.date(2024, 1, 31)
+        assert invoice.amount == Decimal("100.00")
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 2
 
 
 @pytest.mark.django_db

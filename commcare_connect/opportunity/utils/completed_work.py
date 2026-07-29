@@ -366,8 +366,3 @@ def get_invoice_items(completed_works_qs):
         )
 
     return invoice_items
-
-
-def link_invoice_to_completed_works(invoice, start_date=None, end_date=None):
-    completed_works_qs = get_uninvoiced_completed_works_qs(invoice.opportunity, start_date, end_date)
-    completed_works_qs.update(invoice=invoice)
