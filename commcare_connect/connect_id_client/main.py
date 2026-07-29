@@ -93,7 +93,7 @@ def get_user_otp(phone_number):
         raise
 
 
-def _make_request(method, path, params=None, json=None, timeout=5, auth=None) -> Response:
+def _make_request(method, path, params=None, json=None, timeout=10, auth=None) -> Response:
     if json and not method == "POST":
         raise ValueError("json can only be used with POST requests")
     if not auth:
