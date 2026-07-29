@@ -1,4 +1,5 @@
 import datetime
+from unittest import mock
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -347,3 +348,47 @@ class TestImageView:
         url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url, {"blob_id": blob_meta.blob_id})
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestAttachmentSignedUrlView:
+    def _url(self, opportunity):
+        return reverse("data_export:attachment_signed_url", kwargs={"opp_id": opportunity.id})
+
+    def test_requires_export_scope(self, api_client, opportunity):
+        response = api_client.get(self._url(opportunity), {"blob_id": "any"})
+        assert response.status_code == 401
+
+    def test_non_member_returns_404(self, api_client, opportunity, user):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        _add_export_credentials(api_client, user)
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    def test_foreign_org_blob_returns_404(self, api_client, opportunity, org_user_member):
+        foreign_visit = UserVisitFactory(opportunity__organization=OrgWithUsersFactory())
+        blob_meta = BlobMetaFactory(parent_id=foreign_visit.xform_id)
+        _add_export_credentials(api_client, org_user_member)
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    def test_returns_501_when_no_s3_backend(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        _add_export_credentials(api_client, org_user_member)
+        # The test environment uses FileSystemStorage, which cannot produce a portable URL.
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 501
+
+    def test_returns_signed_url(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        _add_export_credentials(api_client, org_user_member)
+        with (
+            mock.patch("commcare_connect.data_export.views._default_storage_supports_signed_urls", return_value=True),
+            mock.patch("commcare_connect.data_export.views._get_attachment_signed_url", return_value="https://signed"),
+        ):
+            response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert response.json() == {"attachment_signed_url": "https://signed"}
