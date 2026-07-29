@@ -14,4 +14,5 @@ def get_users_count():
 
 @celery_app.task()
 def clear_expired_oauth_tokens():
+    # https://django-oauth-toolkit.readthedocs.io/en/latest/management_commands.html
     call_command("cleartokens")
