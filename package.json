@@ -4,6 +4,7 @@
   "devDependencies": {
     "@babel/core": "^7.16.5",
     "@babel/preset-env": "^7.16.5",
+    "@eslint/js": "^10.0.1",
     "@fortawesome/fontawesome-free": "^7.0.0",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@ryangjchandler/alpine-tooltip": "^2.0.1",
@@ -15,8 +16,9 @@
     "concurrently": "^8.0.1",
     "css-loader": "^6.5.1",
     "dotenv-webpack": "^8.0.1",
-    "eslint": "^8.57.1",
+    "eslint": "^10.8.0",
     "flatpickr": "^4.6.13",
+    "globals": "^17.8.0",
     "gulp-concat": "^2.6.1",
     "htmx.org": "^1.9.4",
     "mapbox-gl": "^3.13.0",
