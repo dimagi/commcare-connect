@@ -2,16 +2,24 @@ import datetime
 from decimal import Decimal
 
 import pytest
+from django.db.models import Sum
 
-from commcare_connect.opportunity.models import CompletedWorkStatus
+from commcare_connect.opportunity.models import (
+    CompletedWorkInvoice,
+    CompletedWorkStatus,
+    Currency,
+    PaymentInvoice,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
+    PaymentInvoiceFactory,
     PaymentUnitFactory,
 )
 from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
+    create_invoice_line_items,
     get_billable_completed_works_qs,
     get_billable_line_items,
     group_line_items,
@@ -181,3 +189,167 @@ class TestLineItemGrouping:
         items = get_billable_line_items(access.opportunity, JAN, FEB_END)
 
         assert [item["month"] for item in items] == [JAN, FEB]
+
+
+@pytest.mark.django_db
+class TestCreateInvoiceLineItems:
+    def _invoice(self, opportunity, start_date=JAN, end_date=FEB_END):
+        return PaymentInvoiceFactory.build(
+            opportunity=opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    def test_snapshots_one_row_per_work_with_flw_and_org_pay(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit, approved=2)
+        invoice = self._invoice(access.opportunity)
+
+        create_invoice_line_items(invoice, start_date=JAN, end_date=FEB_END)
+
+        row = CompletedWorkInvoice.objects.get(invoice=invoice, completed_work=work)
+        assert row.billed_count == 2
+        assert row.month == JAN
+        assert row.flw_amount_local == Decimal("200")
+        assert row.flw_amount_usd == Decimal("200")
+        assert row.org_amount_local == Decimal("40")
+        assert row.org_amount_usd == Decimal("40")
+        assert row.exchange_rate == Decimal("1")
+
+    def test_advances_the_watermark_to_the_saved_count(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit, approved=3, invoiced=1)
+        invoice = self._invoice(access.opportunity)
+
+        create_invoice_line_items(invoice, start_date=JAN, end_date=FEB_END)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 3
+        assert CompletedWorkInvoice.objects.get(invoice=invoice).billed_count == 2
+
+    def test_sets_invoice_totals_from_the_frozen_rows(self, billing_setup):
+        access, payment_unit = billing_setup
+        approved_work(access, payment_unit)
+        approved_work(access, payment_unit)
+        invoice = self._invoice(access.opportunity)
+
+        create_invoice_line_items(invoice, start_date=JAN, end_date=FEB_END)
+
+        invoice.refresh_from_db()
+        assert invoice.amount == Decimal("240")
+        assert invoice.amount_usd == Decimal("240")
+        stored = invoice.work_items.aggregate(
+            local=Sum("flw_amount_local") + Sum("org_amount_local"),
+            usd=Sum("flw_amount_usd") + Sum("org_amount_usd"),
+        )
+        assert invoice.amount == stored["local"]
+        assert invoice.amount_usd == stored["usd"]
+
+    def test_usd_amounts_are_rounded_per_work_then_summed(self, billing_setup):
+        """Ensures USD amounts are rounded per work item before summing.
+
+        Without per-work rounding, this invoice would total 98.03 instead of 98.04 and
+        would no longer match the sum of its line items.
+        """
+        access, payment_unit = billing_setup
+        access.opportunity.currency = Currency.objects.get(code="KES")
+        access.opportunity.save(update_fields=["currency"])
+        ExchangeRateFactory(currency_code="KES", rate=Decimal("3.6725"), rate_date=datetime.date(2020, 1, 1))
+        for _ in range(3):
+            approved_work(access, payment_unit)
+        invoice = self._invoice(access.opportunity)
+
+        create_invoice_line_items(invoice, start_date=JAN, end_date=FEB_END)
+
+        invoice.refresh_from_db()
+        assert invoice.amount == Decimal("360")  # 3 x (100 + 20); local amounts never round
+        # Each work is 100/3.6725 -> 27.23 plus 20/3.6725 -> 5.45, so 32.68 x 3.
+        assert invoice.amount_usd == Decimal("98.04")
+        assert invoice.work_items.count() == 3
+        assert (
+            invoice.amount_usd
+            == invoice.work_items.aggregate(usd=Sum("flw_amount_usd") + Sum("org_amount_usd"))["usd"]
+        )
+
+    def test_leaves_the_billing_window_alone(self, billing_setup):
+        """The window is the caller's input — an NM types it — so nothing here may narrow it to the
+        months that happened to be billable."""
+        access, payment_unit = billing_setup
+        approved_work(access, payment_unit, approved_on=datetime.datetime(2026, 2, 3, tzinfo=datetime.UTC))
+        invoice = self._invoice(access.opportunity, start_date=JAN, end_date=FEB_END)
+
+        create_invoice_line_items(invoice, start_date=JAN, end_date=FEB_END)
+
+        invoice.refresh_from_db()
+        assert invoice.start_date == JAN
+        assert invoice.end_date == FEB_END
+        assert CompletedWorkInvoice.objects.get(invoice=invoice).month == FEB
+
+    def test_a_late_delta_only_invoice_bills_under_the_billing_month(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit, approved=2, invoiced=1, approved_on=JAN_APPROVAL)
+        invoice = self._invoice(access.opportunity, start_date=FEB, end_date=FEB_END)
+
+        create_invoice_line_items(invoice, start_date=FEB, end_date=FEB_END)
+
+        row = CompletedWorkInvoice.objects.get(invoice=invoice, completed_work=work)
+        assert row.billed_count == 1
+        assert row.month == FEB
+
+    def test_nothing_billable_writes_no_invoice_at_all(self, billing_setup):
+        access, payment_unit = billing_setup
+        approved_work(access, payment_unit, approved=1, invoiced=1)  # fully billed
+        invoice = self._invoice(access.opportunity)
+
+        assert create_invoice_line_items(invoice, start_date=JAN, end_date=FEB_END) == []
+
+        assert invoice.pk is None
+        assert not PaymentInvoice.objects.filter(opportunity=access.opportunity).exists()
+        assert not CompletedWorkInvoice.objects.exists()
+
+    def test_a_second_invoice_bills_only_the_new_delta(self, billing_setup):
+        """The forward-delta acceptance case: a late approval bills on the next invoice, attributed
+        to that invoice's month, and leaves the first invoice untouched."""
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit)
+        january = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
+        create_invoice_line_items(january, start_date=JAN, end_date=JAN_END)
+
+        work.saved_approved_count = 2
+        work.save(update_fields=["saved_approved_count"])
+        february = self._invoice(access.opportunity, start_date=FEB, end_date=FEB_END)
+        create_invoice_line_items(february, start_date=FEB, end_date=FEB_END)
+
+        january.refresh_from_db()
+        february.refresh_from_db()
+        assert january.amount == Decimal("120")
+        assert january.work_items.get().month == JAN
+        assert february.amount == Decimal("120")
+        assert february.work_items.get().month == FEB
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 2
+
+    def test_a_skipped_month_still_bills_the_delta_on_the_next_invoice(self, billing_setup):
+        """No invoice is issued in February at all. The delta must not be lost: March picks it up
+        and attributes it to March, because the watermark — not any date — decides billability."""
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit)
+        january = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
+        create_invoice_line_items(january, start_date=JAN, end_date=JAN_END)
+
+        work.saved_approved_count = 2
+        work.save(update_fields=["saved_approved_count"])
+        # February passes with no invoice created.
+
+        march = self._invoice(access.opportunity, start_date=MAR, end_date=MAR_END)
+        create_invoice_line_items(march, start_date=MAR, end_date=MAR_END)
+
+        row = march.work_items.get()
+        assert row.billed_count == 1
+        assert row.month == MAR
+        assert january.work_items.get().month == JAN  # January is untouched
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 2

@@ -2,9 +2,15 @@ import datetime
 from dataclasses import dataclass
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import F, Q
 
-from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkInvoice,
+    CompletedWorkStatus,
+    ExchangeRate,
+)
 from commcare_connect.utils.datetime import get_month_start_date
 
 CENTS = Decimal("0.01")
@@ -139,6 +145,65 @@ def get_billable_line_items(opportunity, start_date, end_date):
     """
     rows = _build_billable_rows(opportunity, start_date, end_date)
     return group_line_items(rows, opportunity.currency_code)
+
+
+def create_invoice_line_items(invoice, start_date, end_date):
+    """Freeze this invoice's line items and advance the billed-work watermark.
+
+    `invoiced_approved_count` is only ever advanced here. `invoice` may be unsaved: it is written by
+    `_freeze_line_items`, and only if there is a delta to bill, so a caller with nothing billable
+    gets `[]` back and no invoice row.
+    """
+    with transaction.atomic():
+        rows = _build_billable_rows(invoice.opportunity, start_date, end_date, for_update=True)
+        if not rows:
+            return []
+
+        _freeze_line_items(invoice, rows)
+
+    return rows
+
+
+def _freeze_line_items(invoice, rows):
+    """Write `rows` as this invoice's snapshot, advance each work's watermark, and set the fields
+    that are derived from what was billed: `exchange_rate`, `amount`, `amount_usd`.
+
+    Unsafe to call directly: it assumes an open transaction and rows built with `for_update=True`.
+    """
+    # The latest month actually billed, not the window's end: works approved only in May take May's
+    # rate even when the window runs to June 30.
+    invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
+        invoice.opportunity.currency_code, max(row.month for row in rows)
+    )
+    invoice.amount = sum(row.total_amount_local for row in rows)
+    invoice.amount_usd = sum(row.total_amount_usd for row in rows)
+    invoice.save()
+
+    CompletedWorkInvoice.objects.bulk_create(
+        [
+            CompletedWorkInvoice(
+                invoice=invoice,
+                completed_work=row.completed_work,
+                month=row.month,
+                billed_count=row.billed_count,
+                flw_amount_local=row.flw_amount_local,
+                flw_amount_usd=row.flw_amount_usd,
+                org_amount_local=row.org_amount_local,
+                org_amount_usd=row.org_amount_usd,
+                exchange_rate=row.exchange_rate,
+            )
+            for row in rows
+        ]
+    )
+
+    billed_works = []
+    for row in rows:
+        work = row.completed_work
+        work.invoiced_approved_count = work.saved_approved_count
+        billed_works.append(work)
+    # batch_size caps the CASE arms per statement; Postgres would otherwise emit one UPDATE
+    # with a branch per work, which parses slowly on a large invoice.
+    CompletedWork.objects.bulk_update(billed_works, ["invoiced_approved_count"], batch_size=500)
 
 
 def _billed_month(work, end_date):
