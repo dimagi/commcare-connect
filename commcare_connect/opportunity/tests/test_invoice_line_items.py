@@ -22,7 +22,9 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     create_invoice_line_items,
     get_billable_completed_works_qs,
+    get_billable_delivery_rows,
     get_billable_line_items,
+    get_invoice_delivery_rows,
     get_invoice_line_items,
     group_line_items,
     rollback_invoice_line_items,
@@ -514,3 +516,42 @@ class TestStartDateForInvoice:
         approved_work(access, payment_unit, approved=1, invoiced=1)  # fully billed: not billable
 
         assert get_start_date_for_invoice(access.opportunity) == datetime.date(2025, 9, 1)
+
+
+@pytest.mark.django_db
+class TestDeliveryRows:
+    def test_billable_rows_carry_the_delta_and_delivery_identity(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit, approved=3, invoiced=1)
+
+        (row,) = get_billable_delivery_rows(access.opportunity, JAN, FEB_END)
+
+        assert row["payment_unit"] == payment_unit.name
+        assert row["opportunity"] == access.opportunity.name
+        assert row["entity_name"] == work.entity_name
+        assert row["username"] == access.user.name
+        assert row["approved_count"] == 2
+        assert row["flw_amount_local"] == Decimal("200")
+        assert row["org_amount_local"] == Decimal("40")
+        assert row["total_amount_local"] == Decimal("240")
+        assert row["total_amount_usd"] == Decimal("240")
+
+    def test_invoice_rows_stay_frozen_after_a_later_approval(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = approved_work(access, payment_unit)
+        invoice = PaymentInvoiceFactory(
+            opportunity=access.opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=JAN,
+            end_date=JAN_END,
+        )
+        create_invoice_line_items(invoice, start_date=JAN, end_date=JAN_END)
+
+        work.saved_approved_count = 9
+        work.save(update_fields=["saved_approved_count"])
+
+        (row,) = get_invoice_delivery_rows(invoice)
+        assert row["approved_count"] == 1
+        assert row["total_amount_local"] == Decimal("120")

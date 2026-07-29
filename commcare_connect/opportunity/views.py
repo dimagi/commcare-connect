@@ -187,12 +187,11 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.completed_work import (
-    get_uninvoiced_completed_works_qs,
-    get_uninvoiced_visit_items,
-)
 from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
 from commcare_connect.opportunity.utils.invoice_line_items import (
+    get_billable_delivery_rows,
+    get_billable_line_items,
+    get_invoice_delivery_rows,
     get_invoice_line_items,
     rollback_invoice_line_items,
 )
@@ -3398,7 +3397,7 @@ def invoice_items(request, *args, **kwargs):
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
+    line_items = get_billable_line_items(request.opportunity, start_date, end_date)
     total_local_amount = sum(item["total_amount_local"] for item in line_items)
     total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
     show_org = any(item["org_amount_local"] for item in line_items)
@@ -3432,14 +3431,12 @@ def download_invoice_line_items(request, org_slug, opp_id):
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
     if invoice_id:
-        deliveries = CompletedWork.objects.filter(
-            invoice__payment_invoice_id=invoice_id,
-            opportunity_access__opportunity=request.opportunity,
-        )
+        invoice = get_object_or_404(PaymentInvoice, payment_invoice_id=invoice_id, opportunity=request.opportunity)
+        deliveries = get_invoice_delivery_rows(invoice)
     else:
-        deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
+        deliveries = get_billable_delivery_rows(request.opportunity, start_date, end_date)
 
-    show_org = deliveries.filter(saved_org_payment_accrued__gt=0).exists()
+    show_org = any(delivery["org_amount_local"] for delivery in deliveries)
     table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries, show_org=show_org)
     export_format = "csv"
     exporter = TableExport(export_format, table)
