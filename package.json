@@ -35,7 +35,6 @@
     "webpack": "^5.65.0",
     "webpack-bundle-tracker": "^2.0.0",
     "webpack-cli": "^5.0.1",
-    "webpack-dev-server": "^4.6.0",
     "webpack-merge": "^5.8.0"
   },
   "engines": {
