@@ -10,7 +10,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Min, Q, Sum, TextChoices
+from django.db.models import Count, F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -25,8 +25,6 @@ from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     AudioAttachment,
     CommCareApp,
-    CompletedWork,
-    CompletedWorkStatus,
     Country,
     CredentialConfiguration,
     Currency,
@@ -1707,32 +1705,6 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 }
             )
             self.fields["date_of_expense"].required = True
-
-    def get_start_date_for_invoice(self):
-        date = (
-            CompletedWork.objects.filter(
-                invoice__isnull=True,
-                opportunity_access__opportunity=self.opportunity,
-                status=CompletedWorkStatus.approved,
-            )
-            .aggregate(earliest_date=Min("status_modified_date"))
-            .get("earliest_date")
-        )
-
-        start_date = date
-        if date:
-            start_date = date.date()
-        else:
-            start_date = self.opportunity.start_date
-
-        return start_date.replace(day=1)
-
-    def get_end_date_for_invoice(self, start_date):
-        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
-
-        if start_date > last_day_previous_month:
-            return datetime.date.today() - datetime.timedelta(days=1)
-        return last_day_previous_month
 
     def get_form_layout(self):
         if self.is_service_delivery:
