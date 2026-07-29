@@ -392,3 +392,34 @@ class TestAttachmentSignedUrlView:
             response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
         assert response.status_code == 200
         assert response.json() == {"attachment_signed_url": "https://signed"}
+
+
+class _FakeSignedStorage:
+    """Storage stand-in that records how ``url()`` is invoked.
+
+    Used because django-storages (the real S3 backend) is a production-only dependency and
+    is absent from the test environment. ``location`` is a class default; a per-instance
+    override models config a *resolved* storage carries, so this verifies the copy retains
+    it rather than falling back to bare class defaults.
+    """
+
+    location = "class-default"
+
+    def __init__(self):
+        self.querystring_auth = False
+
+    def url(self, name, expire, http_method):
+        return f"https://signed/{self.location}/{name}?auth={self.querystring_auth}&method={http_method}"
+
+
+def test_get_attachment_signed_url_preserves_resolved_storage_config():
+    from commcare_connect.data_export.views import _get_attachment_signed_url
+
+    storage = _FakeSignedStorage()
+    storage.location = "configured/prefix"  # instance-level config, e.g. a STORAGES OPTIONS override
+    with mock.patch("commcare_connect.data_export.views.storages", {"default": storage}):
+        url = _get_attachment_signed_url("blob123")
+    # The signed URL reflects the resolved instance's config (not the class default), opts
+    # querystring_auth in, and is scoped to GET; the original instance is left untouched.
+    assert url == "https://signed/configured/prefix/blob123?auth=True&method=GET"
+    assert storage.querystring_auth is False

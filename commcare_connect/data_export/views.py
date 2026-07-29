@@ -1,3 +1,4 @@
+import copy
 import csv
 import uuid
 from collections import defaultdict
@@ -512,9 +513,10 @@ def _get_attachment_signed_url(blob_id, expire=ATTACHMENT_SIGNED_URL_EXPIRY):
 
     Caller must guard with ``_default_storage_supports_signed_urls()`` first.
     """
-    # AWS_QUERYSTRING_AUTH is globally False, so build a signing-enabled storage of the
-    # same class (preserving its ``location`` prefix) and request a GET-only URL.
-    signed_storage = type(storages["default"])(querystring_auth=True)
+    # Create a storage handler which allows pre-authed url's, retaining the existing
+    # config of the default handler.
+    signed_storage = copy.copy(storages["default"])
+    signed_storage.querystring_auth = True
     return signed_storage.url(blob_id, expire=expire, http_method="GET")
 
 
