@@ -30,6 +30,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_invoice_delivery_rows,
     get_invoice_line_items,
     group_line_items,
+    rollback_invoice_line_items,
 )
 from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
 
@@ -352,6 +353,56 @@ class TestCreateInvoiceLineItems:
         assert row.month == expected_month
         work.refresh_from_db()
         assert work.invoiced_approved_count == 2
+
+
+@pytest.mark.django_db
+class TestRollbackInvoiceLineItems:
+    def _billed_invoice(self, access, start_date=JAN, end_date=FEB_END):
+        invoice = PaymentInvoiceFactory(
+            opportunity=access.opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        bill_invoice(invoice, start_date=start_date, end_date=end_date)
+        return invoice
+
+    def test_deletes_the_rows_and_reopens_the_work(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit, approved=2)
+        invoice = self._billed_invoice(access)
+
+        rollback_invoice_line_items(invoice)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 0
+        assert not invoice.work_items.exists()
+        assert list(get_billable_completed_works_qs(access.opportunity, JAN, FEB_END)) == [work]
+
+    def test_cancelling_one_of_two_covering_invoices_rolls_back_only_its_portion(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit)
+        january = self._billed_invoice(access, start_date=JAN, end_date=JAN_END)
+        work.saved_approved_count = 3
+        work.save(update_fields=["saved_approved_count"])
+        february = self._billed_invoice(access, start_date=FEB, end_date=FEB_END)
+
+        rollback_invoice_line_items(february)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 1  # January's billing survives
+        assert january.work_items.count() == 1
+        assert not february.work_items.exists()
+
+    def test_rollback_is_a_no_op_for_an_invoice_with_no_rows(self, billing_setup):
+        access, _ = billing_setup
+        invoice = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, end_date=FEB_END)
+
+        rollback_invoice_line_items(invoice)  # must not raise
+
+        assert not invoice.work_items.exists()
 
 
 @pytest.mark.django_db

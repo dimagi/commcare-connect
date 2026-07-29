@@ -193,6 +193,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_billable_line_items,
     get_invoice_delivery_rows,
     get_invoice_line_items,
+    rollback_invoice_line_items,
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
@@ -1976,7 +1977,7 @@ def invoice_update_status(request, org_slug, opp_id):
         invoice.description = description
         invoice.save(update_fields=["status", "description"])
         if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            invoice.unlink_completed_works()
+            rollback_invoice_line_items(invoice)
     else:
         invoice.save(update_fields=["status"])
 

@@ -1,4 +1,5 @@
 import datetime
+import logging
 from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 
@@ -12,6 +13,8 @@ from commcare_connect.opportunity.models import (
     ExchangeRate,
 )
 from commcare_connect.utils.datetime import get_month_start_date
+
+logger = logging.getLogger(__name__)
 
 CENTS = Decimal("0.01")
 
@@ -253,6 +256,31 @@ def bill_invoice(invoice, start_date, end_date):
         _freeze_line_items(invoice, rows)
 
     return rows
+
+
+def rollback_invoice_line_items(invoice):
+    with transaction.atomic():
+        billed_by_work = dict(invoice.work_items.values_list("completed_work_id", "billed_count"))
+        if not billed_by_work:
+            return
+
+        works = []
+        for work in CompletedWork.objects.select_for_update(of=("self",)).filter(id__in=billed_by_work):
+            released = billed_by_work[work.id]
+            if released > work.invoiced_approved_count:
+                # Only reachable if the watermark and the rows have already diverged. Clamping keeps
+                # the cancel working, but the divergence itself is a bug worth seeing.
+                logger.error(
+                    "Invoice %s releases %s units of completed work %s but only %s are invoiced; clamping to 0.",
+                    invoice.id,
+                    released,
+                    work.id,
+                    work.invoiced_approved_count,
+                )
+            work.invoiced_approved_count = max(0, work.invoiced_approved_count - released)
+            works.append(work)
+        CompletedWork.objects.bulk_update(works, ["invoiced_approved_count"])
+        invoice.work_items.all().delete()
 
 
 def _freeze_line_items(invoice, rows):
