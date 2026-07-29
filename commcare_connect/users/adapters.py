@@ -51,8 +51,9 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if account.provider != CommcareHQProvider.id:
             return  # non-HQ providers (e.g. OCS) are never used to sign in, so always safe to disconnect
 
-        super().validate_disconnect(account, accounts)
         # A user with no usable password almost certainly signed up via HQ, so HQ must stay
         # connected even if another provider (e.g. OCS) is also connected as a fallback.
+        # Checked before super() so this message takes precedence over allauth's generic one.
         if not account.user.has_usable_password():
             raise ValidationError(_("You can't disconnect your CommCare HQ account because it's your sign-in method."))
+        super().validate_disconnect(account, accounts)
