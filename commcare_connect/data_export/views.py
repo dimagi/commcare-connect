@@ -166,6 +166,16 @@ def _get_opportunity_or_404(user, opp_id):
         raise NotFound()
 
 
+def _get_scoped_blob_meta(request):
+    """Resolve the ``blob_id`` query param to its BlobMeta, enforcing that the requesting
+    user has access to the opportunity that owns the blob."""
+    blob_id = request.query_params["blob_id"]
+    blob_meta = BlobMeta.objects.get(blob_id=blob_id)
+    form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
+    _get_opportunity_or_404(request.user, form.opportunity_id)
+    return blob_meta
+
+
 def _get_program_or_404(user, program_id):
     try:
         return (
@@ -475,11 +485,8 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
 
 class ImageView(OpportunityDataExportView):
     def get(self, request, *args, **kwargs):
-        blob_id = request.query_params["blob_id"]
-        blob_meta = BlobMeta.objects.get(blob_id=blob_id)
-        form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
-        _get_opportunity_or_404(request.user, form.opportunity_id)
-        attachment = storages["default"].open(blob_id)
+        blob_meta = _get_scoped_blob_meta(request)
+        attachment = storages["default"].open(blob_meta.blob_id)
         return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
 
 

@@ -2,6 +2,8 @@ import datetime
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.core.files.base import ContentFile
+from django.core.files.storage import storages
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import now
@@ -9,7 +11,13 @@ from django.utils.timezone import now
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import LabsRecord
-from commcare_connect.opportunity.tests.factories import AssignedTaskFactory, OpportunityAccessFactory, TaskTypeFactory
+from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
+    BlobMetaFactory,
+    OpportunityAccessFactory,
+    TaskTypeFactory,
+    UserVisitFactory,
+)
 from commcare_connect.users.tests.factories import LLOEntityFactory, OrgWithUsersFactory
 
 
@@ -318,3 +326,24 @@ class TestLabsRecordDataViewAuthorization:
         assert response.status_code == 404
         record.refresh_from_db()
         assert record.experiment == "original", "Cross-org record must not be overwritten"
+
+
+@pytest.mark.django_db
+class TestImageView:
+    def test_returns_image_bytes(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
+        _add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"imagebytes"
+
+    def test_non_member_returns_404(self, api_client, opportunity, user):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        _add_export_credentials(api_client, user)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
