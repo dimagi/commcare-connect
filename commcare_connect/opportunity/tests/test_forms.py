@@ -1,5 +1,6 @@
 import datetime
 import json
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -24,7 +25,7 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
-    CompletedWork,
+    CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
     PaymentUnit,
@@ -746,8 +747,8 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.amount == 100.0
         assert invoice.date == datetime.date(2025, 11, 6)
 
-    @patch("commcare_connect.opportunity.forms.link_invoice_to_completed_works")
-    def test_non_service_delivery_form(self, mock_link_invoice, valid_opportunity):
+    @patch("commcare_connect.opportunity.forms.bill_invoice")
+    def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
         form = AutomatedPaymentInvoiceForm(
@@ -772,10 +773,10 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.start_date is None
         assert invoice.end_date is None
         assert invoice.title is None
-        mock_link_invoice.assert_not_called()
+        mock_bill_invoice.assert_not_called()
 
-    @patch("commcare_connect.opportunity.forms.link_invoice_to_completed_works")
-    def test_service_delivery_form(self, mock_link_invoice, valid_opportunity):
+    @patch("commcare_connect.opportunity.forms.bill_invoice")
+    def test_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
         form = AutomatedPaymentInvoiceForm(
@@ -799,27 +800,24 @@ class TestAutomatedPaymentInvoiceForm:
         assert str(invoice.end_date) == "2025-10-31"
         assert invoice.description == "Monthly consulting services rendered."
 
-        mock_link_invoice.assert_called_once()
+        mock_bill_invoice.assert_called_once()
 
-    def test_invoice_linkage(self, valid_opportunity):
-        ExchangeRateFactory(rate_date="2020-01-01")
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            status=CompletedWorkStatus.approved,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+    @patch("commcare_connect.opportunity.forms.bill_invoice", return_value=[])
+    def test_service_delivery_amount_is_never_the_posted_one(self, mock_bill_invoice, valid_opportunity):
+        """The posted total is a preview artefact and must never survive onto the invoice.
 
-        assert CompletedWork.objects.get(id=cw.id).invoice is None
-
+        bill_invoice is patched to return [] to stand in for the delta being billed
+        elsewhere between clean() and save() -- the race no validation can close. The invoice must
+        then be 0 rather than the 100 that was posted, so it never claims money it has no rows for.
+        """
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
             invoice_type="service_delivery",
             data={
-                "invoice_number": "INV-001",
+                "invoice_number": "INV-STALE",
                 "amount": 100.0,
                 "date": "2025-11-06",
-                "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
                 "description": "Monthly consulting services rendered.",
@@ -830,7 +828,63 @@ class TestAutomatedPaymentInvoiceForm:
         assert form.is_valid()
         invoice = form.save()
 
-        assert CompletedWork.objects.get(id=cw.id).invoice == invoice
+        invoice.refresh_from_db()
+        assert invoice.amount == Decimal("0")
+        assert invoice.amount_usd == Decimal("0")
+        assert not invoice.work_items.exists()
+
+    def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
+        # Explicit date: the factory default is Faker("date_time"), which can land after the
+        # billed month and miss `latest_exchange_rate`'s rate_date filter intermittently.
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+            invoiced_approved_count=0,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-001",
+                "amount": 100.0,
+                "date": "2025-11-06",
+                "title": "Consulting Services Invoice",
+                # Deliberately wider than the single month that has billable work, so the
+                # assertions below prove the posted window survives rather than collapsing onto
+                # the month that happened to be billed.
+                "start_date": "2025-09-01",
+                "end_date": "2025-10-31",
+                "description": "Monthly consulting services rendered.",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid()
+        invoice = form.save()
+
+        row = CompletedWorkInvoice.objects.get(invoice=invoice)
+        assert row.completed_work_id == cw.id
+        assert row.billed_count == 1
+        assert row.month == datetime.date(2025, 10, 1)
+        assert row.flw_amount_local == Decimal("100")
+        assert row.org_amount_local == Decimal("20")
+
+        invoice.refresh_from_db()
+        assert invoice.amount == Decimal("120")  # server-computed from the rows, not the posted 100
+        # The window is the NM's input and is never narrowed to the months that were billable.
+        assert invoice.start_date == datetime.date(2025, 9, 1)
+        assert invoice.end_date == datetime.date(2025, 10, 31)
+
+        cw.refresh_from_db()
+        assert cw.invoiced_approved_count == 1
+        assert cw.invoice is None  # the FK is no longer written
 
     def test_readonly_form_initialization(self, valid_opportunity):
         invoice = PaymentInvoiceFactory(

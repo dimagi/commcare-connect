@@ -46,12 +46,12 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1883,17 +1883,28 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
-        instance.amount_usd = self.cleaned_data["amount_usd"]
-        instance.amount = self.cleaned_data["amount"]
+        if not self.is_service_delivery:
+            instance.amount = self.cleaned_data["amount"]
+            instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
-        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.service_delivery = self.is_service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
         instance.status = self.status
 
-        if commit:
+        if not commit:
+            return instance
+
+        if self.is_service_delivery:
+            # Save the invoice totals from the rows just frozen (or 0 if nothing was billable).
+            # Preview totals are only for display and may be stale; persisted totals must come
+            # from the same read that created the invoice line items so they always match.
+            rows = bill_invoice(instance, start_date=instance.start_date, end_date=instance.end_date)
+            if not rows:
+                instance.amount = 0
+                instance.amount_usd = 0
+                instance.save()
+        else:
             instance.save()
-            if self.is_service_delivery:
-                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
 
         return instance
 
