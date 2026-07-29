@@ -332,7 +332,12 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.context["show_implementation_area_btn"] is True
         assert response.context["implementation_areas_present"] is False
         assert b"Upload Implementation Area" in response.content
-        assert b"Clear Implementation Areas" not in response.content
+        # The Clear Data entry is always rendered; with nothing uploaded it is disabled and says so.
+        assert b"Clear Implementation Areas" in response.content
+        assert (
+            response.context["clear_data_details"]["implementation_areas"]
+            == "No Implementation Areas have been uploaded yet."
+        )
 
         ImplementationAreaFactory(opportunity=opportunity)
 
@@ -341,6 +346,7 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.context["implementation_areas_present"] is True
         assert b"Upload Implementation Area" not in response.content
         assert b"Clear Implementation Areas" in response.content
+        assert response.context["clear_data_details"]["implementation_areas"] == "1 record"
 
     def test_auto_poll_targets_matching_status_endpoint(
         self, client: Client, settings, organization, org_user_admin, opportunity
