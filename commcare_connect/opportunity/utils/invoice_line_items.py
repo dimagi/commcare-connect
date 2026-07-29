@@ -184,9 +184,14 @@ def get_invoice_line_items(invoice):
 def create_invoice_line_items(invoice, start_date, end_date):
     """Freeze this invoice's line items and advance the billed-work watermark.
 
-    `invoiced_approved_count` is only ever advanced here. `invoice` may be unsaved: it is written by
-    `_freeze_line_items`, and only if there is a delta to bill, so a caller with nothing billable
-    gets `[]` back and no invoice row.
+    `invoiced_approved_count` is only ever advanced here.
+
+    Who owns the invoice totals: **this function does whenever it writes rows** — it derived
+    `amount`, `amount_usd` and `exchange_rate` from the same locked read, so nothing else may set
+    them. **The caller does when this returns `[]`**, because only the caller knows what an empty
+    delta means for its invoice: 0 for one it has just created, untouched for one already billed.
+    On `[]` nothing at all is written here — not even `invoice` itself, if it is still unsaved, which
+    is how the automated task avoids creating an invoice it would have to delete.
     """
     with transaction.atomic():
         rows = _build_billable_rows(invoice.opportunity, start_date, end_date, for_update=True)

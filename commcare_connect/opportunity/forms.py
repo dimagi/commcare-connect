@@ -46,12 +46,12 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import create_invoice_line_items
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1883,17 +1883,29 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
-        instance.amount_usd = self.cleaned_data["amount_usd"]
-        instance.amount = self.cleaned_data["amount"]
+        if self.is_service_delivery:
+            # The posted totals mirror the preview and can be stale: a failed re-fetch leaves the
+            # previous window's total in the field, and the delta can be billed elsewhere between
+            # render and submit. So they never reach the instance -- create_invoice_line_items
+            # overwrites these from the rows it freezes, and with nothing billable they stay 0, so
+            # the invoice can never claim an amount it has no line items for.
+            instance.amount = 0
+            instance.amount_usd = 0
+        else:
+            instance.amount = self.cleaned_data["amount"]
+            instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
-        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.service_delivery = self.is_service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
         instance.status = self.status
 
         if commit:
             instance.save()
             if self.is_service_delivery:
-                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
+                # Sets amount/amount_usd from the rows it just froze, ignoring the posted amount:
+                # the total has to come from the same read that wrote the rows, or the invoice
+                # stops matching its own line items.
+                create_invoice_line_items(instance, start_date=instance.start_date, end_date=instance.end_date)
 
         return instance
 
