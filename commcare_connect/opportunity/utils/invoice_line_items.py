@@ -198,6 +198,25 @@ def create_invoice_line_items(invoice, start_date, end_date):
     return rows
 
 
+def rollback_invoice_line_items(invoice):
+    """Undo this invoice's billing for cancelled/rejected invoices.
+
+    Reduce each work item's watermark by the amount billed by this invoice, not to zero.
+    Other invoices covering the same work must keep their billed portion.
+    """
+    with transaction.atomic():
+        billed_by_work = dict(invoice.work_items.values_list("completed_work_id", "billed_count"))
+        if not billed_by_work:
+            return
+
+        works = []
+        for work in CompletedWork.objects.select_for_update(of=("self",)).filter(id__in=billed_by_work):
+            work.invoiced_approved_count = max(0, work.invoiced_approved_count - billed_by_work[work.id])
+            works.append(work)
+        CompletedWork.objects.bulk_update(works, ["invoiced_approved_count"])
+        invoice.work_items.all().delete()
+
+
 def _freeze_line_items(invoice, rows):
     """Write `rows` as this invoice's snapshot, advance each work's watermark, and set the fields
     that are derived from what was billed: `exchange_rate`, `amount`, `amount_usd`.
