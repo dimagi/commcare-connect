@@ -1,30 +1,37 @@
 import datetime
 import secrets
 
-from django.db.models import Min
+from django.db.models import Count, Min, Q
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 
-from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, InvoiceStatus
+from commcare_connect.opportunity.models import InvoiceStatus
+from commcare_connect.opportunity.utils.invoice_line_items import billable_works_qs
+from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
 
 
 def get_start_date_for_invoice(opportunity):
-    date = (
-        CompletedWork.objects.filter(
-            invoice__isnull=True,
-            opportunity_access__opportunity=opportunity,
-            status=CompletedWorkStatus.approved,
-        )
-        .aggregate(earliest_date=Min("status_modified_date"))
-        .get("earliest_date")
+    """Return the invoice window start.
+
+    Use the earliest unbilled approval for first billings. If only late deltas are
+    billable, use the invoiced month.
+    """
+    aggregates = billable_works_qs(opportunity).aggregate(
+        first_billing_date=Min("status_modified_date", filter=Q(invoiced_approved_count=0)),
+        late_delta_count=Count("id", filter=Q(invoiced_approved_count__gt=0)),
     )
 
-    if date:
-        start_date = date.date()
+    if aggregates["first_billing_date"]:
+        start_date = aggregates["first_billing_date"]
+    elif aggregates["late_delta_count"]:
+        # No first billing pending: only late deltas remain, and a late delta bills under the month
+        # being invoiced — the *previous* month, since that is the window the automated invoicing process uses.
+        start_date = get_end_date_previous_month()
     else:
+        # Nothing billable at all, preserves existing logic
         start_date = opportunity.start_date
 
-    return start_date.replace(day=1)
+    return get_month_start_date(start_date)
 
 
 def get_end_date_for_invoice(start_date):

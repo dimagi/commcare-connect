@@ -674,12 +674,13 @@ class TestAutomatedPaymentInvoiceForm:
         last_day_of_previous_month = today.replace(day=1) + relativedelta(days=-1)
         assert form.fields["end_date"].initial == str(last_day_of_previous_month)
 
-    def test_start_date_equal_to_first_uninvoiced_completed_work_month_start(self, valid_opportunity):
+    def test_start_date_equal_to_first_unbilled_completed_work_month_start(self, valid_opportunity):
         cw = CompletedWorkFactory(
             status=CompletedWorkStatus.approved,
             opportunity_access__opportunity=valid_opportunity,
+            saved_approved_count=1,
         )
-        cw.status_modified_date = datetime.date(2025, 10, 1)
+        cw.status_modified_date = datetime.date(2025, 10, 5)
         cw.save()
 
         form = AutomatedPaymentInvoiceForm(
@@ -687,13 +688,10 @@ class TestAutomatedPaymentInvoiceForm:
         )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
-        invoice = PaymentInvoiceFactory(opportunity=valid_opportunity)
-        cw.invoice = invoice
-        cw.save()
-
         cw = CompletedWorkFactory(
             status=CompletedWorkStatus.approved,
             opportunity_access__opportunity=valid_opportunity,
+            saved_approved_count=1,
         )
         cw.status_modified_date = datetime.date(2025, 10, 20)
         cw.save()

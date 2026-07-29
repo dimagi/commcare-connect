@@ -17,6 +17,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentInvoiceFactory,
     PaymentUnitFactory,
 )
+from commcare_connect.opportunity.utils.invoice import get_start_date_for_invoice
 from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     bill_invoice,
@@ -24,6 +25,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_billable_line_items,
     group_line_items,
 )
+from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
 
 JAN = datetime.date(2026, 1, 1)
 JAN_END = datetime.date(2026, 1, 31)
@@ -351,3 +353,46 @@ class TestCreateInvoiceLineItems:
         assert january.work_items.get().month == JAN  # January is untouched
         work.refresh_from_db()
         assert work.invoiced_approved_count == 2
+
+
+@pytest.mark.django_db
+class TestStartDateForInvoice:
+    def test_uses_the_earliest_first_billing_approval_month(self, billing_setup):
+        access, payment_unit = billing_setup
+        approved_work(access, payment_unit, approved_on=datetime.datetime(2026, 2, 20, tzinfo=datetime.UTC))
+        approved_work(access, payment_unit, approved_on=datetime.datetime(2026, 4, 2, tzinfo=datetime.UTC))
+
+        assert get_start_date_for_invoice(access.opportunity) == FEB
+
+    def test_a_late_delta_does_not_drag_the_start_date_back(self, billing_setup):
+        """A late delta's status_modified_date is frozen at the original (already billed) approval."""
+        access, payment_unit = billing_setup
+        approved_work(access, payment_unit, approved=2, invoiced=1, approved_on=JAN_APPROVAL)
+        approved_work(access, payment_unit, approved_on=datetime.datetime(2026, 4, 2, tzinfo=datetime.UTC))
+
+        assert get_start_date_for_invoice(access.opportunity) == datetime.date(2026, 4, 1)
+
+    def test_falls_back_to_the_billing_month_when_only_late_deltas_remain(self, billing_setup):
+        """Nothing awaits first billing, so anything still billable is a late delta — and a late
+        delta bills under the invoice's own month."""
+        access, payment_unit = billing_setup
+        access.opportunity.start_date = datetime.date(2025, 9, 14)
+        access.opportunity.save(update_fields=["start_date"])
+        approved_work(access, payment_unit, approved=2, invoiced=1, approved_on=JAN_APPROVAL)
+
+        start_date = get_start_date_for_invoice(access.opportunity)
+
+        # Asserted as relationships so the test doesn't hardcode "now".
+        end_date = get_end_date_previous_month()
+        # For only late delta, it is start of billing month which defaults to last month.
+        assert start_date <= end_date
+        assert start_date == get_month_start_date(end_date)
+
+    def test_falls_back_to_the_opportunity_start_when_nothing_is_billable(self, billing_setup):
+        """No invoice can come of this window at all, so today's behaviour is kept."""
+        access, payment_unit = billing_setup
+        access.opportunity.start_date = datetime.date(2025, 9, 14)
+        access.opportunity.save(update_fields=["start_date"])
+        approved_work(access, payment_unit, approved=1, invoiced=1)  # fully billed: not billable
+
+        assert get_start_date_for_invoice(access.opportunity) == datetime.date(2025, 9, 1)
