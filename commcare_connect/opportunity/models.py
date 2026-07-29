@@ -984,6 +984,14 @@ class CompletedWorkInvoice(BaseModel):
     class Meta:
         unique_together = ("invoice", "completed_work")
 
+    @property
+    def total_amount_local(self):
+        return self.flw_amount_local + self.org_amount_local
+
+    @property
+    def total_amount_usd(self):
+        return self.flw_amount_usd + self.org_amount_usd
+
 
 class VisitReviewStatus(models.TextChoices):
     pending = "pending", gettext("Pending Review")
