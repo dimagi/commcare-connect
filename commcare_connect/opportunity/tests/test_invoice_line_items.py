@@ -1,7 +1,9 @@
 import datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
+from dateutil.relativedelta import relativedelta
 from django.db.models import Sum
 
 from commcare_connect.opportunity.models import (
@@ -502,3 +504,146 @@ class TestDeliveryRows:
         (row,) = get_invoice_delivery_rows(invoice)
         assert row["approved_count"] == 1
         assert row["total_amount_local"] == Decimal("120")
+
+
+@pytest.mark.django_db
+class TestBillableLineItemsAcrossMonths:
+    """Moved from test_completed_work.py's TestUninvoicedVisitItems when the FK helpers went away.
+
+    `org_amount=0` throughout: these assertions compare `total_amount_local` against
+    `count * payment_unit.amount`, and the factory's default org pay is a random 0-10.
+    """
+
+    def _billable_items(self, opportunity):
+        """The moved tests span three months, so bill from before the earliest to today."""
+        start_date = (datetime.datetime.now() - relativedelta(months=4)).date()
+        return get_billable_line_items(opportunity, start_date, datetime.date.today())
+
+    def test_items_without_prior_invoice(self):
+        opp_access = OpportunityAccessFactory()
+        CompletedWorkFactory(status=CompletedWorkStatus.pending, opportunity_access=opp_access)
+        assert self._billable_items(opp_access.opportunity) == []
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit__org_amount=0,
+            saved_approved_count=1,
+            status_modified_date=datetime.datetime.now(tz=datetime.UTC),
+        )
+
+        items = self._billable_items(opp_access.opportunity)
+        assert len(items) == 1
+
+        invoice_item = items[0]
+        assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
+        assert invoice_item["number_approved"] == 1
+        assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
+
+    def test_no_items_for_a_fully_billed_work(self):
+        opp_access = OpportunityAccessFactory()
+        CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            saved_approved_count=1,
+            invoiced_approved_count=1,
+            # Explicit so the window cannot be what excludes it -- the watermark must be.
+            status_modified_date=datetime.datetime.now(tz=datetime.UTC),
+        )
+        assert self._billable_items(opp_access.opportunity) == []
+
+    @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
+    def test_groups_line_items_by_month_and_payment_unit(self, mock_get_exchange_rate):
+        two_months_ago = datetime.datetime.now(tz=datetime.UTC) - relativedelta(months=2)
+        one_month_ago = datetime.datetime.now(tz=datetime.UTC) - relativedelta(months=1)
+        today = datetime.datetime.now(tz=datetime.UTC)
+
+        rate_two_months_ago = Decimal("0.25")
+        rate_one_month_ago = Decimal("0.50")
+        rate_today = Decimal("0.75")
+
+        mock_get_exchange_rate.side_effect = lambda _, date: {
+            two_months_ago.month: rate_two_months_ago,
+            one_month_ago.month: rate_one_month_ago,
+            today.month: rate_today,
+        }[date.month]
+
+        opp_access = OpportunityAccessFactory(opportunity__currency_id="EUR")
+
+        payment_unit1 = PaymentUnitFactory(org_amount=0, opportunity=opp_access.opportunity)
+        payment_unit2 = PaymentUnitFactory(org_amount=0, opportunity=opp_access.opportunity)
+
+        self._create_completed_work(opp_access, two_months_ago, payment_unit1, n=2)
+        self._create_completed_work(opp_access, two_months_ago, payment_unit2, n=1)
+
+        self._create_completed_work(opp_access, one_month_ago, payment_unit1, n=1)
+
+        self._create_completed_work(opp_access, today, payment_unit1, n=1)
+        self._create_completed_work(opp_access, today, payment_unit2, n=1)
+
+        items = self._billable_items(opp_access.opportunity)
+        expected = {
+            (two_months_ago.month, payment_unit1.name): (2, payment_unit1, rate_two_months_ago),
+            (two_months_ago.month, payment_unit2.name): (1, payment_unit2, rate_two_months_ago),
+            (one_month_ago.month, payment_unit1.name): (1, payment_unit1, rate_one_month_ago),
+            (today.month, payment_unit1.name): (1, payment_unit1, rate_today),
+            (today.month, payment_unit2.name): (1, payment_unit2, rate_today),
+        }
+
+        assert len(items) == len(expected)
+
+        for item in items:
+            key = (item["month"].month, item["payment_unit_name"])
+            assert key in expected
+
+            expected_count, payment_unit, expected_rate = expected[key]
+
+            total_local = expected_count * payment_unit.amount
+
+            assert item["number_approved"] == expected_count
+            assert item["total_amount_local"] == total_local
+            assert item["exchange_rate"] == expected_rate
+            assert item["total_amount_usd"] == round(total_local / expected_rate, 2)
+
+    def test_number_approved_uses_saved_approved_count(self):
+        """A single CompletedWork can represent multiple approved visits.
+
+        number_approved must aggregate saved_approved_count, not row count, so it stays consistent
+        with total_amount_local (which is saved_approved_count * payment_unit.amount).
+        """
+        opp_access = OpportunityAccessFactory()
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100, org_amount=0)
+
+        CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+            saved_approved_count=2,
+            status_modified_date=datetime.datetime.now(tz=datetime.UTC),
+        )
+        CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+            saved_approved_count=1,
+            status_modified_date=datetime.datetime.now(tz=datetime.UTC),
+        )
+
+        items = self._billable_items(opp_access.opportunity)
+        assert len(items) == 1
+
+        item = items[0]
+        assert item["number_approved"] == 3
+        assert item["total_amount_local"] == 3 * payment_unit.amount
+
+    def _create_completed_work(self, opp_access, status_modified_date, payment_unit, n=1):
+        for _ in range(n):
+            cw = CompletedWorkFactory(
+                status=CompletedWorkStatus.approved,
+                opportunity_access=opp_access,
+                payment_unit=payment_unit,
+                saved_approved_count=1,
+                invoiced_approved_count=0,
+            )
+            cw.status_modified_date = status_modified_date
+            cw.save()
