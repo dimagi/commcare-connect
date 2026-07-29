@@ -40,12 +40,13 @@ class Organization(BaseModel):
     def __str__(self):
         return self.slug
 
-    def get_member_emails(self):
-        return list(
-            self.memberships.exclude(user__email__isnull=True)
-            .exclude(user__email="")
-            .values_list("user__email", flat=True)
-        )
+    def get_member_emails(self, exclude_viewer=False):
+        member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")
+
+        if exclude_viewer:
+            member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
+
+        return list(member_query.values_list("user__email", flat=True))
 
 
 class UserOrganizationMembership(models.Model):
