@@ -40,6 +40,7 @@ from django.utils.decorators import method_decorator
 from django.utils.text import slugify
 from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
@@ -118,10 +119,14 @@ PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a 
 @waffle_flag(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
-    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
-    implementation_areas_present = ImplementationArea.objects.filter(opportunity_id=opportunity.id).exists()
+    work_area_count = WorkArea.objects.filter(opportunity_id=opportunity.id).count()
+    work_area_group_count = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).count()
+    implementation_area_count = ImplementationArea.objects.filter(opportunity_id=opportunity.id).count()
     areas_assigned = WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
-    work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
+
+    areas_present = bool(work_area_count)
+    work_area_groups_present = bool(work_area_group_count)
+    implementation_areas_present = bool(implementation_area_count)
 
     show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
     show_workarea_groups_btn = areas_present and not work_area_groups_present
@@ -129,6 +134,12 @@ def microplanning_home(request, *args, **kwargs):
     show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
     show_implementation_area_btn = not (
         cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None or implementation_areas_present
+    )
+    clear_data_details = get_clear_data_details(
+        work_area_count=work_area_count,
+        work_area_group_count=work_area_group_count,
+        implementation_area_count=implementation_area_count,
+        areas_assigned=areas_assigned,
     )
 
     tiles_url = reverse(
@@ -212,6 +223,7 @@ def microplanning_home(request, *args, **kwargs):
         "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
         "show_clear_work_areas_btn": show_clear_work_areas_btn,
+        "clear_data_details": clear_data_details,
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
@@ -255,6 +267,51 @@ def microplanning_home(request, *args, **kwargs):
         template_name="microplanning/home.html",
         context=context,
     )
+
+
+def get_clear_data_details(*, work_area_count, work_area_group_count, implementation_area_count, areas_assigned):
+    """Helper text for each entry in the Clear Data dropdown.
+
+    Every Work Area action is also blocked while Work Areas are assigned, so a disabled entry has
+    to name the reason that actually applies instead of assuming nothing was uploaded.
+    """
+    nothing_uploaded = _("No Work Areas have been uploaded yet.")
+    areas_are_assigned = _("Work Areas are assigned to FLWs and cannot be cleared.")
+
+    if not work_area_count:
+        work_areas = nothing_uploaded
+    elif areas_assigned:
+        work_areas = areas_are_assigned
+    else:
+        work_areas = ngettext(
+            "%(count)d record — also clears Work Area Groups",
+            "%(count)d records — also clears Work Area Groups",
+            work_area_count,
+        ) % {"count": work_area_count}
+
+    if not work_area_count:
+        work_area_groups = nothing_uploaded
+    elif areas_assigned:
+        work_area_groups = areas_are_assigned
+    elif not work_area_group_count:
+        work_area_groups = _("Clustering has not been run yet.")
+    else:
+        work_area_groups = ngettext("%(count)d group", "%(count)d groups", work_area_group_count) % {
+            "count": work_area_group_count
+        }
+
+    if not implementation_area_count:
+        implementation_areas = _("No Implementation Areas have been uploaded yet.")
+    else:
+        implementation_areas = ngettext("%(count)d record", "%(count)d records", implementation_area_count) % {
+            "count": implementation_area_count
+        }
+
+    return {
+        "work_areas": work_areas,
+        "work_area_groups": work_area_groups,
+        "implementation_areas": implementation_areas,
+    }
 
 
 def get_metrics_for_microplanning(opportunity):

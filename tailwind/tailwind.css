@@ -814,3 +814,41 @@ select:disabled,
     @apply rounded-lg border border-white/30 bg-white/10 text-white;
   }
 }
+
+.dropdown {
+  @apply relative;
+}
+
+.dropdown > summary {
+  @apply list-none;
+}
+
+.dropdown > summary::-webkit-details-marker {
+  @apply hidden;
+}
+
+.dropdown[open] > summary .dropdown-chevron {
+  @apply rotate-180;
+}
+
+.dropdown-content {
+  @layer components {
+    @apply absolute mt-2 z-10 w-max max-w-sm bg-white rounded-lg shadow-lg overflow-hidden text-sm text-brand-deep-purple;
+
+    .dropdown-item {
+      @apply w-full p-4 text-left cursor-pointer hover:bg-gray-100;
+    }
+
+    .dropdown-item:disabled {
+      @apply cursor-not-allowed text-gray-600;
+    }
+
+    .dropdown-item .dropdown-item-icon {
+      @apply mr-2 text-lg text-red-600;
+    }
+
+    .dropdown-item:disabled .dropdown-item-icon {
+      @apply text-gray-400;
+    }
+  }
+}
