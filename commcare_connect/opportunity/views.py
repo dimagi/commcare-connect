@@ -187,11 +187,11 @@ from commcare_connect.opportunity.tasks import (
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.utils.completed_work import (
-    get_invoiced_visit_items,
     get_uninvoiced_completed_works_qs,
     get_uninvoiced_visit_items,
 )
 from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice_line_items import get_invoice_line_items
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -1841,9 +1841,9 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 
         line_items_table = None
         if invoice.service_delivery:
-            completed_works = get_invoiced_visit_items(invoice)
-            show_org = any(item["org_amount_local"] for item in completed_works)
-            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, completed_works, show_org=show_org)
+            line_items = get_invoice_line_items(invoice)
+            show_org = any(item["org_amount_local"] for item in line_items)
+            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
             instance=invoice,
             opportunity=opportunity,
