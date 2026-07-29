@@ -833,7 +833,7 @@ select:disabled,
 
 .dropdown-content {
   @layer components {
-    @apply absolute mt-2 z-10 w-max max-w-sm bg-white rounded-lg shadow-lg overflow-hidden text-sm text-brand-deep-purple;
+    @apply absolute mt-2 z-10 w-max max-w-sm bg-white rounded-lg shadow-lg overflow-hidden text-sm text-brand-deep-purple font-medium;
 
     .dropdown-item {
       @apply w-full p-4 text-left cursor-pointer hover:bg-gray-100;
