@@ -186,12 +186,13 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.completed_work import (
-    get_invoiced_visit_items,
-    get_uninvoiced_completed_works_qs,
-    get_uninvoiced_visit_items,
-)
+from commcare_connect.opportunity.utils.completed_work import get_uninvoiced_completed_works_qs
 from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    Money,
+    get_billable_line_items,
+    get_invoice_line_items,
+)
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -1888,9 +1889,9 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 
         line_items_table = None
         if invoice.service_delivery:
-            completed_works = get_invoiced_visit_items(invoice)
-            show_org = any(item["org_amount_local"] for item in completed_works)
-            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, completed_works, show_org=show_org)
+            line_items = get_invoice_line_items(invoice)
+            show_org = any(item.org_pay.local for item in line_items)
+            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
             instance=invoice,
             opportunity=opportunity,
@@ -3526,10 +3527,10 @@ def invoice_items(request, *args, **kwargs):
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
-    total_local_amount = sum(item["total_amount_local"] for item in line_items)
-    total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
-    show_org = any(item["org_amount_local"] for item in line_items)
+    line_items = get_billable_line_items(request.opportunity, start_date, end_date)
+    # An empty window has nothing to sum, so seed with zero rather than sum()'s int 0.
+    total = sum((item.total_pay for item in line_items), Money.zero())
+    show_org = any(item.org_pay.local for item in line_items)
 
     html = render_to_string(
         "opportunity/partials/invoice_line_items.html",
@@ -3540,8 +3541,8 @@ def invoice_items(request, *args, **kwargs):
     return JsonResponse(
         {
             "line_items_table_html": html,
-            "total_amount": total_local_amount,
-            "total_usd_amount": total_usd_amount,
+            "total_amount": total.local,
+            "total_usd_amount": total.usd,
         }
     )
 

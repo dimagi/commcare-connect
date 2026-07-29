@@ -23,6 +23,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
+    get_invoice_line_items,
     group_line_items,
 )
 from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
@@ -343,6 +344,69 @@ class TestCreateInvoiceLineItems:
         assert row.month == expected_month
         work.refresh_from_db()
         assert work.invoiced_approved_count == 2
+
+
+@pytest.mark.django_db
+class TestInvoicedLineItems:
+    def test_reads_frozen_rows_grouped_by_payment_unit_and_month(self, billing_setup):
+        access, payment_unit = billing_setup
+        other_unit = PaymentUnitFactory(opportunity=access.opportunity, amount=50, org_amount=0)
+        completed_work(access, payment_unit)
+        completed_work(access, payment_unit)
+        completed_work(access, other_unit)
+        invoice = PaymentInvoiceFactory(
+            opportunity=access.opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=JAN,
+            end_date=FEB_END,
+        )
+        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+
+        items = get_invoice_line_items(invoice)
+
+        by_name = {item.payment_unit_name: item for item in items}
+        assert len(items) == 2
+        assert by_name[payment_unit.name].number_approved == 2
+        assert by_name[payment_unit.name].flw_pay.local == Decimal("200")
+        assert by_name[payment_unit.name].org_pay.local == Decimal("40")
+        assert by_name[payment_unit.name].total_pay.local == Decimal("240")
+        assert by_name[payment_unit.name].total_pay.usd == Decimal("240")
+        assert by_name[payment_unit.name].month == JAN
+        assert by_name[payment_unit.name].exchange_rate == Decimal("1")
+        assert by_name[other_unit.name].flw_pay.local == Decimal("50")
+        assert by_name[other_unit.name].org_pay.local == Decimal("0")
+        assert by_name[other_unit.name].total_pay.local == Decimal("50")
+        assert by_name[other_unit.name].total_pay.usd == Decimal("50")
+
+    def test_a_later_approval_does_not_change_an_issued_invoice(self, billing_setup):
+        """The drift acceptance case: recomputing saved_* after issue must not move the line items."""
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit)
+        invoice = PaymentInvoiceFactory(
+            opportunity=access.opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=JAN,
+            end_date=JAN_END,
+        )
+        bill_invoice(invoice, start_date=JAN, end_date=JAN_END)
+
+        work.saved_approved_count = 5
+        work.saved_payment_accrued = 500
+        work.save(update_fields=["saved_approved_count", "saved_payment_accrued"])
+
+        (item,) = get_invoice_line_items(invoice)
+        assert item.number_approved == 1
+        assert item.total_pay.local == Decimal("120")
+
+    def test_no_rows_yields_no_items(self, billing_setup):
+        access, _ = billing_setup
+        invoice = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, end_date=FEB_END)
+
+        assert get_invoice_line_items(invoice) == []
 
 
 @pytest.mark.django_db

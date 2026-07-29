@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Max, Q, Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -162,6 +162,35 @@ def group_line_items(rows):
 def get_billable_line_items(opportunity, start_date, end_date):
     works = get_billable_completed_works_qs(opportunity, start_date, end_date)
     return group_line_items(_build_billable_rows(works, opportunity.currency_code, end_date))
+
+
+def get_invoice_line_items(invoice):
+    records = (
+        invoice.work_items.values("completed_work__payment_unit", "month")
+        .annotate(
+            payment_unit_name=F("completed_work__payment_unit__name"),
+            number_approved=Sum("billed_count"),
+            flw_local=Sum("flw_amount_local"),
+            org_local=Sum("org_amount_local"),
+            flw_usd=Sum("flw_amount_usd"),
+            org_usd=Sum("org_amount_usd"),
+            # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
+            rate=Max("exchange_rate__rate"),
+        )
+        .order_by("month", "payment_unit_name")
+    )
+
+    return [
+        LineItem(
+            month=record["month"],
+            payment_unit_name=record["payment_unit_name"],
+            number_approved=record["number_approved"],
+            flw_pay=Money(record["flw_local"], record["flw_usd"]),
+            org_pay=Money(record["org_local"], record["org_usd"]),
+            exchange_rate=record["rate"],
+        )
+        for record in records
+    ]
 
 
 def bill_invoice(invoice, start_date, end_date):

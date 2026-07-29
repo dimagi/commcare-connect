@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from unittest.mock import patch
+from datetime import date, datetime, timezone
+from decimal import ROUND_HALF_EVEN, Decimal
 
 import pytest
 from dateutil.relativedelta import relativedelta
@@ -16,246 +16,104 @@ from commcare_connect.opportunity.tests.factories import (
     ExchangeRateFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
-    PaymentInvoiceFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.utils.completed_work import (
-    get_invoice_items,
-    get_uninvoiced_visit_items,
-    update_status,
-)
+from commcare_connect.opportunity.utils.completed_work import update_status
+from commcare_connect.opportunity.utils.invoice_line_items import CENTS, get_billable_line_items
+from commcare_connect.utils.datetime import get_month_start_date
 
 
 @pytest.mark.django_db
-class TestUninvoicedVisitItems:
-    def test_items_without_prior_invoice(self):
+class TestBillableLineItemsAcrossMonths:
+    @pytest.fixture
+    def access(self):
+        """A USD opportunity with a baseline rate of 1; each test adds its own payment units."""
         opp_access = OpportunityAccessFactory()
-        CompletedWorkFactory(status=CompletedWorkStatus.pending, opportunity_access=opp_access)
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 0
-
-        completed_work = CompletedWorkFactory(status=CompletedWorkStatus.approved, opportunity_access=opp_access)
-        completed_work.saved_approved_count = 1
-        completed_work.saved_payment_accrued = completed_work.payment_unit.amount
-        completed_work.save()
-
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 1
-
-        invoice_item = items[0]
-        assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
-        assert invoice_item["number_approved"] == 1
-        assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
-
-    def test_items_with_prior_invoice(self):
-        opp_access = OpportunityAccessFactory()
-        invoice = PaymentInvoiceFactory(opportunity=opp_access.opportunity)
-        CompletedWorkFactory(
-            status=CompletedWorkStatus.approved,
-            opportunity_access=opp_access,
-            invoice=invoice,
+        ExchangeRateFactory(
+            currency_code=opp_access.opportunity.currency_code, rate=Decimal("1"), rate_date=date(2020, 1, 1)
         )
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 0
+        return opp_access
 
-        completed_work = CompletedWorkFactory(
-            status=CompletedWorkStatus.approved,
-            opportunity_access=opp_access,
+    def test_groups_each_month_and_unit_at_the_rate_in_force(self, access):
+        two_months_ago, one_month_ago, now = self._recent_months()
+        rates = self._pin_monthly_rates(
+            access.opportunity, [(two_months_ago, "0.25"), (one_month_ago, "0.50"), (now, "0.75")]
         )
-        completed_work.saved_approved_count = 1
-        completed_work.saved_payment_accrued = completed_work.payment_unit.amount
-        completed_work.save()
+        unit_a = PaymentUnitFactory(opportunity=access.opportunity, amount=100, org_amount=0)
+        unit_b = PaymentUnitFactory(opportunity=access.opportunity, amount=50, org_amount=0)
+        # One entry per expected line item; the list is each of its works' saved_approved_count.
+        groups = [
+            (two_months_ago, unit_a, [1, 1]),
+            (two_months_ago, unit_b, [1]),
+            (one_month_ago, unit_a, [2]),
+            (now, unit_a, [1]),
+            (now, unit_b, [1]),
+        ]
+        for approved_on, payment_unit, approvals in groups:
+            for approved in approvals:
+                self._create_approved_completed_work(access, approved_on, payment_unit, approved=approved)
 
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 1
+        items = self._billable_items(access.opportunity)
 
-        invoice_item = items[0]
-        assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
-        assert invoice_item["number_approved"] == 1
-        assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
+        assert len(items) == len(groups)
+        by_key = {(item.month.month, item.payment_unit_name): item for item in items}
+        for approved_on, payment_unit, approvals in groups:
+            item = by_key[(approved_on.month, payment_unit.name)]
+            self._assert_priced(item, sum(approvals), payment_unit, rates[approved_on.month])
 
-    @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
-    def test_same_pu_items_across_multiple_months(self, mock_get_exchange_rate):
-        two_months_ago = datetime.now() - relativedelta(months=2)
-        one_month_ago = datetime.now() - relativedelta(months=1)
-        today = datetime.now()
+    def test_total_includes_org_pay(self, access):
+        payment_unit = PaymentUnitFactory(opportunity=access.opportunity, amount=10, org_amount=4)
+        now = datetime.now(tz=timezone.utc)
+        self._pin_monthly_rates(access.opportunity, [(now, "2")])
+        self._create_approved_completed_work(access, now, payment_unit, approved=2)
 
-        ExchangeRateFactory(rate_date=two_months_ago, currency_code="EUR", rate=0.25)
-        ExchangeRateFactory(rate_date=one_month_ago, currency_code="EUR", rate=0.50)
-        ExchangeRateFactory(rate_date=today, currency_code="EUR", rate=0.75)
+        (item,) = self._billable_items(access.opportunity)
+        # Raw FLW/Org breakdowns are surfaced separately.
+        assert item.flw_pay.local == Decimal("20")
+        assert item.org_pay.local == Decimal("8")
+        assert item.flw_pay.usd == Decimal("10")
+        assert item.org_pay.usd == Decimal("4")
+        # Totals always fold in org pay (FLW + Org).
+        assert item.total_pay.local == Decimal("28")
+        assert item.total_pay.usd == Decimal("14")
 
-        mock_get_exchange_rate.side_effect = lambda _, date: {
-            two_months_ago.month: 0.25,
-            one_month_ago.month: 0.50,
-            today.month: 0.75,
-        }[date.month]
+    def _billable_items(self, opportunity):
+        """These tests span three months back, so bill from before the earliest through today."""
+        start_date = (datetime.now(tz=timezone.utc) - relativedelta(months=4)).date()
+        return get_billable_line_items(opportunity, start_date, date.today())
 
-        opp_access = OpportunityAccessFactory(opportunity__currency_id="EUR")
-
-        payment_unit = PaymentUnitFactory()
-
-        self._create_completed_work(opp_access, two_months_ago, payment_unit, exchange_rate=0.25, n=2)
-        self._create_completed_work(opp_access, one_month_ago, payment_unit, exchange_rate=0.50, n=1)
-        self._create_completed_work(opp_access, today, payment_unit, exchange_rate=0.75, n=1)
-
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 3
-
-        for item in items:
-            expected_number_approved = 0
-            expected_payment_unit = None
-            expected_exchange_rate = 0.0
-
-            if item["month"].month == two_months_ago.month:
-                expected_number_approved = 2
-                expected_payment_unit = payment_unit
-                expected_exchange_rate = 0.25
-            elif item["month"].month == one_month_ago.month:
-                expected_number_approved = 1
-                expected_payment_unit = payment_unit
-                expected_exchange_rate = 0.50
-            elif item["month"].month == today.month:
-                expected_number_approved = 1
-                expected_payment_unit = payment_unit
-                expected_exchange_rate = 0.75
-            else:
-                pytest.fail("Unexpected month in invoice items")
-
-            total_local_amount = expected_number_approved * expected_payment_unit.amount
-            assert item["number_approved"] == expected_number_approved
-            assert item["total_amount_local"] == total_local_amount
-            assert item["exchange_rate"] == expected_exchange_rate
-            assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
-
-    @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
-    def test_different_pu_items_across_multiple_months(self, mock_get_exchange_rate):
-        two_months_ago = datetime.now() - relativedelta(months=2)
-        one_month_ago = datetime.now() - relativedelta(months=1)
-        today = datetime.now()
-
-        rate_two_months_ago = 0.25
-        rate_one_month_ago = 0.50
-        rate_today = 0.75
-
-        ExchangeRateFactory(rate_date=two_months_ago, currency_code="EUR", rate=rate_two_months_ago)
-        ExchangeRateFactory(rate_date=one_month_ago, currency_code="EUR", rate=rate_one_month_ago)
-        ExchangeRateFactory(rate_date=today, currency_code="EUR", rate=rate_today)
-
-        mock_get_exchange_rate.side_effect = lambda _, date: {
-            two_months_ago.month: rate_two_months_ago,
-            one_month_ago.month: rate_one_month_ago,
-            today.month: rate_today,
-        }[date.month]
-
-        opp_access = OpportunityAccessFactory(opportunity__currency_id="EUR")
-
-        payment_unit1 = PaymentUnitFactory()
-        payment_unit2 = PaymentUnitFactory()
-
-        self._create_completed_work(opp_access, two_months_ago, payment_unit1, exchange_rate=rate_two_months_ago, n=2)
-        self._create_completed_work(opp_access, two_months_ago, payment_unit2, exchange_rate=rate_two_months_ago, n=1)
-
-        self._create_completed_work(opp_access, one_month_ago, payment_unit1, exchange_rate=rate_one_month_ago, n=1)
-
-        self._create_completed_work(opp_access, today, payment_unit1, exchange_rate=rate_today, n=1)
-        self._create_completed_work(opp_access, today, payment_unit2, exchange_rate=rate_today, n=1)
-
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 5
-
-        for item in items:
-            expected_number_approved = 0
-            expected_payment_unit = None
-            expected_exchange_rate = 0.0
-
-            if item["month"].month == two_months_ago.month:
-                expected_exchange_rate = rate_two_months_ago
-                if item["payment_unit_name"] == payment_unit1.name:
-                    expected_number_approved = 2
-                    expected_payment_unit = payment_unit1
-                elif item["payment_unit_name"] == payment_unit2.name:
-                    expected_number_approved = 1
-                    expected_payment_unit = payment_unit2
-                else:
-                    pytest.fail("Unexpected payment unit name")
-
-            elif item["month"].month == one_month_ago.month:
-                expected_exchange_rate = rate_one_month_ago
-
-                if item["payment_unit_name"] == payment_unit1.name:
-                    expected_number_approved = 1
-                    expected_payment_unit = payment_unit1
-                else:
-                    pytest.fail("Unexpected payment unit name")
-
-            elif item["month"].month == today.month:
-                expected_exchange_rate = rate_today
-
-                if item["payment_unit_name"] == payment_unit1.name:
-                    expected_number_approved = 1
-                    expected_payment_unit = payment_unit1
-                elif item["payment_unit_name"] == payment_unit2.name:
-                    expected_number_approved = 1
-                    expected_payment_unit = payment_unit2
-                else:
-                    pytest.fail("Unexpected payment unit name")
-            else:
-                pytest.fail("Unexpected month in invoice items")
-
-            total_local_amount = expected_number_approved * expected_payment_unit.amount
-            assert item["number_approved"] == expected_number_approved
-            assert item["total_amount_local"] == total_local_amount
-            assert item["exchange_rate"] == expected_exchange_rate
-            assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
-
-    def test_number_approved_uses_saved_approved_count(self):
-        """A single CompletedWork can represent multiple approved visits.
-
-        number_approved must aggregate saved_approved_count, not row count, so it
-        stays consistent with total_amount_local (which sums saved_payment_accrued
-        = saved_approved_count * payment_unit.amount).
-        """
-        opp_access = OpportunityAccessFactory()
-        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
-
-        cw1 = CompletedWorkFactory(
+    def _create_approved_completed_work(self, opp_access, status_modified_date, payment_unit, approved=1):
+        return CompletedWorkFactory(
             status=CompletedWorkStatus.approved,
             opportunity_access=opp_access,
             payment_unit=payment_unit,
+            saved_approved_count=approved,
+            invoiced_approved_count=0,
+            status_modified_date=status_modified_date,
         )
-        cw1.saved_approved_count = 2
-        cw1.saved_payment_accrued = 2 * payment_unit.amount
-        cw1.save()
 
-        cw2 = CompletedWorkFactory(
-            status=CompletedWorkStatus.approved,
-            opportunity_access=opp_access,
-            payment_unit=payment_unit,
-        )
-        cw2.saved_approved_count = 1
-        cw2.saved_payment_accrued = payment_unit.amount
-        cw2.save()
+    def _recent_months(self):
+        now = datetime.now(tz=timezone.utc)
+        return now - relativedelta(months=2), now - relativedelta(months=1), now
 
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
-        assert len(items) == 1
+    def _pin_monthly_rates(self, opportunity, rates):
+        return {
+            approved_on.month: ExchangeRateFactory(
+                currency_code=opportunity.currency_code,
+                rate=Decimal(rate),
+                rate_date=get_month_start_date(approved_on),
+            ).rate
+            for approved_on, rate in rates
+        }
 
-        item = items[0]
-        assert item["number_approved"] == 3
-        assert item["total_amount_local"] == 3 * payment_unit.amount
+    def _assert_priced(self, item, expected_count, payment_unit, expected_rate):
+        total_local = expected_count * payment_unit.amount
 
-    def _create_completed_work(self, opp_access, status_modified_date, payment_unit, exchange_rate=1.0, n=1):
-        for _ in range(n):
-            cw = CompletedWorkFactory(
-                status=CompletedWorkStatus.approved,
-                opportunity_access=opp_access,
-                payment_unit=payment_unit,
-            )
-            cw.status_modified_date = status_modified_date
-            cw.saved_approved_count = 1
-            cw.saved_payment_accrued = cw.payment_unit.amount
-            cw.saved_payment_accrued_usd = cw.saved_payment_accrued / exchange_rate
-            cw.save()
+        assert item.number_approved == expected_count
+        assert item.total_pay.local == total_local
+        assert item.exchange_rate == expected_rate
+        assert item.total_pay.usd == (total_local / expected_rate).quantize(CENTS, rounding=ROUND_HALF_EVEN)
 
 
 @pytest.mark.django_db
@@ -855,32 +713,3 @@ class TestUpdateStatus:
         self._run_update_status(completed_work)
 
         assert completed_work.status == CompletedWorkStatus.approved
-
-
-@pytest.mark.django_db
-def test_get_invoice_items_total_includes_org_pay():
-    payment_unit = PaymentUnitFactory(amount=10, org_amount=4)
-    cw = CompletedWorkFactory(
-        payment_unit=payment_unit,
-        status=CompletedWorkStatus.approved,
-        saved_approved_count=2,
-        saved_payment_accrued=20,
-        saved_org_payment_accrued=8,
-        saved_payment_accrued_usd=2,
-        saved_org_payment_accrued_usd=1,
-    )
-    cw.status_modified_date = datetime(2025, 10, 5, tzinfo=timezone.utc)
-    cw.save()
-
-    items = get_invoice_items(CompletedWork.objects.filter(id=cw.id))
-
-    assert len(items) == 1
-    item = items[0]
-    # Raw FLW/Org breakdowns are surfaced separately.
-    assert item["flw_amount_local"] == 20
-    assert item["org_amount_local"] == 8
-    assert item["flw_amount_usd"] == 2
-    assert item["org_amount_usd"] == 1
-    # Totals always fold in org pay (FLW + Org).
-    assert item["total_amount_local"] == 28
-    assert float(item["total_amount_usd"]) == 3.0

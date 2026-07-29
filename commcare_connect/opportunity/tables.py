@@ -1746,11 +1746,11 @@ class InvoiceLineItemsTable(tables.Table):
     month = tables.Column(verbose_name=gettext_lazy("Month"))
     payment_unit_name = tables.Column(verbose_name=gettext_lazy("Payment Unit"))
     number_approved = tables.Column(verbose_name=gettext_lazy("Number Approved"))
-    flw_amount_local = tables.Column(verbose_name=gettext_lazy("FLW Pay (local)"))
-    org_amount_local = tables.Column(verbose_name=gettext_lazy("Org Pay (local)"))
-    total_amount_local = tables.Column(verbose_name=gettext_lazy("Total Pay (local)"))
+    flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay (local)"))
+    org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay (local)"))
+    total_amount_local = tables.Column(accessor="total_pay__local", verbose_name=gettext_lazy("Total Pay (local)"))
     exchange_rate = tables.Column(verbose_name=gettext_lazy("Exchange Rate"))
-    total_amount_usd = tables.Column(verbose_name=gettext_lazy("Total Pay (USD)"))
+    total_amount_usd = tables.Column(accessor="total_pay__usd", verbose_name=gettext_lazy("Total Pay (USD)"))
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1776,7 +1776,7 @@ class InvoiceLineItemsTable(tables.Table):
 
     class Meta:
         orderable = False
-        empty_text = "No invoice items found."
+        empty_text = gettext_lazy("No invoice items found.")
         attrs = {"class": "min-w-full rounded-lg shadow-md bg-white", "thead": {"class": "bg-gray-100"}}
         row_attrs = {"class": "even:bg-gray-50 text-gray-800 hover:bg-gray-100"}
 

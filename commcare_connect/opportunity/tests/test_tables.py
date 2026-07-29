@@ -1,3 +1,6 @@
+import datetime
+from decimal import Decimal
+
 import pytest
 from django.test import RequestFactory
 from django_tables2 import RequestConfig
@@ -16,6 +19,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserInviteFactory,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import LineItem, Money
 
 
 @pytest.mark.parametrize("show_org", [False, True])
@@ -29,6 +33,26 @@ def test_invoice_line_items_table_org_column_visibility(show_org):
     if show_org:
         assert table.columns["flw_amount_local"].column.verbose_name == "FLW Pay (KES)"
         assert table.columns["org_amount_local"].column.verbose_name == "Org Pay (KES)"
+
+
+def test_invoice_line_items_table_reads_money_off_line_items():
+    line_item = LineItem(
+        month=datetime.date(2026, 1, 1),
+        payment_unit_name="Household visit",
+        number_approved=2,
+        flw_pay=Money(Decimal("40"), Decimal("4")),
+        org_pay=Money(Decimal("10"), Decimal("1")),
+        exchange_rate=Decimal("10"),
+    )
+    table = InvoiceLineItemsTable("KES", [line_item], show_org=True)
+
+    rows = list(table.as_values())
+    row = dict(zip(rows[0], rows[1]))
+
+    assert row["FLW Pay (KES)"] == Decimal("40")
+    assert row["Org Pay (KES)"] == Decimal("10")
+    assert row["Total Pay (KES)"] == Decimal("50")  # 40 + 10
+    assert row["Number Approved"] == 2
 
 
 @pytest.mark.parametrize("show_org", [False, True])
