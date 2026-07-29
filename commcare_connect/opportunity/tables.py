@@ -1785,20 +1785,25 @@ class InvoiceLineItemsTable(tables.Table):
 
 
 class InvoiceDeliveriesTable(tables.Table):
-    date_approved = DMYTColumn(verbose_name=gettext_lazy("Date Approved"), accessor="status_modified_date")
-    opportunity = tables.Column(verbose_name=gettext_lazy("Opportunity"), accessor="payment_unit__opportunity__name")
-    approved_count = tables.Column(verbose_name=gettext_lazy("Approved Deliveries"), accessor="saved_approved_count")
-    flw_amount_local = tables.Column(verbose_name=gettext_lazy("FLW Pay"), accessor="saved_payment_accrued")
-    org_amount_local = tables.Column(verbose_name=gettext_lazy("Org Pay"), accessor="saved_org_payment_accrued")
-    total_amount_local = tables.Column(
-        verbose_name=gettext_lazy("Total Pay"), accessor="saved_payment_accrued", empty_values=()
+    payment_unit = tables.Column(
+        accessor="completed_work__payment_unit__name", verbose_name=gettext_lazy("Payment Unit")
     )
-    total_amount_usd = tables.Column(
-        verbose_name=gettext_lazy("Total Pay (USD)"), accessor="saved_payment_accrued_usd", empty_values=()
+    opportunity = tables.Column(
+        accessor="completed_work__payment_unit__opportunity__name", verbose_name=gettext_lazy("Opportunity")
     )
-    entity_name = tables.Column(verbose_name=gettext_lazy("Beneficiary"), accessor="entity_name")
-    date_created = DMYTColumn(verbose_name=gettext_lazy("Date of Delivery"), accessor="date_created")
-    username = tables.Column(verbose_name=gettext_lazy("Worker"), accessor="opportunity_access__user__name")
+    entity_name = tables.Column(accessor="completed_work__entity_name", verbose_name=gettext_lazy("Beneficiary"))
+    username = tables.Column(
+        accessor="completed_work__opportunity_access__user__name", verbose_name=gettext_lazy("Worker")
+    )
+    date_created = DMYTColumn(accessor="completed_work__date_created", verbose_name=gettext_lazy("Date of Delivery"))
+    date_approved = DMYTColumn(
+        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("Date Approved")
+    )
+    approved_count = tables.Column(accessor="billed_count", verbose_name=gettext_lazy("Approved Deliveries"))
+    flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay"))
+    org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay"))
+    total_amount_local = tables.Column(accessor="total_pay__local", verbose_name=gettext_lazy("Total Pay"))
+    total_amount_usd = tables.Column(accessor="total_pay__usd", verbose_name=gettext_lazy("Total Pay (USD)"))
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1813,8 +1818,7 @@ class InvoiceDeliveriesTable(tables.Table):
             self.columns["org_amount_local"].column.exclude_from_export = True
 
     class Meta:
-        model = CompletedWork
-        fields = ("payment_unit",)
+        orderable = False
         sequence = (
             "payment_unit",
             "opportunity",
@@ -1828,12 +1832,6 @@ class InvoiceDeliveriesTable(tables.Table):
             "total_amount_local",
             "total_amount_usd",
         )
-
-    def value_total_amount_local(self, record):
-        return (record.saved_payment_accrued or 0) + (record.saved_org_payment_accrued or 0)
-
-    def value_total_amount_usd(self, record):
-        return (record.saved_payment_accrued_usd or 0) + (record.saved_org_payment_accrued_usd or 0)
 
 
 _task_select_td_extra = {

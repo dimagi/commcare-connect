@@ -23,6 +23,8 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
+    get_billable_delivery_rows,
+    get_invoice_delivery_rows,
     get_invoice_line_items,
     group_line_items,
 )
@@ -407,6 +409,57 @@ class TestInvoicedLineItems:
         invoice = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, end_date=FEB_END)
 
         assert get_invoice_line_items(invoice) == []
+
+
+@pytest.mark.django_db
+class TestDeliveryRows:
+    def _invoice(self, opportunity, start_date=JAN, end_date=FEB_END):
+        return PaymentInvoiceFactory.build(
+            opportunity=opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    @pytest.mark.parametrize("issued", [False, True], ids=["billable", "invoiced"])
+    def test_carries_the_delta_and_the_delivery_it_came_from(self, billing_setup, issued):
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit, approved=3, invoiced=1)
+
+        if issued:
+            invoice = self._invoice(access.opportunity)
+            bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+            (row,) = get_invoice_delivery_rows(invoice)
+        else:
+            (row,) = get_billable_delivery_rows(access.opportunity, JAN, FEB_END)
+
+        assert row.completed_work == work
+        assert row.billed_count == 2  # the unbilled delta, not saved_approved_count
+        assert row.flw_pay.local == Decimal("200")
+        assert row.org_pay.local == Decimal("40")
+        assert row.total_pay.local == Decimal("240")
+        assert row.total_pay.usd == Decimal("240")
+
+    def test_issued_rows_stay_frozen_while_billable_rows_move_on(self, billing_setup):
+        """Why there are two readers: an issued invoice's export shows what was billed, while the
+        preview shows what is still owed."""
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit, status=CompletedWorkStatus.approved, approved=1, invoiced=0)
+        invoice = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
+        bill_invoice(invoice, start_date=JAN, end_date=JAN_END)
+
+        work.saved_approved_count = 3
+        work.save(update_fields=["saved_approved_count"])
+
+        (frozen,) = get_invoice_delivery_rows(invoice)
+        (billable,) = get_billable_delivery_rows(access.opportunity, FEB, FEB_END)
+
+        assert frozen.billed_count == 1
+        assert frozen.total_pay.local == Decimal("120")
+        assert billable.billed_count == 2
+        assert billable.total_pay.local == Decimal("240")
 
 
 @pytest.mark.django_db

@@ -193,6 +193,46 @@ def get_invoice_line_items(invoice):
     ]
 
 
+@dataclass(frozen=True)
+class DeliveryRow:
+    completed_work: CompletedWork
+    billed_count: int
+    flw_pay: Money
+    org_pay: Money
+
+    @property
+    def total_pay(self) -> Money:
+        return self.flw_pay + self.org_pay
+
+
+def get_invoice_delivery_rows(invoice):
+    work_items = invoice.work_items.select_related(
+        "completed_work__payment_unit__opportunity", "completed_work__opportunity_access__user"
+    ).order_by("month", "completed_work__payment_unit__name")
+    return [
+        DeliveryRow(
+            completed_work=item.completed_work,
+            billed_count=item.billed_count,
+            flw_pay=Money(item.flw_amount_local, item.flw_amount_usd),
+            org_pay=Money(item.org_amount_local, item.org_amount_usd),
+        )
+        for item in work_items
+    ]
+
+
+def get_billable_delivery_rows(opportunity, start_date, end_date):
+    works = get_billable_completed_works_qs(opportunity, start_date, end_date)
+    return [
+        DeliveryRow(
+            completed_work=row.completed_work,
+            billed_count=row.billed_count,
+            flw_pay=row.flw_pay,
+            org_pay=row.org_pay,
+        )
+        for row in _build_billable_rows(works, opportunity.currency_code, end_date)
+    ]
+
+
 def bill_invoice(invoice, start_date, end_date):
     """Freeze this invoice's line items and advance each work's invoiced count.
 
