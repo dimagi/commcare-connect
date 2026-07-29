@@ -558,6 +558,29 @@ class TestDeliveryRows:
 
 
 @pytest.mark.django_db
+def test_invoicing_never_writes_the_legacy_invoice_fk(billing_setup):
+    """The FK column stays for rollback/old pods but is write-dead; it is dropped in a later release."""
+    access, payment_unit = billing_setup
+    work = approved_work(access, payment_unit)
+    invoice = PaymentInvoiceFactory(
+        opportunity=access.opportunity,
+        service_delivery=True,
+        amount=0,
+        amount_usd=0,
+        start_date=JAN,
+        end_date=FEB_END,
+    )
+
+    bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+    work.refresh_from_db()
+    assert work.invoice_id is None
+
+    rollback_invoice_line_items(invoice)
+    work.refresh_from_db()
+    assert work.invoice_id is None
+
+
+@pytest.mark.django_db
 class TestBillableLineItemsAcrossMonths:
     """Moved from test_completed_work.py's TestUninvoicedVisitItems when the FK helpers went away.
 
