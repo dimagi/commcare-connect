@@ -142,6 +142,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.opportunity_header import get_opportunity_header_context
 from commcare_connect.opportunity.tables import (
     AssignedTaskListTable,
     CompletedWorkTable,
@@ -471,17 +472,6 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
     def get_context_data(self, object, request, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        learn_module_count = LearnModule.objects.filter(app=object.learn_app).count()
-        deliver_unit_count = DeliverUnit.objects.filter(app=object.deliver_app).count()
-        payment_unit_count = object.paymentunit_set.count()
-
-        def safe_display(value):
-            if value is None:
-                return "---"
-            if isinstance(value, datetime.date):
-                return value.strftime("%Y-%m-%d")
-            return str(value)
-
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {
@@ -489,53 +479,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
                 "url": reverse("opportunity:detail", args=(request.org.slug, object.opportunity_id)),
             },
         ]
-
-        context["resources"] = [
-            {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open"},
-            {"name": "Deliver App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
-            {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
-        ]
-
-        context["basic_details"] = [
-            {
-                "name": "Delivery Type",
-                "count": safe_display(object.delivery_type and object.delivery_type.name),
-                "icon": "fa-file-circle-check",
-            },
-            {
-                "name": "Start Date",
-                "count": safe_display(object.start_date),
-                "icon": "fa-calendar-days",
-            },
-            {
-                "name": "End Date",
-                "count": safe_display(object.end_date),
-                "icon": "fa-arrow-right !text-brand-mango",  # color is also changed",
-            },
-            {
-                "name": "Max Connect Workers",
-                "count": header_with_tooltip(
-                    safe_display(int(object.number_of_users)), "Maximum allowed workers in the Opportunity"
-                ),
-                "icon": "fa-users",
-            },
-            {
-                "name": "Max Service Deliveries",
-                "count": header_with_tooltip(
-                    safe_display(int(object.allotted_visits)),
-                    "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
-                ),
-                "icon": "fa-gears",
-            },
-            {
-                "name": "Max Budget",
-                "count": header_with_tooltip(
-                    f"{object.currency_code} {intcomma(object.total_budget)}",
-                    "Maximum payments that can be made for workers and organization",
-                ),
-                "icon": "fa-money-bill",
-            },
-        ]
+        context["header"] = get_opportunity_header_context(object)
         context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
         return context

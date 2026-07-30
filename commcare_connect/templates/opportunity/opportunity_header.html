@@ -1,0 +1,122 @@
+{% load i18n humanize %}
+{% with theme=header.theme %}
+  <div class="relative overflow-hidden rounded-xl {{ theme.hero }}"
+       x-data="{ isOpen: false, showModal: false, selectedTab: '', selectedOption: '', historyLoaded: false }"
+       x-init="$watch('showModal', value => { document.body.classList.toggle('overflow-hidden', value); if (value && !historyLoaded) { $dispatch('tabShown'); historyLoaded = true; } })">
+    {% if theme.overlay %}<div class="pointer-events-none absolute inset-0 bg-black/18"></div>{% endif %}
+    <div class="relative flex flex-wrap items-start gap-8 px-6 pt-5 pb-4.5">
+      <div class="min-w-80 flex-1">
+        {% if object.program %}
+          <div class="mb-2 flex items-center gap-2.5">
+            <i class="fa-solid fa-table-columns text-[11px] {{ theme.eyebrow }}"></i>
+            {% if request.is_opportunity_pm %}
+              <a href="{% url 'program:opportunity_list' request.org.slug object.program.program_id %}"
+                 class="text-xs font-medium {{ theme.eyebrow }}">{{ object.program.name }}</a>
+            {% else %}
+              <span class="text-xs font-medium {{ theme.eyebrow }}">{{ object.program.name }}</span>
+            {% endif %}
+          </div>
+        {% endif %}
+        <div class="mb-2 flex flex-wrap items-center gap-3">
+          <h1 class="m-0 text-2xl leading-[1.15] font-semibold tracking-[-.01em] {{ theme.title }}">{{ object.name }}</h1>
+          {% if object.is_active %}
+            <span class="positive-light inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold">
+              <span class="h-1.5 w-1.5 rounded-full bg-green-600"></span>{% translate "Active" %}
+            </span>
+          {% else %}
+            <span class="negative-light inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold">
+              <span class="h-1.5 w-1.5 rounded-full bg-red-600"></span>{% translate "Inactive" %}
+            </span>
+          {% endif %}
+          {% if object.is_test %}
+            <span class="warning-light inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold">
+              <i class="fa-solid fa-flask text-[9px]"></i>{% translate "Test" %}
+            </span>
+          {% endif %}
+          {% if header.ended_date %}
+            <span class="text-[11.5px] {{ theme.ended_note }}">{% translate "Ended" %} {{ header.ended_date|date:"d M Y" }}</span>
+          {% endif %}
+        </div>
+        {% if object.description %}
+          <p class="m-0 max-w-[760px] text-[13px] leading-[1.55] {{ theme.description }}" style="text-wrap:pretty">{{ object.description }}</p>
+        {% endif %}
+      </div>
+      <div class="flex flex-none flex-col items-end gap-3">
+        {% if not request.org_membership.is_viewer %}
+          <div class="flex gap-2">
+            {% if request.is_opportunity_pm and not header.is_inactive %}
+              <a href="{% url 'opportunity:edit' request.org.slug object.opportunity_id %}"
+                 class="inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-[13px] font-medium transition-all duration-300 {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
+                <i class="fa-solid fa-pen-to-square text-[12px]"></i>{% translate "Edit" %}
+              </a>
+            {% endif %}
+            <button type="button"
+                    @click="isOpen = !isOpen"
+                    aria-label="{% translate 'More actions' %}"
+                    class="relative inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border transition-all duration-300 {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
+              <i class="fa-solid fa-ellipsis text-[13px]"></i>
+            </button>
+            {% include "opportunity/opportunity_menu.html" with request=request opportunity=object is_opportunity_pm=request.is_opportunity_pm %}
+          </div>
+        {% endif %}
+        <div x-cloak class="flex gap-2">
+          {% for resource in header.resources %}
+            <span class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[12.5px] font-medium {{ theme.counter_bg }} {{ theme.counter_border }} {{ theme.counter_text }}"
+                  @click="showModal = true; selectedTab = '{{ resource.tab }}'; selectedOption = '{{ resource.tab }}'">
+              <i class="fa-solid {{ resource.icon }} text-[11px] {{ theme.counter_icon }}"></i>{{ resource.name }}<span class="font-semibold opacity-75">{{ resource.count }}</span>
+            </span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% include "opportunity/opportunity_resource_modal.html" with opportunity=object %}
+    <div class="relative mx-3 mb-3 grid grid-cols-3 rounded-[10px] xl:grid-cols-[1.25fr_1.6fr_1fr_1fr_1.15fr] {{ theme.well }}">
+      <div class="px-4.5 py-3.5">
+        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Delivery Type" %}</div>
+        <div class="text-sm font-medium {{ theme.value }}">{{ object.delivery_type.name|default:"—" }}</div>
+      </div>
+      <div class="border-l px-4.5 py-3.5 {{ theme.divider }}">
+        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Delivery Window" %}</div>
+        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
+          {{ object.start_date|date:"d M Y" }} → {{ object.end_date|date:"d M Y" }}
+          <span class="text-[12.5px] font-normal {{ theme.subvalue }}">
+            {% if header.window.closed %}· {% translate "Closed" %}{% elif header.window.months_left %}· {% blocktranslate count months=header.window.months_left %}{{ months }} month left{% plural %}{{ months }} months left{% endblocktranslate %}{% endif %}
+          </span>
+        </div>
+        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
+          <div class="h-full rounded-[2px] {{ theme.bar_fill }}" style="width: {{ header.window.pct }}%"></div>
+        </div>
+      </div>
+      <div class="border-l px-4.5 py-3.5 {{ theme.divider }}">
+        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Connect Workers" %}</div>
+        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
+          {{ header.workers.actual|intcomma }} <span class="text-[12.5px] font-normal {{ theme.subvalue }}">/ {{ header.workers.cap|intcomma }}</span>
+        </div>
+        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
+          <div class="h-full rounded-[2px] {{ theme.bar_fill }}" style="width: {{ header.workers.pct }}%"></div>
+        </div>
+      </div>
+      <div class="col-span-3 h-px xl:hidden {{ theme.divider }}"></div>
+      <div class="px-4.5 py-3.5 xl:border-l {{ theme.divider }}">
+        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Service Deliveries" %}</div>
+        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
+          {{ header.deliveries.actual|intcomma }} <span class="text-[12.5px] font-normal {{ theme.subvalue }}">/ {{ header.deliveries.cap|intcomma }}</span>
+        </div>
+        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
+          <div class="h-full rounded-[2px] {{ theme.bar_fill }}" style="width: {{ header.deliveries.pct }}%"></div>
+        </div>
+      </div>
+      <div class="border-l px-4.5 py-3.5 {{ theme.divider }}">
+        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">
+          {% if object.currency_code %}{% translate "Budget" %} ({{ object.currency_code }}){% else %}{% translate "Budget" %}{% endif %}
+        </div>
+        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
+          {{ header.budget.actual|intcomma }} <span class="text-[12.5px] font-normal {{ theme.subvalue }}">/ {{ header.budget.cap|intcomma }}</span>
+        </div>
+        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
+          <div class="h-full rounded-[2px] {{ theme.bar_fill_budget }}" style="width: {{ header.budget.pct }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endwith %}
