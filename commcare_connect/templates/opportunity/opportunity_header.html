@@ -20,25 +20,26 @@
         <div class="mb-2 flex flex-wrap items-center gap-3">
           <h1 class="m-0 text-2xl leading-[1.15] font-semibold tracking-[-.01em] {{ theme.title }}">{{ object.name }}</h1>
           {% if object.is_active %}
-            <span class="positive-light inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold">
+            <span class="opp-header-badge positive-light">
               <span class="h-1.5 w-1.5 rounded-full bg-green-600"></span>{% translate "Active" %}
             </span>
           {% else %}
-            <span class="negative-light inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold">
+            <span class="opp-header-badge negative-light">
               <span class="h-1.5 w-1.5 rounded-full bg-red-600"></span>{% translate "Inactive" %}
             </span>
           {% endif %}
           {% if object.is_test %}
-            <span class="warning-light inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold">
+            <span class="opp-header-badge warning-light">
               <i class="fa-solid fa-flask text-[9px]"></i>{% translate "Test" %}
             </span>
           {% endif %}
           {% if header.ended_date %}
-            <span class="text-[11.5px] {{ theme.ended_note }}">{% translate "Ended" %} {{ header.ended_date|date:"d M Y" }}</span>
+            <span class="text-[11.5px] {{ theme.ended_note }}">{% blocktranslate with ended_date=header.ended_date|date:"d M Y" %}Ended {{ ended_date }}{% endblocktranslate %}</span>
           {% endif %}
         </div>
         {% if object.description %}
-          <p class="m-0 max-w-[760px] text-[13px] leading-[1.55] {{ theme.description }}" style="text-wrap:pretty">{{ object.description }}</p>
+          <p class="m-0 max-w-[760px] text-[13px] leading-[1.55] {{ theme.description }}"
+             style="text-wrap:pretty">{{ object.description }}</p>
         {% endif %}
       </div>
       <div class="flex flex-none flex-col items-end gap-3">
@@ -46,22 +47,22 @@
           <div class="flex gap-2">
             {% if request.is_opportunity_pm and not header.is_inactive %}
               <a href="{% url 'opportunity:edit' request.org.slug object.opportunity_id %}"
-                 class="inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-[13px] font-medium transition-all duration-300 {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
+                 class="opp-header-action {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
                 <i class="fa-solid fa-pen-to-square text-[12px]"></i>{% translate "Edit" %}
               </a>
             {% endif %}
             <button type="button"
                     @click="isOpen = !isOpen"
                     aria-label="{% translate 'More actions' %}"
-                    class="relative inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border transition-all duration-300 {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
+                    class="relative opp-header-action-icon {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
               <i class="fa-solid fa-ellipsis text-[13px]"></i>
             </button>
-            {% include "opportunity/opportunity_menu.html" with request=request opportunity=object is_opportunity_pm=request.is_opportunity_pm %}
+            {% include "opportunity/opportunity_menu.html" with opportunity=object %}
           </div>
         {% endif %}
         <div x-cloak class="flex gap-2">
           {% for resource in header.resources %}
-            <span class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[12.5px] font-medium {{ theme.counter_bg }} {{ theme.counter_border }} {{ theme.counter_text }}"
+            <span class="opp-header-counter {{ theme.counter_bg }} {{ theme.counter_border }} {{ theme.counter_text }}"
                   @click="showModal = true; selectedTab = '{{ resource.tab }}'; selectedOption = '{{ resource.tab }}'">
               <i class="fa-solid {{ resource.icon }} text-[11px] {{ theme.counter_icon }}"></i>{{ resource.name }}<span class="font-semibold opacity-75">{{ resource.count }}</span>
             </span>
@@ -71,50 +72,54 @@
     </div>
     {% include "opportunity/opportunity_resource_modal.html" with opportunity=object %}
     <div class="relative mx-3 mb-3 grid grid-cols-3 rounded-[10px] xl:grid-cols-[1.25fr_1.6fr_1fr_1fr_1.15fr] {{ theme.well }}">
-      <div class="px-4.5 py-3.5">
-        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Delivery Type" %}</div>
-        <div class="text-sm font-medium {{ theme.value }}">{{ object.delivery_type.name|default:"—" }}</div>
+      <div class="opp-header-metric-cell">
+        <div class="opp-header-metric-label {{ theme.eyebrow }}">{% translate "Delivery Type" %}</div>
+        <div class="opp-header-metric-value {{ theme.value }}">{{ object.delivery_type.name|default:"—" }}</div>
       </div>
-      <div class="border-l px-4.5 py-3.5 {{ theme.divider }}">
-        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Delivery Window" %}</div>
-        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
+      <div class="opp-header-metric-cell border-l {{ theme.divider }}">
+        <div class="opp-header-metric-label {{ theme.eyebrow }}">{% translate "Delivery Window" %}</div>
+        <div class="opp-header-metric-value mb-1.5 {{ theme.value }}">
           {{ object.start_date|date:"d M Y" }} → {{ object.end_date|date:"d M Y" }}
-          <span class="text-[12.5px] font-normal {{ theme.subvalue }}">
-            {% if header.window.closed %}· {% translate "Closed" %}{% elif header.window.months_left %}· {% blocktranslate count months=header.window.months_left %}{{ months }} month left{% plural %}{{ months }} months left{% endblocktranslate %}{% endif %}
+          <span class="opp-header-metric-subvalue {{ theme.subvalue }}">
+            {% if header.window.closed %}
+              · {% translate "Closed" %}
+            {% elif header.window.months_left %}
+              · {% blocktranslate count months=header.window.months_left %}{{ months }} month left{% plural %}{{ months }} months left{% endblocktranslate %}
+            {% endif %}
           </span>
         </div>
-        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
-          <div class="h-full rounded-[2px] {{ theme.bar_fill }}" style="width: {{ header.window.pct }}%"></div>
+        <div class="opp-header-bar-track {{ theme.track }}">
+          <div class="opp-header-bar-fill {{ theme.bar_fill }}"
+               style="width: {{ header.window.pct }}%"></div>
         </div>
       </div>
-      <div class="border-l px-4.5 py-3.5 {{ theme.divider }}">
-        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Connect Workers" %}</div>
-        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
-          {{ header.workers.actual|intcomma }} <span class="text-[12.5px] font-normal {{ theme.subvalue }}">/ {{ header.workers.cap|intcomma }}</span>
+      {% for metric in header.metrics %}
+        <div class="opp-header-metric-cell {% if forloop.first %}border-l{% else %}xl:border-l{% endif %} {{ theme.divider }}">
+          <div class="opp-header-metric-label {{ theme.eyebrow }}">{{ metric.label }}</div>
+          <div class="opp-header-metric-value mb-1.5 {{ theme.value }}">
+            {{ metric.actual|intcomma }} <span class="opp-header-metric-subvalue {{ theme.subvalue }}">/ {{ metric.cap|intcomma }}</span>
+          </div>
+          <div class="opp-header-bar-track {{ theme.track }}">
+            <div class="opp-header-bar-fill {{ theme.bar_fill }}"
+                 style="width: {{ metric.pct }}%"></div>
+          </div>
         </div>
-        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
-          <div class="h-full rounded-[2px] {{ theme.bar_fill }}" style="width: {{ header.workers.pct }}%"></div>
+        {% if forloop.first %}<div class="col-span-3 h-px xl:hidden {{ theme.divider }}"></div>{% endif %}
+      {% endfor %}
+      <div class="opp-header-metric-cell border-l {{ theme.divider }}">
+        <div class="opp-header-metric-label {{ theme.eyebrow }}">
+          {% if object.currency_code %}
+            {% translate "Budget" %} ({{ object.currency_code }})
+          {% else %}
+            {% translate "Budget" %}
+          {% endif %}
         </div>
-      </div>
-      <div class="col-span-3 h-px xl:hidden {{ theme.divider }}"></div>
-      <div class="px-4.5 py-3.5 xl:border-l {{ theme.divider }}">
-        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">{% translate "Service Deliveries" %}</div>
-        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
-          {{ header.deliveries.actual|intcomma }} <span class="text-[12.5px] font-normal {{ theme.subvalue }}">/ {{ header.deliveries.cap|intcomma }}</span>
+        <div class="opp-header-metric-value mb-1.5 {{ theme.value }}">
+          {{ header.budget.actual|intcomma }} <span class="opp-header-metric-subvalue {{ theme.subvalue }}">/ {{ header.budget.cap|intcomma }}</span>
         </div>
-        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
-          <div class="h-full rounded-[2px] {{ theme.bar_fill }}" style="width: {{ header.deliveries.pct }}%"></div>
-        </div>
-      </div>
-      <div class="border-l px-4.5 py-3.5 {{ theme.divider }}">
-        <div class="mb-[5px] text-[11px] {{ theme.eyebrow }}">
-          {% if object.currency_code %}{% translate "Budget" %} ({{ object.currency_code }}){% else %}{% translate "Budget" %}{% endif %}
-        </div>
-        <div class="mb-1.5 text-sm font-medium {{ theme.value }}">
-          {{ header.budget.actual|intcomma }} <span class="text-[12.5px] font-normal {{ theme.subvalue }}">/ {{ header.budget.cap|intcomma }}</span>
-        </div>
-        <div class="h-[3px] rounded-[2px] {{ theme.track }}">
-          <div class="h-full rounded-[2px] {{ theme.bar_fill_budget }}" style="width: {{ header.budget.pct }}%"></div>
+        <div class="opp-header-bar-track {{ theme.track }}">
+          <div class="opp-header-bar-fill {{ theme.bar_fill_budget }}"
+               style="width: {{ header.budget.pct }}%"></div>
         </div>
       </div>
     </div>

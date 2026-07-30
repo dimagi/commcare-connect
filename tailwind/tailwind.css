@@ -852,3 +852,46 @@ select:disabled,
     }
   }
 }
+
+/*--- Opportunity header ------------------------- */
+@layer components {
+  .opp-header-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold;
+  }
+
+  .opp-header-action {
+    @apply inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-[13px] font-medium transition-all duration-300;
+  }
+
+  .opp-header-action-icon {
+    @apply inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border transition-all duration-300;
+  }
+
+  .opp-header-counter {
+    @apply inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[12.5px] font-medium;
+  }
+
+  .opp-header-metric-cell {
+    @apply px-4.5 py-3.5;
+  }
+
+  .opp-header-metric-label {
+    @apply mb-[5px] text-[11px];
+  }
+
+  .opp-header-metric-value {
+    @apply text-sm font-medium;
+  }
+
+  .opp-header-metric-subvalue {
+    @apply text-[12.5px] font-normal;
+  }
+
+  .opp-header-bar-track {
+    @apply h-[3px] rounded-[2px];
+  }
+
+  .opp-header-bar-fill {
+    @apply h-full rounded-[2px];
+  }
+}

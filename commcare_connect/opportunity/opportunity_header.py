@@ -1,11 +1,13 @@
 import datetime
 
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
+from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import DeliverUnit, LearnModule, Opportunity, OpportunityAccess
 
-# Tailwind utility classes for every themed element of the opportunity header.
-# "live"/"test" = surface theme (Opportunity.is_test), "active"/"inactive" = lifecycle modifier.
+# Tailwind color classes for every themed element of the opportunity header, layered on top of
+# the structural `.opp-header-*` classes in tailwind.css. "live"/"test" = surface theme
+# (Opportunity.is_test); "inactive" holds only the values that change on top of "active".
 _THEME = {
     "live": {
         "active": {
@@ -32,27 +34,17 @@ _THEME = {
             "ended_note": "text-white/50",
         },
         "inactive": {
-            "hero": "bg-brand-deep-purple",
             "overlay": True,
-            "eyebrow": "text-brand-sky",
             "title": "text-white/82",
             "description": "text-white/60",
-            "well": "bg-black/20",
-            "divider": "border-white/20",
             "track": "bg-white/16",
             "value": "text-white/85",
             "subvalue": "text-white/50",
             "counter_bg": "bg-white/8",
             "counter_border": "border-white/18",
             "counter_text": "text-white/80",
-            "counter_icon": "text-brand-sky",
-            "btn_border": "border-white/28",
-            "btn_bg": "bg-white/8",
-            "btn_text": "text-white",
-            "btn_hover": "hover:bg-white/20",
             "bar_fill": "bg-white/45",
             "bar_fill_budget": "bg-white/45",
-            "ended_note": "text-white/50",
         },
     },
     "test": {
@@ -81,44 +73,33 @@ _THEME = {
         },
         "inactive": {
             "hero": "bg-gray-50 border border-brand-border-light",
-            "overlay": False,
             "eyebrow": "text-slate-400",
             "title": "text-gray-500",
             "description": "text-slate-400",
             "well": "bg-slate-100",
-            "divider": "border-slate-200",
-            "track": "bg-slate-200",
             "value": "text-gray-500",
-            "subvalue": "text-slate-400",
             "counter_bg": "bg-indigo-100",
             "counter_border": "border-indigo-100",
             "counter_text": "text-indigo-600",
             "counter_icon": "text-indigo-600",
-            "btn_border": "border-gray-400",
-            "btn_bg": "bg-gray-50",
-            "btn_text": "text-brand-deep-purple",
-            "btn_hover": "hover:bg-slate-100",
             "bar_fill": "bg-slate-300",
             "bar_fill_budget": "bg-slate-300",
-            "ended_note": "text-slate-400",
         },
     },
 }
 
 
 def get_opportunity_header_context(opportunity: Opportunity) -> dict:
-    """Build the theme classes + metric strip data for the opportunity detail header partial."""
     is_inactive = not opportunity.is_active
-    theme = _THEME["test" if opportunity.is_test else "live"]["inactive" if is_inactive else "active"]
+    surface = "test" if opportunity.is_test else "live"
+    theme = {**_THEME[surface]["active"], **_THEME[surface]["inactive"]} if is_inactive else _THEME[surface]["active"]
 
-    today = datetime.date.today()
-    window = _delivery_window(opportunity.start_date, opportunity.end_date, today)
-
-    workers_actual = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).count()
-    deliveries_actual = opportunity.approved_visits
-    budget_actual = (
-        OpportunityAccess.objects.filter(opportunity=opportunity).aggregate(total=Sum("payment_accrued"))["total"] or 0
+    access_stats = OpportunityAccess.objects.filter(opportunity=opportunity).aggregate(
+        workers_actual=Count("id", filter=Q(accepted=True)),
+        budget_actual=Sum("payment_accrued"),
     )
+    workers_actual = access_stats["workers_actual"]
+    deliveries_actual = opportunity.approved_visits
 
     return {
         "theme": theme,
@@ -126,41 +107,35 @@ def get_opportunity_header_context(opportunity: Opportunity) -> dict:
         "ended_date": opportunity.end_date if opportunity.has_ended else None,
         "resources": [
             {
-                "name": "Learn App",
+                "name": _("Learn App"),
                 "tab": "Learn App",
                 "icon": "fa-book-open",
                 "count": LearnModule.objects.filter(app=opportunity.learn_app).count(),
             },
             {
-                "name": "Deliver App",
+                "name": _("Deliver App"),
                 "tab": "Deliver App",
                 "icon": "fa-clipboard-check",
                 "count": DeliverUnit.objects.filter(app=opportunity.deliver_app).count(),
             },
             {
-                "name": "Payment Units",
+                "name": _("Payment Units"),
                 "tab": "Payments Units",
                 "icon": "fa-hand-holding-dollar",
                 "count": opportunity.paymentunit_set.count(),
             },
         ],
-        "window": window,
-        "workers": {
-            "actual": workers_actual,
-            "cap": opportunity.number_of_users,
-            "pct": _pct(workers_actual, opportunity.number_of_users),
-        },
-        "deliveries": {
-            "actual": deliveries_actual,
-            "cap": opportunity.allotted_visits,
-            "pct": _pct(deliveries_actual, opportunity.allotted_visits),
-        },
-        "budget": {
-            "actual": budget_actual,
-            "cap": opportunity.total_budget,
-            "pct": _pct(budget_actual, opportunity.total_budget),
-        },
+        "window": _delivery_window(opportunity.start_date, opportunity.end_date, datetime.date.today()),
+        "metrics": [
+            {"label": _("Connect Workers"), **_ratio(workers_actual, opportunity.number_of_users)},
+            {"label": _("Service Deliveries"), **_ratio(deliveries_actual, opportunity.allotted_visits)},
+        ],
+        "budget": _ratio(access_stats["budget_actual"] or 0, opportunity.total_budget),
     }
+
+
+def _ratio(actual, cap):
+    return {"actual": actual, "cap": cap, "pct": _pct(actual, cap)}
 
 
 def _pct(actual, cap):
