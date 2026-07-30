@@ -14,6 +14,7 @@
       showDownloadButton: false,
       showCancelModal: false,
       showRejectModal: false,
+      lineItemsError: false,
 
       init() {
         if (this.isServiceDelivery) {
@@ -51,6 +52,7 @@
       fetchInvoiceLineItems() {
         if (!this.startDate || !this.endDate) return;
 
+        this.lineItemsError = false;
         fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           method: 'POST',
           headers: {
@@ -70,7 +72,12 @@
           this.showDownloadButton = true;
         }).catch(error => {
           console.error('Error fetching invoice items:', error);
+          // Clear totals and table on failure to avoid showing stale data from another window.
+          document.getElementById('invoice-line-items-wrapper').innerHTML = '';
+          this.amount = null;
+          this.usdAmount = null;
           this.showDownloadButton = false;
+          this.lineItemsError = true;
         });
       },
 

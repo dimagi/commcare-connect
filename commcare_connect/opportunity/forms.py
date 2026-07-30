@@ -1721,7 +1721,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", _("Submit"), css_class="button button-md primary-dark"),
+                    Submit(
+                        "submit",
+                        _("Submit"),
+                        css_class="button button-md primary-dark",
+                        # Disable when there is an error while fetching the line items
+                        **{":disabled": "isServiceDelivery && lineItemsError"},
+                    ),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -1952,8 +1958,27 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 """
             )
         else:
+            # The wrapper fetch is the only source of the amount, so show an error if it fails.
             table = HTML(
                 """
+                {% load i18n %}
+                <div x-show="lineItemsError"
+                  x-cloak
+                  role="alert"
+                  class="flex items-center justify-between p-4 mb-4 rounded-lg border-[0.5px]
+                         bg-message-error text-message-error-text border-message-error-border">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>
+                      {% translate "Could not load the deliveries for this period, so the amount is unavailable." %}
+                    </span>
+                  </div>
+                  <button type="button"
+                          class="button button-md outline-style ml-4"
+                          @click="fetchInvoiceLineItems()">
+                    {% translate "Retry" %}
+                  </button>
+                </div>
                 <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
             """
             )
