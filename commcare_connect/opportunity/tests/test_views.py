@@ -37,6 +37,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     OpportunityClaimLimit,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     TaskType,
     UserInvite,
@@ -1570,6 +1571,48 @@ def _invoice_review_url(org, opportunity, invoice):
         "opportunity:invoice_review",
         args=(org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
     )
+
+
+@pytest.mark.django_db
+class TestInvoiceCreateView(BaseTestInvoiceView):
+    def test_invalid_submit_validates_once_and_renders_its_own_errors(self, client, setup_invoice):
+        """A rejected submit must render the form that rejected it.
+
+        Delegating to get() built a second bound form and revalidated it while rendering, so the
+        errors displayed came from a later read than the decision -- and vanished entirely if the
+        state changed back in between.
+        """
+        opportunity = setup_invoice["opportunity"]
+        client.force_login(setup_invoice["user"])
+        url = reverse("opportunity:invoice_create", args=(opportunity.organization.slug, opportunity.opportunity_id))
+
+        clean_calls = []
+        original_clean = AutomatedPaymentInvoiceForm.clean
+
+        def counting_clean(self):
+            clean_calls.append(self)
+            return original_clean(self)
+
+        with mock.patch.object(AutomatedPaymentInvoiceForm, "clean", counting_clean):
+            response = client.post(
+                url,
+                data={
+                    "invoice_number": "INV-002",
+                    "amount": 100.0,
+                    "date": "2025-11-06",
+                    "start_date": "2025-10-31",
+                    # Earlier than start_date, so clean() rejects it.
+                    "end_date": "2025-10-01",
+                    "description": "Monthly consulting services rendered.",
+                },
+            )
+
+        assert response.status_code == 200
+        assert len(clean_calls) == 1
+        form = response.context["form"]
+        assert form is clean_calls[0]
+        assert "End date cannot be earlier than start date." in str(form.errors)
+        assert not PaymentInvoice.objects.filter(invoice_number="INV-002").exists()
 
 
 @pytest.mark.django_db

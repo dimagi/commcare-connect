@@ -1735,7 +1735,12 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
 
         form = self.get_form()
         if not form.is_valid():
-            return self.get(request, org_slug, opp_id, **kwargs)
+            # Render *this* form rather than delegating to get(), which would build a second bound
+            # instance and revalidate it while rendering. The errors shown would then come from a
+            # later read than the one that rejected the submit -- and would be missing entirely if
+            # the state had changed back in between, leaving the page with no explanation.
+            self.object = None  # what BaseCreateView.post sets before delegating
+            return self.form_invalid(form)
 
         form.save()
         return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
