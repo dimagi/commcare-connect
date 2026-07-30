@@ -20,6 +20,14 @@ class Program(BaseModel):
     start_date = models.DateField()
     end_date = models.DateField()
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    funder = models.ForeignKey(
+        Organization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="funded_programs",
+    )
+    watchers = models.ManyToManyField(Organization, related_name="watched_programs", blank=True)
 
     def save(self, *args, **kwargs):
         if not self.id:
