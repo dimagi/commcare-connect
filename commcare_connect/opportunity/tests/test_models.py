@@ -460,13 +460,6 @@ class TestSupervisingOrganizationDefault:
         opp.refresh_from_db()
         assert opp.supervising_organization == program.organization
 
-    def test_defaults_to_own_organization_without_program(self):
-        org = OrganizationFactory()
-        opp = Opportunity(organization=org, program=None, name="opp", description="desc")
-        opp.save()
-        opp.refresh_from_db()
-        assert opp.supervising_organization == org
-
     def test_does_not_override_explicit_supervisor(self):
         supervisor = OrganizationFactory()
         opp = Opportunity(

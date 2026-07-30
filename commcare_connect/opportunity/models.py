@@ -130,11 +130,9 @@ class Opportunity(BaseModel):
 
     def save(self, *args, **kwargs):
         # Until the UI allows setting a supervising organization, default it to the program's
-        # owning organization (or the opportunity's own organization when there is no program).
+        # owning organization.
         if not self.supervising_organization_id:
-            self.supervising_organization_id = (
-                self.program.organization_id if self.program_id else self.organization_id
-            )
+            self.supervising_organization_id = self.program.organization_id
         super().save(*args, **kwargs)
 
     def __str__(self):

@@ -1,20 +1,17 @@
 import django.db.models.deletion
 from django.db import migrations, models
-from django.db.models import F, OuterRef, Subquery
+from django.db.models import OuterRef, Subquery
 
 
 def backfill_supervising_organization(apps, schema_editor):
+    # Every opportunity is program-linked as of 0134_add_program_fk_to_opportunity, so the
+    # supervising organization is always the program's owning organization.
     Opportunity = apps.get_model("opportunity", "Opportunity")
     Program = apps.get_model("program", "Program")
-    # Program-linked (managed) opportunities inherit the program's owning organization.
-    Opportunity.objects.filter(program__isnull=False, supervising_organization__isnull=True).update(
+    Opportunity.objects.filter(supervising_organization__isnull=True).update(
         supervising_organization_id=Subquery(
             Program.objects.filter(pk=OuterRef("program_id")).values("organization_id")[:1]
         )
-    )
-    # Any remaining opportunities (no program) supervise themselves.
-    Opportunity.objects.filter(supervising_organization__isnull=True).update(
-        supervising_organization_id=F("organization_id")
     )
 
 
