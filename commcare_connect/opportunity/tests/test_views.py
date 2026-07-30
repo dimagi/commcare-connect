@@ -38,6 +38,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     OpportunityClaimLimit,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     TaskType,
     UserInvite,
