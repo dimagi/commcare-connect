@@ -53,7 +53,10 @@ from commcare_connect.opportunity.utils.invoice import (
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
-from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    bill_invoice,
+    get_billable_line_items,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1881,7 +1884,29 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+            self._reject_stale_total(amount, start_date, end_date)
+
         return cleaned_data
+
+    def _reject_stale_total(self, amount, start_date, end_date):
+        """Reject a submit if the posted total no longer matches the current billable total.
+
+        This provides a user-facing error when the preview has gone stale. `save()` still
+        recomputes the total under a lock and never trusts the posted amount.
+        """
+
+        # Use the same calculation as the preview, so a mismatch reflects a real state change.
+        billable_total = sum(
+            item.total_pay.local for item in get_billable_line_items(self.opportunity, start_date, end_date)
+        )
+        if amount != billable_total:
+            raise ValidationError(
+                _(
+                    "The billable total for this period is %(actual)s, not %(posted)s. The deliveries "
+                    "changed since this page was loaded — review the line items below and submit again."
+                )
+                % {"actual": billable_total, "posted": amount}
+            )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
