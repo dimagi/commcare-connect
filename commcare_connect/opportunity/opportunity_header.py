@@ -154,9 +154,11 @@ def _delivery_window(start_date, end_date, today):
     elif start_date >= today:
         pct = 0
     else:
+        # Reached only when start_date < today <= end_date, so the window always spans
+        # at least one day here.
         total_days = (end_date - start_date).days
         elapsed_days = (today - start_date).days
-        pct = 100 if total_days <= 0 else _pct(elapsed_days, total_days)
+        pct = _pct(elapsed_days, total_days)
 
     months_left = None
     if not closed:
