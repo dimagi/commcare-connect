@@ -70,6 +70,11 @@
           this.showDownloadButton = true;
         }).catch(error => {
           console.error('Error fetching invoice items:', error);
+          // Clear the totals too: leaving the previous window's figures in these read-only fields
+          // shows an amount that was never priced for this period, and the server rejects a
+          // submitted total that doesn't match the window anyway.
+          this.amount = null;
+          this.usdAmount = null;
           this.showDownloadButton = false;
         });
       },
