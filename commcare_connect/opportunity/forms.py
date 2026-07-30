@@ -51,7 +51,10 @@ from commcare_connect.opportunity.utils.invoice import (
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
-from commcare_connect.opportunity.utils.invoice_line_items import create_invoice_line_items
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    bill_invoice,
+    get_billable_line_items,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1878,20 +1881,43 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+            self._reject_stale_total(amount, start_date, end_date)
+
         return cleaned_data
+
+    def _reject_stale_total(self, amount, start_date, end_date):
+        """Refuse a submit whose total no longer matches what this window would bill.
+
+        The amount field is server-filled from the preview, so a mismatch means the deliveries
+        changed since the page was loaded — an approval landed, or an automated run billed the
+        delta. Saving silently would hand the NM an invoice for a different figure than the one
+        they reviewed, so they are sent back to a re-fetched preview instead.
+
+        This is the readable error, not the guarantee: it reads before `save`'s locked read, so a
+        change landing in between still gets through. `save` never trusts the posted amount for
+        that reason.
+        """
+        # The same call the preview endpoint makes, so a mismatch is always real state change and
+        # never representation drift: JsonResponse's encoder sends the Decimal total as a string,
+        # which comes back through cleaned_data as the identical Decimal.
+        billable_total = sum(
+            item["total_amount_local"] for item in get_billable_line_items(self.opportunity, start_date, end_date)
+        )
+        if amount != billable_total:
+            raise ValidationError(
+                _(
+                    "The billable total for this period is %(actual)s, not %(posted)s. The deliveries "
+                    "changed since this page was loaded — review the line items below and submit again."
+                )
+                % {"actual": billable_total, "posted": amount}
+            )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
-        if self.is_service_delivery:
-            # The posted totals mirror the preview and can be stale: a failed re-fetch leaves the
-            # previous window's total in the field, and the delta can be billed elsewhere between
-            # render and submit. So they never reach the instance -- create_invoice_line_items
-            # overwrites these from the rows it freezes, and with nothing billable they stay 0, so
-            # the invoice can never claim an amount it has no line items for.
-            instance.amount = 0
-            instance.amount_usd = 0
-        else:
+        if not self.is_service_delivery:
+            # A service delivery invoice's totals are not set here at all: bill_invoice derives
+            # them below from the deliveries it freezes.
             instance.amount = self.cleaned_data["amount"]
             instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
@@ -1900,12 +1926,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         instance.status = self.status
 
         if commit:
-            instance.save()
             if self.is_service_delivery:
-                # Sets amount/amount_usd from the rows it just froze, ignoring the posted amount:
-                # the total has to come from the same read that wrote the rows, or the invoice
-                # stops matching its own line items.
-                create_invoice_line_items(instance, start_date=instance.start_date, end_date=instance.end_date)
+                # Saves the invoice itself, with amount/amount_usd from the rows it froze -- 0 when
+                # there was nothing to bill. The posted totals never reach the database: they mirror
+                # the preview and can be stale, both because a failed re-fetch leaves the previous
+                # window's figures in the field and because the delta can be billed elsewhere
+                # between render and submit. The total has to come from the same read that wrote the
+                # rows, or the invoice stops matching its own line items.
+                bill_invoice(instance, start_date=instance.start_date, end_date=instance.end_date)
+            else:
+                instance.save()
 
         return instance
 

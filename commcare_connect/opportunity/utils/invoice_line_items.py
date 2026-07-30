@@ -212,17 +212,31 @@ def get_billable_delivery_rows(opportunity, start_date, end_date):
     ]
 
 
+def bill_invoice(invoice, start_date, end_date):
+    """Bill an invoice that has to exist afterwards either way: `create_invoice_line_items`, except
+    that a period with no delta still leaves a saved invoice, for zero.
+
+    Only whoever created the invoice knows whether that is right. The automated task calls
+    `create_invoice_line_items` directly, so an empty period leaves nothing behind at all.
+    """
+    rows = create_invoice_line_items(invoice, start_date, end_date)
+    if not rows:
+        invoice.amount = 0
+        invoice.amount_usd = 0
+        invoice.save()
+    return rows
+
+
 def create_invoice_line_items(invoice, start_date, end_date):
     """Freeze this invoice's line items and advance the billed-work watermark.
 
     `invoiced_approved_count` is only ever advanced here.
 
-    Who owns the invoice totals: **this function does whenever it writes rows** — it derived
-    `amount`, `amount_usd` and `exchange_rate` from the same locked read, so nothing else may set
-    them. **The caller does when this returns `[]`**, because only the caller knows what an empty
-    delta means for its invoice: 0 for one it has just created, untouched for one already billed.
-    On `[]` nothing at all is written here — not even `invoice` itself, if it is still unsaved, which
-    is how the automated task avoids creating an invoice it would have to delete.
+    The invoice's totals always come from the rows this froze: it derived `amount`, `amount_usd`
+    and `exchange_rate` from the same locked read that wrote them, so nothing else may set them.
+    With no delta nothing at all is written — not even `invoice` itself, if it is still unsaved,
+    which is how the automated task avoids creating an invoice it would have to delete. Callers
+    that need the invoice saved regardless go through `bill_invoice`.
     """
     with transaction.atomic():
         rows = _build_billable_rows(invoice.opportunity, start_date, end_date, for_update=True)
