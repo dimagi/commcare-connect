@@ -25,6 +25,11 @@ urlpatterns = [
         name="image_export",
     ),
     path(
+        "opportunity/<int:opp_id>/attachment_signed_url/",
+        views.AttachmentSignedUrlView.as_view(),
+        name="attachment_signed_url",
+    ),
+    path(
         "opportunity/<int:opp_id>/app_structure/",
         views.AppStructureView.as_view(),
         name="app_structure",

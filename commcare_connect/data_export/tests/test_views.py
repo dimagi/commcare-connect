@@ -1,7 +1,10 @@
 import datetime
+from unittest import mock
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.core.files.base import ContentFile
+from django.core.files.storage import storages
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import now
@@ -9,7 +12,13 @@ from django.utils.timezone import now
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import LabsRecord
-from commcare_connect.opportunity.tests.factories import AssignedTaskFactory, OpportunityAccessFactory, TaskTypeFactory
+from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
+    BlobMetaFactory,
+    OpportunityAccessFactory,
+    TaskTypeFactory,
+    UserVisitFactory,
+)
 from commcare_connect.users.tests.factories import LLOEntityFactory, OrgWithUsersFactory
 
 
@@ -318,3 +327,99 @@ class TestLabsRecordDataViewAuthorization:
         assert response.status_code == 404
         record.refresh_from_db()
         assert record.experiment == "original", "Cross-org record must not be overwritten"
+
+
+@pytest.mark.django_db
+class TestImageView:
+    def test_returns_image_bytes(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
+        _add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"imagebytes"
+
+    def test_non_member_returns_404(self, api_client, opportunity, user):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        _add_export_credentials(api_client, user)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestAttachmentSignedUrlView:
+    def _url(self, opportunity):
+        return reverse("data_export:attachment_signed_url", kwargs={"opp_id": opportunity.id})
+
+    def test_requires_export_scope(self, api_client, opportunity):
+        response = api_client.get(self._url(opportunity), {"blob_id": "any"})
+        assert response.status_code == 401
+
+    def test_non_member_returns_404(self, api_client, opportunity, user):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        _add_export_credentials(api_client, user)
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    def test_foreign_org_blob_returns_404(self, api_client, opportunity, org_user_member):
+        foreign_visit = UserVisitFactory(opportunity__organization=OrgWithUsersFactory())
+        blob_meta = BlobMetaFactory(parent_id=foreign_visit.xform_id)
+        _add_export_credentials(api_client, org_user_member)
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    def test_returns_501_when_no_s3_backend(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        _add_export_credentials(api_client, org_user_member)
+        # The test environment uses FileSystemStorage, which cannot produce a portable URL.
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 501
+
+    def test_returns_signed_url(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        _add_export_credentials(api_client, org_user_member)
+        with (
+            mock.patch("commcare_connect.data_export.views._default_storage_supports_signed_urls", return_value=True),
+            mock.patch("commcare_connect.data_export.views._get_attachment_signed_url", return_value="https://signed"),
+        ):
+            response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert response.json() == {"attachment_signed_url": "https://signed"}
+
+
+class _FakeSignedStorage:
+    """Storage stand-in that records how ``url()`` is invoked.
+
+    Used because django-storages (the real S3 backend) is a production-only dependency and
+    is absent from the test environment. ``location`` is a class default; a per-instance
+    override models config a *resolved* storage carries, so this verifies the copy retains
+    it rather than falling back to bare class defaults.
+    """
+
+    location = "class-default"
+
+    def __init__(self):
+        self.querystring_auth = False
+
+    def url(self, name, expire, http_method):
+        return f"https://signed/{self.location}/{name}?auth={self.querystring_auth}&method={http_method}"
+
+
+def test_get_attachment_signed_url_preserves_resolved_storage_config():
+    from commcare_connect.data_export.views import _get_attachment_signed_url
+
+    storage = _FakeSignedStorage()
+    storage.location = "configured/prefix"  # instance-level config, e.g. a STORAGES OPTIONS override
+    with mock.patch("commcare_connect.data_export.views.storages", {"default": storage}):
+        url = _get_attachment_signed_url("blob123")
+    # The signed URL reflects the resolved instance's config (not the class default), opts
+    # querystring_auth in, and is scoped to GET; the original instance is left untouched.
+    assert url == "https://signed/configured/prefix/blob123?auth=True&method=GET"
+    assert storage.querystring_auth is False
