@@ -4,6 +4,8 @@
 {% load socialaccount_extras %}
 {% block content %}
   <div class="max-w-screen-lg mx-auto py-8 px-4">
+    {% connections_breadcrumb_path as path %}
+    {% include 'components/breadcrumbs.html' with path=path %}
     <h2 class="text-xl font-semibold text-brand-deep-purple mb-1">{% translate "Connected Accounts" %}</h2>
     <p class="card_description mb-6">{% translate "Manage third-party accounts linked to your Connect profile." %}</p>
     {% if form.non_field_errors %}
