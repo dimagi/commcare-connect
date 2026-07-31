@@ -1090,21 +1090,77 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert saved.archived == original_time
 
-    def test_excludes_non_editable_fields(self, opportunity):
-        task_type = TaskTypeFactory(app=opportunity.deliver_app, slug="original-slug", case_property="original_prop")
+    def test_updates_case_property(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="wrong_prop")
         form = EditTaskTypeForm(
             data={
-                "name": "New Name",
-                "description": "New Desc",
-                "slug": "hacked-slug",
-                "case_property": "hacked_prop",
+                "name": task_type.name,
+                "description": task_type.description,
+                "case_property": "correct_prop",
             },
             instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()
-        assert saved.slug == "original-slug"
+        assert saved.case_property == "correct_prop"
+
+    @pytest.mark.parametrize("initial_case_property", ["original_prop", None])
+    def test_case_property_is_optional(self, opportunity, initial_case_property):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property=initial_case_property)
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description, "case_property": ""},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert not saved.case_property
+
+    @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
+    def test_case_property_disabled_when_task_assigned(self, opportunity, status):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        AssignedTaskFactory(task_type=task_type, status=status)
+        form = EditTaskTypeForm(instance=task_type)
+        assert form.fields["case_property"].disabled is True
+        assert form.fields["case_property"].help_text
+
+    @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
+    def test_case_property_change_ignored_when_task_assigned(self, opportunity, status):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        AssignedTaskFactory(task_type=task_type, status=status)
+        form = EditTaskTypeForm(
+            data={"name": "New Name", "description": "New Desc", "case_property": "hacked_prop"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
         assert saved.case_property == "original_prop"
+        assert saved.name == "New Name"
+
+    def test_case_property_editable_without_assigned_tasks(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        form = EditTaskTypeForm(instance=task_type)
+        assert form.fields["case_property"].disabled is False
+        assert not form.fields["case_property"].help_text
+
+    def test_case_property_editable_when_other_task_type_assigned(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        AssignedTaskFactory(task_type=TaskTypeFactory(app=opportunity.deliver_app))
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description, "case_property": "correct_prop"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        assert form.save().case_property == "correct_prop"
+
+    def test_excludes_slug(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, slug="original-slug")
+        form = EditTaskTypeForm(
+            data={"name": "New Name", "description": "New Desc", "slug": "hacked-slug"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.slug == "original-slug"
 
 
 @pytest.mark.django_db

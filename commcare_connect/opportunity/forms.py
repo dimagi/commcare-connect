@@ -2104,15 +2104,33 @@ class EditTaskTypeForm(forms.ModelForm):
 
     class Meta:
         model = TaskType
-        fields = ["name", "description"]
+        fields = ["name", "case_property", "description"]
         widgets = {"description": forms.Textarea(attrs={"rows": 2})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.archived:
             self.fields["is_archived"].initial = True
+        if self._has_assigned_tasks():
+            self._lock_case_property()
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Field("name"),
+            Field("case_property"),
+            Field("description"),
+            Field("is_archived"),
+        )
+
+    def _has_assigned_tasks(self):
+        return bool(self.instance.pk) and AssignedTask.objects.filter(task_type=self.instance).exists()
+
+    def _lock_case_property(self):
+        field = self.fields["case_property"]
+        field.disabled = True
+        field.help_text = _(
+            "This cannot be changed because the task type has already been assigned to one or more workers."
+        )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
