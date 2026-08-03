@@ -62,6 +62,7 @@ class OpportunityFactory(DjangoModelFactory):
     country = LazyFunction(lambda: Country.objects.get(code="USA"))
     hq_server = SubFactory(HQServerFactory)
     program = SubFactory("commcare_connect.program.tests.factories.ProgramFactory")
+    supervising_organization = LazyAttribute(lambda o: o.program.organization if o.program else o.organization)
 
     class Meta:
         model = "opportunity.Opportunity"

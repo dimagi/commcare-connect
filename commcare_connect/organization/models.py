@@ -30,6 +30,7 @@ class Organization(BaseModel):
         settings.AUTH_USER_MODEL, related_name="organizations", through="UserOrganizationMembership"
     )
     program_manager = models.BooleanField(default=False)
+    funder = models.BooleanField(default=False)
     llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
 
     def save(self, *args, **kwargs):
