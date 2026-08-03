@@ -18,6 +18,11 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/tomselect.js',
     ),
+    // Loads after the tomselect bundle, which it reuses via window.TomSelect.
+    work_area_search: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/work_area_search.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
