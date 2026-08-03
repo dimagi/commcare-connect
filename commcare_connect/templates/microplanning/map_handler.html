@@ -229,14 +229,89 @@
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
             },
 
-            clearFilters() {
+            onSearchChanged() {
+                const option = this.searchSelection();
+                this.clearFilterFields();
+                if (option) this.applySearchSelection(option);
+                this.applyFilters();  // clears selectedFeature
+                if (option?.kind === 'wa') {
+                    this.showWorkAreaDetail(option.object_id);
+                }
+            },
+
+            applySearchSelection(option) {
                 const form = this.$refs.filterForm;
-                form.reset();
-                // Clear TomSelect instances
-                form.querySelectorAll('select[data-tomselect]').forEach(el => {
-                    if (el.tomselect) el.tomselect.clear();
-                });
+                if (option.kind === 'wa') {
+                    form.querySelector('[name="work_area"]').value = option.object_id;
+                    return;
+                }
+                const name = option.kind === 'wag' ? 'work_area_group' : 'implementation_area';
+                const el = form.querySelector(`select[name="${name}"]`);
+                if (el?.tomselect) el.tomselect.setValue(String(option.object_id), true);
+            },
+
+            searchSelection() {
+                const el = this.searchElement();
+                const value = el?.tomselect?.getValue();
+                return value ? el.tomselect.options[value] : null;
+            },
+
+            showWorkAreaDetail(workAreaId) {
+                const url = '{{ work_area_detail_url|escapejs }}' + workAreaId + '/';
+                fetch(url)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load work area details');
+                        return res.json();
+                    })
+                    .then((detail) => {
+                        if (this.selectedFeature) {
+                            this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                        }
+                        this.selectedFeature = { ...detail, _id: detail.id };
+                        this.setWorkAreaState(detail.id, { selected: true });
+                    })
+                    .catch(() => {
+                        this.showToast("{% translate 'Could not load work area details.' %}", true);
+                    });
+            },
+
+            onFilterChanged() {
+                this.clearSearchSelection();
                 this.applyFilters();
+            },
+
+            clearFilters() {
+                this.clearFilterFields();
+                this.clearSearchSelection();
+                this.applyFilters();
+            },
+
+            clearFilterFields() {
+                const form = this.$refs.filterForm;
+                form.querySelectorAll('select[data-tomselect]').forEach(el => {
+                    // Silent clear — a change event here would trigger onFilterChanged() and
+                    // wipe the search selection we were just asked to apply.
+                    if (el.tomselect) el.tomselect.clear(true);
+                });
+                form.querySelectorAll('select:not([data-tomselect])').forEach(el => {
+                    el.selectedIndex = 0;
+                });
+                form.querySelectorAll('input').forEach(el => {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        el.checked = false;
+                    } else {
+                        el.value = '';
+                    }
+                });
+            },
+
+            searchElement() {
+                return document.querySelector('[data-work-area-search]');
+            },
+
+            clearSearchSelection() {
+                const el = this.searchElement();
+                if (el?.tomselect) el.tomselect.clear(true);
             },
 
             // --- Assignment mode methods ---

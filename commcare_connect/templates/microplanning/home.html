@@ -9,9 +9,10 @@
   {{ block.super }}
   <script src="{% static 'bundles/js/mapbox-bundle.js' %}"></script>
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
+  <script src="{% static 'bundles/js/work_area_search-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block content %}
-  <div class="min-w-0">
+  <div class="min-w-0 mb-4">
     {% include 'components/breadcrumbs.html' with path=path %}
     <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
     <!-- Top header section -->
@@ -200,8 +201,26 @@
       <!-- Sidebars (stacked) -->
       <div class="w-full xl:w-96 shrink-0 flex flex-col gap-2 min-h-0 xl:h-full">
         {% if not assignment_mode %}
+          <aside class="bg-white shadow-md p-4 min-h-0 rounded-lg">
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="text-lg font-semibold">{% translate "Search Work Areas" %}</h2>
+              <i class="fa-solid fa-crosshairs"></i>
+            </div>
+            <div class="flex flex-col gap-2 py-4">
+              <select id="work-area-search"
+                      data-work-area-search
+                      data-options-url="{{ search_options_url }}"
+                      data-loading-text="{% translate 'Loading search options…' %}"
+                      data-ready-text="{% translate 'Search by work area, group or implementation area' %}"
+                      data-error-text="{% translate 'Search unavailable — reload the page' %}"
+                      @change="onSearchChanged()">
+                <option value=""></option>
+              </select>
+              <span class="hint">{% blocktrans %}Type a few letters and the search box will show you options for selection.{% endblocktrans %}</span>
+            </div>
+          </aside>
           <aside id="sidebar"
-                 class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0">
+                 class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0 rounded-lg">
             <div class="flex items-center justify-between mb-2">
               <h2 class="text-lg font-semibold">{% translate "Filter Map Work Areas" %}</h2>
               <div class="flex gap-4">
@@ -240,9 +259,14 @@
                        {% if not implementation_areas_present %}disabled{% endif %}>
               </span>
             </div>
-            <form x-ref="filterForm" @change.debounce.1000ms="applyFilters()">
+            <form id="map-filter-form"
+                  x-ref="filterForm"
+                  @change.debounce.1000ms="onFilterChanged()">
               {% for field in filter_form %}
-                {% if field.name == "unassigned_only" %}
+                {# Hidden field with no sidebar control of its own; the search box sets it. #}
+                {% if field.name == "work_area" %}
+                  {{ field }}
+                {% elif field.name == "unassigned_only" %}
                   <div class="mb-3 flex items-center justify-between py-2">
                     <label for="{{ field.id_for_label }}"
                            class="text-sm font-medium text-gray-700">
@@ -263,7 +287,7 @@
             </form>
           </aside>
           <aside id="lower-sidebar"
-                 class="bg-white shadow-md p-4 xl:flex-1 min-h-0 overflow-auto">
+                 class="bg-white shadow-md p-4 xl:flex-1 min-h-0 overflow-auto rounded-lg">
             {{ status_meta|json_script:"status-meta-data" }}
             <h2 class="text-lg font-semibold mb-2">{% translate "Select Work Area" %}</h2>
             <template x-if="!selectedFeature">
