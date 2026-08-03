@@ -1,127 +1,123 @@
 {% load i18n humanize %}
-{% with theme=header.theme %}
-  <div class="relative overflow-hidden rounded-xl {{ theme.hero }}"
-       x-data="{ isOpen: false, showModal: false, selectedTab: '', selectedOption: '', historyLoaded: false }"
-       x-init="$watch('showModal', value => { document.body.classList.toggle('overflow-hidden', value); if (value && !historyLoaded) { $dispatch('tabShown'); historyLoaded = true; } })">
-    {% if theme.overlay %}<div class="pointer-events-none absolute inset-0 bg-black/18"></div>{% endif %}
-    <div class="relative flex flex-wrap items-start gap-8 px-6 pt-5 pb-4.5">
-      <div class="min-w-80 flex-1">
-        {% if object.program %}
-          <div class="mb-2 flex items-center gap-2.5">
-            <i class="fa-solid fa-table-columns text-[11px] {{ theme.eyebrow }}"></i>
-            {% if request.is_opportunity_pm %}
-              <a href="{% url 'program:opportunity_list' request.org.slug object.program.program_id %}"
-                 class="text-xs font-medium {{ theme.eyebrow }}">{{ object.program.name }}</a>
-            {% else %}
-              <span class="text-xs font-medium {{ theme.eyebrow }}">{{ object.program.name }}</span>
-            {% endif %}
-          </div>
-        {% endif %}
-        <div class="mb-2 flex flex-wrap items-center gap-3">
-          <h1 class="m-0 text-2xl leading-[1.15] font-semibold tracking-[-.01em] {{ theme.title }}">{{ object.name }}</h1>
-          {% if object.is_active %}
-            <span class="opp-header-badge positive-light">
-              <span class="h-1.5 w-1.5 rounded-full bg-green-600"></span>{% translate "Active" %}
-            </span>
+<div class="opp-header {% if object.is_test %}opp-header--test{% endif %} {% if not object.is_active %}opp-header--inactive{% endif %}"
+     x-data="{ isOpen: false, showModal: false, selectedTab: '', selectedOption: '', historyLoaded: false }"
+     x-init="$watch('showModal', value => { document.body.classList.toggle('overflow-hidden', value); if (value && !historyLoaded) { $dispatch('tabShown'); historyLoaded = true; } })">
+  <div class="opp-header-overlay"></div>
+  <div class="relative flex flex-wrap items-start gap-8 px-6 pt-5 pb-4.5">
+    <div class="min-w-80 flex-1">
+      {% if object.program %}
+        <div class="mb-2 flex items-center gap-2.5">
+          <i class="opp-header-accent fa-solid fa-table-columns text-[11px]"></i>
+          {% if request.is_opportunity_pm %}
+            <a href="{% url 'program:opportunity_list' request.org.slug object.program.program_id %}"
+               class="opp-header-accent text-xs font-medium">{{ object.program.name }}</a>
           {% else %}
-            <span class="opp-header-badge negative-light">
-              <span class="h-1.5 w-1.5 rounded-full bg-red-600"></span>{% translate "Inactive" %}
-            </span>
-          {% endif %}
-          {% if object.is_test %}
-            <span class="opp-header-badge warning-light">
-              <i class="fa-solid fa-flask text-[9px]"></i>{% translate "Test" %}
-            </span>
-          {% endif %}
-          {% if header.ended_date %}
-            <span class="text-[11.5px] {{ theme.ended_note }}">{% blocktranslate with ended_date=header.ended_date|date:"d M Y" %}Ended {{ ended_date }}{% endblocktranslate %}</span>
+            <span class="opp-header-accent text-xs font-medium">{{ object.program.name }}</span>
           {% endif %}
         </div>
-        {% if object.description %}
-          <p class="m-0 max-w-[760px] text-[13px] leading-[1.55] {{ theme.description }}"
-             style="text-wrap:pretty">{{ object.description }}</p>
-        {% endif %}
-      </div>
-      <div class="flex flex-none flex-col items-end gap-3">
-        {% if not request.org_membership.is_viewer %}
-          <div class="flex gap-2">
-            {% if request.is_opportunity_pm and not header.is_inactive %}
-              <a href="{% url 'opportunity:edit' request.org.slug object.opportunity_id %}"
-                 class="opp-header-action {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
-                <i class="fa-solid fa-pen-to-square text-[12px]"></i>{% translate "Edit" %}
-              </a>
-            {% endif %}
-            <button type="button"
-                    @click="isOpen = !isOpen"
-                    aria-label="{% translate 'More actions' %}"
-                    class="relative opp-header-action-icon {{ theme.btn_border }} {{ theme.btn_bg }} {{ theme.btn_text }} {{ theme.btn_hover }}">
-              <i class="fa-solid fa-ellipsis text-[13px]"></i>
-            </button>
-            {% include "opportunity/opportunity_menu.html" with opportunity=object %}
-          </div>
-        {% endif %}
-        <div x-cloak class="flex gap-2">
-          {% for resource in header.resources %}
-            <span class="opp-header-counter {{ theme.counter_bg }} {{ theme.counter_border }} {{ theme.counter_text }}"
-                  @click="showModal = true; selectedTab = '{{ resource.tab }}'; selectedOption = '{{ resource.tab }}'">
-              <i class="fa-solid {{ resource.icon }} text-[11px] {{ theme.counter_icon }}"></i>{{ resource.name }}<span class="font-semibold opacity-75">{{ resource.count }}</span>
-            </span>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-    {% include "opportunity/opportunity_resource_modal.html" with opportunity=object %}
-    <div class="relative mx-3 mb-3 grid grid-cols-3 rounded-[10px] xl:grid-cols-[1.25fr_1.6fr_1fr_1fr_1.15fr] {{ theme.well }}">
-      <div class="opp-header-metric-cell">
-        <div class="opp-header-metric-label {{ theme.eyebrow }}">{% translate "Delivery Type" %}</div>
-        <div class="opp-header-metric-value {{ theme.value }}">{{ object.delivery_type.name|default:"—" }}</div>
-      </div>
-      <div class="opp-header-metric-cell border-l {{ theme.divider }}">
-        <div class="opp-header-metric-label {{ theme.eyebrow }}">{% translate "Delivery Window" %}</div>
-        <div class="opp-header-metric-value mb-1.5 {{ theme.value }}">
-          {{ object.start_date|date:"d M Y" }} → {{ object.end_date|date:"d M Y" }}
-          <span class="opp-header-metric-subvalue {{ theme.subvalue }}">
-            {% if header.window.closed %}
-              · {% translate "Closed" %}
-            {% elif header.window.months_left %}
-              · {% blocktranslate count months=header.window.months_left %}{{ months }} month left{% plural %}{{ months }} months left{% endblocktranslate %}
-            {% endif %}
+      {% endif %}
+      <div class="mb-2 flex flex-wrap items-center gap-3">
+        <h1 class="opp-header-title m-0 text-2xl leading-[1.15] font-semibold tracking-[-.01em]">{{ object.name }}</h1>
+        {% if object.is_active %}
+          <span class="opp-header-badge positive-light">
+            <span class="h-1.5 w-1.5 rounded-full bg-green-600"></span>{% translate "Active" %}
           </span>
-        </div>
-        <div class="opp-header-bar-track {{ theme.track }}">
-          <div class="opp-header-bar-fill {{ theme.bar_fill }}"
-               style="width: {{ header.window.pct }}%"></div>
-        </div>
+        {% else %}
+          <span class="opp-header-badge negative-light">
+            <span class="h-1.5 w-1.5 rounded-full bg-red-600"></span>{% translate "Inactive" %}
+          </span>
+        {% endif %}
+        {% if object.is_test %}
+          <span class="opp-header-badge warning-light">
+            <i class="fa-solid fa-flask text-[9px]"></i>{% translate "Test" %}
+          </span>
+        {% endif %}
+        {% if header.ended_date %}
+          <span class="opp-header-ended-note text-[11.5px]">{% blocktranslate with ended_date=header.ended_date|date:"d M Y" %}Ended {{ ended_date }}{% endblocktranslate %}</span>
+        {% endif %}
       </div>
-      {% for metric in header.metrics %}
-        <div class="opp-header-metric-cell {% if forloop.first %}border-l{% else %}xl:border-l{% endif %} {{ theme.divider }}">
-          <div class="opp-header-metric-label {{ theme.eyebrow }}">{{ metric.label }}</div>
-          <div class="opp-header-metric-value mb-1.5 {{ theme.value }}">
-            {{ metric.actual|intcomma }} <span class="opp-header-metric-subvalue {{ theme.subvalue }}">/ {{ metric.cap|intcomma }}</span>
-          </div>
-          <div class="opp-header-bar-track {{ theme.track }}">
-            <div class="opp-header-bar-fill {{ theme.bar_fill }}"
-                 style="width: {{ metric.pct }}%"></div>
-          </div>
-        </div>
-        {% if forloop.first %}<div class="col-span-3 h-px xl:hidden {{ theme.divider }}"></div>{% endif %}
-      {% endfor %}
-      <div class="opp-header-metric-cell border-l {{ theme.divider }}">
-        <div class="opp-header-metric-label {{ theme.eyebrow }}">
-          {% if object.currency_code %}
-            {% translate "Budget" %} ({{ object.currency_code }})
-          {% else %}
-            {% translate "Budget" %}
+      {% if object.description %}
+        <p class="opp-header-description m-0 max-w-[760px] text-[13px] leading-[1.55]"
+           style="text-wrap:pretty">{{ object.description }}</p>
+      {% endif %}
+    </div>
+    <div class="flex flex-none flex-col items-end gap-3">
+      {% if not request.org_membership.is_viewer %}
+        <div class="flex gap-2">
+          {% if request.is_opportunity_pm and object.is_active %}
+            <a href="{% url 'opportunity:edit' request.org.slug object.opportunity_id %}"
+               class="opp-header-action">
+              <i class="fa-solid fa-pen-to-square text-[12px]"></i>{% translate "Edit" %}
+            </a>
           {% endif %}
+          <button type="button"
+                  @click="isOpen = !isOpen"
+                  aria-label="{% translate 'More actions' %}"
+                  class="relative opp-header-action-icon">
+            <i class="fa-solid fa-ellipsis text-[13px]"></i>
+          </button>
+          {% include "opportunity/opportunity_menu.html" with opportunity=object %}
         </div>
-        <div class="opp-header-metric-value mb-1.5 {{ theme.value }}">
-          {{ header.budget.actual|intcomma }} <span class="opp-header-metric-subvalue {{ theme.subvalue }}">/ {{ header.budget.cap|intcomma }}</span>
-        </div>
-        <div class="opp-header-bar-track {{ theme.track }}">
-          <div class="opp-header-bar-fill {{ theme.bar_fill_budget }}"
-               style="width: {{ header.budget.pct }}%"></div>
-        </div>
+      {% endif %}
+      <div x-cloak class="flex gap-2">
+        {% for resource in header.resources %}
+          <span class="opp-header-counter"
+                @click="showModal = true; selectedTab = '{{ resource.tab }}'; selectedOption = '{{ resource.tab }}'">
+            <i class="opp-header-counter-icon fa-solid {{ resource.icon }} text-[11px]"></i>{{ resource.name }}<span class="font-semibold opacity-75">{{ resource.count }}</span>
+          </span>
+        {% endfor %}
       </div>
     </div>
   </div>
-{% endwith %}
+  {% include "opportunity/opportunity_resource_modal.html" with opportunity=object %}
+  <div class="opp-header-well relative mx-3 mb-3 grid grid-cols-3 rounded-[10px] xl:grid-cols-[1.25fr_1.6fr_1fr_1fr_1.15fr]">
+    <div class="opp-header-metric-cell">
+      <div class="opp-header-accent opp-header-metric-label">{% translate "Delivery Type" %}</div>
+      <div class="opp-header-metric-value">{{ object.delivery_type.name|default:"—" }}</div>
+    </div>
+    <div class="opp-header-divider opp-header-metric-cell border-l">
+      <div class="opp-header-accent opp-header-metric-label">{% translate "Delivery Window" %}</div>
+      <div class="opp-header-metric-value mb-1.5">
+        {{ object.start_date|date:"d M Y" }} → {{ object.end_date|date:"d M Y" }}
+        <span class="opp-header-metric-subvalue">
+          {% if header.window.closed %}
+            · {% translate "Closed" %}
+          {% elif header.window.months_left %}
+            · {% blocktranslate count months=header.window.months_left %}{{ months }} month left{% plural %}{{ months }} months left{% endblocktranslate %}
+          {% endif %}
+        </span>
+      </div>
+      <div class="opp-header-bar-track">
+        <div class="opp-header-bar-fill" style="width: {{ header.window.pct }}%"></div>
+      </div>
+    </div>
+    {% for metric in header.metrics %}
+      <div class="opp-header-divider opp-header-metric-cell {% if forloop.first %}border-l{% else %}xl:border-l{% endif %}">
+        <div class="opp-header-accent opp-header-metric-label">{{ metric.label }}</div>
+        <div class="opp-header-metric-value mb-1.5">
+          {{ metric.actual|intcomma }} <span class="opp-header-metric-subvalue">/ {{ metric.cap|intcomma }}</span>
+        </div>
+        <div class="opp-header-bar-track">
+          <div class="opp-header-bar-fill" style="width: {{ metric.pct }}%"></div>
+        </div>
+      </div>
+      {% if forloop.first %}<div class="opp-header-divider col-span-3 h-px xl:hidden"></div>{% endif %}
+    {% endfor %}
+    <div class="opp-header-divider opp-header-metric-cell border-l">
+      <div class="opp-header-accent opp-header-metric-label">
+        {% if object.currency_code %}
+          {% translate "Budget" %} ({{ object.currency_code }})
+        {% else %}
+          {% translate "Budget" %}
+        {% endif %}
+      </div>
+      <div class="opp-header-metric-value mb-1.5">
+        {{ header.budget.actual|intcomma }} <span class="opp-header-metric-subvalue">/ {{ header.budget.cap|intcomma }}</span>
+      </div>
+      <div class="opp-header-bar-track">
+        <div class="opp-header-bar-fill opp-header-bar-fill--budget"
+             style="width: {{ header.budget.pct }}%"></div>
+      </div>
+    </div>
+  </div>
+</div>

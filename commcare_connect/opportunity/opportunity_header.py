@@ -5,105 +5,20 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import DeliverUnit, LearnModule, Opportunity, OpportunityAccess
 
-# Tailwind color classes for every themed element of the opportunity header, layered on top of
-# the structural `.opp-header-*` classes in tailwind.css. "live"/"test" = surface theme
-# (Opportunity.is_test); "inactive" holds only the values that change on top of "active".
-_THEME = {
-    "live": {
-        "active": {
-            "hero": "bg-brand-deep-purple",
-            "overlay": False,
-            "eyebrow": "text-brand-sky",
-            "title": "text-white",
-            "description": "text-white/72",
-            "well": "bg-black/20",
-            "divider": "border-white/20",
-            "track": "bg-white/18",
-            "value": "text-white",
-            "subvalue": "text-white/55",
-            "counter_bg": "bg-white/10",
-            "counter_border": "border-white/22",
-            "counter_text": "text-white",
-            "counter_icon": "text-brand-sky",
-            "btn_border": "border-white/28",
-            "btn_bg": "bg-white/8",
-            "btn_text": "text-white",
-            "btn_hover": "hover:bg-white/20",
-            "bar_fill": "bg-brand-sky",
-            "bar_fill_budget": "bg-brand-marigold",
-            "ended_note": "text-white/50",
-        },
-        "inactive": {
-            "overlay": True,
-            "title": "text-white/82",
-            "description": "text-white/60",
-            "track": "bg-white/16",
-            "value": "text-white/85",
-            "subvalue": "text-white/50",
-            "counter_bg": "bg-white/8",
-            "counter_border": "border-white/18",
-            "counter_text": "text-white/80",
-            "bar_fill": "bg-white/45",
-            "bar_fill_budget": "bg-white/45",
-        },
-    },
-    "test": {
-        "active": {
-            "hero": "bg-white border border-brand-border-light",
-            "overlay": False,
-            "eyebrow": "text-brand-indigo",
-            "title": "text-brand-deep-purple",
-            "description": "text-gray-500",
-            "well": "bg-slate-50",
-            "divider": "border-slate-200",
-            "track": "bg-slate-200",
-            "value": "text-brand-deep-purple",
-            "subvalue": "text-slate-400",
-            "counter_bg": "bg-brand-indigo",
-            "counter_border": "border-brand-indigo",
-            "counter_text": "text-white",
-            "counter_icon": "text-white",
-            "btn_border": "border-gray-400",
-            "btn_bg": "bg-gray-50",
-            "btn_text": "text-brand-deep-purple",
-            "btn_hover": "hover:bg-slate-100",
-            "bar_fill": "bg-brand-indigo",
-            "bar_fill_budget": "bg-brand-marigold",
-            "ended_note": "text-slate-400",
-        },
-        "inactive": {
-            "hero": "bg-gray-50 border border-brand-border-light",
-            "eyebrow": "text-slate-400",
-            "title": "text-gray-500",
-            "description": "text-slate-400",
-            "well": "bg-slate-100",
-            "value": "text-gray-500",
-            "counter_bg": "bg-indigo-100",
-            "counter_border": "border-indigo-100",
-            "counter_text": "text-indigo-600",
-            "counter_icon": "text-indigo-600",
-            "bar_fill": "bg-slate-300",
-            "bar_fill_budget": "bg-slate-300",
-        },
-    },
-}
-
 
 def get_opportunity_header_context(opportunity: Opportunity) -> dict:
-    is_inactive = not opportunity.is_active
-    surface = "test" if opportunity.is_test else "live"
-    theme = {**_THEME[surface]["active"], **_THEME[surface]["inactive"]} if is_inactive else _THEME[surface]["active"]
-
     access_stats = OpportunityAccess.objects.filter(opportunity=opportunity).aggregate(
         workers_actual=Count("id", filter=Q(accepted=True)),
         budget_actual=Sum("payment_accrued"),
     )
     workers_actual = access_stats["workers_actual"]
     deliveries_actual = opportunity.approved_visits
+    # number_of_users can be fractional when the budget doesn't divide evenly across workers;
+    # floor it first so the service-deliveries cap scales off a whole worker count too, rather
+    # than off number_of_users' raw fraction.
+    workers_cap = int(opportunity.number_of_users)
 
     return {
-        "theme": theme,
-        "is_inactive": is_inactive,
         "ended_date": opportunity.end_date if opportunity.has_ended else None,
         "resources": [
             {
@@ -127,8 +42,11 @@ def get_opportunity_header_context(opportunity: Opportunity) -> dict:
         ],
         "window": _delivery_window(opportunity.start_date, opportunity.end_date, datetime.date.today()),
         "metrics": [
-            {"label": _("Connect Workers"), **_ratio(workers_actual, opportunity.number_of_users)},
-            {"label": _("Service Deliveries"), **_ratio(deliveries_actual, opportunity.allotted_visits)},
+            {"label": _("Connect Workers"), **_ratio(workers_actual, workers_cap)},
+            {
+                "label": _("Service Deliveries"),
+                **_ratio(deliveries_actual, workers_cap * opportunity.max_visits_per_user),
+            },
         ],
         "budget": _ratio(access_stats["budget_actual"] or 0, opportunity.total_budget),
     }

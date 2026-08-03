@@ -853,22 +853,153 @@ select:disabled,
   }
 }
 
-/*--- Opportunity header ------------------------- */
+/*--- Opportunity header -------------------------
+   State lives on the root `.opp-header` element as plain modifier classes
+   (`--test`, `--inactive`) driven straight from the raw `is_test`/`is_active`
+   data; every themed descendant just reads the CSS variables that modifier
+   sets, so the template/CSS decide how to render rather than being handed a
+   pre-resolved theme object. ------------------------- */
 @layer components {
+  .opp-header {
+    --opp-hero-bg: var(--color-brand-deep-purple);
+    --opp-hero-border: transparent;
+    --opp-accent: var(--color-brand-sky);
+    --opp-title: #fff;
+    --opp-description: rgb(255 255 255 / 72%);
+    --opp-well-bg: rgb(0 0 0 / 20%);
+    --opp-divider: rgb(255 255 255 / 20%);
+    --opp-track-bg: rgb(255 255 255 / 18%);
+    --opp-value: #fff;
+    --opp-subvalue: rgb(255 255 255 / 55%);
+    --opp-counter-bg: rgb(255 255 255 / 10%);
+    --opp-counter-border: rgb(255 255 255 / 22%);
+    --opp-counter-text: #fff;
+    --opp-counter-icon: var(--color-brand-sky);
+    --opp-btn-border: rgb(255 255 255 / 28%);
+    --opp-btn-bg: rgb(255 255 255 / 8%);
+    --opp-btn-text: #fff;
+    --opp-btn-hover-bg: rgb(255 255 255 / 20%);
+    --opp-bar-fill: var(--color-brand-sky);
+    --opp-bar-fill-budget: var(--color-brand-marigold);
+    --opp-ended-note: rgb(255 255 255 / 50%);
+
+    @apply relative overflow-hidden rounded-xl;
+    background: var(--opp-hero-bg);
+    border: 1px solid var(--opp-hero-border);
+  }
+
+  .opp-header--test {
+    --opp-hero-border: var(--color-brand-border-light);
+    --opp-accent: var(--color-brand-indigo);
+    --opp-title: var(--color-brand-deep-purple);
+    --opp-description: #6b7280;
+    --opp-well-bg: #f8fafc;
+    --opp-divider: #e2e8f0;
+    --opp-track-bg: #e2e8f0;
+    --opp-value: var(--color-brand-deep-purple);
+    --opp-subvalue: #94a3b8;
+    --opp-counter-bg: var(--color-brand-indigo);
+    --opp-counter-border: var(--color-brand-indigo);
+    --opp-counter-text: #fff;
+    --opp-counter-icon: #fff;
+    --opp-btn-border: #9ca3af;
+    --opp-btn-bg: #f9fafb;
+    --opp-btn-text: var(--color-brand-deep-purple);
+    --opp-btn-hover-bg: #f1f5f9;
+    --opp-bar-fill: var(--color-brand-indigo);
+    --opp-ended-note: #94a3b8;
+    background: #fff;
+  }
+
+  .opp-header--inactive {
+    --opp-title: rgb(255 255 255 / 82%);
+    --opp-description: rgb(255 255 255 / 60%);
+    --opp-track-bg: rgb(255 255 255 / 16%);
+    --opp-value: rgb(255 255 255 / 85%);
+    --opp-subvalue: rgb(255 255 255 / 50%);
+    --opp-counter-bg: rgb(255 255 255 / 8%);
+    --opp-counter-border: rgb(255 255 255 / 18%);
+    --opp-counter-text: rgb(255 255 255 / 80%);
+    --opp-bar-fill: rgb(255 255 255 / 45%);
+    --opp-bar-fill-budget: rgb(255 255 255 / 45%);
+  }
+
+  .opp-header--test.opp-header--inactive {
+    --opp-accent: #94a3b8;
+    --opp-title: #6b7280;
+    --opp-description: #94a3b8;
+    --opp-well-bg: #f1f5f9;
+    --opp-value: #6b7280;
+    --opp-counter-bg: #e0e7ff;
+    --opp-counter-border: #e0e7ff;
+    --opp-counter-text: #4f46e5;
+    --opp-counter-icon: #4f46e5;
+    --opp-bar-fill: #cbd5e1;
+    --opp-bar-fill-budget: #cbd5e1;
+    background: #f9fafb;
+  }
+
+  .opp-header-overlay {
+    @apply pointer-events-none absolute inset-0 hidden;
+    background: rgb(0 0 0 / 18%);
+  }
+
+  .opp-header--inactive:not(.opp-header--test) .opp-header-overlay {
+    @apply block;
+  }
+
+  .opp-header-accent {
+    color: var(--opp-accent);
+  }
+
+  .opp-header-title {
+    color: var(--opp-title);
+  }
+
+  .opp-header-description {
+    color: var(--opp-description);
+  }
+
+  .opp-header-well {
+    background: var(--opp-well-bg);
+  }
+
+  .opp-header-divider {
+    border-color: var(--opp-divider);
+  }
+
   .opp-header-badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold;
   }
 
   .opp-header-action {
     @apply inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-[13px] font-medium transition-all duration-300;
+    background: var(--opp-btn-bg);
+    border-color: var(--opp-btn-border);
+    color: var(--opp-btn-text);
   }
 
   .opp-header-action-icon {
     @apply inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border transition-all duration-300;
+    background: var(--opp-btn-bg);
+    border-color: var(--opp-btn-border);
+    color: var(--opp-btn-text);
+  }
+
+  .opp-header-action:hover,
+  .opp-header-action-icon:hover {
+    background: var(--opp-btn-hover-bg);
   }
 
   .opp-header-counter {
     @apply inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[12.5px] font-medium;
+    background: var(--opp-counter-bg);
+    border-color: var(--opp-counter-border);
+    color: var(--opp-counter-text);
+  }
+
+  .opp-header-counter-icon {
+    color: var(--opp-counter-icon);
   }
 
   .opp-header-metric-cell {
@@ -881,17 +1012,29 @@ select:disabled,
 
   .opp-header-metric-value {
     @apply text-sm font-medium;
+    color: var(--opp-value);
   }
 
   .opp-header-metric-subvalue {
     @apply text-[12.5px] font-normal;
+    color: var(--opp-subvalue);
   }
 
   .opp-header-bar-track {
     @apply h-[3px] rounded-[2px];
+    background: var(--opp-track-bg);
   }
 
   .opp-header-bar-fill {
     @apply h-full rounded-[2px];
+    background: var(--opp-bar-fill);
+  }
+
+  .opp-header-bar-fill--budget {
+    background: var(--opp-bar-fill-budget);
+  }
+
+  .opp-header-ended-note {
+    color: var(--opp-ended-note);
   }
 }
