@@ -303,7 +303,10 @@ class ExchangeRateFactory(DjangoModelFactory):
 
 class CompletedWorkInvoiceFactory(DjangoModelFactory):
     invoice = SubFactory(PaymentInvoiceFactory)
-    completed_work = SubFactory(CompletedWorkFactory)
+    completed_work = SubFactory(
+        CompletedWorkFactory,
+        opportunity_access__opportunity=SelfAttribute("...invoice.opportunity"),
+    )
     month = LazyFunction(lambda: date.today().replace(day=1))
     billed_count = 1
     flw_amount_local = 0
