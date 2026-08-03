@@ -1314,6 +1314,10 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert response.context["opportunity"].id == opportunity.id
         assert response.context["is_service_delivery"] is True
 
+        content = response.content.decode()
+        assert "Number Approved" in content
+        assert 'id="invoice-line-items-wrapper"' not in content
+
         path = response.context["path"]
         assert len(path) == 4
         assert path[0]["title"] == "Opportunities"

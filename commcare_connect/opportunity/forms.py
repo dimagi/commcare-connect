@@ -1948,58 +1948,10 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
     @property
     def line_items(self):
-        if self.line_items_table:
-            table = HTML(
-                """
-                {% load django_tables2 %}
-                <div class="overflow-x-auto mb-4">
-                    {% render_table form.line_items_table %}
-                </div>
-                """
-            )
-        else:
-            # The wrapper fetch is the only source of the amount, so show an error if it fails.
-            table = HTML(
-                """
-                {% load i18n %}
-                <div x-show="lineItemsError"
-                  x-cloak
-                  role="alert"
-                  class="flex items-center justify-between p-4 mb-4 rounded-lg border-[0.5px]
-                         bg-message-error text-message-error-text border-message-error-border">
-                  <div class="flex items-center gap-2">
-                    <i class="fa-solid fa-circle-exclamation"></i>
-                    <span>
-                      {% translate "Could not load the deliveries for this period, so the amount is unavailable." %}
-                    </span>
-                  </div>
-                  <button type="button"
-                          class="button button-md outline-style ml-4"
-                          @click="fetchInvoiceLineItems()">
-                    {% translate "Retry" %}
-                  </button>
-                </div>
-                <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
-            """
-            )
-
+        # The wrapper fetch is the only source of the amount, so show an error if it fails.
         return Fieldset(
             "Line Items",
-            table,
-            HTML(
-                """
-                <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
-                    <a type="button"
-                    class="button button-md outline-style"
-                    :href="downloadLineItemsUrl()"
-                    target="_blank"
-                    >
-                        <i class="fa-solid fa-download mr-2"></i>
-                        {% load i18n %}{% translate "Download All Items" %}
-                    </a>
-                </div>
-                """
-            ),
+            HTML('{% include "opportunity/partials/invoice_line_items_fieldset.html" %}'),
         )
 
 
