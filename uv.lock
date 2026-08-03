@@ -525,7 +525,7 @@ dev = [
     { name = "pytest-httpx", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.15.17" },
     { name = "watchfiles", specifier = ">=0.19.0" },
-    { name = "werkzeug", extras = ["watchdog"], specifier = ">=2.3.7" },
+    { name = "werkzeug", extras = ["watchdog"], specifier = ">=3.1.8" },
     { name = "xml2json", git = "https://github.com/dimagi/xml2json?rev=041b1ef" },
 ]
 production = [
