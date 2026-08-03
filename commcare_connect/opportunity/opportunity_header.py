@@ -1,6 +1,5 @@
-import datetime
-
 from django.db.models import Count, Q, Sum
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import DeliverUnit, LearnModule, Opportunity, OpportunityAccess
@@ -40,7 +39,7 @@ def get_opportunity_header_context(opportunity: Opportunity) -> dict:
                 "count": opportunity.paymentunit_set.count(),
             },
         ],
-        "window": _delivery_window(opportunity.start_date, opportunity.end_date, datetime.date.today()),
+        "window": _delivery_window(opportunity.start_date, opportunity.end_date, now().date()),
         "metrics": [
             {"label": _("Connect Workers"), **_ratio(workers_actual, workers_cap)},
             {

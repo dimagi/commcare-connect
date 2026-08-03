@@ -894,10 +894,10 @@ select:disabled,
     --opp-title: var(--color-brand-deep-purple);
     --opp-description: #6b7280;
     --opp-well-bg: #f8fafc;
-    --opp-divider: #e2e8f0;
-    --opp-track-bg: #e2e8f0;
+    --opp-divider: var(--color-brand-border-light);
+    --opp-track-bg: var(--color-brand-border-light);
     --opp-value: var(--color-brand-deep-purple);
-    --opp-subvalue: #94a3b8;
+    --opp-subvalue: var(--color-brand-blue-light);
     --opp-counter-bg: var(--color-brand-indigo);
     --opp-counter-border: var(--color-brand-indigo);
     --opp-counter-text: #fff;
@@ -907,7 +907,7 @@ select:disabled,
     --opp-btn-text: var(--color-brand-deep-purple);
     --opp-btn-hover-bg: #f1f5f9;
     --opp-bar-fill: var(--color-brand-indigo);
-    --opp-ended-note: #94a3b8;
+    --opp-ended-note: var(--color-brand-blue-light);
     background: #fff;
   }
 
@@ -925,9 +925,9 @@ select:disabled,
   }
 
   .opp-header--test.opp-header--inactive {
-    --opp-accent: #94a3b8;
+    --opp-accent: var(--color-brand-blue-light);
     --opp-title: #6b7280;
-    --opp-description: #94a3b8;
+    --opp-description: var(--color-brand-blue-light);
     --opp-well-bg: #f1f5f9;
     --opp-value: #6b7280;
     --opp-counter-bg: #e0e7ff;

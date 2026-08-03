@@ -1,4 +1,6 @@
 {% load i18n humanize %}
+{# .opp-header--test / .opp-header--inactive set the CSS custom properties every themed #}
+{# .opp-header-* class below reads from -- see tailwind/tailwind.css "Opportunity header". #}
 <div class="opp-header {% if object.is_test %}opp-header--test{% endif %} {% if not object.is_active %}opp-header--inactive{% endif %}"
      x-data="{ isOpen: false, showModal: false, selectedTab: '', selectedOption: '', historyLoaded: false }"
      x-init="$watch('showModal', value => { document.body.classList.toggle('overflow-hidden', value); if (value && !historyLoaded) { $dispatch('tabShown'); historyLoaded = true; } })">
