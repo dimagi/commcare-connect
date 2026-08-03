@@ -890,6 +890,29 @@ class TestWorkAreaMapFilterSet:
         result = self._filter_ids({"unassigned_only": "True"}, opportunity)
         assert result == {work_areas.wa_unassigned.id}
 
+    def test_work_area_filter(self, opportunity, work_areas):
+        """Picking a work area in the search box narrows to just that one. Groups and
+        implementation areas reuse the sidebar's own filters, so they need no equivalent here."""
+        result = self._filter_ids({"work_area": work_areas.wa_visited.id}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_work_area_filter_ignores_empty_value(self, opportunity, work_areas):
+        """The hidden input is submitted on every filter change, so a blank value has to be a
+        no-op rather than an error that empties the map."""
+        expected = {work_areas.wa_not_visited.id, work_areas.wa_visited.id, work_areas.wa_unassigned.id}
+        assert self._filter_ids({"work_area": ""}, opportunity) == expected
+
+    def test_work_area_filter_matches_nothing_for_another_opportunitys_area(self, opportunity, work_areas):
+        other_work_area = WorkAreaFactory()
+
+        assert self._filter_ids({"work_area": other_work_area.id}, opportunity) == set()
+
+    def test_work_area_filter_combines_with_status(self, opportunity, work_areas):
+        result = self._filter_ids(
+            {"work_area": work_areas.wa_visited.id, "status": [WorkAreaStatus.NOT_VISITED]}, opportunity
+        )
+        assert result == set()
+
 
 @pytest.mark.django_db
 class TestUserVisitVectorLayer:
