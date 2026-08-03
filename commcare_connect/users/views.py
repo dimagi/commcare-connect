@@ -45,7 +45,7 @@ from commcare_connect.utils.permission_const import (
     PRODUCT_FEATURES_ACCESS,
 )
 
-from .helpers import create_hq_user_and_link
+from .helpers import InvalidProfileUpdate, create_hq_user_and_link, update_user_profile
 from .models import ConnectIDUserLink
 
 User = get_user_model()
@@ -304,6 +304,18 @@ class ResendInvitesView(ClientProtectedResourceMixin, View):
         for opp_id in opps:
             update_user_and_send_invite(user, opp_id)
         return HttpResponse(status=200)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class UpdateUserProfileView(ClientProtectedResourceMixin, View):
+    """Called by PersonalID when a user changes their profile."""
+
+    def post(self, request, *args, **kwargs):
+        try:
+            updated = update_user_profile(request.POST.get("username"), request.POST.get("name"))
+        except InvalidProfileUpdate:
+            return JsonResponse({"error": "invalid username or name"}, status=400)
+        return JsonResponse({"updated": updated})
 
 
 class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
