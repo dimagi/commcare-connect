@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             backfill_supervising_organization,
             migrations.RunPython.noop,
-            hints={"run_on_secondary": False},
+            hints={"run_on_secondary": True},
         ),
         # Step 3: enforce non-null now that every row has a value.
         migrations.AlterField(
