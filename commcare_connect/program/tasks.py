@@ -286,7 +286,7 @@ def send_pm_invoice_review_reminder():
 
 
 def _send_pm_invoice_review_reminder_email(pm_org, invoices):
-    recipient_emails = pm_org.get_member_emails()
+    recipient_emails = pm_org.get_member_emails(exclude_viewer=True)
     if not recipient_emails:
         return
 
