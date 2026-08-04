@@ -10,6 +10,7 @@ from django.core.management.base import CommandError
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
 from commcare_connect.users.management.commands.backfill_hq_user_uuid import Command
+from commcare_connect.users.management.commands.refresh_worker_names import DEFAULT_BATCH_SIZE
 from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MobileUserFactory
 
 FETCH_HQ_USER_UUIDS = "commcare_connect.users.management.commands.backfill_hq_user_uuid.fetch_hq_user_uuids"
@@ -215,6 +216,30 @@ class TestRefreshWorkerNames:
         unchanged.refresh_from_db()
         assert renamed.name == "New Name"
         assert unchanged.name == "Same Name"
+
+    @pytest.mark.parametrize(
+        "batch_size,expected_queries",
+        [
+            pytest.param(DEFAULT_BATCH_SIZE, 2, id="one_batch"),
+            pytest.param(2, 3, id="two_batches"),
+            pytest.param(1, 4, id="one_batch_per_worker"),
+        ],
+    )
+    def test_saves_each_batch_in_a_single_update(self, django_assert_num_queries, batch_size, expected_queries):
+        workers = [_worker(f"+1555010{i}", "Old Name") for i in range(3)]
+        by_phone = {worker.phone_number: worker for worker in workers}
+
+        def fetch(phone_numbers):
+            return [_connectid_user(by_phone[phone], f"New Name {phone}") for phone in phone_numbers]
+
+        with mock.patch(FETCH_USERS, side_effect=fetch):
+            # One SELECT for the workers, then one UPDATE per lookup batch — never one per worker.
+            with django_assert_num_queries(expected_queries):
+                call_command("refresh_worker_names", batch_size=batch_size, stdout=StringIO())
+
+        for phone, worker in by_phone.items():
+            worker.refresh_from_db()
+            assert worker.name == f"New Name {phone}"
 
     @pytest.mark.parametrize("batch_size", [0, -1])
     def test_batch_size_below_one_is_rejected_before_any_lookup(self, batch_size):

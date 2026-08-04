@@ -12,17 +12,21 @@ recurring run to find; rerun it manually if pushes are ever known to have been l
 Flow:
 1. Collect users who have at least one OpportunityAccess (only those appear on Connect web).
 2. Skip any without a phone number, since PersonalID's fetch_users is keyed by phone number.
-3. Look names up in batches (--batch-size, default 100) and update the ones that differ.
+3. Look names up in batches (--batch-size, default 100) and save the ones that differ with a
+   single bulk update per batch.
 """
 
 from django.core.management.base import BaseCommand, CommandError
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.users.helpers import InvalidProfileUpdate, update_user_profile
+from commcare_connect.users.helpers import NAME_MAX_LENGTH
 from commcare_connect.users.models import User
 from commcare_connect.utils.itertools import batched
 
 DEFAULT_BATCH_SIZE = 100
+# --batch-size sizes the PersonalID lookup; cap the UPDATE separately so a large lookup batch
+# doesn't turn into one enormous CASE WHEN statement.
+UPDATE_BATCH_SIZE = 500
 
 
 class Command(BaseCommand):
@@ -77,28 +81,40 @@ class Command(BaseCommand):
             return
 
         found_phone_numbers = set()
+        to_update = []
         for connectid_user in found_users:
             found_phone_numbers.add(connectid_user.phone_number)
             for user in users_by_phone.get(connectid_user.phone_number, []):
-                self._refresh_user(user, connectid_user, totals, dry_run)
+                if self._stage_update(user, connectid_user.name, totals, dry_run):
+                    to_update.append(user)
         totals["not_found"] += len(set(batch) - found_phone_numbers)
 
-    def _refresh_user(self, user, connectid_user, totals, dry_run):
-        if user.name == connectid_user.name:
-            totals["unchanged"] += 1
-            return
-        if dry_run:
-            self.stdout.write(f"{user.username}: {user.name!r} -> {connectid_user.name!r}")
-            totals["updated"] += 1
-            return
-        try:
-            update_user_profile(connectid_user.username, connectid_user.name)
-        except InvalidProfileUpdate as e:
+        if to_update:
+            User.objects.bulk_update(to_update, ["name"], batch_size=UPDATE_BATCH_SIZE)
+
+    def _stage_update(self, user, new_name, totals, dry_run):
+        """Set ``user.name`` in memory, returning whether it needs saving."""
+        new_name = (new_name or "").strip()
+        if not new_name:
             # ConnectID allows a blank name; leave the existing local one alone.
-            self.stderr.write(f"Skipping {user.username}: {e}")
+            self.stderr.write(f"Skipping {user.username}: name is blank in ConnectID")
             totals["skipped"] += 1
-            return
+            return False
+        if len(new_name) > NAME_MAX_LENGTH:
+            # ConnectID stores the name in a TextField, so it can hold more than this column accepts.
+            self.stderr.write(f"Skipping {user.username}: name exceeds {NAME_MAX_LENGTH} characters")
+            totals["skipped"] += 1
+            return False
+        if user.name == new_name:
+            totals["unchanged"] += 1
+            return False
+
         totals["updated"] += 1
+        if dry_run:
+            self.stdout.write(f"{user.username}: {user.name!r} -> {new_name!r}")
+            return False
+        user.name = new_name
+        return True
 
     def _report(self, totals, without_phone, dry_run):
         verb = "would be updated" if dry_run else "updated"
