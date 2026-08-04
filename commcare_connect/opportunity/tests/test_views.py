@@ -1301,6 +1301,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
+        CompletedWorkInvoiceFactory(invoice=invoice, billed_count=3, flw_amount_local=150, flw_amount_usd=100)
 
         client.force_login(user)
         url = reverse(
@@ -1350,6 +1351,36 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert f'amount: "{amount:.2f}"' in content
         assert f'usdAmount: "{amount:.2f}"' in content
         assert '"null"' not in content
+
+    @pytest.mark.parametrize(
+        "status,expected_message",
+        [
+            (InvoiceStatus.PENDING_NM_REVIEW, "No deliveries were billable for this period"),
+            (InvoiceStatus.CANCELLED_BY_NM, "Since this invoice was cancelled or rejected"),
+            (InvoiceStatus.REJECTED_BY_PM, "Since this invoice was cancelled or rejected"),
+        ],
+    )
+    def test_invoice_with_no_line_items_says_why(self, client, setup_invoice, status, expected_message):
+        """Cancelling or rejecting deletes the frozen rows, so an empty table means either that or a
+        period with nothing billable -- two very different things the reader cannot tell apart.
+        """
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        invoice.status = status
+        invoice.save()
+
+        client.force_login(setup_invoice["user"])
+        response = client.get(
+            reverse(
+                "opportunity:invoice_review",
+                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+            )
+        )
+
+        content = response.content.decode()
+        assert response.status_code == 200
+        assert expected_message in content
+        assert "Number Approved" not in content
 
     def test_invoice_not_found(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]

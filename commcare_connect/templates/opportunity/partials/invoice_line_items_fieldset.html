@@ -1,7 +1,22 @@
 {% load i18n %}
 {% load django_tables2 %}
 {% if form.line_items_table %}
-  <div class="overflow-x-auto mb-4">{% render_table form.line_items_table %}</div>
+  {% if form.line_items_table.rows %}
+    <div class="overflow-x-auto mb-4">{% render_table form.line_items_table %}</div>
+  {% else %}
+    {# An empty table alone reads as a missing page. Say which of the two reasons it is. #}
+    <div role="status"
+         class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-info text-message-info-text border-message-info-border">
+      <i class="fa-solid fa-circle-info"></i>
+      <span>
+        {% if form.line_items_released %}
+          {% translate "Since this invoice was cancelled or rejected, the deliveries it billed have been released and are no longer listed here." %}
+        {% else %}
+          {% translate "No deliveries were billable for this period, so this invoice has no line items." %}
+        {% endif %}
+      </span>
+    </div>
+  {% endif %}
 {% else %}
   {# The fetch is the only source of the amount, so a failure has to say so: the field is #}
   {# read-only, and the NM would otherwise see it blank with no explanation and no way on. #}

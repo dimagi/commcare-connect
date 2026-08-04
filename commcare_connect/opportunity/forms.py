@@ -1958,6 +1958,19 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             HTML('{% include "opportunity/partials/invoice_line_items_fieldset.html" %}'),
         )
 
+    @property
+    def line_items_released(self):
+        """True when this invoice's line items were released because it was cancelled or rejected.
+
+        The frozen rows are the only record of what an invoice billed, and cancelling or rejecting
+        deletes them so the work becomes billable again. An empty table therefore has two very
+        different meanings, and the reader cannot tell them apart without this.
+        """
+        return self.instance.pk is not None and self.instance.status in (
+            InvoiceStatus.CANCELLED_BY_NM,
+            InvoiceStatus.REJECTED_BY_PM,
+        )
+
 
 class CreateTaskForm(forms.Form):
     task = forms.ModelChoiceField(
