@@ -14,9 +14,15 @@ Flow:
 2. Skip any without a phone number, since PersonalID's fetch_users is keyed by phone number.
 3. Look names up in batches (--batch-size, default 100) and save the ones that differ with a
    single bulk update per batch.
+
+The phone number is only a lookup key, not an identity: PersonalID allows one active account per
+phone number, but Connect can hold several User rows for one number. Only the row whose username
+matches the account PersonalID returned is refreshed; the rest are reported as mismatched and left
+untouched, since we have no evidence the returned name belongs to them.
 """
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.users.helpers import NAME_MAX_LENGTH
@@ -51,21 +57,27 @@ class Command(BaseCommand):
             raise CommandError("--batch-size must be at least 1.")
 
         dry_run = options["dry_run"]
-        users = User.objects.filter(opportunityaccess__isnull=False).distinct()
+        has_phone_filter = Q(phone_number__isnull=False) & ~Q(phone_number="")
+        workers = User.objects.filter(opportunityaccess__isnull=False).distinct()
+        without_phone = workers.exclude(has_phone_filter).count()
+
         names_by_phone = {}
-        without_phone = 0
-        for user in users:
-            if user.phone_number:
-                names_by_phone.setdefault(user.phone_number, []).append(user)
-            else:
-                without_phone += 1
+        for user in workers.filter(has_phone_filter):
+            names_by_phone.setdefault(user.phone_number, []).append(user)
 
         if not names_by_phone:
             self.stdout.write("No workers with a phone number to refresh.")
             return
 
         phone_numbers = sorted(names_by_phone)
-        totals = {"checked": len(phone_numbers), "updated": 0, "unchanged": 0, "skipped": 0, "not_found": 0}
+        totals = {
+            "checked": len(phone_numbers),
+            "updated": 0,
+            "unchanged": 0,
+            "skipped": 0,
+            "not_found": 0,
+            "mismatched": 0,
+        }
         for batch in batched(phone_numbers, batch_size):
             self._refresh_batch(batch, names_by_phone, totals, dry_run)
 
@@ -85,6 +97,9 @@ class Command(BaseCommand):
         for connectid_user in found_users:
             found_phone_numbers.add(connectid_user.phone_number)
             for user in users_by_phone.get(connectid_user.phone_number, []):
+                if user.username != connectid_user.username:
+                    totals["mismatched"] += 1
+                    continue
                 if self._stage_update(user, connectid_user.name, totals, dry_run):
                     to_update.append(user)
         totals["not_found"] += len(set(batch) - found_phone_numbers)
@@ -122,5 +137,6 @@ class Command(BaseCommand):
             f"{totals['checked']} phone number(s) checked, {totals['updated']} name(s) {verb}, "
             f"{totals['unchanged']} already current, {totals['skipped']} skipped, "
             f"{totals['not_found']} not found in ConnectID, "
+            f"{totals['mismatched']} local record(s) shared a phone number but not the username, "
             f"{without_phone} worker(s) had no phone number."
         )

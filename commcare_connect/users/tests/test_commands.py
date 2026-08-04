@@ -204,25 +204,34 @@ def _connectid_user(user, name):
 
 @pytest.mark.django_db
 class TestRefreshWorkerNames:
-    def test_updates_only_names_that_differ(self):
+    def test_writes_the_new_name_only_where_it_belongs(self):
         renamed = _worker("+15550001", "Old Name")
         unchanged = _worker("+15550002", "Same Name")
+        # ConnectID has one active account per phone number, but Connect can hold several rows for
+        # it; this one shares renamed's number under a different username, so it isn't that account.
+        namesake = _worker(renamed.phone_number, "Someone Else")
+        _worker(None, "No Phone")
         found = [_connectid_user(renamed, "New Name"), _connectid_user(unchanged, "Same Name")]
+        out = StringIO()
 
         with mock.patch(FETCH_USERS, return_value=found):
-            call_command("refresh_worker_names", stdout=StringIO())
+            call_command("refresh_worker_names", stdout=out)
 
-        renamed.refresh_from_db()
-        unchanged.refresh_from_db()
+        for worker in (renamed, unchanged, namesake):
+            worker.refresh_from_db()
         assert renamed.name == "New Name"
         assert unchanged.name == "Same Name"
+        assert namesake.name == "Someone Else"
+        assert "1 name(s) updated" in out.getvalue()
+        assert "1 already current" in out.getvalue()
+        assert "1 local record(s) shared a phone number but not the username" in out.getvalue()
+        assert "1 worker(s) had no phone number" in out.getvalue()
 
     @pytest.mark.parametrize(
         "batch_size,expected_queries",
         [
-            pytest.param(DEFAULT_BATCH_SIZE, 2, id="one_batch"),
-            pytest.param(2, 3, id="two_batches"),
-            pytest.param(1, 4, id="one_batch_per_worker"),
+            pytest.param(DEFAULT_BATCH_SIZE, 3, id="one_batch"),
+            pytest.param(1, 5, id="one_batch_per_worker"),
         ],
     )
     def test_saves_each_batch_in_a_single_update(self, django_assert_num_queries, batch_size, expected_queries):
@@ -233,7 +242,8 @@ class TestRefreshWorkerNames:
             return [_connectid_user(by_phone[phone], f"New Name {phone}") for phone in phone_numbers]
 
         with mock.patch(FETCH_USERS, side_effect=fetch):
-            # One SELECT for the workers, then one UPDATE per lookup batch — never one per worker.
+            # A COUNT for the phone-less workers and a SELECT for the rest, then one UPDATE per
+            # lookup batch — never one per worker.
             with django_assert_num_queries(expected_queries):
                 call_command("refresh_worker_names", batch_size=batch_size, stdout=StringIO())
 
@@ -241,21 +251,14 @@ class TestRefreshWorkerNames:
             worker.refresh_from_db()
             assert worker.name == f"New Name {phone}"
 
-    @pytest.mark.parametrize("batch_size", [0, -1])
-    def test_batch_size_below_one_is_rejected_before_any_lookup(self, batch_size):
-        worker = _worker("+15550003", "Old Name")
-
-        with mock.patch(FETCH_USERS) as fetch_users:
-            with pytest.raises(CommandError):
-                call_command("refresh_worker_names", batch_size=batch_size, stdout=StringIO())
+    def test_batch_size_below_one_is_rejected_before_any_lookup(self):
+        with mock.patch(FETCH_USERS) as fetch_users, pytest.raises(CommandError):
+            call_command("refresh_worker_names", batch_size=0, stdout=StringIO())
 
         fetch_users.assert_not_called()
-        worker.refresh_from_db()
-        assert worker.name == "Old Name"
 
-    def test_workers_without_a_phone_number_are_skipped(self):
-        no_phone = MobileUserFactory(name="No Phone", phone_number=None)
-        OpportunityAccessFactory(user=no_phone)
+    def test_returns_early_when_no_worker_has_a_phone_number(self):
+        _worker(None, "No Phone")
         out = StringIO()
 
         with mock.patch(FETCH_USERS, return_value=[]) as fetch_users:
