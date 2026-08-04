@@ -59,7 +59,7 @@
         </div>
       </div>
     </header>
-    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showImplUploadBtn: {{ show_implementation_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false, showClearImplementationAreasModal: false }"
+    <div x-data="{ showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }}, showUploadBtn: {{ show_area_btn|yesno:'true,false' }}, showImplUploadBtn: {{ show_implementation_area_btn|yesno:'true,false' }}, showUploading: {{ task_id|yesno:'true,false' }}, showSeeResult: false, showImportWorkAreaModal: false, showCreateWorkAreaGroupsModal: false, showClearWorkAreaGroupsModal: false, showClearImplementationAreasModal: false, showClearWorkAreasModal: false }"
          class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
       <div class="flex items-end space-x-2 w-full">
         {% if task_id %}
@@ -86,13 +86,6 @@
             <i class="fa-solid fa-upload"></i> {% translate "Upload Implementation Area" %}
           </button>
         {% endif %}
-        {% if implementation_areas_present %}
-          <button type="button"
-                  @click="showClearImplementationAreasModal = true"
-                  class="button button-md outline-style">
-            <i class="fa-solid fa-trash"></i> {% translate "Clear Implementation Areas" %}
-          </button>
-        {% endif %}
         {% if show_workarea_groups_btn %}
           <button class="button button-md primary-dark"
                   x-show="showCreateGroupBtn"
@@ -109,13 +102,48 @@
                   @click="showCreateWorkAreaGroupsModal = true">
             <i class="fa-solid fa-play"></i> {% translate "Rerun Clustering" %}
           </button>
-          <button class="button button-md outline-style"
-                  type="button"
-                  id="clear-work-area-groups"
-                  @click="showClearWorkAreaGroupsModal = true">
-            <i class="fa-solid fa-trash"></i> {% translate "Clear Work Area Groups" %}
-          </button>
         {% endif %}
+        <details class="dropdown" @click.outside="$el.open = false">
+          <summary class="button button-md outline-style">
+            <i class="fa-solid fa-trash"></i>{% translate "Clear Data" %}
+            <i class="fa-solid fa-angle-down dropdown-chevron transition-transform"></i>
+          </summary>
+          <div class="dropdown-content" @click="$el.closest('details').open = false">
+            <button type="button"
+                    class="dropdown-item"
+                    {% if show_clear_work_areas_btn %} @click="showClearWorkAreasModal = true" {% else %} disabled {% endif %}>
+              <div class="flex items-center">
+                <i class="fa-solid fa-trash dropdown-item-icon"></i>
+                <div>
+                  <p>{% translate "Clear Work Areas" %}</p>
+                  <p class="mt-1 text-xs text-gray-400">{{ clear_data_details.work_areas }}</p>
+                </div>
+              </div>
+            </button>
+            <button type="button"
+                    class="dropdown-item"
+                    {% if show_rerun_clear_work_area_groups_btn %} @click="showClearWorkAreaGroupsModal = true" {% else %} disabled {% endif %}>
+              <div class="flex items-center">
+                <i class="fa-solid fa-trash dropdown-item-icon"></i>
+                <div>
+                  <p>{% translate "Clear Work Area Groups" %}</p>
+                  <p class="mt-1 text-xs text-gray-400">{{ clear_data_details.work_area_groups }}</p>
+                </div>
+              </div>
+            </button>
+            <button type="button"
+                    class="dropdown-item"
+                    {% if implementation_areas_present %} @click="showClearImplementationAreasModal = true" {% else %} disabled {% endif %}>
+              <div class="flex items-center">
+                <i class="fa-solid fa-trash dropdown-item-icon"></i>
+                <div>
+                  <p>{% translate "Clear Implementation Areas" %}</p>
+                  <p class="mt-1 text-xs text-gray-400">{{ clear_data_details.implementation_areas }}</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        </details>
         {% if is_program_manager and not assignment_mode %}
           <a href="?assignment_mode=1"
              class="button button-md primary-dark ml-auto">
@@ -137,6 +165,9 @@
       <div x-show="showImportWorkAreaModal" id="modal-container"></div>
       {% if show_workarea_groups_btn or show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/cluster_work_area_modal.html" %}
+      {% endif %}
+      {% if show_clear_work_areas_btn %}
+        {% include "microplanning/clear_work_areas_modal.html" %}
       {% endif %}
       {% if show_rerun_clear_work_area_groups_btn %}
         {% include "microplanning/clear_work_area_groups_modal.html" %}

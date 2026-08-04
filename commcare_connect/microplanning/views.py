@@ -40,6 +40,7 @@ from django.utils.decorators import method_decorator
 from django.utils.text import slugify
 from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
@@ -118,16 +119,27 @@ PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a 
 @waffle_flag(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
-    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
-    implementation_areas_present = ImplementationArea.objects.filter(opportunity_id=opportunity.id).exists()
+    work_area_count = WorkArea.objects.filter(opportunity_id=opportunity.id).count()
+    work_area_group_count = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).count()
+    implementation_area_count = ImplementationArea.objects.filter(opportunity_id=opportunity.id).count()
     areas_assigned = WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
-    work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
+
+    areas_present = bool(work_area_count)
+    work_area_groups_present = bool(work_area_group_count)
+    implementation_areas_present = bool(implementation_area_count)
 
     show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
     show_workarea_groups_btn = areas_present and not work_area_groups_present
+    show_clear_work_areas_btn = areas_present and not areas_assigned
     show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
     show_implementation_area_btn = not (
         cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None or implementation_areas_present
+    )
+    clear_data_details = get_clear_data_details(
+        work_area_count=work_area_count,
+        work_area_group_count=work_area_group_count,
+        implementation_area_count=implementation_area_count,
+        areas_assigned=areas_assigned,
     )
 
     tiles_url = reverse(
@@ -210,6 +222,8 @@ def microplanning_home(request, *args, **kwargs):
         "show_implementation_area_btn": show_implementation_area_btn,
         "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
+        "show_clear_work_areas_btn": show_clear_work_areas_btn,
+        "clear_data_details": clear_data_details,
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
@@ -253,6 +267,55 @@ def microplanning_home(request, *args, **kwargs):
         template_name="microplanning/home.html",
         context=context,
     )
+
+
+def get_clear_data_details(*, work_area_count, work_area_group_count, implementation_area_count, areas_assigned):
+    """Helper text for each entry in the Clear Data dropdown.
+
+    Every Work Area action is also blocked while Work Areas are assigned, so a disabled entry has
+    to name the reason that actually applies instead of assuming nothing was uploaded.
+    """
+    blocked_message = _get_work_areas_blocked_message(work_area_count, areas_assigned)
+
+    if blocked_message:
+        work_areas_message = blocked_message
+    else:
+        work_areas_message = ngettext(
+            "%(count)d record — also clears Work Area Groups",
+            "%(count)d records — also clears Work Area Groups",
+            work_area_count,
+        ) % {"count": work_area_count}
+
+    if blocked_message:
+        work_area_groups_message = blocked_message
+    elif not work_area_group_count:
+        work_area_groups_message = _("Clustering has not been run yet.")
+    else:
+        work_area_groups_message = ngettext("%(count)d group", "%(count)d groups", work_area_group_count) % {
+            "count": work_area_group_count
+        }
+
+    if not implementation_area_count:
+        implementation_areas_message = _("No Implementation Areas have been uploaded yet.")
+    else:
+        implementation_areas_message = ngettext("%(count)d record", "%(count)d records", implementation_area_count) % {
+            "count": implementation_area_count
+        }
+
+    return {
+        "work_areas": work_areas_message,
+        "work_area_groups": work_area_groups_message,
+        "implementation_areas": implementation_areas_message,
+    }
+
+
+def _get_work_areas_blocked_message(work_area_count, areas_assigned):
+    """Reason Work Area data cannot be cleared, or None when it can be."""
+    if not work_area_count:
+        return _("No Work Areas have been uploaded yet.")
+    if areas_assigned:
+        return _("Work Areas are assigned to FLWs and cannot be cleared.")
+    return None
 
 
 def get_metrics_for_microplanning(opportunity):
@@ -843,9 +906,34 @@ def exclude_work_areas(request, org_slug, opp_id):
     return response
 
 
+@require_POST
 @org_admin_required
 @opportunity_required
+@waffle_flag(MICROPLANNING)
+def clear_work_areas(request, org_slug, opp_id):
+    redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+    work_areas = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
+
+    access_ids = list(work_areas.select_for_update().values_list("opportunity_access_id", flat=True))
+    if any(access_id is not None for access_id in access_ids):
+        messages.error(request, _("Work Areas cannot be cleared as they are assigned to users."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    if work_areas.filter(uservisit__isnull=False).exists():
+        messages.error(request, _("Visits have been recorded against these Work Areas. They cannot be cleared."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    work_areas.delete()
+    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
+
+    messages.success(request, _("Work Areas and Work Area Groups cleared. You can now upload a new file."))
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+
 @require_POST
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
 def clear_work_area_groups(request, org_slug, opp_id):
     redirect_url = reverse(
         "microplanning:microplanning_home",
