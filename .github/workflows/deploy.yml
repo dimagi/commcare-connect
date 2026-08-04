@@ -61,7 +61,7 @@ jobs:
 
       - id: slack
         name: Notify Deploy Start
-        uses: slackapi/slack-github-action@v1.24.0
+        uses: slackapi/slack-github-action@v3.0.3
         with:
           channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           payload: |
@@ -129,7 +129,7 @@ jobs:
           generate_release_notes: true
 
       - name: Notify Deploy End
-        uses: slackapi/slack-github-action@v1.24.0
+        uses: slackapi/slack-github-action@v3.0.3
         if: always()
         with:
           channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
