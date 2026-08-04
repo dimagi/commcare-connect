@@ -6,8 +6,9 @@
       currency: false,
       startDate: "{% firstof form.instance.start_date|date:'Y-m-d' form.start_date.value  '' %}",
       endDate: "{% firstof form.instance.end_date|date:'Y-m-d' form.end_date.value '' %}",
-      amount: "{{ form.amount.value|default:'null' }}",
-      usdAmount: "{{ form.amount_usd.value|default:'null' }}",
+      // Preserve zero amounts; using `default` converts 0.00 to `null`.
+      amount: "{{ form.amount.value|default_if_none:'null' }}",
+      usdAmount: "{{ form.amount_usd.value|default_if_none:'null' }}",
       isServiceDelivery: "{{ is_service_delivery|yesno:'true,false' }}" == 'true',
       isReadOnly: "{{ is_read_only|yesno:'true,false'}}" == "true",
       invoiceId: "{{ form.instance.payment_invoice_id|default:'' }}",
