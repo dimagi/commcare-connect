@@ -2,13 +2,16 @@
  * Typeahead for the microplanning map's "Search Work Areas" box.
  *
  * Kept out of tomselect.js because the type badge needs render *functions*, which cannot be
- * expressed through that initializer's `data-tomselect:settings` JSON channel. The select
- * therefore carries `data-work-area-search` instead of `data-tomselect`, so the generic
- * initializer leaves it alone.
+ * expressed through that initializer's `data-tomselect:settings` JSON channel. The select must
+ * therefore not carry `data-tomselect`, or the generic initializer would claim it first.
  *
  * Options are fetched once after page load rather than rendered inline (keeps the page payload
  * small) or per keystroke (avoids a round trip per character); matching is client-side.
  */
+
+// There is exactly one of these on the page, so it is found by id rather than by a marker
+// attribute. It is absent in assignment mode, which renders no filter sidebar.
+const SEARCH_SELECT_ID = 'work-area-search';
 
 // Keyed on the option's `kind`, not its `type` — `type` is translated, `kind` is not.
 const BADGE_CLASSES = {
@@ -89,7 +92,6 @@ function initWorkAreaSearch(el) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  document
-    .querySelectorAll('[data-work-area-search]')
-    .forEach(initWorkAreaSearch);
+  const el = document.getElementById(SEARCH_SELECT_ID);
+  if (el) initWorkAreaSearch(el);
 });
