@@ -1957,6 +1957,14 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             HTML('{% include "opportunity/partials/invoice_line_items_fieldset.html" %}'),
         )
 
+    @property
+    def line_items_released(self):
+        """True when line items were released due to cancellation or rejection."""
+        return self.instance.pk is not None and self.instance.status in (
+            InvoiceStatus.CANCELLED_BY_NM,
+            InvoiceStatus.REJECTED_BY_PM,
+        )
+
 
 class CreateTaskForm(forms.Form):
     task = forms.ModelChoiceField(

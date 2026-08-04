@@ -1301,6 +1301,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
+        CompletedWorkInvoiceFactory(invoice=invoice, billed_count=3, flw_amount_local=150, flw_amount_usd=100)
 
         client.force_login(user)
         url = reverse(
