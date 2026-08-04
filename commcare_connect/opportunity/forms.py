@@ -13,8 +13,9 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
@@ -1645,7 +1646,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widgets = {
             "date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "end_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "end_date": forms.DateInput(
+                attrs={"type": "date", "max": timezone.localdate() - datetime.timedelta(days=1)}, format="%Y-%m-%d"
+            ),
             "title": forms.TextInput(attrs={"placeholder": _("e.g. October Services")}),
         }
         labels = {
@@ -1934,6 +1937,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
             if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+            if end_date >= localdate():
+                raise ValidationError({"end_date": _("End date must be before today.")})
 
             self._reject_stale_total(amount, start_date, end_date)
 
