@@ -230,6 +230,12 @@
             },
 
             onSearchChanged() {
+                // Assignment mode renders no filter sidebar, so there are no controls to drive
+                // and nothing to clear; its tiles are filtered directly instead.
+                if (this.assignmentMode) {
+                    this.applyAssignmentModeFilters();
+                    return;
+                }
                 const option = this.searchSelection();
                 this.clearFilterFields();
                 if (option) this.applySearchSelection(option);
@@ -239,15 +245,28 @@
                 }
             },
 
+            // The filter each kind of search result corresponds to. Both modes route through
+            // this, so the filtering cannot drift between them.
+            searchFilterName(kind) {
+                return {
+                    wa: 'work_area',
+                    wag: 'work_area_group',
+                    ia: 'implementation_area',
+                }[kind];
+            },
+
             applySearchSelection(option) {
-                const form = this.$refs.filterForm;
-                if (option.kind === 'wa') {
-                    form.querySelector('[name="work_area"]').value = option.object_id;
-                    return;
+                const el = this.$refs.filterForm.querySelector(
+                    `[name="${this.searchFilterName(option.kind)}"]`,
+                );
+                if (!el) return;
+                if (el.tomselect) {
+                    // Silent: a change event here would run onFilterChanged() and clear the
+                    // search box we are in the middle of applying.
+                    el.tomselect.setValue(String(option.object_id), true);
+                } else {
+                    el.value = option.object_id;
                 }
-                const name = option.kind === 'wag' ? 'work_area_group' : 'implementation_area';
-                const el = form.querySelector(`select[name="${name}"]`);
-                if (el?.tomselect) el.tomselect.setValue(String(option.object_id), true);
             },
 
             searchSelection() {
@@ -775,13 +794,21 @@
                 }
             },
 
-            applyUnassignedFilter() {
+            // Assignment mode's equivalent of applyFilters(): it has no filter form to read, so
+            // the tiles query is composed from its two inputs — the unassigned toggle and the
+            // search box — which apply together.
+            applyAssignmentModeFilters() {
                 if (!this.map) return;
+                const params = new URLSearchParams();
+                if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
+                const option = this.searchSelection();
+                if (option) params.set(this.searchFilterName(option.kind), option.object_id);
+
                 const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = this.showOnlyUnassigned ? `${baseUrl}?unassigned_only=true` : baseUrl;
+                const query = params.toString();
                 const source = this.map.getSource('workareas');
                 if (source) {
-                    source.setTiles([newUrl]);
+                    source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
                 }
             },
 
@@ -798,7 +825,7 @@
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
 
                     this.$watch('showOnlyUnassigned', () => {
-                        this.applyUnassignedFilter();
+                        this.applyAssignmentModeFilters();
                     });
                 }
 
