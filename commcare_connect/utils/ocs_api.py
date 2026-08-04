@@ -31,9 +31,12 @@ def list_chatbots(user) -> list[tuple[str, str]]:
             raise OcsApiError(f"Failed to list chatbots: {response.text}")
         except httpx.RequestError as e:
             raise OcsApiError(f"Failed to list chatbots: {e}")
-        data = response.json()
-        chatbots.extend((c["id"], c["name"]) for c in data.get("results", []))
-        url = data.get("next")
+        try:
+            data = response.json()
+            chatbots.extend((c["id"], c["name"]) for c in data["results"])
+            url = data.get("next")
+        except (ValueError, KeyError, TypeError) as e:
+            raise OcsApiError(f"Unexpected chatbots response from OCS: {e}")
     return chatbots
 
 
