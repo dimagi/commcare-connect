@@ -6,8 +6,10 @@
       currency: false,
       startDate: "{% firstof form.instance.start_date|date:'Y-m-d' form.start_date.value  '' %}",
       endDate: "{% firstof form.instance.end_date|date:'Y-m-d' form.end_date.value '' %}",
-      amount: "{{ form.amount.value|default:'null' }}",
-      usdAmount: "{{ form.amount_usd.value|default:'null' }}",
+      {# default_if_none, not default: a 0.00 amount is falsy, and `default` would send "null" #}
+      {# here, which x-model then writes into a number input that rejects it -- a blank field. #}
+      amount: "{{ form.amount.value|default_if_none:'null' }}",
+      usdAmount: "{{ form.amount_usd.value|default_if_none:'null' }}",
       isServiceDelivery: "{{ is_service_delivery|yesno:'true,false' }}" == 'true',
       isReadOnly: "{{ is_read_only|yesno:'true,false'}}" == "true",
       invoiceId: "{{ form.instance.payment_invoice_id|default:'' }}",
