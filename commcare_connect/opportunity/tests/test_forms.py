@@ -808,6 +808,38 @@ class TestAutomatedPaymentInvoiceForm:
         assert not invoice.work_items.exists()
 
     @pytest.mark.parametrize(
+        "start_date, end_date, expected_error",
+        [
+            ("2025-10-01", "2025-10-31", None),
+            ("2025-10-31", "2025-10-01", "End date cannot be earlier than start date."),
+            ("2025-10-01", "2099-12-31", "End date cannot be in the future."),
+        ],
+        ids=["completed-period", "end-before-start", "future-end"],
+    )
+    def test_service_delivery_window_must_be_a_completed_period(
+        self, valid_opportunity, start_date, end_date, expected_error
+    ):
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-WINDOW",
+                "amount": 0,
+                "date": "2025-11-06",
+                "start_date": start_date,
+                "end_date": end_date,
+                "description": "Monthly consulting services rendered.",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid() is (expected_error is None)
+        if expected_error:
+            assert expected_error in str(form.errors)
+
+    @pytest.mark.parametrize(
         "posted_amount, expect_valid",
         [(120.0, True), (100.0, False), (0, False)],
         ids=["matches", "stale-lower", "stale-zero"],
