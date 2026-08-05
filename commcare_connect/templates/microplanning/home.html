@@ -20,14 +20,14 @@
       <div class="metric-container p-5 shadow-sm sm:p-6">
         <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div class="min-w-0 flex-1">
-            <h1 class="multi-line-clamp-2 text-2xl font-semibold text-white break-words hyphens-auto leading-snug">
+            <h1 class="multi-line-clamp-3 text-xl font-semibold text-white break-words hyphens-auto leading-snug">
               {{ opportunity.name }}
             </h1>
           </div>
-          <div class="w-full border-t border-white/20 pt-4 lg:w-auto lg:border-t-0 lg:border-l lg:border-white/20 lg:pl-8 lg:pt-0">
-            <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-5xl xl:grid-cols-[repeat(8,minmax(0,1fr))]">
+          <div class="w-full border-t border-white/20 pt-4 lg:w-auto lg:border-t-0 lg:border-l lg:border-white/20 lg:pl-4 lg:pt-0">
+            <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-5xl xl:grid-cols-[repeat(9,minmax(0,1fr))]">
               {% for metric in metrics %}
-                <div class="metric-card rounded-md p-3 text-center">
+                <div class="metric-card rounded-md p-2 text-center">
                   {% if "percentage" in metric %}
                     <div class="flex items-baseline justify-between gap-1 text-white">
                       <span class="text-xl font-semibold">{{ metric.value|default:"--" }}</span>
