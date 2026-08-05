@@ -5,16 +5,19 @@ import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.coverage_progress import (
     CoverageDateFilter,
     CoverageProgressReport,
     _static_slot,
+    annotate_approved_visit_counts,
     annotate_status_timestamps,
     build_wag_rows,
     build_ward_rows,
     get_status_aggregates,
     get_target_aggregates,
     get_visits_approved_aggregates,
+    in_scope_work_areas,
     non_excluded_workareas,
     status_event_model,
     ward_saturation_goal,
@@ -23,7 +26,12 @@ from commcare_connect.microplanning.filters import CoverageProgressFilterSet
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import VisitValidationStatus
-from commcare_connect.opportunity.tests.factories import UserVisitFactory
+from commcare_connect.opportunity.tests.factories import (
+    DeliverUnitFactory,
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    UserVisitFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -193,13 +201,87 @@ def test_target_aggregates_by_wag_excludes_excluded(opportunity):
     }
 
 
-def _approved_visit(opportunity, work_area, when):
+def _approved_visit(opportunity, work_area, when, **kwargs):
     return UserVisitFactory(
         opportunity=opportunity,
         work_area=work_area,
         status=VisitValidationStatus.approved,
         visit_date=timezone.make_aware(datetime.datetime.combine(when, datetime.time(9, 0))),
+        **kwargs,
     )
+
+
+def _assigned_work_area(opportunity, status=WorkAreaStatus.NOT_VISITED):
+    return WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+        status=status,
+    )
+
+
+def _deliver_unit(opportunity, slug):
+    return DeliverUnitFactory(app=opportunity.deliver_app, slug=slug)
+
+
+def test_in_scope_work_areas_drops_excluded_and_unassigned(opportunity):
+    kept = [
+        _assigned_work_area(opportunity, WorkAreaStatus.NOT_VISITED),
+        _assigned_work_area(opportunity, WorkAreaStatus.VISITED),
+        _assigned_work_area(opportunity, WorkAreaStatus.INACCESSIBLE),
+        _assigned_work_area(opportunity, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE),
+    ]
+    _assigned_work_area(opportunity, WorkAreaStatus.EXCLUDED)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=None, status=WorkAreaStatus.UNASSIGNED)
+    # In scope for its own opportunity, so only the opportunity filter keeps it out of this one.
+    _assigned_work_area(opportunity=OpportunityFactory())
+
+    assert set(in_scope_work_areas(opportunity)) == set(kept)
+
+
+def test_annotate_visit_counts_counts_only_approved_service_delivery_visits(opportunity):
+    work_area = _assigned_work_area(opportunity)
+    empty_work_area = _assigned_work_area(opportunity)
+    hsd = _deliver_unit(opportunity, SERVICE_DELIVERY_UNIT_SLUG)
+    march = datetime.date(2026, 3, 10)
+    _approved_visit(opportunity, work_area, march, deliver_unit=hsd)
+    _approved_visit(opportunity, work_area, march, deliver_unit=hsd)
+    # dropped: another deliver unit, and a service delivery still awaiting review
+    _approved_visit(opportunity, work_area, march, deliver_unit=_deliver_unit(opportunity, "registration"))
+    UserVisitFactory(
+        opportunity=opportunity,
+        work_area=work_area,
+        deliver_unit=hsd,
+        status=VisitValidationStatus.pending,
+        visit_date=timezone.make_aware(datetime.datetime(2026, 3, 10, 9, 0)),
+    )
+
+    counts = {
+        wa.pk: wa.hsd_count for wa in annotate_approved_visit_counts(in_scope_work_areas(opportunity), opportunity)
+    }
+    assert counts == {work_area.pk: 2, empty_work_area.pk: 0}
+
+
+def test_annotate_visit_counts_adds_the_no_children_count_on_request(opportunity):
+    work_area = _assigned_work_area(opportunity)
+    march = datetime.date(2026, 3, 10)
+    _approved_visit(opportunity, work_area, march, deliver_unit=_deliver_unit(opportunity, SERVICE_DELIVERY_UNIT_SLUG))
+    _approved_visit(
+        opportunity, work_area, march, deliver_unit=_deliver_unit(opportunity, NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+    )
+
+    row = annotate_approved_visit_counts(in_scope_work_areas(opportunity), opportunity, ncwa=True).get(pk=work_area.pk)
+    assert (row.hsd_count, row.ncwa_count) == (1, 1)
+
+
+def test_annotate_visit_counts_window_filters_on_visit_date(opportunity):
+    work_area = _assigned_work_area(opportunity)
+    hsd = _deliver_unit(opportunity, SERVICE_DELIVERY_UNIT_SLUG)
+    _approved_visit(opportunity, work_area, datetime.date(2026, 3, 10), deliver_unit=hsd)
+    _approved_visit(opportunity, work_area, datetime.date(2026, 4, 10), deliver_unit=hsd)
+
+    window = CoverageDateFilter(start=datetime.date(2026, 3, 1), end=datetime.date(2026, 3, 31)).window
+    annotated = annotate_approved_visit_counts(in_scope_work_areas(opportunity), opportunity, window=window)
+    assert annotated.get(pk=work_area.pk).hsd_count == 1
 
 
 def test_visits_approved_overall_excludes_excluded_and_unapproved(opportunity):

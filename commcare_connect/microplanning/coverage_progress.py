@@ -3,14 +3,15 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from django.core.cache import cache
-from django.db.models import Count, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.timezone import localdate
 
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.helpers import pct, ratio
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
+from commcare_connect.opportunity.models import DeliverUnit, Opportunity, UserVisit, VisitValidationStatus
 
 WEEK_DAYS = 7
 
@@ -88,6 +89,51 @@ class CoverageDateFilter:
 
 def non_excluded_workareas(opportunity):
     return WorkArea.objects.filter(opportunity=opportunity).exclude(status=WorkAreaStatus.EXCLUDED)
+
+
+def in_scope_work_areas(opportunity):
+    """The work areas every coverage metric is measured over — numerators and denominators alike.
+
+    Business rule: Excluded areas and unassigned areas are out of scope.
+    """
+    return WorkArea.objects.filter(opportunity=opportunity, opportunity_access__isnull=False).exclude(
+        status=WorkAreaStatus.EXCLUDED
+    )
+
+
+def annotate_approved_visit_counts(work_areas, opportunity, *, ncwa=False, window=None):
+    """Annotate each work area with its approved service-delivery count as ``hsd_count``.
+    hsd stands for "health service delivery" and refers to approved visits for the services_delivery_unit.
+    ncwa stands for "no children in work area" and refers to approved visits for the no-children-wa deliver unit.
+    """
+    annotations = {"hsd_count": _approved_visit_count(opportunity, SERVICE_DELIVERY_UNIT_SLUG, window)}
+    if ncwa:
+        annotations["ncwa_count"] = _approved_visit_count(opportunity, NO_CHILDREN_WORK_AREA_UNIT_SLUG, window)
+    return work_areas.annotate(**annotations)
+
+
+def _approved_visit_count(opportunity, deliver_unit_slug, window):
+    visits = UserVisit.objects.filter(
+        opportunity=opportunity,
+        work_area=OuterRef("pk"),
+        status=VisitValidationStatus.approved,
+        deliver_unit__slug=deliver_unit_slug,
+    )
+    if window is not None:
+        start, end = window
+        visits = visits.filter(visit_date__gte=start, visit_date__lt=end)
+    counted = visits.values("work_area").annotate(count=Count("*")).values("count")
+    # Coalesce so an area with no such visits reads 0 rather than NULL, keeping it comparable.
+    return Coalesce(Subquery(counted, output_field=IntegerField()), 0)
+
+
+def missing_deliver_units(opportunity: Opportunity, slugs: list[str]) -> list[str]:
+    if opportunity.deliver_app_id is None:
+        return slugs
+    present = set(
+        DeliverUnit.objects.filter(app_id=opportunity.deliver_app_id, slug__in=slugs).values_list("slug", flat=True)
+    )
+    return [slug for slug in slugs if slug not in present]
 
 
 def status_event_model():
