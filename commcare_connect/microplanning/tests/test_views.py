@@ -2222,7 +2222,12 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         return reverse("microplanning:coverage_progress", args=(org_slug, opp_id))
 
     def test_renders_page_with_tables_in_context(self, client, org_user_admin, opportunity):
-        WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+        WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            ward="w1",
+            status=WorkAreaStatus.VISITED,
+        )
         client.force_login(org_user_admin)
         resp = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
         assert resp.status_code == 200
@@ -2275,7 +2280,12 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         assert resp["Content-Type"].startswith("text/csv")
 
     def test_export_returns_csv_of_requested_table(self, client, org_user_admin, opportunity):
-        WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+        WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            ward="w1",
+            status=WorkAreaStatus.VISITED,
+        )
         client.force_login(org_user_admin)
         resp = client.get(
             self.url(opportunity.organization.slug, str(opportunity.opportunity_id)),

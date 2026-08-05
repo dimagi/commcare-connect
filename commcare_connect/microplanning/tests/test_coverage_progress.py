@@ -18,7 +18,6 @@ from commcare_connect.microplanning.coverage_progress import (
     get_target_aggregates,
     get_visits_approved_aggregates,
     in_scope_work_areas,
-    non_excluded_workareas,
     status_event_model,
     ward_saturation_goal,
 )
@@ -73,22 +72,41 @@ def _stamp_transition(work_area, status, when):
 
 
 def test_annotate_status_timestamps_uses_earliest_transition(opportunity):
-    wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
+    wa = _assigned_work_area(opportunity, WorkAreaStatus.VISITED)
     early = timezone.make_aware(datetime.datetime(2026, 1, 10, 9, 0))
     late = timezone.make_aware(datetime.datetime(2026, 2, 20, 9, 0))
     _stamp_transition(wa, WorkAreaStatus.VISITED, late)
     _stamp_transition(wa, WorkAreaStatus.VISITED, early)
     _stamp_transition(wa, WorkAreaStatus.EXPECTED_VISIT_REACHED, late)
 
-    annotated = annotate_status_timestamps(non_excluded_workareas(opportunity)).get(pk=wa.pk)
+    annotated = annotate_status_timestamps(in_scope_work_areas(opportunity)).get(pk=wa.pk)
     assert annotated.visited_at == early
     assert annotated.evc_reached_at == late
 
 
+def _access(opportunity):
+    return OpportunityAccessFactory(opportunity=opportunity)
+
+
 def test_status_aggregates_overall_strict_and_exclusive(opportunity):
-    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED, building_count=10)
-    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.EXPECTED_VISIT_REACHED, building_count=7)
-    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.NOT_VISITED, building_count=3)
+    access = _access(opportunity)
+    WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.VISITED, building_count=10
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        ward="w1",
+        status=WorkAreaStatus.EXPECTED_VISIT_REACHED,
+        building_count=7,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        ward="w1",
+        status=WorkAreaStatus.NOT_VISITED,
+        building_count=3,
+    )
     WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.EXCLUDED, building_count=99)
 
     result = get_status_aggregates(opportunity, "ward", window=None)
@@ -98,8 +116,33 @@ def test_status_aggregates_overall_strict_and_exclusive(opportunity):
     assert result["w1"]["Buildings_covered_in_WAs_visited"] == 10
 
 
+def test_status_aggregates_excludes_unassigned(opportunity):
+    """An unassigned area has no FLW to do the work, so it drops out like an excluded one."""
+    WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=_access(opportunity),
+        ward="w1",
+        status=WorkAreaStatus.VISITED,
+        building_count=10,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=None, ward="w1", status=WorkAreaStatus.VISITED, building_count=99
+    )
+
+    result = get_status_aggregates(opportunity, "ward", window=None)
+
+    assert result["w1"]["WAs_visited"] == 1
+    assert result["w1"]["Buildings_covered_in_WAs_visited"] == 10
+
+
 def test_status_aggregates_window_filters_by_transition_date(opportunity):
-    wa = WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED, building_count=10)
+    wa = WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=_access(opportunity),
+        ward="w1",
+        status=WorkAreaStatus.VISITED,
+        building_count=10,
+    )
     _stamp_transition(wa, WorkAreaStatus.VISITED, timezone.make_aware(datetime.datetime(2026, 3, 15, 9, 0)))
     in_window = (datetime.date(2026, 3, 1), datetime.date(2026, 3, 31))
     out_window = (datetime.date(2026, 4, 1), datetime.date(2026, 4, 30))
@@ -111,7 +154,11 @@ def test_status_aggregates_window_filters_by_transition_date(opportunity):
 def test_status_aggregates_window_filters_by_transition_date_for_wag(opportunity):
     group = WorkAreaGroupFactory(opportunity=opportunity)
     wa = WorkAreaFactory(
-        opportunity=opportunity, work_area_group=group, status=WorkAreaStatus.VISITED, building_count=10
+        opportunity=opportunity,
+        opportunity_access=_access(opportunity),
+        work_area_group=group,
+        status=WorkAreaStatus.VISITED,
+        building_count=10,
     )
     _stamp_transition(wa, WorkAreaStatus.VISITED, timezone.make_aware(datetime.datetime(2026, 3, 15, 9, 0)))
     in_window = (datetime.date(2026, 3, 1), datetime.date(2026, 3, 31))
@@ -126,6 +173,7 @@ def test_status_aggregates_window_filters_by_transition_date_for_wag(opportunity
 def test_target_aggregates_by_ward_excludes_excluded(opportunity):
     WorkAreaFactory(
         opportunity=opportunity,
+        opportunity_access=_access(opportunity),
         ward="w1",
         status=WorkAreaStatus.VISITED,
         target_population=100,
@@ -134,6 +182,7 @@ def test_target_aggregates_by_ward_excludes_excluded(opportunity):
     )
     WorkAreaFactory(
         opportunity=opportunity,
+        opportunity_access=_access(opportunity),
         ward="w1",
         status=WorkAreaStatus.INACCESSIBLE,
         target_population=50,
@@ -150,6 +199,7 @@ def test_target_aggregates_by_ward_excludes_excluded(opportunity):
     )
     WorkAreaFactory(
         opportunity=opportunity,
+        opportunity_access=_access(opportunity),
         ward="w2",
         status=WorkAreaStatus.NOT_VISITED,
         target_population=20,
@@ -168,10 +218,29 @@ def test_target_aggregates_by_ward_excludes_excluded(opportunity):
     assert result["w2"]["num_work_areas"] == 1
 
 
+def test_target_aggregates_excludes_unassigned(opportunity):
+    """An unassigned area has no FLW to do the work, so it leaves the denominator like an excluded one."""
+    WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=_access(opportunity),
+        ward="w1",
+        building_count=10,
+        expected_visit_count=5,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=None, ward="w1", building_count=99, expected_visit_count=99
+    )
+
+    result = get_target_aggregates(opportunity, "ward")
+
+    assert result["w1"] == {"ward": "w1", "building_count": 10, "num_work_areas": 1, "expected_visit_total": 5}
+
+
 def test_target_aggregates_by_wag_excludes_excluded(opportunity):
     group = WorkAreaGroupFactory(opportunity=opportunity)
     WorkAreaFactory(
         opportunity=opportunity,
+        opportunity_access=_access(opportunity),
         work_area_group=group,
         status=WorkAreaStatus.VISITED,
         target_population=100,
@@ -198,6 +267,8 @@ def test_target_aggregates_by_wag_excludes_excluded(opportunity):
 
 
 def _approved_visit(opportunity, work_area, when, **kwargs):
+    """An approved visit, defaulting to the Service Delivery deliver unit unless one is passed."""
+    kwargs.setdefault("deliver_unit", _deliver_unit(opportunity, SERVICE_DELIVERY_UNIT_SLUG))
     return UserVisitFactory(
         opportunity=opportunity,
         work_area=work_area,
@@ -208,11 +279,7 @@ def _approved_visit(opportunity, work_area, when, **kwargs):
 
 
 def _assigned_work_area(opportunity, status=WorkAreaStatus.NOT_VISITED):
-    return WorkAreaFactory(
-        opportunity=opportunity,
-        opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
-        status=status,
-    )
+    return WorkAreaFactory(opportunity=opportunity, opportunity_access=_access(opportunity), status=status)
 
 
 def _deliver_unit(opportunity, slug):
@@ -281,7 +348,9 @@ def test_annotate_visit_counts_window_filters_on_visit_date(opportunity):
 
 
 def test_visits_approved_overall_excludes_excluded_and_unapproved(opportunity):
-    wa = WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+    wa = WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=_access(opportunity), ward="w1", status=WorkAreaStatus.VISITED
+    )
     excluded = WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.EXCLUDED)
     _approved_visit(opportunity, wa, datetime.date(2026, 3, 10))
     _approved_visit(opportunity, wa, datetime.date(2026, 3, 12))
@@ -297,8 +366,33 @@ def test_visits_approved_overall_excludes_excluded_and_unapproved(opportunity):
     assert result["w1"]["visits_approved"] == 2
 
 
+def test_visits_approved_excludes_unassigned(opportunity):
+    """An unassigned area has no FLW to do the work, so its approved visits don't count either."""
+    unassigned = WorkAreaFactory(opportunity=opportunity, opportunity_access=None, ward="w1")
+    _approved_visit(opportunity, unassigned, datetime.date(2026, 3, 10))
+
+    result = get_visits_approved_aggregates(opportunity, "ward", window=None)
+    assert result.get("w1", {}).get("visits_approved", 0) == 0
+
+
+def test_visits_approved_only_counts_service_delivery_unit(opportunity):
+    """Only approved visits on the Service Delivery deliver unit count toward the tracker's visit columns."""
+    wa = WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=_access(opportunity), ward="w1", status=WorkAreaStatus.VISITED
+    )
+    _approved_visit(opportunity, wa, datetime.date(2026, 3, 10))  # HSD, via the helper's default
+    _approved_visit(
+        opportunity, wa, datetime.date(2026, 3, 12), deliver_unit=_deliver_unit(opportunity, "registration")
+    )
+
+    result = get_visits_approved_aggregates(opportunity, "ward", window=None)
+    assert result["w1"]["visits_approved"] == 1
+
+
 def test_visits_approved_window_filters_visit_date(opportunity):
-    wa = WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+    wa = WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=_access(opportunity), ward="w1", status=WorkAreaStatus.VISITED
+    )
     _approved_visit(opportunity, wa, datetime.date(2026, 3, 10))
     _approved_visit(opportunity, wa, datetime.date(2026, 4, 10))
     window = (datetime.date(2026, 3, 1), datetime.date(2026, 3, 31))
@@ -425,6 +519,7 @@ def test_report_exposes_header_ward_and_wag_rows(opportunity):
     group = WorkAreaGroupFactory(opportunity=opportunity, ward="w1", name="G1")
     wa = WorkAreaFactory(
         opportunity=opportunity,
+        opportunity_access=_access(opportunity),
         ward="w1",
         work_area_group=group,
         status=WorkAreaStatus.EXPECTED_VISIT_REACHED,
@@ -443,8 +538,11 @@ def test_report_exposes_header_ward_and_wag_rows(opportunity):
 
 def test_header_saturation_goal_ignores_date_filter(opportunity):
     # Two work areas in one ward; one currently EVC-reached, its transition stamped in March.
-    evc = WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
-    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.NOT_VISITED)
+    access = _access(opportunity)
+    evc = WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.EXPECTED_VISIT_REACHED
+    )
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.NOT_VISITED)
     _stamp_transition(
         evc, WorkAreaStatus.EXPECTED_VISIT_REACHED, timezone.make_aware(datetime.datetime(2026, 3, 15, 9, 0))
     )

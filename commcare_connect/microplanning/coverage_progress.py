@@ -85,10 +85,6 @@ class CoverageDateFilter:
         return (start_dt, end_dt)
 
 
-def non_excluded_workareas(opportunity):
-    return WorkArea.objects.filter(opportunity=opportunity).exclude(status=WorkAreaStatus.EXCLUDED)
-
-
 # Business rule: Excluded areas and unassigned areas are out of scope. Kept as a Q so the Progress
 # Mapping tiles, which aggregate over all work areas at once, share this one definition.
 IN_SCOPE_WORK_AREA = ~Q(status=WorkAreaStatus.EXCLUDED) & Q(opportunity_access__isnull=False)
@@ -155,7 +151,7 @@ def annotate_status_timestamps(qs):
 def get_target_aggregates(opportunity, group_field) -> dict[GroupKey, TargetAggregate]:
     """Static, filter-independent denominators grouped by ward or work_area_group_id."""
     rows = (
-        non_excluded_workareas(opportunity)
+        in_scope_work_areas(opportunity)
         .values(group_field)
         .annotate(
             building_count=Sum("building_count"),
@@ -172,7 +168,7 @@ def get_status_aggregates(opportunity, group_field, window) -> dict[GroupKey, St
     window=None -> Overall (all current-status WAs). A window applies the
     visited-at / evc-reached-at transition-date filter.
     """
-    qs = non_excluded_workareas(opportunity)
+    qs = in_scope_work_areas(opportunity)
     if window is None:
         visited_filter = Q(status=WorkAreaStatus.VISITED)
         evc_filter = Q(status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
@@ -193,7 +189,8 @@ def get_status_aggregates(opportunity, group_field, window) -> dict[GroupKey, St
 
 
 def get_visits_approved_aggregates(opportunity, group_field, window) -> dict[GroupKey, VisitsAggregate]:
-    """Approved-visit counts per group via work_area, dropping EXCLUDED WAs.
+    """Approved Service Delivery visit counts per group via work_area, dropping out-of-scope WAs
+    (excluded or unassigned).
 
     group_field is "ward" or "work_area_group_id"; the join path through work_area
     is "work_area__<group_field>".
@@ -201,7 +198,9 @@ def get_visits_approved_aggregates(opportunity, group_field, window) -> dict[Gro
     qs = UserVisit.objects.filter(
         opportunity=opportunity,
         status=VisitValidationStatus.approved,
+        deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
         work_area__isnull=False,
+        work_area__opportunity_access__isnull=False,
     ).exclude(work_area__status=WorkAreaStatus.EXCLUDED)
     if window is not None:
         start_dt, end_dt = window

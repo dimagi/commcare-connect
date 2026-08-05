@@ -11,8 +11,8 @@ WARD_METRIC_COLUMNS = (
     ("expected_visit_total", _("Expected Visit Count")),
     ("building_count", _("Building Count")),
     ("num_work_areas", _("Work Areas")),
-    ("visits_approved", _("Approved Visits")),
-    ("pct_visits_approved", _("% Visits Completed")),
+    ("visits_approved", _("Approved HSD Visits")),
+    ("pct_visits_approved", _("% HSD Visits Completed")),
     ("WAs_visited", _("WAs Visited")),
     ("pct_WAs_visited", _("% WAs Visited")),
     ("WAs_visited_last_week", _("WAs Visited (Last Week)")),
@@ -36,8 +36,8 @@ WAG_LABEL_COLUMNS = (
 
 WAG_METRIC_COLUMNS = (
     ("expected_visit_total", _("Expected Visit Count")),
-    ("pct_visits_approved", _("% Visits Completed")),
-    ("pct_visits_approved_last_week", _("% Visits Completed (Last Week)")),
+    ("pct_visits_approved", _("% HSD Visits Completed")),
+    ("pct_visits_approved_last_week", _("% HSD Visits Completed (Last Week)")),
     ("pct_WAs_evc_reached", _("% WAs EVC Reached")),
     ("pct_WA_visited_to_pct_visits", _("WA Visited : Visits Ratio")),
     ("pct_WA_visited_to_pct_visits_last_week", _("WA Visited : Visits Ratio (Last Week)")),
