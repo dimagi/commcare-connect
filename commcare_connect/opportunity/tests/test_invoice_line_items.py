@@ -120,7 +120,7 @@ class TestBillableRows:
         assert row.flw_amount_local == Decimal("200")
         assert row.org_amount_local == Decimal("40")
         assert row.total_amount_local == Decimal("240")
-        assert row.exchange_rate == Decimal("1")
+        assert row.exchange_rate.rate == Decimal("1")
         assert row.total_amount_usd == Decimal("240")
 
     def test_first_billing_is_attributed_to_its_approval_month(self, billing_setup):
@@ -225,7 +225,7 @@ class TestCreateInvoiceLineItems:
         assert row.flw_amount_usd == Decimal("200")
         assert row.org_amount_local == Decimal("40")
         assert row.org_amount_usd == Decimal("40")
-        assert row.exchange_rate == Decimal("1")
+        assert row.exchange_rate.rate == Decimal("1")
 
     def test_advances_the_watermark_to_the_saved_count(self, billing_setup):
         access, payment_unit = billing_setup
@@ -597,6 +597,7 @@ class TestBillableLineItemsAcrossMonths:
 
     def test_items_without_prior_invoice(self):
         opp_access = OpportunityAccessFactory()
+        ExchangeRateFactory(currency_code="USD", rate=1, rate_date=datetime.date(2020, 1, 1))
         CompletedWorkFactory(status=CompletedWorkStatus.pending, opportunity_access=opp_access)
         assert self._billable_items(opp_access.opportunity) == []
 
@@ -628,20 +629,20 @@ class TestBillableLineItemsAcrossMonths:
         )
         assert self._billable_items(opp_access.opportunity) == []
 
-    @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
-    def test_same_pu_items_across_multiple_months(self, mock_get_exchange_rate):
+    @patch("commcare_connect.opportunity.models.ExchangeRate.latest_exchange_rate")
+    def test_same_pu_items_across_multiple_months(self, mock_latest_exchange_rate):
         two_months_ago = datetime.datetime.now(tz=datetime.UTC) - relativedelta(months=2)
         one_month_ago = datetime.datetime.now(tz=datetime.UTC) - relativedelta(months=1)
         today = datetime.datetime.now(tz=datetime.UTC)
 
-        ExchangeRateFactory(rate_date=two_months_ago, currency_code="EUR", rate=Decimal("0.25"))
-        ExchangeRateFactory(rate_date=one_month_ago, currency_code="EUR", rate=Decimal("0.50"))
-        ExchangeRateFactory(rate_date=today, currency_code="EUR", rate=Decimal("0.75"))
+        rate_two_months_ago = ExchangeRateFactory(rate_date=two_months_ago, currency_code="EUR", rate=Decimal("0.25"))
+        rate_one_month_ago = ExchangeRateFactory(rate_date=one_month_ago, currency_code="EUR", rate=Decimal("0.50"))
+        rate_today = ExchangeRateFactory(rate_date=today, currency_code="EUR", rate=Decimal("0.75"))
 
-        mock_get_exchange_rate.side_effect = lambda _, date: {
-            two_months_ago.month: Decimal("0.25"),
-            one_month_ago.month: Decimal("0.50"),
-            today.month: Decimal("0.75"),
+        mock_latest_exchange_rate.side_effect = lambda _, date: {
+            two_months_ago.month: rate_two_months_ago,
+            one_month_ago.month: rate_one_month_ago,
+            today.month: rate_today,
         }[date.month]
 
         opp_access = OpportunityAccessFactory(opportunity__currency_id="EUR")
@@ -681,8 +682,8 @@ class TestBillableLineItemsAcrossMonths:
             assert item["exchange_rate"] == expected_exchange_rate
             assert item["total_amount_usd"] == round(total_local_amount / expected_exchange_rate, 2)
 
-    @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
-    def test_different_pu_items_across_multiple_months(self, mock_get_exchange_rate):
+    @patch("commcare_connect.opportunity.models.ExchangeRate.latest_exchange_rate")
+    def test_different_pu_items_across_multiple_months(self, mock_latest_exchange_rate):
         two_months_ago = datetime.datetime.now(tz=datetime.UTC) - relativedelta(months=2)
         one_month_ago = datetime.datetime.now(tz=datetime.UTC) - relativedelta(months=1)
         today = datetime.datetime.now(tz=datetime.UTC)
@@ -691,14 +692,18 @@ class TestBillableLineItemsAcrossMonths:
         rate_one_month_ago = Decimal("0.50")
         rate_today = Decimal("0.75")
 
-        ExchangeRateFactory(rate_date=two_months_ago, currency_code="EUR", rate=rate_two_months_ago)
-        ExchangeRateFactory(rate_date=one_month_ago, currency_code="EUR", rate=rate_one_month_ago)
-        ExchangeRateFactory(rate_date=today, currency_code="EUR", rate=rate_today)
+        exchange_rate_two_months_ago = ExchangeRateFactory(
+            rate_date=two_months_ago, currency_code="EUR", rate=rate_two_months_ago
+        )
+        exchange_rate_one_month_ago = ExchangeRateFactory(
+            rate_date=one_month_ago, currency_code="EUR", rate=rate_one_month_ago
+        )
+        exchange_rate_today = ExchangeRateFactory(rate_date=today, currency_code="EUR", rate=rate_today)
 
-        mock_get_exchange_rate.side_effect = lambda _, date: {
-            two_months_ago.month: rate_two_months_ago,
-            one_month_ago.month: rate_one_month_ago,
-            today.month: rate_today,
+        mock_latest_exchange_rate.side_effect = lambda _, date: {
+            two_months_ago.month: exchange_rate_two_months_ago,
+            one_month_ago.month: exchange_rate_one_month_ago,
+            today.month: exchange_rate_today,
         }[date.month]
 
         opp_access = OpportunityAccessFactory(opportunity__currency_id="EUR")
@@ -762,7 +767,8 @@ class TestBillableLineItemsAcrossMonths:
             assert item["exchange_rate"] == expected_exchange_rate
             assert item["total_amount_usd"] == round(total_local_amount / expected_exchange_rate, 2)
 
-    def test_number_approved_uses_saved_approved_count(self):
+    @patch("commcare_connect.opportunity.models.ExchangeRate.latest_exchange_rate")
+    def test_number_approved_uses_saved_approved_count(self, mock_latest_exchange_rate):
         """A single CompletedWork can represent multiple approved visits.
 
         number_approved must aggregate saved_approved_count, not row count, so it stays consistent
@@ -770,6 +776,10 @@ class TestBillableLineItemsAcrossMonths:
         """
         opp_access = OpportunityAccessFactory()
         payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100, org_amount=0)
+
+        mock_latest_exchange_rate.return_value = ExchangeRateFactory(
+            rate_date=datetime.datetime.now(tz=datetime.UTC), currency_code="EUR", rate=Decimal("0.50")
+        )
 
         CompletedWorkFactory(
             status=CompletedWorkStatus.approved,

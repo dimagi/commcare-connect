@@ -51,7 +51,7 @@ class BillableRow:
     flw_amount_usd: Decimal
     org_amount_local: Decimal
     org_amount_usd: Decimal
-    exchange_rate: Decimal | int  # get_exchange_rate returns int 1 for USD; the DecimalField coerces
+    exchange_rate: ExchangeRate
 
     @property
     def total_amount_local(self):
@@ -71,8 +71,6 @@ def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
 
     for_update=True is only for writes. Read-only callers must leave it False.
     """
-    from commcare_connect.opportunity.visit_import import get_exchange_rate
-
     works = get_billable_completed_works_qs(opportunity, start_date, end_date).select_related(
         "payment_unit__opportunity", "opportunity_access__user"
     )
@@ -85,8 +83,8 @@ def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
     for work in works.order_by("id"):
         month = _billed_month(work, end_date)
         if month not in rates_by_month:
-            rates_by_month[month] = get_exchange_rate(currency_code, month)
-        rate = rates_by_month[month]
+            rates_by_month[month] = ExchangeRate.latest_exchange_rate(currency_code, month)
+        exchange_rate = rates_by_month[month]
 
         billed_count = work.saved_approved_count - work.invoiced_approved_count
         flw_local = Decimal(billed_count * work.payment_unit.amount)
@@ -97,10 +95,10 @@ def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
                 billed_count=billed_count,
                 month=month,
                 flw_amount_local=flw_local,
-                flw_amount_usd=_to_usd(flw_local, rate),
+                flw_amount_usd=_to_usd(flw_local, exchange_rate.rate),
                 org_amount_local=org_local,
-                org_amount_usd=_to_usd(org_local, rate),
-                exchange_rate=rate,
+                org_amount_usd=_to_usd(org_local, exchange_rate.rate),
+                exchange_rate=exchange_rate,
             )
         )
     return rows
@@ -119,7 +117,7 @@ def group_line_items(rows, currency_code):
                 "org_amount_local": Decimal(0),
                 "flw_amount_usd": Decimal(0),
                 "org_amount_usd": Decimal(0),
-                "exchange_rate": row.exchange_rate,
+                "exchange_rate": row.exchange_rate.rate,
             },
         )
         group["number_approved"] += row.billed_count
@@ -159,7 +157,7 @@ def get_invoice_line_items(invoice):
             flw_usd=Sum("flw_amount_usd"),
             org_usd=Sum("org_amount_usd"),
             # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
-            rate=Max("exchange_rate"),
+            rate=Max("exchange_rate__rate"),
         )
         .order_by("month", "payment_unit_name")
     )
@@ -319,7 +317,7 @@ def _billed_month(work, end_date):
     return get_month_start_date(end_date)
 
 
-def _to_usd(amount_local: Decimal, exchange_rate: int | Decimal) -> Decimal:
+def _to_usd(amount_local: Decimal, exchange_rate: Decimal) -> Decimal:
     """Round each row to cents before summing so `invoice.amount_usd` always equals
     the sum of the stored rows. Although `DecimalField(decimal_places=2)` rounds on
     save, leaving values at full precision in memory would allow invoice totals to
