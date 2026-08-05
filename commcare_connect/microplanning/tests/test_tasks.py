@@ -7,15 +7,23 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import (
+    ImplementationAreaCSVImporter,
     WorkAreaCSVImporter,
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
 )
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+)
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
+
+WA_BASE_HEADER = "Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State"
+WA_ROW = 'area-{n},Ward1,77.1 28.6,"POLYGON((77 28,78 28,78 29,77 29,77 28))",5,6,7,LGA1,State1'
 
 
 @pytest.fixture
@@ -216,6 +224,75 @@ class TestWorkAreaCSVImporter:
         expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
 
+    def build_row(self, slug, group_name=None):
+        row = [
+            slug,
+            "ward",
+            self.CENTROID,
+            self.POLYGON,
+            5,
+            "6",
+            "100",
+            "LGA1",
+            "State1",
+        ]
+        if group_name is not None:
+            row.append(group_name)
+        return row
+
+    def build_csv_with_groups(self, rows):
+        headers = self.HEADERS + [WorkAreaCSVImporter.GROUP_NAME_HEADER]
+        return self.build_csv(rows, headers=headers)
+
+    def test_import_assigns_work_area_groups_when_all_rows_have_one(self, opportunity):
+        rows = [
+            self.build_row("area-1", "group-a"),
+            self.build_row("area-2", "group-a"),
+            self.build_row("area-3", "group-b"),
+        ]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert result["created"] == 3
+        groups = {g.name: g for g in WorkAreaGroup.objects.filter(opportunity=opportunity)}
+        assert set(groups) == {"group-a", "group-b"}
+        assert WorkArea.objects.get(slug="area-1").work_area_group == groups["group-a"]
+        assert WorkArea.objects.get(slug="area-2").work_area_group == groups["group-a"]
+        assert WorkArea.objects.get(slug="area-3").work_area_group == groups["group-b"]
+        # centroid should be computed for the newly created groups
+        assert groups["group-a"].centroid is not None
+        assert groups["group-b"].centroid is not None
+
+    def test_import_without_group_column_leaves_work_areas_ungrouped(self, opportunity):
+        rows = [self.build_row("area-1"), self.build_row("area-2")]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result["created"] == 2
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        assert WorkArea.objects.get(slug="area-1").work_area_group is None
+        assert WorkArea.objects.get(slug="area-2").work_area_group is None
+
+    def test_import_errors_when_only_some_rows_have_a_group(self, opportunity):
+        rows = [
+            self.build_row("area-1", "group-a"),
+            self.build_row("area-2", ""),
+        ]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert "errors" in result
+        error_keys = " ".join(result["errors"].keys()).lower()
+        assert "work area group name" in error_keys
+        assert WorkArea.objects.count() == 0
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+
+    def test_import_reuses_existing_work_area_group_with_same_name(self, opportunity):
+        existing_group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="other-ward")
+        rows = [self.build_row("area-1", "group-a")]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert result["created"] == 1
+        assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+        assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
+
 
 @pytest.mark.django_db
 def test_import_work_areas_task_bom_csv(opportunity):
@@ -246,6 +323,113 @@ def test_send_work_area_assignment_notification(opportunity):
     assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
     assert message.data["title"]
     assert message.data["body"]
+
+
+@pytest.mark.django_db
+def test_work_area_import_matches_implementation_area_by_name(opportunity):
+    ia = ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+    content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Ward North\n")
+    result = WorkAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 1}
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id == ia.id
+
+
+@pytest.mark.django_db
+def test_work_area_import_unmatched_implementation_area_is_null_but_name_kept(opportunity):
+    content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Nonexistent\n")
+    result = WorkAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 1}
+    work_area = WorkArea.objects.get(slug="area-1")
+    assert work_area.implementation_area_id is None
+    # Name is kept so a later Implementation Area upload can complete the link.
+    assert work_area.implementation_area_name == "Nonexistent"
+
+
+@pytest.mark.django_db
+def test_work_area_import_without_implementation_area_column(opportunity):
+    content = io.StringIO(f"{WA_BASE_HEADER}\n" + WA_ROW.format(n=1) + "\n")
+    result = WorkAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 1}
+    work_area = WorkArea.objects.get(slug="area-1")
+    assert work_area.implementation_area_id is None
+    assert work_area.implementation_area_name == ""
+
+
+@pytest.mark.django_db
+def test_implementation_area_import_backlinks_existing_work_areas(opportunity):
+    # Work Areas uploaded first, before any Implementation Area exists: FK stays null, name kept.
+    wa_content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Ward North\n")
+    assert WorkAreaCSVImporter(opportunity.id, wa_content).run() == {"created": 1}
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
+
+    # Uploading the matching Implementation Area afterwards links the existing work area.
+    ia_content = io.StringIO(f'{IA_HEADER}\nWard North,77.1 28.6,"{IA_POLY}"\n')
+    assert ImplementationAreaCSVImporter(opportunity.id, ia_content).run() == {"created": 1}
+
+    area = ImplementationArea.objects.get(opportunity=opportunity, name="Ward North")
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id == area.id
+
+
+@pytest.mark.django_db
+def test_implementation_area_import_does_not_link_unrelated_work_areas(opportunity):
+    wa_content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Ward North\n")
+    WorkAreaCSVImporter(opportunity.id, wa_content).run()
+
+    ia_content = io.StringIO(f'{IA_HEADER}\nWard South,77.1 28.6,"{IA_POLY}"\n')
+    ImplementationAreaCSVImporter(opportunity.id, ia_content).run()
+
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
+
+
+IA_HEADER = "Implementation Area Name,Centroid,Boundary"
+IA_POLY = "POLYGON((77 28,78 28,78 29,77 29,77 28))"
+
+
+@pytest.mark.django_db
+def test_implementation_area_import_success(opportunity):
+    content = io.StringIO(f'{IA_HEADER}\nWard North,77.1 28.6,"{IA_POLY}"\nWard South,77.2 28.7,"{IA_POLY}"\n')
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 2}
+    assert ImplementationArea.objects.filter(opportunity_id=opportunity.id).count() == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "row,expected_error",
+    [
+        (f',77.1 28.6,"{IA_POLY}"', "Implementation Area Name is required and should be unique."),
+        (f'Ward,bad-centroid,"{IA_POLY}"', "Centroid must be in 'lon lat' format"),
+        ("Ward,77.1 28.6,NOT_WKT", "Invalid WKT format for Boundary(Polygon)."),
+    ],
+)
+def test_implementation_area_row_validations(opportunity, row, expected_error):
+    content = io.StringIO(f"{IA_HEADER}\n{row}\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert expected_error in result["errors"]
+    assert result["errors"][expected_error] == [2]
+
+
+@pytest.mark.django_db
+def test_implementation_area_duplicate_name_in_file(opportunity):
+    content = io.StringIO(f'{IA_HEADER}\nWard,77.1 28.6,"{IA_POLY}"\nWard,77.2 28.7,"{IA_POLY}"\n')
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert "Duplicate Implementation Area Name in file" in result["errors"]
+
+
+@pytest.mark.django_db
+def test_implementation_area_short_row_reports_boundary_error(opportunity):
+    # A row with fewer fields than headers leaves boundary as None; it must surface as a
+    # clean per-row validation error, not crash the import with an AttributeError.
+    content = io.StringIO(f"{IA_HEADER}\nWard,77.1 28.6\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert "Invalid WKT format for Boundary(Polygon)." in result["errors"]
+
+
+@pytest.mark.django_db
+def test_implementation_area_missing_columns(opportunity):
+    content = io.StringIO("Implementation Area Name,Centroid\nWard,77.1 28.6\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert any("Missing columns" in msg for msg in result["errors"])
 
 
 @mock.patch("commcare_connect.microplanning.tasks.cache")

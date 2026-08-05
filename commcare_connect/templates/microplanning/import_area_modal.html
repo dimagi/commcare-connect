@@ -7,11 +7,11 @@
   <div class="modal">
     <!-- Header -->
     <div class="header text-lg font-semibold text-brand-deep-purple flex justify-between items-center">
-      <h1>{% translate "Upload Work Areas" %}</h1>
+      <h1>{{ modal_title }}</h1>
     </div>
     <!-- Modal Body -->
     <div id="import-result"
-         {% if task_id and not result_ready %} hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}?task_id={{ task_id }}" hx-trigger="every 2s" hx-target="#import-parent" hx-swap="outerHTML" {% endif %}>
+         {% if task_id and not result_ready %} hx-get="{{ status_url }}?task_id={{ task_id }}" hx-trigger="every 2s" hx-target="#import-parent" hx-swap="outerHTML" {% endif %}>
       {% if task_id and not result_ready %}
         <!-- Spinner -->
         <div class="flex flex-col items-center justify-center mt-4">
@@ -26,7 +26,7 @@
           <div class="mt-4 border-t border-gray-100 pt-4">
             <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
               <i class="fa-solid fa-circle-exclamation text-red-500"></i>
-              {% translate "No Work Areas Were Uploaded — CSV Contains Errors" %}
+              {% translate "No" %} {{ records_label }} {% translate "Were Uploaded — CSV Contains Errors" %}
             </h3>
             <div class="max-h-64 overflow-y-auto custom-scrollbar border border-gray-200 rounded-md">
               <table class="min-w-full divide-y divide-gray-200">
@@ -50,7 +50,7 @@
           </div>
         {% elif result_data.created %}
           <div class="mt-4 border-t border-gray-100 pt-4 text-green-600 text-center">
-            <i class="fa-solid fa-circle-check"></i> {% translate "Successfully created" %} {{ result_data.created }} {% translate "work area(s)" %}
+            <i class="fa-solid fa-circle-check"></i> {% translate "Successfully created" %} {{ result_data.created }} {{ success_noun }}
           </div>
         {% endif %}
         <div class="footer flex justify-end gap-2 p-4">
@@ -61,14 +61,14 @@
         <!-- Upload Form -->
         <form method="post"
               enctype="multipart/form-data"
-              action="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+              action="{{ upload_url }}"
               class="content">
           {% csrf_token %}
           <div class="modal-body flex flex-col items-center text-center p-6">
             <div class="mb-2 text-indigo-600">
               <i class="fa-solid fa-cloud-arrow-up text-5xl"></i>
             </div>
-            <a href="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+            <a href="{{ upload_url }}"
                class="mt-6 flex items-center px-4 py-1.5 border border-gray-800 rounded-md text-sm font-medium hover:bg-gray-50 transition mb-4">
               <i class="fa-solid fa-file-arrow-down mr-2"></i>
               {% translate "Download Template" %}
@@ -88,14 +88,7 @@
               <div class="mt-3 text-xs text-gray-600 space-y-1">
                 <p class="font-semibold">{% translate "CSV Column Requirements:" %}</p>
                 <ul class="list-disc ml-4">
-                  <li>{% translate "Area Slug – unique identifier for each work area should be unique in an opportunity" %}</li>
-                  <li>{% translate "Ward – name of the ward" %}</li>
-                  <li>{% translate "Centroid – longitude and latitude separated by space (e.g. 77.123 28.456)" %}</li>
-                  <li>{% translate "Boundary – Polygon in WKT format" %}</li>
-                  <li>{% translate "Building Count – positive integer" %}</li>
-                  <li>{% translate "Expected Visit Count – positive integer" %}</li>
-                  <li>{% translate "LGA – name of the LGA the work area is in" %}</li>
-                  <li>{% translate "State – name of the state the work area is in" %}</li>
+                  {% for requirement in column_requirements %}<li>{{ requirement }}</li>{% endfor %}
                 </ul>
               </div>
             </div>

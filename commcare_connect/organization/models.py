@@ -30,6 +30,7 @@ class Organization(BaseModel):
         settings.AUTH_USER_MODEL, related_name="organizations", through="UserOrganizationMembership"
     )
     program_manager = models.BooleanField(default=False)
+    funder = models.BooleanField(default=False)
     llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
 
     def save(self, *args, **kwargs):
@@ -40,12 +41,13 @@ class Organization(BaseModel):
     def __str__(self):
         return self.slug
 
-    def get_member_emails(self):
-        return list(
-            self.memberships.exclude(user__email__isnull=True)
-            .exclude(user__email="")
-            .values_list("user__email", flat=True)
-        )
+    def get_member_emails(self, exclude_viewer=False):
+        member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")
+
+        if exclude_viewer:
+            member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
+
+        return list(member_query.values_list("user__email", flat=True))
 
 
 class UserOrganizationMembership(models.Model):
@@ -73,10 +75,6 @@ class UserOrganizationMembership(models.Model):
     @property
     def is_viewer(self):
         return self.role == self.Role.VIEWER
-
-    @property
-    def is_program_manager(self):
-        return self.organization.program_manager and self.is_admin
 
     class Meta:
         db_table = "organization_membership"

@@ -62,6 +62,7 @@ class OpportunityFactory(DjangoModelFactory):
     country = LazyFunction(lambda: Country.objects.get(code="USA"))
     hq_server = SubFactory(HQServerFactory)
     program = SubFactory("commcare_connect.program.tests.factories.ProgramFactory")
+    supervising_organization = LazyAttribute(lambda o: o.program.organization if o.program else o.organization)
 
     class Meta:
         model = "opportunity.Opportunity"
@@ -302,14 +303,17 @@ class ExchangeRateFactory(DjangoModelFactory):
 
 class CompletedWorkInvoiceFactory(DjangoModelFactory):
     invoice = SubFactory(PaymentInvoiceFactory)
-    completed_work = SubFactory(CompletedWorkFactory)
+    completed_work = SubFactory(
+        CompletedWorkFactory,
+        opportunity_access__opportunity=SelfAttribute("...invoice.opportunity"),
+    )
     month = LazyFunction(lambda: date.today().replace(day=1))
     billed_count = 1
     flw_amount_local = 0
     flw_amount_usd = 0
     org_amount_local = 0
     org_amount_usd = 0
-    exchange_rate = 1
+    exchange_rate = SubFactory(ExchangeRateFactory)
 
     class Meta:
         model = "opportunity.CompletedWorkInvoice"
