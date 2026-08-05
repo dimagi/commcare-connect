@@ -56,21 +56,21 @@ class Command(BaseCommand):
         if batch_size < 1:
             raise CommandError("--batch-size must be at least 1.")
 
-        dry_run = options["dry_run"]
+        self.dry_run = options["dry_run"]
         has_phone_filter = Q(phone_number__isnull=False) & ~Q(phone_number="")
         workers = User.objects.filter(opportunityaccess__isnull=False).distinct()
         without_phone = workers.exclude(has_phone_filter).count()
 
-        names_by_phone = {}
+        self.users_by_phone = {}
         for user in workers.filter(has_phone_filter):
-            names_by_phone.setdefault(user.phone_number, []).append(user)
+            self.users_by_phone.setdefault(user.phone_number, []).append(user)
 
-        if not names_by_phone:
+        if not self.users_by_phone:
             self.stdout.write("No workers with a phone number to refresh.")
             return
 
-        phone_numbers = sorted(names_by_phone)
-        totals = {
+        phone_numbers = sorted(self.users_by_phone)
+        self.totals = {
             "checked": len(phone_numbers),
             "updated": 0,
             "unchanged": 0,
@@ -79,64 +79,64 @@ class Command(BaseCommand):
             "mismatched": 0,
         }
         for batch in batched(phone_numbers, batch_size):
-            self._refresh_batch(batch, names_by_phone, totals, dry_run)
+            self._refresh_batch(batch)
 
-        self._report(totals, without_phone, dry_run)
+        self._report(without_phone)
 
-    def _refresh_batch(self, batch, users_by_phone, totals, dry_run):
+    def _refresh_batch(self, batch):
         try:
             found_users = fetch_users(batch)
         except Exception as e:
             # One bad batch must not abort the run; a rerun picks up whatever was missed.
             self.stderr.write(f"Lookup failed for {len(batch)} phone number(s), skipping batch: {e}")
-            totals["skipped"] += len(batch)
+            self.totals["skipped"] += len(batch)
             return
 
         found_phone_numbers = set()
         to_update = []
         for connectid_user in found_users:
             found_phone_numbers.add(connectid_user.phone_number)
-            for user in users_by_phone.get(connectid_user.phone_number, []):
+            for user in self.users_by_phone.get(connectid_user.phone_number, []):
                 if user.username != connectid_user.username:
-                    totals["mismatched"] += 1
+                    self.totals["mismatched"] += 1
                     continue
-                if self._stage_update(user, connectid_user.name, totals, dry_run):
+                if self._stage_update(user, connectid_user.name):
                     to_update.append(user)
-        totals["not_found"] += len(set(batch) - found_phone_numbers)
+        self.totals["not_found"] += len(set(batch) - found_phone_numbers)
 
         if to_update:
             User.objects.bulk_update(to_update, ["name"], batch_size=UPDATE_BATCH_SIZE)
 
-    def _stage_update(self, user, new_name, totals, dry_run):
+    def _stage_update(self, user, new_name):
         """Set ``user.name`` in memory, returning whether it needs saving."""
         new_name = (new_name or "").strip()
         if not new_name:
             # ConnectID allows a blank name; leave the existing local one alone.
             self.stderr.write(f"Skipping {user.username}: name is blank in ConnectID")
-            totals["skipped"] += 1
+            self.totals["skipped"] += 1
             return False
         if len(new_name) > NAME_MAX_LENGTH:
             # ConnectID stores the name in a TextField, so it can hold more than this column accepts.
             self.stderr.write(f"Skipping {user.username}: name exceeds {NAME_MAX_LENGTH} characters")
-            totals["skipped"] += 1
+            self.totals["skipped"] += 1
             return False
         if user.name == new_name:
-            totals["unchanged"] += 1
+            self.totals["unchanged"] += 1
             return False
 
-        totals["updated"] += 1
-        if dry_run:
+        self.totals["updated"] += 1
+        if self.dry_run:
             self.stdout.write(f"{user.username}: {user.name!r} -> {new_name!r}")
             return False
         user.name = new_name
         return True
 
-    def _report(self, totals, without_phone, dry_run):
-        verb = "would be updated" if dry_run else "updated"
+    def _report(self, without_phone):
+        verb = "would be updated" if self.dry_run else "updated"
         self.stdout.write(
-            f"{totals['checked']} phone number(s) checked, {totals['updated']} name(s) {verb}, "
-            f"{totals['unchanged']} already current, {totals['skipped']} skipped, "
-            f"{totals['not_found']} not found in ConnectID, "
-            f"{totals['mismatched']} local record(s) shared a phone number but not the username, "
+            f"{self.totals['checked']} phone number(s) checked, {self.totals['updated']} name(s) {verb}, "
+            f"{self.totals['unchanged']} already current, {self.totals['skipped']} skipped, "
+            f"{self.totals['not_found']} not found in ConnectID, "
+            f"{self.totals['mismatched']} local record(s) shared a phone number but not the username, "
             f"{without_phone} worker(s) had no phone number."
         )
