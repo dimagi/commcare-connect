@@ -313,7 +313,7 @@ class CompletedWorkInvoiceFactory(DjangoModelFactory):
     flw_amount_usd = 0
     org_amount_local = 0
     org_amount_usd = 0
-    exchange_rate = 1
+    exchange_rate = SubFactory(ExchangeRateFactory)
 
     class Meta:
         model = "opportunity.CompletedWorkInvoice"
