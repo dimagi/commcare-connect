@@ -96,7 +96,6 @@ def test_status_aggregates_overall_strict_and_exclusive(opportunity):
     assert result["w1"]["WAs_visited"] == 1
     assert result["w1"]["WAs_evc_reached"] == 1
     assert result["w1"]["Buildings_covered_in_WAs_visited"] == 10
-    assert result["w1"]["Buildings_covered_in_WAs_evc_reached"] == 7
 
 
 def test_status_aggregates_window_filters_by_transition_date(opportunity):
@@ -162,13 +161,11 @@ def test_target_aggregates_by_ward_excludes_excluded(opportunity):
 
     assert result["w1"] == {
         "ward": "w1",
-        "target_population": 150,
         "building_count": 14,
         "num_work_areas": 2,
         "expected_visit_total": 8,
     }
     assert result["w2"]["num_work_areas"] == 1
-    assert "999" not in str(result["w1"])  # excluded WA not summed
 
 
 def test_target_aggregates_by_wag_excludes_excluded(opportunity):
@@ -194,7 +191,6 @@ def test_target_aggregates_by_wag_excludes_excluded(opportunity):
 
     assert result[group.id] == {
         "work_area_group_id": group.id,
-        "target_population": 100,
         "building_count": 10,
         "num_work_areas": 1,
         "expected_visit_total": 5,
@@ -313,7 +309,6 @@ def test_build_ward_rows_merges_and_derives():
     target_aggregates = {
         "w1": {
             "ward": "w1",
-            "target_population": 200,
             "building_count": 50,
             "num_work_areas": 10,
             "expected_visit_total": 40,
@@ -325,7 +320,6 @@ def test_build_ward_rows_merges_and_derives():
             "WAs_visited": 4,
             "WAs_evc_reached": 2,
             "Buildings_covered_in_WAs_visited": 20,
-            "Buildings_covered_in_WAs_evc_reached": 8,
         }
     }
     filtered_visits = {"w1": {"ward": "w1", "visits_approved": 20}}
@@ -335,7 +329,6 @@ def test_build_ward_rows_merges_and_derives():
             "WAs_visited": 1,
             "WAs_evc_reached": 0,
             "Buildings_covered_in_WAs_visited": 5,
-            "Buildings_covered_in_WAs_evc_reached": 0,
         }
     }
     last_week_visits = {"w1": {"ward": "w1", "visits_approved": 5}}
@@ -351,7 +344,6 @@ def test_build_ward_rows_merges_and_derives():
     assert row["pct_WAs_evc_reached"] == 20.0  # 2 / 10
     assert row["pct_Buildings_covered_in_WAs_visited"] == 40.0  # 20 / 50
     assert row["pct_WA_visited_to_pct_visits"] == 0.8  # 40 / 50
-    assert row["pct_WA_evc_reached_to_pct_visit"] == 0.4  # 20 / 50
     assert row["WAs_visited_last_week"] == 1
     assert row["pct_WAs_visited_last_week"] == 10.0  # 1 / 10
     # last-week ratio = pct_WAs_visited_last_week / pct_visits_approved_last_week
@@ -363,7 +355,6 @@ def test_build_ward_rows_zero_denominator_yields_none():
     target_aggregates = {
         "w1": {
             "ward": "w1",
-            "target_population": 0,
             "building_count": 0,
             "num_work_areas": 0,
             "expected_visit_total": 0,
@@ -382,7 +373,6 @@ def test_build_wag_rows_reduced_columns(opportunity):
     target_aggregates = {
         group.id: {
             "work_area_group_id": group.id,
-            "target_population": 300,
             "building_count": 60,
             "num_work_areas": 12,
             "expected_visit_total": 50,
@@ -394,7 +384,6 @@ def test_build_wag_rows_reduced_columns(opportunity):
             "WAs_visited": 6,
             "WAs_evc_reached": 3,
             "Buildings_covered_in_WAs_visited": 30,
-            "Buildings_covered_in_WAs_evc_reached": 12,
         }
     }
     filtered_visits = {group.id: {"work_area_group_id": group.id, "visits_approved": 25}}
@@ -404,7 +393,6 @@ def test_build_wag_rows_reduced_columns(opportunity):
             "WAs_visited": 2,
             "WAs_evc_reached": 1,
             "Buildings_covered_in_WAs_visited": 10,
-            "Buildings_covered_in_WAs_evc_reached": 4,
         }
     }
     last_week_visits = {group.id: {"work_area_group_id": group.id, "visits_approved": 10}}
@@ -421,8 +409,6 @@ def test_build_wag_rows_reduced_columns(opportunity):
     assert row["pct_visits_approved"] == 50.0  # 25 / 50
     assert row["pct_WAs_evc_reached"] == 25.0  # 3 / 12
     assert row["pct_WA_visited_to_pct_visits"] == 1.0  # (6/12=50) / (25/50=50)
-    # reduced set: building-coverage columns are NOT present
-    assert "pct_Buildings_covered_in_WAs_visited" not in row
 
 
 def test_ward_saturation_goal_rolls_up_opportunity_wide():
