@@ -14,6 +14,7 @@ from commcare_connect.microplanning.coverage_progress import (
     annotate_status_timestamps,
     build_wag_rows,
     build_ward_rows,
+    get_coverage_aggregates,
     get_status_aggregates,
     get_target_aggregates,
     get_visits_approved_aggregates,
@@ -168,6 +169,87 @@ def test_status_aggregates_window_filters_by_transition_date_for_wag(opportunity
     out_result = get_status_aggregates(opportunity, "work_area_group_id", window=out_window)
     assert in_result[group.id]["WAs_visited"] == 1
     assert out_result.get(group.id, {}).get("WAs_visited", 0) == 0
+
+
+def test_coverage_aggregates_counts_each_area_once(opportunity):
+    """WAs_visited is the union of HSD/NCWA delivery and inaccessible status, not their sum."""
+    access = _access(opportunity)
+    wa_hsd = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1")
+    wa_ncwa = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1")
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.INACCESSIBLE)
+    WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+    )
+    # wa_overlap is both inaccessible and holds an approved HSD visit, so it must count once — same
+    # rule as Progress Mapping's Work Areas Done tile.
+    wa_overlap = WorkAreaFactory(
+        opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.INACCESSIBLE
+    )
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1")  # wa_untouched
+    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.EXCLUDED)
+    unassigned = WorkAreaFactory(opportunity=opportunity, opportunity_access=None, ward="w1")
+
+    _approved_visit(opportunity, wa_hsd, datetime.date(2026, 3, 10))
+    _approved_visit(
+        opportunity,
+        wa_ncwa,
+        datetime.date(2026, 3, 10),
+        deliver_unit=_deliver_unit(opportunity, NO_CHILDREN_WORK_AREA_UNIT_SLUG),
+    )
+    _approved_visit(opportunity, wa_overlap, datetime.date(2026, 3, 10))
+    _approved_visit(opportunity, unassigned, datetime.date(2026, 3, 10))  # dropped: out of scope
+
+    result = get_coverage_aggregates(opportunity, "ward", window=None)
+
+    assert result["w1"]["WAs_visited"] == 5  # hsd, ncwa, inaccessible, request_inaccessible, overlap
+
+
+def test_coverage_aggregates_buildings_covered_stays_hsd_only(opportunity):
+    """Buildings_covered_in_WAs_visited sums only HSD-delivered areas, not the wider WAs_visited union."""
+    access = _access(opportunity)
+    wa_hsd = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", building_count=10)
+    WorkAreaFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        ward="w1",
+        status=WorkAreaStatus.INACCESSIBLE,
+        building_count=99,
+    )
+    _approved_visit(opportunity, wa_hsd, datetime.date(2026, 3, 10))
+
+    result = get_coverage_aggregates(opportunity, "ward", window=None)
+
+    assert result["w1"]["WAs_visited"] == 2  # both count toward the union
+    assert result["w1"]["Buildings_covered_in_WAs_visited"] == 10  # only the HSD-delivered one
+
+
+def test_coverage_aggregates_evc_reached_ignores_areas_with_no_target(opportunity):
+    access = _access(opportunity)
+    wa_reached = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", expected_visit_count=2)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", expected_visit_count=0)
+    _approved_visit(opportunity, wa_reached, datetime.date(2026, 3, 10))
+    _approved_visit(opportunity, wa_reached, datetime.date(2026, 3, 11))
+
+    result = get_coverage_aggregates(opportunity, "ward", window=None)
+
+    assert result["w1"]["WAs_evc_reached"] == 1
+
+
+def test_coverage_aggregates_window_scopes_visits_but_not_status(opportunity):
+    """The HSD/NCWA arm is windowed on visit_date; inaccessible status has no date to test, so it isn't."""
+    access = _access(opportunity)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", status=WorkAreaStatus.INACCESSIBLE)
+    wa_hsd = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", expected_visit_count=1)
+    _approved_visit(opportunity, wa_hsd, datetime.date(2026, 3, 10))  # outside the window below
+
+    window = (
+        timezone.make_aware(datetime.datetime(2026, 4, 1)),
+        timezone.make_aware(datetime.datetime(2026, 4, 30)),
+    )
+    result = get_coverage_aggregates(opportunity, "ward", window=window)
+
+    assert result["w1"]["WAs_visited"] == 1  # the inaccessible area counts regardless of window
+    assert result["w1"]["WAs_evc_reached"] == 0  # fully windowed: no HSD visit inside window
 
 
 def test_target_aggregates_by_ward_excludes_excluded(opportunity):

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from django.core.cache import cache
-from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.timezone import localdate
@@ -184,6 +184,29 @@ def get_status_aggregates(opportunity, group_field, window) -> dict[GroupKey, St
         WAs_visited=Count("id", filter=visited_filter),
         WAs_evc_reached=Count("id", filter=evc_filter),
         Buildings_covered_in_WAs_visited=Coalesce(Sum("building_count", filter=visited_filter), 0),
+    )
+    return {row[group_field]: row for row in rows}
+
+
+def get_coverage_aggregates(opportunity, group_field, window) -> dict[GroupKey, StatusAggregate]:
+    """Visit-based replacement for ``get_status_aggregates``.
+
+    WAs_visited counts each work area once if it has an approved HSD visit, an
+    approved NCWA visit, or is inaccessible. ``window`` applies only to visits;
+    inaccessible areas are always included. Buildings_covered_in_WAs_visited
+    remains HSD-only.
+    """
+    qs = annotate_approved_visit_counts(in_scope_work_areas(opportunity), opportunity, ncwa=True, window=window)
+
+    hsd_delivered = Q(hsd_count__gte=1)
+    ncwa_delivered = Q(ncwa_count__gte=1)
+    inaccessible_status = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
+    evc_reached = Q(expected_visit_count__gt=0) & Q(hsd_count__gte=F("expected_visit_count"))
+
+    rows = qs.values(group_field).annotate(
+        WAs_visited=Count("id", filter=hsd_delivered | ncwa_delivered | inaccessible_status),
+        WAs_evc_reached=Count("id", filter=evc_reached),
+        Buildings_covered_in_WAs_visited=Coalesce(Sum("building_count", filter=hsd_delivered), 0),
     )
     return {row[group_field]: row for row in rows}
 
