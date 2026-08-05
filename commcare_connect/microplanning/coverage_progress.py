@@ -27,8 +27,8 @@ class TargetAggregate(TypedDict):
     expected_visit_total: int
 
 
-class StatusAggregate(TypedDict):
-    """WA-status counts + building sums for one group, as emitted by ``status_aggregates``."""
+class CoverageAggregate(TypedDict):
+    """Visit-based WA counts + building sum for one group, as emitted by ``get_coverage_aggregates``."""
 
     WAs_visited: int
     WAs_evc_reached: int
@@ -130,24 +130,6 @@ def missing_deliver_units(opportunity: Opportunity, slugs: list[str]) -> list[st
     return [slug for slug in slugs if slug not in present]
 
 
-def status_event_model():
-    return WorkArea.pgh_event_model
-
-
-def _earliest_transition_subquery(status):
-    events = status_event_model().objects
-    return Subquery(
-        events.filter(pgh_obj_id=OuterRef("pk"), status=status).order_by("pgh_created_at").values("pgh_created_at")[:1]
-    )
-
-
-def annotate_status_timestamps(qs):
-    return qs.annotate(
-        visited_at=_earliest_transition_subquery(WorkAreaStatus.VISITED),
-        evc_reached_at=_earliest_transition_subquery(WorkAreaStatus.EXPECTED_VISIT_REACHED),
-    )
-
-
 def get_target_aggregates(opportunity, group_field) -> dict[GroupKey, TargetAggregate]:
     """Static, filter-independent denominators grouped by ward or work_area_group_id."""
     rows = (
@@ -162,34 +144,8 @@ def get_target_aggregates(opportunity, group_field) -> dict[GroupKey, TargetAggr
     return {row[group_field]: row for row in rows}
 
 
-def get_status_aggregates(opportunity, group_field, window) -> dict[GroupKey, StatusAggregate]:
-    """WA-status counts + building sums per group, strict on current status.
-
-    window=None -> Overall (all current-status WAs). A window applies the
-    visited-at / evc-reached-at transition-date filter.
-    """
-    qs = in_scope_work_areas(opportunity)
-    if window is None:
-        visited_filter = Q(status=WorkAreaStatus.VISITED)
-        evc_filter = Q(status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
-    else:
-        qs = annotate_status_timestamps(qs)
-        start_dt, end_dt = window
-        visited_filter = Q(status=WorkAreaStatus.VISITED, visited_at__gte=start_dt, visited_at__lt=end_dt)
-        evc_filter = Q(
-            status=WorkAreaStatus.EXPECTED_VISIT_REACHED, evc_reached_at__gte=start_dt, evc_reached_at__lt=end_dt
-        )
-
-    rows = qs.values(group_field).annotate(
-        WAs_visited=Count("id", filter=visited_filter),
-        WAs_evc_reached=Count("id", filter=evc_filter),
-        Buildings_covered_in_WAs_visited=Coalesce(Sum("building_count", filter=visited_filter), 0),
-    )
-    return {row[group_field]: row for row in rows}
-
-
-def get_coverage_aggregates(opportunity, group_field, window) -> dict[GroupKey, StatusAggregate]:
-    """Visit-based replacement for ``get_status_aggregates``.
+def get_coverage_aggregates(opportunity, group_field, window) -> dict[GroupKey, CoverageAggregate]:
+    """WA-status counts + building sums per group, from live delivery counts and current status.
 
     WAs_visited counts each work area once if it has an approved HSD visit, an
     approved NCWA visit, or is inaccessible. ``window`` applies only to visits;
@@ -273,34 +229,34 @@ def _static_slot(opportunity):
             "wag_display": _wag_display_lookup(opportunity),
         }
 
-    return cache.get_or_set(f"coverage:static:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
+    return cache.get_or_set(f"coverage:v2:static:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
 
 
 def _last_week_slot(opportunity):
     def compute():
         window = CoverageDateFilter.last_week().window
         return {
-            "ward_status": get_status_aggregates(opportunity, "ward", window=window),
+            "ward_status": get_coverage_aggregates(opportunity, "ward", window=window),
             "ward_visits": get_visits_approved_aggregates(opportunity, "ward", window=window),
-            "wag_status": get_status_aggregates(opportunity, "work_area_group_id", window=window),
+            "wag_status": get_coverage_aggregates(opportunity, "work_area_group_id", window=window),
             "wag_visits": get_visits_approved_aggregates(opportunity, "work_area_group_id", window=window),
         }
 
-    return cache.get_or_set(f"coverage:last_week:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
+    return cache.get_or_set(f"coverage:v2:last_week:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
 
 
 def _compute_filtered(opportunity, window):
     return {
-        "ward_status": get_status_aggregates(opportunity, "ward", window=window),
+        "ward_status": get_coverage_aggregates(opportunity, "ward", window=window),
         "ward_visits": get_visits_approved_aggregates(opportunity, "ward", window=window),
-        "wag_status": get_status_aggregates(opportunity, "work_area_group_id", window=window),
+        "wag_status": get_coverage_aggregates(opportunity, "work_area_group_id", window=window),
         "wag_visits": get_visits_approved_aggregates(opportunity, "work_area_group_id", window=window),
     }
 
 
 def _filtered_overall_slot(opportunity):
     return cache.get_or_set(
-        f"coverage:filtered:opp={opportunity.id}",
+        f"coverage:v2:filtered:opp={opportunity.id}",
         lambda: _compute_filtered(opportunity, window=None),
         timeout=COVERAGE_CACHE_TTL_SECONDS,
     )
@@ -355,15 +311,17 @@ class CoverageProgressReport:
         )
 
 
-def ward_saturation_goal(target_aggregates, status_aggregates):
-    """Opportunity-wide pct_WAs_evc_reached for the page header: SUM(WAs_evc_reached) / SUM(num_work_areas) * 100.
+def ward_saturation_goal(target_aggregates, coverage_aggregates):
+    """Opportunity-wide pct_WAs_visited for the page header: SUM(WAs_visited) / SUM(num_work_areas) * 100.
 
-    target_aggregates / status_aggregates: dicts keyed by ward -> that ward's target / status-count dict.
-    Returns None when there are no (non-EXCLUDED) work areas.
+    The same Work Areas Done union as the ward table's WAs_visited column, rolled up across every
+    ward rather than the guarded EVC-reached count.
+    target_aggregates / coverage_aggregates: dicts keyed by ward -> that ward's target / coverage dict.
+    Returns None when there are no in-scope work areas.
     """
     total_work_areas = sum(t["num_work_areas"] for t in target_aggregates.values())
-    total_evc_reached = sum(s.get("WAs_evc_reached", 0) for s in status_aggregates.values())
-    return pct(total_evc_reached, total_work_areas)
+    total_visited = sum(s.get("WAs_visited", 0) for s in coverage_aggregates.values())
+    return pct(total_visited, total_work_areas)
 
 
 def build_ward_rows(target_aggregates, filtered_status, filtered_visits, last_week_status, last_week_visits):

@@ -17,16 +17,19 @@ WARD_METRIC_COLUMNS = (
     ("pct_WAs_visited", _("% WAs Visited")),
     ("WAs_visited_last_week", _("WAs Visited (Last Week)")),
     ("pct_WAs_visited_last_week", _("% WAs Visited (Last Week)")),
-    ("WAs_evc_reached", _("WAs EVC Reached")),
-    ("pct_WAs_evc_reached", _("% WAs EVC Reached")),
-    ("Buildings_covered_in_WAs_visited", _("Buildings Covered (WAs Visited)")),
-    ("pct_Buildings_covered_in_WAs_visited", _("% Buildings Covered (WAs Visited)")),
-    ("Buildings_covered_in_WAs_visited_last_week", _("Buildings Covered (WAs Visited, Last Week)")),
-    ("pct_buildings_covered_in_WAs_visited_last_week", _("% Buildings Covered (WAs Visited, Last Week)")),
+    ("WAs_evc_reached", _("WAs EVC Reached (HSD)")),
+    ("pct_WAs_evc_reached", _("% WAs EVC Reached (HSD)")),
+    ("Buildings_covered_in_WAs_visited", _("Buildings Covered (HSD)")),
+    ("pct_Buildings_covered_in_WAs_visited", _("% Buildings Covered (HSD)")),
+    ("Buildings_covered_in_WAs_visited_last_week", _("Buildings Covered (HSD, Last Week)")),
+    ("pct_buildings_covered_in_WAs_visited_last_week", _("% Buildings Covered (HSD, Last Week)")),
     ("pct_WA_visited_to_pct_visits", _("WA Visited : Visits Ratio")),
     ("pct_WA_visited_to_pct_visits_last_week", _("WA Visited : Visits Ratio (Last Week)")),
-    ("pct_buildings_covered_in_WA_visited_to_pct_visit", _("Buildings Visited : Visits Ratio")),
-    ("pct_buildings_covered_in_WA_visited_to_pct_visits_last_week", _("Buildings Visited : Visits Ratio (Last Week)")),
+    ("pct_buildings_covered_in_WA_visited_to_pct_visit", _("Buildings Visited : Visits Ratio (HSD)")),
+    (
+        "pct_buildings_covered_in_WA_visited_to_pct_visits_last_week",
+        _("Buildings Visited : Visits Ratio (HSD, Last Week)"),
+    ),
 )
 
 WAG_LABEL_COLUMNS = (
@@ -38,7 +41,7 @@ WAG_METRIC_COLUMNS = (
     ("expected_visit_total", _("Expected Visit Count")),
     ("pct_visits_approved", _("% HSD Visits Completed")),
     ("pct_visits_approved_last_week", _("% HSD Visits Completed (Last Week)")),
-    ("pct_WAs_evc_reached", _("% WAs EVC Reached")),
+    ("pct_WAs_evc_reached", _("% WAs EVC Reached (HSD)")),
     ("pct_WA_visited_to_pct_visits", _("WA Visited : Visits Ratio")),
     ("pct_WA_visited_to_pct_visits_last_week", _("WA Visited : Visits Ratio (Last Week)")),
 )
