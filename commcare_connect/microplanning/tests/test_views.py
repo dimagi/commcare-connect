@@ -1998,15 +1998,16 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     def test_evc_reached_count_and_percentage(self, opp):
         """EVC reached = WAs with approved_count >= expected_visit_count, among non-excluded."""
-        wa_reached, wa_partial, wa_over, wa_excluded_reached = self._make_work_areas(
+        wa_reached, wa_partial, wa_over, wa_no_target, wa_excluded_reached = self._make_work_areas(
             opp,
             [
-                WorkAreaStatus.NOT_VISITED,
-                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.EXPECTED_VISIT_REACHED,
+                WorkAreaStatus.VISITED,
+                WorkAreaStatus.EXPECTED_VISIT_REACHED,
                 WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.EXCLUDED,
             ],
-            expected_visit_counts=[5, 5, 5, 5],
+            expected_visit_counts=[5, 5, 5, 0, 5],
         )
         self._make_visits(opp, wa_reached, approved=5)  # reached
         self._make_visits(opp, wa_partial, approved=4)  # not reached
@@ -2015,9 +2016,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "EVC Reached")
-        # non_excluded = 3; reached = 2
+        # non_excluded = 4; reached = 2 — wa_no_target is not one of them
         assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        assert m["percentage"] == 50  # round(2/4 * 100)
 
     def test_inaccessible_count_and_percentage(self, opp):
         self._make_work_areas(

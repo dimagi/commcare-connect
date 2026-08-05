@@ -346,7 +346,8 @@ def get_metrics_for_microplanning(opportunity):
         visited=Count("id", filter=non_excluded & Q(approved_count__gte=1)),
         evc_reached=Count(
             "id",
-            filter=non_excluded & Q(approved_count__gte=F("expected_visit_count")),
+            # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
+            filter=non_excluded & Q(expected_visit_count__gt=0) & Q(approved_count__gte=F("expected_visit_count")),
         ),
         inaccessible=Count("id", filter=Q(status=WorkAreaStatus.INACCESSIBLE)),
         total_expected_visits=Sum("expected_visit_count", filter=non_excluded),
