@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("program", "0017_delete_managedopportunity"),
-        ("opportunity", "0140_opportunity_supervising_organization"),
+        ("opportunity", "0141_alter_tasktype_mode"),
     ]
 
     operations = [
