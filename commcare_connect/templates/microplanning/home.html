@@ -13,6 +13,7 @@
 {% block content %}
   <div class="min-w-0">
     {% include 'components/breadcrumbs.html' with path=path %}
+    {% include 'microplanning/missing_deliver_units_banner.html' %}
     <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
     <!-- Top header section -->
     <header class="mb-2">

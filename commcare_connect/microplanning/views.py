@@ -53,12 +53,14 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
+    REQUIRED_DELIVER_UNIT_SLUGS,
     WORK_AREA_STATUS_COLORS,
 )
 from commcare_connect.microplanning.coverage_progress import (
     IN_SCOPE_WORK_AREA,
     CoverageProgressReport,
     annotate_approved_visit_counts,
+    missing_deliver_units,
 )
 from commcare_connect.microplanning.filters import (
     CoverageProgressFilterSet,
@@ -257,6 +259,7 @@ def microplanning_home(request, *args, **kwargs):
         "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
+        "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
     }
 
     if assignment_mode:
@@ -396,6 +399,11 @@ def get_metrics_for_microplanning(opportunity):
         {"name": _("Excluded Work Areas"), "value": agg["excluded"]},
         {"name": _("WA Visited : Visits Ratio"), "value": visited_to_visits},
     ]
+
+
+def _quoted_missing_deliver_units(opportunity):
+    missing_units = missing_deliver_units(opportunity, list(REQUIRED_DELIVER_UNIT_SLUGS))
+    return ", ".join([f'"{unit}"' for unit in missing_units])
 
 
 def _get_assignment_mode_context(request, opportunity):
@@ -1374,6 +1382,7 @@ def coverage_progress(request, *args, **kwargs):
         "wag_table": wag_table,
         "filter_form": filterset.form,
         "export_hrefs": export_hrefs,
+        "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "path": [
             {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {

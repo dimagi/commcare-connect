@@ -271,6 +271,32 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.status_code == 200
         assert any(t.name == "microplanning/home.html" for t in response.templates)
 
+    @pytest.mark.parametrize(
+        "create_deliver_units, expected_quoted",
+        [
+            pytest.param(False, '"services_delivery_unit", "no-children-wa"', id="both-missing"),
+            pytest.param(True, "", id="both-present"),
+        ],
+    )
+    def test_missing_deliver_units_banner(
+        self,
+        client: Client,
+        settings,
+        organization,
+        org_user_admin,
+        opportunity,
+        create_deliver_units,
+        expected_quoted,
+    ):
+        if create_deliver_units:
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        assert response.context["quoted_missing_deliver_units"] == expected_quoted
+        assert (SERVICE_DELIVERY_UNIT_SLUG.encode() in response.content) == (not create_deliver_units)
+
     def test_sidebar_shows_implementation_area_label(
         self, client: Client, settings, organization, org_user_admin, opportunity
     ):
@@ -2236,6 +2262,24 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         ward_table = resp.context["ward_table"]
         assert any(row.get_cell_value("ward") == "w1" for row in ward_table.rows)
         assert "wag_table" in resp.context
+
+    @pytest.mark.parametrize(
+        "create_deliver_units, expected_quoted",
+        [
+            pytest.param(False, '"services_delivery_unit", "no-children-wa"', id="both-missing"),
+            pytest.param(True, "", id="both-present"),
+        ],
+    )
+    def test_missing_deliver_units_banner(
+        self, client, org_user_admin, opportunity, create_deliver_units, expected_quoted
+    ):
+        if create_deliver_units:
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+        client.force_login(org_user_admin)
+        resp = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+        assert resp.context["quoted_missing_deliver_units"] == expected_quoted
+        assert (SERVICE_DELIVERY_UNIT_SLUG.encode() in resp.content) == (not create_deliver_units)
 
     def test_context_exposes_date_filter(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
