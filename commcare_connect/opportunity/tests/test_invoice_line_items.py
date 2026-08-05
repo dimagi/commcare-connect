@@ -114,7 +114,7 @@ class TestBillableRows:
         assert row.flw_amount_local == Decimal("200")
         assert row.org_amount_local == Decimal("40")
         assert row.total_amount_local == Decimal("240")
-        assert row.exchange_rate == Decimal("1")
+        assert row.exchange_rate.rate == Decimal("1")
         assert row.total_amount_usd == Decimal("240")
 
     def test_first_billing_is_attributed_to_its_approval_month(self, billing_setup):
@@ -217,7 +217,7 @@ class TestCreateInvoiceLineItems:
         assert row.flw_amount_usd == Decimal("200")
         assert row.org_amount_local == Decimal("40")
         assert row.org_amount_usd == Decimal("40")
-        assert row.exchange_rate == Decimal("1")
+        assert row.exchange_rate.rate == Decimal("1")
 
     def test_advances_the_watermark_to_the_saved_count(self, billing_setup):
         access, payment_unit = billing_setup
