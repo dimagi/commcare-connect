@@ -7,7 +7,13 @@ from django.contrib.gis.geos import Point, Polygon
 from factory import Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
-from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup, WorkAreaInaccessibilityRequest
+from commcare_connect.microplanning.models import (
+    SRID,
+    ImplementationArea,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
+)
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
 
 
@@ -57,6 +63,22 @@ class WorkAreaFactory(DjangoModelFactory):
 
     class Meta:
         model = WorkArea
+
+
+class ImplementationAreaFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    name = Sequence(lambda n: f"impl-area-{n}")
+
+    @factory.lazy_attribute
+    def centroid(self):
+        return Point(random.uniform(77, 78), random.uniform(28, 29), srid=SRID)
+
+    @factory.lazy_attribute
+    def boundary(self):
+        return Polygon(((77, 28), (78, 28), (78, 29), (77, 29), (77, 28)), srid=SRID)
+
+    class Meta:
+        model = ImplementationArea
 
 
 class WorkAreaInaccessibilityRequestFactory(DjangoModelFactory):

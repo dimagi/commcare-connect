@@ -117,6 +117,21 @@
   .animate-marquee p {
     @apply truncate text-nowrap hover:overflow-visible;
   }
+
+  @keyframes progress-bar {
+    0% {
+      background-position: 0% 50%;
+    }
+    100% {
+      background-position: 200% 50%;
+    }
+  }
+
+  .animate-progress-bar {
+    background-image: linear-gradient(to right, #8b5cf6, #a78bfa, #8b5cf6);
+    background-size: 200% 100%;
+    animation: progress-bar 2s linear infinite;
+  }
 }
 
 /*-- status ----------------------------------*/
@@ -153,7 +168,9 @@
 /*-- buttons -------------------------------------*/
 
 .button {
-  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
+  /* Reserve a 1px border on every button so solid variants (e.g. .primary-dark) render the
+     same size as bordered ones (e.g. .outline-style, which overrides the color). */
+  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg border border-transparent text-sm font-medium transition-all duration-300;
 }
 
 .button:not(:disabled):hover::after {
@@ -501,11 +518,15 @@
   }
 
   .simple-toggle:checked {
-    @apply bg-green-600;
+    @apply bg-indigo-600;
   }
 
   .simple-toggle:checked::before {
     @apply translate-x-5;
+  }
+
+  .simple-toggle:disabled {
+    @apply cursor-not-allowed opacity-50;
   }
 }
 
@@ -791,5 +812,43 @@ select:disabled,
 
   .metric-card {
     @apply rounded-lg border border-white/30 bg-white/10 text-white;
+  }
+}
+
+.dropdown {
+  @apply relative;
+}
+
+.dropdown > summary {
+  @apply list-none;
+}
+
+.dropdown > summary::-webkit-details-marker {
+  @apply hidden;
+}
+
+.dropdown[open] > summary .dropdown-chevron {
+  @apply rotate-180;
+}
+
+.dropdown-content {
+  @layer components {
+    @apply absolute mt-2 z-10 w-max max-w-sm bg-white rounded-lg shadow-lg overflow-hidden text-sm text-brand-deep-purple font-medium;
+
+    .dropdown-item {
+      @apply w-full p-4 text-left cursor-pointer hover:bg-gray-100;
+    }
+
+    .dropdown-item:disabled {
+      @apply cursor-not-allowed text-gray-600;
+    }
+
+    .dropdown-item .dropdown-item-icon {
+      @apply mr-2 text-lg text-red-600;
+    }
+
+    .dropdown-item:disabled .dropdown-item-icon {
+      @apply text-gray-400;
+    }
   }
 }

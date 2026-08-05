@@ -19,6 +19,7 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
+from commcare_connect.utils import ocs_api
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 # Max length for CharFields backed by a TextChoices enum.
@@ -120,8 +121,20 @@ class Opportunity(BaseModel):
     archived = models.BooleanField(default=False)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
     managed = models.BooleanField(default=False)
-    program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING, null=True)
+    program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING)
+    supervising_organization = models.ForeignKey(
+        Organization,
+        on_delete=models.PROTECT,
+        related_name="supervised_opportunities",
+    )
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
+
+    def save(self, *args, **kwargs):
+        # Until the UI allows setting a supervising organization, default it to the program's
+        # owning organization.
+        if not self.supervising_organization_id:
+            self.supervising_organization_id = self.program.organization_id
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -288,8 +301,8 @@ class LearnModule(models.Model):
 
 
 class TaskTypeModeChoices(models.TextChoices):
-    RELEARN = "relearn", gettext("relearn")
-    OCS = "ocs", gettext("ocs")
+    RELEARN = "relearn", gettext("Relearn")
+    OCS = "ocs", gettext("Open Chat Studio")
 
 
 class TaskType(models.Model):
@@ -508,11 +521,66 @@ class AssignedTask(XFormBaseModel):
                 )
             except IntegrityError:
                 raise TaskAlreadyAssignedError(f"Task type '{task_type}' could not be assigned.")
-            case_property = task_type.case_property
-            if case_property:
-                bulk_update_usercases({opportunity_access: {"properties": {case_property: "1"}}})
+
+            if task_type.mode == TaskTypeModeChoices.OCS:
+                assigned_task.trigger_ocs_bot(assigned_by)
+            elif task_type.case_property:
+                bulk_update_usercases({opportunity_access: {"properties": {task_type.case_property: "1"}}})
             transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
         return assigned_task
+
+    def trigger_ocs_bot(self, assigned_by):
+        task_user = self.opportunity_access.user
+
+        session_id, channel_id = ocs_api.trigger_bot(
+            assigned_by,
+            identifier=task_user.username or task_user.phone_number,
+            experiment=self.task_type.ocs_chatbot_id,
+            participant_data={"connectTaskId": str(self.assigned_task_id)},
+        )
+        self.ocs_session_id = session_id
+        self.connect_channel_id = channel_id
+        self.save(update_fields=["ocs_session_id", "connect_channel_id"])
+
+    def mark_completed(
+        self,
+        *,
+        completed_at=None,
+        xform_id=None,
+        duration=None,
+        app_build_id=None,
+        app_build_version=None,
+    ):
+        """Mark this task complete and notify the assignee."""
+        from commcare_connect.opportunity.tasks import send_task_completion_notification
+
+        if self.status == AssignedTaskStatus.COMPLETED:
+            return
+
+        self.status = AssignedTaskStatus.COMPLETED
+        self.completed_at = completed_at or now()
+        self.xform_id = xform_id
+        self.duration = duration
+        self.app_build_id = app_build_id
+        self.app_build_version = app_build_version
+        self.save(
+            update_fields=[
+                "status",
+                "completed_at",
+                "xform_id",
+                "duration",
+                "app_build_id",
+                "app_build_version",
+                "date_modified",
+            ]
+        )
+
+        access = self.opportunity_access
+        if not access.last_active or access.last_active < self.completed_at:
+            access.last_active = self.completed_at
+            access.save(update_fields=["last_active"])
+
+        transaction.on_commit(lambda: send_task_completion_notification.delay(self.pk))
 
     @classmethod
     def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
@@ -756,7 +824,7 @@ class CompletedWork(models.Model):
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     reason = models.CharField(max_length=300, null=True, blank=True)
-    status_modified_date = models.DateTimeField(null=True)
+    status_modified_date = models.DateTimeField(null=True, default=now)
     payment_date = models.DateTimeField(null=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
@@ -783,7 +851,6 @@ class CompletedWork(models.Model):
 
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
-        self.status_modified_date = now()
         super().__init__(*args, **kwargs)
 
     def __setattr__(self, name, value):
@@ -912,17 +979,17 @@ class UserVisit(XFormBaseModel):
         blank=True,
         on_delete=models.PROTECT,
     )
-    status_modified_date = models.DateTimeField(null=True)
+    status_modified_date = models.DateTimeField(null=True, default=now)
     review_status = models.CharField(
         max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
     )
+    review_status_modified_date = models.DateTimeField(blank=True, null=True, default=now)
     review_created_on = models.DateTimeField(blank=True, null=True)
     justification = models.CharField(max_length=300, null=True, blank=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
     def __init__(self, *args, **kwargs):
         self.status = VisitValidationStatus.pending
-        self.status_modified_date = now()
         super().__init__(*args, **kwargs)
 
     def __setattr__(self, name, value):

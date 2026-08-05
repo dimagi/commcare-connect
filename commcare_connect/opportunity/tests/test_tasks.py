@@ -40,6 +40,7 @@ from commcare_connect.opportunity.tasks import (
     notify_user_for_scored_assessment,
     save_export,
     send_task_assignment_notification,
+    send_task_completion_notification,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
@@ -637,3 +638,49 @@ def test_send_task_assignment_notification(send_message_patch):
             },
         )
     )
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.send_message")
+def test_send_task_completion_notification(send_message_patch):
+    opportunity = OpportunityFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app)
+    assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+
+    send_task_completion_notification(assigned_task.pk)
+
+    assert send_message_patch.call_count == 1
+    send_message_patch.assert_called_with(
+        Message(
+            usernames=[access.user.username],
+            data={
+                "action": "ccc_generic_opportunity",
+                "title": "Task Completed",
+                "body": f"You have completed the task '{task_type.name}'.",
+                "opportunity_uuid": str(opportunity.opportunity_id),
+                "opportunity_status": "delivery",
+                "key": "task_completion",
+                "session_endpoint_id": "cc_app_home",
+            },
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("seen_users", "expect_error", "expect_text"),
+    [
+        ({"a"}, False, "uploaded successfully for 1 user."),
+        ({"a", "b"}, False, "uploaded successfully for 2 users."),
+        (set(), True, "No payments were uploaded."),
+    ],
+)
+def test_get_payment_import_result_message(seen_users, expect_error, expect_text):
+    from commcare_connect.opportunity.tasks import get_payment_import_result_message
+    from commcare_connect.opportunity.visit_import import PaymentImportStatus
+
+    status = PaymentImportStatus(seen_users=seen_users, missing_users=set())
+    message, is_error = get_payment_import_result_message(status)
+
+    assert is_error is expect_error
+    assert expect_text in message

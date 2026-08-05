@@ -46,6 +46,23 @@ class TestOrganization:
         emails = organization.get_member_emails()
         assert sorted(emails) == sorted([org_user_admin.email, org_user_member.email])
 
+    @pytest.mark.parametrize(
+        "exclude_viewer,expect_viewer",
+        [(False, True), (True, False)],
+    )
+    def test_get_member_emails_viewer_exclusion(
+        self, organization, org_user_admin, org_user_member, exclude_viewer, expect_viewer
+    ):
+        viewer = UserFactory(email="viewer@example.com")
+        MembershipFactory(organization=organization, user=viewer, role=UserOrganizationMembership.Role.VIEWER)
+
+        emails = organization.get_member_emails(exclude_viewer=exclude_viewer)
+
+        expected = [org_user_admin.email, org_user_member.email]
+        if expect_viewer:
+            expected.append(viewer.email)
+        assert sorted(emails) == sorted(expected)
+
 
 @pytest.mark.django_db
 class TestUserOrganizationMembership:
@@ -60,14 +77,6 @@ class TestUserOrganizationMembership:
     def test_viewer_role_is_viewer(self):
         membership = MembershipFactory(role=UserOrganizationMembership.Role.VIEWER)
         assert membership.is_viewer
-
-    def test_is_program_manager_admin_in_pm_org(self, program_manager_org_user_admin, program_manager_org):
-        membership = program_manager_org.memberships.get(user=program_manager_org_user_admin)
-        assert membership.is_program_manager
-
-    def test_is_program_manager_member_in_pm_org(self, program_manager_org_user_member, program_manager_org):
-        membership = program_manager_org.memberships.get(user=program_manager_org_user_member)
-        assert not membership.is_program_manager
 
 
 @pytest.mark.django_db

@@ -1,3 +1,4 @@
+import copy
 import csv
 import uuid
 from collections import defaultdict
@@ -164,6 +165,16 @@ def _get_opportunity_or_404(user, opp_id):
         )
     except Opportunity.DoesNotExist:
         raise NotFound()
+
+
+def _get_scoped_blob_meta(request):
+    """Resolve the ``blob_id`` query param to its BlobMeta, enforcing that the requesting
+    user has access to the opportunity that owns the blob."""
+    blob_id = request.query_params["blob_id"]
+    blob_meta = BlobMeta.objects.get(blob_id=blob_id)
+    form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
+    _get_opportunity_or_404(request.user, form.opportunity_id)
+    return blob_meta
 
 
 def _get_program_or_404(user, program_id):
@@ -475,12 +486,46 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
 
 class ImageView(OpportunityDataExportView):
     def get(self, request, *args, **kwargs):
-        blob_id = request.query_params["blob_id"]
-        blob_meta = BlobMeta.objects.get(blob_id=blob_id)
-        form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
-        _get_opportunity_or_404(request.user, form.opportunity_id)
-        attachment = storages["default"].open(blob_id)
+        blob_meta = _get_scoped_blob_meta(request)
+        attachment = storages["default"].open(blob_meta.blob_id)
         return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+
+
+# Signed URLs are consumed by a follow-up request made immediately after issuance.
+ATTACHMENT_SIGNED_URL_EXPIRY = 60 * 10  # seconds (10 minutes)
+
+
+def _default_storage_supports_signed_urls():
+    """True when the default storage is S3-backed and can produce a portable signed URL.
+
+    django-storages is a production-only dependency, so it may be absent entirely; when it
+    is, there is no S3 backend and therefore no portable URL.
+    """
+    try:
+        from storages.backends.s3boto3 import S3Boto3Storage
+    except ImportError:
+        return False
+    return isinstance(storages["default"], S3Boto3Storage)
+
+
+def _get_attachment_signed_url(blob_id, expire=ATTACHMENT_SIGNED_URL_EXPIRY):
+    """Return a pre-signed GET URL for ``blob_id`` in the default (S3) storage.
+
+    Caller must guard with ``_default_storage_supports_signed_urls()`` first.
+    """
+    # Create a storage handler which allows pre-authed url's, retaining the existing
+    # config of the default handler.
+    signed_storage = copy.copy(storages["default"])
+    signed_storage.querystring_auth = True
+    return signed_storage.url(blob_id, expire=expire, http_method="GET")
+
+
+class AttachmentSignedUrlView(OpportunityDataExportView):
+    def get(self, request, *args, **kwargs):
+        blob_meta = _get_scoped_blob_meta(request)
+        if not _default_storage_supports_signed_urls():
+            return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
+        return Response({"attachment_signed_url": _get_attachment_signed_url(blob_meta.blob_id)})
 
 
 class AppStructureView(OpportunityDataExportView):

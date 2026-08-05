@@ -4,6 +4,8 @@ webservers:
       ansible_host: i-0061917b7240cfaef
     web1:
       ansible_host: i-0006273d9b40ce3e0
+    export1:
+      ansible_host: i-028041b238ae4e183
     celery0:
       ansible_host: i-0517c5593d6eb861e
   vars:

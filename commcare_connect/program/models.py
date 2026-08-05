@@ -3,7 +3,7 @@ from uuid import uuid4
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import Country, Currency, DeliveryType, Opportunity
+from commcare_connect.opportunity.models import Country, Currency, DeliveryType
 from commcare_connect.organization.models import Organization
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
@@ -20,6 +20,14 @@ class Program(BaseModel):
     start_date = models.DateField()
     end_date = models.DateField()
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    funder = models.ForeignKey(
+        Organization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="funded_programs",
+    )
+    watchers = models.ManyToManyField(Organization, related_name="watched_programs", blank=True)
 
     def save(self, *args, **kwargs):
         if not self.id:
@@ -35,15 +43,6 @@ class Program(BaseModel):
             return self.currency.code
         else:
             return None
-
-
-class ManagedOpportunity(Opportunity):
-    program_old = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
-    claimed = models.BooleanField(default=False)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.managed = True
 
 
 class ProgramApplicationStatus(models.TextChoices):

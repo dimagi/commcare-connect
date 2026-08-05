@@ -69,8 +69,6 @@ def send_new_audit_report_notifications(reports) -> None:
     for report in reports:
         try:
             opportunity = report.opportunity
-            if opportunity.program_id is None:
-                continue
             pm_org = opportunity.program.organization
             report_url = build_absolute_uri(
                 None,
