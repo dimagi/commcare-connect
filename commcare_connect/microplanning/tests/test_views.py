@@ -1912,12 +1912,14 @@ class TestGetMetricsForMicroplanningWorkAreas:
     def opp(self):
         return OpportunityFactory(end_date=date.today() + timedelta(days=5))
 
-    def _make_work_areas(self, opp, statuses, expected_visit_counts=None):
-        """Create WorkArea objects with given statuses (and optional expected_visit_counts list)."""
+    def _make_work_areas(self, opp, statuses, expected_visit_counts=None, assigned=True):
+        access = OpportunityAccessFactory(opportunity=opp) if assigned else None
         areas = []
         for i, status in enumerate(statuses):
             evc = expected_visit_counts[i] if expected_visit_counts else 10
-            areas.append(WorkAreaFactory(opportunity=opp, status=status, expected_visit_count=evc))
+            areas.append(
+                WorkAreaFactory(opportunity=opp, status=status, expected_visit_count=evc, opportunity_access=access)
+            )
         return areas
 
     def _make_visits(self, opp, work_area, *, approved=0, pending=0):
@@ -2114,21 +2116,30 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["value"] == 0
         assert m["percentage"] is None
 
-    def test_unassigned_counted_as_unvisited(self, opp):
-        """UNASSIGNED with 0 approved visits → unvisited. A WA with approved visits → visited regardless of status."""
-        wa_unassigned, wa_with_visits = self._make_work_areas(
-            opp,
-            [
-                WorkAreaStatus.UNASSIGNED,  # default status, no visits → unvisited
-                WorkAreaStatus.UNASSIGNED,  # has approved visit → visited
-            ],
+    def test_unassigned_work_areas_leave_every_total(self, opp):
+        """An unassigned WA has no FLW to do the work, so it drops out of every numerator and denominator."""
+        # in scope
+        _, visited_wa = self._make_work_areas(
+            opp, statuses=[WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED], expected_visit_counts=[5, 2]
         )
-        self._make_visits(opp, wa_with_visits, approved=1)
+        self._make_visits(opp, visited_wa, approved=2)  # EVC reached for this
+        # out of scope : so excluded from every metric's denominator and numerator
+        wa_unassigned, _wa_inaccessible, _wa_excluded = self._make_work_areas(
+            opp,
+            [WorkAreaStatus.UNASSIGNED, WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.EXCLUDED],
+            expected_visit_counts=[1, 10, 10],
+            assigned=False,
+        )
+        self._make_visits(opp, wa_unassigned, approved=1)
 
-        metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "Unvisited Work Areas")
-        assert m["value"] == 1
-        assert m["percentage"] == 50
+        tiles = {m["name"]: (m["value"], m.get("percentage")) for m in get_metrics_for_microplanning(opp)}
+        assert tiles["Unvisited Work Areas"] == (1, 50)  # denominator is 2
+        assert tiles["Visited Work Areas"] == (1, 50)
+        assert tiles["EVC Reached"] == (1, 50)
+        assert tiles["Inaccessible Work Areas"] == (0, 0)
+        assert tiles["WA Visited : Visits Ratio"] == (1.75, None)
+        # The one tile that must not follow the rule: its count is what the rule removes.
+        assert tiles["Excluded Work Areas"] == (1, 20)  # 1/5 so covers all 5 areas
 
     @pytest.mark.parametrize(
         "end_date, expected",

@@ -91,14 +91,14 @@ def non_excluded_workareas(opportunity):
     return WorkArea.objects.filter(opportunity=opportunity).exclude(status=WorkAreaStatus.EXCLUDED)
 
 
-def in_scope_work_areas(opportunity):
-    """The work areas every coverage metric is measured over — numerators and denominators alike.
+# Business rule: Excluded areas and unassigned areas are out of scope. Kept as a Q so the Progress
+# Mapping tiles, which aggregate over all work areas at once, share this one definition.
+IN_SCOPE_WORK_AREA = ~Q(status=WorkAreaStatus.EXCLUDED) & Q(opportunity_access__isnull=False)
 
-    Business rule: Excluded areas and unassigned areas are out of scope.
-    """
-    return WorkArea.objects.filter(opportunity=opportunity, opportunity_access__isnull=False).exclude(
-        status=WorkAreaStatus.EXCLUDED
-    )
+
+def in_scope_work_areas(opportunity):
+    """The work areas every coverage metric is measured over — numerators and denominators alike."""
+    return WorkArea.objects.filter(IN_SCOPE_WORK_AREA, opportunity=opportunity)
 
 
 def annotate_approved_visit_counts(work_areas, opportunity, *, ncwa=False, window=None):

@@ -59,7 +59,7 @@ from commcare_connect.microplanning.const import (
     MAX_UNASSIGN_WORK_AREAS,
     WORK_AREA_STATUS_COLORS,
 )
-from commcare_connect.microplanning.coverage_progress import CoverageProgressReport
+from commcare_connect.microplanning.coverage_progress import IN_SCOPE_WORK_AREA, CoverageProgressReport
 from commcare_connect.microplanning.filters import (
     CoverageProgressFilterSet,
     UserVisitMapFilterSet,
@@ -337,30 +337,31 @@ def get_metrics_for_microplanning(opportunity):
         )
     )
 
-    non_excluded = ~Q(status=WorkAreaStatus.EXCLUDED)
     agg = qs.aggregate(
         total=Count("id"),
         excluded=Count("id", filter=Q(status=WorkAreaStatus.EXCLUDED)),
-        non_excluded=Count("id", filter=non_excluded),
-        unvisited=Count("id", filter=non_excluded & Q(approved_count=0)),
-        visited=Count("id", filter=non_excluded & Q(approved_count__gte=1)),
+        in_scope=Count("id", filter=IN_SCOPE_WORK_AREA),
+        unvisited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(approved_count=0)),
+        visited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(approved_count__gte=1)),
         evc_reached=Count(
             "id",
             # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
-            filter=non_excluded & Q(expected_visit_count__gt=0) & Q(approved_count__gte=F("expected_visit_count")),
+            filter=IN_SCOPE_WORK_AREA
+            & Q(expected_visit_count__gt=0)
+            & Q(approved_count__gte=F("expected_visit_count")),
         ),
-        inaccessible=Count("id", filter=Q(status=WorkAreaStatus.INACCESSIBLE)),
-        total_expected_visits=Sum("expected_visit_count", filter=non_excluded),
-        total_approved_visits=Sum("approved_count", filter=non_excluded),
+        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.INACCESSIBLE)),
+        total_expected_visits=Sum("expected_visit_count", filter=IN_SCOPE_WORK_AREA),
+        total_approved_visits=Sum("approved_count", filter=IN_SCOPE_WORK_AREA),
     )
 
-    non_excluded_count = agg["non_excluded"] or 0
+    in_scope_count = agg["in_scope"] or 0
     total = agg["total"] or 0
 
     total_expected = agg["total_expected_visits"] or 0
-    if non_excluded_count and total_expected:
+    if in_scope_count and total_expected:
         total_approved_visits = agg["total_approved_visits"] or 0
-        pct_wa_visited = (agg["visited"] or 0) / non_excluded_count
+        pct_wa_visited = (agg["visited"] or 0) / in_scope_count
         pct_visits = total_approved_visits / total_expected
         visited_to_visits = round(pct_wa_visited / pct_visits, 2) if pct_visits else "--"
     else:
@@ -373,22 +374,22 @@ def get_metrics_for_microplanning(opportunity):
         {
             "name": _("Unvisited Work Areas"),
             "value": agg["unvisited"],
-            "percentage": pct(agg["unvisited"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["unvisited"], in_scope_count, ndigits=None),
         },
         {
             "name": _("Visited Work Areas"),
             "value": agg["visited"],
-            "percentage": pct(agg["visited"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["visited"], in_scope_count, ndigits=None),
         },
         {
             "name": _("EVC Reached"),
             "value": agg["evc_reached"],
-            "percentage": pct(agg["evc_reached"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["evc_reached"], in_scope_count, ndigits=None),
         },
         {
             "name": _("Inaccessible Work Areas"),
             "value": agg["inaccessible"],
-            "percentage": pct(agg["inaccessible"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["inaccessible"], in_scope_count, ndigits=None),
         },
         {
             "name": _("Excluded Work Areas"),
