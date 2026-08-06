@@ -1976,7 +1976,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     def test_unvisited_count_and_percentage(self, opp):
         """Unvisited = WAs still carrying the NOT_VISITED status, among in-scope areas."""
-        wa_not_visited, wa_visited, wa_inaccessible, wa_excluded = self._make_work_areas(
+        _wa_not_visited, wa_visited, _wa_inaccessible, _wa_excluded = self._make_work_areas(
             opp,
             [
                 WorkAreaStatus.NOT_VISITED,
