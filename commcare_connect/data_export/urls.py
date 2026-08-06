@@ -60,4 +60,9 @@ urlpatterns = [
     ),
     path("opportunity/<int:opp_id>/work_areas/", views.WorkAreaDataView.as_view(), name="work_area_data"),
     path("llo_entity/", views.LLOEntityDataView.as_view(), name="llo_entity_data"),
+    path(
+        "opportunity/<int:opp_id>/work_area_groups/write/",
+        views.WorkAreaGroupWriteView.as_view(),
+        name="work_area_group_write",
+    ),
 ]

@@ -49,6 +49,7 @@ from commcare_connect.data_export.serializer import (
     UserVisitDataWithImagesSerializer,
     WorkAreaDataSerializer,
     WorkAreaGroupDataSerializer,
+    WorkAreaGroupWriteSerializer,
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
@@ -693,3 +694,24 @@ class LLOEntityDataView(BaseDataExportListViewV2):
 
     def get_queryset(self, *args, **kwargs):
         return LLOEntity.objects.all()
+
+
+class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):
+    """Upsert: creates a WorkAreaGroup when the payload has no `id`, updates the matching
+    one (scoped to this opportunity)"""
+
+    def post(self, request, *args, **kwargs):
+        pk = request.data.get("id")
+        instance = None
+        if pk:
+            try:
+                instance = WorkAreaGroup.objects.get(pk=pk, opportunity=self.opportunity)
+            except WorkAreaGroup.DoesNotExist:
+                raise NotFound()
+
+        serializer = WorkAreaGroupWriteSerializer(
+            instance, data=request.data, partial=bool(instance), context={"view": self}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK if instance else status.HTTP_201_CREATED)

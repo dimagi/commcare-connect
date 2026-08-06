@@ -1,10 +1,13 @@
 from collections import OrderedDict
 
+from django.contrib.gis.geos import GEOSException, GEOSGeometry
+from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
@@ -26,6 +29,40 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
+
+
+class LonLatPointField(serializers.Field):
+    default_error_messages = {"invalid": "Centroid must be in 'lon lat' format."}
+
+    def to_internal_value(self, data):
+        try:
+            return parse_lon_lat_centroid(data)
+        except (GEOSException, ValueError, TypeError, AttributeError):
+            self.fail("invalid")
+
+    def to_representation(self, value):
+        return f"{value.x} {value.y}"
+
+
+class WKTPolygonField(serializers.Field):
+    default_error_messages = {
+        "invalid": "Invalid WKT.",
+        "wrong_type": "Expected a WKT Polygon.",
+    }
+
+    def to_internal_value(self, data):
+        try:
+            geom = GEOSGeometry(data, srid=SRID)
+        except (GEOSException, ValueError, TypeError):
+            self.fail("invalid")
+
+        if geom.geom_type != "Polygon":
+            self.fail("wrong_type")
+
+        return geom
+
+    def to_representation(self, value):
+        return value.wkt
 
 
 class OpportunityDataExportSerializer(serializers.ModelSerializer):
@@ -435,3 +472,23 @@ class AuditReportEntryDataSerializer(serializers.ModelSerializer):
             "date_created",
             "date_modified",
         ]
+
+
+class WorkAreaGroupWriteSerializer(serializers.ModelSerializer):
+    centroid = LonLatPointField(required=False, allow_null=True)
+
+    class Meta:
+        model = WorkAreaGroup
+        fields = ["name", "ward", "centroid"]
+
+    def validate_name(self, value):
+        opportunity = self.context["view"].opportunity
+        qs = WorkAreaGroup.objects.filter(opportunity=opportunity, name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(_("A work area group with this name already exists."))
+        return value
+
+    def create(self, validated_data):
+        return WorkAreaGroup.objects.create(opportunity=self.context["view"].opportunity, **validated_data)
