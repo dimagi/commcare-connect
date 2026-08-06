@@ -65,4 +65,9 @@ urlpatterns = [
         views.WorkAreaGroupWriteView.as_view(),
         name="work_area_group_write",
     ),
+    path(
+        "opportunity/<int:opp_id>/work_areas/bulk_update/",
+        views.WorkAreaBulkUpdateView.as_view(),
+        name="work_area_bulk_update",
+    ),
 ]

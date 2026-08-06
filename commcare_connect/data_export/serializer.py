@@ -6,6 +6,8 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
+from commcare_connect.microplanning.helpers import assign_work_areas_to_access
 from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
 from commcare_connect.opportunity.api.serializers.mobile import (
@@ -21,6 +23,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     LabsRecord,
     Opportunity,
+    OpportunityAccess,
     OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
@@ -492,3 +495,105 @@ class WorkAreaGroupWriteSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         return WorkAreaGroup.objects.create(opportunity=self.context["view"].opportunity, **validated_data)
+
+
+class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
+    def create(self, validated_data):
+        opportunity = self.context["view"].opportunity
+
+        instances = []
+        touched_fields = set()
+        needs_visit_status_update = []
+        needs_hq_resync = []
+        work_area_to_access = {}
+        recompute_group_ids = set()
+
+        for item in validated_data:
+            item = item.copy()
+            instance = item.pop("id")
+            access = item.pop("opportunity_access", None)
+            old_group_id = instance.work_area_group_id
+
+            for field, value in item.items():
+                setattr(instance, field, value)
+                touched_fields.add(field)
+
+            if "expected_visit_count" in item:
+                needs_visit_status_update.append(instance)
+
+            if "boundary" in item and instance.work_area_group_id is not None:
+                # Group centroid is derived from member WorkAreas' boundaries, so an edit here
+                # needs a recompute even without a group change.
+                recompute_group_ids.add(instance.work_area_group_id)
+
+            if instance.work_area_group_id != old_group_id:
+                recompute_group_ids.update({instance.work_area_group_id, old_group_id})
+
+            if access is not None:
+                work_area_to_access[instance] = access
+            elif item and instance.opportunity_access_id:
+                needs_hq_resync.append(instance)
+
+            instances.append(instance)
+
+        if touched_fields:
+            WorkArea.objects.bulk_update(instances, fields=list(touched_fields))
+
+        for instance in needs_visit_status_update:
+            instance.update_status()
+
+        recompute_group_ids.discard(None)
+        if recompute_group_ids:
+            groups = list(WorkAreaGroup.objects.filter(pk__in=recompute_group_ids))
+            for group in groups:
+                group.update_centroid(commit=False)
+            WorkAreaGroup.objects.bulk_update(groups, ["centroid"])
+
+        if needs_hq_resync:
+            bulk_create_or_update_cases_by_work_areas(needs_hq_resync, opportunity)
+
+        if work_area_to_access:
+            assign_work_areas_to_access(opportunity, work_area_to_access)
+
+        return instances
+
+
+class WorkAreaBulkUpdateSerializer(serializers.ModelSerializer):
+    id = serializers.PrimaryKeyRelatedField(queryset=WorkArea.objects.none())
+    centroid = LonLatPointField(required=False)
+    boundary = WKTPolygonField(required=False)
+    work_area_group = serializers.PrimaryKeyRelatedField(
+        queryset=WorkAreaGroup.objects.none(),
+        required=False,
+        allow_null=True,
+    )
+    opportunity_access = serializers.PrimaryKeyRelatedField(
+        queryset=OpportunityAccess.objects.none(),
+        required=False,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = WorkArea
+        list_serializer_class = WorkAreaBulkUpdateListSerializer
+        fields = [
+            "id",
+            "work_area_group",
+            "opportunity_access",
+            "expected_visit_count",
+            "target_population",
+            "centroid",
+            "boundary",
+            "case_properties",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        opportunity = self.context["view"].opportunity
+
+        self.fields["id"].queryset = WorkArea.objects.filter(opportunity=opportunity).select_related(
+            "opportunity", "work_area_group"
+        )
+        self.fields["work_area_group"].queryset = WorkAreaGroup.objects.filter(opportunity=opportunity)
+        self.fields["opportunity_access"].queryset = OpportunityAccess.objects.filter(opportunity=opportunity)

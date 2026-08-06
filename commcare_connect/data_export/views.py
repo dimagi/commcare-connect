@@ -1,17 +1,20 @@
 import copy
 import csv
+import logging
 import uuid
 from collections import defaultdict
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import storages
+from django.db import transaction
 from django.db.models import Count, F, Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
+from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
 from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import GenericAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.versioning import AcceptHeaderVersioning
@@ -47,6 +50,7 @@ from commcare_connect.data_export.serializer import (
     TaskTypeDataSerializer,
     UserVisitDataSerializer,
     UserVisitDataWithImagesSerializer,
+    WorkAreaBulkUpdateSerializer,
     WorkAreaDataSerializer,
     WorkAreaGroupDataSerializer,
     WorkAreaGroupWriteSerializer,
@@ -67,7 +71,7 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.decorators import user_is_opportunity_admin
+from commcare_connect.organization.decorators import user_is_opportunity_admin, user_is_opportunity_pm
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
@@ -77,6 +81,7 @@ from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_
 
 STREAM_CHUNK_SIZE = 2000
 BULK_MAX_ITEMS = 100
+logger = logging.getLogger(__name__)
 
 
 class BaseDataExportView(APIView):
@@ -715,3 +720,32 @@ class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK if instance else status.HTTP_201_CREATED)
+
+
+class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, BulkListMixin, GenericAPIView):
+    http_method_names = ["patch", "options"]
+    serializer_class = WorkAreaBulkUpdateSerializer
+
+    def patch(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        assigning_access = any("opportunity_access" in item for item in serializer.validated_data)
+        if assigning_access and not user_is_opportunity_pm(request.user, self.opportunity):
+            raise NotFound()
+
+        try:
+            serializer.save()
+        except CommCareHQAPIException:
+            transaction.set_rollback(True)
+            logger.exception("Failed to bulk sync work areas to HQ for opportunity %s", self.opportunity.id)
+            return Response(
+                {
+                    "error": _(
+                        "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact us."
+                    )
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(serializer.data)
