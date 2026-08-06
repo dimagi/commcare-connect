@@ -249,6 +249,9 @@ class OpportunityUserDataView(OpportunityScopedDataView):
     def get_queryset(self, request, opp_id):
         return (
             OpportunityAccess.objects.filter(opportunity=self.opportunity)
+            # The claim is already joined for the date_claimed annotation, so selecting it
+            # costs nothing and saves the prefetch a round trip.
+            .select_related("opportunityclaim")
             .annotate(
                 username=F("user__username"),
                 name=F("user__name"),

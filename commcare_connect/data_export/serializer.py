@@ -96,10 +96,7 @@ class OpportunityUserDataSerializer(serializers.Serializer):
 
     @extend_schema_field(OpportunityClaimLimitSerializer.many_init())
     def get_claim_limits(self, obj):
-        """Reads the claim limits prefetched by ``OpportunityUserDataView.get_queryset``.
-
-        Falls back to a query when the object was not loaded through that queryset.
-        """
+        """Reads the claim limits prefetched by ``OpportunityUserDataView.get_queryset``."""
         claim = getattr(obj, "opportunityclaim", None)
         if claim is None:
             return []
