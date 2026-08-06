@@ -748,8 +748,13 @@ class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        response_data = serializer.data
         unassign_result = getattr(serializer, "unassign_result", None)
         if unassign_result:
-            response_data = {"results": response_data, "unassign_result": unassign_result}
-        return Response(response_data)
+            return Response(
+                {
+                    "results": serializer.data,
+                    "unassign_skipped": unassign_result["skipped"],
+                    "unassign_failed_ids": unassign_result["failed_ids"],
+                }
+            )
+        return Response(serializer.data)
