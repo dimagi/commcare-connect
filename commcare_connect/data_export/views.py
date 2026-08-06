@@ -1,5 +1,6 @@
 import copy
 import csv
+import io
 import logging
 import uuid
 from collections import defaultdict
@@ -57,6 +58,7 @@ from commcare_connect.data_export.serializer import (
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.tasks import WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -81,6 +83,7 @@ from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_
 
 STREAM_CHUNK_SIZE = 2000
 BULK_MAX_ITEMS = 100
+CSV_IMPORT_MAX_ROWS = 500
 logger = logging.getLogger(__name__)
 
 
@@ -758,3 +761,70 @@ class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
                 }
             )
         return Response(serializer.data)
+
+
+class CSVImporterBulkCreateView(APIView):
+    csv_importer_class = None
+    item_name = "items"
+
+    def get_fieldnames(self):
+        return list(self.csv_importer_class.HEADERS.values())
+
+    def row_from_item(self, item):
+        raise NotImplementedError
+
+    def items_to_csv(self, items):
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=self.get_fieldnames())
+        writer.writeheader()
+        for item in items:
+            writer.writerow(self.row_from_item(item))
+        buffer.seek(0)
+        return buffer
+
+    def post(self, request, *args, **kwargs):
+        items = request.data
+        if not isinstance(items, list):
+            return Response(
+                {"error": _("Expected a list of %(name)s.") % {"name": self.item_name}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(items) > CSV_IMPORT_MAX_ROWS:
+            return Response(
+                {"error": _("Ensure this list has no more than %(max)d elements.") % {"max": CSV_IMPORT_MAX_ROWS}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        csv_source = self.items_to_csv(items)
+        result = self.csv_importer_class(self.opportunity.id, csv_source).run()
+
+        if "errors" in result:
+            return Response({"errors": list(result["errors"].keys())}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView):
+    csv_importer_class = WorkAreaCSVImporter
+    item_name = "Work Areas"
+
+    def get_fieldnames(self):
+        return [
+            *WorkAreaCSVImporter.HEADERS.values(),
+            WorkAreaCSVImporter.GROUP_NAME_HEADER,
+            WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+        ]
+
+    def row_from_item(self, item):
+        return {
+            "Area Slug": item.get("slug", ""),
+            "Ward": item.get("ward", ""),
+            "Centroid": item.get("centroid", ""),
+            "Boundary": item.get("boundary", ""),
+            "Building Count": item.get("building_count", 0),
+            "Expected Visit Count": item.get("expected_visit_count", 0),
+            "Target Population": item.get("target_population", 0),
+            "LGA": item.get("lga", ""),
+            "State": item.get("state", ""),
+            "Work Area Group Name": item.get("work_area_group_name", ""),
+            "Implementation Area": item.get("implementation_area_name", ""),
+        }
