@@ -1,7 +1,7 @@
 from collections import OrderedDict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -498,7 +498,10 @@ class WorkAreaGroupWriteSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        return WorkAreaGroup.objects.create(opportunity=self.context["view"].opportunity, **validated_data)
+        try:
+            return WorkAreaGroup.objects.create(opportunity=self.context["view"].opportunity, **validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError({"name": _("A work area group with this name already exists.")})
 
 
 class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
