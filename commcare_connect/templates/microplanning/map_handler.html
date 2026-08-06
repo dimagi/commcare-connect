@@ -229,14 +229,108 @@
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
             },
 
-            clearFilters() {
-                const form = this.$refs.filterForm;
-                form.reset();
-                // Clear TomSelect instances
-                form.querySelectorAll('select[data-tomselect]').forEach(el => {
-                    if (el.tomselect) el.tomselect.clear();
-                });
+            onSearchChanged() {
+                // Assignment mode renders no filter sidebar, so there are no controls to drive
+                // and nothing to clear; its tiles are filtered directly instead.
+                if (this.assignmentMode) {
+                    this.applyAssignmentModeFilters();
+                    return;
+                }
+                const option = this.searchSelection();
+                this.clearFilterFields();
+                if (option) this.applySearchSelection(option);
+                this.applyFilters();  // clears selectedFeature
+                if (option?.kind === 'wa') {
+                    this.showWorkAreaDetail(option.object_id);
+                }
+            },
+
+            // The filter each kind of search result corresponds to. Both modes route through
+            // this, so the filtering cannot drift between them.
+            searchFilterName(kind) {
+                return {
+                    wa: 'work_area',
+                    wag: 'work_area_group',
+                    ia: 'implementation_area',
+                }[kind];
+            },
+
+            applySearchSelection(option) {
+                const el = this.$refs.filterForm.querySelector(
+                    `[name="${this.searchFilterName(option.kind)}"]`,
+                );
+                if (!el) return;
+                if (el.tomselect) {
+                    // Silent: a change event here would run onFilterChanged() and clear the
+                    // search box we are in the middle of applying.
+                    el.tomselect.setValue(String(option.object_id), true);
+                } else {
+                    el.value = option.object_id;
+                }
+            },
+
+            searchSelection() {
+                const el = this.searchElement();
+                const value = el?.tomselect?.getValue();
+                return value ? el.tomselect.options[value] : null;
+            },
+
+            showWorkAreaDetail(workAreaId) {
+                const url = '{{ work_area_detail_url|escapejs }}' + workAreaId + '/';
+                fetch(url)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load work area details');
+                        return res.json();
+                    })
+                    .then((detail) => {
+                        if (this.selectedFeature) {
+                            this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                        }
+                        this.selectedFeature = { ...detail, _id: detail.id };
+                        this.setWorkAreaState(detail.id, { selected: true });
+                    })
+                    .catch(() => {
+                        this.showToast("{% translate 'Could not load work area details.' %}", true);
+                    });
+            },
+
+            onFilterChanged() {
+                this.clearSearchSelection();
                 this.applyFilters();
+            },
+
+            clearFilters() {
+                this.clearFilterFields();
+                this.clearSearchSelection();
+                this.applyFilters();
+            },
+
+            clearFilterFields() {
+                const form = this.$refs.filterForm;
+                form.querySelectorAll('select[data-tomselect]').forEach(el => {
+                    // Silent clear — a change event here would trigger onFilterChanged() and
+                    // wipe the search selection we were just asked to apply.
+                    if (el.tomselect) el.tomselect.clear(true);
+                });
+                form.querySelectorAll('select:not([data-tomselect])').forEach(el => {
+                    el.selectedIndex = 0;
+                });
+                form.querySelectorAll('input').forEach(el => {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        el.checked = false;
+                    } else {
+                        el.value = '';
+                    }
+                });
+            },
+
+            searchElement() {
+                return document.getElementById('work-area-search');
+            },
+
+            clearSearchSelection() {
+                const el = this.searchElement();
+                if (el?.tomselect) el.tomselect.clear(true);
             },
 
             // --- Assignment mode methods ---
@@ -700,13 +794,21 @@
                 }
             },
 
-            applyUnassignedFilter() {
+            // Assignment mode's equivalent of applyFilters(): it has no filter form to read, so
+            // the tiles query is composed from its two inputs — the unassigned toggle and the
+            // search box — which apply together.
+            applyAssignmentModeFilters() {
                 if (!this.map) return;
+                const params = new URLSearchParams();
+                if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
+                const option = this.searchSelection();
+                if (option) params.set(this.searchFilterName(option.kind), option.object_id);
+
                 const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = this.showOnlyUnassigned ? `${baseUrl}?unassigned_only=true` : baseUrl;
+                const query = params.toString();
                 const source = this.map.getSource('workareas');
                 if (source) {
-                    source.setTiles([newUrl]);
+                    source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
                 }
             },
 
@@ -723,7 +825,7 @@
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
 
                     this.$watch('showOnlyUnassigned', () => {
-                        this.applyUnassignedFilter();
+                        this.applyAssignmentModeFilters();
                     });
                 }
 
