@@ -406,7 +406,7 @@ def _get_assignment_mode_context(request, opportunity):
         "assignees_json": list(
             OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
             .select_related("user")
-            .values("id", "user__name", "user__user_id")
+            .values("id", "user__name", "user__username", "user__user_id")
         ),
         "group_work_areas_url": reverse(
             "microplanning:get_work_areas_for_assignment",

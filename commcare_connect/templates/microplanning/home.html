@@ -462,7 +462,7 @@
                         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                   <option value="">{% translate "— Select FLW —" %}</option>
                   <template x-for="a in assignees" :key="a.id">
-                    <option :value="a.id" x-text="a.user__name"></option>
+                    <option :value="a.id" x-text="`${a.user__name} (${a.user__username})`"></option>
                   </template>
                 </select>
               </div>
