@@ -1,15 +1,19 @@
 from collections import OrderedDict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
-from commcare_connect.microplanning.helpers import assign_work_areas_to_access, unassign_work_areas_for_opportunity
+from commcare_connect.microplanning.helpers import (
+    assign_work_areas_and_sync_to_hq,
+    unassign_work_areas_for_opportunity,
+)
 from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
+from commcare_connect.microplanning.tasks import parse_lon_lat_centroid, send_work_area_assignment_notification
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
@@ -505,7 +509,8 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
         touched_fields = set()
         needs_visit_status_update = []
         needs_hq_resync = []
-        work_area_to_access = {}
+        to_assign = []
+        original_access_status = {}
         to_unassign = []
         recompute_group_ids = set()
 
@@ -532,7 +537,12 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
                 recompute_group_ids.update({instance.work_area_group_id, old_group_id})
 
             if access is not None:
-                work_area_to_access[instance] = access
+                # assign_work_areas_and_sync_to_hq expects opportunity_access/status already set.
+                original_access_status[instance.id] = (instance.opportunity_access_id, instance.status)
+                instance.opportunity_access = access
+                if instance.status == WorkAreaStatus.UNASSIGNED:
+                    instance.status = WorkAreaStatus.NOT_VISITED
+                to_assign.append(instance)
             elif has_access_key:
                 # Explicit `opportunity_access: null` — unassign rather than silently ignore.
                 to_unassign.append(instance)
@@ -557,8 +567,20 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
         if needs_hq_resync:
             bulk_create_or_update_cases_by_work_areas(needs_hq_resync, opportunity)
 
-        if work_area_to_access:
-            assign_work_areas_to_access(opportunity, work_area_to_access)
+        if to_assign:
+            result = assign_work_areas_and_sync_to_hq(opportunity, to_assign, self.context["request"].user)
+            self.assign_result = result
+            failed_ids = set(result["failed_ids"])
+            notified_access_ids = set()
+            for wa in to_assign:
+                if wa.id in failed_ids:
+                    orig_access_id, orig_status = original_access_status[wa.id]
+                    wa.opportunity_access_id = orig_access_id
+                    wa.status = orig_status
+                else:
+                    notified_access_ids.add(wa.opportunity_access_id)
+            for access_id in notified_access_ids:
+                transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
         if to_unassign:
             result = unassign_work_areas_for_opportunity(

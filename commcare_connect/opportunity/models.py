@@ -121,7 +121,7 @@ class Opportunity(BaseModel):
     archived = models.BooleanField(default=False)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
     managed = models.BooleanField(default=False)
-    program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING, null=True)
+    program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING)
     supervising_organization = models.ForeignKey(
         Organization,
         on_delete=models.PROTECT,

@@ -3781,7 +3781,8 @@ def create_task(request, org_slug, opp_id):
         )
     except TaskAlreadyAssignedError:
         messages.error(request, _("This task type is already assigned to the selected worker."))
-    except CommCareHQAPIException:
+    except CommCareHQAPIException as e:
+        logger.exception(f"CommCareHQ task creation failed: {str(e)}")
         messages.error(request, _("Task creation failed: could not update CommCare HQ. Please try again."))
     except OcsApiError as e:
         logger.exception(f"OCS task creation failed: {str(e)}")

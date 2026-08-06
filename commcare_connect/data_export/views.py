@@ -751,6 +751,16 @@ class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
+        assign_result = getattr(serializer, "assign_result", None)
+        if assign_result and assign_result["failed_ids"]:
+            return Response(
+                {
+                    "error": _("Failed to sync %(count)d work area(s) with CommCare HQ. Please try again.")
+                    % {"count": len(assign_result["failed_ids"])}
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
         unassign_result = getattr(serializer, "unassign_result", None)
         if unassign_result:
             return Response(

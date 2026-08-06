@@ -5,6 +5,7 @@ from django.contrib.gis.geos import Polygon
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.helpers import (
+    assign_work_areas_and_sync_to_hq,
     exclude_work_areas_for_opportunity,
     unassign_work_areas_for_opportunity,
 )
@@ -333,6 +334,38 @@ class TestExcludeWorkAreas:
         assert (group_b.centroid.x, group_b.centroid.y) == (60.5, 40.5)
         assert a_keep.work_area_group_id == group_a.id
         assert b_keep.work_area_group_id == group_b.id
+
+
+@pytest.mark.django_db
+class TestAssignWorkAreasAndSyncToHQ:
+    @patch("commcare_connect.microplanning.helpers.HQ_ASSIGN_BULK_CHUNK_SIZE", 2)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_failed_chunk_rolls_back_only_its_own_rows(self, mock_bulk_hq, org_user_admin, opportunity):
+        """A failed HQ chunk rolls back only its own rows; the chunks that synced commit.
+        This is the DB/HQ divergence the per-chunk savepoints prevent."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        # Chunk size 2 => the 5 areas split into chunks of 2, 2 and 1; only the middle chunk fails.
+        work_areas = WorkAreaFactory.create_batch(5, opportunity=opportunity)
+        ok_a, ok_b, fail_a, fail_b, ok_c = work_areas
+        for wa in work_areas:
+            wa.opportunity_access = access
+            wa.status = WorkAreaStatus.NOT_VISITED
+        mock_bulk_hq.side_effect = [None, CommCareHQAPIException("HQ down"), None]
+
+        res = assign_work_areas_and_sync_to_hq(opportunity, work_areas, org_user_admin)
+
+        assert [len(call.args[0]) for call in mock_bulk_hq.call_args_list] == [2, 2, 1]
+        assert set(res["assigned_ids"]) == {ok_a.id, ok_b.id, ok_c.id}
+        assert set(res["failed_ids"]) == {fail_a.id, fail_b.id}
+
+        for wa in (fail_a, fail_b):
+            wa.refresh_from_db()
+            assert wa.opportunity_access is None
+            assert wa.status == WorkAreaStatus.UNASSIGNED
+        for wa in (ok_a, ok_b, ok_c):
+            wa.refresh_from_db()
+            assert wa.opportunity_access == access
+            assert wa.status == WorkAreaStatus.NOT_VISITED
 
 
 @pytest.mark.django_db

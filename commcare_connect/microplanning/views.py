@@ -64,7 +64,7 @@ from commcare_connect.microplanning.filters import (
 )
 from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
-    assign_work_areas_to_access,
+    assign_work_areas_and_sync_to_hq,
     exclude_work_areas_for_opportunity,
     pct,
     unassign_work_areas_for_opportunity,
@@ -100,6 +100,7 @@ from .tasks import (
     get_import_area_cache_key,
     import_implementation_areas_task,
     import_work_areas_task,
+    send_work_area_assignment_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -1136,17 +1137,22 @@ def save_assignment(request, org_slug, opp_id):
             {"error": _("Invalid work area IDs: %(ids)s") % {"ids": sorted(invalid_wa_ids)}}, status=400
         )
 
-    wa_to_access = {work_area: work_area_to_access[work_area.id] for work_area in all_work_areas}
-    try:
-        assign_work_areas_to_access(request.opportunity, wa_to_access)
-    except CommCareHQAPIException:
-        transaction.set_rollback(True)
-        logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
+    for work_area in all_work_areas:
+        work_area.opportunity_access = work_area_to_access[work_area.id]
+        if work_area.status == WorkAreaStatus.UNASSIGNED:
+            work_area.status = WorkAreaStatus.NOT_VISITED
+
+    result = assign_work_areas_and_sync_to_hq(request.opportunity, all_work_areas, request.user)
+    assigned_ids = set(result["assigned_ids"])
+    notified_access_ids = {work_area_to_access[wa.id].id for wa in all_work_areas if wa.id in assigned_ids}
+    for access_id in notified_access_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
+
+    if result["failed_ids"]:
         return JsonResponse(
             {
-                "error": _(
-                    "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact support."
-                )
+                "error": _("Failed to sync %(count)d work area(s) with CommCare HQ. Please try again.")
+                % {"count": len(result["failed_ids"])}
             },
             status=502,
         )

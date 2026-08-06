@@ -4,9 +4,12 @@ import pghistory
 from django.db import transaction
 
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
-from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
+from commcare_connect.microplanning.const import (
+    HQ_ASSIGN_BULK_CHUNK_SIZE,
+    HQ_BULK_CHUNK_SIZE,
+    HQ_UNASSIGN_BULK_CHUNK_SIZE,
+)
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.microplanning.tasks import send_work_area_assignment_notification
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
@@ -32,22 +35,6 @@ def ratio(numerator, denominator, ndigits=2):
     if not denominator or numerator is None:
         return None
     return round(numerator / denominator, ndigits)
-
-
-def assign_work_areas_to_access(opportunity, work_area_to_access):
-    work_areas = list(work_area_to_access.keys())
-    for work_area in work_areas:
-        work_area.opportunity_access = work_area_to_access[work_area]
-        if work_area.status == WorkAreaStatus.UNASSIGNED:
-            work_area.status = WorkAreaStatus.NOT_VISITED
-
-    WorkArea.objects.bulk_update(work_areas, ["opportunity_access", "status"])
-
-    bulk_create_or_update_cases_by_work_areas(work_areas, opportunity)
-
-    notified_access_ids = {access.id for access in work_area_to_access.values()}
-    for access_id in notified_access_ids:
-        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
 
 def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusion_reason):
@@ -128,6 +115,33 @@ def _bulk_exclude(work_areas, user, exclusion_reason):
         work_areas,
         fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
     )
+
+
+def assign_work_areas_and_sync_to_hq(opportunity, work_areas, user):
+    """Persist work-area assignments and push the new owners to HQ, one HQ POST per chunk in
+    its own savepoint.
+
+    Each ``work_area`` must already have its target ``opportunity_access``/``status`` set in
+    memory.
+    """
+    assigned_ids = []
+    failed_ids = []
+    pghistory_ctx = dict(reason="assigned", username=user.username, user_email=user.email)
+
+    for batch in batched(work_areas, HQ_ASSIGN_BULK_CHUNK_SIZE):
+        chunk = list(batch)
+        try:
+            with transaction.atomic(), pghistory.context(**pghistory_ctx):
+                WorkArea.objects.bulk_update(chunk, ["opportunity_access", "status"])
+                bulk_create_or_update_cases_by_work_areas(chunk, opportunity)
+        except CommCareHQAPIException as e:
+            logger.warning(
+                "Failed to sync work area assignment chunk to HQ opp=%s size=%d: %s", opportunity.id, len(chunk), e
+            )
+            failed_ids.extend(wa.id for wa in chunk)
+            continue
+        assigned_ids.extend(wa.id for wa in chunk)
+    return {"assigned_ids": assigned_ids, "failed_ids": failed_ids}
 
 
 def unassign_work_areas_for_opportunity(opportunity, work_area_ids, user):

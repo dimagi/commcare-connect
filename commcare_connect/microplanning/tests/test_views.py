@@ -1232,7 +1232,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             ]
         }
         with mock.patch(
-            "commcare_connect.microplanning.helpers.send_work_area_assignment_notification.delay"
+            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
         ) as delay_patch:
             response = client.post(
                 self._url(program_manager_org, managed_opportunity),
@@ -1251,7 +1251,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
         client.force_login(program_manager_org_user_admin)
 
         with mock.patch(
-            "commcare_connect.microplanning.helpers.send_work_area_assignment_notification.delay"
+            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
         ) as delay_patch:
             response = client.post(
                 self._url(program_manager_org, managed_opportunity),

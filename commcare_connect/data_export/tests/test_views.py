@@ -656,7 +656,7 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
 
         payload = [{"id": area.id, "opportunity_access": access.id}]
         with mock.patch(
-            "commcare_connect.microplanning.helpers.send_work_area_assignment_notification.delay"
+            "commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"
         ) as mock_notify:
             response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
 

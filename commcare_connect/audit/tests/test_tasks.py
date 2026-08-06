@@ -131,16 +131,6 @@ def test_excludes_non_admin_members(mock_send):
 
 @pytest.mark.django_db
 @mock.patch("commcare_connect.audit.tasks.send_mail_async")
-def test_skips_report_when_opportunity_has_no_program(mock_send):
-    report = AuditReportFactory(opportunity=OpportunityFactory(program=None))
-
-    send_new_audit_report_notifications([report])
-
-    mock_send.delay.assert_not_called()
-
-
-@pytest.mark.django_db
-@mock.patch("commcare_connect.audit.tasks.send_mail_async")
 def test_no_email_when_pm_org_has_no_admins(mock_send):
     pm_org = ProgramManagerOrganisationFactory()
     MembershipFactory(organization=pm_org, role="member")
