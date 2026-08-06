@@ -11,10 +11,10 @@ from django.utils import timezone
 from django.utils.timezone import now
 
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
-from commcare_connect.data_export.views import WorkAreaBulkCreateView
+from commcare_connect.data_export.views import ImplementationAreaBulkCreateView, WorkAreaBulkCreateView
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
@@ -727,25 +727,35 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         assert area.status == WorkAreaStatus.VISITED
 
 
-def test_work_area_bulk_create_row_from_item_keys_match_get_fieldnames():
+@pytest.mark.parametrize(
+    "view_class, sample_item",
+    [
+        (
+            WorkAreaBulkCreateView,
+            {
+                "slug": "s",
+                "ward": "w",
+                "centroid": "c",
+                "boundary": "b",
+                "building_count": 1,
+                "expected_visit_count": 1,
+                "target_population": 1,
+                "lga": "l",
+                "state": "st",
+                "work_area_group_name": "g",
+                "implementation_area_name": "i",
+            },
+        ),
+        (ImplementationAreaBulkCreateView, {"name": "n", "centroid": "c", "boundary": "b"}),
+    ],
+    ids=["WorkAreaBulkCreateView", "ImplementationAreaBulkCreateView"],
+)
+def test_row_from_item_keys_match_get_fieldnames(view_class, sample_item):
     """Ensures row_from_item() stays in sync with get_fieldnames(). If a field is
     added, renamed, or removed in the importer headers but not updated in
     row_from_item(), csv.DictWriter silently writes an empty value instead of
     raising an error.This test fails loudly the moment the two drift apart, instead of a mystery blank column."""
-    view = WorkAreaBulkCreateView()
-    sample_item = {
-        "slug": "s",
-        "ward": "w",
-        "centroid": "c",
-        "boundary": "b",
-        "building_count": 1,
-        "expected_visit_count": 1,
-        "target_population": 1,
-        "lga": "l",
-        "state": "st",
-        "work_area_group_name": "g",
-        "implementation_area_name": "i",
-    }
+    view = view_class()
     assert set(view.row_from_item(sample_item)) == set(view.get_fieldnames())
 
 
@@ -848,3 +858,56 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.implementation_area_id is None
         assert area.implementation_area_name == "not-created-yet"
+
+
+@pytest.mark.django_db(transaction=True)
+class TestImplementationAreaBulkCreateView(BaseMicroplanningFlagTest):
+    def url(self, opp_id):
+        return reverse("data_export:implementation_area_bulk_create", kwargs={"opp_id": opp_id})
+
+    def _item(self, **overrides):
+        item = {
+            "name": "zone-a",
+            "centroid": "36.8 -1.29",
+            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+        }
+        item.update(overrides)
+        return item
+
+    def test_creates_implementation_areas(self, v2_write_client, opportunity):
+        payload = [self._item(name="zone-a"), self._item(name="zone-b")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+        assert response.json() == {"created": 2}
+
+        area = ImplementationArea.objects.get(opportunity=opportunity, name="zone-a")
+        assert area.centroid.wkt == "POINT (36.8 -1.29)"
+        assert area.boundary.wkt.startswith("POLYGON")
+
+    def test_duplicate_name_in_payload_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(name="dup"), self._item(name="dup")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "duplicate" in " ".join(response.json()["errors"]).lower()
+        assert not ImplementationArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_existing_name_in_db_rejected(self, v2_write_client, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="taken")
+        payload = [self._item(name="taken")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "already exists" in " ".join(response.json()["errors"]).lower()
+
+    def test_links_pending_work_areas_by_stored_name(self, v2_write_client, opportunity):
+        pending = WorkAreaFactory(opportunity=opportunity, implementation_area=None, implementation_area_name="zone-a")
+        other = WorkAreaFactory(opportunity=opportunity, implementation_area=None, implementation_area_name="zone-b")
+
+        payload = [self._item(name="zone-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = ImplementationArea.objects.get(opportunity=opportunity, name="zone-a")
+        pending.refresh_from_db()
+        other.refresh_from_db()
+        assert pending.implementation_area_id == area.id
+        assert other.implementation_area_id is None

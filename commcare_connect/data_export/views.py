@@ -58,7 +58,7 @@ from commcare_connect.data_export.serializer import (
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
-from commcare_connect.microplanning.tasks import WorkAreaCSVImporter
+from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -827,4 +827,18 @@ class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
             "State": item.get("state", ""),
             "Work Area Group Name": item.get("work_area_group_name", ""),
             "Implementation Area": item.get("implementation_area_name", ""),
+        }
+
+
+class ImplementationAreaBulkCreateView(
+    MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView
+):
+    csv_importer_class = ImplementationAreaCSVImporter
+    item_name = "Implementation Areas"
+
+    def row_from_item(self, item):
+        return {
+            "Implementation Area Name": item.get("name", ""),
+            "Centroid": item.get("centroid", ""),
+            "Boundary": item.get("boundary", ""),
         }
