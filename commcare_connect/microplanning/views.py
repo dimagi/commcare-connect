@@ -49,10 +49,7 @@ from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 from waffle.decorators import waffle_flag
 
-from commcare_connect.commcarehq.api import (
-    bulk_create_or_update_cases_by_work_areas,
-    create_or_update_case_by_work_area,
-)
+from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
@@ -67,6 +64,7 @@ from commcare_connect.microplanning.filters import (
 )
 from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
+    assign_work_areas_to_access,
     exclude_work_areas_for_opportunity,
     pct,
     unassign_work_areas_for_opportunity,
@@ -102,7 +100,6 @@ from .tasks import (
     get_import_area_cache_key,
     import_implementation_areas_task,
     import_work_areas_task,
-    send_work_area_assignment_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -1139,15 +1136,9 @@ def save_assignment(request, org_slug, opp_id):
             {"error": _("Invalid work area IDs: %(ids)s") % {"ids": sorted(invalid_wa_ids)}}, status=400
         )
 
-    for work_area in all_work_areas:
-        work_area.opportunity_access = work_area_to_access[work_area.id]
-        if work_area.status == WorkAreaStatus.UNASSIGNED:
-            work_area.status = WorkAreaStatus.NOT_VISITED
-
-    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access", "status"])
-
+    wa_to_access = {work_area: work_area_to_access[work_area.id] for work_area in all_work_areas}
     try:
-        bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
+        assign_work_areas_to_access(request.opportunity, wa_to_access)
     except CommCareHQAPIException:
         transaction.set_rollback(True)
         logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
@@ -1159,10 +1150,6 @@ def save_assignment(request, org_slug, opp_id):
             },
             status=502,
         )
-
-    notified_access_ids = {access.id for access in work_area_to_access.values()}
-    for access_id in notified_access_ids:
-        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
     return JsonResponse({"status": "ok"})
 

@@ -3,9 +3,10 @@ import logging
 import pghistory
 from django.db import transaction
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.tasks import send_work_area_assignment_notification
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
@@ -31,6 +32,22 @@ def ratio(numerator, denominator, ndigits=2):
     if not denominator or numerator is None:
         return None
     return round(numerator / denominator, ndigits)
+
+
+def assign_work_areas_to_access(opportunity, work_area_to_access):
+    work_areas = list(work_area_to_access.keys())
+    for work_area in work_areas:
+        work_area.opportunity_access = work_area_to_access[work_area]
+        if work_area.status == WorkAreaStatus.UNASSIGNED:
+            work_area.status = WorkAreaStatus.NOT_VISITED
+
+    WorkArea.objects.bulk_update(work_areas, ["opportunity_access", "status"])
+
+    bulk_create_or_update_cases_by_work_areas(work_areas, opportunity)
+
+    notified_access_ids = {access.id for access in work_area_to_access.values()}
+    for access_id in notified_access_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
 
 def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusion_reason):
