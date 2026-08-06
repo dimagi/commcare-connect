@@ -18,7 +18,6 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     LabsRecord,
     Opportunity,
-    OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
     TaskType,
@@ -73,6 +72,12 @@ class ProgramDataExportSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "delivery_type", "currency", "organization", "funder", "watchers"]
 
 
+# Reused across rows so the serializer's fields are only built once. It carries no
+# per-instance state, so it is safe to share. Kept at module level because a serializer
+# assigned as a class attribute would be collected as a declared field.
+_claim_limit_list_serializer = OpportunityClaimLimitSerializer(many=True)
+
+
 class OpportunityUserDataSerializer(serializers.Serializer):
     username = serializers.CharField()
     name = serializers.CharField()
@@ -91,8 +96,11 @@ class OpportunityUserDataSerializer(serializers.Serializer):
 
     @extend_schema_field(OpportunityClaimLimitSerializer.many_init())
     def get_claim_limits(self, obj):
-        claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access=obj)
-        data = OpportunityClaimLimitSerializer(claim_limits, many=True).data
+        """Reads the claim limits prefetched by ``OpportunityUserDataView.get_queryset``."""
+        claim = getattr(obj, "opportunityclaim", None)
+        if claim is None:
+            return []
+        data = _claim_limit_list_serializer.to_representation(claim.opportunityclaimlimit_set.all())
         return [dict(row) for row in data]
 
 

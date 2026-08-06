@@ -4,7 +4,7 @@ import uuid
 from collections import defaultdict
 
 from django.core.files.storage import storages
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Prefetch, Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
@@ -58,6 +58,7 @@ from commcare_connect.opportunity.models import (
     LabsRecord,
     Opportunity,
     OpportunityAccess,
+    OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
     TaskType,
@@ -246,12 +247,24 @@ class OpportunityUserDataView(OpportunityScopedDataView):
     serializer_class = OpportunityUserDataSerializer
 
     def get_queryset(self, request, opp_id):
-        return OpportunityAccess.objects.filter(opportunity=self.opportunity).annotate(
-            username=F("user__username"),
-            name=F("user__name"),
-            phone=F("user__phone_number"),
-            user_invite_status=F("userinvite__status"),
-            date_claimed=F("opportunityclaim__date_claimed"),
+        return (
+            OpportunityAccess.objects.filter(opportunity=self.opportunity)
+            # The claim is already joined for the date_claimed annotation, so selecting it
+            # costs nothing and saves the prefetch a round trip.
+            .select_related("opportunityclaim")
+            .annotate(
+                username=F("user__username"),
+                name=F("user__name"),
+                phone=F("user__phone_number"),
+                user_invite_status=F("userinvite__status"),
+                date_claimed=F("opportunityclaim__date_claimed"),
+            )
+            .prefetch_related(
+                Prefetch(
+                    "opportunityclaim__opportunityclaimlimit_set",
+                    queryset=OpportunityClaimLimit.objects.select_related("payment_unit"),
+                )
+            )
         )
 
 
