@@ -236,6 +236,20 @@ def bill_invoice(invoice, start_date, end_date):
     return rows
 
 
+def rollback_invoice_line_items(invoice):
+    with transaction.atomic():
+        billed_by_work = dict(invoice.work_items.values_list("completed_work_id", "billed_count"))
+        if not billed_by_work:
+            return
+
+        works = []
+        for work in CompletedWork.objects.select_for_update(of=("self",)).filter(id__in=billed_by_work):
+            work.invoiced_approved_count = max(0, work.invoiced_approved_count - billed_by_work[work.id])
+            works.append(work)
+        CompletedWork.objects.bulk_update(works, ["invoiced_approved_count"])
+        invoice.work_items.all().delete()
+
+
 def _freeze_line_items(invoice, rows):
     """Persist billed rows, advance work watermarks, and update invoice totals."""
     # For display only: show the latest billed month's rate on the invoice.
