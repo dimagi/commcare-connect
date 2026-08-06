@@ -3,6 +3,7 @@ import csv
 import uuid
 from collections import defaultdict
 
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import storages
 from django.db.models import Count, F, Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
@@ -15,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.versioning import AcceptHeaderVersioning
 from rest_framework.views import APIView
+from waffle import flag_is_active
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.data_export.const import (
@@ -48,6 +50,7 @@ from commcare_connect.data_export.serializer import (
     WorkAreaDataSerializer,
     WorkAreaGroupDataSerializer,
 )
+from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -63,6 +66,7 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
+from commcare_connect.organization.decorators import user_is_opportunity_admin
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
@@ -71,6 +75,7 @@ from commcare_connect.utils.file import EchoWriter
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
+BULK_MAX_ITEMS = 100
 
 
 class BaseDataExportView(APIView):
@@ -78,13 +83,58 @@ class BaseDataExportView(APIView):
     required_scopes = ["export"]
 
 
-class OpportunityDataExportView(BaseDataExportView):
-    def check_opportunity_permission(self, user, opp_id):
-        self.opportunity = _get_opportunity_or_404(user, opp_id)
+class BaseDataWriteView(APIView):
+    permission_classes = [IsAuthenticated, TokenHasScope]
+    required_scopes = ["write"]
+
+
+class OpportunityPermissionMixin:
+    opportunity_kwarg = "opp_id"
+
+    def check_opportunity_permission(self, user):
+        self.opportunity = _get_opportunity_or_404(
+            user,
+            self.kwargs[self.opportunity_kwarg],
+        )
 
     def check_permissions(self, request):
         super().check_permissions(request)
-        self.check_opportunity_permission(request.user, self.kwargs.get("opp_id"))
+        self.check_opportunity_permission(request.user)
+
+
+class OpportunityDataExportView(OpportunityPermissionMixin, BaseDataExportView):
+    pass
+
+
+class OpportunityAdminView(OpportunityPermissionMixin, BaseDataWriteView):
+    def check_opportunity_permission(self, user):
+        super().check_opportunity_permission(user)
+        if not user_is_opportunity_admin(user, self.opportunity):
+            raise NotFound()
+
+
+class MicroplanningFlagRequiredMixin:
+    def check_opportunity_permission(self, user):
+        if not hasattr(super(), "check_opportunity_permission"):
+            raise ImproperlyConfigured(
+                "MicroplanningFlagRequiredMixin must be combined with OpportunityPermissionMixin "
+                "listed after it in the class bases."
+            )
+        super().check_opportunity_permission(user)
+        self.request.opportunity = self.opportunity
+        if not flag_is_active(self.request, MICROPLANNING):
+            raise NotFound("Microplanning flag is not enabled for this opportunity.")
+
+
+class BulkListMixin:
+    """Forces list input and caps batch size, so an unbounded payload can't blow up memory
+    or DB pressure. DRF's ListSerializer already supports `max_length` natively. Shared by
+    bulk-create and bulk-update views."""
+
+    def get_serializer(self, *args, **kwargs):
+        kwargs["many"] = True
+        kwargs["max_length"] = BULK_MAX_ITEMS
+        return super().get_serializer(*args, **kwargs)
 
 
 class BaseDataExportListView(BaseDataExportView):
