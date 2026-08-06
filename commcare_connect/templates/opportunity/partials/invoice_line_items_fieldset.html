@@ -1,0 +1,49 @@
+{% load i18n %}
+{% load django_tables2 %}
+{% if form.line_items_table %}
+  {% if form.line_items_table.rows %}
+    <div class="overflow-x-auto mb-4">{% render_table form.line_items_table %}</div>
+  {% else %}
+    {# An empty table alone reads as a missing page. Say which of the two reasons it is. #}
+    <div role="status"
+         class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-info text-message-info-text border-message-info-border">
+      <i class="fa-solid fa-circle-info"></i>
+      <span>
+        {% if form.line_items_released %}
+          {% translate "Since this invoice was cancelled or rejected, the deliveries it billed have been released and are no longer listed here." %}
+        {% else %}
+          {% translate "No deliveries were billable for this period, so this invoice has no line items." %}
+        {% endif %}
+      </span>
+    </div>
+  {% endif %}
+{% else %}
+  {# The fetch is the only source of the amount, so a failure has to say so: the field is #}
+  {# read-only, and the NM would otherwise see it blank with no explanation and no way on. #}
+  <div x-show="lineItemsError"
+       x-cloak
+       role="alert"
+       class="flex items-center justify-between p-4 mb-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>{% translate "Could not load the deliveries for this period, so the amount is unavailable." %}</span>
+    </div>
+    <button type="button"
+            class="button button-md outline-style ml-4"
+            @click="fetchInvoiceLineItems()">{% translate "Retry" %}</button>
+  </div>
+  <div id="invoice-line-items-wrapper"
+       class="space-y-1 text-sm text-gray-500 mb-4"></div>
+{% endif %}
+<div id="download-line-items-wrapper"
+     x-cloak
+     x-show="showDownloadButton"
+     class="my-4">
+  <a type="button"
+     class="button button-md outline-style"
+     :href="downloadLineItemsUrl()"
+     target="_blank">
+    <i class="fa-solid fa-download mr-2"></i>
+    {% translate "Download All Items" %}
+  </a>
+</div>

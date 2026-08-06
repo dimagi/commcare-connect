@@ -405,6 +405,35 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice2.work_items.get().completed_work_id == completed_work2.id
         assert invoice2.work_items.get().billed_count == 1
 
+    def test_one_failing_opportunity_does_not_abort_the_run(self):
+        failing = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        billable = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=billable, amount=Decimal("100.00"), org_amount=0)
+        access = OpportunityAccessFactory(opportunity=billable)
+        CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 4),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
+        )
+
+        def start_date(opportunity):
+            if opportunity.id == failing.id:
+                raise Exception("no exchange rate for the billed month")
+            return datetime.date(2024, 1, 1)
+
+        self.mock_start_date.side_effect = start_date
+
+        with mock.patch("commcare_connect.opportunity.tasks._send_auto_invoice_created_notification") as mock_notify:
+            generate_automated_service_delivery_invoice()
+
+        assert not PaymentInvoice.objects.filter(opportunity=failing).exists()
+        invoice = PaymentInvoice.objects.get(opportunity=billable)
+        # The notification still fires, or the invoices that did get billed go unannounced.
+        mock_notify.assert_called_once_with([invoice.id])
+
     def test_no_invoice_for_inactive_opportunities(self):
         inactive_opportunity = OpportunityFactory(active=False, is_test=False, start_date=datetime.date(2026, 1, 1))
         payment_unit = PaymentUnitFactory(opportunity=inactive_opportunity)

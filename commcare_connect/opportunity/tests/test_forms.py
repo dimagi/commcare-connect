@@ -28,6 +28,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    PaymentInvoice,
     PaymentUnit,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -775,8 +776,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.title is None
         mock_bill_invoice.assert_not_called()
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice")
-    def test_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
+    def test_service_delivery_form(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
         form = AutomatedPaymentInvoiceForm(
@@ -784,7 +784,8 @@ class TestAutomatedPaymentInvoiceForm:
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-001",
-                "amount": 100.0,
+                # No billable work in this window, so the only total that validates is 0.
+                "amount": 0,
                 "date": "2025-11-06",
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
@@ -800,7 +801,85 @@ class TestAutomatedPaymentInvoiceForm:
         assert str(invoice.end_date) == "2025-10-31"
         assert invoice.description == "Monthly consulting services rendered."
 
-        mock_bill_invoice.assert_called_once()
+        # A window with no delta is still a saved invoice, for zero, with no line items behind it.
+        invoice.refresh_from_db()
+        assert invoice.amount == Decimal("0")
+        assert invoice.amount_usd == Decimal("0")
+        assert not invoice.work_items.exists()
+
+    @pytest.mark.parametrize(
+        "start_date, end_date, expected_error",
+        [
+            ("2025-10-01", "2025-10-31", None),
+            ("2025-10-31", "2025-10-01", "End date cannot be earlier than start date."),
+            ("2025-10-01", "2099-12-31", "End date cannot be in the future."),
+        ],
+        ids=["completed-period", "end-before-start", "future-end"],
+    )
+    def test_service_delivery_window_must_be_a_completed_period(
+        self, valid_opportunity, start_date, end_date, expected_error
+    ):
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-WINDOW",
+                "amount": 0,
+                "date": "2025-11-06",
+                "start_date": start_date,
+                "end_date": end_date,
+                "description": "Monthly consulting services rendered.",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid() is (expected_error is None)
+        if expected_error:
+            assert expected_error in str(form.errors)
+
+    @pytest.mark.parametrize(
+        "posted_amount, expect_valid",
+        [(120.0, True), (100.0, False), (0, False)],
+        ids=["matches", "stale-lower", "stale-zero"],
+    )
+    def test_service_delivery_rejects_a_total_that_no_longer_matches_the_window(
+        self, valid_opportunity, posted_amount, expect_valid
+    ):
+        """The amount is server-filled from the preview, so a mismatch means the deliveries moved.
+
+        Saving anyway would hand the NM an invoice for a figure they never reviewed.
+        """
+        ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-001",
+                "amount": posted_amount,
+                "date": "2025-11-06",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "Monthly consulting services rendered.",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid() is expect_valid
+        if not expect_valid:
+            assert "The billable total for this period is 120" in str(form.errors)
+            assert not PaymentInvoice.objects.filter(invoice_number="INV-001").exists()
 
     @patch("commcare_connect.opportunity.forms.bill_invoice", return_value=[])
     def test_service_delivery_amount_is_never_the_posted_one(self, mock_bill_invoice, valid_opportunity):
@@ -808,15 +887,27 @@ class TestAutomatedPaymentInvoiceForm:
 
         bill_invoice is patched to return [] to stand in for the delta being billed
         elsewhere between clean() and save() -- the race no validation can close. The invoice must
-        then be 0 rather than the 100 that was posted, so it never claims money it has no rows for.
+        then be 0 rather than the 120 that was posted, so it never claims money it has no rows for.
         """
         ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-STALE",
-                "amount": 100.0,
+                # Matches the window at validation time, so clean() passes; the patched writer then
+                # reports no delta, as if it had been billed elsewhere in between.
+                "amount": 120.0,
                 "date": "2025-11-06",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
@@ -853,7 +944,7 @@ class TestAutomatedPaymentInvoiceForm:
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-001",
-                "amount": 100.0,
+                "amount": 120.0,
                 "date": "2025-11-06",
                 "title": "Consulting Services Invoice",
                 # Deliberately wider than the single month that has billable work, so the
@@ -877,7 +968,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert row.org_amount_local == Decimal("20")
 
         invoice.refresh_from_db()
-        assert invoice.amount == Decimal("120")  # server-computed from the rows, not the posted 100
+        assert invoice.amount == Decimal("120")  # server-computed from the frozen rows
         # The window is the NM's input and is never narrowed to the months that were billable.
         assert invoice.start_date == datetime.date(2025, 9, 1)
         assert invoice.end_date == datetime.date(2025, 10, 31)
