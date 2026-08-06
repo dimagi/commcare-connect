@@ -10,8 +10,8 @@ def make_audit_entry():
     ``calc_a`` result, for a worker named ``name``.
     """
 
-    def _make(report, name, value, has_data=True, in_range=True):
-        access = OpportunityAccessFactory(user=UserFactory(name=name))
+    def _make(report, name, value, has_data=True, in_range=True, phone_number=None):
+        access = OpportunityAccessFactory(user=UserFactory(name=name, phone_number=phone_number))
         return AuditReportEntryFactory(
             audit_report=report,
             opportunity_access=access,

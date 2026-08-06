@@ -85,7 +85,9 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
     )
     columns_spec = column_specs(all_entries)
 
-    worker_filter_choices = [(str(e.opportunity_access_id), e.opportunity_access.user.name) for e in all_entries]
+    worker_filter_choices = [
+        (str(e.opportunity_access_id), e.opportunity_access.user.display_name_with_username()) for e in all_entries
+    ]
 
     selected_workers = request.GET.getlist("worker")
     if selected_workers:
