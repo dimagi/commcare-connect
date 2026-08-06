@@ -1866,6 +1866,11 @@ class BaseAssignedTaskTable(tables.Table):
 
 class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
     connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
+    phone_number = tables.Column(
+        verbose_name=gettext_lazy("Phone Number"),
+        accessor="opportunity_access__user__phone_number",
+        default="—",
+    )
     task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     action = tables.TemplateColumn(
         verbose_name="",
@@ -1886,6 +1891,7 @@ class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
         sequence = (
             "select",
             "connect_worker",
+            "phone_number",
             "status",
             "task_type",
             "assigned_date",
