@@ -636,6 +636,7 @@ class WorkAreaVectorLayer(VectorLayer):
         "group_id",
         "group_name",
         "assignee_name",
+        "assignee_phone",
         "slug",
         "visits_completed",
         "implementation_area_name",
@@ -653,6 +654,7 @@ class WorkAreaVectorLayer(VectorLayer):
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
             assignee_name=F("opportunity_access__user__name"),
+            assignee_phone=F("opportunity_access__user__phone_number"),
             visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
         )
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs

@@ -2682,6 +2682,7 @@ def user_visit_data(request, org_slug, opp_id, pk):
         {
             "visit_date": visit_date.strftime(DATE_TIME_FORMAT),
             "worker_name": escape(user_visit.user.name),
+            "phone_number": escape(user_visit.user.phone_number) if user_visit.user.phone_number else None,
             "deliver_type": escape(user_visit.deliver_unit.name) if user_visit.deliver_unit else None,
             "worker_url": (
                 f"{worker_url}?{urlencode({'user': user_visit.user.user_id, 'visit_id': user_visit.user_visit_id})}"

@@ -755,6 +755,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert row.group_id == group.id
         assert row.group_name == group.name
         assert row.assignee_name == access.user.name
+        assert row.assignee_phone == access.user.phone_number
 
 
 @pytest.mark.django_db
