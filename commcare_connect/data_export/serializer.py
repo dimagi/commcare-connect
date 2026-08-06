@@ -7,8 +7,8 @@ from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
-from commcare_connect.microplanning.helpers import assign_work_areas_to_access
-from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.helpers import assign_work_areas_to_access, unassign_work_areas_for_opportunity
+from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
@@ -506,11 +506,13 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
         needs_visit_status_update = []
         needs_hq_resync = []
         work_area_to_access = {}
+        to_unassign = []
         recompute_group_ids = set()
 
         for item in validated_data:
             item = item.copy()
             instance = item.pop("id")
+            has_access_key = "opportunity_access" in item
             access = item.pop("opportunity_access", None)
             old_group_id = instance.work_area_group_id
 
@@ -531,6 +533,9 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
 
             if access is not None:
                 work_area_to_access[instance] = access
+            elif has_access_key:
+                # Explicit `opportunity_access: null` — unassign rather than silently ignore.
+                to_unassign.append(instance)
             elif item and instance.opportunity_access_id:
                 needs_hq_resync.append(instance)
 
@@ -554,6 +559,17 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
 
         if work_area_to_access:
             assign_work_areas_to_access(opportunity, work_area_to_access)
+
+        if to_unassign:
+            result = unassign_work_areas_for_opportunity(
+                opportunity, [wa.id for wa in to_unassign], self.context["request"].user
+            )
+            self.unassign_result = result
+            unassigned_ids = set(result["unassigned_ids"])
+            for wa in to_unassign:
+                if wa.id in unassigned_ids:
+                    wa.opportunity_access = None
+                    wa.status = WorkAreaStatus.UNASSIGNED
 
         return instances
 

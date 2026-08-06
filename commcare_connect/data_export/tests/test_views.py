@@ -675,3 +675,44 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         area.refresh_from_db()
         assert area.opportunity_access_id is None
         assert area.status == WorkAreaStatus.UNASSIGNED
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_explicit_null_opportunity_access_unassigns(
+        self, mock_hq_call, api_client, managed_opportunity, program_manager_org_user_admin
+    ):
+        _add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(
+            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
+        )
+
+        payload = [{"id": area.id, "opportunity_access": None}]
+        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        assert response.status_code == 200
+        assert response.json()["unassign_result"]["unassigned_ids"] == [area.id]
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+        assert area.status == WorkAreaStatus.UNASSIGNED
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_explicit_null_opportunity_access_skips_ineligible_work_area(
+        self, mock_hq_call, api_client, managed_opportunity, program_manager_org_user_admin
+    ):
+        _add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(
+            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.VISITED
+        )
+
+        payload = [{"id": area.id, "opportunity_access": None}]
+        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        assert response.status_code == 200
+        assert response.json()["unassign_result"]["unassigned_ids"] == []
+        assert response.json()["unassign_result"]["skipped"] == 1
+        area.refresh_from_db()
+        assert area.opportunity_access_id == access.id
+        assert area.status == WorkAreaStatus.VISITED
