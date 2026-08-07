@@ -12,6 +12,8 @@
             showVisits: false,
             showImplementationAreas: false,
             filterQuery: '',
+            pendingTileQuery: null,
+            workAreaDetailRequestId: 0,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -209,23 +211,29 @@
                 }, duration);
             },
 
-            applyFilters() {
-                if (!this.map) return;
-                const form = this.$refs.filterForm;
-                const query = new URLSearchParams(new FormData(form)).toString();
-                this.filterQuery = query;
+            applyTileQuery(query) {
+                const source = this.map?.getSource('workareas');
+                if (!source) return false;
+
                 const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = query ? `${baseUrl}?${query}` : baseUrl;
-                const source = this.map.getSource('workareas');
-                if (source) {
-                    source.setTiles([newUrl]);
-                    this.selectedFeature = null; // Clear selection on filter change
-                }
+                source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
+
                 const visitSource = this.map.getSource('user-visits');
                 if (visitSource) {
                     const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
-                    const visitNewUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
-                    visitSource.setTiles([visitNewUrl]);
+                    visitSource.setTiles([query ? `${visitBaseUrl}?${query}` : visitBaseUrl]);
+                }
+                return true;
+            },
+
+            applyFilters() {
+                const form = this.$refs.filterForm;
+                const query = new URLSearchParams(new FormData(form)).toString();
+                this.filterQuery = query;
+                this.pendingTileQuery = query;
+                if (this.applyTileQuery(query)) {
+                    this.selectedFeature = null; // Clear selection on filter change
+                    this.invalidateWorkAreaDetailRequest();
                 }
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
             },
@@ -246,19 +254,9 @@
                 }
             },
 
-            // The filter each kind of search result corresponds to. Both modes route through
-            // this, so the filtering cannot drift between them.
-            searchFilterName(kind) {
-                return {
-                    wa: 'work_area',
-                    wag: 'work_area_group',
-                    ia: 'implementation_area',
-                }[kind];
-            },
-
             applySearchSelection(option) {
                 const el = this.$refs.filterForm.querySelector(
-                    `[name="${this.searchFilterName(option.kind)}"]`,
+                    `[name="${option.filter_name}"]`,
                 );
                 if (!el) return;
                 if (el.tomselect) {
@@ -276,7 +274,12 @@
                 return value ? el.tomselect.options[value] : null;
             },
 
+            invalidateWorkAreaDetailRequest() {
+                return ++this.workAreaDetailRequestId;
+            },
+
             showWorkAreaDetail(workAreaId) {
+                const requestId = this.invalidateWorkAreaDetailRequest();
                 const url = '{{ work_area_detail_url|escapejs }}' + workAreaId + '/';
                 fetch(url)
                     .then((res) => {
@@ -284,6 +287,7 @@
                         return res.json();
                     })
                     .then((detail) => {
+                        if (requestId !== this.workAreaDetailRequestId) return;  // superseded
                         if (this.selectedFeature) {
                             this.setWorkAreaState(this.selectedFeature._id, { selected: false });
                         }
@@ -291,6 +295,7 @@
                         this.setWorkAreaState(detail.id, { selected: true });
                     })
                     .catch(() => {
+                        if (requestId !== this.workAreaDetailRequestId) return;  // superseded
                         this.showToast("{% translate 'Could not load work area details.' %}", true);
                     });
             },
@@ -800,18 +805,14 @@
             // the tiles query is composed from its two inputs — the unassigned toggle and the
             // search box — which apply together.
             applyAssignmentModeFilters() {
-                if (!this.map) return;
                 const params = new URLSearchParams();
                 if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
                 const option = this.searchSelection();
-                if (option) params.set(this.searchFilterName(option.kind), option.object_id);
+                if (option) params.set(option.filter_name, option.object_id);
 
-                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
                 const query = params.toString();
-                const source = this.map.getSource('workareas');
-                if (source) {
-                    source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
-                }
+                this.pendingTileQuery = query;
+                this.applyTileQuery(query);
             },
 
             init() {
@@ -924,6 +925,10 @@
                     minzoom: minZoom,
                     promoteId: { 'workareas': 'id' }
                 });
+
+                if (this.pendingTileQuery) {
+                    this.applyTileQuery(this.pendingTileQuery);
+                }
 
                 // Colors each workarea by group using a golden angle HSL hash on group_id,
                 // so adjacent groups get visually distinct colors without a lookup table.
@@ -1187,6 +1192,8 @@
                         }
                         return;
                     }
+
+                    this.invalidateWorkAreaDetailRequest();
 
                     if (this.selectedFeature) {
                         this.setWorkAreaState(this.selectedFeature._id, { selected: false });

@@ -206,15 +206,17 @@
             <i class="fa-solid fa-crosshairs"></i>
           </div>
           <div class="flex flex-col gap-2 py-4">
+            <label for="work-area-search" class="sr-only">{% translate "Search work areas" %}</label>
             <select id="work-area-search"
                     data-options-url="{{ search_options_url }}"
+                    data-describedby="work-area-search-hint"
                     data-loading-text="{% translate 'Loading search options…' %}"
                     data-ready-text="{% translate 'Search by work area, group or implementation area' %}"
                     data-error-text="{% translate 'Search unavailable — reload the page' %}"
                     @change="onSearchChanged()">
               <option value=""></option>
             </select>
-            <span class="hint">{% blocktrans %}Type a few letters and the search box will show you options for selection.{% endblocktrans %}</span>
+            <span id="work-area-search-hint" class="hint">{% blocktrans %}Type a few letters and the search box will show you options for selection.{% endblocktrans %}</span>
           </div>
         </aside>
         {% if not assignment_mode %}
