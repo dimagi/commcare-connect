@@ -54,6 +54,13 @@
                 this.map.setFeatureState({ source: 'workareas', sourceLayer: 'workareas', id }, state);
             },
 
+            clearSelectedFeature() {
+                if (this.selectedFeature) {
+                    this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                }
+                this.selectedFeature = null;
+            },
+
             openWorkAreaEditModal(workAreaId) {
                 const editWorkAreaUrl = '{{ edit_work_area_url|escapejs }}';
                 const url = editWorkAreaUrl + workAreaId + '/';
@@ -232,7 +239,7 @@
                 this.filterQuery = query;
                 this.pendingTileQuery = query;
                 if (this.applyTileQuery(query)) {
-                    this.selectedFeature = null; // Clear selection on filter change
+                    this.clearSelectedFeature(); // Clear selection on filter change
                     this.invalidateWorkAreaDetailRequest();
                 }
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
