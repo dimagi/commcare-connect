@@ -49,10 +49,7 @@ from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 from waffle.decorators import waffle_flag
 
-from commcare_connect.commcarehq.api import (
-    bulk_create_or_update_cases_by_work_areas,
-    create_or_update_case_by_work_area,
-)
+from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
@@ -67,6 +64,7 @@ from commcare_connect.microplanning.filters import (
 )
 from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
+    assign_work_areas_and_sync_to_hq,
     exclude_work_areas_for_opportunity,
     pct,
     unassign_work_areas_for_opportunity,
@@ -406,7 +404,7 @@ def _get_assignment_mode_context(request, opportunity):
         "assignees_json": list(
             OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
             .select_related("user")
-            .values("id", "user__name", "user__user_id")
+            .values("id", "user__name", "user__username", "user__user_id")
         ),
         "group_work_areas_url": reverse(
             "microplanning:get_work_areas_for_assignment",
@@ -636,6 +634,7 @@ class WorkAreaVectorLayer(VectorLayer):
         "group_id",
         "group_name",
         "assignee_name",
+        "assignee_phone",
         "slug",
         "visits_completed",
         "implementation_area_name",
@@ -653,6 +652,7 @@ class WorkAreaVectorLayer(VectorLayer):
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
             assignee_name=F("opportunity_access__user__name"),
+            assignee_phone=F("opportunity_access__user__phone_number"),
             visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
         )
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
@@ -1144,25 +1144,20 @@ def save_assignment(request, org_slug, opp_id):
         if work_area.status == WorkAreaStatus.UNASSIGNED:
             work_area.status = WorkAreaStatus.NOT_VISITED
 
-    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access", "status"])
+    result = assign_work_areas_and_sync_to_hq(request.opportunity, all_work_areas, request.user)
+    assigned_ids = set(result["assigned_ids"])
+    notified_access_ids = {work_area_to_access[wa.id].id for wa in all_work_areas if wa.id in assigned_ids}
+    for access_id in notified_access_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
-    try:
-        bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
-    except CommCareHQAPIException:
-        transaction.set_rollback(True)
-        logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
+    if result["failed_ids"]:
         return JsonResponse(
             {
-                "error": _(
-                    "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact support."
-                )
+                "error": _("Failed to sync %(count)d work area(s) with CommCare HQ. Please try again.")
+                % {"count": len(result["failed_ids"])}
             },
             status=502,
         )
-
-    notified_access_ids = {access.id for access in work_area_to_access.values()}
-    for access_id in notified_access_ids:
-        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
     return JsonResponse({"status": "ok"})
 

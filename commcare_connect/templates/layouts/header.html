@@ -86,6 +86,12 @@
                   <p class="text-brand-deep-purple">{% translate "Profile" %}</p>
                 </a>
               </li>
+              <li class="p-2 text-left">
+                <a class="block p-2 hover:bg-gray-100 rounded cursor-pointer"
+                   href="{% url 'socialaccount_connections' %}">
+                  <p class="text-brand-deep-purple">{% translate "Connected Accounts" %}</p>
+                </a>
+              </li>
               <li class="p-2">
                 <a class="cursor-pointer" href="{% url 'account_logout' %}">
                   <div class="bg-brand-indigo text-white px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">

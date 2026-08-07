@@ -7,11 +7,8 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --group production
 
-FROM node:18-bullseye AS build-node
-#RUN apt-get update && apt-get -y install curl
-#RUN curl -sL https://deb.nodesource.com/setup_18.x | bash -
-#RUN apt-get install -y nodejs
-RUN nodejs -v && npm -v
+FROM node:26-bookworm AS build-node
+RUN node -v && npm -v
 WORKDIR /app
 COPY . /app
 RUN npm install

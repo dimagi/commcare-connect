@@ -26,6 +26,7 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
     PaymentUnit,
     TaskType,
+    TaskTypeModeChoices,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -1865,6 +1866,11 @@ class BaseAssignedTaskTable(tables.Table):
 
 class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
     connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
+    phone_number = tables.Column(
+        verbose_name=gettext_lazy("Phone Number"),
+        accessor="opportunity_access__user__phone_number",
+        default="—",
+    )
     task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     action = tables.TemplateColumn(
         verbose_name="",
@@ -1885,6 +1891,7 @@ class AssignedTaskListTable(BaseAssignedTaskTable, OpportunityContextTable):
         sequence = (
             "select",
             "connect_worker",
+            "phone_number",
             "status",
             "task_type",
             "assigned_date",
@@ -1952,6 +1959,7 @@ class TaskTable(OpportunityContextTable):
     index = IndexColumn()
     name = tables.Column(verbose_name=gettext_lazy("Task Type Name"))
     description = tables.Column(verbose_name=gettext_lazy("Description"))
+    mode = tables.Column(verbose_name=gettext_lazy("Mode"))
     linked_task_unit = tables.Column(verbose_name=gettext_lazy("Linked Task Unit"), accessor="unit_name")
     archived = tables.DateColumn(verbose_name=gettext_lazy("Archived"))
     actions = tables.TemplateColumn(
@@ -1974,5 +1982,12 @@ class TaskTable(OpportunityContextTable):
 
     class Meta:
         model = TaskType
-        fields = ("index", "name", "description", "linked_task_unit", "archived", "actions")
+        fields = ("index", "name", "description", "mode", "linked_task_unit", "archived", "actions")
         empty_text = gettext_lazy("No task types configured for this opportunity.")
+
+    def render_mode(self, value, record):
+        if value == TaskTypeModeChoices.OCS:
+            badge_class = "badge badge-sm bg-indigo-600/20 text-indigo-600"
+        else:
+            badge_class = "badge badge-sm bg-slate-100 text-slate-500"
+        return format_html('<span class="{}">{}</span>', badge_class, record.get_mode_display())
