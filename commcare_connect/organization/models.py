@@ -2,7 +2,6 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -29,9 +28,13 @@ def _current_year():
     return timezone.now().year
 
 
-class PrimarySector(models.TextChoices):
-    # TODO: fill in actual sector values before merge
-    OTHER = "other", _("Other")
+class PrimarySector(models.Model):
+    name = models.CharField(max_length=255)
+    slug = models.CharField(max_length=255)
+    description = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.name
 
 
 class Organization(BaseModel):
@@ -54,11 +57,7 @@ class Organization(BaseModel):
     flws_managed = models.PositiveIntegerField(null=True, blank=True)
     countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")
     regions = models.TextField(blank=True)
-    primary_sectors = ArrayField(
-        models.CharField(max_length=64, choices=PrimarySector.choices),
-        default=list,
-        blank=True,
-    )
+    primary_sectors = models.ManyToManyField(PrimarySector, null=True, blank=True)
     website = models.URLField(blank=True)
     office_address = models.TextField(blank=True)
     contact_emails = models.TextField(blank=True, help_text=_("One email address per line."))
