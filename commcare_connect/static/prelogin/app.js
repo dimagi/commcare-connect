@@ -163,6 +163,10 @@ const ROUTE_META = {
     title: 'Rooftop Sampling | Connect by Dimagi',
     desc: 'A GPS-navigated household survey method that uses satellite building footprints as the sampling frame, no household list required. Developed by IDinsight.',
   },
+  '/support-kmc': {
+    title: 'Fund a Frontline Worker | Connect by Dimagi',
+    desc: 'Your gift funds a trained Frontline Worker to deliver verified Kangaroo Mother Care home visits to small and vulnerable newborns. $60 covers one complete, verified intervention.',
+  },
 };
 
 // Only the SPA document (index.html) carries the home route; the standalone
@@ -1056,6 +1060,91 @@ document.addEventListener('click', (e) => {
   }
   function init() {
     document.querySelectorAll('.testimonial-carousel').forEach(setup);
+  }
+  if (document.readyState !== 'loading') init();
+  else document.addEventListener('DOMContentLoaded', init);
+})();
+
+// Support KMC (/support-kmc): donation frequency toggle swaps each
+// donate-button's href between its one-time / monthly / quarterly / yearly
+// Stripe Payment Link, and the sticky "Donate Now" bar appears once the hero
+// has scrolled out of view.
+(function () {
+  function setup(section) {
+    const oneTimeBtn = section.querySelector('#oneTimeBtn');
+    const recurringBtn = section.querySelector('#recurringBtn');
+    const recurringOptions = section.querySelector('#recurringOptions');
+    if (!oneTimeBtn || !recurringBtn || !recurringOptions) return;
+    const donateButtons = section.querySelectorAll('.donate-button');
+
+    function setFrequency(freq) {
+      donateButtons.forEach((btn) => {
+        const url = btn.dataset[freq === 'onetime' ? 'onetime' : freq];
+        if (url) btn.href = url;
+      });
+    }
+
+    function setPressed(btn, pressed) {
+      btn.classList.toggle('active', pressed);
+      btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    }
+
+    oneTimeBtn.addEventListener('click', () => {
+      setPressed(oneTimeBtn, true);
+      setPressed(recurringBtn, false);
+      recurringOptions.classList.remove('visible');
+      setFrequency('onetime');
+    });
+
+    recurringBtn.addEventListener('click', () => {
+      setPressed(recurringBtn, true);
+      setPressed(oneTimeBtn, false);
+      recurringOptions.classList.add('visible');
+      const activeSub =
+        recurringOptions.querySelector('button.active') ||
+        recurringOptions.querySelector('button');
+      recurringOptions
+        .querySelectorAll('button')
+        .forEach((b) => setPressed(b, false));
+      setPressed(activeSub, true);
+      setFrequency(activeSub.dataset.frequency);
+    });
+
+    recurringOptions.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        recurringOptions
+          .querySelectorAll('button')
+          .forEach((b) => setPressed(b, false));
+        setPressed(btn, true);
+        setFrequency(btn.dataset.frequency);
+      });
+    });
+
+    // Only float the sticky CTA while /support-kmc is the active SPA route —
+    // the hero sits in the DOM (just display:none) on every other page too,
+    // so an unguarded observer would flag it as "not intersecting" the
+    // moment the visitor navigates away and incorrectly show the CTA there.
+    const hero = section.querySelector('.hero-dark');
+    const stickyCta = section.querySelector('#stickyCta');
+    if (hero && stickyCta) {
+      const setCtaVisible = (visible) => {
+        stickyCta.classList.toggle('visible', visible);
+        stickyCta.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        stickyCta.setAttribute('tabindex', visible ? '0' : '-1');
+      };
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          setCtaVisible(
+            section.classList.contains('active') && !entry.isIntersecting,
+          );
+        },
+        { threshold: 0 },
+      );
+      observer.observe(hero);
+    }
+  }
+  function init() {
+    document.querySelectorAll('[data-page="/support-kmc"]').forEach(setup);
   }
   if (document.readyState !== 'loading') init();
   else document.addEventListener('DOMContentLoaded', init);
