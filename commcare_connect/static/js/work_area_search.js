@@ -92,6 +92,10 @@ function initWorkAreaSearch(el) {
     el.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
+  tomselect.on('item_add', () => {
+    tomselect.blur();
+  });
+
   linkDescription(el, tomselect);
   tomselect.disable();
   setPlaceholder(tomselect, el.dataset.loadingText);
