@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='completedwork',
             name='invoiced_approved_count',
-            field=models.IntegerField(default=0, help_text='Approved units already billed on a live invoice (billing watermark).'),
+            field=models.IntegerField(default=0, help_text='Approved units already billed on a live invoice.'),
         ),
         migrations.CreateModel(
             name='CompletedWorkInvoice',
