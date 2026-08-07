@@ -1084,24 +1084,29 @@ document.addEventListener('click', (e) => {
       });
     }
 
+    function setPressed(btn, pressed) {
+      btn.classList.toggle('active', pressed);
+      btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    }
+
     oneTimeBtn.addEventListener('click', () => {
-      oneTimeBtn.classList.add('active');
-      recurringBtn.classList.remove('active');
+      setPressed(oneTimeBtn, true);
+      setPressed(recurringBtn, false);
       recurringOptions.classList.remove('visible');
       setFrequency('onetime');
     });
 
     recurringBtn.addEventListener('click', () => {
-      recurringBtn.classList.add('active');
-      oneTimeBtn.classList.remove('active');
+      setPressed(recurringBtn, true);
+      setPressed(oneTimeBtn, false);
       recurringOptions.classList.add('visible');
       const activeSub =
         recurringOptions.querySelector('button.active') ||
         recurringOptions.querySelector('button');
       recurringOptions
         .querySelectorAll('button')
-        .forEach((b) => b.classList.remove('active'));
-      activeSub.classList.add('active');
+        .forEach((b) => setPressed(b, false));
+      setPressed(activeSub, true);
       setFrequency(activeSub.dataset.frequency);
     });
 
@@ -1109,18 +1114,29 @@ document.addEventListener('click', (e) => {
       btn.addEventListener('click', () => {
         recurringOptions
           .querySelectorAll('button')
-          .forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
+          .forEach((b) => setPressed(b, false));
+        setPressed(btn, true);
         setFrequency(btn.dataset.frequency);
       });
     });
 
+    // Only float the sticky CTA while /support-kmc is the active SPA route —
+    // the hero sits in the DOM (just display:none) on every other page too,
+    // so an unguarded observer would flag it as "not intersecting" the
+    // moment the visitor navigates away and incorrectly show the CTA there.
     const hero = section.querySelector('.hero-dark');
     const stickyCta = section.querySelector('#stickyCta');
     if (hero && stickyCta) {
+      const setCtaVisible = (visible) => {
+        stickyCta.classList.toggle('visible', visible);
+        stickyCta.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        stickyCta.setAttribute('tabindex', visible ? '0' : '-1');
+      };
       const observer = new IntersectionObserver(
         ([entry]) => {
-          stickyCta.classList.toggle('visible', !entry.isIntersecting);
+          setCtaVisible(
+            section.classList.contains('active') && !entry.isIntersecting,
+          );
         },
         { threshold: 0 },
       );

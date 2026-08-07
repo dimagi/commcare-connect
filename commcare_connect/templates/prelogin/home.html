@@ -1758,13 +1758,13 @@
       <div class="frequency-toggle-wrap">
         <span class="frequency-toggle-label">Choose your donation frequency</span>
         <div class="frequency-toggle">
-          <button id="oneTimeBtn" class="active" data-frequency="onetime">One-Time</button>
-          <button id="recurringBtn" data-frequency="recurring">Recurring</button>
+          <button id="oneTimeBtn" class="active" data-frequency="onetime" aria-pressed="true">One-Time</button>
+          <button id="recurringBtn" data-frequency="recurring" aria-pressed="false">Recurring</button>
         </div>
         <div id="recurringOptions" class="recurring-options">
-          <button data-frequency="monthly" class="active">Monthly</button>
-          <button data-frequency="quarterly">Quarterly</button>
-          <button data-frequency="yearly">Yearly</button>
+          <button data-frequency="monthly" class="active" aria-pressed="true">Monthly</button>
+          <button data-frequency="quarterly" aria-pressed="false">Quarterly</button>
+          <button data-frequency="yearly" aria-pressed="false">Yearly</button>
         </div>
       </div>
 
@@ -1842,7 +1842,7 @@
             <span class="faq-icon" aria-hidden="true"></span>
           </summary>
           <div class="answer">
-            <p>Yes, all donations are tax-deductible. Our fiscal sponsor, Players Philanthropy Fund (PPF), is a registered 501(c)(3) organization. You will receive an email confirmation from PPF after your donation is processed, and tax receipts will also be provided at a later date for donations over $250.</p>
+            <p>Yes, your gift is tax-deductible to the extent allowed by law. Our fiscal sponsor, Players Philanthropy Fund (PPF), is a registered 501(c)(3) organization. You will receive an email confirmation from PPF after your donation is processed, and tax receipts will also be provided at a later date for donations over $250.</p>
           </div>
         </details>
         <details class="faq-row">
@@ -1908,7 +1908,7 @@
     </div>
   </div>
 
-  <a id="stickyCta" href="#donate" class="btn btn-primary sticky-cta">Donate Now</a>
+  <a id="stickyCta" href="#donate" class="btn btn-primary sticky-cta" aria-hidden="true" tabindex="-1">Donate Now</a>
 
 </section>
 
