@@ -59,7 +59,7 @@ def _access(opportunity):
 
 
 def test_coverage_aggregates_counts_each_area_once(opportunity):
-    """WAs_visited is the union of HSD/NCWA delivery and inaccessible status, not their sum."""
+    """wa_visited is the union of HSD/NCWA delivery and inaccessible status, not their sum."""
     access = _access(opportunity)
     wa_hsd = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1")
     wa_ncwa = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1")
@@ -88,11 +88,11 @@ def test_coverage_aggregates_counts_each_area_once(opportunity):
 
     result = get_coverage_aggregates(opportunity, "ward", window=None)
 
-    assert result["w1"]["WAs_visited"] == 5  # hsd, ncwa, inaccessible, request_inaccessible, overlap
+    assert result["w1"]["wa_visited"] == 5  # hsd, ncwa, inaccessible, request_inaccessible, overlap
 
 
 def test_coverage_aggregates_buildings_covered_stays_hsd_only(opportunity):
-    """Buildings_covered_in_WAs_visited sums only HSD-delivered areas, not the wider WAs_visited union."""
+    """buildings_covered_in_wa_visited sums only HSD-delivered areas, not the wider wa_visited union."""
     access = _access(opportunity)
     wa_hsd = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, ward="w1", building_count=10)
     WorkAreaFactory(
@@ -106,8 +106,8 @@ def test_coverage_aggregates_buildings_covered_stays_hsd_only(opportunity):
 
     result = get_coverage_aggregates(opportunity, "ward", window=None)
 
-    assert result["w1"]["WAs_visited"] == 2  # both count toward the union
-    assert result["w1"]["Buildings_covered_in_WAs_visited"] == 10  # only the HSD-delivered one
+    assert result["w1"]["wa_visited"] == 2  # both count toward the union
+    assert result["w1"]["buildings_covered_in_wa_visited"] == 10  # only the HSD-delivered one
 
 
 def test_coverage_aggregates_evc_reached_ignores_areas_with_no_target(opportunity):
@@ -119,7 +119,7 @@ def test_coverage_aggregates_evc_reached_ignores_areas_with_no_target(opportunit
 
     result = get_coverage_aggregates(opportunity, "ward", window=None)
 
-    assert result["w1"]["WAs_evc_reached"] == 1
+    assert result["w1"]["wa_evc_reached"] == 1
 
 
 def test_coverage_aggregates_window_scopes_visits_but_not_status(opportunity):
@@ -135,8 +135,8 @@ def test_coverage_aggregates_window_scopes_visits_but_not_status(opportunity):
     )
     result = get_coverage_aggregates(opportunity, "ward", window=window)
 
-    assert result["w1"]["WAs_visited"] == 1  # the inaccessible area counts regardless of window
-    assert result["w1"]["WAs_evc_reached"] == 0  # fully windowed: no HSD visit inside window
+    assert result["w1"]["wa_visited"] == 1  # the inaccessible area counts regardless of window
+    assert result["w1"]["wa_evc_reached"] == 0  # fully windowed: no HSD visit inside window
 
 
 def test_target_aggregates_by_ward_excludes_excluded(opportunity):
@@ -380,18 +380,18 @@ def test_build_ward_rows_merges_and_derives():
     filtered_status = {
         "w1": {
             "ward": "w1",
-            "WAs_visited": 4,
-            "WAs_evc_reached": 2,
-            "Buildings_covered_in_WAs_visited": 20,
+            "wa_visited": 4,
+            "wa_evc_reached": 2,
+            "buildings_covered_in_wa_visited": 20,
         }
     }
     filtered_visits = {"w1": {"ward": "w1", "visits_approved": 20}}
     last_week_status = {
         "w1": {
             "ward": "w1",
-            "WAs_visited": 1,
-            "WAs_evc_reached": 0,
-            "Buildings_covered_in_WAs_visited": 5,
+            "wa_visited": 1,
+            "wa_evc_reached": 0,
+            "buildings_covered_in_wa_visited": 5,
         }
     }
     last_week_visits = {"w1": {"ward": "w1", "visits_approved": 5}}
@@ -401,17 +401,17 @@ def test_build_ward_rows_merges_and_derives():
 
     assert row["num_work_areas"] == 10
     assert row["visits_approved"] == 20
-    assert row["WAs_visited"] == 4
+    assert row["wa_visited"] == 4
     assert row["pct_visits_approved"] == 50.0  # 20 / 40
-    assert row["pct_WAs_visited"] == 40.0  # 4 / 10
-    assert row["pct_WAs_evc_reached"] == 20.0  # 2 / 10
-    assert row["pct_Buildings_covered_in_WAs_visited"] == 40.0  # 20 / 50
-    assert row["pct_WA_visited_to_pct_visits"] == 0.8  # 40 / 50
-    assert row["WAs_visited_last_week"] == 1
-    assert row["pct_WAs_visited_last_week"] == 10.0  # 1 / 10
-    # last-week ratio = pct_WAs_visited_last_week / pct_visits_approved_last_week
+    assert row["pct_wa_visited"] == 40.0  # 4 / 10
+    assert row["pct_wa_evc_reached"] == 20.0  # 2 / 10
+    assert row["pct_buildings_covered_in_wa_visited"] == 40.0  # 20 / 50
+    assert row["pct_wa_visited_to_pct_visits"] == 0.8  # 40 / 50
+    assert row["wa_visited_last_week"] == 1
+    assert row["pct_wa_visited_last_week"] == 10.0  # 1 / 10
+    # last-week ratio = pct_wa_visited_last_week / pct_visits_approved_last_week
     #                 = 10.0 / (5/40*100 = 12.5) = 0.8
-    assert row["pct_WA_visited_to_pct_visits_last_week"] == 0.8
+    assert row["pct_wa_visited_to_pct_visits_last_week"] == 0.8
 
 
 def test_build_ward_rows_zero_denominator_yields_none():
@@ -427,8 +427,8 @@ def test_build_ward_rows_zero_denominator_yields_none():
     row = rows[0]
     assert row["visits_approved"] == 0
     assert row["pct_visits_approved"] is None
-    assert row["pct_WAs_visited"] is None
-    assert row["pct_WA_visited_to_pct_visits"] is None
+    assert row["pct_wa_visited"] is None
+    assert row["pct_wa_visited_to_pct_visits"] is None
 
 
 def test_build_wag_rows_reduced_columns(opportunity):
@@ -444,18 +444,18 @@ def test_build_wag_rows_reduced_columns(opportunity):
     filtered_status = {
         group.id: {
             "work_area_group_id": group.id,
-            "WAs_visited": 6,
-            "WAs_evc_reached": 3,
-            "Buildings_covered_in_WAs_visited": 30,
+            "wa_visited": 6,
+            "wa_evc_reached": 3,
+            "buildings_covered_in_wa_visited": 30,
         }
     }
     filtered_visits = {group.id: {"work_area_group_id": group.id, "visits_approved": 25}}
     last_week_status = {
         group.id: {
             "work_area_group_id": group.id,
-            "WAs_visited": 2,
-            "WAs_evc_reached": 1,
-            "Buildings_covered_in_WAs_visited": 10,
+            "wa_visited": 2,
+            "wa_evc_reached": 1,
+            "buildings_covered_in_wa_visited": 10,
         }
     }
     last_week_visits = {group.id: {"work_area_group_id": group.id, "visits_approved": 10}}
@@ -470,14 +470,14 @@ def test_build_wag_rows_reduced_columns(opportunity):
     assert row["ward"] == "w1"
     assert row["expected_visit_total"] == 50
     assert row["pct_visits_approved"] == 50.0  # 25 / 50
-    assert row["pct_WAs_evc_reached"] == 25.0  # 3 / 12
-    assert row["pct_WA_visited_to_pct_visits"] == 1.0  # (6/12=50) / (25/50=50)
+    assert row["pct_wa_evc_reached"] == 25.0  # 3 / 12
+    assert row["pct_wa_visited_to_pct_visits"] == 1.0  # (6/12=50) / (25/50=50)
 
 
 def test_ward_saturation_goal_rolls_up_opportunity_wide():
     """Ward Saturation Goal is the Work Areas Done union rolled up opportunity-wide, not EVC-reached."""
     target_aggregates = {"w1": {"num_work_areas": 10}, "w2": {"num_work_areas": 10}}
-    coverage_aggregates = {"w1": {"WAs_visited": 3}, "w2": {"WAs_visited": 2}}
+    coverage_aggregates = {"w1": {"wa_visited": 3}, "w2": {"wa_visited": 2}}
     assert ward_saturation_goal(target_aggregates, coverage_aggregates) == 25.0  # 5 / 20 * 100
 
 

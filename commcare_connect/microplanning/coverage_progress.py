@@ -30,9 +30,9 @@ class TargetAggregate(TypedDict):
 class CoverageAggregate(TypedDict):
     """Visit-based WA counts + building sum for one group, as emitted by ``get_coverage_aggregates``."""
 
-    WAs_visited: int
-    WAs_evc_reached: int
-    Buildings_covered_in_WAs_visited: int
+    wa_visited: int
+    wa_evc_reached: int
+    buildings_covered_in_wa_visited: int
 
 
 class VisitsAggregate(TypedDict):
@@ -147,9 +147,9 @@ def get_target_aggregates(opportunity, group_field) -> dict[GroupKey, TargetAggr
 def get_coverage_aggregates(opportunity, group_field, window) -> dict[GroupKey, CoverageAggregate]:
     """WA-status counts + building sums per group, from live delivery counts and current status.
 
-    WAs_visited counts each work area once if it has an approved HSD visit, an
+    wa_visited counts each work area once if it has an approved HSD visit, an
     approved NCWA visit, or is inaccessible. ``window`` applies only to visits;
-    inaccessible areas are always included. Buildings_covered_in_WAs_visited
+    inaccessible areas are always included. buildings_covered_in_wa_visited
     remains HSD-only.
     """
     qs = annotate_approved_visit_counts(in_scope_work_areas(opportunity), opportunity, ncwa=True, window=window)
@@ -160,9 +160,9 @@ def get_coverage_aggregates(opportunity, group_field, window) -> dict[GroupKey, 
     evc_reached = Q(expected_visit_count__gt=0) & Q(hsd_count__gte=F("expected_visit_count"))
 
     rows = qs.values(group_field).annotate(
-        WAs_visited=Count("id", filter=hsd_delivered | ncwa_delivered | inaccessible_status),
-        WAs_evc_reached=Count("id", filter=evc_reached),
-        Buildings_covered_in_WAs_visited=Coalesce(Sum("building_count", filter=hsd_delivered), 0),
+        wa_visited=Count("id", filter=hsd_delivered | ncwa_delivered | inaccessible_status),
+        wa_evc_reached=Count("id", filter=evc_reached),
+        buildings_covered_in_wa_visited=Coalesce(Sum("building_count", filter=hsd_delivered), 0),
     )
     return {row[group_field]: row for row in rows}
 
@@ -193,13 +193,13 @@ def get_visits_approved_aggregates(opportunity, group_field, window) -> dict[Gro
 # Straight percentages: (output column, value key in ``row``, denominator key in ``target``).
 _WARD_PCT_OF_TARGET = (
     ("pct_visits_approved", "visits_approved", "expected_visit_total"),
-    ("pct_WAs_visited", "WAs_visited", "num_work_areas"),
-    ("pct_WAs_visited_last_week", "WAs_visited_last_week", "num_work_areas"),
-    ("pct_WAs_evc_reached", "WAs_evc_reached", "num_work_areas"),
-    ("pct_Buildings_covered_in_WAs_visited", "Buildings_covered_in_WAs_visited", "building_count"),
+    ("pct_wa_visited", "wa_visited", "num_work_areas"),
+    ("pct_wa_visited_last_week", "wa_visited_last_week", "num_work_areas"),
+    ("pct_wa_evc_reached", "wa_evc_reached", "num_work_areas"),
+    ("pct_buildings_covered_in_wa_visited", "buildings_covered_in_wa_visited", "building_count"),
     (
-        "pct_buildings_covered_in_WAs_visited_last_week",
-        "Buildings_covered_in_WAs_visited_last_week",
+        "pct_buildings_covered_in_wa_visited_last_week",
+        "buildings_covered_in_wa_visited_last_week",
         "building_count",
     ),
 )
@@ -207,12 +207,12 @@ _WARD_PCT_OF_TARGET = (
 # Ratios of two percentages: (output column, numerator pct column, which visits-pct is the denominator).
 # "filtered" -> row["pct_visits_approved"]; "last_week" -> the pinned 7-day visits pct.
 _WARD_PCT_RATIOS = (
-    ("pct_WA_visited_to_pct_visits", "pct_WAs_visited", "filtered"),
-    ("pct_WA_visited_to_pct_visits_last_week", "pct_WAs_visited_last_week", "last_week"),
-    ("pct_buildings_covered_in_WA_visited_to_pct_visit", "pct_Buildings_covered_in_WAs_visited", "filtered"),
+    ("pct_wa_visited_to_pct_visits", "pct_wa_visited", "filtered"),
+    ("pct_wa_visited_to_pct_visits_last_week", "pct_wa_visited_last_week", "last_week"),
+    ("pct_buildings_covered_in_wa_visited_to_pct_visit", "pct_buildings_covered_in_wa_visited", "filtered"),
     (
-        "pct_buildings_covered_in_WA_visited_to_pct_visits_last_week",
-        "pct_buildings_covered_in_WAs_visited_last_week",
+        "pct_buildings_covered_in_wa_visited_to_pct_visits_last_week",
+        "pct_buildings_covered_in_wa_visited_last_week",
         "last_week",
     ),
 )
@@ -312,15 +312,15 @@ class CoverageProgressReport:
 
 
 def ward_saturation_goal(target_aggregates, coverage_aggregates):
-    """Opportunity-wide pct_WAs_visited for the page header: SUM(WAs_visited) / SUM(num_work_areas) * 100.
+    """Opportunity-wide pct_wa_visited for the page header: SUM(wa_visited) / SUM(num_work_areas) * 100.
 
-    The same Work Areas Done union as the ward table's WAs_visited column, rolled up across every
+    The same Work Areas Done union as the ward table's wa_visited column, rolled up across every
     ward rather than the guarded EVC-reached count.
     target_aggregates / coverage_aggregates: dicts keyed by ward -> that ward's target / coverage dict.
     Returns None when there are no in-scope work areas.
     """
     total_work_areas = sum(t["num_work_areas"] for t in target_aggregates.values())
-    total_visited = sum(s.get("WAs_visited", 0) for s in coverage_aggregates.values())
+    total_visited = sum(s.get("wa_visited", 0) for s in coverage_aggregates.values())
     return pct(total_visited, total_work_areas)
 
 
@@ -348,11 +348,11 @@ def build_ward_rows(target_aggregates, filtered_status, filtered_visits, last_we
             "building_count": target["building_count"],
             "num_work_areas": target["num_work_areas"],
             "visits_approved": visits.get("visits_approved", 0),
-            "WAs_visited": status.get("WAs_visited", 0),
-            "WAs_visited_last_week": lw_status.get("WAs_visited", 0),
-            "WAs_evc_reached": status.get("WAs_evc_reached", 0),
-            "Buildings_covered_in_WAs_visited": status.get("Buildings_covered_in_WAs_visited", 0),
-            "Buildings_covered_in_WAs_visited_last_week": lw_status.get("Buildings_covered_in_WAs_visited", 0),
+            "wa_visited": status.get("wa_visited", 0),
+            "wa_visited_last_week": lw_status.get("wa_visited", 0),
+            "wa_evc_reached": status.get("wa_evc_reached", 0),
+            "buildings_covered_in_wa_visited": status.get("buildings_covered_in_wa_visited", 0),
+            "buildings_covered_in_wa_visited_last_week": lw_status.get("buildings_covered_in_wa_visited", 0),
         }
 
         # percentages — denominators come from the static targets; numerators read back from the row
@@ -405,13 +405,13 @@ def build_wag_rows(display, target_aggregates, filtered_status, filtered_visits,
         }
         row["pct_visits_approved"] = pct(visits.get("visits_approved", 0), target["expected_visit_total"])
         row["pct_visits_approved_last_week"] = pct(lw_visits.get("visits_approved", 0), target["expected_visit_total"])
-        row["pct_WAs_evc_reached"] = pct(status.get("WAs_evc_reached", 0), target["num_work_areas"])
-        # pct_WAs_visited is not a bottom-table column; compute inline as the ratio numerator
-        row["pct_WA_visited_to_pct_visits"] = ratio(
-            pct(status.get("WAs_visited", 0), target["num_work_areas"]), row["pct_visits_approved"]
+        row["pct_wa_evc_reached"] = pct(status.get("wa_evc_reached", 0), target["num_work_areas"])
+        # pct_wa_visited is not a bottom-table column; compute inline as the ratio numerator
+        row["pct_wa_visited_to_pct_visits"] = ratio(
+            pct(status.get("wa_visited", 0), target["num_work_areas"]), row["pct_visits_approved"]
         )
-        row["pct_WA_visited_to_pct_visits_last_week"] = ratio(
-            pct(lw_status.get("WAs_visited", 0), target["num_work_areas"]), row["pct_visits_approved_last_week"]
+        row["pct_wa_visited_to_pct_visits_last_week"] = ratio(
+            pct(lw_status.get("wa_visited", 0), target["num_work_areas"]), row["pct_visits_approved_last_week"]
         )
         rows.append(row)
     return rows
