@@ -163,6 +163,10 @@ const ROUTE_META = {
     title: 'Rooftop Sampling | Connect by Dimagi',
     desc: 'A GPS-navigated household survey method that uses satellite building footprints as the sampling frame, no household list required. Developed by IDinsight.',
   },
+  '/support-kmc': {
+    title: 'Fund a Frontline Worker | Connect by Dimagi',
+    desc: 'Your gift funds a trained Frontline Worker to deliver verified Kangaroo Mother Care home visits to small and vulnerable newborns. $60 covers one complete, verified intervention.',
+  },
 };
 
 // Only the SPA document (index.html) carries the home route; the standalone
@@ -1056,6 +1060,75 @@ document.addEventListener('click', (e) => {
   }
   function init() {
     document.querySelectorAll('.testimonial-carousel').forEach(setup);
+  }
+  if (document.readyState !== 'loading') init();
+  else document.addEventListener('DOMContentLoaded', init);
+})();
+
+// Support KMC (/support-kmc): donation frequency toggle swaps each
+// donate-button's href between its one-time / monthly / quarterly / yearly
+// Stripe Payment Link, and the sticky "Donate Now" bar appears once the hero
+// has scrolled out of view.
+(function () {
+  function setup(section) {
+    const oneTimeBtn = section.querySelector('#oneTimeBtn');
+    const recurringBtn = section.querySelector('#recurringBtn');
+    const recurringOptions = section.querySelector('#recurringOptions');
+    if (!oneTimeBtn || !recurringBtn || !recurringOptions) return;
+    const donateButtons = section.querySelectorAll('.donate-button');
+
+    function setFrequency(freq) {
+      donateButtons.forEach((btn) => {
+        const url = btn.dataset[freq === 'onetime' ? 'onetime' : freq];
+        if (url) btn.href = url;
+      });
+    }
+
+    oneTimeBtn.addEventListener('click', () => {
+      oneTimeBtn.classList.add('active');
+      recurringBtn.classList.remove('active');
+      recurringOptions.classList.remove('visible');
+      setFrequency('onetime');
+    });
+
+    recurringBtn.addEventListener('click', () => {
+      recurringBtn.classList.add('active');
+      oneTimeBtn.classList.remove('active');
+      recurringOptions.classList.add('visible');
+      const activeSub =
+        recurringOptions.querySelector('button.active') ||
+        recurringOptions.querySelector('button');
+      recurringOptions
+        .querySelectorAll('button')
+        .forEach((b) => b.classList.remove('active'));
+      activeSub.classList.add('active');
+      setFrequency(activeSub.dataset.frequency);
+    });
+
+    recurringOptions.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        recurringOptions
+          .querySelectorAll('button')
+          .forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        setFrequency(btn.dataset.frequency);
+      });
+    });
+
+    const hero = section.querySelector('.hero-dark');
+    const stickyCta = section.querySelector('#stickyCta');
+    if (hero && stickyCta) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          stickyCta.classList.toggle('visible', !entry.isIntersecting);
+        },
+        { threshold: 0 },
+      );
+      observer.observe(hero);
+    }
+  }
+  function init() {
+    document.querySelectorAll('[data-page="/support-kmc"]').forEach(setup);
   }
   if (document.readyState !== 'loading') init();
   else document.addEventListener('DOMContentLoaded', init);
