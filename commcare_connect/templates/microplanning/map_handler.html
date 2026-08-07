@@ -12,6 +12,8 @@
             showVisits: false,
             showImplementationAreas: false,
             filterQuery: '',
+            pendingTileQuery: null,
+            workAreaDetailRequestId: 0,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -50,6 +52,13 @@
 
             setWorkAreaState(id, state) {
                 this.map.setFeatureState({ source: 'workareas', sourceLayer: 'workareas', id }, state);
+            },
+
+            clearSelectedFeature() {
+                if (this.selectedFeature) {
+                    this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                }
+                this.selectedFeature = null;
             },
 
             openWorkAreaEditModal(workAreaId) {
@@ -209,35 +218,132 @@
                 }, duration);
             },
 
-            applyFilters() {
-                if (!this.map) return;
-                const form = this.$refs.filterForm;
-                const query = new URLSearchParams(new FormData(form)).toString();
-                this.filterQuery = query;
+            applyTileQuery(query) {
+                const source = this.map?.getSource('workareas');
+                if (!source) return false;
+
                 const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = query ? `${baseUrl}?${query}` : baseUrl;
-                const source = this.map.getSource('workareas');
-                if (source) {
-                    source.setTiles([newUrl]);
-                    this.selectedFeature = null; // Clear selection on filter change
-                }
+                source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
+
                 const visitSource = this.map.getSource('user-visits');
                 if (visitSource) {
                     const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
-                    const visitNewUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
-                    visitSource.setTiles([visitNewUrl]);
+                    visitSource.setTiles([query ? `${visitBaseUrl}?${query}` : visitBaseUrl]);
+                }
+                return true;
+            },
+
+            applyFilters() {
+                const form = this.$refs.filterForm;
+                const query = new URLSearchParams(new FormData(form)).toString();
+                this.filterQuery = query;
+                this.pendingTileQuery = query;
+                if (this.applyTileQuery(query)) {
+                    this.clearSelectedFeature(); // Clear selection on filter change
+                    this.invalidateWorkAreaDetailRequest();
                 }
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
             },
 
-            clearFilters() {
-                const form = this.$refs.filterForm;
-                form.reset();
-                // Clear TomSelect instances
-                form.querySelectorAll('select[data-tomselect]').forEach(el => {
-                    if (el.tomselect) el.tomselect.clear();
-                });
+            onSearchChanged() {
+                // Assignment mode renders no filter sidebar, so there are no controls to drive
+                // and nothing to clear; its tiles are filtered directly instead.
+                if (this.assignmentMode) {
+                    this.applyAssignmentModeFilters();
+                    return;
+                }
+                const option = this.searchSelection();
+                this.clearFilterFields();
+                if (option) this.applySearchSelection(option);
+                this.applyFilters();  // clears selectedFeature
+                if (option?.kind === 'wa') {
+                    this.showWorkAreaDetail(option.object_id);
+                }
+            },
+
+            applySearchSelection(option) {
+                const el = this.$refs.filterForm.querySelector(
+                    `[name="${option.filter_name}"]`,
+                );
+                if (!el) return;
+                if (el.tomselect) {
+                    // Silent: a change event here would run onFilterChanged() and clear the
+                    // search box we are in the middle of applying.
+                    el.tomselect.setValue(String(option.object_id), true);
+                } else {
+                    el.value = option.object_id;
+                }
+            },
+
+            searchSelection() {
+                const el = this.searchElement();
+                const value = el?.tomselect?.getValue();
+                return value ? el.tomselect.options[value] : null;
+            },
+
+            invalidateWorkAreaDetailRequest() {
+                return ++this.workAreaDetailRequestId;
+            },
+
+            showWorkAreaDetail(workAreaId) {
+                const requestId = this.invalidateWorkAreaDetailRequest();
+                const url = '{{ work_area_detail_url|escapejs }}' + workAreaId + '/';
+                fetch(url)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load work area details');
+                        return res.json();
+                    })
+                    .then((detail) => {
+                        if (requestId !== this.workAreaDetailRequestId) return;  // superseded
+                        if (this.selectedFeature) {
+                            this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                        }
+                        this.selectedFeature = { ...detail, _id: detail.id };
+                        this.setWorkAreaState(detail.id, { selected: true });
+                    })
+                    .catch(() => {
+                        if (requestId !== this.workAreaDetailRequestId) return;  // superseded
+                        this.showToast("{% translate 'Could not load work area details.' %}", true);
+                    });
+            },
+
+            onFilterChanged() {
+                this.clearSearchSelection();
                 this.applyFilters();
+            },
+
+            clearFilters() {
+                this.clearFilterFields();
+                this.clearSearchSelection();
+                this.applyFilters();
+            },
+
+            clearFilterFields() {
+                const form = this.$refs.filterForm;
+                form.querySelectorAll('select[data-tomselect]').forEach(el => {
+                    // Silent clear — a change event here would trigger onFilterChanged() and
+                    // wipe the search selection we were just asked to apply.
+                    if (el.tomselect) el.tomselect.clear(true);
+                });
+                form.querySelectorAll('select:not([data-tomselect])').forEach(el => {
+                    el.selectedIndex = 0;
+                });
+                form.querySelectorAll('input').forEach(el => {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        el.checked = false;
+                    } else {
+                        el.value = '';
+                    }
+                });
+            },
+
+            searchElement() {
+                return document.getElementById('work-area-search');
+            },
+
+            clearSearchSelection() {
+                const el = this.searchElement();
+                if (el?.tomselect) el.tomselect.clear(true);
             },
 
             // --- Assignment mode methods ---
@@ -702,14 +808,18 @@
                 }
             },
 
-            applyUnassignedFilter() {
-                if (!this.map) return;
-                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = this.showOnlyUnassigned ? `${baseUrl}?unassigned_only=true` : baseUrl;
-                const source = this.map.getSource('workareas');
-                if (source) {
-                    source.setTiles([newUrl]);
-                }
+            // Assignment mode's equivalent of applyFilters(): it has no filter form to read, so
+            // the tiles query is composed from its two inputs — the unassigned toggle and the
+            // search box — which apply together.
+            applyAssignmentModeFilters() {
+                const params = new URLSearchParams();
+                if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
+                const option = this.searchSelection();
+                if (option) params.set(option.filter_name, option.object_id);
+
+                const query = params.toString();
+                this.pendingTileQuery = query;
+                this.applyTileQuery(query);
             },
 
             init() {
@@ -725,7 +835,7 @@
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
 
                     this.$watch('showOnlyUnassigned', () => {
-                        this.applyUnassignedFilter();
+                        this.applyAssignmentModeFilters();
                     });
                 }
 
@@ -822,6 +932,10 @@
                     minzoom: minZoom,
                     promoteId: { 'workareas': 'id' }
                 });
+
+                if (this.pendingTileQuery) {
+                    this.applyTileQuery(this.pendingTileQuery);
+                }
 
                 // Colors each workarea by group using a golden angle HSL hash on group_id,
                 // so adjacent groups get visually distinct colors without a lookup table.
@@ -1085,6 +1199,8 @@
                         }
                         return;
                     }
+
+                    this.invalidateWorkAreaDetailRequest();
 
                     if (this.selectedFeature) {
                         this.setWorkAreaState(this.selectedFeature._id, { selected: false });

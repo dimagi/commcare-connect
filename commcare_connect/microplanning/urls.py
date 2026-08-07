@@ -40,6 +40,12 @@ urlpatterns = [
         views.workareas_group_geojson,
         name="workareas_group_geojson",
     ),
+    path("<slug:opp_id>/search_options/", views.search_options, name="search_options"),
+    path(
+        "<slug:opp_id>/work_area_detail/<int:work_area_id>/",
+        views.work_area_detail_json,
+        name="work_area_detail",
+    ),
     path(
         "<slug:opp_id>/implementation_areas_geojson/",
         views.implementation_areas_geojson,
