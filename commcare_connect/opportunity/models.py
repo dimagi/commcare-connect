@@ -846,7 +846,7 @@ class CompletedWork(models.Model):
     )
     invoiced_approved_count = models.IntegerField(
         default=0,
-        help_text=gettext_lazy("Approved units already billed on a live invoice (billing watermark)."),
+        help_text=gettext_lazy("Approved units already billed on a live invoice."),
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -974,11 +974,11 @@ class CompletedWorkInvoice(BaseModel):
     flw_amount_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     org_amount_local = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     org_amount_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    exchange_rate = models.DecimalField(
-        max_digits=10,
-        decimal_places=6,
-        default=1,
-        help_text=gettext_lazy("Local-currency-per-USD rate used for this row's month; 1 for USD."),
+    exchange_rate = models.ForeignKey(
+        ExchangeRate,
+        on_delete=models.PROTECT,
+        related_name="completed_work_invoices",
+        help_text=gettext_lazy("ExchangeRate row used for this row's month."),
     )
 
     class Meta:
