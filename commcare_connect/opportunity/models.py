@@ -846,7 +846,7 @@ class CompletedWork(models.Model):
     )
     invoiced_approved_count = models.IntegerField(
         default=0,
-        help_text=gettext_lazy("Approved units already billed on a live invoice (billing watermark)."),
+        help_text=gettext_lazy("Approved units already billed on a live invoice."),
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
