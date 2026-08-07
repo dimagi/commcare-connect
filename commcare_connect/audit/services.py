@@ -20,12 +20,15 @@ def stream_audit_report_csv(report, selected_workers=None):
     columns = column_specs(report.entries.all()[:1])
     writer = csv.writer(EchoWriter())
 
-    yield writer.writerow([gettext("Connect Worker"), *_column_headers(columns)])
+    yield writer.writerow(
+        [gettext("Connect Worker"), gettext("Username"), gettext("Phone Number"), *_column_headers(columns)]
+    )
 
     entries = entries_for_export(report, selected_workers)
     for entry in entries.iterator(chunk_size=STREAM_CHUNK_SIZE):
+        user = entry.opportunity_access.user
         cells = [_export_cell_value(entry.results, name) for name, _label, _tooltip in columns]
-        yield writer.writerow([entry.opportunity_access.user.name, *cells])
+        yield writer.writerow([user.name, user.username or "", user.phone_number or "", *cells])
 
 
 def _column_headers(columns):

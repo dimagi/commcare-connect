@@ -328,10 +328,10 @@ def test_detail_filter_limits_table_server_side(client, program_manager_org_user
     assert response.status_code == 200
     rendered_rows = [e.opportunity_access.user.name for e in response.context["table"].page.object_list.data]
     assert rendered_rows == ["Alice Smith"]
-    # Both workers remain available as filter options.
+    # Both workers remain available as filter options, labelled "name (username)".
     option_names = [name for _, name in response.context["worker_filter_choices"]]
-    assert "Alice Smith" in option_names
-    assert "Bob Jones" in option_names
+    assert f"Alice Smith ({alice_access.user.username})" in option_names
+    assert f"Bob Jones ({bob_access.user.username})" in option_names
 
 
 @pytest.mark.django_db

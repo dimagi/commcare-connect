@@ -755,6 +755,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert row.group_id == group.id
         assert row.group_name == group.name
         assert row.assignee_name == access.user.name
+        assert row.assignee_phone == access.user.phone_number
 
 
 @pytest.mark.django_db
@@ -1212,7 +1213,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
         self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
@@ -1571,7 +1572,7 @@ class TestSaveAssignment:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_assigns_work_areas_and_syncs_to_hq(
         self,
         mock_hq_sync,
@@ -1601,7 +1602,7 @@ class TestSaveAssignment:
             wa.refresh_from_db()
             assert wa.opportunity_access_id == access.id
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_rolls_back_db(
         self,
         mock_hq_sync,

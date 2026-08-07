@@ -4,35 +4,77 @@ from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.utils import user_email
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
-from allauth.socialaccount.models import SocialLogin
+from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
 from allauth.utils import email_address_exists
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.utils.translation import gettext as _
 
-from commcare_connect.ocs_provider.provider import OcsProvider
+from commcare_connect.commcarehq_provider.provider import CommcareHQProvider
+from commcare_connect.utils.middleware import is_safe_redirect_url
 
 
 class AccountAdapter(DefaultAccountAdapter):
     def is_open_for_signup(self, request: HttpRequest):
         return getattr(settings, "ACCOUNT_ALLOW_REGISTRATION", True)
 
+    def add_message(self, request, level, message_template, message_context=None, extra_tags=""):
+        if message_template == "socialaccount/messages/account_connected.txt":
+            level = messages.SUCCESS
+        super().add_message(request, level, message_template, message_context, extra_tags)
+
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def is_open_for_signup(self, request: HttpRequest, sociallogin: Any):
         return getattr(settings, "ACCOUNT_ALLOW_REGISTRATION", True)
 
+    def authentication_error(self, request, *args, **kwargs):
+        messages.error(request, _("Could not connect your account. Please try again."))
+        next_url = self._next_url_from_state(request)
+        if not next_url:
+            return
+        raise ImmediateHttpResponse(redirect(next_url))
+
+    @staticmethod
+    def _next_url_from_state(request):
+        oauth_state = request.session.get("socialaccount_state")
+        if not oauth_state:
+            return None
+        next_url = oauth_state[0].get("next")
+        return next_url if is_safe_redirect_url(request, next_url) else None
+
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin):
         if sociallogin.is_existing:
             return
-        if sociallogin.state.get("process") == AuthProcess.CONNECT and sociallogin.account.provider == OcsProvider.id:
-            return  # OCS account being linked to an already-authenticated user
+        if sociallogin.state.get("process") == AuthProcess.CONNECT:
+            return  # linking a new provider account to an already-authenticated user is always allowed
+
+        if sociallogin.account.provider != CommcareHQProvider.id:
+            self._reject_non_hq_login(request)
+        else:
+            self._reject_if_email_already_registered(request, sociallogin)
+
+    def _reject_non_hq_login(self, request: HttpRequest):
+        messages.error(request, _("This account can only be connected, not used to sign in."))
+        raise ImmediateHttpResponse(redirect("account_login"))
+
+    def _reject_if_email_already_registered(self, request: HttpRequest, sociallogin: SocialLogin):
         email = user_email(sociallogin.user)
-        if not email:
-            return
-        if email_address_exists(email):
+        if email and email_address_exists(email):
             messages.error(request, _("Unable to sign in with SSO. Please sign in with your email and password."))
             raise ImmediateHttpResponse(redirect("account_login"))
+
+    def validate_disconnect(self, account: SocialAccount, accounts: list[SocialAccount]):
+        if account.provider != CommcareHQProvider.id:
+            return  # non-HQ providers (e.g. OCS) are never used to sign in, so always safe to disconnect
+
+        # A user with no usable password almost certainly signed up via HQ, so HQ must stay
+        # connected even if another provider (e.g. OCS) is also connected as a fallback.
+        # Checked before super() so this message takes precedence over allauth's generic one.
+        if not account.user.has_usable_password():
+            raise ValidationError(_("You can't disconnect your CommCare HQ account because it's your sign-in method."))
+        super().validate_disconnect(account, accounts)

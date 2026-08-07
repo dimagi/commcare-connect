@@ -3,6 +3,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+from allauth.socialaccount.models import SocialAccount
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
 from django.utils.timezone import now
@@ -28,6 +29,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     CredentialConfiguration,
     PaymentUnit,
+    TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -916,6 +918,57 @@ class TestCreateTaskForm:
         assert form.cleaned_data["task"] == task_type
         assert form.cleaned_data["access"] == access
 
+    @pytest.fixture
+    def ocs_task_type(self, opportunity):
+        return TaskTypeFactory(
+            app=opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="bot-1",
+        )
+
+    def _task_form_data(self, task_type, access):
+        return {
+            "task": task_type.pk,
+            "access": access.pk,
+            "due_date": (datetime.date.today() + datetime.timedelta(days=7)).isoformat(),
+        }
+
+    def test_ocs_connected_reflects_account(self, opportunity, user):
+        assert CreateTaskForm(opportunity=opportunity, user=user).ocs_connected is False
+        SocialAccount.objects.create(user=user, provider="ocs", uid="uid-ocs")
+        assert CreateTaskForm(opportunity=opportunity, user=user).ocs_connected is True
+
+    def test_ocs_task_rejected_when_user_not_connected(self, opportunity, ocs_task_type, user):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        form = CreateTaskForm(self._task_form_data(ocs_task_type, access), opportunity=opportunity, user=user)
+        assert not form.is_valid()
+        assert form.non_field_errors()
+
+    def test_ocs_task_allowed_when_user_connected(self, opportunity, ocs_task_type, user):
+        SocialAccount.objects.create(user=user, provider="ocs", uid="uid-ocs")
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        form = CreateTaskForm(self._task_form_data(ocs_task_type, access), opportunity=opportunity, user=user)
+        assert form.is_valid()
+
+    def test_non_ocs_task_unaffected_when_user_not_connected(self, opportunity, task_type, user):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        form = CreateTaskForm(self._task_form_data(task_type, access), opportunity=opportunity, user=user)
+        assert form.is_valid()
+
+    def test_selected_task_is_ocs_restored_on_bound_form(self, opportunity, ocs_task_type, task_type, user):
+        """A re-rendered (validation-error) modal must know an OCS task is selected so the connect
+        prompt stays visible and Save stays disabled."""
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+
+        unbound = CreateTaskForm(opportunity=opportunity, user=user)
+        assert unbound.selected_task_is_ocs is False
+
+        ocs_bound = CreateTaskForm(self._task_form_data(ocs_task_type, access), opportunity=opportunity, user=user)
+        assert ocs_bound.selected_task_is_ocs is True
+
+        relearn_bound = CreateTaskForm(self._task_form_data(task_type, access), opportunity=opportunity, user=user)
+        assert relearn_bound.selected_task_is_ocs is False
+
     @pytest.mark.parametrize(
         "task_status, provide_access, in_queryset",
         [
@@ -1035,6 +1088,65 @@ class TestAddTaskTypeForm:
         assert task_type.app == opportunity.deliver_app
         assert task_type.opportunity == opportunity
 
+    def test_ocs_mode_requires_chatbot(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"mode": "ocs", "name": "Chat task", "description": "desc"},
+                opportunity=opportunity,
+            )
+        assert not form.is_valid()
+        assert "Please select a chatbot." in form.non_field_errors()
+
+    def test_ocs_mode_ignores_missing_task_unit(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
+                opportunity=opportunity,
+            )
+        assert form.is_valid(), form.errors
+        assert "task_unit_id" not in form.errors
+
+    def test_ocs_mode_save_sets_slug_and_clears_case_property(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={
+                    "mode": "ocs",
+                    "ocs_chatbot_id": "bot-123",
+                    "name": "Chat task",
+                    "description": "desc",
+                    "case_property": "ignored",
+                },
+                opportunity=opportunity,
+            )
+            assert form.is_valid(), form.errors
+            task_type = form.save()
+        assert task_type.mode == "ocs"
+        assert task_type.slug == "bot-123"
+        assert task_type.ocs_chatbot_id == "bot-123"
+        assert task_type.case_property is None
+        assert task_type.app == opportunity.deliver_app
+
+    def test_ocs_mode_duplicate_chatbot_rejected(self, opportunity, task_units):
+        TaskTypeFactory(app=opportunity.deliver_app, slug="bot-123")
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
+                opportunity=opportunity,
+            )
+        assert not form.is_valid()
+        assert "A task type for this chatbot already exists." in form.non_field_errors()
+
+    def test_relearn_mode_still_valid_and_default(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"task_unit_id": "task_1", "name": "My Task", "description": "desc"},
+                opportunity=opportunity,
+            )
+            assert form.is_valid(), form.errors
+            task_type = form.save()
+        assert task_type.mode == "relearn"
+        assert task_type.slug == "task_1"
+
 
 @pytest.mark.django_db
 class TestEditTaskTypeForm:
@@ -1090,21 +1202,77 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert saved.archived == original_time
 
-    def test_excludes_non_editable_fields(self, opportunity):
-        task_type = TaskTypeFactory(app=opportunity.deliver_app, slug="original-slug", case_property="original_prop")
+    def test_updates_case_property(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="wrong_prop")
         form = EditTaskTypeForm(
             data={
-                "name": "New Name",
-                "description": "New Desc",
-                "slug": "hacked-slug",
-                "case_property": "hacked_prop",
+                "name": task_type.name,
+                "description": task_type.description,
+                "case_property": "correct_prop",
             },
             instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()
-        assert saved.slug == "original-slug"
+        assert saved.case_property == "correct_prop"
+
+    @pytest.mark.parametrize("initial_case_property", ["original_prop", None])
+    def test_case_property_is_optional(self, opportunity, initial_case_property):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property=initial_case_property)
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description, "case_property": ""},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert not saved.case_property
+
+    @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
+    def test_case_property_disabled_when_task_assigned(self, opportunity, status):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        AssignedTaskFactory(task_type=task_type, status=status)
+        form = EditTaskTypeForm(instance=task_type)
+        assert form.fields["case_property"].disabled is True
+        assert form.fields["case_property"].help_text
+
+    @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
+    def test_case_property_change_ignored_when_task_assigned(self, opportunity, status):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        AssignedTaskFactory(task_type=task_type, status=status)
+        form = EditTaskTypeForm(
+            data={"name": "New Name", "description": "New Desc", "case_property": "hacked_prop"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
         assert saved.case_property == "original_prop"
+        assert saved.name == "New Name"
+
+    def test_case_property_editable_without_assigned_tasks(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        form = EditTaskTypeForm(instance=task_type)
+        assert form.fields["case_property"].disabled is False
+        assert not form.fields["case_property"].help_text
+
+    def test_case_property_editable_when_other_task_type_assigned(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
+        AssignedTaskFactory(task_type=TaskTypeFactory(app=opportunity.deliver_app))
+        form = EditTaskTypeForm(
+            data={"name": task_type.name, "description": task_type.description, "case_property": "correct_prop"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        assert form.save().case_property == "correct_prop"
+
+    def test_excludes_slug(self, opportunity):
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, slug="original-slug")
+        form = EditTaskTypeForm(
+            data={"name": "New Name", "description": "New Desc", "slug": "hacked-slug"},
+            instance=task_type,
+        )
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.slug == "original-slug"
 
 
 @pytest.mark.django_db
