@@ -20,8 +20,15 @@ MAX_EXCLUDE_WORK_AREAS = 200
 MAX_UNASSIGN_WORK_AREAS = 200
 HQ_BULK_CHUNK_SIZE = 50
 HQ_UNASSIGN_BULK_CHUNK_SIZE = 200
+HQ_ASSIGN_BULK_CHUNK_SIZE = 100
 
 # Bounds for the user-configurable target building count per work area group.
 MIN_BUILDING_COUNT = 100
 MAX_BUILDING_COUNT = 300
 DEFAULT_BUILDING_COUNT = 200
+
+SEARCH_KIND_FILTERS = {
+    "wa": "work_area",
+    "wag": "work_area_group",
+    "ia": "implementation_area",
+}

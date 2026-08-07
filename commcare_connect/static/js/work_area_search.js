@@ -46,6 +46,12 @@ function renderItem(data, escape) {
     </div>`;
 }
 
+function linkDescription(el, tomselect) {
+  const describedBy = el.dataset.describedby;
+  if (describedBy)
+    tomselect.focus_node?.setAttribute('aria-describedby', describedBy);
+}
+
 function setPlaceholder(tomselect, text) {
   tomselect.settings.placeholder = text;
   tomselect.control_input.setAttribute('placeholder', text);
@@ -86,6 +92,11 @@ function initWorkAreaSearch(el) {
     el.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
+  tomselect.on('item_add', () => {
+    tomselect.blur();
+  });
+
+  linkDescription(el, tomselect);
   tomselect.disable();
   setPlaceholder(tomselect, el.dataset.loadingText);
   loadOptions(el, tomselect);

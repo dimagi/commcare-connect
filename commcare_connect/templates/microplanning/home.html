@@ -207,15 +207,17 @@
             <i class="fa-solid fa-crosshairs"></i>
           </div>
           <div class="flex flex-col gap-2 py-4">
+            <label for="work-area-search" class="sr-only">{% translate "Search work areas" %}</label>
             <select id="work-area-search"
                     data-options-url="{{ search_options_url }}"
+                    data-describedby="work-area-search-hint"
                     data-loading-text="{% translate 'Loading search options…' %}"
                     data-ready-text="{% translate 'Search by work area, group or implementation area' %}"
                     data-error-text="{% translate 'Search unavailable — reload the page' %}"
                     @change="onSearchChanged()">
               <option value=""></option>
             </select>
-            <span class="hint">{% blocktrans %}Type a few letters and the search box will show you options for selection.{% endblocktrans %}</span>
+            <span id="work-area-search-hint" class="hint">{% blocktrans %}Type a few letters and the search box will show you options for selection.{% endblocktrans %}</span>
           </div>
         </aside>
         {% if not assignment_mode %}
@@ -304,6 +306,10 @@
                     <dt class="text-sm text-gray-500">{% translate "Assignee" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
                         x-text="selectedFeature.assignee_name ?? '—'">
+                    </dd>
+                    <dt class="text-sm text-gray-500">{% translate "Assignee Phone Number" %}</dt>
+                    <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                        x-text="selectedFeature.assignee_phone ?? '—'">
                     </dd>
                     <dt class="text-sm text-gray-500">{% translate "Work Area Group" %}</dt>
                     <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
@@ -482,7 +488,7 @@
                         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                   <option value="">{% translate "— Select FLW —" %}</option>
                   <template x-for="a in assignees" :key="a.id">
-                    <option :value="a.id" x-text="a.user__name"></option>
+                    <option :value="a.id" x-text="`${a.user__name} (${a.user__username})`"></option>
                   </template>
                 </select>
               </div>

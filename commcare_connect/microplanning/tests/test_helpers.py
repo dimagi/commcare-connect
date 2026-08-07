@@ -6,6 +6,7 @@ from django.utils import translation
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.helpers import (
+    assign_work_areas_and_sync_to_hq,
     exclude_work_areas_for_opportunity,
     unassign_work_areas_for_opportunity,
     work_area_detail,
@@ -344,6 +345,38 @@ class TestExcludeWorkAreas:
 
 
 @pytest.mark.django_db
+class TestAssignWorkAreasAndSyncToHQ:
+    @patch("commcare_connect.microplanning.helpers.HQ_ASSIGN_BULK_CHUNK_SIZE", 2)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_failed_chunk_rolls_back_only_its_own_rows(self, mock_bulk_hq, org_user_admin, opportunity):
+        """A failed HQ chunk rolls back only its own rows; the chunks that synced commit.
+        This is the DB/HQ divergence the per-chunk savepoints prevent."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        # Chunk size 2 => the 5 areas split into chunks of 2, 2 and 1; only the middle chunk fails.
+        work_areas = WorkAreaFactory.create_batch(5, opportunity=opportunity)
+        ok_a, ok_b, fail_a, fail_b, ok_c = work_areas
+        for wa in work_areas:
+            wa.opportunity_access = access
+            wa.status = WorkAreaStatus.NOT_VISITED
+        mock_bulk_hq.side_effect = [None, CommCareHQAPIException("HQ down"), None]
+
+        res = assign_work_areas_and_sync_to_hq(opportunity, work_areas, org_user_admin)
+
+        assert [len(call.args[0]) for call in mock_bulk_hq.call_args_list] == [2, 2, 1]
+        assert set(res["assigned_ids"]) == {ok_a.id, ok_b.id, ok_c.id}
+        assert set(res["failed_ids"]) == {fail_a.id, fail_b.id}
+
+        for wa in (fail_a, fail_b):
+            wa.refresh_from_db()
+            assert wa.opportunity_access is None
+            assert wa.status == WorkAreaStatus.UNASSIGNED
+        for wa in (ok_a, ok_b, ok_c):
+            wa.refresh_from_db()
+            assert wa.opportunity_access == access
+            assert wa.status == WorkAreaStatus.NOT_VISITED
+
+
+@pytest.mark.django_db
 class TestUnassignWorkAreas:
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_happy_path_unassigns_and_syncs_to_hq(self, mock_bulk_hq, org_user_admin, opportunity):
@@ -603,6 +636,7 @@ class TestWorkAreaSearchOptions:
                 "type": "Work Area",
                 "kind": "wa",
                 "object_id": work_area.id,
+                "filter_name": "work_area",
             },
             {
                 "value": f"wag:{group.id}",
@@ -610,6 +644,7 @@ class TestWorkAreaSearchOptions:
                 "type": "Work Area Group",
                 "kind": "wag",
                 "object_id": group.id,
+                "filter_name": "work_area_group",
             },
             {
                 "value": f"ia:{impl_area.id}",
@@ -617,6 +652,7 @@ class TestWorkAreaSearchOptions:
                 "type": "Implementation Area",
                 "kind": "ia",
                 "object_id": impl_area.id,
+                "filter_name": "implementation_area",
             },
         ]
 
@@ -674,6 +710,7 @@ class TestWorkAreaDetail:
             "group_id": group.id,
             "group_name": group.name,
             "assignee_name": access.user.name,
+            "assignee_phone": access.user.phone_number,
             "visits_completed": 0,
             "implementation_area_name": impl_area.name,
         }

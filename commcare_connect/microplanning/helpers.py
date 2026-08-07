@@ -5,8 +5,13 @@ from django.db import transaction
 from django.db.models import Count, F, Q
 from django.utils.translation import gettext
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases
-from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
+from commcare_connect.microplanning.const import (
+    HQ_ASSIGN_BULK_CHUNK_SIZE,
+    HQ_BULK_CHUNK_SIZE,
+    HQ_UNASSIGN_BULK_CHUNK_SIZE,
+    SEARCH_KIND_FILTERS,
+)
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -45,6 +50,7 @@ MAP_WORK_AREA_FIELDS = (
     "group_id",
     "group_name",
     "assignee_name",
+    "assignee_phone",
     "visits_completed",
     "implementation_area_name",
 )
@@ -60,6 +66,7 @@ def map_work_areas(opportunity):
         group_id=F("work_area_group__id"),
         group_name=F("work_area_group__name"),
         assignee_name=F("opportunity_access__user__name"),
+        assignee_phone=F("opportunity_access__user__phone_number"),
         visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
     )
 
@@ -73,11 +80,13 @@ def work_area_search_options(opportunity):
     """Typeahead options for the map's work area search box, across all three searchable types.
 
     Each option carries a typed token ("wa:42") rather than a bare pk, because the three models
-    share an id space once merged into a single dropdown. See
-    ``WorkAreaMapFilterSet.SEARCH_TOKEN_FIELDS``, which must stay in step with the prefixes here.
+    share an id space once merged into a single dropdown.
 
     ``type`` is the translated display label; ``kind`` repeats the prefix as a stable key, so the
     badge colouring in work_area_search.js does not depend on the active language.
+
+    ``filter_name`` is the ``WorkAreaMapFilterSet`` filter this option drives, taken from
+    ``SEARCH_KIND_FILTERS`` so the map JS does not have to carry its own copy of that mapping.
     """
     sources = [
         (
@@ -97,7 +106,14 @@ def work_area_search_options(opportunity):
         ),
     ]
     return [
-        {"value": f"{prefix}:{pk}", "label": label, "type": type_name, "kind": prefix, "object_id": pk}
+        {
+            "value": f"{prefix}:{pk}",
+            "label": label,
+            "type": type_name,
+            "kind": prefix,
+            "object_id": pk,
+            "filter_name": SEARCH_KIND_FILTERS[prefix],
+        }
         for prefix, type_name, rows in sources
         for pk, label in rows
     ]
@@ -181,6 +197,33 @@ def _bulk_exclude(work_areas, user, exclusion_reason):
         work_areas,
         fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
     )
+
+
+def assign_work_areas_and_sync_to_hq(opportunity, work_areas, user):
+    """Persist work-area assignments and push the new owners to HQ, one HQ POST per chunk in
+    its own savepoint.
+
+    Each ``work_area`` must already have its target ``opportunity_access``/``status`` set in
+    memory.
+    """
+    assigned_ids = []
+    failed_ids = []
+    pghistory_ctx = dict(reason="assigned", username=user.username, user_email=user.email)
+
+    for batch in batched(work_areas, HQ_ASSIGN_BULK_CHUNK_SIZE):
+        chunk = list(batch)
+        try:
+            with transaction.atomic(), pghistory.context(**pghistory_ctx):
+                WorkArea.objects.bulk_update(chunk, ["opportunity_access", "status"])
+                bulk_create_or_update_cases_by_work_areas(chunk, opportunity)
+        except CommCareHQAPIException as e:
+            logger.warning(
+                "Failed to sync work area assignment chunk to HQ opp=%s size=%d: %s", opportunity.id, len(chunk), e
+            )
+            failed_ids.extend(wa.id for wa in chunk)
+            continue
+        assigned_ids.extend(wa.id for wa in chunk)
+    return {"assigned_ids": assigned_ids, "failed_ids": failed_ids}
 
 
 def unassign_work_areas_for_opportunity(opportunity, work_area_ids, user):

@@ -21,7 +21,11 @@ from django.urls import reverse
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
-from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
+from commcare_connect.microplanning.const import (
+    NO_CHILDREN_WORK_AREA_UNIT_SLUG,
+    SEARCH_KIND_FILTERS,
+    SERVICE_DELIVERY_UNIT_SLUG,
+)
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm
 from commcare_connect.microplanning.models import (
@@ -782,6 +786,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert row.group_id == group.id
         assert row.group_name == group.name
         assert row.assignee_name == access.user.name
+        assert row.assignee_phone == access.user.phone_number
 
 
 @pytest.mark.django_db
@@ -812,6 +817,15 @@ class TestWorkAreaMapFilterSet:
     def _filter_ids(self, params, opportunity):
         qs = WorkArea.objects.filter(opportunity=opportunity)
         return set(WorkAreaMapFilterSet(params, queryset=qs, opportunity=opportunity).qs.values_list("id", flat=True))
+
+    def test_search_kinds_map_to_real_filters(self):
+        """Each search kind must name a filter this filter set actually declares.
+
+        The map JS applies the ``filter_name`` stamped on each search option verbatim, so a filter
+        renamed here without updating SEARCH_KIND_FILTERS would silently stop filtering the map
+        rather than raise anywhere.
+        """
+        assert set(SEARCH_KIND_FILTERS.values()) <= set(WorkAreaMapFilterSet.base_filters)
 
     @pytest.mark.parametrize(
         "statuses, expected_attrs",
@@ -1262,7 +1276,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
         self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
@@ -1621,7 +1635,7 @@ class TestSaveAssignment:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_assigns_work_areas_and_syncs_to_hq(
         self,
         mock_hq_sync,
@@ -1651,7 +1665,7 @@ class TestSaveAssignment:
             wa.refresh_from_db()
             assert wa.opportunity_access_id == access.id
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_rolls_back_db(
         self,
         mock_hq_sync,
