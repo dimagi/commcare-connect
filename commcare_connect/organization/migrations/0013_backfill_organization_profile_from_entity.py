@@ -23,7 +23,7 @@ def copy_entity_profile_to_organizations(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("organization", "0012_organization_profile_fields"),
+        ("organization", "0012_primarysector_organization_contact_emails_and_more"),
     ]
 
     operations = [
