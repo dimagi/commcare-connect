@@ -21,6 +21,7 @@ from django.urls import reverse
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
+from commcare_connect.microplanning.const import SEARCH_KIND_FILTERS
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm
 from commcare_connect.microplanning.models import (
@@ -787,6 +788,15 @@ class TestWorkAreaMapFilterSet:
         qs = WorkArea.objects.filter(opportunity=opportunity)
         return set(WorkAreaMapFilterSet(params, queryset=qs, opportunity=opportunity).qs.values_list("id", flat=True))
 
+    def test_search_kinds_map_to_real_filters(self):
+        """Each search kind must name a filter this filter set actually declares.
+
+        The map JS applies the ``filter_name`` stamped on each search option verbatim, so a filter
+        renamed here without updating SEARCH_KIND_FILTERS would silently stop filtering the map
+        rather than raise anywhere.
+        """
+        assert set(SEARCH_KIND_FILTERS.values()) <= set(WorkAreaMapFilterSet.base_filters)
+
     @pytest.mark.parametrize(
         "statuses, expected_attrs",
         [
@@ -890,6 +900,29 @@ class TestWorkAreaMapFilterSet:
     def test_unassigned_only_still_filters_when_true(self, opportunity, work_areas):
         result = self._filter_ids({"unassigned_only": "True"}, opportunity)
         assert result == {work_areas.wa_unassigned.id}
+
+    def test_work_area_filter(self, opportunity, work_areas):
+        """Picking a work area in the search box narrows to just that one. Groups and
+        implementation areas reuse the sidebar's own filters, so they need no equivalent here."""
+        result = self._filter_ids({"work_area": work_areas.wa_visited.id}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_work_area_filter_ignores_empty_value(self, opportunity, work_areas):
+        """The hidden input is submitted on every filter change, so a blank value has to be a
+        no-op rather than an error that empties the map."""
+        expected = {work_areas.wa_not_visited.id, work_areas.wa_visited.id, work_areas.wa_unassigned.id}
+        assert self._filter_ids({"work_area": ""}, opportunity) == expected
+
+    def test_work_area_filter_matches_nothing_for_another_opportunitys_area(self, opportunity, work_areas):
+        other_work_area = WorkAreaFactory()
+
+        assert self._filter_ids({"work_area": other_work_area.id}, opportunity) == set()
+
+    def test_work_area_filter_combines_with_status(self, opportunity, work_areas):
+        result = self._filter_ids(
+            {"work_area": work_areas.wa_visited.id, "status": [WorkAreaStatus.NOT_VISITED]}, opportunity
+        )
+        assert result == set()
 
 
 @pytest.mark.django_db

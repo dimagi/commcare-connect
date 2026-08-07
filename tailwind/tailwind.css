@@ -156,6 +156,18 @@
   @apply inline-block text-nowrap rounded-full text-xs;
 }
 
+.badge-indigo {
+  @apply bg-indigo-100 text-indigo-700;
+}
+
+.badge-teal {
+  @apply bg-teal-100 text-teal-700;
+}
+
+.badge-amber {
+  @apply bg-amber-100 text-amber-700;
+}
+
 /* Size Variants */
 .badge-sm {
   @apply px-2 py-0.5;
