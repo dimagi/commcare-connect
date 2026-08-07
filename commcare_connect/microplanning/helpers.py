@@ -10,6 +10,7 @@ from commcare_connect.microplanning.const import (
     HQ_ASSIGN_BULK_CHUNK_SIZE,
     HQ_BULK_CHUNK_SIZE,
     HQ_UNASSIGN_BULK_CHUNK_SIZE,
+    SEARCH_KIND_FILTERS,
 )
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import VisitValidationStatus
@@ -79,11 +80,13 @@ def work_area_search_options(opportunity):
     """Typeahead options for the map's work area search box, across all three searchable types.
 
     Each option carries a typed token ("wa:42") rather than a bare pk, because the three models
-    share an id space once merged into a single dropdown. See
-    ``WorkAreaMapFilterSet.SEARCH_TOKEN_FIELDS``, which must stay in step with the prefixes here.
+    share an id space once merged into a single dropdown.
 
     ``type`` is the translated display label; ``kind`` repeats the prefix as a stable key, so the
     badge colouring in work_area_search.js does not depend on the active language.
+
+    ``filter_name`` is the ``WorkAreaMapFilterSet`` filter this option drives, taken from
+    ``SEARCH_KIND_FILTERS`` so the map JS does not have to carry its own copy of that mapping.
     """
     sources = [
         (
@@ -103,7 +106,14 @@ def work_area_search_options(opportunity):
         ),
     ]
     return [
-        {"value": f"{prefix}:{pk}", "label": label, "type": type_name, "kind": prefix, "object_id": pk}
+        {
+            "value": f"{prefix}:{pk}",
+            "label": label,
+            "type": type_name,
+            "kind": prefix,
+            "object_id": pk,
+            "filter_name": SEARCH_KIND_FILTERS[prefix],
+        }
         for prefix, type_name, rows in sources
         for pk, label in rows
     ]

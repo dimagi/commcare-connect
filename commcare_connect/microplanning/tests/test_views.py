@@ -21,6 +21,7 @@ from django.urls import reverse
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
+from commcare_connect.microplanning.const import SEARCH_KIND_FILTERS
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm
 from commcare_connect.microplanning.models import (
@@ -786,6 +787,15 @@ class TestWorkAreaMapFilterSet:
     def _filter_ids(self, params, opportunity):
         qs = WorkArea.objects.filter(opportunity=opportunity)
         return set(WorkAreaMapFilterSet(params, queryset=qs, opportunity=opportunity).qs.values_list("id", flat=True))
+
+    def test_search_kinds_map_to_real_filters(self):
+        """Each search kind must name a filter this filter set actually declares.
+
+        The map JS applies the ``filter_name`` stamped on each search option verbatim, so a filter
+        renamed here without updating SEARCH_KIND_FILTERS would silently stop filtering the map
+        rather than raise anywhere.
+        """
+        assert set(SEARCH_KIND_FILTERS.values()) <= set(WorkAreaMapFilterSet.base_filters)
 
     @pytest.mark.parametrize(
         "statuses, expected_attrs",

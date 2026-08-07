@@ -636,6 +636,7 @@ class TestWorkAreaSearchOptions:
                 "type": "Work Area",
                 "kind": "wa",
                 "object_id": work_area.id,
+                "filter_name": "work_area",
             },
             {
                 "value": f"wag:{group.id}",
@@ -643,6 +644,7 @@ class TestWorkAreaSearchOptions:
                 "type": "Work Area Group",
                 "kind": "wag",
                 "object_id": group.id,
+                "filter_name": "work_area_group",
             },
             {
                 "value": f"ia:{impl_area.id}",
@@ -650,6 +652,7 @@ class TestWorkAreaSearchOptions:
                 "type": "Implementation Area",
                 "kind": "ia",
                 "object_id": impl_area.id,
+                "filter_name": "implementation_area",
             },
         ]
 
