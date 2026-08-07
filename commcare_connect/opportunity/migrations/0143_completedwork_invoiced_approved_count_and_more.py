@@ -8,7 +8,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0140_opportunity_supervising_organization'),
+        ('opportunity', '0142_alter_opportunity_program'),
     ]
 
     operations = [
