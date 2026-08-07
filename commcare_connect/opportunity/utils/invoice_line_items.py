@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Max, Q, Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -142,6 +142,73 @@ def get_billable_line_items(opportunity, start_date, end_date):
     return group_line_items(rows, opportunity.currency_code)
 
 
+def get_invoice_line_items(invoice):
+    """This invoice's line items *as billed*, aggregated over its frozen snapshot rows."""
+    records = (
+        invoice.work_items.values("completed_work__payment_unit", "month")
+        .annotate(
+            payment_unit_name=F("completed_work__payment_unit__name"),
+            number_approved=Sum("billed_count"),
+            flw_local=Sum("flw_amount_local"),
+            org_local=Sum("org_amount_local"),
+            flw_usd=Sum("flw_amount_usd"),
+            org_usd=Sum("org_amount_usd"),
+            # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
+            rate=Max("exchange_rate__rate"),
+        )
+        .order_by("month", "payment_unit_name")
+    )
+
+    currency_code = invoice.opportunity.currency_code
+    return [
+        _line_item(
+            month=record["month"],
+            payment_unit_name=record["payment_unit_name"],
+            number_approved=record["number_approved"],
+            flw_amount_local=record["flw_local"],
+            org_amount_local=record["org_local"],
+            flw_amount_usd=record["flw_usd"],
+            org_amount_usd=record["org_usd"],
+            exchange_rate=record["rate"],
+            currency_code=currency_code,
+        )
+        for record in records
+    ]
+
+
+def get_invoice_delivery_rows(invoice):
+    """Per-delivery export rows for an issued invoice, read from its frozen snapshot rows."""
+    work_items = invoice.work_items.select_related(
+        "completed_work__payment_unit__opportunity", "completed_work__opportunity_access__user"
+    ).order_by("month", "completed_work__payment_unit__name")
+    return [
+        _delivery_row(
+            completed_work=item.completed_work,
+            billed_count=item.billed_count,
+            flw_amount_local=item.flw_amount_local,
+            org_amount_local=item.org_amount_local,
+            total_amount_local=item.total_amount_local,
+            total_amount_usd=item.total_amount_usd,
+        )
+        for item in work_items
+    ]
+
+
+def get_billable_delivery_rows(opportunity, start_date, end_date):
+    """Per-delivery export rows for a window that has not been invoiced yet, computed from live state."""
+    return [
+        _delivery_row(
+            completed_work=row.completed_work,
+            billed_count=row.billed_count,
+            flw_amount_local=row.flw_amount_local,
+            org_amount_local=row.org_amount_local,
+            total_amount_local=row.total_amount_local,
+            total_amount_usd=row.total_amount_usd,
+        )
+        for row in _build_billable_rows(opportunity, start_date, end_date)
+    ]
+
+
 def bill_invoice(invoice, start_date, end_date):
     """Freeze this invoice's line items and advance each work's invoiced count.
 
@@ -192,6 +259,24 @@ def _billed_month(work, end_date):
 def _to_usd(amount_local: Decimal, exchange_rate: Decimal) -> Decimal:
     """Using the default `ROUND_HALF_EVEN` to match Django's `DecimalField` quantization."""
     return (amount_local / exchange_rate).quantize(CENTS)
+
+
+def _delivery_row(
+    completed_work, billed_count, flw_amount_local, org_amount_local, total_amount_local, total_amount_usd
+):
+    return {
+        "payment_unit": completed_work.payment_unit.name,
+        "opportunity": completed_work.payment_unit.opportunity.name,
+        "entity_name": completed_work.entity_name,
+        "username": completed_work.opportunity_access.user.name,
+        "date_created": completed_work.date_created,
+        "date_approved": completed_work.status_modified_date,
+        "approved_count": billed_count,
+        "flw_amount_local": flw_amount_local,
+        "org_amount_local": org_amount_local,
+        "total_amount_local": total_amount_local,
+        "total_amount_usd": total_amount_usd,
+    }
 
 
 def _line_item(

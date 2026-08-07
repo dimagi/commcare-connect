@@ -2,6 +2,7 @@ import datetime
 from decimal import Decimal
 
 import pytest
+from dateutil.relativedelta import relativedelta
 from django.db.models import Sum
 
 from commcare_connect.opportunity.models import (
@@ -22,6 +23,8 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
+    get_billable_line_items,
+    get_invoice_line_items,
     group_line_items,
 )
 from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
@@ -306,6 +309,70 @@ class TestCreateInvoiceLineItems:
 
 
 @pytest.mark.django_db
+class TestInvoicedLineItems:
+    def test_reads_frozen_rows_grouped_by_payment_unit_and_month(self, billing_setup):
+        access, payment_unit = billing_setup
+        other_unit = PaymentUnitFactory(opportunity=access.opportunity, amount=50, org_amount=0)
+        completed_work(access, payment_unit)
+        completed_work(access, payment_unit)
+        completed_work(access, other_unit)
+        invoice = PaymentInvoiceFactory(
+            opportunity=access.opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=JAN,
+            end_date=FEB_END,
+        )
+        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+
+        items = get_invoice_line_items(invoice)
+
+        by_name = {item["payment_unit_name"]: item for item in items}
+        assert len(items) == 2
+        assert by_name[payment_unit.name]["number_approved"] == 2
+        assert by_name[payment_unit.name]["flw_amount_local"] == Decimal("200")
+        assert by_name[payment_unit.name]["org_amount_local"] == Decimal("40")
+        assert by_name[payment_unit.name]["total_amount_local"] == Decimal("240")
+        assert by_name[payment_unit.name]["total_amount_usd"] == Decimal("240")
+        assert by_name[payment_unit.name]["month"] == JAN
+        assert by_name[payment_unit.name]["exchange_rate"] == Decimal("1")
+        assert by_name[payment_unit.name]["currency"] == "USD"
+        assert by_name[other_unit.name]["flw_amount_local"] == Decimal("50")
+        assert by_name[other_unit.name]["org_amount_local"] == Decimal("0")
+        assert by_name[other_unit.name]["total_amount_local"] == Decimal("50")
+        assert by_name[other_unit.name]["total_amount_usd"] == Decimal("50")
+
+    def test_a_later_approval_does_not_change_an_issued_invoice(self, billing_setup):
+        """The drift acceptance case: recomputing saved_* after issue must not move the line items."""
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit)
+        invoice = PaymentInvoiceFactory(
+            opportunity=access.opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=JAN,
+            end_date=JAN_END,
+        )
+        bill_invoice(invoice, start_date=JAN, end_date=JAN_END)
+
+        work.saved_approved_count = 5
+        work.saved_payment_accrued = 500
+        work.save(update_fields=["saved_approved_count", "saved_payment_accrued"])
+
+        (item,) = get_invoice_line_items(invoice)
+        assert item["number_approved"] == 1
+        assert item["total_amount_local"] == Decimal("120")
+
+    def test_no_rows_yields_no_items(self, billing_setup):
+        access, _ = billing_setup
+        invoice = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, end_date=FEB_END)
+
+        assert get_invoice_line_items(invoice) == []
+
+
+@pytest.mark.django_db
 class TestStartDateForInvoice:
     @pytest.mark.parametrize(
         "works, opportunity_start, expected",
@@ -358,3 +425,108 @@ class TestStartDateForInvoice:
         # For only late delta, it is start of billing month which defaults to last month.
         assert start_date <= end_date
         assert start_date == get_month_start_date(end_date)
+
+
+@pytest.mark.django_db
+class TestBillableLineItemsAcrossMonths:
+    """Moved from test_completed_work.py's TestUninvoicedVisitItems when the FK helpers went away.
+
+    These span real calendar months relative to today, unlike the fixed JAN/FEB windows above.
+    """
+
+    def _billable_items(self, opportunity):
+        """The moved tests span three months, so bill from before the earliest to today."""
+        start_date = (datetime.datetime.now() - relativedelta(months=4)).date()
+        return get_billable_line_items(opportunity, start_date, datetime.date.today())
+
+    def _works(self, access, payment_unit, approved_on, n=1):
+        for _ in range(n):
+            completed_work(access, payment_unit, approved_on=approved_on)
+
+    def test_items_without_prior_invoice(self, billing_setup):
+        access, payment_unit = billing_setup
+        now = datetime.datetime.now(tz=datetime.UTC)
+        completed_work(access, payment_unit, approved_on=now, status=CompletedWorkStatus.pending)
+
+        assert self._billable_items(access.opportunity) == []
+
+        completed_work(access, payment_unit, approved_on=now)
+
+        (item,) = self._billable_items(access.opportunity)
+        assert item["payment_unit_name"] == payment_unit.name
+        assert item["number_approved"] == 1
+        assert item["total_amount_local"] == payment_unit.amount + payment_unit.org_amount
+
+    def test_no_items_for_a_fully_billed_work(self, billing_setup):
+        access, payment_unit = billing_setup
+        # Approved just now, so the window cannot be what excludes it -- the invoiced count must be.
+        completed_work(
+            access, payment_unit, approved=1, invoiced=1, approved_on=datetime.datetime.now(tz=datetime.UTC)
+        )
+
+        assert self._billable_items(access.opportunity) == []
+
+    def test_groups_line_items_by_month_and_payment_unit(self, billing_setup):
+        """Each month is priced at the rate in force that month, so issuing a new rate never
+        reprices an earlier month's line items."""
+        access, _ = billing_setup
+        now = datetime.datetime.now(tz=datetime.UTC)
+        two_months_ago = now - relativedelta(months=2)
+        one_month_ago = now - relativedelta(months=1)
+
+        rates = {}
+        for approved_on, rate in ((two_months_ago, "0.25"), (one_month_ago, "0.50"), (now, "0.75")):
+            rates[approved_on.month] = ExchangeRateFactory(
+                currency_code=access.opportunity.currency.code,
+                rate=Decimal(rate),
+                rate_date=get_month_start_date(approved_on),
+            ).rate
+
+        payment_unit1 = PaymentUnitFactory(opportunity=access.opportunity, amount=100, org_amount=0)
+        payment_unit2 = PaymentUnitFactory(opportunity=access.opportunity, amount=50, org_amount=0)
+
+        self._works(access, payment_unit1, two_months_ago, n=2)
+        self._works(access, payment_unit2, two_months_ago)
+        self._works(access, payment_unit1, one_month_ago)
+        self._works(access, payment_unit1, now)
+        self._works(access, payment_unit2, now)
+
+        expected = {
+            (two_months_ago.month, payment_unit1.name): (2, payment_unit1),
+            (two_months_ago.month, payment_unit2.name): (1, payment_unit2),
+            (one_month_ago.month, payment_unit1.name): (1, payment_unit1),
+            (now.month, payment_unit1.name): (1, payment_unit1),
+            (now.month, payment_unit2.name): (1, payment_unit2),
+        }
+
+        items = self._billable_items(access.opportunity)
+        assert len(items) == len(expected)
+
+        for item in items:
+            key = (item["month"].month, item["payment_unit_name"])
+            assert key in expected
+
+            expected_count, payment_unit = expected[key]
+            expected_rate = rates[item["month"].month]
+            total_local = expected_count * payment_unit.amount
+
+            assert item["number_approved"] == expected_count
+            assert item["total_amount_local"] == total_local
+            assert item["exchange_rate"] == expected_rate
+            assert item["total_amount_usd"] == round(total_local / expected_rate, 2)
+
+    def test_number_approved_uses_saved_approved_count(self, billing_setup):
+        """A single CompletedWork can represent multiple approved visits.
+
+        number_approved must aggregate saved_approved_count, not row count, so it stays consistent
+        with total_amount_local (which is saved_approved_count * payment_unit.amount).
+        """
+        access, _ = billing_setup
+        payment_unit = PaymentUnitFactory(opportunity=access.opportunity, amount=100, org_amount=0)
+        now = datetime.datetime.now(tz=datetime.UTC)
+        completed_work(access, payment_unit, approved=2, approved_on=now)
+        completed_work(access, payment_unit, approved=1, approved_on=now)
+
+        (item,) = self._billable_items(access.opportunity)
+        assert item["number_approved"] == 3
+        assert item["total_amount_local"] == 3 * payment_unit.amount
