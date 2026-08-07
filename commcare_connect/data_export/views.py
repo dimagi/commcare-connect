@@ -82,8 +82,8 @@ from commcare_connect.utils.file import EchoWriter
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
-BULK_MAX_ITEMS = 100
-CSV_IMPORT_MAX_ROWS = 500
+BULK_MAX_ITEMS = 100  # JSON bulk-update: per-item FK validation + possible HQ sync/notification
+CSV_IMPORT_MAX_ROWS = 500  # CSV bulk-create: closer to raw bulk_create, cheaper per row
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +130,8 @@ class MicroplanningFlagRequiredMixin:
                 "listed after it in the class bases."
             )
         super().check_opportunity_permission(user)
+        # flag_is_active() reads request.opportunity for opportunity-scoped flags; these
+        # API views aren't behind OrganizationMiddleware, so it's never set otherwise.
         self.request.opportunity = self.opportunity
         if not flag_is_active(self.request, MICROPLANNING):
             raise NotFound("Microplanning flag is not enabled for this opportunity.")

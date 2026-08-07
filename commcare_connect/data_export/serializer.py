@@ -555,6 +555,8 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
             instances.append(instance)
 
         if touched_fields:
+            # Must run before the group-centroid recompute below: update_centroid() re-reads
+            # member WorkAreas' boundaries from the DB, so it needs this write already committed.
             WorkArea.objects.bulk_update(instances, fields=list(touched_fields))
 
         for instance in needs_visit_status_update:
@@ -572,6 +574,8 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
 
         if to_assign:
             result = assign_work_areas_and_sync_to_hq(opportunity, to_assign, self.context["request"].user)
+            # Side-channeled on the serializer instance: ListSerializer.save() only returns
+            # instances, so this is how the view recovers failed_ids/skipped counts.
             self.assign_result = result
             failed_ids = set(result["failed_ids"])
             notified_access_ids = set()
@@ -589,6 +593,7 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
             result = unassign_work_areas_for_opportunity(
                 opportunity, [wa.id for wa in to_unassign], self.context["request"].user
             )
+            # See assign_result above: same side-channel, for the unassign path.
             self.unassign_result = result
             unassigned_ids = set(result["unassigned_ids"])
             for wa in to_unassign:
