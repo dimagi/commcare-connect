@@ -219,7 +219,7 @@ class TestCreateInvoiceLineItems:
         assert row.org_amount_usd == Decimal("40")
         assert row.exchange_rate.rate == Decimal("1")
 
-    def test_advances_the_watermark_to_the_saved_count(self, billing_setup):
+    def test_advances_the_invoiced_count_to_the_saved_count(self, billing_setup):
         access, payment_unit = billing_setup
         work = approved_work(access, payment_unit, approved=3, invoiced=1)
         invoice = self._invoice(access.opportunity)
@@ -334,7 +334,7 @@ class TestCreateInvoiceLineItems:
 
     def test_a_skipped_month_still_bills_the_delta_on_the_next_invoice(self, billing_setup):
         """No invoice is issued in February at all. The delta must not be lost: March picks it up
-        and attributes it to March, because the watermark — not any date — decides billability."""
+        and attributes it to March, because the invoiced count — not any date — decides billability."""
         access, payment_unit = billing_setup
         work = approved_work(access, payment_unit)
         january = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)

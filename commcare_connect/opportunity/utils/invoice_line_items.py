@@ -19,7 +19,7 @@ CENTS = Decimal("0.01")
 def get_billable_completed_works_qs(opportunity, start_date, end_date):
     """Approved works that still have unbilled units.
 
-    The watermark decides what is billable; the dates only *scope* it:
+    `invoiced_approved_count` decides what is billable; the dates only *scope* it:
 
     - first-billing works (`invoiced_approved_count == 0`) are scoped by the window, where their
       `status_modified_date` is meaningful;
@@ -151,7 +151,7 @@ def get_billable_line_items(opportunity, start_date, end_date):
 
 
 def bill_invoice(invoice, start_date, end_date):
-    """Freeze this invoice's line items and advance the billed-work watermark.
+    """Freeze this invoice's line items and advance each work's invoiced count.
 
     `invoiced_approved_count` is only ever advanced here. `invoice` may be unsaved: it is written by
     `_freeze_line_items`, and only if there is a delta to bill, so a caller with nothing billable
@@ -168,7 +168,7 @@ def bill_invoice(invoice, start_date, end_date):
 
 
 def _freeze_line_items(invoice, rows):
-    """Persist billed rows, advance work watermarks, and update invoice totals."""
+    """Persist billed rows, advance each work's invoiced count, and update invoice totals."""
     # For display only: show the latest billed month's rate on the invoice.
     # Individual line items keep their own monthly rates and use it for calculations.
     invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
