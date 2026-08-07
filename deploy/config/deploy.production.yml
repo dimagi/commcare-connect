@@ -14,6 +14,7 @@ servers:
     hosts:
       - i-0061917b7240cfaef
       - i-0006273d9b40ce3e0
+      - i-028041b238ae4e183
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load socialaccount %}
+{% load socialaccount_extras %}
+{% block content %}
+  <div class="max-w-screen-lg mx-auto py-8 px-4">
+    {% connections_breadcrumb_path as path %}
+    {% include 'components/breadcrumbs.html' with path=path %}
+    <h2 class="text-xl font-semibold text-brand-deep-purple mb-1">{% translate "Connected Accounts" %}</h2>
+    <p class="card_description mb-6">{% translate "Manage third-party accounts linked to your Connect profile." %}</p>
+    {% if form.non_field_errors %}
+      <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        {{ form.non_field_errors }}
+      </div>
+    {% endif %}
+    <div class="flex flex-col gap-4">
+      {% get_providers as socialaccount_providers %}
+      {% for provider in socialaccount_providers %}
+        {% with account=form.accounts|account_for_provider:provider.id %}
+          <div class="card_bg flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center gap-4">
+              <div class="flex size-10 items-center justify-center rounded-full bg-indigo-100 text-brand-indigo">
+                <i class="fa-solid fa-link"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="card_title">{{ provider.name }}</h4>
+                  {% if account %}
+                    <span class="badge badge-sm positive-light">{% translate "Connected" %}</span>
+                  {% endif %}
+                </div>
+                <p class="card_description">
+                  {% if account %}
+                    {{ account.get_provider_account }}
+                  {% else %}
+                    {% translate "Not connected" %}
+                  {% endif %}
+                </p>
+              </div>
+            </div>
+            <div>
+              {% if account %}
+                <form method="post" action="{% url 'socialaccount_connections' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="account" value="{{ account.pk }}">
+                  <button class="button button-md outline-style text-red-600 border-red-300"
+                          type="submit">{% translate "Disconnect" %}</button>
+                </form>
+              {% else %}
+                <form method="post"
+                      action="{% provider_login_url provider.id process="connect" %}">
+                  {% csrf_token %}
+                  <button class="button button-md primary-dark" type="submit">{% translate "Connect" %}</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+{% endblock content %}

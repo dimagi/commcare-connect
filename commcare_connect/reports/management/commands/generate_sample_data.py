@@ -37,7 +37,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication
+from commcare_connect.program.models import Program, ProgramApplication
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import MobileUserFactory
 
@@ -82,7 +82,6 @@ class Command(BaseCommand):
             lambda: UserInvite.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: OpportunityAccess.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: Opportunity.objects.filter(organization_id__in=org_ids).delete(),
-            lambda: ManagedOpportunity.objects.filter(organization_id__in=org_ids).delete(),
             lambda: ProgramApplication.objects.filter(program__organization_id__in=org_ids).delete(),
             lambda: Program.objects.filter(organization_id__in=org_ids).delete(),
         ]
