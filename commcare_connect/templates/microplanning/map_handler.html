@@ -73,6 +73,7 @@
                             .setHTML(`
                                 <table><tbody>
                                 <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Connect Worker" %}</th><td>${data.worker_name}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Phone Number" %}</th><td>${data.phone_number ?? '—'}</td></tr>
                                 <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Visit Date" %}</th><td>${data.visit_date}</td></tr>
                                 <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Deliver Type" %}</th><td>${data.deliver_type ?? '—'}</td></tr>
                                 </tbody></table>
@@ -664,6 +665,7 @@
                             if (props) {
                                 props.status = 'UNASSIGNED';
                                 props.assignee_name = null;
+                                props.assignee_phone = null;
                             }
                         }
                         if (unassignedIds.length > 0) this.invalidateGroupWorkAreasCache();

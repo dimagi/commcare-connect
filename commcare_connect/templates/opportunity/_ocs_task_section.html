@@ -1,0 +1,36 @@
+{% load i18n %}
+{% if not ocs_connected %}
+  {% include 'ocs/_connect_prompt.html' with next_url=ocs_next_url %}
+{% elif ocs_error %}
+  <div class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border"
+       role="alert">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>{% translate "Failed to load chatbots from Open Chat Studio." %}</span>
+    </div>
+    <button type="button"
+            class="button button-sm outline-style"
+            hx-get="{{ ocs_section_url }}"
+            hx-target="#ocs-task-section"
+            hx-swap="innerHTML"
+            hx-indicator="#ocs-retry-spinner">
+      <i id="ocs-retry-spinner"
+         class="fa-solid fa-spinner animate-spin !hidden [&.htmx-request]:!inline-block htmx-indicator mr-1"></i>
+      {% translate "Retry" %}
+    </button>
+  </div>
+{% else %}
+  <div class="mb-3">
+    <label for="id_ocs_chatbot_id"
+           class="block text-gray-700 text-sm font-bold mb-2">{% translate "Chatbot" %}</label>
+    <select name="ocs_chatbot_id"
+            id="id_ocs_chatbot_id"
+            class="base-input w-full">
+      <option value="">{% translate "Select a chatbot" %}</option>
+      {% for id, name in chatbots %}
+        <option value="{{ id }}"
+                {% if id|stringformat:"s" == selected_chatbot_id %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+{% endif %}
