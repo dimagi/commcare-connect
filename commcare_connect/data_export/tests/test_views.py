@@ -474,29 +474,33 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
     def test_creates_group_when_id_omitted(self, v2_write_client, opportunity):
         response = v2_write_client.post(
             self.url(opportunity.id),
-            data={"name": "new-group", "ward": "ward-a", "centroid": "36.8219 -1.2921"},
+            data={"name": "new-group", "ward": "ward-a"},
         )
         assert response.status_code == 201
         group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
         assert group.ward == "ward-a"
-        assert group.centroid.wkt == "POINT (36.8219 -1.2921)"
+        assert group.centroid is None
 
-    def test_updates_name_ward_and_centroid_when_id_present(self, v2_write_client, opportunity):
+    def test_centroid_in_payload_is_ignored(self, v2_write_client, opportunity):
+        """centroid is derived from member WorkAreas' boundaries, never client-writable."""
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"name": "new-group", "ward": "ward-a", "centroid": "36.8219 -1.2921"},
+        )
+        assert response.status_code == 201
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.centroid is None
+
+    def test_updates_name_and_ward_when_id_present(self, v2_write_client, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity, name="old-name")
         response = v2_write_client.post(
             self.url(opportunity.id),
-            data={
-                "id": group.id,
-                "name": "new-name",
-                "ward": "new-ward",
-                "centroid": "36.8219 -1.2921",
-            },
+            data={"id": group.id, "name": "new-name", "ward": "new-ward"},
         )
         assert response.status_code == 200
         group.refresh_from_db()
         assert group.name == "new-name"
         assert group.ward == "new-ward"
-        assert group.centroid.wkt == "POINT (36.8219 -1.2921)"
 
     def test_duplicate_name_returns_400(self, v2_write_client, opportunity):
         WorkAreaGroupFactory(opportunity=opportunity, name="taken")
@@ -510,11 +514,6 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
             self.url(opportunity.id), data={"id": group.id, "name": "mine", "ward": "new-ward"}
         )
         assert response.status_code == 200
-
-    def test_rejects_invalid_lon_lat_centroid(self, v2_write_client, opportunity):
-        group = WorkAreaGroupFactory(opportunity=opportunity)
-        response = v2_write_client.post(self.url(opportunity.id), data={"id": group.id, "centroid": "not-a-point"})
-        assert response.status_code == 400
 
     def test_unknown_id_returns_404(self, v2_write_client, opportunity):
         response = v2_write_client.post(self.url(opportunity.id), data={"id": 999999, "name": "new-name"})

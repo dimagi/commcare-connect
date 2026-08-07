@@ -482,7 +482,9 @@ class AuditReportEntryDataSerializer(serializers.ModelSerializer):
 
 
 class WorkAreaGroupWriteSerializer(serializers.ModelSerializer):
-    centroid = LonLatPointField(required=False, allow_null=True)
+    # Derived from member WorkAreas' boundaries via update_centroid() — never client-writable,
+    # exposed here read-only so the response reflects the current computed value.
+    centroid = LonLatPointField(read_only=True)
 
     class Meta:
         model = WorkAreaGroup
