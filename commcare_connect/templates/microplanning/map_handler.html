@@ -51,6 +51,7 @@
             },
 
             setWorkAreaState(id, state) {
+                if (!this.map?.getSource('workareas')) return;
                 this.map.setFeatureState({ source: 'workareas', sourceLayer: 'workareas', id }, state);
             },
 
@@ -238,10 +239,9 @@
                 const query = new URLSearchParams(new FormData(form)).toString();
                 this.filterQuery = query;
                 this.pendingTileQuery = query;
-                if (this.applyTileQuery(query)) {
-                    this.clearSelectedFeature(); // Clear selection on filter change
-                    this.invalidateWorkAreaDetailRequest();
-                }
+                this.clearSelectedFeature(); // Clear selection on filter change
+                this.invalidateWorkAreaDetailRequest();
+                this.applyTileQuery(query);
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
             },
 
@@ -935,6 +935,9 @@
 
                 if (this.pendingTileQuery) {
                     this.applyTileQuery(this.pendingTileQuery);
+                }
+                if (this.selectedFeature) {
+                    this.setWorkAreaState(this.selectedFeature._id, { selected: true });
                 }
 
                 // Colors each workarea by group using a golden angle HSL hash on group_id,
