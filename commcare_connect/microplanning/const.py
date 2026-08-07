@@ -10,6 +10,12 @@ WORK_AREA_STATUS_COLORS = {
     WorkAreaStatus.EXCLUDED: "bg-gray-500 text-white",
 }
 WORK_AREA_CASE_TYPE = "work-area"
+
+# Deliver units the coverage metrics are defined on.
+SERVICE_DELIVERY_UNIT_SLUG = "services_delivery_unit"
+NO_CHILDREN_WORK_AREA_UNIT_SLUG = "no-children-wa"
+REQUIRED_DELIVER_UNIT_SLUGS = (SERVICE_DELIVERY_UNIT_SLUG, NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+
 MAX_EXCLUDE_WORK_AREAS = 200
 MAX_UNASSIGN_WORK_AREAS = 200
 HQ_BULK_CHUNK_SIZE = 50

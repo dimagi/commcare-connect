@@ -3,14 +3,15 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from django.core.cache import cache
-from django.db.models import Count, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.timezone import localdate
 
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.helpers import pct, ratio
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
+from commcare_connect.opportunity.models import DeliverUnit, Opportunity, UserVisit, VisitValidationStatus
 
 WEEK_DAYS = 7
 
@@ -21,19 +22,17 @@ GroupKey = str | int
 class TargetAggregate(TypedDict):
     """Static, filter-independent denominators for one group, as emitted by ``target_aggregates``."""
 
-    target_population: int
     building_count: int
     num_work_areas: int
     expected_visit_total: int
 
 
-class StatusAggregate(TypedDict):
-    """WA-status counts + building sums for one group, as emitted by ``status_aggregates``."""
+class CoverageAggregate(TypedDict):
+    """Visit-based WA counts + building sum for one group, as emitted by ``get_coverage_aggregates``."""
 
     WAs_visited: int
     WAs_evc_reached: int
     Buildings_covered_in_WAs_visited: int
-    Buildings_covered_in_WAs_evc_reached: int
 
 
 class VisitsAggregate(TypedDict):
@@ -86,35 +85,57 @@ class CoverageDateFilter:
         return (start_dt, end_dt)
 
 
-def non_excluded_workareas(opportunity):
-    return WorkArea.objects.filter(opportunity=opportunity).exclude(status=WorkAreaStatus.EXCLUDED)
+# Business rule: Excluded areas and unassigned areas are out of scope. Kept as a Q so the Progress
+# Mapping tiles, which aggregate over all work areas at once, share this one definition.
+IN_SCOPE_WORK_AREA = ~Q(status=WorkAreaStatus.EXCLUDED) & Q(opportunity_access__isnull=False)
 
 
-def status_event_model():
-    return WorkArea.pgh_event_model
+def in_scope_work_areas(opportunity):
+    """The work areas every coverage metric is measured over — numerators and denominators alike."""
+    return WorkArea.objects.filter(IN_SCOPE_WORK_AREA, opportunity=opportunity)
 
 
-def _earliest_transition_subquery(status):
-    events = status_event_model().objects
-    return Subquery(
-        events.filter(pgh_obj_id=OuterRef("pk"), status=status).order_by("pgh_created_at").values("pgh_created_at")[:1]
+def annotate_approved_visit_counts(work_areas, opportunity, *, ncwa=False, window=None):
+    """Annotate each work area with its approved service-delivery count as ``hsd_count``.
+    hsd stands for "health service delivery" and refers to approved visits for the services_delivery_unit.
+    ncwa stands for "no children in work area" and refers to approved visits for the no-children-wa deliver unit.
+    """
+    annotations = {"hsd_count": _approved_visit_count(opportunity, SERVICE_DELIVERY_UNIT_SLUG, window)}
+    if ncwa:
+        annotations["ncwa_count"] = _approved_visit_count(opportunity, NO_CHILDREN_WORK_AREA_UNIT_SLUG, window)
+    return work_areas.annotate(**annotations)
+
+
+def _approved_visit_count(opportunity, deliver_unit_slug, window):
+    visits = UserVisit.objects.filter(
+        opportunity=opportunity,
+        work_area=OuterRef("pk"),
+        status=VisitValidationStatus.approved,
+        deliver_unit__slug=deliver_unit_slug,
     )
+    if window is not None:
+        start, end = window
+        visits = visits.filter(visit_date__gte=start, visit_date__lt=end)
+    counted = visits.values("work_area").annotate(count=Count("*")).values("count")
+    # Coalesce so an area with no such visits reads 0 rather than NULL, keeping it comparable.
+    return Coalesce(Subquery(counted, output_field=IntegerField()), 0)
 
 
-def annotate_status_timestamps(qs):
-    return qs.annotate(
-        visited_at=_earliest_transition_subquery(WorkAreaStatus.VISITED),
-        evc_reached_at=_earliest_transition_subquery(WorkAreaStatus.EXPECTED_VISIT_REACHED),
+def missing_deliver_units(opportunity: Opportunity, slugs: list[str]) -> list[str]:
+    if opportunity.deliver_app_id is None:
+        return slugs
+    present = set(
+        DeliverUnit.objects.filter(app_id=opportunity.deliver_app_id, slug__in=slugs).values_list("slug", flat=True)
     )
+    return [slug for slug in slugs if slug not in present]
 
 
 def get_target_aggregates(opportunity, group_field) -> dict[GroupKey, TargetAggregate]:
     """Static, filter-independent denominators grouped by ward or work_area_group_id."""
     rows = (
-        non_excluded_workareas(opportunity)
+        in_scope_work_areas(opportunity)
         .values(group_field)
         .annotate(
-            target_population=Sum("target_population"),
             building_count=Sum("building_count"),
             num_work_areas=Count("id"),
             expected_visit_total=Sum("expected_visit_count"),
@@ -123,35 +144,32 @@ def get_target_aggregates(opportunity, group_field) -> dict[GroupKey, TargetAggr
     return {row[group_field]: row for row in rows}
 
 
-def get_status_aggregates(opportunity, group_field, window) -> dict[GroupKey, StatusAggregate]:
-    """WA-status counts + building sums per group, strict on current status.
+def get_coverage_aggregates(opportunity, group_field, window) -> dict[GroupKey, CoverageAggregate]:
+    """WA-status counts + building sums per group, from live delivery counts and current status.
 
-    window=None -> Overall (all current-status WAs). A window applies the
-    visited-at / evc-reached-at transition-date filter.
+    WAs_visited counts each work area once if it has an approved HSD visit, an
+    approved NCWA visit, or is inaccessible. ``window`` applies only to visits;
+    inaccessible areas are always included. Buildings_covered_in_WAs_visited
+    remains HSD-only.
     """
-    qs = non_excluded_workareas(opportunity)
-    if window is None:
-        visited_filter = Q(status=WorkAreaStatus.VISITED)
-        evc_filter = Q(status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
-    else:
-        qs = annotate_status_timestamps(qs)
-        start_dt, end_dt = window
-        visited_filter = Q(status=WorkAreaStatus.VISITED, visited_at__gte=start_dt, visited_at__lt=end_dt)
-        evc_filter = Q(
-            status=WorkAreaStatus.EXPECTED_VISIT_REACHED, evc_reached_at__gte=start_dt, evc_reached_at__lt=end_dt
-        )
+    qs = annotate_approved_visit_counts(in_scope_work_areas(opportunity), opportunity, ncwa=True, window=window)
+
+    hsd_delivered = Q(hsd_count__gte=1)
+    ncwa_delivered = Q(ncwa_count__gte=1)
+    inaccessible_status = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
+    evc_reached = Q(expected_visit_count__gt=0) & Q(hsd_count__gte=F("expected_visit_count"))
 
     rows = qs.values(group_field).annotate(
-        WAs_visited=Count("id", filter=visited_filter),
-        WAs_evc_reached=Count("id", filter=evc_filter),
-        Buildings_covered_in_WAs_visited=Coalesce(Sum("building_count", filter=visited_filter), 0),
-        Buildings_covered_in_WAs_evc_reached=Coalesce(Sum("building_count", filter=evc_filter), 0),
+        WAs_visited=Count("id", filter=hsd_delivered | ncwa_delivered | inaccessible_status),
+        WAs_evc_reached=Count("id", filter=evc_reached),
+        Buildings_covered_in_WAs_visited=Coalesce(Sum("building_count", filter=hsd_delivered), 0),
     )
     return {row[group_field]: row for row in rows}
 
 
 def get_visits_approved_aggregates(opportunity, group_field, window) -> dict[GroupKey, VisitsAggregate]:
-    """Approved-visit counts per group via work_area, dropping EXCLUDED WAs.
+    """Approved Service Delivery visit counts per group via work_area, dropping out-of-scope WAs
+    (excluded or unassigned).
 
     group_field is "ward" or "work_area_group_id"; the join path through work_area
     is "work_area__<group_field>".
@@ -159,7 +177,9 @@ def get_visits_approved_aggregates(opportunity, group_field, window) -> dict[Gro
     qs = UserVisit.objects.filter(
         opportunity=opportunity,
         status=VisitValidationStatus.approved,
+        deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
         work_area__isnull=False,
+        work_area__opportunity_access__isnull=False,
     ).exclude(work_area__status=WorkAreaStatus.EXCLUDED)
     if window is not None:
         start_dt, end_dt = window
@@ -176,13 +196,6 @@ _WARD_PCT_OF_TARGET = (
     ("pct_WAs_visited", "WAs_visited", "num_work_areas"),
     ("pct_WAs_visited_last_week", "WAs_visited_last_week", "num_work_areas"),
     ("pct_WAs_evc_reached", "WAs_evc_reached", "num_work_areas"),
-    ("pct_WAs_evc_reached_last_week", "WAs_evc_reached_last_week", "num_work_areas"),
-    ("pct_Buildings_covered_in_WAs_evc_reached", "Buildings_covered_in_WAs_evc_reached", "building_count"),
-    (
-        "pct_buildings_covered_in_WAs_evc_reached_last_week",
-        "Buildings_covered_in_WAs_evc_reached_last_week",
-        "building_count",
-    ),
     ("pct_Buildings_covered_in_WAs_visited", "Buildings_covered_in_WAs_visited", "building_count"),
     (
         "pct_buildings_covered_in_WAs_visited_last_week",
@@ -196,14 +209,6 @@ _WARD_PCT_OF_TARGET = (
 _WARD_PCT_RATIOS = (
     ("pct_WA_visited_to_pct_visits", "pct_WAs_visited", "filtered"),
     ("pct_WA_visited_to_pct_visits_last_week", "pct_WAs_visited_last_week", "last_week"),
-    ("pct_WA_evc_reached_to_pct_visit", "pct_WAs_evc_reached", "filtered"),
-    ("pct_WA_evc_reached_to_pct_visits_last_week", "pct_WAs_evc_reached_last_week", "last_week"),
-    ("pct_buildings_covered_in_WA_evc_reached_to_pct_visit", "pct_Buildings_covered_in_WAs_evc_reached", "filtered"),
-    (
-        "pct_buildings_covered_in_WA_evc_reached_to_pct_visits_last_week",
-        "pct_buildings_covered_in_WAs_evc_reached_last_week",
-        "last_week",
-    ),
     ("pct_buildings_covered_in_WA_visited_to_pct_visit", "pct_Buildings_covered_in_WAs_visited", "filtered"),
     (
         "pct_buildings_covered_in_WA_visited_to_pct_visits_last_week",
@@ -224,34 +229,34 @@ def _static_slot(opportunity):
             "wag_display": _wag_display_lookup(opportunity),
         }
 
-    return cache.get_or_set(f"coverage:static:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
+    return cache.get_or_set(f"coverage:v2:static:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
 
 
 def _last_week_slot(opportunity):
     def compute():
         window = CoverageDateFilter.last_week().window
         return {
-            "ward_status": get_status_aggregates(opportunity, "ward", window=window),
+            "ward_status": get_coverage_aggregates(opportunity, "ward", window=window),
             "ward_visits": get_visits_approved_aggregates(opportunity, "ward", window=window),
-            "wag_status": get_status_aggregates(opportunity, "work_area_group_id", window=window),
+            "wag_status": get_coverage_aggregates(opportunity, "work_area_group_id", window=window),
             "wag_visits": get_visits_approved_aggregates(opportunity, "work_area_group_id", window=window),
         }
 
-    return cache.get_or_set(f"coverage:last_week:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
+    return cache.get_or_set(f"coverage:v2:last_week:opp={opportunity.id}", compute, timeout=COVERAGE_CACHE_TTL_SECONDS)
 
 
 def _compute_filtered(opportunity, window):
     return {
-        "ward_status": get_status_aggregates(opportunity, "ward", window=window),
+        "ward_status": get_coverage_aggregates(opportunity, "ward", window=window),
         "ward_visits": get_visits_approved_aggregates(opportunity, "ward", window=window),
-        "wag_status": get_status_aggregates(opportunity, "work_area_group_id", window=window),
+        "wag_status": get_coverage_aggregates(opportunity, "work_area_group_id", window=window),
         "wag_visits": get_visits_approved_aggregates(opportunity, "work_area_group_id", window=window),
     }
 
 
 def _filtered_overall_slot(opportunity):
     return cache.get_or_set(
-        f"coverage:filtered:opp={opportunity.id}",
+        f"coverage:v2:filtered:opp={opportunity.id}",
         lambda: _compute_filtered(opportunity, window=None),
         timeout=COVERAGE_CACHE_TTL_SECONDS,
     )
@@ -306,22 +311,24 @@ class CoverageProgressReport:
         )
 
 
-def ward_saturation_goal(target_aggregates, status_aggregates):
-    """Opportunity-wide pct_WAs_evc_reached for the page header: SUM(WAs_evc_reached) / SUM(num_work_areas) * 100.
+def ward_saturation_goal(target_aggregates, coverage_aggregates):
+    """Opportunity-wide pct_WAs_visited for the page header: SUM(WAs_visited) / SUM(num_work_areas) * 100.
 
-    target_aggregates / status_aggregates: dicts keyed by ward -> that ward's target / status-count dict.
-    Returns None when there are no (non-EXCLUDED) work areas.
+    The same Work Areas Done union as the ward table's WAs_visited column, rolled up across every
+    ward rather than the guarded EVC-reached count.
+    target_aggregates / coverage_aggregates: dicts keyed by ward -> that ward's target / coverage dict.
+    Returns None when there are no in-scope work areas.
     """
     total_work_areas = sum(t["num_work_areas"] for t in target_aggregates.values())
-    total_evc_reached = sum(s.get("WAs_evc_reached", 0) for s in status_aggregates.values())
-    return pct(total_evc_reached, total_work_areas)
+    total_visited = sum(s.get("WAs_visited", 0) for s in coverage_aggregates.values())
+    return pct(total_visited, total_work_areas)
 
 
 def build_ward_rows(target_aggregates, filtered_status, filtered_visits, last_week_status, last_week_visits):
     """Merge the per-ward aggregate dicts into top-table rows (one row per ward, ~30 columns).
 
     Each argument is a dict keyed by ward slug -> that ward's aggregate dict:
-      - target_aggregates: static targets (target_population, building_count, num_work_areas, expected_visit_total)
+      - target_aggregates: static targets (building_count, num_work_areas, expected_visit_total)
       - filtered_status / last_week_status: WA-status counts + building sums (active filter / pinned 7 days)
       - filtered_visits / last_week_visits: approved-visit counts (active filter / pinned 7 days)
     Derived columns are driven by _WARD_PCT_OF_TARGET / _WARD_PCT_RATIOS so the numerator/denominator
@@ -344,9 +351,6 @@ def build_ward_rows(target_aggregates, filtered_status, filtered_visits, last_we
             "WAs_visited": status.get("WAs_visited", 0),
             "WAs_visited_last_week": lw_status.get("WAs_visited", 0),
             "WAs_evc_reached": status.get("WAs_evc_reached", 0),
-            "WAs_evc_reached_last_week": lw_status.get("WAs_evc_reached", 0),
-            "Buildings_covered_in_WAs_evc_reached": status.get("Buildings_covered_in_WAs_evc_reached", 0),
-            "Buildings_covered_in_WAs_evc_reached_last_week": lw_status.get("Buildings_covered_in_WAs_evc_reached", 0),
             "Buildings_covered_in_WAs_visited": status.get("Buildings_covered_in_WAs_visited", 0),
             "Buildings_covered_in_WAs_visited_last_week": lw_status.get("Buildings_covered_in_WAs_visited", 0),
         }
@@ -402,7 +406,6 @@ def build_wag_rows(display, target_aggregates, filtered_status, filtered_visits,
         row["pct_visits_approved"] = pct(visits.get("visits_approved", 0), target["expected_visit_total"])
         row["pct_visits_approved_last_week"] = pct(lw_visits.get("visits_approved", 0), target["expected_visit_total"])
         row["pct_WAs_evc_reached"] = pct(status.get("WAs_evc_reached", 0), target["num_work_areas"])
-        row["pct_WAs_evc_reached_last_week"] = pct(lw_status.get("WAs_evc_reached", 0), target["num_work_areas"])
         # pct_WAs_visited is not a bottom-table column; compute inline as the ratio numerator
         row["pct_WA_visited_to_pct_visits"] = ratio(
             pct(status.get("WAs_visited", 0), target["num_work_areas"]), row["pct_visits_approved"]

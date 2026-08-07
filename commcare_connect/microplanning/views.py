@@ -23,22 +23,18 @@ from django.db.models import (
     F,
     FloatField,
     Func,
-    IntegerField,
-    OuterRef,
     Q,
-    Subquery,
     Sum,
     TextChoices,
     Value,
 )
-from django.db.models.functions import Cast, Coalesce
+from django.db.models.functions import Cast
 from django.db.utils import OperationalError
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.text import slugify
-from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views import View
@@ -54,9 +50,15 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
+    REQUIRED_DELIVER_UNIT_SLUGS,
     WORK_AREA_STATUS_COLORS,
 )
-from commcare_connect.microplanning.coverage_progress import CoverageProgressReport
+from commcare_connect.microplanning.coverage_progress import (
+    IN_SCOPE_WORK_AREA,
+    CoverageProgressReport,
+    annotate_approved_visit_counts,
+    missing_deliver_units,
+)
 from commcare_connect.microplanning.filters import (
     CoverageProgressFilterSet,
     UserVisitMapFilterSet,
@@ -269,6 +271,7 @@ def microplanning_home(request, *args, **kwargs):
         "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
+        "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "search_options_url": search_options_url,
         "work_area_detail_url": work_area_detail_url,
     }
@@ -333,83 +336,88 @@ def _get_work_areas_blocked_message(work_area_count, areas_assigned):
 
 
 def get_metrics_for_microplanning(opportunity):
-    approved_visits_for_work_area = (
-        UserVisit.objects.filter(
-            opportunity=opportunity,
-            work_area=OuterRef("pk"),
-            status=VisitValidationStatus.approved,
-        )
-        .values("work_area")
-        .annotate(c=Count("*"))
-        .values("c")
-    )
+    qs = annotate_approved_visit_counts(WorkArea.objects.filter(opportunity=opportunity), opportunity, ncwa=True)
 
-    qs = WorkArea.objects.filter(opportunity=opportunity).annotate(
-        approved_count=Coalesce(
-            Subquery(approved_visits_for_work_area, output_field=IntegerField()),
-            0,
-        )
-    )
+    # REQUEST_FOR_INACCESSIBLE counts as inaccessible too for metrics pupose,
+    #  even though it isn't a final status.
+    inaccessible_status = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
+    has_evc_target = Q(expected_visit_count__gt=0)
+    visited_children_found = Q(hsd_count__gte=1)
+    visited_no_children_found = Q(ncwa_count__gte=1)
 
-    non_excluded = ~Q(status=WorkAreaStatus.EXCLUDED)
+    # Every tile but Excluded Work Areas is scoped to the in-scope areas.
     agg = qs.aggregate(
-        total=Count("id"),
         excluded=Count("id", filter=Q(status=WorkAreaStatus.EXCLUDED)),
-        non_excluded=Count("id", filter=non_excluded),
-        unvisited=Count("id", filter=non_excluded & Q(approved_count=0)),
-        visited=Count("id", filter=non_excluded & Q(approved_count__gte=1)),
+        in_scope=Count("id", filter=IN_SCOPE_WORK_AREA),
+        done=Count(
+            "id",
+            # An OR filter, so an area meeting several conditions (e.g. inaccessible with an
+            # approved visit already on file) is still counted once.
+            filter=IN_SCOPE_WORK_AREA & (visited_children_found | visited_no_children_found | inaccessible_status),
+        ),
+        unvisited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.NOT_VISITED)),
+        visited_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_children_found),
+        visited_no_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_no_children_found),
         evc_reached=Count(
             "id",
-            filter=non_excluded & Q(approved_count__gte=F("expected_visit_count")),
+            # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
+            filter=IN_SCOPE_WORK_AREA & has_evc_target & Q(hsd_count__gte=F("expected_visit_count")),
         ),
-        inaccessible=Count("id", filter=Q(status=WorkAreaStatus.INACCESSIBLE)),
-        total_expected_visits=Sum("expected_visit_count", filter=non_excluded),
-        total_approved_visits=Sum("approved_count", filter=non_excluded),
+        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & inaccessible_status),
+        total_expected_visits=Sum("expected_visit_count", filter=IN_SCOPE_WORK_AREA),
+        total_hsd_visits=Sum("hsd_count", filter=IN_SCOPE_WORK_AREA),
     )
 
-    non_excluded_count = agg["non_excluded"] or 0
-    total = agg["total"] or 0
+    in_scope_count = agg["in_scope"] or 0
 
     total_expected = agg["total_expected_visits"] or 0
-    if non_excluded_count and total_expected:
-        total_approved_visits = agg["total_approved_visits"] or 0
-        pct_wa_visited = (agg["visited"] or 0) / non_excluded_count
-        pct_visits = total_approved_visits / total_expected
+    if in_scope_count and total_expected:
+        total_hsd_visits = agg["total_hsd_visits"] or 0
+        pct_wa_visited = (agg["visited_children_found"] or 0) / in_scope_count
+        pct_visits = total_hsd_visits / total_expected
         visited_to_visits = round(pct_wa_visited / pct_visits, 2) if pct_visits else "--"
     else:
         visited_to_visits = "--"
 
-    days_remaining = max((opportunity.end_date - localdate()).days, 0) if opportunity.end_date else "--"
-
     return [
-        {"name": _("Days Remaining"), "value": days_remaining},
+        {
+            "name": _("Work Areas Done"),
+            "value": agg["done"],
+            "percentage": pct(agg["done"], in_scope_count, ndigits=None),
+        },
         {
             "name": _("Unvisited Work Areas"),
             "value": agg["unvisited"],
-            "percentage": pct(agg["unvisited"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["unvisited"], in_scope_count, ndigits=None),
         },
         {
-            "name": _("Visited Work Areas"),
-            "value": agg["visited"],
-            "percentage": pct(agg["visited"], non_excluded_count, ndigits=None),
+            "name": _("Visited Work Areas (children found)"),
+            "value": agg["visited_children_found"],
+            "percentage": pct(agg["visited_children_found"], in_scope_count, ndigits=None),
+        },
+        {
+            "name": _("Visited Work Areas (no children found)"),
+            "value": agg["visited_no_children_found"],
+            "percentage": pct(agg["visited_no_children_found"], in_scope_count, ndigits=None),
         },
         {
             "name": _("EVC Reached"),
             "value": agg["evc_reached"],
-            "percentage": pct(agg["evc_reached"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["evc_reached"], in_scope_count, ndigits=None),
         },
         {
             "name": _("Inaccessible Work Areas"),
             "value": agg["inaccessible"],
-            "percentage": pct(agg["inaccessible"], non_excluded_count, ndigits=None),
+            "percentage": pct(agg["inaccessible"], in_scope_count, ndigits=None),
         },
-        {
-            "name": _("Excluded Work Areas"),
-            "value": agg["excluded"],
-            "percentage": pct(agg["excluded"], total, ndigits=None),
-        },
+        {"name": _("Excluded Work Areas"), "value": agg["excluded"]},
         {"name": _("WA Visited : Visits Ratio"), "value": visited_to_visits},
     ]
+
+
+def _quoted_missing_deliver_units(opportunity):
+    missing_units = missing_deliver_units(opportunity, list(REQUIRED_DELIVER_UNIT_SLUGS))
+    return ", ".join([f'"{unit}"' for unit in missing_units])
 
 
 def _get_assignment_mode_context(request, opportunity):
@@ -1391,6 +1399,7 @@ def coverage_progress(request, *args, **kwargs):
         "wag_table": wag_table,
         "filter_form": filterset.form,
         "export_hrefs": export_hrefs,
+        "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "path": [
             {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {
