@@ -39,7 +39,7 @@
         {% endif %}
       </div>
       {% if object.description %}
-        <p class="opp-header-description m-0 max-w-[760px] text-xs2 leading-[1.55]"
+        <p class="opp-header-description m-0 max-w-[760px] text-xs-plus leading-[1.55]"
            style="text-wrap:pretty">{{ object.description }}</p>
       {% endif %}
     </div>
@@ -56,7 +56,7 @@
                   @click="isOpen = !isOpen"
                   aria-label="{% translate 'More actions' %}"
                   class="relative opp-header-action-icon">
-            <i class="fa-solid fa-ellipsis text-xs2"></i>
+            <i class="fa-solid fa-ellipsis text-xs-plus"></i>
           </button>
           {% include "opportunity/opportunity_menu.html" with opportunity=object %}
         </div>

@@ -490,6 +490,10 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
 
     def get_header_context(self, opportunity):
         stats = get_opportunity_header_stats(opportunity)
+        # number_of_users can be fractional when the budget doesn't divide evenly across workers.
+        # Floor it *before* multiplying by max_visits_per_user below, not after: floating-point
+        # error can inflate a floor-after-multiply result (e.g. 1000/300*3 evaluates to exactly
+        # 10.0 in Python, not the "intuitive" 9.999...), silently overstating the deliveries cap.
         workers_cap = int(opportunity.number_of_users)
 
         return {
@@ -530,11 +534,15 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
         if not start_date or not end_date:
             return {"pct": 0, "closed": False, "months_left": None}
 
-        closed = opportunity.has_ended
+        # Read "today" once and reuse it for both checks below (matches Opportunity.has_ended's
+        # own `end_date < now().date()`), rather than letting closed/pct/months_left each read
+        # the clock independently and risk disagreeing across a midnight boundary.
+        today = now().date()
+        closed = end_date < today
         return {
-            "pct": 100 if closed else get_elapsed_percent(start_date, end_date),
+            "pct": 100 if closed else get_elapsed_percent(start_date, end_date, today),
             "closed": closed,
-            "months_left": None if closed else max(get_months_remaining(end_date), 1),
+            "months_left": None if closed else max(get_months_remaining(end_date, today), 1),
         }
 
 

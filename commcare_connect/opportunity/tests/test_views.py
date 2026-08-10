@@ -67,7 +67,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import OpportunityDashboard, WorkerPaymentsView
+from commcare_connect.opportunity.views import OpportunityDashboard, WorkerPaymentsView, _metric_ratio
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
@@ -3221,3 +3221,33 @@ class TestOpportunityDashboardHeaderContext:
         window = OpportunityDashboard().get_delivery_window_context(opportunity)
 
         assert window == {"pct": 0, "closed": False, "months_left": None}
+
+    def test_delivery_window_ends_today_is_not_closed(self, opportunity):
+        # has_ended uses a strict `<`, so an opportunity ending today isn't "closed" yet even
+        # though the window reads as fully elapsed -- this combination must stay self-consistent
+        # now that "closed" and "pct" are computed from the same locally-captured today.
+        today = now().date()
+        opportunity.start_date = today - timedelta(days=1)
+        opportunity.end_date = today
+        opportunity.save()
+
+        window = OpportunityDashboard().get_delivery_window_context(opportunity)
+
+        assert window == {"pct": 100, "closed": False, "months_left": 1}
+
+
+@pytest.mark.parametrize(
+    ("actual", "cap", "expected"),
+    [
+        (0, 100, 0),
+        (50, 100, 50),
+        (100, 100, 100),
+        (150, 100, 100),  # over cap clamps to 100
+        (-10, 100, 0),  # negative clamps to 0
+        (1, 3, 33),
+        (0, 0, 0),  # no cap
+        (5, None, 0),  # no cap
+    ],
+)
+def test_metric_ratio(actual, cap, expected):
+    assert _metric_ratio(actual, cap) == {"actual": actual, "cap": cap, "pct": expected}

@@ -474,11 +474,15 @@ def test_opportunity_worker_progress_stats(opportunity):
 def test_get_opportunity_header_stats(opportunity):
     OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=250)
     OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=150)
-    OpportunityAccessFactory(opportunity=opportunity, accepted=False, payment_accrued=0)
+    # payment_accrued is intentionally summed across every access regardless of accepted status
+    # (accrual isn't gated on invite acceptance), unlike workers_actual which is. Giving this one
+    # a distinct, nonzero amount pins down that the sum really is unfiltered, rather than passing
+    # coincidentally because an excluded row happened to contribute zero either way.
+    OpportunityAccessFactory(opportunity=opportunity, accepted=False, payment_accrued=999)
 
     stats = get_opportunity_header_stats(opportunity)
 
-    assert stats == {"workers_actual": 2, "budget_actual": 400}
+    assert stats == {"workers_actual": 2, "budget_actual": 1399}
 
 
 @pytest.mark.django_db
