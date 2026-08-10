@@ -9,7 +9,7 @@
     <div class="min-w-80 flex-1">
       {% if object.program %}
         <div class="mb-2 flex items-center gap-2.5">
-          <i class="opp-header-accent fa-solid fa-table-columns text-[11px]"></i>
+          <i class="opp-header-accent opp-header-icon fa-solid fa-table-columns"></i>
           {% if request.is_opportunity_pm %}
             <a href="{% url 'program:opportunity_list' request.org.slug object.program.program_id %}"
                class="opp-header-accent text-xs font-medium">{{ object.program.name }}</a>
@@ -31,15 +31,15 @@
         {% endif %}
         {% if object.is_test %}
           <span class="opp-header-badge warning-light">
-            <i class="fa-solid fa-flask text-[9px]"></i>{% translate "Test" %}
+            <i class="opp-header-icon fa-solid fa-flask"></i>{% translate "Test" %}
           </span>
         {% endif %}
         {% if header.ended_date %}
-          <span class="opp-header-ended-note text-[11.5px]">{% blocktranslate with ended_date=header.ended_date|date:"d M Y" %}Ended {{ ended_date }}{% endblocktranslate %}</span>
+          <span class="opp-header-ended-note text-2xs">{% blocktranslate with ended_date=header.ended_date|date:"d M Y" %}Ended {{ ended_date }}{% endblocktranslate %}</span>
         {% endif %}
       </div>
       {% if object.description %}
-        <p class="opp-header-description m-0 max-w-[760px] text-[13px] leading-[1.55]"
+        <p class="opp-header-description m-0 max-w-[760px] text-xs2 leading-[1.55]"
            style="text-wrap:pretty">{{ object.description }}</p>
       {% endif %}
     </div>
@@ -49,14 +49,14 @@
           {% if request.is_opportunity_pm and object.is_active %}
             <a href="{% url 'opportunity:edit' request.org.slug object.opportunity_id %}"
                class="opp-header-action">
-              <i class="fa-solid fa-pen-to-square text-[12px]"></i>{% translate "Edit" %}
+              <i class="fa-solid fa-pen-to-square text-xs"></i>{% translate "Edit" %}
             </a>
           {% endif %}
           <button type="button"
                   @click="isOpen = !isOpen"
                   aria-label="{% translate 'More actions' %}"
                   class="relative opp-header-action-icon">
-            <i class="fa-solid fa-ellipsis text-[13px]"></i>
+            <i class="fa-solid fa-ellipsis text-xs2"></i>
           </button>
           {% include "opportunity/opportunity_menu.html" with opportunity=object %}
         </div>
@@ -65,7 +65,7 @@
         {% for resource in header.resources %}
           <span class="opp-header-counter"
                 @click="showModal = true; selectedTab = '{{ resource.tab }}'; selectedOption = '{{ resource.tab }}'">
-            <i class="opp-header-counter-icon fa-solid {{ resource.icon }} text-[11px]"></i>{{ resource.name }}<span class="font-semibold opacity-75">{{ resource.count }}</span>
+            <i class="opp-header-counter-icon fa-solid {{ resource.icon }}"></i>{{ resource.name }}<span class="font-semibold opacity-75">{{ resource.count }}</span>
           </span>
         {% endfor %}
       </div>

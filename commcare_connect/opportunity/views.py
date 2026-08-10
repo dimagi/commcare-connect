@@ -105,6 +105,7 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
+    get_opportunity_header_stats,
     get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_learn_table_data,
@@ -142,7 +143,6 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.opportunity_header import get_opportunity_header_context
 from commcare_connect.opportunity.tables import (
     AssignedTaskListTable,
     CompletedWorkTable,
@@ -224,7 +224,11 @@ from commcare_connect.utils.celery import (
     render_export_status,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
-from commcare_connect.utils.datetime import get_start_end_date_range_with_time
+from commcare_connect.utils.datetime import (
+    get_elapsed_percent,
+    get_months_remaining,
+    get_start_end_date_range_with_time,
+)
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
@@ -479,10 +483,64 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
                 "url": reverse("opportunity:detail", args=(request.org.slug, object.opportunity_id)),
             },
         ]
-        context["header"] = get_opportunity_header_context(object)
+        context["header"] = self.get_header_context(object)
         context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
         return context
+
+    def get_header_context(self, opportunity):
+        stats = get_opportunity_header_stats(opportunity)
+        workers_cap = int(opportunity.number_of_users)
+
+        return {
+            "ended_date": opportunity.end_date if opportunity.has_ended else None,
+            "resources": [
+                {
+                    "name": _("Learn App"),
+                    "tab": "Learn App",
+                    "icon": "fa-book-open",
+                    "count": LearnModule.objects.filter(app=opportunity.learn_app).count(),
+                },
+                {
+                    "name": _("Deliver App"),
+                    "tab": "Deliver App",
+                    "icon": "fa-clipboard-check",
+                    "count": DeliverUnit.objects.filter(app=opportunity.deliver_app).count(),
+                },
+                {
+                    "name": _("Payment Units"),
+                    "tab": "Payments Units",
+                    "icon": "fa-hand-holding-dollar",
+                    "count": opportunity.paymentunit_set.count(),
+                },
+            ],
+            "window": self.get_delivery_window_context(opportunity),
+            "metrics": [
+                {"label": _("Connect Workers"), **_metric_ratio(stats["workers_actual"], workers_cap)},
+                {
+                    "label": _("Service Deliveries"),
+                    **_metric_ratio(opportunity.approved_visits, workers_cap * opportunity.max_visits_per_user),
+                },
+            ],
+            "budget": _metric_ratio(stats["budget_actual"] or 0, opportunity.total_budget),
+        }
+
+    def get_delivery_window_context(self, opportunity):
+        start_date, end_date = opportunity.start_date, opportunity.end_date
+        if not start_date or not end_date:
+            return {"pct": 0, "closed": False, "months_left": None}
+
+        closed = opportunity.has_ended
+        return {
+            "pct": 100 if closed else get_elapsed_percent(start_date, end_date),
+            "closed": closed,
+            "months_left": None if closed else max(get_months_remaining(end_date), 1),
+        }
+
+
+def _metric_ratio(actual, cap):
+    percent = (actual / cap) * 100 if cap else 0
+    return {"actual": actual, "cap": cap, "pct": max(0, min(100, round(percent)))}
 
 
 @org_member_required

@@ -40,6 +40,11 @@
   --color-tooltip-bg: #fff;
   --color-tooltip: #141d4d;
   --width-screen-sm: var(--breakpoint-sm);
+
+  /* Extends the default text-xs (12px)/text-sm (14px) scale with the two intermediate
+     sizes small badges, pills, and metric labels need. */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs2: 0.8125rem; /* 13px */
 }
 
 /* ------ Tippy.js tooltip ------ */
@@ -968,12 +973,16 @@ select:disabled,
     border-color: var(--opp-divider);
   }
 
+  .opp-header-icon {
+    @apply text-2xs;
+  }
+
   .opp-header-badge {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-2xs font-semibold;
   }
 
   .opp-header-action {
-    @apply inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-[13px] font-medium transition-all duration-300;
+    @apply inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-xs2 font-medium transition-all duration-300;
     background: var(--opp-btn-bg);
     border-color: var(--opp-btn-border);
     color: var(--opp-btn-text);
@@ -992,13 +1001,14 @@ select:disabled,
   }
 
   .opp-header-counter {
-    @apply inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[12.5px] font-medium;
+    @apply inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs2 font-medium;
     background: var(--opp-counter-bg);
     border-color: var(--opp-counter-border);
     color: var(--opp-counter-text);
   }
 
   .opp-header-counter-icon {
+    @apply text-2xs;
     color: var(--opp-counter-icon);
   }
 
@@ -1007,7 +1017,7 @@ select:disabled,
   }
 
   .opp-header-metric-label {
-    @apply mb-[5px] text-[11px];
+    @apply mb-[5px] text-2xs;
   }
 
   .opp-header-metric-value {
@@ -1016,7 +1026,7 @@ select:disabled,
   }
 
   .opp-header-metric-subvalue {
-    @apply text-[12.5px] font-normal;
+    @apply text-xs2 font-normal;
     color: var(--opp-subvalue);
   }
 

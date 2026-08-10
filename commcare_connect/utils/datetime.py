@@ -53,3 +53,20 @@ def get_quarter_series(from_date: datetime.date, to_date: datetime.date):
 
 def get_end_date_previous_month():
     return datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+
+
+def get_elapsed_percent(start_date: datetime.date, end_date: datetime.date, today: datetime.date | None = None):
+    """Percentage of [start_date, end_date] elapsed by today, clamped to 0-100."""
+    today = today or now().date()
+    if end_date <= start_date or today >= end_date:
+        return 100
+    if today <= start_date:
+        return 0
+    return round((today - start_date).days / (end_date - start_date).days * 100)
+
+
+def get_months_remaining(end_date: datetime.date, today: datetime.date | None = None):
+    """Whole calendar months between today and end_date, floored at 0."""
+    today = today or now().date()
+    delta = relativedelta(end_date, today)
+    return max(delta.years * 12 + delta.months, 0)
