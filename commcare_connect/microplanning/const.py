@@ -20,3 +20,9 @@ HQ_ASSIGN_BULK_CHUNK_SIZE = 100
 MIN_BUILDING_COUNT = 100
 MAX_BUILDING_COUNT = 300
 DEFAULT_BUILDING_COUNT = 200
+
+SEARCH_KIND_FILTERS = {
+    "wa": "work_area",
+    "wag": "work_area_group",
+    "ia": "implementation_area",
+}

@@ -89,6 +89,15 @@ class CoverageProgressFilterSet(django_filters.FilterSet):
 
 
 class WorkAreaMapFilterSet(django_filters.FilterSet):
+    # Set from the map's search box, which has no sidebar control of its own to drive — picking a
+    # group or an implementation area there fills in those filters below instead. An id from
+    # another opportunity needs no rejecting: the queryset is already scoped, so it matches nothing.
+    work_area = django_filters.NumberFilter(
+        label="",
+        field_name="pk",
+        widget=forms.HiddenInput(),
+    )
+
     unassigned_only = django_filters.BooleanFilter(
         label=_("Show Only Unassigned"),
         method="filter_unassigned_only",
