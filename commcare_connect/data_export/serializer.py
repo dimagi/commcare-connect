@@ -640,8 +640,6 @@ class WorkAreaBulkUpdateSerializer(serializers.ModelSerializer):
 
         opportunity = self.context["view"].opportunity
 
-        self.fields["id"].queryset = WorkArea.objects.filter(opportunity=opportunity).select_related(
-            "work_area_group"
-        )
+        self.fields["id"].queryset = WorkArea.objects.filter(opportunity=opportunity).select_related("work_area_group")
         self.fields["work_area_group"].queryset = WorkAreaGroup.objects.filter(opportunity=opportunity)
         self.fields["opportunity_access"].queryset = OpportunityAccess.objects.filter(opportunity=opportunity)
