@@ -1,6 +1,6 @@
 import datetime
-from dataclasses import asdict, dataclass
-from decimal import Decimal
+from dataclasses import dataclass
+from decimal import ROUND_HALF_EVEN, Decimal
 
 from django.db import transaction
 from django.db.models import F, Q
@@ -45,25 +45,45 @@ def billable_works_qs(opportunity):
 
 
 @dataclass(frozen=True)
+class Money:
+    """An amount in an opportunity's local currency together with its USD equivalent."""
+
+    local: Decimal
+    usd: Decimal
+
+    @classmethod
+    def zero(cls) -> "Money":
+        return cls(Decimal(0), Decimal(0))
+
+    @classmethod
+    def from_local_amount(cls, local_amount: Decimal, exchange_rate: Decimal) -> "Money":
+        # Match Django's DecimalField rounding when storing the USD amount.
+        return cls(local=local_amount, usd=(local_amount / exchange_rate).quantize(CENTS, rounding=ROUND_HALF_EVEN))
+
+    def __add__(self, other: "Money | int") -> "Money":
+        if type(other) is int and other == 0:  # so a bare sum() can start from its implicit int 0
+            return self
+        if not isinstance(other, Money):
+            return NotImplemented
+        return Money(self.local + other.local, self.usd + other.usd)
+
+    __radd__ = __add__
+
+
+@dataclass(frozen=True)
 class BillableRow:
     """One work's unbilled delta, priced and attributed to a month."""
 
     completed_work: CompletedWork
     billed_count: int
     month: datetime.date
-    flw_amount_local: Decimal
-    flw_amount_usd: Decimal
-    org_amount_local: Decimal
-    org_amount_usd: Decimal
+    flw_pay: Money
+    org_pay: Money
     exchange_rate: ExchangeRate
 
     @property
-    def total_amount_local(self):
-        return self.flw_amount_local + self.org_amount_local
-
-    @property
-    def total_amount_usd(self):
-        return self.flw_amount_usd + self.org_amount_usd
+    def total_pay(self) -> Money:
+        return self.flw_pay + self.org_pay
 
 
 def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
@@ -88,24 +108,35 @@ def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
         exchange_rate = rates_by_month[month]
 
         billed_count = work.saved_approved_count - work.invoiced_approved_count
-        flw_local = Decimal(billed_count * work.payment_unit.amount)
-        org_local = Decimal(billed_count * work.payment_unit.org_amount)
+        rate = exchange_rate.rate
         rows.append(
             BillableRow(
                 completed_work=work,
                 billed_count=billed_count,
                 month=month,
-                flw_amount_local=flw_local,
-                flw_amount_usd=_to_usd(flw_local, exchange_rate.rate),
-                org_amount_local=org_local,
-                org_amount_usd=_to_usd(org_local, exchange_rate.rate),
+                flw_pay=Money.from_local_amount(Decimal(billed_count * work.payment_unit.amount), rate),
+                org_pay=Money.from_local_amount(Decimal(billed_count * work.payment_unit.org_amount), rate),
                 exchange_rate=exchange_rate,
             )
         )
     return rows
 
 
-def group_line_items(rows, currency_code):
+@dataclass(frozen=True)
+class LineItem:
+    month: datetime.date
+    payment_unit_name: str
+    number_approved: int
+    flw_pay: Money
+    org_pay: Money
+    exchange_rate: Decimal
+
+    @property
+    def total_pay(self) -> Money:
+        return self.flw_pay + self.org_pay
+
+
+def group_line_items(rows):
     groups = {}
     for row in rows:
         payment_unit = row.completed_work.payment_unit
@@ -114,32 +145,25 @@ def group_line_items(rows, currency_code):
             {
                 "payment_unit_name": payment_unit.name,
                 "number_approved": 0,
-                "flw_amount_local": Decimal(0),
-                "org_amount_local": Decimal(0),
-                "flw_amount_usd": Decimal(0),
-                "org_amount_usd": Decimal(0),
+                "flw_pay": Money.zero(),
+                "org_pay": Money.zero(),
                 "exchange_rate": row.exchange_rate.rate,
             },
         )
         group["number_approved"] += row.billed_count
-        group["flw_amount_local"] += row.flw_amount_local
-        group["org_amount_local"] += row.org_amount_local
-        group["flw_amount_usd"] += row.flw_amount_usd
-        group["org_amount_usd"] += row.org_amount_usd
+        group["flw_pay"] += row.flw_pay
+        group["org_pay"] += row.org_pay
 
     def display_order(entry):
         (month, _), group = entry
         return (month, group["payment_unit_name"])
 
-    return [
-        _line_item(month=month, currency_code=currency_code, **group)
-        for (month, _), group in sorted(groups.items(), key=display_order)
-    ]
+    return [LineItem(month=month, **group) for (month, _), group in sorted(groups.items(), key=display_order)]
 
 
 def get_billable_line_items(opportunity, start_date, end_date):
     rows = _build_billable_rows(opportunity, start_date, end_date)
-    return group_line_items(rows, opportunity.currency_code)
+    return group_line_items(rows)
 
 
 def bill_invoice(invoice, start_date, end_date):
@@ -165,11 +189,27 @@ def _freeze_line_items(invoice, rows):
     invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
         invoice.opportunity.currency_code, max(row.month for row in rows)
     )
-    invoice.amount = sum(row.total_amount_local for row in rows)
-    invoice.amount_usd = sum(row.total_amount_usd for row in rows)
+    total = sum(row.total_pay for row in rows)
+    invoice.amount = total.local
+    invoice.amount_usd = total.usd
     invoice.save()
 
-    CompletedWorkInvoice.objects.bulk_create([CompletedWorkInvoice(invoice=invoice, **asdict(row)) for row in rows])
+    CompletedWorkInvoice.objects.bulk_create(
+        [
+            CompletedWorkInvoice(
+                invoice=invoice,
+                completed_work=row.completed_work,
+                billed_count=row.billed_count,
+                month=row.month,
+                flw_amount_local=row.flw_pay.local,
+                flw_amount_usd=row.flw_pay.usd,
+                org_amount_local=row.org_pay.local,
+                org_amount_usd=row.org_pay.usd,
+                exchange_rate=row.exchange_rate,
+            )
+            for row in rows
+        ]
+    )
 
     billed_works = []
     for row in rows:
@@ -187,34 +227,3 @@ def _billed_month(work, end_date):
     if work.invoiced_approved_count == 0 and work.status_modified_date:
         return get_month_start_date(work.status_modified_date)
     return get_month_start_date(end_date)
-
-
-def _to_usd(amount_local: Decimal, exchange_rate: Decimal) -> Decimal:
-    """Using the default `ROUND_HALF_EVEN` to match Django's `DecimalField` quantization."""
-    return (amount_local / exchange_rate).quantize(CENTS)
-
-
-def _line_item(
-    month,
-    payment_unit_name,
-    number_approved,
-    flw_amount_local,
-    org_amount_local,
-    flw_amount_usd,
-    org_amount_usd,
-    exchange_rate,
-    currency_code,
-):
-    return {
-        "month": month,
-        "payment_unit_name": payment_unit_name,
-        "number_approved": number_approved,
-        "flw_amount_local": flw_amount_local,
-        "org_amount_local": org_amount_local,
-        "total_amount_local": flw_amount_local + org_amount_local,
-        "flw_amount_usd": flw_amount_usd,
-        "org_amount_usd": org_amount_usd,
-        "total_amount_usd": flw_amount_usd + org_amount_usd,
-        "exchange_rate": exchange_rate,
-        "currency": currency_code,
-    }

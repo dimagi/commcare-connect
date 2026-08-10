@@ -19,6 +19,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.opportunity.utils.invoice import get_start_date_for_invoice
 from commcare_connect.opportunity.utils.invoice_line_items import (
+    Money,
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
@@ -65,6 +66,40 @@ def completed_work(
     )
 
 
+class TestMoney:
+    @pytest.mark.parametrize(
+        "local, rate, expected_usd",
+        [
+            pytest.param("100", "1", "100.00", id="parity"),
+            pytest.param("100", "3.6725", "27.23", id="rounds-to-cents"),
+            # Both land exactly on a half cent; ROUND_HALF_EVEN sends them to the even neighbour,
+            # which is what Django's DecimalField does when it stores the result.
+            pytest.param("0.125", "1", "0.12", id="half-rounds-down-to-even"),
+            pytest.param("0.135", "1", "0.14", id="half-rounds-up-to-even"),
+        ],
+    )
+    def test_from_local_amount_prices_and_quantizes(self, local, rate, expected_usd):
+        money = Money.from_local_amount(Decimal(local), Decimal(rate))
+
+        assert money.local == Decimal(local)  # local amounts are never rounded
+        assert money.usd == Decimal(expected_usd)
+
+    def test_addition_keeps_the_two_amounts_in_step(self):
+        assert Money(Decimal("100"), Decimal("27.23")) + Money(Decimal("20"), Decimal("5.45")) == Money(
+            Decimal("120"), Decimal("32.68")
+        )
+
+    def test_sum_starts_from_its_implicit_zero(self):
+        amounts = [Money.from_local_amount(Decimal("100"), Decimal("3.6725")) for _ in range(3)]
+
+        assert sum(amounts) == Money(Decimal("300"), Decimal("81.69"))
+        assert sum([], Money.zero()) == Money.zero()
+
+    def test_adding_a_bare_number_is_refused(self):
+        with pytest.raises(TypeError):
+            Money.zero() + Decimal("10")
+
+
 @pytest.mark.django_db
 class TestBillableSelection:
     @pytest.mark.parametrize(
@@ -97,11 +132,11 @@ class TestBillableRows:
         (row,) = _build_billable_rows(access.opportunity, JAN, FEB_END)
 
         assert row.billed_count == 2
-        assert row.flw_amount_local == Decimal("200")
-        assert row.org_amount_local == Decimal("40")
-        assert row.total_amount_local == Decimal("240")
+        assert row.flw_pay.local == Decimal("200")
+        assert row.org_pay.local == Decimal("40")
+        assert row.total_pay.local == Decimal("240")
         assert row.exchange_rate.rate == Decimal("1")
-        assert row.total_amount_usd == Decimal("240")
+        assert row.total_pay.usd == Decimal("240")
 
     @pytest.mark.parametrize(
         "approved, invoiced, expected_month",
@@ -138,22 +173,22 @@ class TestLineItemGrouping:
         completed_work(access, other_unit)
         completed_work(access, payment_unit, approved=2, invoiced=1)  # late delta -> February
 
-        items = group_line_items(_build_billable_rows(access.opportunity, JAN, FEB_END), "USD")
+        items = group_line_items(_build_billable_rows(access.opportunity, JAN, FEB_END))
 
-        assert [item["month"] for item in items] == [JAN, JAN, FEB]
-        by_key = {(item["month"], item["payment_unit_name"]): item for item in items}
+        assert [item.month for item in items] == [JAN, JAN, FEB]
+        by_key = {(item.month, item.payment_unit_name): item for item in items}
         assert len(by_key) == 3
         # 2 works for Jan and first payment unit
         january = by_key[(JAN, payment_unit.name)]
-        assert january["number_approved"] == 2
-        assert january["flw_amount_local"] == Decimal("200")
-        assert january["org_amount_local"] == Decimal("40")
-        assert january["total_amount_local"] == Decimal("240")
-        assert january["currency"] == "USD"
+        assert january.number_approved == 2
+        assert january.flw_pay.local == Decimal("200")
+        assert january.org_pay.local == Decimal("40")
+        assert january.total_pay.local == Decimal("240")
+        assert january.exchange_rate == Decimal("1")
         # 1 work for Jan and other payment unit
-        assert by_key[(JAN, other_unit.name)]["total_amount_local"] == Decimal("50")
+        assert by_key[(JAN, other_unit.name)].total_pay.local == Decimal("50")
         # 1 delta for first payment unit, covered in february
-        assert by_key[(FEB, payment_unit.name)]["number_approved"] == 1
+        assert by_key[(FEB, payment_unit.name)].number_approved == 1
 
     def test_same_named_payment_units_stay_separate_line_items(self, billing_setup):
         """Grouping is by payment unit id: `name` is not unique within an opportunity, and merging
@@ -163,10 +198,10 @@ class TestLineItemGrouping:
         completed_work(access, payment_unit)
         completed_work(access, twin)
 
-        items = group_line_items(_build_billable_rows(access.opportunity, JAN, JAN_END), "USD")
+        items = group_line_items(_build_billable_rows(access.opportunity, JAN, JAN_END))
 
-        assert [item["payment_unit_name"] for item in items] == [payment_unit.name, payment_unit.name]
-        assert sorted(item["total_amount_local"] for item in items) == [Decimal("7"), Decimal("120")]
+        assert [item.payment_unit_name for item in items] == [payment_unit.name, payment_unit.name]
+        assert sorted(item.total_pay.local for item in items) == [Decimal("7"), Decimal("120")]
 
 
 @pytest.mark.django_db
