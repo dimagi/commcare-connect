@@ -34,6 +34,12 @@ def get_cluster_area_cache_lock_key(opp_id: int):
     return f"work_area_clustering_cache_lock_key_{opp_id}"
 
 
+def parse_lon_lat_centroid(value):
+    """Parse a "lon lat" string into a centroid Point."""
+    lon, lat = value.strip().split()
+    return GEOSGeometry(f"POINT({lon} {lat})", srid=SRID)
+
+
 class BaseAreaCSVImporter:
     model = None
     HEADERS = {}
@@ -134,9 +140,7 @@ class BaseAreaCSVImporter:
         return GEOSGeometry(boundary_wkt, srid=SRID)
 
     def get_centroid(self, row):
-        lon, lat = row.get(self.HEADERS.get("centroid")).strip().split()
-        wkt = f"POINT({lon} {lat})"
-        return GEOSGeometry(wkt, srid=SRID)
+        return parse_lon_lat_centroid(row.get(self.HEADERS.get("centroid")))
 
     def _validate_centroid(self, row, line_num):
         invalid = True

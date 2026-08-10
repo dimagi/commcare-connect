@@ -1,4 +1,5 @@
 import datetime
+import json
 from unittest import mock
 
 import pytest
@@ -10,22 +11,51 @@ from django.utils import timezone
 from django.utils.timezone import now
 
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
+from commcare_connect.data_export.views import ImplementationAreaBulkCreateView, WorkAreaBulkCreateView
+from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.flags.models import Flag
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+)
+from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     BlobMetaFactory,
     OpportunityAccessFactory,
+    OpportunityFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.tests.factories import LLOEntityFactory, OrgWithUsersFactory
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+
+def _patch_json(client, url, payload):
+    return client.patch(url, data=json.dumps(payload), content_type="application/json")
+
+
+def _post_json(client, url, payload):
+    return client.post(url, data=json.dumps(payload), content_type="application/json")
 
 
 def _add_export_credentials(api_client, user):
     token, _ = user.oauth2_provider_accesstoken.get_or_create(
         token="export-token",
         scope="read write export",
+        defaults={"expires": now() + datetime.timedelta(hours=1)},
+    )
+    api_client.credentials(**{**getattr(api_client, "_credentials", {}), "Authorization": f"Bearer {token}"})
+
+
+def _add_export_only_credentials(api_client, user):
+    """Grants export scope but NOT write — used to assert write endpoints reject it."""
+    token, _ = user.oauth2_provider_accesstoken.get_or_create(
+        token="export-only-token",
+        scope="read export",
         defaults={"expires": now() + datetime.timedelta(hours=1)},
     )
     api_client.credentials(**{**getattr(api_client, "_credentials", {}), "Authorization": f"Bearer {token}"})
@@ -40,6 +70,15 @@ def _add_v2_header(api_client):
 @pytest.fixture
 def v2_export_client(api_client, org_user_member):
     _add_export_credentials(api_client, org_user_member)
+    _add_v2_header(api_client)
+    return api_client
+
+
+@pytest.fixture
+def v2_write_client(api_client, org_user_admin):
+    """Write endpoints additionally require org-admin (mirroring org_admin_required on the
+    equivalent htmx views), so member-level v2_export_client isn't enough for them."""
+    _add_export_credentials(api_client, org_user_admin)
     _add_v2_header(api_client)
     return api_client
 
@@ -423,3 +462,451 @@ def test_get_attachment_signed_url_preserves_resolved_storage_config():
     # querystring_auth in, and is scoped to GET; the original instance is left untouched.
     assert url == "https://signed/configured/prefix/blob123?auth=True&method=GET"
     assert storage.querystring_auth is False
+
+
+@pytest.mark.django_db
+class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
+    """Upsert endpoint: POST with no `id` creates, POST with `id` updates."""
+
+    def url(self, opp_id):
+        return reverse("data_export:work_area_group_write", kwargs={"opp_id": opp_id})
+
+    def test_creates_group_when_id_omitted(self, v2_write_client, opportunity):
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"name": "new-group", "ward": "ward-a"},
+        )
+        assert response.status_code == 201
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.ward == "ward-a"
+        assert group.centroid is None
+
+    def test_centroid_in_payload_is_ignored(self, v2_write_client, opportunity):
+        """centroid is derived from member WorkAreas' boundaries, never client-writable."""
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"name": "new-group", "ward": "ward-a", "centroid": "36.8219 -1.2921"},
+        )
+        assert response.status_code == 201
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.centroid is None
+
+    def test_updates_name_and_ward_when_id_present(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="old-name")
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"id": group.id, "name": "new-name", "ward": "new-ward"},
+        )
+        assert response.status_code == 200
+        group.refresh_from_db()
+        assert group.name == "new-name"
+        assert group.ward == "new-ward"
+
+    def test_duplicate_name_returns_400(self, v2_write_client, opportunity):
+        WorkAreaGroupFactory(opportunity=opportunity, name="taken")
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="mine")
+        response = v2_write_client.post(self.url(opportunity.id), data={"id": group.id, "name": "taken"})
+        assert response.status_code == 400
+
+    def test_same_name_on_same_instance_is_allowed(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="mine")
+        response = v2_write_client.post(
+            self.url(opportunity.id), data={"id": group.id, "name": "mine", "ward": "new-ward"}
+        )
+        assert response.status_code == 200
+
+    def test_unknown_id_returns_404(self, v2_write_client, opportunity):
+        response = v2_write_client.post(self.url(opportunity.id), data={"id": 999999, "name": "new-name"})
+        assert response.status_code == 404
+
+    def test_requires_write_scope(self, api_client, opportunity, user):
+        _add_export_only_credentials(api_client, user)
+        _add_v2_header(api_client)
+        response = api_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
+        assert response.status_code == 403
+
+    def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
+        _add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        response = api_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
+        assert response.status_code == 404
+
+    def test_member_role_returns_404(self, v2_export_client, opportunity):
+        """Mirrors org_admin_required on the equivalent htmx flows: plain membership isn't enough."""
+        response = v2_export_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db(transaction=True)
+class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
+    @pytest.fixture(autouse=True)
+    def setup_flag_for_managed_opportunity(self, managed_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity)
+        flag.flush()
+
+    def url(self, opp_id):
+        return reverse("data_export:work_area_bulk_update", kwargs={"opp_id": opp_id})
+
+    def test_updates_multiple_fields_independently_across_items(self, v2_write_client, opportunity):
+        area_a = WorkAreaFactory(opportunity=opportunity, expected_visit_count=5, target_population=10)
+        area_b = WorkAreaFactory(opportunity=opportunity, expected_visit_count=7, target_population=20)
+
+        payload = [
+            {"id": area_a.id, "expected_visit_count": 50},
+            {"id": area_b.id, "target_population": 200},
+        ]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+
+        area_a.refresh_from_db()
+        area_b.refresh_from_db()
+        assert area_a.expected_visit_count == 50
+        assert area_a.target_population == 10  # untouched by area_b's update in the same bulk_update call
+        assert area_b.target_population == 200
+        assert area_b.expected_visit_count == 7  # untouched by area_a's update in the same bulk_update call
+
+    def test_moving_between_groups_recomputes_both_centroids(self, v2_write_client, opportunity):
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        new_group = WorkAreaGroupFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, work_area_group=old_group)
+
+        payload = [{"id": area.id, "work_area_group": new_group.id}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+
+        old_group.refresh_from_db()
+        new_group.refresh_from_db()
+        assert old_group.centroid is None  # no work areas left in the old group
+        assert new_group.centroid is not None
+
+    def test_boundary_edit_recomputes_group_centroid_without_group_change(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        group.update_centroid()
+        old_centroid = group.centroid.wkt
+
+        payload = [{"id": area.id, "boundary": "POLYGON((50 10, 51 10, 51 11, 50 11, 50 10))"}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+
+        group.refresh_from_db()
+        assert group.centroid.wkt != old_centroid
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [{"centroid": "not-a-point"}, {"boundary": "not-wkt"}],
+        ids=["invalid_centroid", "invalid_boundary"],
+    )
+    def test_rejects_invalid_field_values(self, v2_write_client, opportunity, overrides):
+        area = WorkAreaFactory(opportunity=opportunity)
+        payload = [{"id": area.id, **overrides}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert list(overrides.keys())[0] in response.json()[0]
+
+    @pytest.mark.parametrize("field_name", ["work_area_group", "opportunity_access"])
+    def test_rejects_foreign_key_from_other_opportunity(self, v2_write_client, opportunity, field_name):
+        other_opportunity = OpportunityFactory()
+        area = WorkAreaFactory(opportunity=opportunity)
+        foreign_id = (
+            WorkAreaGroupFactory(opportunity=other_opportunity).id
+            if field_name == "work_area_group"
+            else OpportunityAccessFactory(opportunity=other_opportunity).id
+        )
+        payload = [{"id": area.id, field_name: foreign_id}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert field_name in response.json()[0]
+
+    def test_rejects_work_area_id_from_other_opportunity(self, v2_write_client, opportunity):
+        other_area = WorkAreaFactory(opportunity=OpportunityFactory(), target_population=1)
+        payload = [{"id": other_area.id, "target_population": 5}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        other_area.refresh_from_db()
+        assert other_area.target_population == 1
+
+    def test_org_admin_without_pm_role_cannot_assign(self, v2_write_client, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 404
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+
+    def test_org_admin_without_pm_role_can_edit_other_fields(self, v2_write_client, opportunity):
+        area = WorkAreaFactory(opportunity=opportunity, target_population=1)
+        payload = [{"id": area.id, "target_population": 99}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+        area.refresh_from_db()
+        assert area.target_population == 99
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_pm_admin_assign_flips_status_syncs_hq_and_notifies(
+        self, mock_hq_sync, api_client, managed_opportunity, program_manager_org_user_admin
+    ):
+        _add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        with mock.patch(
+            "commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"
+        ) as mock_notify:
+            response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        assert response.status_code == 200
+        area.refresh_from_db()
+        assert area.opportunity_access_id == access.id
+        assert area.status == WorkAreaStatus.NOT_VISITED
+        mock_hq_sync.assert_called_once()
+        mock_notify.assert_called_once_with(access.id)
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_hq_failure_during_assignment_rolls_back(
+        self, mock_hq_sync, api_client, managed_opportunity, program_manager_org_user_admin
+    ):
+        mock_hq_sync.side_effect = CommCareHQAPIException("HQ unavailable")
+        _add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        assert response.status_code == 502
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+        assert area.status == WorkAreaStatus.UNASSIGNED
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_explicit_null_opportunity_access_unassigns(
+        self, mock_hq_unassign, api_client, managed_opportunity, program_manager_org_user_admin
+    ):
+        _add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(
+            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
+        )
+
+        payload = [{"id": area.id, "opportunity_access": None}]
+        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["unassign_skipped"] == 0
+        assert body["unassign_failed_ids"] == []
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+        assert area.status == WorkAreaStatus.UNASSIGNED
+
+    def test_explicit_null_opportunity_access_skips_ineligible_work_area(
+        self, api_client, managed_opportunity, program_manager_org_user_admin
+    ):
+        _add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(
+            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.VISITED
+        )
+
+        payload = [{"id": area.id, "opportunity_access": None}]
+        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        assert response.status_code == 200
+        assert response.json()["unassign_skipped"] == 1
+        area.refresh_from_db()
+        assert area.opportunity_access_id == access.id
+        assert area.status == WorkAreaStatus.VISITED
+
+
+@pytest.mark.parametrize(
+    "view_class, sample_item",
+    [
+        (
+            WorkAreaBulkCreateView,
+            {
+                "slug": "s",
+                "ward": "w",
+                "centroid": "c",
+                "boundary": "b",
+                "building_count": 1,
+                "expected_visit_count": 1,
+                "target_population": 1,
+                "lga": "l",
+                "state": "st",
+                "work_area_group_name": "g",
+                "implementation_area_name": "i",
+            },
+        ),
+        (ImplementationAreaBulkCreateView, {"name": "n", "centroid": "c", "boundary": "b"}),
+    ],
+    ids=["WorkAreaBulkCreateView", "ImplementationAreaBulkCreateView"],
+)
+def test_row_from_item_keys_match_get_fieldnames(view_class, sample_item):
+    """Ensures row_from_item() stays in sync with get_fieldnames(). If a field is
+    added, renamed, or removed in the importer headers but not updated in
+    row_from_item(), csv.DictWriter silently writes an empty value instead of
+    raising an error.This test fails loudly the moment the two drift apart, instead of a mystery blank column."""
+    view = view_class()
+    assert set(view.row_from_item(sample_item)) == set(view.get_fieldnames())
+
+
+@pytest.mark.django_db(transaction=True)
+class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
+    def url(self, opp_id):
+        return reverse("data_export:work_area_bulk_create", kwargs={"opp_id": opp_id})
+
+    def _item(self, **overrides):
+        item = {
+            "slug": "area-1",
+            "ward": "ward-a",
+            "centroid": "36.8 -1.29",
+            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+            "building_count": 5,
+            "expected_visit_count": 10,
+            "target_population": 100,
+            "lga": "lga-1",
+            "state": "state-1",
+        }
+        item.update(overrides)
+        return item
+
+    def test_creates_work_areas(self, v2_write_client, opportunity):
+        payload = [self._item(slug="area-1"), self._item(slug="area-2")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+        assert response.json() == {"created": 2}
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.ward == "ward-a"
+        assert area.centroid.wkt == "POINT (36.8 -1.29)"
+        assert area.building_count == 5
+        assert area.expected_visit_count == 10
+        assert area.target_population == 100
+        assert area.case_properties == {"lga": "lga-1", "state": "state-1"}
+
+    def test_resolves_existing_work_area_group_by_name(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="original-ward")
+        payload = [self._item(work_area_group_name="group-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.work_area_group_id == group.id
+        assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+
+    def test_creates_missing_work_area_group_by_name(self, v2_write_client, opportunity):
+        payload = [self._item(work_area_group_name="new-group", ward="ward-b")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.ward == "ward-b"
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.work_area_group_id == group.id
+
+    def test_partial_group_names_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(slug="area-1", work_area_group_name="group-a"), self._item(slug="area-2")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "required for all Work Areas" in response.json()["errors"][0]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_duplicate_slug_in_payload_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(slug="dup"), self._item(slug="dup")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "duplicate" in " ".join(response.json()["errors"]).lower()
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_existing_slug_in_db_rejected(self, v2_write_client, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="taken")
+        payload = [self._item(slug="taken")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "already exists" in " ".join(response.json()["errors"]).lower()
+
+    def test_invalid_centroid_format_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(centroid="not-a-point")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "lon lat" in " ".join(response.json()["errors"]).lower()
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_links_to_existing_implementation_area_by_name(self, v2_write_client, opportunity):
+        implementation_area = ImplementationAreaFactory(opportunity=opportunity, name="zone-a")
+        payload = [self._item(implementation_area_name="zone-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.implementation_area_id == implementation_area.id
+
+    def test_stores_implementation_area_name_when_not_yet_created(self, v2_write_client, opportunity):
+        payload = [self._item(implementation_area_name="not-created-yet")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.implementation_area_id is None
+        assert area.implementation_area_name == "not-created-yet"
+
+
+@pytest.mark.django_db(transaction=True)
+class TestImplementationAreaBulkCreateView(BaseMicroplanningFlagTest):
+    def url(self, opp_id):
+        return reverse("data_export:implementation_area_bulk_create", kwargs={"opp_id": opp_id})
+
+    def _item(self, **overrides):
+        item = {
+            "name": "zone-a",
+            "centroid": "36.8 -1.29",
+            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+        }
+        item.update(overrides)
+        return item
+
+    def test_creates_implementation_areas(self, v2_write_client, opportunity):
+        payload = [self._item(name="zone-a"), self._item(name="zone-b")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+        assert response.json() == {"created": 2}
+
+        area = ImplementationArea.objects.get(opportunity=opportunity, name="zone-a")
+        assert area.centroid.wkt == "POINT (36.8 -1.29)"
+        assert area.boundary.wkt.startswith("POLYGON")
+
+    def test_duplicate_name_in_payload_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(name="dup"), self._item(name="dup")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "duplicate" in " ".join(response.json()["errors"]).lower()
+        assert not ImplementationArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_existing_name_in_db_rejected(self, v2_write_client, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="taken")
+        payload = [self._item(name="taken")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "already exists" in " ".join(response.json()["errors"]).lower()
+
+    def test_links_pending_work_areas_by_stored_name(self, v2_write_client, opportunity):
+        pending = WorkAreaFactory(opportunity=opportunity, implementation_area=None, implementation_area_name="zone-a")
+        other = WorkAreaFactory(opportunity=opportunity, implementation_area=None, implementation_area_name="zone-b")
+
+        payload = [self._item(name="zone-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = ImplementationArea.objects.get(opportunity=opportunity, name="zone-a")
+        pending.refresh_from_db()
+        other.refresh_from_db()
+        assert pending.implementation_area_id == area.id
+        assert other.implementation_area_id is None

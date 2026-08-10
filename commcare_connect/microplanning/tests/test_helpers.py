@@ -2,15 +2,24 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.gis.geos import Polygon
+from django.utils import translation
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.helpers import (
+    assign_work_areas_and_sync_to_hq,
     exclude_work_areas_for_opportunity,
     unassign_work_areas_for_opportunity,
+    work_area_detail,
+    work_area_search_options,
 )
 from commcare_connect.microplanning.models import SRID, WorkAreaStatus
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
+from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+)
+from commcare_connect.opportunity.models import VisitValidationStatus
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -336,6 +345,38 @@ class TestExcludeWorkAreas:
 
 
 @pytest.mark.django_db
+class TestAssignWorkAreasAndSyncToHQ:
+    @patch("commcare_connect.microplanning.helpers.HQ_ASSIGN_BULK_CHUNK_SIZE", 2)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_failed_chunk_rolls_back_only_its_own_rows(self, mock_bulk_hq, org_user_admin, opportunity):
+        """A failed HQ chunk rolls back only its own rows; the chunks that synced commit.
+        This is the DB/HQ divergence the per-chunk savepoints prevent."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        # Chunk size 2 => the 5 areas split into chunks of 2, 2 and 1; only the middle chunk fails.
+        work_areas = WorkAreaFactory.create_batch(5, opportunity=opportunity)
+        ok_a, ok_b, fail_a, fail_b, ok_c = work_areas
+        for wa in work_areas:
+            wa.opportunity_access = access
+            wa.status = WorkAreaStatus.NOT_VISITED
+        mock_bulk_hq.side_effect = [None, CommCareHQAPIException("HQ down"), None]
+
+        res = assign_work_areas_and_sync_to_hq(opportunity, work_areas, org_user_admin)
+
+        assert [len(call.args[0]) for call in mock_bulk_hq.call_args_list] == [2, 2, 1]
+        assert set(res["assigned_ids"]) == {ok_a.id, ok_b.id, ok_c.id}
+        assert set(res["failed_ids"]) == {fail_a.id, fail_b.id}
+
+        for wa in (fail_a, fail_b):
+            wa.refresh_from_db()
+            assert wa.opportunity_access is None
+            assert wa.status == WorkAreaStatus.UNASSIGNED
+        for wa in (ok_a, ok_b, ok_c):
+            wa.refresh_from_db()
+            assert wa.opportunity_access == access
+            assert wa.status == WorkAreaStatus.NOT_VISITED
+
+
+@pytest.mark.django_db
 class TestUnassignWorkAreas:
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_happy_path_unassigns_and_syncs_to_hq(self, mock_bulk_hq, org_user_admin, opportunity):
@@ -579,3 +620,117 @@ class TestUnassignWorkAreas:
         still_assigned = {wa.id for wa in work_areas if wa.status == WorkAreaStatus.NOT_VISITED}
         assert unassigned == set(result["unassigned_ids"])
         assert still_assigned == set(result["failed_ids"])
+
+
+@pytest.mark.django_db
+class TestWorkAreaSearchOptions:
+    def test_includes_all_three_searchable_types(self, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        impl_area = ImplementationAreaFactory(opportunity=opportunity)
+
+        assert work_area_search_options(opportunity) == [
+            {
+                "value": f"wa:{work_area.id}",
+                "label": work_area.slug,
+                "type": "Work Area",
+                "kind": "wa",
+                "object_id": work_area.id,
+                "filter_name": "work_area",
+            },
+            {
+                "value": f"wag:{group.id}",
+                "label": group.name,
+                "type": "Work Area Group",
+                "kind": "wag",
+                "object_id": group.id,
+                "filter_name": "work_area_group",
+            },
+            {
+                "value": f"ia:{impl_area.id}",
+                "label": impl_area.name,
+                "type": "Implementation Area",
+                "kind": "ia",
+                "object_id": impl_area.id,
+                "filter_name": "implementation_area",
+            },
+        ]
+
+    def test_kind_is_untranslated_so_styling_can_key_on_it(self, opportunity):
+        """``type`` is a translated display string; ``kind`` is the stable key the badge colours
+        are chosen by, so it must not change with the active language."""
+        WorkAreaFactory(opportunity=opportunity)
+
+        with translation.override("fr"):
+            option = work_area_search_options(opportunity)[0]
+
+        assert option["kind"] == "wa"
+
+    def test_excludes_other_opportunities(self, opportunity):
+        WorkAreaFactory()
+        WorkAreaGroupFactory()
+        ImplementationAreaFactory()
+
+        assert work_area_search_options(opportunity) == []
+
+    def test_orders_each_type_by_label(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="zeta-area")
+        WorkAreaFactory(opportunity=opportunity, slug="alpha-area")
+        WorkAreaGroupFactory(opportunity=opportunity, name="Zeta Group")
+        WorkAreaGroupFactory(opportunity=opportunity, name="Alpha Group")
+
+        labels = [option["label"] for option in work_area_search_options(opportunity)]
+
+        assert labels == ["alpha-area", "zeta-area", "Alpha Group", "Zeta Group"]
+
+
+@pytest.mark.django_db
+class TestWorkAreaDetail:
+    def test_returns_the_fields_the_map_sidebar_renders(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        impl_area = ImplementationAreaFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            work_area_group=group,
+            implementation_area=impl_area,
+            implementation_area_name=impl_area.name,
+            status=WorkAreaStatus.NOT_VISITED,
+        )
+
+        detail = work_area_detail(opportunity, work_area.id)
+
+        assert detail == {
+            "id": work_area.id,
+            "slug": work_area.slug,
+            "status": WorkAreaStatus.NOT_VISITED,
+            "building_count": work_area.building_count,
+            "expected_visit_count": work_area.expected_visit_count,
+            "group_id": group.id,
+            "group_name": group.name,
+            "assignee_name": access.user.name,
+            "assignee_phone": access.user.phone_number,
+            "visits_completed": 0,
+            "implementation_area_name": impl_area.name,
+        }
+
+    def test_visits_completed_counts_only_approved_visits(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
+        for status in (
+            VisitValidationStatus.approved,
+            VisitValidationStatus.approved,
+            VisitValidationStatus.rejected,
+        ):
+            UserVisitFactory(opportunity=opportunity, user=access.user, work_area=work_area, status=status)
+
+        assert work_area_detail(opportunity, work_area.id)["visits_completed"] == 2
+
+    def test_returns_none_for_another_opportunitys_work_area(self, opportunity):
+        other_work_area = WorkAreaFactory()
+
+        assert work_area_detail(opportunity, other_work_area.id) is None
+
+    def test_returns_none_for_a_missing_work_area(self, opportunity):
+        assert work_area_detail(opportunity, 999999) is None

@@ -158,10 +158,16 @@ class AuditReportEntryTable(OrgContextTable):
         verbose_name=_l("Connect Worker"),
         attrs={"th": {"class": "whitespace-normal align-bottom w-40"}},
     )
+    phone_number = columns.Column(
+        accessor="opportunity_access__user__phone_number",
+        verbose_name=_l("Phone Number"),
+        default="—",
+        attrs={"th": {"class": "whitespace-normal align-bottom w-36"}},
+    )
 
     class Meta:
         model = AuditReportEntry
-        fields = ("user",)
+        fields = ("user", "phone_number")
         empty_text = _l("No workers.")
 
     def __init__(self, data, *, opportunity, report, columns_spec, **kw):
@@ -173,3 +179,15 @@ class AuditReportEntryTable(OrgContextTable):
         ]
         extra.append(("action", ActionColumn()))
         super().__init__(data, extra_columns=extra, **kw)
+
+    def render_user(self, value, record):
+        return format_html(
+            """
+            <div class="flex flex-col items-start">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            value,
+            record.opportunity_access.user.username or "",
+        )

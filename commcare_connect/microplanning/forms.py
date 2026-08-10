@@ -143,4 +143,4 @@ class AssignmentModeForm(forms.Form):
                 .select_related("user")
                 .order_by("user__name")
             )
-            self.fields["assignee"].label_from_instance = lambda obj: obj.user.name
+            self.fields["assignee"].label_from_instance = lambda obj: obj.user.display_name_with_username()

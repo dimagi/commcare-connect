@@ -30,7 +30,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast
 from django.db.utils import OperationalError
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -45,10 +45,7 @@ from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 from waffle.decorators import waffle_flag
 
-from commcare_connect.commcarehq.api import (
-    bulk_create_or_update_cases_by_work_areas,
-    create_or_update_case_by_work_area,
-)
+from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
@@ -69,9 +66,14 @@ from commcare_connect.microplanning.filters import (
 )
 from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
+    MAP_WORK_AREA_FIELDS,
+    assign_work_areas_and_sync_to_hq,
     exclude_work_areas_for_opportunity,
+    map_work_areas,
     pct,
     unassign_work_areas_for_opportunity,
+    work_area_detail,
+    work_area_search_options,
 )
 from commcare_connect.microplanning.models import (
     ImplementationArea,
@@ -190,6 +192,16 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
+    search_options_url = reverse(
+        "microplanning:search_options",
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
+    )
+
+    work_area_detail_url = reverse(
+        "microplanning:work_area_detail",
+        args=[request.org.slug, opportunity.opportunity_id, 0],
+    ).replace("/0/", "/")
+
     status_meta = {
         status.value: {
             "label": status.label,
@@ -260,6 +272,8 @@ def microplanning_home(request, *args, **kwargs):
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
+        "search_options_url": search_options_url,
+        "work_area_detail_url": work_area_detail_url,
     }
 
     if assignment_mode:
@@ -414,7 +428,7 @@ def _get_assignment_mode_context(request, opportunity):
         "assignees_json": list(
             OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
             .select_related("user")
-            .values("id", "user__name", "user__user_id")
+            .values("id", "user__name", "user__username", "user__user_id")
         ),
         "group_work_areas_url": reverse(
             "microplanning:get_work_areas_for_assignment",
@@ -636,18 +650,9 @@ def import_status(request, org_slug, opp_id, area_type="work_area"):
 
 class WorkAreaVectorLayer(VectorLayer):
     id = "workareas"
-    tile_fields = (
-        "id",
-        "status",
-        "building_count",
-        "expected_visit_count",
-        "group_id",
-        "group_name",
-        "assignee_name",
-        "slug",
-        "visits_completed",
-        "implementation_area_name",
-    )
+    # Same fields the search box's sidebar detail serves, so a work area reads identically
+    # however the sidebar was populated.
+    tile_fields = MAP_WORK_AREA_FIELDS
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -657,12 +662,7 @@ class WorkAreaVectorLayer(VectorLayer):
         super().__init__(*args, **kwargs)
 
     def get_queryset(self):
-        qs = WorkArea.objects.filter(opportunity=self.opportunity).annotate(
-            group_id=F("work_area_group__id"),
-            group_name=F("work_area_group__name"),
-            assignee_name=F("opportunity_access__user__name"),
-            visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
-        )
+        qs = map_work_areas(self.opportunity)
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
 
 
@@ -756,6 +756,28 @@ def workareas_group_geojson(request, org_slug, opp_id):
     ]
     extent = qs.aggregate(extent=Extent("boundary"))["extent"]
     return JsonResponse({"group_features": group_features, "workarea_bounds": extent})
+
+
+@require_GET
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def search_options(request, org_slug, opp_id):
+    """Options for the map's work area search box, fetched once after the page loads."""
+    return JsonResponse({"options": work_area_search_options(request.opportunity)})
+
+
+@require_GET
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def work_area_detail_json(request, org_slug, opp_id, work_area_id):
+    """One work area's details, so picking it in the search box fills the sidebar without a
+    map click — the searched area is often outside the current viewport."""
+    detail = work_area_detail(request.opportunity, work_area_id)
+    if detail is None:
+        raise Http404("Work area not found")
+    return JsonResponse(detail)
 
 
 @org_admin_required
@@ -1152,25 +1174,20 @@ def save_assignment(request, org_slug, opp_id):
         if work_area.status == WorkAreaStatus.UNASSIGNED:
             work_area.status = WorkAreaStatus.NOT_VISITED
 
-    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access", "status"])
+    result = assign_work_areas_and_sync_to_hq(request.opportunity, all_work_areas, request.user)
+    assigned_ids = set(result["assigned_ids"])
+    notified_access_ids = {work_area_to_access[wa.id].id for wa in all_work_areas if wa.id in assigned_ids}
+    for access_id in notified_access_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
-    try:
-        bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
-    except CommCareHQAPIException:
-        transaction.set_rollback(True)
-        logger.exception("Failed to sync work area assignments to HQ for opportunity %s", request.opportunity.id)
+    if result["failed_ids"]:
         return JsonResponse(
             {
-                "error": _(
-                    "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact support."
-                )
+                "error": _("Failed to sync %(count)d work area(s) with CommCare HQ. Please try again.")
+                % {"count": len(result["failed_ids"])}
             },
             status=502,
         )
-
-    notified_access_ids = {access.id for access in work_area_to_access.values()}
-    for access_id in notified_access_ids:
-        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
     return JsonResponse({"status": "ok"})
 
