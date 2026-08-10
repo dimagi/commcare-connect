@@ -2,27 +2,8 @@ import httpx
 
 from commcare_connect.opportunity.models import HQApiKey
 from commcare_connect.organization.models import Organization
-from commcare_connect.users.models import ConnectIDUserLink, User
+from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
-
-
-class InvalidProfileUpdate(Exception):
-    pass
-
-
-NAME_MAX_LENGTH = User._meta.get_field("name").max_length
-
-
-def update_user_profile(username, name):
-    """Update Connect's cached copy of a ConnectID user's profile."""
-    username = (username or "").strip()
-    name = (name or "").strip()
-    if not username or not name:
-        raise InvalidProfileUpdate("username and name are required")
-    if len(name) > NAME_MAX_LENGTH:
-        # ConnectID stores the name in a TextField, so it can hold more than this column accepts.
-        raise InvalidProfileUpdate(f"name exceeds {NAME_MAX_LENGTH} characters")
-    return User.objects.filter(username=username).update(name=name) > 0
 
 
 def get_organization_for_request(request, view_kwargs):

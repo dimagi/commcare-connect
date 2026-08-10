@@ -434,8 +434,9 @@ class TestUpdateUserProfileView:
             authenticate_client.return_value = True
             return UpdateUserProfileView.as_view()(request)
 
-    def test_updates_name(self, mobile_user: User, rf: RequestFactory):
-        response = self._post(rf, {"username": mobile_user.username, "name": "New Name"})
+    @pytest.mark.parametrize("name", ["New Name", "  New Name  "], ids=["plain", "padded"])
+    def test_updates_name(self, mobile_user: User, rf: RequestFactory, name):
+        response = self._post(rf, {"username": mobile_user.username, "name": name})
 
         mobile_user.refresh_from_db()
         assert response.status_code == 200
@@ -448,11 +449,21 @@ class TestUpdateUserProfileView:
         assert response.status_code == 200
         assert json.loads(response.content) == {"updated": False}
 
-    def test_missing_name_is_a_bad_request(self, mobile_user: User, rf: RequestFactory):
-        original_name = mobile_user.name
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"name": "New Name"},
+            {"username": "   ", "name": "New Name"},
+            {"username": "a-worker"},
+            {"username": "a-worker", "name": "   "},
+        ],
+        ids=["no_username", "blank_username", "no_name", "blank_name"],
+    )
+    def test_invalid_data_is_a_bad_request(self, rf: RequestFactory, data):
+        worker = UserFactory(username="a-worker", name="Old Name")
 
-        response = self._post(rf, {"username": mobile_user.username})
+        response = self._post(rf, data)
 
-        mobile_user.refresh_from_db()
+        worker.refresh_from_db()
         assert response.status_code == 400
-        assert mobile_user.name == original_name
+        assert worker.name == "Old Name"

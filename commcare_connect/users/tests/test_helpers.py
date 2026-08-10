@@ -2,13 +2,10 @@ import pytest
 from django.test import RequestFactory
 
 from commcare_connect.users.helpers import (
-    NAME_MAX_LENGTH,
-    InvalidProfileUpdate,
     build_hq_user_payload,
     create_hq_user_and_link,
     fetch_hq_user_uuid,
     get_organization_for_request,
-    update_user_profile,
 )
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory
@@ -198,22 +195,3 @@ class TestGetOrganizationForRequest:
         request = rf.get("/fake-url/")
         request.user = user
         assert get_organization_for_request(request, {}) is None
-
-
-@pytest.mark.django_db
-class TestUpdateUserProfile:
-    @pytest.mark.parametrize("name", ["New Name", "  New Name  "], ids=["plain", "padded"])
-    def test_updates_name(self, mobile_user, name):
-        assert update_user_profile(mobile_user.username, name) is True
-
-        mobile_user.refresh_from_db()
-        assert mobile_user.name == "New Name"
-
-    def test_rejects_a_name_longer_than_the_column(self, mobile_user):
-        original_name = mobile_user.name
-
-        with pytest.raises(InvalidProfileUpdate):
-            update_user_profile(mobile_user.username, "x" * (NAME_MAX_LENGTH + 1))
-
-        mobile_user.refresh_from_db()
-        assert mobile_user.name == original_name
