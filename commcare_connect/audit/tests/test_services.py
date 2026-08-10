@@ -118,14 +118,15 @@ def test_entries_for_export_filters_by_selected_workers(make_audit_entry):
 @pytest.mark.django_db
 def test_stream_audit_report_csv_outputs_header_and_rows(make_audit_entry):
     report = AuditReportFactory()
-    make_audit_entry(report, "Bob", 0.5, in_range=False)  # out-of-range still exports raw value
-    make_audit_entry(report, "Ann", None, has_data=False)  # insufficient data -> "N/A"
+    # Out-of-range still exports the raw value; a worker without a phone number gets an empty column.
+    bob = make_audit_entry(report, "Bob", 0.5, in_range=False, phone_number="+2348031234567")
+    ann = make_audit_entry(report, "Ann", None, has_data=False)  # insufficient data -> "N/A"
 
     lines = "".join(stream_audit_report_csv(report)).splitlines()
 
-    assert lines[0] == "Connect Worker,Calc A"
-    assert "Ann,N/A" in lines
-    assert "Bob,0.5" in lines
+    assert lines[0] == "Connect Worker,Username,Phone Number,Calc A"
+    assert f"Ann,{ann.opportunity_access.user.username},,N/A" in lines
+    assert f"Bob,{bob.opportunity_access.user.username},+2348031234567,0.5" in lines
 
 
 @pytest.mark.django_db
@@ -170,4 +171,4 @@ def test_stream_audit_report_csv_appends_reference_range_to_header(isolated_regi
 
     header = "".join(stream_audit_report_csv(report)).splitlines()[0]
 
-    assert header == "Connect Worker,Calc A (0.5 - 1.0)"
+    assert header == "Connect Worker,Username,Phone Number,Calc A (0.5 - 1.0)"
