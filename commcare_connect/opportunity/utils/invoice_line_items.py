@@ -1,5 +1,5 @@
 import datetime
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 
 from django.db import transaction
@@ -37,7 +37,6 @@ def get_billable_completed_works_qs(opportunity, start_date, end_date):
 
 
 def billable_works_qs(opportunity):
-    """Approved works with an unbilled delta, unscoped by date."""
     return CompletedWork.objects.filter(
         opportunity_access__opportunity=opportunity,
         status=CompletedWorkStatus.approved,
@@ -68,13 +67,10 @@ class BillableRow:
 
 
 def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
-    """Price each billable work's delta into a BillableRow.
+    """ "Price each billable work's delta into a `BillableRow`.
 
-    `end_date` is the billing cutoff — the invoice's end date — and carries two roles: it bounds
-    which first-billing works are selected, and it is the month a late delta is attributed to (a
-    late delta bypasses the bound but still needs a month to be billed under).
-
-    for_update=True is only for writes. Read-only callers must leave it False.
+    `end_date` does double duty: it bounds which first-billing works are selected, and it is the
+    month a late delta is attributed to. `for_update=True` is for writes only.
     """
     works = get_billable_completed_works_qs(opportunity, start_date, end_date).select_related(
         "payment_unit__opportunity", "opportunity_access__user"
@@ -142,10 +138,6 @@ def group_line_items(rows, currency_code):
 
 
 def get_billable_line_items(opportunity, start_date, end_date):
-    """Returns billable line items computed from the current opportunity state.
-    Use `get_invoice_line_items` for an issued invoice, which reads the
-    persisted invoice snapshot.
-    """
     rows = _build_billable_rows(opportunity, start_date, end_date)
     return group_line_items(rows, opportunity.currency_code)
 
@@ -168,7 +160,6 @@ def bill_invoice(invoice, start_date, end_date):
 
 
 def _freeze_line_items(invoice, rows):
-    """Persist billed rows, advance each work's invoiced count, and update invoice totals."""
     # For display only: show the latest billed month's rate on the invoice.
     # Individual line items keep their own monthly rates and use it for calculations.
     invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
@@ -178,22 +169,7 @@ def _freeze_line_items(invoice, rows):
     invoice.amount_usd = sum(row.total_amount_usd for row in rows)
     invoice.save()
 
-    CompletedWorkInvoice.objects.bulk_create(
-        [
-            CompletedWorkInvoice(
-                invoice=invoice,
-                completed_work=row.completed_work,
-                month=row.month,
-                billed_count=row.billed_count,
-                flw_amount_local=row.flw_amount_local,
-                flw_amount_usd=row.flw_amount_usd,
-                org_amount_local=row.org_amount_local,
-                org_amount_usd=row.org_amount_usd,
-                exchange_rate=row.exchange_rate,
-            )
-            for row in rows
-        ]
-    )
+    CompletedWorkInvoice.objects.bulk_create([CompletedWorkInvoice(invoice=invoice, **asdict(row)) for row in rows])
 
     billed_works = []
     for row in rows:
@@ -214,14 +190,7 @@ def _billed_month(work, end_date):
 
 
 def _to_usd(amount_local: Decimal, exchange_rate: Decimal) -> Decimal:
-    """Round each row to cents before summing so `invoice.amount_usd` always equals
-    the sum of the stored rows. Although `DecimalField(decimal_places=2)` rounds on
-    save, leaving values at full precision in memory would allow invoice totals to
-    drift from persisted line items.
-
-    Keep the default `ROUND_HALF_EVEN` to match Django's `DecimalField`
-    quantization and existing backfilled rows.
-    """
+    """Using the default `ROUND_HALF_EVEN` to match Django's `DecimalField` quantization."""
     return (amount_local / exchange_rate).quantize(CENTS)
 
 
