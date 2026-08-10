@@ -25,7 +25,6 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.users.helpers import NAME_MAX_LENGTH
 from commcare_connect.users.models import User
 from commcare_connect.utils.itertools import batched
 
@@ -113,11 +112,6 @@ class Command(BaseCommand):
         if not new_name:
             # ConnectID allows a blank name; leave the existing local one alone.
             self.stderr.write(f"Skipping {user.username}: name is blank in ConnectID")
-            self.totals["skipped"] += 1
-            return False
-        if len(new_name) > NAME_MAX_LENGTH:
-            # ConnectID stores the name in a TextField, so it can hold more than this column accepts.
-            self.stderr.write(f"Skipping {user.username}: name exceeds {NAME_MAX_LENGTH} characters")
             self.totals["skipped"] += 1
             return False
         if user.name == new_name:
