@@ -10,12 +10,17 @@ from django.utils import timezone
 from django.utils.timezone import now
 
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
+from commcare_connect.data_export.serializer import OpportunityUserDataSerializer
+from commcare_connect.data_export.views import OpportunityUserDataView
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     BlobMetaFactory,
     OpportunityAccessFactory,
+    OpportunityClaimFactory,
+    OpportunityClaimLimitFactory,
+    PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -289,6 +294,74 @@ class TestAuditReportEntryDataView:
         url = reverse("data_export:audit_report_entry_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestOpportunityUserDataView:
+    def _build_view(self, opportunity):
+        view = OpportunityUserDataView()
+        view.opportunity = opportunity
+        return view
+
+    def _build_queryset(self, opportunity):
+        return self._build_view(opportunity).get_queryset(request=None, opp_id=opportunity.id)
+
+    def _create_claim_limit(self, opportunity):
+        claim = OpportunityClaimFactory(opportunity_access=OpportunityAccessFactory(opportunity=opportunity))
+        return OpportunityClaimLimitFactory(
+            opportunity_claim=claim,
+            payment_unit=PaymentUnitFactory(opportunity=opportunity),
+        )
+
+    def test_claim_limits_use_a_constant_number_of_queries(self, opportunity, django_assert_num_queries):
+        payment_units = [PaymentUnitFactory(opportunity=opportunity) for _ in range(2)]
+        for _ in range(3):
+            claim = OpportunityClaimFactory(
+                opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            )
+            for payment_unit in payment_units:
+                OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit)
+
+        queryset = self._build_queryset(opportunity)
+        # accesses (with their claim) + claim limits, regardless of how many users or claim limits there are
+        with django_assert_num_queries(2):
+            data = OpportunityUserDataSerializer(queryset, many=True).data
+
+        assert len(data) == 3
+        for row in data:
+            assert sorted(limit["payment_unit"] for limit in row["claim_limits"]) == sorted(
+                pu.id for pu in payment_units
+            )
+
+    def test_claim_limits_contents(self, opportunity):
+        claim_limit = self._create_claim_limit(opportunity)
+
+        (row,) = OpportunityUserDataSerializer(self._build_queryset(opportunity), many=True).data
+
+        assert row["claim_limits"] == [
+            {
+                "max_visits": claim_limit.max_visits,
+                "payment_unit": claim_limit.payment_unit_id,
+                "payment_unit_id": str(claim_limit.payment_unit.payment_unit_id),
+            }
+        ]
+
+    def test_csv_stream_keeps_the_prefetch(self, opportunity, django_assert_num_queries):
+        """The v1.0 path iterates the queryset, which only keeps prefetches when a chunk size is set."""
+        claim_limit = self._create_claim_limit(opportunity)
+
+        view = self._build_view(opportunity)
+        with django_assert_num_queries(2):
+            rows = list(view.get_data_generator(request=None, opp_id=opportunity.id))
+
+        assert str(claim_limit.max_visits) in rows[-1]
+
+    def test_access_without_claim_has_no_claim_limits(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+
+        (row,) = OpportunityUserDataSerializer(self._build_queryset(opportunity), many=True).data
+
+        assert row["claim_limits"] == []
 
 
 @pytest.mark.django_db
