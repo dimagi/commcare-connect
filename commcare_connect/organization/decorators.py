@@ -35,6 +35,27 @@ def user_is_program_manager_by_slug(user, org_slug):
     ).exists()
 
 
+def user_is_opportunity_admin(user, opportunity):
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=[opportunity.organization_id, opportunity.program.organization_id],
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+def user_is_opportunity_pm(user, opportunity):
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id=opportunity.program.organization_id,
+        organization__program_manager=True,
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
 class IsProgramManagerAdmin(BasePermission):
     """DRF permission: user must be admin of a program-manager organization."""
 

@@ -1,20 +1,26 @@
 import copy
 import csv
+import io
+import logging
 import uuid
 from collections import defaultdict
 
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import storages
+from django.db import transaction
 from django.db.models import Count, F, Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
+from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
 from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import GenericAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.versioning import AcceptHeaderVersioning
 from rest_framework.views import APIView
+from waffle import flag_is_active
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.data_export.const import (
@@ -45,10 +51,14 @@ from commcare_connect.data_export.serializer import (
     TaskTypeDataSerializer,
     UserVisitDataSerializer,
     UserVisitDataWithImagesSerializer,
+    WorkAreaBulkUpdateSerializer,
     WorkAreaDataSerializer,
     WorkAreaGroupDataSerializer,
+    WorkAreaGroupWriteSerializer,
 )
+from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -63,6 +73,7 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
+from commcare_connect.organization.decorators import user_is_opportunity_admin, user_is_opportunity_pm
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
@@ -71,6 +82,9 @@ from commcare_connect.utils.file import EchoWriter
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
+BULK_MAX_ITEMS = 100  # JSON bulk-update: per-item FK validation + possible HQ sync/notification
+CSV_IMPORT_MAX_ROWS = 500  # CSV bulk-create: closer to raw bulk_create, cheaper per row
+logger = logging.getLogger(__name__)
 
 
 class BaseDataExportView(APIView):
@@ -78,13 +92,60 @@ class BaseDataExportView(APIView):
     required_scopes = ["export"]
 
 
-class OpportunityDataExportView(BaseDataExportView):
-    def check_opportunity_permission(self, user, opp_id):
-        self.opportunity = _get_opportunity_or_404(user, opp_id)
+class BaseDataWriteView(APIView):
+    permission_classes = [IsAuthenticated, TokenHasScope]
+    required_scopes = ["write"]
+
+
+class OpportunityPermissionMixin:
+    opportunity_kwarg = "opp_id"
+
+    def check_opportunity_permission(self, user):
+        self.opportunity = _get_opportunity_or_404(
+            user,
+            self.kwargs[self.opportunity_kwarg],
+        )
 
     def check_permissions(self, request):
         super().check_permissions(request)
-        self.check_opportunity_permission(request.user, self.kwargs.get("opp_id"))
+        self.check_opportunity_permission(request.user)
+
+
+class OpportunityDataExportView(OpportunityPermissionMixin, BaseDataExportView):
+    pass
+
+
+class OpportunityAdminView(OpportunityPermissionMixin, BaseDataWriteView):
+    def check_opportunity_permission(self, user):
+        super().check_opportunity_permission(user)
+        if not user_is_opportunity_admin(user, self.opportunity):
+            raise NotFound()
+
+
+class MicroplanningFlagRequiredMixin:
+    def check_opportunity_permission(self, user):
+        if not hasattr(super(), "check_opportunity_permission"):
+            raise ImproperlyConfigured(
+                "MicroplanningFlagRequiredMixin must be combined with OpportunityPermissionMixin "
+                "listed after it in the class bases."
+            )
+        super().check_opportunity_permission(user)
+        # flag_is_active() reads request.opportunity for opportunity-scoped flags; these
+        # API views aren't behind OrganizationMiddleware, so it's never set otherwise.
+        self.request.opportunity = self.opportunity
+        if not flag_is_active(self.request, MICROPLANNING):
+            raise NotFound("Microplanning flag is not enabled for this opportunity.")
+
+
+class BulkListMixin:
+    """Forces list input and caps batch size, so an unbounded payload can't blow up memory
+    or DB pressure. DRF's ListSerializer already supports `max_length` natively. Shared by
+    bulk-create and bulk-update views."""
+
+    def get_serializer(self, *args, **kwargs):
+        kwargs["many"] = True
+        kwargs["max_length"] = BULK_MAX_ITEMS
+        return super().get_serializer(*args, **kwargs)
 
 
 class BaseDataExportListView(BaseDataExportView):
@@ -643,3 +704,153 @@ class LLOEntityDataView(BaseDataExportListViewV2):
 
     def get_queryset(self, *args, **kwargs):
         return LLOEntity.objects.all()
+
+
+class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):
+    """Upsert: creates a WorkAreaGroup when the payload has no `id`, updates the matching
+    one (scoped to this opportunity)"""
+
+    def post(self, request, *args, **kwargs):
+        pk = request.data.get("id")
+        instance = None
+        if pk:
+            try:
+                instance = WorkAreaGroup.objects.get(pk=pk, opportunity=self.opportunity)
+            except WorkAreaGroup.DoesNotExist:
+                raise NotFound()
+
+        serializer = WorkAreaGroupWriteSerializer(
+            instance, data=request.data, partial=bool(instance), context={"view": self}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK if instance else status.HTTP_201_CREATED)
+
+
+class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, BulkListMixin, GenericAPIView):
+    http_method_names = ["patch", "options"]
+    serializer_class = WorkAreaBulkUpdateSerializer
+
+    def patch(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        assigning_access = any("opportunity_access" in item for item in serializer.validated_data)
+        if assigning_access and not user_is_opportunity_pm(request.user, self.opportunity):
+            raise NotFound()
+
+        try:
+            serializer.save()
+        except CommCareHQAPIException:
+            transaction.set_rollback(True)
+            logger.exception("Failed to bulk sync work areas to HQ for opportunity %s", self.opportunity.id)
+            return Response(
+                {
+                    "error": _(
+                        "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact us."
+                    )
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        assign_result = getattr(serializer, "assign_result", None)
+        if assign_result and assign_result["failed_ids"]:
+            return Response(
+                {
+                    "error": _("Failed to sync %(count)d work area(s) with CommCare HQ. Please try again.")
+                    % {"count": len(assign_result["failed_ids"])}
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        unassign_result = getattr(serializer, "unassign_result", None)
+        if unassign_result:
+            return Response(
+                {
+                    "results": serializer.data,
+                    "unassign_skipped": unassign_result["skipped"],
+                    "unassign_failed_ids": unassign_result["failed_ids"],
+                }
+            )
+        return Response(serializer.data)
+
+
+class CSVImporterBulkCreateView(APIView):
+    csv_importer_class = None
+    item_name = "items"
+
+    def get_fieldnames(self):
+        return list(self.csv_importer_class.HEADERS.values())
+
+    def row_from_item(self, item):
+        raise NotImplementedError
+
+    def items_to_csv(self, items):
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=self.get_fieldnames())
+        writer.writeheader()
+        for item in items:
+            writer.writerow(self.row_from_item(item))
+        buffer.seek(0)
+        return buffer
+
+    def post(self, request, *args, **kwargs):
+        items = request.data
+        if not isinstance(items, list):
+            return Response(
+                {"error": _("Expected a list of %(name)s.") % {"name": self.item_name}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(items) > CSV_IMPORT_MAX_ROWS:
+            return Response(
+                {"error": _("Ensure this list has no more than %(max)d elements.") % {"max": CSV_IMPORT_MAX_ROWS}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        csv_source = self.items_to_csv(items)
+        result = self.csv_importer_class(self.opportunity.id, csv_source).run()
+
+        if "errors" in result:
+            return Response({"errors": list(result["errors"].keys())}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView):
+    csv_importer_class = WorkAreaCSVImporter
+    item_name = "Work Areas"
+
+    def get_fieldnames(self):
+        return [
+            *WorkAreaCSVImporter.HEADERS.values(),
+            WorkAreaCSVImporter.GROUP_NAME_HEADER,
+            WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+        ]
+
+    def row_from_item(self, item):
+        return {
+            "Area Slug": item.get("slug", ""),
+            "Ward": item.get("ward", ""),
+            "Centroid": item.get("centroid", ""),
+            "Boundary": item.get("boundary", ""),
+            "Building Count": item.get("building_count", 0),
+            "Expected Visit Count": item.get("expected_visit_count", 0),
+            "Target Population": item.get("target_population", 0),
+            "LGA": item.get("lga", ""),
+            "State": item.get("state", ""),
+            "Work Area Group Name": item.get("work_area_group_name", ""),
+            "Implementation Area": item.get("implementation_area_name", ""),
+        }
+
+
+class ImplementationAreaBulkCreateView(
+    MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView
+):
+    csv_importer_class = ImplementationAreaCSVImporter
+    item_name = "Implementation Areas"
+
+    def row_from_item(self, item):
+        return {
+            "Implementation Area Name": item.get("name", ""),
+            "Centroid": item.get("centroid", ""),
+            "Boundary": item.get("boundary", ""),
+        }
