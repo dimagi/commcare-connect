@@ -100,6 +100,11 @@ class TestMoney:
             Money.zero() + Decimal("10")
 
 
+def billable_rows(opportunity, start_date, end_date):
+    works = get_billable_completed_works_qs(opportunity, start_date, end_date)
+    return _build_billable_rows(works, opportunity.currency_code, end_date)
+
+
 @pytest.mark.django_db
 class TestBillableSelection:
     @pytest.mark.parametrize(
@@ -129,7 +134,7 @@ class TestBillableRows:
         access, payment_unit = billing_setup
         completed_work(access, payment_unit, approved=3, invoiced=1)
 
-        (row,) = _build_billable_rows(access.opportunity, JAN, FEB_END)
+        (row,) = billable_rows(access.opportunity, JAN, FEB_END)
 
         assert row.billed_count == 2
         assert row.flw_pay.local == Decimal("200")
@@ -151,7 +156,7 @@ class TestBillableRows:
         access, payment_unit = billing_setup
         completed_work(access, payment_unit, approved=approved, invoiced=invoiced, approved_on=JAN_APPROVAL)
 
-        (row,) = _build_billable_rows(access.opportunity, JAN, FEB_END)
+        (row,) = billable_rows(access.opportunity, JAN, FEB_END)
 
         assert row.month == expected_month
 
@@ -160,7 +165,7 @@ class TestBillableRows:
         access, _ = billing_setup
 
         with pytest.raises(ValueError):
-            _build_billable_rows(access.opportunity, start_date, end_date)
+            billable_rows(access.opportunity, start_date, end_date)
 
 
 @pytest.mark.django_db
@@ -173,7 +178,7 @@ class TestLineItemGrouping:
         completed_work(access, other_unit)
         completed_work(access, payment_unit, approved=2, invoiced=1)  # late delta -> February
 
-        items = group_line_items(_build_billable_rows(access.opportunity, JAN, FEB_END))
+        items = group_line_items(billable_rows(access.opportunity, JAN, FEB_END))
 
         assert [item.month for item in items] == [JAN, JAN, FEB]
         by_key = {(item.month, item.payment_unit_name): item for item in items}
@@ -198,7 +203,7 @@ class TestLineItemGrouping:
         completed_work(access, payment_unit)
         completed_work(access, twin)
 
-        items = group_line_items(_build_billable_rows(access.opportunity, JAN, JAN_END))
+        items = group_line_items(billable_rows(access.opportunity, JAN, JAN_END))
 
         assert [item.payment_unit_name for item in items] == [payment_unit.name, payment_unit.name]
         assert sorted(item.total_pay.local for item in items) == [Decimal("7"), Decimal("120")]

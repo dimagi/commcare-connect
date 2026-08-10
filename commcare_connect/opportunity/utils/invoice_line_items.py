@@ -30,9 +30,14 @@ def get_billable_completed_works_qs(opportunity, start_date, end_date):
     if start_date is None or end_date is None:
         raise ValueError("start_date and end_date are required")
 
-    return billable_works_qs(opportunity).filter(
-        Q(invoiced_approved_count__gt=0)
-        | Q(status_modified_date__date__gte=start_date, status_modified_date__date__lte=end_date)
+    return (
+        billable_works_qs(opportunity)
+        .filter(
+            Q(invoiced_approved_count__gt=0)
+            | Q(status_modified_date__date__gte=start_date, status_modified_date__date__lte=end_date)
+        )
+        .select_related("payment_unit__opportunity", "opportunity_access__user")
+        .order_by("id")
     )
 
 
@@ -86,22 +91,15 @@ class BillableRow:
         return self.flw_pay + self.org_pay
 
 
-def _build_billable_rows(opportunity, start_date, end_date, for_update=False):
-    """ "Price each billable work's delta into a `BillableRow`.
+def _build_billable_rows(works, currency_code, end_date):
+    """Price each billable work's delta into a `BillableRow`.
 
-    `end_date` does double duty: it bounds which first-billing works are selected, and it is the
-    month a late delta is attributed to. `for_update=True` is for writes only.
+    `end_date` serves two purposes: it bounds the first-billing works selected
+    and determines the month to which a late delta is attributed.
     """
-    works = get_billable_completed_works_qs(opportunity, start_date, end_date).select_related(
-        "payment_unit__opportunity", "opportunity_access__user"
-    )
-    if for_update:
-        works = works.select_for_update(of=("self",))
-
-    currency_code = opportunity.currency_code
     rates_by_month = {}
     rows = []
-    for work in works.order_by("id"):
+    for work in works:
         month = _billed_month(work, end_date)
         if month not in rates_by_month:
             rates_by_month[month] = ExchangeRate.latest_exchange_rate(currency_code, month)
@@ -162,8 +160,8 @@ def group_line_items(rows):
 
 
 def get_billable_line_items(opportunity, start_date, end_date):
-    rows = _build_billable_rows(opportunity, start_date, end_date)
-    return group_line_items(rows)
+    works = get_billable_completed_works_qs(opportunity, start_date, end_date)
+    return group_line_items(_build_billable_rows(works, opportunity.currency_code, end_date))
 
 
 def bill_invoice(invoice, start_date, end_date):
@@ -173,8 +171,10 @@ def bill_invoice(invoice, start_date, end_date):
     `_freeze_line_items`, and only if there is a delta to bill, so a caller with nothing billable
     gets `[]` back and no invoice row.
     """
+    opportunity = invoice.opportunity
     with transaction.atomic():
-        rows = _build_billable_rows(invoice.opportunity, start_date, end_date, for_update=True)
+        works = get_billable_completed_works_qs(opportunity, start_date, end_date).select_for_update(of=("self",))
+        rows = _build_billable_rows(works, opportunity.currency_code, end_date)
         if not rows:
             return []
 
@@ -185,7 +185,6 @@ def bill_invoice(invoice, start_date, end_date):
 
 def _freeze_line_items(invoice, rows):
     # For display only: show the latest billed month's rate on the invoice.
-    # Individual line items keep their own monthly rates and use it for calculations.
     invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
         invoice.opportunity.currency_code, max(row.month for row in rows)
     )
