@@ -22,13 +22,15 @@ CENTS = Decimal("0.01")
 def get_billable_completed_works_qs(opportunity, start_date, end_date):
     """Approved works that still have unbilled units.
 
-    `invoiced_approved_count` decides what is billable; the dates only *scope* it:
+    `saved_approved_count > invoiced_approved_count` decides what is billable.
 
-    - first-billing works (`invoiced_approved_count == 0`) are scoped by the window, where their
-      `status_modified_date` is meaningful;
-    - late deltas (already partly billed) bypass the window entirely. A late duplicate keeps the
-      work at `approved`, so its `status_modified_date` never moves off the original approval;
-      windowing that stale date would silently defer a delta that must bill now.
+    - a work with no first billing is scoped by the window, where its `status_modified_date` is
+      meaningful. One approved outside the window is deferred, not billed, and waits for a window
+      that covers its approval month. Automated invoicing reaches back for it via
+      `get_start_date_for_invoice`; a hand-typed window will not.
+    - a late delta (a work already first-billed) bypasses the window entirely. A late duplicate
+      keeps the work at `approved`, so its `status_modified_date` never moves off the original
+      approval; windowing that stale date would silently defer a delta that must bill now.
     """
     if start_date is None or end_date is None:
         raise ValueError("start_date and end_date are required")
@@ -36,7 +38,7 @@ def get_billable_completed_works_qs(opportunity, start_date, end_date):
     return (
         billable_works_qs(opportunity)
         .filter(
-            Q(invoiced_approved_count__gt=0)
+            Q(has_first_billing=True)
             | Q(status_modified_date__date__gte=start_date, status_modified_date__date__lte=end_date)
         )
         .select_related("payment_unit__opportunity", "opportunity_access__user")
@@ -324,10 +326,10 @@ def _freeze_line_items(invoice, rows):
 
 
 def _billed_month(work, end_date):
-    """First billing keeps the work's real approval month, so catch-up months stay accurate; a late
-    delta takes the billing month, because its `status_modified_date` is frozen at the original
+    """A first billing keeps the work's real approval month, so catch-up months stay accurate; a
+    late delta takes the billing month, because its `status_modified_date` is frozen at the original
     approval (it only moves on a *status* change, and a late duplicate stays `approved`).
     """
-    if work.invoiced_approved_count == 0 and work.status_modified_date:
+    if not work.has_first_billing and work.status_modified_date:
         return get_month_start_date(work.status_modified_date)
     return get_month_start_date(end_date)

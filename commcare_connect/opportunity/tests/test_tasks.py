@@ -48,6 +48,7 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    CompletedWorkInvoiceFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -467,19 +468,30 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             saved_approved_count=1,
             invoiced_approved_count=1,
         )
+        # November was already billed, so the first-billing snapshot prevents the next
+        # unit from being treated as a first billing and backdating to November.
+        earlier_invoice = CompletedWorkInvoiceFactory(
+            invoice__opportunity=opportunity,
+            completed_work=work,
+            billed_count=1,
+            month=datetime.date(2023, 11, 1),
+            is_delta=False,
+        ).invoice
+        new_invoices = PaymentInvoice.objects.exclude(pk=earlier_invoice.pk)
 
         generate_automated_service_delivery_invoice()
-        assert PaymentInvoice.objects.count() == 0  # fully billed: no empty invoice is left behind
+        assert not new_invoices.exists()  # fully billed: no empty invoice is left behind
 
         work.saved_approved_count = 2
         work.save(update_fields=["saved_approved_count"])
 
         generate_automated_service_delivery_invoice()
 
-        invoice = PaymentInvoice.objects.get(opportunity=opportunity)
+        invoice = new_invoices.get(opportunity=opportunity)
         row = invoice.work_items.get()
         assert row.billed_count == 1
         assert row.month == datetime.date(2024, 1, 1)  # the billing month, not November 2023
+        assert row.is_delta is True
         assert invoice.start_date == datetime.date(2024, 1, 1)  # the window start, which is the billed month
         assert invoice.end_date == datetime.date(2024, 1, 31)
         assert invoice.amount == Decimal("100.00")

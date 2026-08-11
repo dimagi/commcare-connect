@@ -418,6 +418,63 @@ class TestRollbackInvoiceLineItems:
 
 
 @pytest.mark.django_db
+class TestCancelledFirstBilling:
+
+    @pytest.fixture
+    def cancelled_first_billing(self, billing_setup):
+        """January first-bills one unit, February bills a late duplicate,
+        then January is cancelled. One unit is billable again and `invoiced` sits at 1, not 0."""
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit, approved=1, approved_on=JAN_APPROVAL)
+        january = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, amount=0, amount_usd=0)
+        bill_invoice(january, start_date=JAN, end_date=JAN_END)
+        work.saved_approved_count = 2
+        work.save(update_fields=["saved_approved_count"])
+        february = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, amount=0, amount_usd=0)
+        bill_invoice(february, start_date=FEB, end_date=FEB_END)
+
+        rollback_invoice_line_items(january)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 1  # February's billing still counts
+        assert [row.is_delta for row in february.work_items.all()] == [True]
+        return access, work
+
+    @pytest.mark.parametrize(
+        "window, billable",
+        [
+            # Re-issuing the cancelled period picks the unit back up...
+            pytest.param((JAN, JAN_END), True, id="reissued-same-period"),
+            # ...but a window that does not cover January defers it, the same as any work still
+            # awaiting a first billing. Automated invoicing self-heals this via its start date.
+            pytest.param((MAR, MAR_END), False, id="later-custom-window-defers-it"),
+        ],
+    )
+    def test_selection_windows_the_work_again(self, cancelled_first_billing, window, billable):
+        access, work = cancelled_first_billing
+
+        qs = get_billable_completed_works_qs(access.opportunity, *window)
+
+        assert list(qs) == ([work] if billable else [])
+
+    def test_rebilling_attributes_it_to_its_approval_month(self, cancelled_first_billing):
+        access, _ = cancelled_first_billing
+        reissued = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, amount=0, amount_usd=0)
+
+        bill_invoice(reissued, start_date=JAN, end_date=MAR_END)
+
+        row = reissued.work_items.get()
+        assert row.billed_count == 1
+        assert row.month == JAN  # its approval month, not the invoice's
+        assert row.is_delta is False
+
+    def test_start_date_reaches_back_to_the_approval_month(self, cancelled_first_billing):
+        access, _ = cancelled_first_billing
+
+        assert get_start_date_for_invoice(access.opportunity) == JAN
+
+
+@pytest.mark.django_db
 class TestInvoicedLineItems:
     def test_reads_frozen_rows_grouped_by_payment_unit_and_month(self, billing_setup):
         access, payment_unit = billing_setup
