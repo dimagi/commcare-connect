@@ -1,7 +1,6 @@
 import uuid
 from urllib.parse import urlencode
 
-from allauth.account.models import transaction
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
@@ -9,6 +8,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
