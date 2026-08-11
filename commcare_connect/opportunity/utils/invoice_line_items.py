@@ -197,6 +197,7 @@ def get_invoice_line_items(invoice):
 class DeliveryRow:
     completed_work: CompletedWork
     billed_count: int
+    month: datetime.date
     flw_pay: Money
     org_pay: Money
 
@@ -213,6 +214,7 @@ def get_invoice_delivery_rows(invoice):
         DeliveryRow(
             completed_work=item.completed_work,
             billed_count=item.billed_count,
+            month=item.month,
             flw_pay=Money(item.flw_amount_local, item.flw_amount_usd),
             org_pay=Money(item.org_amount_local, item.org_amount_usd),
         )
@@ -226,6 +228,7 @@ def get_billable_delivery_rows(opportunity, start_date, end_date):
         DeliveryRow(
             completed_work=row.completed_work,
             billed_count=row.billed_count,
+            month=row.month,
             flw_pay=row.flw_pay,
             org_pay=row.org_pay,
         )

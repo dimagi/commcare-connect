@@ -150,19 +150,22 @@ class TestBillableRows:
         assert row.total_pay.usd == Decimal("240")
 
     @pytest.mark.parametrize(
-        "approved, invoiced, expected_month",
+        "approved, invoiced, end_date, expected_month",
         [
-            pytest.param(1, 0, JAN, id="first-billing-takes-its-approval-month"),
+            pytest.param(1, 0, FEB_END, JAN, id="first-billing-takes-its-approval-month"),
             # A late delta's status_modified_date is frozen at the January approval, so it can only
             # be billed under the month the invoice covers.
-            pytest.param(2, 1, FEB, id="late-delta-takes-the-billing-month"),
+            pytest.param(2, 1, FEB_END, FEB, id="late-delta-takes-the-billing-month"),
+            # An NM types the window by hand, so the end date need not be a month end. The delta
+            # takes the month it falls in, truncated to the 1st.
+            pytest.param(2, 1, date(2026, 3, 15), MAR, id="late-delta-takes-a-mid-month-end-date"),
         ],
     )
-    def test_attributes_the_delta_to_a_month(self, billing_setup, approved, invoiced, expected_month):
+    def test_attributes_the_delta_to_a_month(self, billing_setup, approved, invoiced, end_date, expected_month):
         access, payment_unit = billing_setup
         completed_work(access, payment_unit, approved=approved, invoiced=invoiced, approved_on=JAN_APPROVAL)
 
-        (row,) = billable_rows(access.opportunity, JAN, FEB_END)
+        (row,) = billable_rows(access.opportunity, JAN, end_date)
 
         assert row.month == expected_month
 
@@ -440,6 +443,7 @@ class TestDeliveryRows:
 
         assert row.completed_work == work
         assert row.billed_count == 2  # the unbilled delta, not saved_approved_count
+        assert row.month == FEB  # a late delta bills under the invoice's month
         assert row.flw_pay.local == Decimal("200")
         assert row.org_pay.local == Decimal("40")
         assert row.total_pay.local == Decimal("240")
@@ -463,6 +467,24 @@ class TestDeliveryRows:
         assert frozen.total_pay.local == Decimal("120")
         assert billable.billed_count == 2
         assert billable.total_pay.local == Decimal("240")
+
+    def test_a_month_mixes_first_billings_and_deltas(self, billing_setup):
+        access, payment_unit = billing_setup
+        late = completed_work(access, payment_unit, approved_on=JAN_APPROVAL, approved=1, invoiced=0)
+        january = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
+        bill_invoice(january, start_date=JAN, end_date=JAN_END)
+        late.saved_approved_count = 2
+        late.save(update_fields=["saved_approved_count"])
+        fresh = completed_work(access, payment_unit, approved_on=FEB_APPROVAL)
+
+        february = self._invoice(access.opportunity, start_date=FEB, end_date=FEB_END)
+        bill_invoice(february, start_date=FEB, end_date=FEB_END)
+
+        rows = {row.completed_work: row for row in get_invoice_delivery_rows(february)}
+
+        assert {row.month for row in rows.values()} == {FEB}
+        assert rows[late].billed_count == 1
+        assert rows[fresh].billed_count == 1
 
 
 @pytest.mark.django_db

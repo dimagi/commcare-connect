@@ -81,6 +81,7 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
             opportunity_access=OpportunityAccess(user=User(name="flw")),
         ),
         billed_count=1,
+        month=datetime.date(2026, 1, 1),
         flw_pay=Money(Decimal("40"), Decimal("4")),
         org_pay=Money(Decimal("10"), Decimal("1")),
     )
@@ -94,6 +95,7 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
     assert row["Org Pay (KES)"] == 10
     assert row["Total Pay (KES)"] == 50  # 40 + 10
     assert row["Total Pay (USD)"] == 5  # 4 + 1
+    assert row["Billing Month"] == datetime.date(2026, 1, 1)
 
 
 def _make_table(opportunity, per_page=25):
