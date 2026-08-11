@@ -13,6 +13,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
+    CompletedWorkInvoiceFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
     PaymentInvoiceFactory,
@@ -63,7 +64,7 @@ def completed_work(
     approved_on=JAN_APPROVAL,
     status=CompletedWorkStatus.approved,
 ):
-    return CompletedWorkFactory(
+    work = CompletedWorkFactory(
         opportunity_access=access,
         payment_unit=payment_unit,
         status=status,
@@ -71,6 +72,15 @@ def completed_work(
         invoiced_approved_count=invoiced,
         status_modified_date=approved_on,
     )
+    if invoiced:
+        CompletedWorkInvoiceFactory(
+            invoice__opportunity=access.opportunity,
+            completed_work=work,
+            billed_count=invoiced,
+            month=get_month_start_date(approved_on),
+            is_delta=False,
+        )
+    return work
 
 
 class TestMoney:
@@ -232,14 +242,14 @@ class TestCreateInvoiceLineItems:
         )
 
     @pytest.mark.parametrize(
-        "approved, invoiced, expected_month",
+        "approved, invoiced, expected_month, expected_delta",
         [
-            pytest.param(2, 0, JAN, id="first-billing"),
-            pytest.param(3, 1, FEB, id="late-delta"),
+            pytest.param(2, 0, JAN, False, id="first-billing"),
+            pytest.param(3, 1, FEB, True, id="late-delta"),
         ],
     )
     def test_snapshots_the_delta_and_advances_the_invoiced_count(
-        self, billing_setup, approved, invoiced, expected_month
+        self, billing_setup, approved, invoiced, expected_month, expected_delta
     ):
         access, payment_unit = billing_setup
         work = completed_work(access, payment_unit, approved=approved, invoiced=invoiced)
@@ -250,6 +260,7 @@ class TestCreateInvoiceLineItems:
         row = CompletedWorkInvoice.objects.get(invoice=invoice, completed_work=work)
         assert row.billed_count == 2  # both cases have two unbilled units
         assert row.month == expected_month
+        assert row.is_delta is expected_delta
         assert row.flw_amount_local == Decimal("200")
         assert row.flw_amount_usd == Decimal("200")
         assert row.org_amount_local == Decimal("40")
@@ -312,12 +323,13 @@ class TestCreateInvoiceLineItems:
         access, payment_unit = billing_setup
         completed_work(access, payment_unit, approved=1, invoiced=1)  # fully billed
         invoice = self._invoice(access.opportunity)
+        # Only what the earlier billing left behind; this call must add nothing to either table.
+        before = (PaymentInvoice.objects.count(), CompletedWorkInvoice.objects.count())
 
         assert bill_invoice(invoice, start_date=JAN, end_date=FEB_END) == []
 
         assert invoice.pk is None
-        assert not PaymentInvoice.objects.filter(opportunity=access.opportunity).exists()
-        assert not CompletedWorkInvoice.objects.exists()
+        assert (PaymentInvoice.objects.count(), CompletedWorkInvoice.objects.count()) == before
 
     @pytest.mark.parametrize(
         "second_window, expected_month",

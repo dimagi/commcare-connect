@@ -977,6 +977,9 @@ class CompletedWorkInvoice(BaseModel):
         related_name="completed_work_invoices",
         help_text=gettext_lazy("ExchangeRate row used for this row's month."),
     )
+    # True when this billing represents additional approved work
+    # obtained after the initial billing.
+    is_delta = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("invoice", "completed_work")

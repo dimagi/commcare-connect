@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from django.db import transaction
-from django.db.models import F, Max, Q, Sum
+from django.db.models import Exists, F, Max, OuterRef, Q, Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -49,6 +49,8 @@ def billable_works_qs(opportunity):
         opportunity_access__opportunity=opportunity,
         status=CompletedWorkStatus.approved,
         saved_approved_count__gt=F("invoiced_approved_count"),
+    ).annotate(
+        has_first_billing=Exists(CompletedWorkInvoice.objects.filter(completed_work=OuterRef("pk"), is_delta=False))
     )
 
 
@@ -88,6 +90,7 @@ class BillableRow:
     flw_pay: Money
     org_pay: Money
     exchange_rate: ExchangeRate
+    is_delta: bool
 
     @property
     def total_pay(self) -> Money:
@@ -118,6 +121,7 @@ def _build_billable_rows(works, currency_code, end_date):
                 flw_pay=Money.from_local_amount(Decimal(billed_count * work.payment_unit.amount), rate),
                 org_pay=Money.from_local_amount(Decimal(billed_count * work.payment_unit.org_amount), rate),
                 exchange_rate=exchange_rate,
+                is_delta=work.has_first_billing,
             )
         )
     return rows
@@ -305,6 +309,7 @@ def _freeze_line_items(invoice, rows):
                 org_amount_local=row.org_pay.local,
                 org_amount_usd=row.org_pay.usd,
                 exchange_rate=row.exchange_rate,
+                is_delta=row.is_delta,
             )
             for row in rows
         ]
