@@ -333,6 +333,10 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             mock.patch("commcare_connect.opportunity.tasks.get_end_date_previous_month") as mock_end_date,
             mock.patch("commcare_connect.opportunity.tasks.generate_invoice_number") as mock_invoice_number,
             mock.patch(
+                "commcare_connect.opportunity.tasks.OPPORTUNITY_AUTO_INVOICE_START_DATE",
+                datetime.date(2020, 1, 1),
+            ),
+            mock.patch(
                 "commcare_connect.opportunity.models.ExchangeRate.latest_exchange_rate",
                 create=True,
             ) as mock_latest_exchange_rate,
@@ -456,8 +460,28 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert completed_work.invoiced_approved_count == 0
         assert not CompletedWorkInvoice.objects.exists()
 
+    def test_no_invoice_for_opportunity_starting_before_the_cutoff(self):
+        cutoff = datetime.date(2026, 1, 1)
+        opportunity = OpportunityFactory(active=True, is_test=False, start_date=cutoff - datetime.timedelta(days=1))
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 5),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
+        )
+
+        with mock.patch("commcare_connect.opportunity.tasks.OPPORTUNITY_AUTO_INVOICE_START_DATE", cutoff):
+            generate_automated_service_delivery_invoice()
+
+        assert PaymentInvoice.objects.count() == 0
+        assert not CompletedWorkInvoice.objects.exists()
+
     def test_late_delta_bills_on_the_next_automated_invoice(self):
-        opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2023, 1, 1))
         payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"), org_amount=0)
         access = OpportunityAccessFactory(opportunity=opportunity)
         work = CompletedWorkFactory(

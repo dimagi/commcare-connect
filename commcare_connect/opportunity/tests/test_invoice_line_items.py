@@ -465,7 +465,7 @@ class TestCancelledFirstBilling:
 
         row = reissued.work_items.get()
         assert row.billed_count == 1
-        assert row.month == JAN  # its approval month, not the invoice's
+        assert row.month == JAN  # its approval month
         assert row.is_delta is False
 
     def test_start_date_reaches_back_to_the_approval_month(self, cancelled_first_billing):

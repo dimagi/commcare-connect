@@ -72,6 +72,7 @@ logger = logging.getLogger(__name__)
 
 OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
 OPPORTUNITY_AUTO_ARCHIVE_DAYS = 30
+OPPORTUNITY_AUTO_INVOICE_START_DATE = datetime.date(2026, 1, 1)
 SYSTEM = "system"
 
 
@@ -674,12 +675,11 @@ def generate_automated_service_delivery_invoice():
     CHUNK_SIZE = 100
     end_date_prev_month = get_end_date_previous_month()
 
-    opp_start_date = datetime.date(2026, 1, 1)
     created_invoices_ids = []
 
-    for opportunity in Opportunity.objects.filter(active=True, is_test=False, start_date__gte=opp_start_date).iterator(
-        chunk_size=CHUNK_SIZE
-    ):
+    for opportunity in Opportunity.objects.filter(
+        active=True, is_test=False, start_date__gte=OPPORTUNITY_AUTO_INVOICE_START_DATE
+    ).iterator(chunk_size=CHUNK_SIZE):
         window_start = get_start_date_for_invoice(opportunity)
         # Below indicates there are no unbilled completed works to invoice in previous month or earlier
         if window_start > end_date_prev_month:
