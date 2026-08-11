@@ -7,7 +7,9 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
+from allauth.socialaccount.models import SocialApp
 from django.contrib.messages import get_messages
+from django.contrib.sites.models import Site
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.core.files.storage.handler import StorageHandler
@@ -79,6 +81,12 @@ from commcare_connect.users.tests.factories import (
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
+
+
+def _create_ocs_social_app():
+    app = SocialApp.objects.create(provider="ocs", name="ocs", client_id="ocs-client", secret="ocs-secret")
+    app.sites.add(Site.objects.get_current())
+    return app
 
 
 @pytest.mark.django_db
@@ -2507,6 +2515,7 @@ class TestEditAssignedTask:
         return reverse("opportunity:edit_assigned_task", args=(opp.organization.slug, opp.opportunity_id, task.pk))
 
     def test_list_page_renders_edit_button(self, client, program_manager_org_user_admin, opp, assigned_task):
+        _create_ocs_social_app()
         client.force_login(program_manager_org_user_admin)
         url = reverse("opportunity:assigned_task_list", args=(opp.organization.slug, opp.opportunity_id))
         response = client.get(url)
@@ -2679,6 +2688,7 @@ class TestCreateTask:
         assert any("chatbot" in str(m).lower() for m in msgs)
 
     def test_create_task_invalid_form(self, client, program_manager_org_user_admin, opportunity):
+        _create_ocs_social_app()
         client.force_login(program_manager_org_user_admin)
         response = client.post(self._url(opportunity), data={})
         assert response.status_code == HTTPStatus.OK
