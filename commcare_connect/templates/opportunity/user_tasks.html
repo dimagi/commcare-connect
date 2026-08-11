@@ -90,7 +90,7 @@
     <div class="w-full grid grid-cols-10 gap-2 min-h-[600px]">
       <div class="col-span-6" hx-indicator="#loading-spinner">
         <div class="w-full"
-             hx-get="{% url 'opportunity:user_tasks_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
+             hx-get="{% url 'opportunity:user_tasks_table' request.org.slug opportunity.opportunity_id %}{% querystring_replace %}"
              hx-trigger="load"
              hx-swap="innerHTML">
           <div class="table-container flex flex-col gap-2 mb-1">
