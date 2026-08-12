@@ -8,10 +8,10 @@ from commcare_connect.organization.merge import (
     _move_program_watchers,
     merge_organizations,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -195,3 +195,28 @@ class TestProgramApplications:
         assert program.organization == target
         assert not ProgramApplication.objects.filter(program=program).exists()
         assert summary.self_applications_removed == 1
+
+
+class TestMemberships:
+    def test_source_only_membership_moves(self, source, target):
+        membership = MembershipFactory(organization=source, role="member")
+
+        summary = merge_organizations(source, target)
+
+        membership.refresh_from_db()
+        assert membership.organization == target
+        assert summary.memberships_moved == 1
+        assert summary.memberships_discarded == 0
+
+    def test_target_role_wins_when_the_user_is_in_both(self, source, target):
+        user = UserFactory()
+        MembershipFactory(organization=source, user=user, role="admin")
+        MembershipFactory(organization=target, user=user, role="viewer")
+
+        summary = merge_organizations(source, target)
+
+        membership = UserOrganizationMembership.objects.get(user=user)
+        assert membership.organization == target
+        assert membership.role == "viewer"
+        assert summary.memberships_moved == 0
+        assert summary.memberships_discarded == 1

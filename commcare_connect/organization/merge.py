@@ -83,6 +83,8 @@ class MergeSummary:
     applications_moved: int = 0
     applications_deduped: int = 0
     self_applications_removed: int = 0
+    memberships_moved: int = 0
+    memberships_discarded: int = 0
 
 
 def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
@@ -101,6 +103,7 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         # otherwise move a source application in afterwards and recreate the
         # self-application we just deleted).
         self_apps = _remove_self_applications(target)
+        members_moved, members_dropped = _merge_memberships(source, target)
 
         summary = MergeSummary(
             source_slug=source.slug,
@@ -110,6 +113,8 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             applications_moved=apps_moved,
             applications_deduped=apps_deduped,
             self_applications_removed=self_apps,
+            memberships_moved=members_moved,
+            memberships_discarded=members_dropped,
         )
         source.delete()
 
@@ -186,3 +191,13 @@ def _remove_self_applications(target: Organization) -> int:
     """
     deleted, _ = ProgramApplication.objects.filter(organization=target, program__organization=target).delete()
     return deleted
+
+
+def _merge_memberships(source: Organization, target: Organization) -> tuple[int, int]:
+    target_user_ids = set(target.memberships.values_list("user_id", flat=True))
+    source_memberships = source.memberships.all()
+
+    discarded, _ = source_memberships.filter(user_id__in=target_user_ids).delete()
+    # Whatever survived the delete above is target-safe: (user, organization) is unique.
+    moved = source_memberships.update(organization=target)
+    return moved, discarded
