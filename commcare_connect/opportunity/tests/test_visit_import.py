@@ -45,6 +45,7 @@ from commcare_connect.opportunity.visit_import import (
     _bulk_update_catchments,
     _bulk_update_completed_work_status,
     _bulk_update_visit_review_status,
+    _exchange_rates_by_payment_date,
     bulk_update_payments,
     bulk_update_visit_status,
     get_data_by_visit_id,
@@ -465,6 +466,48 @@ def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
         "Worker is suspended": [7],
     }
     # Not even the one valid row is written.
+    assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
+
+
+@pytest.mark.django_db
+def test_exchange_rates_are_looked_up_once_per_distinct_date(opportunity: Opportunity):
+    """Dated rows share a lookup per date; undated rows are keyed by None to today's rate."""
+    jan = datetime.date(2025, 1, 15)
+    feb = datetime.date(2025, 2, 20)
+    payments_by_user = {
+        "alice": [(2, {"payment_date": jan}), (3, {"payment_date": feb})],
+        "bob": [(4, {"payment_date": jan}), (5, {"payment_date": None})],
+    }
+
+    with mock.patch(
+        "commcare_connect.opportunity.visit_import.get_exchange_rate", return_value=Decimal("2")
+    ) as get_rate:
+        rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, Decimal("3"))
+
+    assert rates == {jan: Decimal("2"), feb: Decimal("2"), None: Decimal("3")}
+    # Four rows, two distinct dates: the undated row reuses the rate passed in.
+    assert sorted(call.args[1] for call in get_rate.call_args_list) == [jan, feb]
+
+
+@pytest.mark.django_db
+def test_bulk_update_payments_writes_nothing_when_a_rate_is_missing(opportunity: Opportunity):
+    """The reason rates are resolved up front: a missing one must not abort a part-written import."""
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    rows = [
+        (payable.username, 50, "2025-01-15", "method", "operator"),
+        (payable.username, 60, "2025-02-20", "method", "operator"),
+    ]
+
+    def rate_for(currency_code, date=None):
+        if date == datetime.date(2025, 2, 20):
+            raise ImportException("Rate not found for opportunity currency")
+        return Decimal("2")
+
+    with mock.patch("commcare_connect.opportunity.visit_import.get_exchange_rate", side_effect=rate_for):
+        with pytest.raises(ImportException):
+            bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
     assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
 
 

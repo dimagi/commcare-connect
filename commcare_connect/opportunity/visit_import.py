@@ -311,7 +311,8 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     exchange_rate_today = get_exchange_rate(opportunity.currency_code)
     payments_by_user, accesses = _validate_payment_rows(opportunity, headers, rows)
-    return _create_payments(opportunity, payments_by_user, accesses, exchange_rate_today)
+    exchange_rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today)
+    return _create_payments(opportunity, payments_by_user, accesses, exchange_rates)
 
 
 def _validate_payment_rows(opportunity, headers, rows):
@@ -345,11 +346,7 @@ def _validate_payment_rows(opportunity, headers, rows):
             continue
         if payment is None:
             continue
-        username = payment.pop("username")
-        if _repeats_last_payment(opportunity, username, payment):
-            reason = "A payment for this user with the same amount and date already exists"
-            errors_by_reason[reason].append(row_number)
-        payments_by_user[username].append((row_number, payment))
+        payments_by_user[payment.pop("username")].append((row_number, payment))
 
     accesses = {
         access.user.username: access
@@ -407,67 +404,82 @@ def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, p
     }
 
 
-def _repeats_last_payment(opportunity, username, payment):
-    """Whether this row repeats the amount and date of the user's most recent payment."""
-    last_payment = (
-        Payment.objects.filter(
-            opportunity_access__user__username=username,
-            opportunity_access__opportunity=opportunity,
-        )
-        .order_by("-created_at")
-        .first()
-    )
-    if not last_payment:
-        return False
-
-    date_paid = payment["payment_date"] or datetime.date.today()
-    return last_payment.amount == payment["amount"] and last_payment.date_paid.date() == date_paid
-
-
 def _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason):
-    """Record a row error for every row whose username cannot be paid."""
+    """Record a row error for every row whose username cannot be paid, or that repeats a payment."""
+    last_payments = _last_payment_by_username(opportunity, payments_by_user)
     for username, numbered_payments in payments_by_user.items():
         access = accesses.get(username)
+        unpayable_reason = None
         if access is None:
             unpayable_reason = "Username was not found in this opportunity"
         elif access.suspended:
             unpayable_reason = "Worker is suspended"
-        else:
-            continue
-        errors_by_reason[unpayable_reason].extend(row_number for row_number, _payment in numbered_payments)
+        last_payment = last_payments.get(username)
+
+        for row_number, payment in numbered_payments:
+            if unpayable_reason:
+                errors_by_reason[unpayable_reason].append(row_number)
+
+            date_paid = payment["payment_date"] or datetime.date.today()
+            if (
+                last_payment
+                and last_payment.amount == payment["amount"]
+                and last_payment.date_paid.date() == date_paid
+            ):
+                reason = "A payment for this user with the same amount and date already exists"
+                errors_by_reason[reason].append(row_number)
 
 
-def _create_payments(opportunity, payments_by_user, accesses, exchange_rate_today):
+def _last_payment_by_username(opportunity, usernames) -> dict[str, Payment]:
+    """The most recently created payment for each of these usernames, in a single query."""
+    payments = (
+        Payment.objects.filter(
+            opportunity_access__opportunity=opportunity,
+            opportunity_access__user__username__in=usernames,
+        )
+        .select_related("opportunity_access__user")
+        .order_by("opportunity_access__user__username", "-created_at")
+        .distinct("opportunity_access__user__username")
+    )
+    return {payment.opportunity_access.user.username: payment for payment in payments}
+
+
+def _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today):
+    """One rate lookup per distinct payment date, resolved before anything is written so that a
+    missing rate cannot abort the import half way through. None keys the rows that carried no date.
+    """
+    dates = {payment["payment_date"] for rows in payments_by_user.values() for _, payment in rows}
+    rates = {date: get_exchange_rate(opportunity.currency_code, date) for date in dates if date}
+    rates[None] = exchange_rate_today
+    return rates
+
+
+def _create_payments(opportunity, payments_by_user, accesses, exchange_rates):
     """Write the validated rows. Only ever called once the whole file is known to be payable."""
-    seen_users = set()
-    payment_ids = []
+    payments = []
+    for username, numbered_payments in payments_by_user.items():
+        access = accesses[username]
+        for _row_number, payment_row in numbered_payments:
+            amount = payment_row["amount"]
+            payment_date = payment_row["payment_date"]
+            payment = Payment(
+                opportunity_access=access,
+                amount=amount,
+                amount_usd=amount / exchange_rates[payment_date],
+                payment_method=payment_row["payment_method"],
+                payment_operator=payment_row["payment_operator"],
+            )
+            if payment_date:
+                payment.date_paid = payment_date
+            payments.append(payment)
+
     with transaction.atomic():
-        for username, numbered_payments in payments_by_user.items():
-            access = accesses[username]
-            for _row_number, payment_row in numbered_payments:
-                amount = payment_row["amount"]
-                payment_date = payment_row["payment_date"]
-                if payment_date:
-                    exchange_rate = get_exchange_rate(opportunity.currency_code, payment_date)
-                else:
-                    exchange_rate = exchange_rate_today
+        Payment.objects.bulk_create(payments)
+        for username in payments_by_user:
+            update_work_payment_date(accesses[username])
+    send_payment_notification.delay(opportunity.id, [payment.pk for payment in payments])
 
-                payment_data = {
-                    "opportunity_access": access,
-                    "amount": amount,
-                    "amount_usd": amount / exchange_rate,
-                    "payment_method": payment_row["payment_method"],
-                    "payment_operator": payment_row["payment_operator"],
-                }
-                if payment_date:
-                    payment_data["date_paid"] = payment_date
-                payment = Payment.objects.create(**payment_data)
-                payment_ids.append(payment.pk)
-            seen_users.add(username)
-            update_work_payment_date(access)
-    send_payment_notification.delay(opportunity.id, payment_ids)
-
-    return PaymentImportStatus(seen_users)
+    return PaymentImportStatus(set(payments_by_user))
 
 
 def get_exchange_rate(currency_code, date=None):
