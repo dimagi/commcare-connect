@@ -4,6 +4,7 @@ import textwrap
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
+from itertools import chain
 
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
@@ -51,11 +52,16 @@ PAYMENT_METHOD_COL = "payment method"
 PAYMENT_OPERATOR_COL = "payment operator"
 REVIEW_STATUS_COL = "program manager review"
 
+# Imported files carry a header line, so the first row of data is line 2 of the file.
+FIRST_DATA_ROW_NUMBER = 2
+
 
 class ImportException(Exception):
-    def __init__(self, message, rows=None):
+    def __init__(self, message, rows=None, errors=None):
         self.message = message
         self.rows = rows
+        # {description: [row numbers]}
+        self.errors = errors or {}
 
 
 class RowDataError(Exception):
@@ -324,15 +330,15 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
     payment_method_col_index = _get_header_index(headers, PAYMENT_METHOD_COL)
     payment_operator_col_index = _get_header_index(headers, PAYMENT_OPERATOR_COL)
 
-    invalid_rows = []
+    errors_by_reason = defaultdict(list)
     payments_by_user = defaultdict(list)
     exchange_rate_today = get_exchange_rate(opportunity.currency_code)
     if not exchange_rate_today:
         raise ImportException(f"Currency code {opportunity.currency_code} is invalid")
 
-    for row in rows:
+    for row_number, row in enumerate(rows, start=FIRST_DATA_ROW_NUMBER):
         row = list(row)
-        username = str(row[username_col_index])
+        username = str(row[username_col_index] or "").strip()
         amount_raw = row[amount_col_index]
         payment_date_raw = row[payment_date_col_index]
         payment_method = row[payment_method_col_index]
@@ -341,26 +347,28 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         if not amount_raw:
             continue
 
+        reasons = []
         if not username:
-            invalid_rows.append(([escape(r) for r in row], "username required"))
-            continue
+            reasons.append("Username is required")
 
         try:
-            amount = Decimal(amount_raw)
+            amount = Decimal(str(amount_raw).strip())
         except InvalidOperation:
-            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
-            continue
+            reasons.append("Payment amount must be a number")
 
-        try:
-            if payment_date_raw:
-                if isinstance(payment_date_raw, datetime.datetime):
-                    payment_date = payment_date_raw.date()
-                else:
-                    payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
+        payment_date = None
+        if payment_date_raw:
+            if isinstance(payment_date_raw, datetime.datetime):
+                payment_date = payment_date_raw.date()
             else:
-                payment_date = None
-        except ValueError:
-            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
+                try:
+                    payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
+                except ValueError:
+                    reasons.append("Payment date must be in YYYY-MM-DD format")
+
+        if reasons:
+            for reason in reasons:
+                errors_by_reason[reason].append(row_number)
             continue
 
         payment_row = {
@@ -383,19 +391,16 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             and user_last_payment.amount == amount
             and user_last_payment.date_paid.date() == date_paid
         ):
-            invalid_rows.append(
-                (
-                    [escape(r) for r in row],
-                    "A payment for this user with the same amount and date already exists.",
-                )
-            )
+            reason = "A payment for this user with the same amount and date already exists"
+            errors_by_reason[reason].append(row_number)
         payments_by_user[username].append(payment_row)
 
-    if invalid_rows:
-        error_details = [f"{reason}: {', '.join(cells)}" for cells, reason in invalid_rows]
-        count = len(invalid_rows)
+    if errors_by_reason:
+        # Count the distinct rows affected, not the number of distinct reasons: one row can
+        # appear under several of them.
+        count = len(set(chain.from_iterable(errors_by_reason.values())))
         summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
-        raise ImportException(summary, "<br>".join(error_details))
+        raise ImportException(summary, errors=dict(errors_by_reason))
 
     seen_users = set()
     payment_ids = []

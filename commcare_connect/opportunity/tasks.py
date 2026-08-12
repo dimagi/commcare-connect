@@ -509,6 +509,7 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
 
     with cache.lock(get_payment_upload_key(opportunity_id), timeout=600):
         set_task_progress(self, "Payment Record Import is in progress.")
+        errors = {}
         try:
             with default_storage.open(file_path, "rb") as f:
                 dataset = get_imported_dataset(f, file_format)
@@ -519,16 +520,17 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
             message, is_error = get_payment_import_result_message(status)
         except ImportException as e:
             message = f"Payment Import failed: {e.message}"
-            if e.rows:
-                message += f"<br>{e.rows}"
+            errors = e.errors
             is_error = True
-        except Exception as e:
-            message = f"Unexpected error during payment import: {e}"
+        except Exception:
+            # The detail goes to the log rather than the banner, which is read by org members.
+            logger.exception("Payment import failed for opportunity %s", opportunity_id)
+            message = "Unexpected error during payment import. Please try again."
             is_error = True
         finally:
             default_storage.delete(file_path)
 
-        set_task_progress(self, message, is_complete=True, is_error=is_error)
+        set_task_progress(self, message, is_complete=True, is_error=is_error, errors=errors)
 
 
 @celery_app.task(bind=True)

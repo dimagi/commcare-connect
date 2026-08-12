@@ -424,11 +424,59 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
 
     assert "1 row has errors" in str(excinfo.value.message)
 
-    error_details = excinfo.value.rows
-    expected_error_substring = "A payment for this user with the same amount and date already exists."
-    assert expected_error_substring in error_details
-    assert "(['" not in error_details  # readable "reason: cells", not a raw Python tuple
+    # The duplicate is the first data row, which is line 2 of the file once the header is counted.
+    assert excinfo.value.errors == {"A payment for this user with the same amount and date already exists": [2]}
     assert Payment.objects.count() == 1
+
+
+PAYMENT_IMPORT_HEADERS = [
+    "Username",
+    "Payment Amount",
+    "Payment Date (YYYY-MM-DD)",
+    "Payment Method",
+    "Payment Operator",
+]
+
+
+@pytest.mark.django_db
+def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
+    mobile_user = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+
+    rows = [
+        (mobile_user.username, "abc", "2025-01-15", "method", "operator"),  # row 2
+        (None, 50, "2025-01-15", "method", "operator"),  # row 3
+        (mobile_user.username, 50, "15-01-2025", "method", "operator"),  # row 4
+        ("   ", 50, "2025-01-15", "method", "operator"),  # row 5
+        (mobile_user.username, 50, "2025-01-15", "method", "operator"),  # row 6, valid
+    ]
+
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert excinfo.value.message == "4 rows have errors"
+    assert excinfo.value.errors == {
+        "Payment amount must be a number": [2],
+        "Username is required": [3, 5],
+        "Payment date must be in YYYY-MM-DD format": [4],
+    }
+
+
+@pytest.mark.django_db
+def test_bulk_update_payments_reports_every_problem_in_a_row(opportunity: Opportunity):
+    """One upload surfaces all of a row's problems, not just the first one found."""
+    rows = [("", "abc", "15-01-2025", "method", "operator")]  # row 2: no username, bad amount, bad date
+
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert excinfo.value.errors == {
+        "Username is required": [2],
+        "Payment amount must be a number": [2],
+        "Payment date must be in YYYY-MM-DD format": [2],
+    }
+    # The row is counted once despite appearing under three reasons.
+    assert excinfo.value.message == "1 row has errors"
 
 
 @pytest.fixture

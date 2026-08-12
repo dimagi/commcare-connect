@@ -9,10 +9,12 @@ CELERY_TASK_PENDING = "PENDING"
 CELERY_TASK_FAILURE = "FAILURE"
 
 
-def set_task_progress(task, message, is_complete=False, is_error=False):
+def set_task_progress(task, message, is_complete=False, is_error=False, errors=None):
+    """`errors` is an optional {description: [row numbers]} mapping for file imports that
+    validate the whole file before writing, so callers can list what stopped the import."""
     task.update_state(
         state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS,
-        meta={"message": message, "is_error": is_error},
+        meta={"message": message, "is_error": is_error, "errors": errors or {}},
     )
 
 
@@ -37,12 +39,15 @@ def get_task_progress(request, task_id, ownership_check=None):
     if ownership_check and status != CELERY_TASK_PENDING:
         ownership_check(request, task_meta)
 
+    result = task_meta.get("result")
     progress = {
         "complete": status == CELERY_TASK_SUCCESS,
         "message": get_task_progress_message(task),
+        # Set by imports that report per-row errors; see set_task_progress.
+        "errors": result.get("errors") or {} if isinstance(result, dict) else {},
     }
     if status == CELERY_TASK_FAILURE:
-        progress["error"] = task_meta.get("result")
+        progress["error"] = result
     return progress
 
 
