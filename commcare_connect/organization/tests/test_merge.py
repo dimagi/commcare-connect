@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest import mock
 
 import pytest
 from django.core.cache import cache
@@ -9,6 +10,8 @@ from commcare_connect.flags.tests.factories import FlagFactory
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentFactory
 from commcare_connect.organization.merge import (
+    APPLICATION_STATUS_PRECEDENCE,
+    HANDLED_RELATIONS,
     SIMPLE_REASSIGNMENTS,
     MergeNotAllowed,
     _move_program_watchers,
@@ -352,3 +355,92 @@ class TestFeatureFlags:
         merge_organizations(source, target)
 
         assert get_cache().get(cache_key) is None
+
+
+def _incoming_relation_labels():
+    """Every relation that points at Organization, as ``app.Model.field`` strings.
+
+    ``include_hidden=True`` matters: a foreign key declared with
+    ``related_name="+"`` is otherwise invisible here, and would slip past the
+    coverage test below without ever being handled by the merge. Auto-created
+    M2M through models are skipped because they are an implementation detail of
+    the M2M field itself, which is listed in its own right.
+    """
+    labels = set()
+    for relation in Organization._meta.get_fields(include_hidden=True):
+        if not (relation.is_relation and relation.auto_created and not relation.concrete):
+            continue
+        related_field = relation.field
+        if related_field.model._meta.auto_created:
+            continue
+        labels.add(f"{related_field.model._meta.label}.{related_field.name}")
+    return labels
+
+
+def test_every_application_status_has_a_precedence():
+    """A new ProgramApplicationStatus member must be ranked, or merges raise ValueError."""
+    assert set(APPLICATION_STATUS_PRECEDENCE) == set(ProgramApplicationStatus.values)
+
+
+class TestRelationCoverage:
+    def test_every_relation_to_organization_is_accounted_for(self):
+        """Fails when a new FK or M2M to Organization is added without handling it.
+
+        Django creates Postgres foreign keys as DEFERRABLE INITIALLY DEFERRED, so
+        a relation the merge forgot would not raise inside a test transaction.
+        This compares the models against the module's own manifest instead.
+        """
+        assert _incoming_relation_labels() == set(HANDLED_RELATIONS), (
+            "The set of relations to Organization has changed. Handle any new relation in "
+            "merge_organizations, then add it to HANDLED_RELATIONS — or drop the stale entry."
+        )
+
+    def test_nothing_still_references_the_source_afterwards(self, source, target):
+        source_pk = source.pk
+        OpportunityFactory(organization=source)
+        OpportunityFactory(supervising_organization=source)
+        CommCareAppFactory(organization=source)
+        PaymentFactory(organization=source)
+        ProgramFactory(organization=source)
+        ProgramFactory(funder=source)
+        ProgramApplicationFactory(organization=source)
+        MembershipFactory(organization=source, role="member")
+        OrganizationInviteFactory(organization=source, email="pending@example.com")
+        LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
+
+        merge_organizations(source, target)
+
+        dangling = []
+        for relation in Organization._meta.get_fields(include_hidden=True):
+            if not (relation.is_relation and relation.auto_created and not relation.concrete):
+                continue
+            related_field = relation.field
+            if related_field.model._meta.auto_created:
+                continue
+            remaining = related_field.model._default_manager.filter(**{related_field.name: source_pk}).count()
+            if remaining:
+                dangling.append(f"{related_field.model._meta.label}.{related_field.name}={remaining}")
+
+        assert dangling == []
+
+
+class TestRollback:
+    def test_any_error_rolls_the_whole_merge_back(self, target):
+        source = OrganizationFactory(name="Rollback Source", program_manager=True)
+        opportunity = OpportunityFactory(organization=source)
+        membership = MembershipFactory(organization=source, role="member")
+
+        with mock.patch(
+            "commcare_connect.organization.merge._clear_flag_memberships",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                merge_organizations(source, target)
+
+        assert Organization.objects.filter(pk=source.pk).exists()
+        opportunity.refresh_from_db()
+        assert opportunity.organization == source
+        membership.refresh_from_db()
+        assert membership.organization == source
+        target.refresh_from_db()
+        assert target.program_manager is False
