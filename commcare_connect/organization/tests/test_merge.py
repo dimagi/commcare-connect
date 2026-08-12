@@ -2,7 +2,12 @@ import pytest
 
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentFactory
-from commcare_connect.organization.merge import SIMPLE_REASSIGNMENTS, MergeNotAllowed, merge_organizations
+from commcare_connect.organization.merge import (
+    SIMPLE_REASSIGNMENTS,
+    MergeNotAllowed,
+    _move_program_watchers,
+    merge_organizations,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory
@@ -105,3 +110,25 @@ class TestSimpleReassignments:
         assert set(summary.reassigned) == {relation.label for relation in SIMPLE_REASSIGNMENTS}
         assert summary.reassigned["program.Program.organization"] == 1
         assert summary.reassigned["opportunity.Payment.organization"] == 0
+
+
+class TestProgramWatchers:
+    def test_watched_programs_move_to_the_target(self, source, target):
+        program = ProgramFactory()
+        program.watchers.add(source)
+
+        summary = merge_organizations(source, target)
+
+        assert list(program.watchers.all()) == [target]
+        assert summary.programs_watched == 1
+
+    def test_no_duplicate_when_both_organizations_watch(self, source, target):
+        program = ProgramFactory()
+        program.watchers.add(source, target)
+
+        moved = _move_program_watchers(source, target)
+
+        assert moved == 1
+        # Asserted without merge_organizations, so the source's removal is
+        # attributable to the helper rather than to source.delete()'s cascade.
+        assert list(program.watchers.all()) == [target]

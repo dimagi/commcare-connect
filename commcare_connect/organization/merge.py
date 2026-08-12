@@ -70,6 +70,7 @@ class MergeSummary:
     source_slug: str
     target_slug: str
     reassigned: dict[str, int] = field(default_factory=dict)
+    programs_watched: int = 0
 
 
 def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
@@ -81,11 +82,13 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
 
     with transaction.atomic():
         reassigned = _reassign_simple_relations(source, target)
+        watched = _move_program_watchers(source, target)
 
         summary = MergeSummary(
             source_slug=source.slug,
             target_slug=target.slug,
             reassigned=reassigned,
+            programs_watched=watched,
         )
         source.delete()
 
@@ -107,3 +110,14 @@ def _reassign_simple_relations(source: Organization, target: Organization) -> di
         reassigned[relation.label] = count
         logger.info("Reassigned %s %s rows from %s to %s", count, relation.label, source.slug, target.slug)
     return reassigned
+
+
+def _move_program_watchers(source: Organization, target: Organization) -> int:
+    """Make the target watch everything the source watched, then drop the source.
+
+    ``add`` is idempotent, so a program both organizations watched needs no explicit deduplication.
+    """
+    watched = list(source.watched_programs.all())
+    target.watched_programs.add(*watched)
+    source.watched_programs.clear()
+    return len(watched)
