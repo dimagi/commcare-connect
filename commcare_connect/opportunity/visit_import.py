@@ -65,7 +65,11 @@ class ImportException(Exception):
 
 
 class RowDataError(Exception):
-    pass
+    """One or more problems with a single imported row."""
+
+    def __init__(self, *reasons):
+        super().__init__(*reasons)
+        self.reasons = list(reasons)
 
 
 class InvalidValueError(RowDataError):
@@ -299,11 +303,23 @@ def _get_header_index(headers: list[str], col_name: str, required=True) -> int:
 
 
 def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[list]):
+    """Import payment rows, writing nothing at all unless every row in the file is payable."""
     opportunity = Opportunity.objects.get(id=opportunity_id)
     headers = [header.lower() for header in headers]
     if not headers:
         raise ImportException("The uploaded file did not contain any headers")
 
+    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
+    payments_by_user, accesses = _validate_payment_rows(opportunity, headers, rows)
+    return _create_payments(opportunity, payments_by_user, accesses, exchange_rate_today)
+
+
+def _validate_payment_rows(opportunity, headers, rows):
+    """Check every row and raise if any of them cannot be paid.
+
+    Returns the (row number, payment) pairs grouped by username, together with the
+    OpportunityAccess each of those usernames resolves to so the write need not look them up again.
+    """
     username_col_index = _get_header_index(headers, USERNAME_COL)
     amount_col_index = _get_header_index(headers, AMOUNT_COL)
     payment_date_col_index = _get_header_index(headers, PAYMENT_DATE_COL)
@@ -312,77 +328,104 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     errors_by_reason = defaultdict(list)
     payments_by_user = defaultdict(list)
-    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
-    if not exchange_rate_today:
-        raise ImportException(f"Currency code {opportunity.currency_code} is invalid")
 
     for row_number, row in enumerate(rows, start=FIRST_DATA_ROW_NUMBER):
         row = list(row)
-        username = str(row[username_col_index] or "").strip()
-        amount_raw = row[amount_col_index]
-        payment_date_raw = row[payment_date_col_index]
-        payment_method = row[payment_method_col_index]
-        payment_operator = row[payment_operator_col_index]
-
-        if not amount_raw:
-            continue
-
-        reasons = []
-        if not username:
-            reasons.append("Username is required")
-
         try:
-            amount = Decimal(str(amount_raw).strip())
-        except InvalidOperation:
-            reasons.append("Payment amount must be a number")
-
-        payment_date = None
-        if payment_date_raw:
-            if isinstance(payment_date_raw, datetime.datetime):
-                payment_date = payment_date_raw.date()
-            else:
-                try:
-                    payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
-                except ValueError:
-                    reasons.append("Payment date must be in YYYY-MM-DD format")
-
-        if reasons:
-            for reason in reasons:
+            payment = _parse_payment_row(
+                username=row[username_col_index],
+                amount_raw=row[amount_col_index],
+                payment_date_raw=row[payment_date_col_index],
+                payment_method=row[payment_method_col_index],
+                payment_operator=row[payment_operator_col_index],
+            )
+        except RowDataError as e:
+            for reason in e.reasons:
                 errors_by_reason[reason].append(row_number)
             continue
-
-        payment_row = {
-            "amount": amount,
-            "payment_date": payment_date,
-            "payment_method": payment_method,
-            "payment_operator": payment_operator,
-        }
-        user_last_payment = (
-            Payment.objects.filter(
-                opportunity_access__user__username=username,
-                opportunity_access__opportunity=opportunity,
-            )
-            .order_by("-created_at")
-            .first()
-        )
-        date_paid = payment_date if payment_date else datetime.date.today()
-        if (
-            user_last_payment
-            and user_last_payment.amount == amount
-            and user_last_payment.date_paid.date() == date_paid
-        ):
+        if payment is None:
+            continue
+        username = payment.pop("username")
+        if _repeats_last_payment(opportunity, username, payment):
             reason = "A payment for this user with the same amount and date already exists"
             errors_by_reason[reason].append(row_number)
-        payments_by_user[username].append((row_number, payment_row))
+        payments_by_user[username].append((row_number, payment))
 
-    # Resolved before anything is written, so a username that cannot be paid stops the whole
-    # import rather than quietly paying everyone else in the file.
     accesses = {
         access.user.username: access
         for access in OpportunityAccess.objects.filter(
             user__username__in=payments_by_user, opportunity=opportunity
         ).select_related("user")
     }
+    _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason)
+
+    if errors_by_reason:
+        count = len(set(chain.from_iterable(errors_by_reason.values())))
+        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
+        raise ImportException(summary, errors=dict(errors_by_reason))
+
+    return payments_by_user, accesses
+
+
+def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, payment_operator):
+    """The payment described by one row, or None when the row has nothing to pay.
+
+    Raises RowDataError listing every problem with the row rather than stopping at the first.
+    """
+    if not amount_raw:
+        return None
+
+    error_reasons = []
+    username = str(username or "").strip()
+    if not username:
+        error_reasons.append("Username is required")
+
+    try:
+        amount = Decimal(str(amount_raw).strip())
+    except InvalidOperation:
+        error_reasons.append("Payment amount must be a number")
+
+    payment_date = None
+    if payment_date_raw:
+        if isinstance(payment_date_raw, datetime.datetime):
+            payment_date = payment_date_raw.date()
+        else:
+            try:
+                payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                error_reasons.append("Payment date must be in YYYY-MM-DD format")
+
+    if error_reasons:
+        raise RowDataError(*error_reasons)
+
+    return {
+        "username": username,
+        "amount": amount,
+        "payment_date": payment_date,
+        "payment_method": payment_method,
+        "payment_operator": payment_operator,
+    }
+
+
+def _repeats_last_payment(opportunity, username, payment):
+    """Whether this row repeats the amount and date of the user's most recent payment."""
+    last_payment = (
+        Payment.objects.filter(
+            opportunity_access__user__username=username,
+            opportunity_access__opportunity=opportunity,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if not last_payment:
+        return False
+
+    date_paid = payment["payment_date"] or datetime.date.today()
+    return last_payment.amount == payment["amount"] and last_payment.date_paid.date() == date_paid
+
+
+def _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason):
+    """Record a row error for every row whose username cannot be paid."""
     for username, numbered_payments in payments_by_user.items():
         access = accesses.get(username)
         if access is None:
@@ -393,13 +436,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             continue
         errors_by_reason[unpayable_reason].extend(row_number for row_number, _payment in numbered_payments)
 
-    if errors_by_reason:
-        # Count the distinct rows affected, not the number of distinct reasons: one row can
-        # appear under several of them.
-        count = len(set(chain.from_iterable(errors_by_reason.values())))
-        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
-        raise ImportException(summary, errors=dict(errors_by_reason))
 
+def _create_payments(opportunity, payments_by_user, accesses, exchange_rate_today):
+    """Write the validated rows. Only ever called once the whole file is known to be payable."""
     seen_users = set()
     payment_ids = []
     with transaction.atomic():
