@@ -2982,7 +2982,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             return
         is_error = self._payment_import_result().get("is_error")
         add_message = messages.error if is_error else messages.success
-        add_message(self.request, mark_safe(message))
+        add_message(self.request, message)
 
     def _payment_import_result(self):
         """The import task's progress meta, or {} when there is no task or it crashed.

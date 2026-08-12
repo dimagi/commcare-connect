@@ -112,29 +112,9 @@ class VisitImportStatus:
 @dataclass
 class PaymentImportStatus:
     seen_users: set[str]
-    missing_users: set[str]
 
     def __len__(self):
         return len(self.seen_users)
-
-    def get_missing_message(self):
-        joined = ", ".join(self.missing_users)
-        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        count = len(self.missing_users)
-        summary = ngettext(
-            "%(count)d username was not found:",
-            "%(count)d usernames were not found:",
-            count,
-        ) % {"count": count}
-        return format_html(
-            "<br>{}<br>{}",
-            summary,
-            format_html_join(
-                "<br>",
-                "{}",
-                ((u,) for u in missing),
-            ),
-        )
 
 
 @dataclass
@@ -393,7 +373,25 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         ):
             reason = "A payment for this user with the same amount and date already exists"
             errors_by_reason[reason].append(row_number)
-        payments_by_user[username].append(payment_row)
+        payments_by_user[username].append((row_number, payment_row))
+
+    # Resolved before anything is written, so a username that cannot be paid stops the whole
+    # import rather than quietly paying everyone else in the file.
+    accesses = {
+        access.user.username: access
+        for access in OpportunityAccess.objects.filter(
+            user__username__in=payments_by_user, opportunity=opportunity
+        ).select_related("user")
+    }
+    for username, numbered_payments in payments_by_user.items():
+        access = accesses.get(username)
+        if access is None:
+            unpayable_reason = "Username was not found in this opportunity"
+        elif access.suspended:
+            unpayable_reason = "Worker is suspended"
+        else:
+            continue
+        errors_by_reason[unpayable_reason].extend(row_number for row_number, _payment in numbered_payments)
 
     if errors_by_reason:
         # Count the distinct rows affected, not the number of distinct reasons: one row can
@@ -405,16 +403,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
     seen_users = set()
     payment_ids = []
     with transaction.atomic():
-        usernames = payments_by_user.keys()
-        users = OpportunityAccess.objects.filter(
-            user__username__in=usernames, opportunity=opportunity, suspended=False
-        ).select_related("user")
-
-        for access in users:
-            username = access.user.username
-            if username not in payments_by_user:
-                continue
-            for payment_row in payments_by_user[username]:
+        for username, numbered_payments in payments_by_user.items():
+            access = accesses[username]
+            for _row_number, payment_row in numbered_payments:
                 amount = payment_row["amount"]
                 payment_date = payment_row["payment_date"]
                 if payment_date:
@@ -435,10 +426,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
                 payment_ids.append(payment.pk)
             seen_users.add(username)
             update_work_payment_date(access)
-    missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
 
-    return PaymentImportStatus(seen_users, missing_users)
+    return PaymentImportStatus(seen_users)
 
 
 def get_exchange_rate(currency_code, date=None):

@@ -482,25 +482,19 @@ def get_payment_upload_key(opp_id):
 
 
 def get_payment_import_result_message(status):
-    """Build the (message, is_error) shown after a payment import completes.
+    """Build the (message, is_error) banner shown after an import that produced no row errors.
 
     No payments uploaded is treated as an error so it surfaces as a red banner.
     """
     count = len(status)
-    if count:
-        message = ngettext(
-            "Payment status uploaded successfully for %(count)d user.",
-            "Payment status uploaded successfully for %(count)d users.",
-            count,
-        ) % {"count": count}
-        lines = [message]
-        is_error = False
-    else:
-        lines = ["No payments were uploaded."]
-        is_error = True
-    if status.missing_users:
-        lines.append(status.get_missing_message())
-    return "<br>".join(lines), is_error
+    if not count:
+        return "No payments were uploaded.", True
+    message = ngettext(
+        "Payment status uploaded successfully for %(count)d user.",
+        "Payment status uploaded successfully for %(count)d users.",
+        count,
+    ) % {"count": count}
+    return message, False
 
 
 @celery_app.task(bind=True)

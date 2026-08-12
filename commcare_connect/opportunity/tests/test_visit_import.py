@@ -3,7 +3,6 @@ import random
 import re
 from datetime import timedelta
 from decimal import Decimal
-from itertools import chain
 from unittest import mock
 
 import pytest
@@ -41,7 +40,6 @@ from commcare_connect.opportunity.visit_import import (
     REVIEW_STATUS_COL,
     VISIT_ID_COL,
     ImportException,
-    PaymentImportStatus,
     ReviewVisitRowData,
     VisitData,
     _bulk_update_catchments,
@@ -325,7 +323,6 @@ def test_get_status_by_visit_id(headers, rows, expected):
 @pytest.mark.django_db
 def test_bulk_update_payments(opportunity: Opportunity):
     mobile_user_seen = MobileUserFactory.create_batch(5)
-    mobile_user_missing = MobileUserFactory.create_batch(5)
     access_objects = []
     for mobile_user in mobile_user_seen:
         access_objects.append(OpportunityAccessFactory(opportunity=opportunity, user=mobile_user))
@@ -343,7 +340,7 @@ def test_bulk_update_payments(opportunity: Opportunity):
     )
 
     payment_date = "2025-01-15"
-    for index, mobile_user in enumerate(chain(mobile_user_seen, mobile_user_missing)):
+    for index, mobile_user in enumerate(mobile_user_seen):
         dataset.append(
             (
                 mobile_user.username,
@@ -359,7 +356,6 @@ def test_bulk_update_payments(opportunity: Opportunity):
     payment_import_status = bulk_update_payments(opportunity.pk, dataset.headers, list(dataset))
 
     assert payment_import_status.seen_users == {user.username for user in mobile_user_seen}
-    assert payment_import_status.missing_users == {user.username for user in mobile_user_missing}
 
     assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 5
 
@@ -440,43 +436,36 @@ PAYMENT_IMPORT_HEADERS = [
 
 @pytest.mark.django_db
 def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
-    mobile_user = MobileUserFactory.create()
-    OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+    """Unreadable rows and unpayable usernames are reported together, and nothing is written."""
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    suspended_user = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=suspended_user, suspended=True)
+    unknown_user = MobileUserFactory.create()
 
     rows = [
-        (mobile_user.username, "abc", "2025-01-15", "method", "operator"),  # row 2
+        (payable.username, "abc", "2025-01-15", "method", "operator"),  # row 2
         (None, 50, "2025-01-15", "method", "operator"),  # row 3
-        (mobile_user.username, 50, "15-01-2025", "method", "operator"),  # row 4
+        (payable.username, 50, "15-01-2025", "method", "operator"),  # row 4
         ("   ", 50, "2025-01-15", "method", "operator"),  # row 5
-        (mobile_user.username, 50, "2025-01-15", "method", "operator"),  # row 6, valid
+        (unknown_user.username, 50, "2025-01-15", "method", "operator"),  # row 6
+        (suspended_user.username, 50, "2025-01-15", "method", "operator"),  # row 7
+        (payable.username, 50, "2025-01-15", "method", "operator"),  # row 8, valid
     ]
 
     with pytest.raises(ImportException) as excinfo:
         bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
 
-    assert excinfo.value.message == "4 rows have errors"
+    assert excinfo.value.message == "6 rows have errors"
     assert excinfo.value.errors == {
         "Payment amount must be a number": [2],
         "Username is required": [3, 5],
         "Payment date must be in YYYY-MM-DD format": [4],
+        "Username was not found in this opportunity": [6],
+        "Worker is suspended": [7],
     }
-
-
-@pytest.mark.django_db
-def test_bulk_update_payments_reports_every_problem_in_a_row(opportunity: Opportunity):
-    """One upload surfaces all of a row's problems, not just the first one found."""
-    rows = [("", "abc", "15-01-2025", "method", "operator")]  # row 2: no username, bad amount, bad date
-
-    with pytest.raises(ImportException) as excinfo:
-        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
-
-    assert excinfo.value.errors == {
-        "Username is required": [2],
-        "Payment amount must be a number": [2],
-        "Payment date must be in YYYY-MM-DD format": [2],
-    }
-    # The row is counted once despite appearing under three reasons.
-    assert excinfo.value.message == "1 row has errors"
+    # Not even the one valid row is written.
+    assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
 
 
 @pytest.fixture
@@ -1079,20 +1068,3 @@ class TestBulkReviewVisitImport:
             assert visit.review_status_modified_date >= before_update
         for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in locked_visits]):
             assert visit.review_status_modified_date == locked_modified_dates[visit.xform_id]
-
-
-@pytest.mark.parametrize(
-    ("missing_users", "expected"),
-    [
-        ({"ghost"}, "1 username was not found:"),
-        ({"ghost1", "ghost2"}, "2 usernames were not found:"),
-    ],
-)
-def test_payment_import_missing_message_pluralization(missing_users, expected):
-    status = PaymentImportStatus(seen_users={"alice"}, missing_users=missing_users)
-
-    message = status.get_missing_message()
-
-    assert expected in message
-    for user in missing_users:
-        assert user in message
