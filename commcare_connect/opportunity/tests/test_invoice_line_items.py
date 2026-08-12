@@ -521,6 +521,7 @@ class TestDeliveryRows:
         assert row.completed_work == work
         assert row.billed_count == 2  # the unbilled delta, not saved_approved_count
         assert row.month == FEB  # a late delta bills under the invoice's month
+        assert row.is_delta is True
         assert row.flw_pay.local == Decimal("200")
         assert row.org_pay.local == Decimal("40")
         assert row.total_pay.local == Decimal("240")
@@ -558,7 +559,9 @@ class TestDeliveryRows:
 
         assert {row.month for row in rows.values()} == {FEB}
         assert rows[late].billed_count == 1
+        assert rows[late].is_delta is True
         assert rows[fresh].billed_count == 1
+        assert rows[fresh].is_delta is False
 
 
 @pytest.mark.django_db

@@ -209,6 +209,7 @@ class DeliveryRow:
     month: datetime.date
     flw_pay: Money
     org_pay: Money
+    is_delta: bool
 
     @property
     def total_pay(self) -> Money:
@@ -226,6 +227,7 @@ def get_invoice_delivery_rows(invoice):
             month=item.month,
             flw_pay=Money(item.flw_amount_local, item.flw_amount_usd),
             org_pay=Money(item.org_amount_local, item.org_amount_usd),
+            is_delta=item.is_delta,
         )
         for item in work_items
     ]
@@ -240,6 +242,7 @@ def get_billable_delivery_rows(opportunity, start_date, end_date):
             month=row.month,
             flw_pay=row.flw_pay,
             org_pay=row.org_pay,
+            is_delta=row.is_delta,
         )
         for row in _build_billable_rows(works, opportunity.currency_code, end_date)
     ]

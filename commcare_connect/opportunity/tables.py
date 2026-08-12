@@ -1784,6 +1784,12 @@ class InvoiceLineItemsTable(tables.Table):
         return value.strftime("%B %Y")
 
 
+BILLING_TYPE_LABELS = {
+    False: gettext_lazy("First Billing"),
+    True: gettext_lazy("Post Billing Delivery"),
+}
+
+
 class InvoiceDeliveriesTable(tables.Table):
     payment_unit = tables.Column(
         accessor="completed_work__payment_unit__name", verbose_name=gettext_lazy("Payment Unit")
@@ -1800,6 +1806,7 @@ class InvoiceDeliveriesTable(tables.Table):
         accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("Date Approved")
     )
     month = tables.Column(verbose_name=gettext_lazy("Billing Month"))
+    billing_type = tables.Column(accessor="is_delta", verbose_name=gettext_lazy("Billing Type"))
     approved_count = tables.Column(accessor="billed_count", verbose_name=gettext_lazy("Approved Deliveries"))
     flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay"))
     org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay"))
@@ -1818,6 +1825,9 @@ class InvoiceDeliveriesTable(tables.Table):
             self.columns["flw_amount_local"].column.exclude_from_export = True
             self.columns["org_amount_local"].column.exclude_from_export = True
 
+    def render_billing_type(self, value):
+        return BILLING_TYPE_LABELS[value]
+
     class Meta:
         orderable = False
         sequence = (
@@ -1828,6 +1838,7 @@ class InvoiceDeliveriesTable(tables.Table):
             "date_created",
             "date_approved",
             "month",
+            "billing_type",
             "approved_count",
             "flw_amount_local",
             "org_amount_local",
