@@ -87,6 +87,7 @@ class MergeSummary:
     memberships_discarded: int = 0
     invites_moved: int = 0
     invites_discarded: int = 0
+    flags_cleared: int = 0
 
 
 def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
@@ -100,15 +101,14 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         reassigned = _reassign_simple_relations(source, target)
         watched = _move_program_watchers(source, target)
         apps_moved, apps_deduped = _merge_program_applications(source, target)
-        # Must follow both the Program.organization reassignment above (which is what
-        # makes a program target-owned) and the application merge (which would
-        # otherwise move a source application in afterwards and recreate the
-        # self-application we just deleted).
+        # Ordering below matters. Self-applications: after Program.organization is repointed (which is what makes a
+        # program target-owned) and after the application merge (which would otherwise move a source application in
+        # and recreate the row). Invites: after memberships, so the "already a member" check sees the moved rows.
+        # Flags: before the delete, because m2m_changed is what flushes waffle's cache.
         self_apps = _remove_self_applications(target)
         members_moved, members_dropped = _merge_memberships(source, target)
-        # Must follow the membership merge, so that the "already a member" check
-        # sees the memberships that have just moved across.
         invites_moved, invites_dropped = _move_pending_invites(source, target)
+        flags_cleared = _clear_flag_memberships(source)
 
         summary = MergeSummary(
             source_slug=source.slug,
@@ -122,6 +122,7 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             memberships_discarded=members_dropped,
             invites_moved=invites_moved,
             invites_discarded=invites_dropped,
+            flags_cleared=flags_cleared,
         )
         source.delete()
 
@@ -229,3 +230,11 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
         moved += 1
 
     return moved, discarded
+
+
+def _clear_flag_memberships(source: Organization) -> int:
+    """Remove the source from its feature flags before it is deleted so the flag's cache is cleared."""
+    flags = list(source.flag_set.all())
+    for flag in flags:
+        flag.organizations.remove(source)
+    return len(flags)

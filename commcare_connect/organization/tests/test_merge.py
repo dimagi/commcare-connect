@@ -1,8 +1,11 @@
 from datetime import timedelta
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
+from waffle.utils import get_cache, get_setting, keyfmt
 
+from commcare_connect.flags.tests.factories import FlagFactory
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentFactory
 from commcare_connect.organization.merge import (
@@ -298,3 +301,54 @@ class TestPendingInvites:
         assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
         assert not OrganizationInvite.objects.filter(email="mover@example.com").exists()
         assert UserOrganizationMembership.objects.get(user=member).organization == target
+
+
+class TestFeatureFlags:
+    def setup_method(self):
+        cache.clear()
+
+    def test_target_does_not_inherit_the_source_flags(self, source, target):
+        flag = FlagFactory()
+        flag.organizations.add(source)
+
+        summary = merge_organizations(source, target)
+
+        assert not target.flag_set.filter(pk=flag.pk).exists()
+        assert list(flag.organizations.all()) == []
+        assert summary.flags_cleared == 1
+
+    def test_existing_target_flags_are_untouched(self, source, target):
+        target_flag = FlagFactory()
+        target_flag.organizations.add(target)
+
+        merge_organizations(source, target)
+
+        assert list(target_flag.organizations.all()) == [target]
+
+    def test_shared_flag_keeps_the_target_membership(self, source, target):
+        """The source is removed from a shared flag without disturbing the target.
+
+        This is the only scenario that distinguishes `remove(source)` from
+        `clear()`; the latter would silently revoke the surviving workspace's
+        own flag membership.
+        """
+        flag = FlagFactory()
+        flag.organizations.add(source, target)
+
+        summary = merge_organizations(source, target)
+
+        assert list(flag.organizations.all()) == [target]
+        assert summary.flags_cleared == 1
+
+    def test_flag_organization_cache_is_flushed(self, source, target):
+        flag = FlagFactory()
+        flag.organizations.add(source)
+        assert flag.is_active_for(source) is True  # populates flag:<name>:organizations
+
+        cache_key = keyfmt(get_setting("FLAG_ORGANIZATIONS_CACHE_KEY", "flag:%s:organizations"), flag.name)
+        # Asserted so that a no-op cache fails loudly instead of passing vacuously.
+        assert get_cache().get(cache_key) == {source.pk}
+
+        merge_organizations(source, target)
+
+        assert get_cache().get(cache_key) is None
