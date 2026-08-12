@@ -814,19 +814,27 @@ def payment_import(request, org_slug=None, opp_id=None):
 @org_member_required
 @require_GET
 def render_payment_import_progress(request, org_slug, task_id):
-    """Polled by the payments page while a payment import runs; on completion it shows a
-    'View status' link that reloads the page so the result appears as a standard banner."""
+    """Renders the payment import modal: a spinner while the import runs, then the row errors
+    that stopped it. An import that finishes without row errors refreshes the page instead, so
+    its outcome shows up as a standard banner."""
 
     def ownership_check(request, task_meta):
         get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
 
     progress = get_task_progress(request, task_id, ownership_check)
+    finished = progress["complete"] or progress.get("error")
+    if finished and not progress["errors"]:
+        response = HttpResponse()
+        response["HX-Refresh"] = "true"
+        return response
+
     context = {
-        "task_id": task_id,
+        "finished": finished,
         "progress": progress,
+        "records_label": _("Payments"),
         "status_url": reverse("opportunity:payment_import_status", args=(org_slug, task_id)),
     }
-    return render(request, "opportunity/payment_import_progress.html", context)
+    return render(request, "opportunity/payment_import_modal.html", context)
 
 
 @org_member_required
@@ -2967,18 +2975,32 @@ class WorkerPaymentsView(BaseWorkerListView):
         if task.status == CELERY_TASK_FAILURE:
             messages.error(self.request, _("The payment import failed. Please try again."))
             return
+        if self._payment_import_errors():
+            return
         message = get_task_progress_message(task)
         if not message:
             return
-        is_error = (task.result or {}).get("is_error")
+        is_error = self._payment_import_result().get("is_error")
         add_message = messages.error if is_error else messages.success
         add_message(self.request, mark_safe(message))
 
+    def _payment_import_result(self):
+        """The import task's progress meta, or {} when there is no task or it crashed.
+
+        A task that failed carries the exception in `result` rather than the meta dict.
+        """
+        result = getattr(self._payment_import_task, "result", None)
+        return result if isinstance(result, dict) else {}
+
+    def _payment_import_errors(self):
+        """Row errors from the import task, as {description: [row numbers]}."""
+        return self._payment_import_result().get("errors") or {}
+
     def get_extra_context(self, opportunity, org_slug):
         # Only keep polling while the import is still running; once complete the result
-        # is shown as a banner instead of the progress bar.
+        # is shown in an error modal.
         task_id = self.request.GET.get("payment_import_task_id")
-        if task_id and self._payment_import_complete():
+        if task_id and self._payment_import_complete() and not self._payment_import_errors():
             task_id = None
         return {
             "export_form": PaymentExportForm(),

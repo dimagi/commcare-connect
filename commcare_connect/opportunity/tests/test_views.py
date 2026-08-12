@@ -3126,23 +3126,53 @@ def test_payment_import_status_in_progress(mock_async_result, client, organizati
     assert response.status_code == 200
     assert "Payment Record Import is in progress." in content
     assert "hx-get" in content  # keeps polling while not complete
+    # A task that never resolves would otherwise leave the backdrop blocking the page for good.
+    assert "Close" in content
 
 
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
-def test_payment_import_status_complete_shows_reload_link(
+def test_payment_import_status_complete_without_errors_refreshes_page(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
+    """Nothing to show in the modal, so the page reloads and reports the outcome as a banner."""
     task = mock_async_result.return_value
-    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task._get_task_meta.return_value = {
+        "status": "SUCCESS",
+        "args": [opportunity.id],
+        "result": {"message": "done", "is_error": False, "errors": {}},
+    }
     task.info = {"message": "done"}
     client.force_login(org_user_member)
     url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
 
     response = client.get(url)
 
+    assert response["HX-Refresh"] == "true"
+    assert response.content == b""
+
+
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_payment_import_status_complete_with_errors_shows_modal(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    errors = {"Username is required": [3, 5], "Payment amount must be a number": [2]}
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {
+        "status": "SUCCESS",
+        "args": [opportunity.id],
+        "result": {"message": "3 rows have errors", "is_error": True, "errors": errors},
+    }
+    task.info = {"message": "3 rows have errors"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
     content = response.content.decode()
-    assert "All done! View status." in content
-    assert "payment_import_task_id=task-xyz" in content
+    assert "HX-Refresh" not in response
+    assert "Username is required" in content
+    assert "3, 5" in content
+    assert "Error Description" in content
     assert "hx-get" not in content  # polling stops once complete
 
 
@@ -3169,3 +3199,71 @@ def test_worker_payments_shows_import_banner_on_reload(
     assert response.status_code == 200
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_opens_modal_for_import_errors(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {
+        "message": "3 rows have errors",
+        "is_error": True,
+        "errors": {"Username is required": [3, 5], "Payment amount must be a number": [2]},
+    }
+    task.info = {"message": "3 rows have errors"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    # The task id is kept so the modal endpoint is called; the errors themselves render there.
+    assert response.context["payment_import_task_id"] == "task-xyz"
+    assert "payment-import-modal-container" in content
+    # The summary is not also shown as a banner.
+    assert "bg-message-error" not in content
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_stops_polling_once_import_succeeds(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    """Without this the modal endpoint would ask for a refresh on every load, looping forever."""
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": "Payment status uploaded successfully for 3 users.", "is_error": False, "errors": {}}
+    task.info = {"message": "Payment status uploaded successfully for 3 users."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    assert response.context["payment_import_task_id"] is None
+    assert "payment_import_status" not in response.content.decode()
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_reports_a_crashed_import_task(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    """A task that died carries the exception in `result`, not the progress meta dict."""
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "FAILURE"
+    task.result = ValueError("worker died")
+    task.info = ValueError("worker died")
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "The payment import failed. Please try again." in content
+    # Nothing left to poll for, so the modal is not opened again.
+    assert response.context["payment_import_task_id"] is None

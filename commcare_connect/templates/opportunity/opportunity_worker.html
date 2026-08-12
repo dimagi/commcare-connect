@@ -11,6 +11,12 @@
 {% block content %}
   {% load crispy_forms_tags %}
   {% include 'components/breadcrumbs.html' with path=path %}
+  <div id="payment-import-modal-container"></div>
+  {% if payment_import_task_id %}
+    <div hx-get="{% url 'opportunity:payment_import_status' request.org.slug payment_import_task_id %}"
+         hx-trigger="load"
+         hx-target="#payment-import-modal-container"></div>
+  {% endif %}
   <div id="loadingIndicator" class="loading-indicator htmx-indicator">
     <div class="loading-content">
       <div class="loading-spinner"></div>
@@ -38,18 +44,6 @@
         {% if export_task_id %}
           <div class="flex">
             <div hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
-                 hx-target="this"
-                 hx-trigger="load"
-                 hx-swap="outerHTML"
-                 class="flex items-center justify-center">
-              <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-              <span class="sr-only">Loading...</span>
-            </div>
-          </div>
-        {% endif %}
-        {% if payment_import_task_id %}
-          <div class="flex">
-            <div hx-get="{% url 'opportunity:payment_import_status' request.org.slug payment_import_task_id %}"
                  hx-target="this"
                  hx-trigger="load"
                  hx-swap="outerHTML"
