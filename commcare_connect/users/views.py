@@ -306,6 +306,19 @@ class ResendInvitesView(ClientProtectedResourceMixin, View):
         return HttpResponse(status=200)
 
 
+@method_decorator(csrf_exempt, name="dispatch")
+class UpdateUserProfileView(ClientProtectedResourceMixin, View):
+    """Called by PersonalID when a user changes their profile."""
+
+    def post(self, request, *args, **kwargs):
+        username = (request.POST.get("username") or "").strip()
+        name = (request.POST.get("name") or "").strip()
+        if not username or not name:
+            return JsonResponse({"error": "invalid username or name"}, status=400)
+        updated = User.objects.filter(username=username).update(name=name)
+        return JsonResponse({"updated": bool(updated)})
+
+
 class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     template_name = "pages/connect_user_otp.html"
     form_class = ManualUserOTPForm
