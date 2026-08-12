@@ -17,8 +17,11 @@ def set_task_progress(task, message, is_complete=False, is_error=False):
 
 
 def get_task_progress_message(task):
-    if task.info and "message" in task.info:
-        return task.info["message"]
+    # A failed task carries the exception in `info` rather than the progress meta, and testing
+    # `"message" in <exception>` raises rather than returning False.
+    info = task.info
+    if isinstance(info, dict):
+        return info.get("message")
 
 
 def get_task_progress(request, task_id, ownership_check=None):
