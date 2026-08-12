@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentFactory
@@ -8,10 +11,15 @@ from commcare_connect.organization.merge import (
     _move_program_watchers,
     merge_organizations,
 )
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
-from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
+from commcare_connect.users.tests.factories import (
+    MembershipFactory,
+    OrganizationFactory,
+    OrganizationInviteFactory,
+    UserFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -220,3 +228,73 @@ class TestMemberships:
         assert membership.role == "viewer"
         assert summary.memberships_moved == 0
         assert summary.memberships_discarded == 1
+
+
+class TestPendingInvites:
+    def test_pending_invite_moves(self, source, target):
+        invite = OrganizationInviteFactory(organization=source, email="new@example.com")
+
+        summary = merge_organizations(source, target)
+
+        invite.refresh_from_db()
+        assert invite.organization == target
+        assert summary.invites_moved == 1
+
+    @pytest.mark.parametrize("status", [OrganizationInvite.Status.ACCEPTED, OrganizationInvite.Status.REVOKED])
+    def test_invite_that_is_not_pending_is_discarded(self, source, target, status):
+        invite = OrganizationInviteFactory(organization=source, status=status)
+
+        summary = merge_organizations(source, target)
+
+        # The row check alone cannot fail: OrganizationInvite.organization is CASCADE,
+        # so source.delete() removes it either way. The counters are what discriminate.
+        assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
+        assert not OrganizationInvite.objects.filter(pk=invite.pk).exists()
+
+    def test_expired_invite_is_discarded(self, source, target):
+        invite = OrganizationInviteFactory(organization=source)
+        stale = timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+        # date_modified is auto_now, so bypass save() to age the row.
+        OrganizationInvite.objects.filter(pk=invite.pk).update(date_modified=stale)
+
+        summary = merge_organizations(source, target)
+
+        assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
+        assert not OrganizationInvite.objects.filter(pk=invite.pk).exists()
+
+    def test_invite_colliding_with_a_target_invite_is_discarded(self, source, target):
+        source_invite = OrganizationInviteFactory(organization=source, email="dup@example.com")
+        target_invite = OrganizationInviteFactory(organization=target, email="dup@example.com")
+
+        summary = merge_organizations(source, target)
+
+        assert not OrganizationInvite.objects.filter(pk=source_invite.pk).exists()
+        assert OrganizationInvite.objects.filter(pk=target_invite.pk).exists()
+        assert summary.invites_discarded == 1
+
+    def test_invite_for_an_existing_target_member_is_discarded(self, source, target):
+        member = UserFactory(email="member@example.com")
+        MembershipFactory(organization=target, user=member, role="admin")
+        invite = OrganizationInviteFactory(organization=source, email="member@example.com")
+
+        summary = merge_organizations(source, target)
+
+        assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
+        assert not OrganizationInvite.objects.filter(pk=invite.pk).exists()
+        assert UserOrganizationMembership.objects.get(user=member).role == "admin"
+
+    def test_invite_for_a_member_moved_by_this_merge_is_discarded(self, source, target):
+        """Proves invites are handled after memberships, not before."""
+        member = UserFactory(email="mover@example.com")
+        MembershipFactory(organization=source, user=member, role="member")
+        OrganizationInviteFactory(organization=source, email="mover@example.com")
+
+        summary = merge_organizations(source, target)
+
+        # Discriminates against two distinct bugs: a no-op helper (counts stay 0, 0),
+        # and the helpers being called in the wrong order -- invites before memberships
+        # would not yet see the moved membership, so the invite would be MOVED (1, 0)
+        # rather than discarded.
+        assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
+        assert not OrganizationInvite.objects.filter(email="mover@example.com").exists()
+        assert UserOrganizationMembership.objects.get(user=member).organization == target

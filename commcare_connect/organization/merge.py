@@ -6,7 +6,7 @@ from functools import cached_property
 from django.apps import apps
 from django.db import transaction
 
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,8 @@ class MergeSummary:
     self_applications_removed: int = 0
     memberships_moved: int = 0
     memberships_discarded: int = 0
+    invites_moved: int = 0
+    invites_discarded: int = 0
 
 
 def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
@@ -104,6 +106,9 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         # self-application we just deleted).
         self_apps = _remove_self_applications(target)
         members_moved, members_dropped = _merge_memberships(source, target)
+        # Must follow the membership merge, so that the "already a member" check
+        # sees the memberships that have just moved across.
+        invites_moved, invites_dropped = _move_pending_invites(source, target)
 
         summary = MergeSummary(
             source_slug=source.slug,
@@ -115,6 +120,8 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             self_applications_removed=self_apps,
             memberships_moved=members_moved,
             memberships_discarded=members_dropped,
+            invites_moved=invites_moved,
+            invites_discarded=invites_dropped,
         )
         source.delete()
 
@@ -200,4 +207,25 @@ def _merge_memberships(source: Organization, target: Organization) -> tuple[int,
     discarded, _ = source_memberships.filter(user_id__in=target_user_ids).delete()
     # Whatever survived the delete above is target-safe: (user, organization) is unique.
     moved = source_memberships.update(organization=target)
+    return moved, discarded
+
+
+def _move_pending_invites(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the live invites the target has no equivalent for"""
+    taken_emails = {email.lower() for email in target.invites.values_list("email", flat=True)}
+    taken_emails |= {email.lower() for email in target.memberships.values_list("user__email", flat=True) if email}
+
+    moved = 0
+    discarded = 0
+    for invite in source.invites.all():
+        is_live = invite.status == OrganizationInvite.Status.INVITED and not invite.is_expired
+        if not is_live or invite.email.lower() in taken_emails:
+            discarded += 1
+            continue
+
+        invite.organization = target
+        invite.save(update_fields=["organization"])
+        taken_emails.add(invite.email.lower())
+        moved += 1
+
     return moved, discarded
