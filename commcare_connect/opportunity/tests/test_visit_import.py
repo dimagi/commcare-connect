@@ -452,17 +452,19 @@ def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
         (unknown_user.username, 50, "2025-01-15", "method", "operator"),  # row 6
         (suspended_user.username, 50, "2025-01-15", "method", "operator"),  # row 7
         (payable.username, 50, "2025-01-15", "method", "operator"),  # row 8, valid
+        (unknown_user.username, "abc", "2025-01-15", "method", "operator"),  # row 9, two problems
     ]
 
     with pytest.raises(ImportException) as excinfo:
         bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
 
-    assert excinfo.value.message == "6 rows have errors"
+    assert excinfo.value.message == "7 rows have errors"
     assert excinfo.value.errors == {
-        "Payment amount must be a number": [2],
+        "Payment amount must be a number": [2, 9],
         "Username is required": [3, 5],
         "Payment date must be in YYYY-MM-DD format": [4],
-        "Username was not found in this opportunity": [6],
+        # Row 9 is reported here too, rather than only once its amount is fixed.
+        "Username was not found in this opportunity": [6, 9],
         "Worker is suspended": [7],
     }
     # Not even the one valid row is written.

@@ -320,6 +320,8 @@ def _validate_payment_rows(opportunity, headers, rows):
 
     Returns the (row number, payment) pairs grouped by username, together with the
     OpportunityAccess each of those usernames resolves to so the write need not look them up again.
+    A row that failed to parse is kept with a payment of None until the raise, so that its username
+    is checked too rather than only surfacing on the next upload.
     """
     username_col_index = _get_header_index(headers, USERNAME_COL)
     amount_col_index = _get_header_index(headers, AMOUNT_COL)
@@ -332,9 +334,10 @@ def _validate_payment_rows(opportunity, headers, rows):
 
     for row_number, row in enumerate(rows, start=FIRST_DATA_ROW_NUMBER):
         row = list(row)
+        username = str(row[username_col_index] or "").strip()
         try:
             payment = _parse_payment_row(
-                username=row[username_col_index],
+                username=username,
                 amount_raw=row[amount_col_index],
                 payment_date_raw=row[payment_date_col_index],
                 payment_method=row[payment_method_col_index],
@@ -343,6 +346,8 @@ def _validate_payment_rows(opportunity, headers, rows):
         except RowDataError as e:
             for reason in e.reasons:
                 errors_by_reason[reason].append(row_number)
+            if username:
+                payments_by_user[username].append((row_number, None))
             continue
         if payment is None:
             continue
@@ -373,7 +378,6 @@ def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, p
         return None
 
     error_reasons = []
-    username = str(username or "").strip()
     if not username:
         error_reasons.append("Username is required")
 
@@ -406,26 +410,27 @@ def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, p
 
 def _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason):
     """Record a row error for every row whose username cannot be paid, or that repeats a payment."""
-    last_payments = _last_payment_by_username(opportunity, payments_by_user)
     for username, numbered_payments in payments_by_user.items():
         access = accesses.get(username)
-        unpayable_reason = None
         if access is None:
             unpayable_reason = "Username was not found in this opportunity"
         elif access.suspended:
             unpayable_reason = "Worker is suspended"
+        else:
+            continue
+        errors_by_reason[unpayable_reason].extend(row_number for row_number, _ in numbered_payments)
+
+    last_payments = _last_payment_by_username(opportunity, payments_by_user)
+    for username, numbered_payments in payments_by_user.items():
         last_payment = last_payments.get(username)
+        if not last_payment:
+            continue
 
         for row_number, payment in numbered_payments:
-            if unpayable_reason:
-                errors_by_reason[unpayable_reason].append(row_number)
-
+            if payment is None:  # The row failed to parse, so there is nothing to compare.
+                continue
             date_paid = payment["payment_date"] or datetime.date.today()
-            if (
-                last_payment
-                and last_payment.amount == payment["amount"]
-                and last_payment.date_paid.date() == date_paid
-            ):
+            if last_payment.amount == payment["amount"] and last_payment.date_paid.date() == date_paid:
                 reason = "A payment for this user with the same amount and date already exists"
                 errors_by_reason[reason].append(row_number)
 
