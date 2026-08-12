@@ -7,6 +7,7 @@ from django.apps import apps
 from django.db import transaction
 
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,14 @@ HANDLED_RELATIONS = frozenset(
     }
 )
 
+APPLICATION_STATUS_PRECEDENCE = [
+    ProgramApplicationStatus.REJECTED,
+    ProgramApplicationStatus.DECLINED,
+    ProgramApplicationStatus.INVITED,
+    ProgramApplicationStatus.APPLIED,
+    ProgramApplicationStatus.ACCEPTED,
+]
+
 
 @dataclass(frozen=True)
 class MergeSummary:
@@ -71,6 +80,9 @@ class MergeSummary:
     target_slug: str
     reassigned: dict[str, int] = field(default_factory=dict)
     programs_watched: int = 0
+    applications_moved: int = 0
+    applications_deduped: int = 0
+    self_applications_removed: int = 0
 
 
 def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
@@ -83,12 +95,21 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
     with transaction.atomic():
         reassigned = _reassign_simple_relations(source, target)
         watched = _move_program_watchers(source, target)
+        apps_moved, apps_deduped = _merge_program_applications(source, target)
+        # Must follow both the Program.organization reassignment above (which is what
+        # makes a program target-owned) and the application merge (which would
+        # otherwise move a source application in afterwards and recreate the
+        # self-application we just deleted).
+        self_apps = _remove_self_applications(target)
 
         summary = MergeSummary(
             source_slug=source.slug,
             target_slug=target.slug,
             reassigned=reassigned,
             programs_watched=watched,
+            applications_moved=apps_moved,
+            applications_deduped=apps_deduped,
+            self_applications_removed=self_apps,
         )
         source.delete()
 
@@ -121,3 +142,47 @@ def _move_program_watchers(source: Organization, target: Organization) -> int:
     target.watched_programs.add(*watched)
     source.watched_programs.clear()
     return len(watched)
+
+
+def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move applications, keeping one row per program at the most advanced status.
+
+    ``(program, organization)`` is not unique in the database but ``invite_organization`` relies on it, calling
+    ``update_or_create``, which raises ``MultipleObjectsReturned`` the moment duplicates exist.
+    """
+    target_applications = {app.program_id: app for app in target.programapplication_set.all()}
+
+    moved = 0
+    deduped = 0
+    for application in source.programapplication_set.all():
+        existing = target_applications.get(application.program_id)
+        if existing is None:
+            application.organization = target
+            application.save(update_fields=["organization"])
+            target_applications[application.program_id] = application
+            moved += 1
+            continue
+
+        # Keep the application that's the most 'advanced'
+        surviving_status = _most_advanced_status(existing.status, application.status)
+        if surviving_status != existing.status:
+            existing.status = surviving_status
+            existing.save(update_fields=["status"])
+        application.delete()
+        deduped += 1
+
+    return moved, deduped
+
+
+def _most_advanced_status(*statuses: str) -> str:
+    return max(statuses, key=APPLICATION_STATUS_PRECEDENCE.index)
+
+
+def _remove_self_applications(target: Organization) -> int:
+    """Drop applications an organization holds to a program it now owns.
+
+    Repointing ``Program.organization`` can leave the target holding an application to its own program, a row
+    ``invite_organization`` refuses to create in the first place.
+    """
+    deleted, _ = ProgramApplication.objects.filter(organization=target, program__organization=target).delete()
+    return deleted

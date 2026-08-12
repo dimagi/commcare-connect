@@ -9,10 +9,13 @@ from commcare_connect.organization.merge import (
     merge_organizations,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory
 
 pytestmark = pytest.mark.django_db
+
+Status = ProgramApplicationStatus
 
 
 @pytest.fixture
@@ -132,3 +135,63 @@ class TestProgramWatchers:
         # Asserted without merge_organizations, so the source's removal is
         # attributable to the helper rather than to source.delete()'s cascade.
         assert list(program.watchers.all()) == [target]
+
+
+class TestProgramApplications:
+    def test_source_only_application_moves(self, source, target):
+        application = ProgramApplicationFactory(organization=source)
+
+        summary = merge_organizations(source, target)
+
+        application.refresh_from_db()
+        assert application.organization == target
+        assert summary.applications_moved == 1
+        assert summary.applications_deduped == 0
+
+    @pytest.mark.parametrize(
+        ("source_status", "target_status", "expected"),
+        [
+            (Status.ACCEPTED, Status.REJECTED, Status.ACCEPTED),
+            (Status.INVITED, Status.ACCEPTED, Status.ACCEPTED),
+            (Status.INVITED, Status.APPLIED, Status.APPLIED),
+            (Status.DECLINED, Status.REJECTED, Status.DECLINED),
+            (Status.APPLIED, Status.APPLIED, Status.APPLIED),
+        ],
+    )
+    def test_conflict_keeps_the_most_advanced_status(self, source, target, source_status, target_status, expected):
+        program = ProgramFactory()
+        ProgramApplicationFactory(program=program, organization=source, status=source_status)
+        ProgramApplicationFactory(program=program, organization=target, status=target_status)
+
+        summary = merge_organizations(source, target)
+
+        applications = ProgramApplication.objects.filter(program=program)
+        assert applications.count() == 1, "duplicates would break invite_organization's update_or_create"
+        surviving = applications.get()
+        assert surviving.organization == target
+        assert surviving.status == expected
+        assert summary.applications_deduped == 1
+
+    def test_duplicate_source_applications_collapse_to_one(self, source, target):
+        """The source can hold duplicates: nothing in the DB or admin prevents it."""
+        program = ProgramFactory()
+        ProgramApplicationFactory(program=program, organization=source, status=Status.INVITED)
+        ProgramApplicationFactory(program=program, organization=source, status=Status.ACCEPTED)
+
+        summary = merge_organizations(source, target)
+
+        applications = ProgramApplication.objects.filter(program=program)
+        assert applications.count() == 1
+        assert applications.get().status == Status.ACCEPTED
+        assert (summary.applications_moved, summary.applications_deduped) == (1, 1)
+
+    def test_application_to_a_program_the_target_now_owns_is_removed(self, source, target):
+        program = ProgramFactory(organization=source)
+        ProgramApplicationFactory(program=program, organization=target)
+
+        summary = merge_organizations(source, target)
+
+        program.refresh_from_db()
+        assert program.organization == target
+        assert not ProgramApplication.objects.filter(program=program).exists()
+        assert summary.self_applications_removed == 1
