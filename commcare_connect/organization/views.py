@@ -4,7 +4,7 @@ from allauth.account import app_settings as allauth_account_settings
 from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext
@@ -23,12 +23,10 @@ from commcare_connect.organization.models import Organization, OrganizationInvit
 from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
-@permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
     form = OrganizationSelectOrCreateForm(data=request.POST or None, user=request.user)
 
