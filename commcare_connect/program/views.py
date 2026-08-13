@@ -36,7 +36,7 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import is_org_pm, request_can_manage_program
+from .utils import is_org_pm, program_from_request, request_can_manage_program
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -135,9 +135,10 @@ class ManagedOpportunityViewMixin:
     program = None
 
     def dispatch(self, request, *args, **kwargs):
-        try:
-            self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
-        except Program.DoesNotExist:
+        # Shared with the access gate, so the view and the gate cannot disagree about
+        # which program is in scope: the opportunity's on edit, the pk's on create.
+        self.program = program_from_request(request)
+        if self.program is None:
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)

@@ -1,10 +1,12 @@
 from http import HTTPStatus
+from types import SimpleNamespace
 
 import pytest
 from django.contrib import messages
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.test import Client
 from django.urls import reverse
+from django.views import View
 
 from commcare_connect.opportunity.tests.factories import (
     DeliveryTypeFactory,
@@ -15,7 +17,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
-from commcare_connect.program.views import ProgramManagerMixin
+from commcare_connect.program.views import ManagedOpportunityViewMixin, ProgramManagerMixin
 from commcare_connect.users.middleware import OrganizationMiddleware
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
@@ -336,3 +338,49 @@ class TestMiddlewareIsOpportunityPm:
 
         # request.is_opportunity_pm is a SimpleLazyObject, so `is True` would never hold.
         assert bool(request.is_opportunity_pm) is True
+
+
+class TestManagedOpportunityUsesTheOpportunitysProgram:
+    """The view's in-scope program must match the gate's, not the URL's pk."""
+
+    class _ConcreteView(ManagedOpportunityViewMixin, View):
+        def get(self, request, *args, **kwargs):
+            return HttpResponse("OK")
+
+    def _dispatch(self, rf, user, org, membership, kwargs):
+        request = rf.get("/")
+        request.user = user
+        request.org = org
+        request.org_membership = membership
+        request.resolver_match = SimpleNamespace(kwargs=kwargs, app_names=["program"])
+
+        view = self._ConcreteView()
+        view.kwargs = kwargs
+        view.dispatch(request)
+        return view
+
+    def test_mismatched_pk_does_not_select_a_foreign_program(self, rf, program, organization):
+        opp = OpportunityFactory(program=program, organization=organization)
+        foreign_program = ProgramFactory(organization=OrganizationFactory(program_manager=True))
+        user = UserFactory()
+        membership = make_membership(program.organization, user, "admin")
+
+        view = self._dispatch(
+            rf,
+            user,
+            program.organization,
+            membership,
+            {"pk": str(foreign_program.program_id), "opp_id": str(opp.opportunity_id)},
+        )
+
+        assert view.program == program
+        assert view.program != foreign_program
+
+    def test_create_still_resolves_the_pk(self, rf, program):
+        """program:opportunity_init carries only a pk, so that program is in scope."""
+        user = UserFactory()
+        membership = make_membership(program.organization, user, "admin")
+
+        view = self._dispatch(rf, user, program.organization, membership, {"pk": str(program.program_id)})
+
+        assert view.program == program
