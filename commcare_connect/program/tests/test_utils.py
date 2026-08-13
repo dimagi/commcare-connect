@@ -6,13 +6,16 @@ from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import (
     AccessLevel,
+    is_opportunity_pm,
     is_org_pm,
+    opportunity_manage_org_ids,
     org_program_role,
     organization_role_level,
     program_from_request,
     request_access_level,
     request_can_manage_program,
     request_can_view_program,
+    request_supervises_opportunity,
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
@@ -247,3 +250,131 @@ class TestProgramFromRequest:
         with django_assert_num_queries(1):
             program_from_request(request)
             program_from_request(request)
+
+
+class TestOpportunityManageOrgIds:
+    def test_includes_program_org_funder_and_supervisor(self, program, funder_org, supervisor_org, organization):
+        program.funder = funder_org
+        program.save()
+        opp = OpportunityFactory(program=program, organization=organization, supervising_organization=supervisor_org)
+        assert opportunity_manage_org_ids(opp) == {program.organization_id, funder_org.id, supervisor_org.id}
+
+    def test_omits_absent_funder(self, program, supervisor_org, organization):
+        opp = OpportunityFactory(program=program, organization=organization, supervising_organization=supervisor_org)
+        assert opportunity_manage_org_ids(opp) == {program.organization_id, supervisor_org.id}
+
+    def test_excludes_the_executing_network_manager(self, program, organization):
+        """The executing org's access is unchanged and is not PM-level oversight."""
+        opp = OpportunityFactory(
+            program=program, organization=organization, supervising_organization=program.organization
+        )
+        assert organization.id not in opportunity_manage_org_ids(opp)
+
+
+class TestRequestSupervisesOpportunity:
+    @pytest.fixture
+    def opp(self, program, funder_org, supervisor_org, organization):
+        program.funder = funder_org
+        program.save()
+        return OpportunityFactory(program=program, organization=organization, supervising_organization=supervisor_org)
+
+    @pytest.mark.parametrize(
+        "relationship,role,expected",
+        [
+            ("program_org", Role.ADMIN, True),
+            ("program_org", Role.MEMBER, False),
+            ("program_org", Role.VIEWER, False),
+            ("funder", Role.ADMIN, True),
+            ("funder", Role.MEMBER, False),
+            ("supervisor", Role.ADMIN, True),
+            ("supervisor", Role.MEMBER, False),
+            ("supervisor", Role.VIEWER, False),
+            ("executor", Role.ADMIN, False),
+            ("unrelated", Role.ADMIN, False),
+        ],
+    )
+    def test_matrix(self, relationship, role, expected, opp, program, funder_org, supervisor_org, organization):
+        orgs = {
+            "program_org": program.organization,
+            "funder": funder_org,
+            "supervisor": supervisor_org,
+            "executor": organization,
+            "unrelated": OrganizationFactory(),
+        }
+        org = orgs[relationship]
+        user = UserFactory()
+        membership = make_membership(org, user, role)
+        request = StubRequest(user=user, org=org, membership=membership)
+
+        assert request_supervises_opportunity(request, opp) is expected
+
+    def test_watcher_does_not_supervise(self, opp, program, watcher_org):
+        program.watchers.add(watcher_org)
+        user = UserFactory()
+        membership = make_membership(watcher_org, user, Role.ADMIN)
+        request = StubRequest(user=user, org=watcher_org, membership=membership)
+        assert request_supervises_opportunity(request, opp) is False
+
+    def test_all_org_access_supervises(self, opp):
+        user = grant_all_org_access(UserFactory())
+        request = StubRequest(user=user, org=OrganizationFactory(), membership=None)
+        assert request_supervises_opportunity(request, opp) is True
+
+    @pytest.mark.parametrize("all_org_access", [False, True])
+    def test_no_org_is_false_even_with_all_org_access(self, all_org_access, opp):
+        user = grant_all_org_access(UserFactory()) if all_org_access else UserFactory()
+        request = StubRequest(user=user, org=None, membership=None)
+        assert request_supervises_opportunity(request, opp) is False
+
+    @pytest.mark.parametrize("all_org_access", [False, True])
+    def test_no_opportunity_is_false(self, all_org_access, organization):
+        user = grant_all_org_access(UserFactory()) if all_org_access else UserFactory()
+        request = StubRequest(user=user, org=organization, membership=None)
+        assert request_supervises_opportunity(request, None) is False
+
+
+class TestIsOpportunityPm:
+    @pytest.fixture
+    def opp(self, program, funder_org, supervisor_org, organization):
+        program.funder = funder_org
+        program.save()
+        return OpportunityFactory(program=program, organization=organization, supervising_organization=supervisor_org)
+
+    @pytest.mark.parametrize("id_kind", ["pk", "uuid"])
+    @pytest.mark.parametrize("relationship", ["program_org", "funder", "supervisor"])
+    def test_admins_of_overseeing_orgs_pass(self, relationship, id_kind, opp, program, funder_org, supervisor_org):
+        org = {"program_org": program.organization, "funder": funder_org, "supervisor": supervisor_org}[relationship]
+        user = UserFactory()
+        membership = make_membership(org, user, Role.ADMIN)
+        request = StubRequest(user=user, org=org, membership=membership)
+        opp_id = opp.pk if id_kind == "pk" else opp.opportunity_id
+
+        assert is_opportunity_pm(request, opp_id) is True
+
+    def test_executing_org_admin_does_not_pass(self, opp, organization):
+        user = UserFactory()
+        membership = make_membership(organization, user, Role.ADMIN)
+        request = StubRequest(user=user, org=organization, membership=membership)
+        assert is_opportunity_pm(request, opp.pk) is False
+
+    @pytest.mark.parametrize("opp_id", [10**9, "abc"], ids=["unknown-pk", "malformed-id"])
+    def test_unresolvable_opportunity_is_false(self, opp_id, organization):
+        user = UserFactory()
+        membership = make_membership(organization, user, Role.ADMIN)
+        request = StubRequest(user=user, org=organization, membership=membership)
+        assert is_opportunity_pm(request, opp_id) is False
+
+    def test_relationship_change_takes_effect_immediately(self, opp, organization):
+        """Guards against reintroducing the deleted get_managed_opp quickcache,
+        which had no invalidation and would keep answering False here for 24 hours.
+        """
+        newcomer_org = OrganizationFactory()
+        user = UserFactory()
+        membership = make_membership(newcomer_org, user, Role.ADMIN)
+        request = StubRequest(user=user, org=newcomer_org, membership=membership)
+        assert is_opportunity_pm(request, opp.pk) is False
+
+        opp.supervising_organization = newcomer_org
+        opp.save()
+        fresh_request = StubRequest(user=user, org=newcomer_org, membership=membership)
+        assert is_opportunity_pm(fresh_request, opp.pk) is True

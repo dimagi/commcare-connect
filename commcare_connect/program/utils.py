@@ -1,7 +1,6 @@
 import uuid
 from enum import IntEnum
 
-from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.program.models import Program
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
@@ -125,12 +124,32 @@ def _program_id_from_kwargs(request, kwargs) -> str | None:
     return program_id
 
 
-@quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
-def get_managed_opp(opp_id) -> Opportunity | None:
-    queryset = Opportunity.objects.select_related("program__organization")
-    if str(opp_id).isdigit():
-        return queryset.filter(pk=int(opp_id)).first()
-    return queryset.filter(opportunity_id=opp_id).first()
+def request_supervises_opportunity(request, opportunity) -> bool:
+    """Whether the request's org has PM-level oversight of this one opportunity.
+
+    That is the program's org, its funder, or the opportunity's supervising
+    organization. Watchers never supervise; their read access comes from
+    request_can_view_program.
+    """
+    if opportunity is None or not request.org:
+        return False
+    if request.user.has_perm(ALL_ORG_ACCESS):
+        return True
+    # Below ALL_ORG_ACCESS: its holders normally have no membership in the org.
+    if organization_role_level(request.org_membership) is not AccessLevel.MANAGE:
+        return False
+    return request.org.id in opportunity_manage_org_ids(opportunity)
+
+
+def opportunity_manage_org_ids(opportunity) -> set[int]:
+    """Org ids with PM-level oversight of `opportunity`, ignoring internal roles."""
+    ids = {
+        opportunity.program.organization_id,
+        opportunity.program.funder_id,
+        opportunity.supervising_organization_id,
+    }
+    ids.discard(None)
+    return ids
 
 
 def is_org_pm(request) -> bool:
@@ -138,8 +157,7 @@ def is_org_pm(request) -> bool:
 
 
 def is_opportunity_pm(request, opp_id) -> bool:
-    managed_opp = get_managed_opp(opp_id)
-    return bool(managed_opp and managed_opp.program.organization.slug == request.org.slug and is_org_pm(request))
+    return request_supervises_opportunity(request, opportunity_by_id(opp_id))
 
 
 def populate_currency_and_country_fk_for_model(apps, model_name, app_label, total_label):
