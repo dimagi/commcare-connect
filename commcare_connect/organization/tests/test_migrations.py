@@ -32,6 +32,17 @@ class TestBackfillOrganizationProfileFromEntity:
             org.refresh_from_db()
             assert org.short_name == "SHARED"
 
+    def test_orgs_spanning_multiple_batches_are_all_backfilled(self, monkeypatch):
+        monkeypatch.setattr(backfill_migration, "BATCH_SIZE", 2)
+        entity = LLOEntityFactory(short_name="BATCHED")
+        orgs = [OrganizationFactory(llo_entity=entity) for _ in range(5)]
+
+        backfill_migration.copy_entity_profile_to_organizations(apps, None)
+
+        for org in orgs:
+            org.refresh_from_db()
+            assert org.short_name == "BATCHED"
+
     def test_org_without_entity_is_untouched(self):
         org = OrganizationFactory(llo_entity=None, short_name="KEEP")
 
