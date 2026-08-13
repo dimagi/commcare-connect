@@ -9,7 +9,12 @@ from django.utils import timezone
 from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationSelectOrCreateForm
 from commcare_connect.organization.models import LLOEntity, Organization, OrganizationInvite
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import LLOEntityFactory, OrganizationInviteFactory, UserFactory
+from commcare_connect.users.tests.factories import (
+    LLOEntityFactory,
+    MembershipFactory,
+    OrganizationInviteFactory,
+    UserFactory,
+)
 from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
@@ -202,18 +207,20 @@ class TestOrganizationChangeForm:
 
 @pytest.mark.django_db
 class TestOrganizationSelectOrCreateForm:
-    def test_both_llo_entity_and_org_exist(self):
+    def test_both_llo_entity_and_org_exist(self, user: User):
         existing_llo = LLOEntity.objects.create(name="Existing LLO")
         existing_org = Organization.objects.create(name="Existing Org", llo_entity=existing_llo)
+        MembershipFactory(user=user, organization=existing_org)
 
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
 
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": str(existing_org.pk),
                 "llo_entity": str(existing_llo.pk),
-            }
+            },
         )
 
         assert form.is_valid(), form.errors
@@ -227,17 +234,18 @@ class TestOrganizationSelectOrCreateForm:
         assert org.llo_entity == existing_llo
         assert not is_new_org
 
-    def test_llo_entity_exists_new_org_created(self):
+    def test_llo_entity_exists_new_org_created(self, user: User):
         existing_llo = LLOEntity.objects.create(name="Existing LLO")
 
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
 
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Organization",
                 "llo_entity": str(existing_llo.pk),
-            }
+            },
         )
 
         assert form.is_valid(), form.errors
@@ -251,16 +259,17 @@ class TestOrganizationSelectOrCreateForm:
         assert org.llo_entity == existing_llo
         assert is_new_org
 
-    def test_both_new_llo_entity_and_new_org_created(self):
+    def test_both_new_llo_entity_and_new_org_created(self, user: User):
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
 
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + "Brand New Organization",
                 "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "Brand New LLO",
                 "llo_entity_short_name": "BNL",
-            }
+            },
         )
 
         assert form.is_valid(), form.errors
@@ -277,16 +286,18 @@ class TestOrganizationSelectOrCreateForm:
         assert org.llo_entity.short_name == "BNL"
         assert is_new_org
 
-    def test_validation_error_mismatched_llo_entity(self):
+    def test_validation_error_mismatched_llo_entity(self, user: User):
         llo1 = LLOEntity.objects.create(name="LLO One")
         llo2 = LLOEntity.objects.create(name="LLO Two")
         existing_org = Organization.objects.create(name="Org With LLO One", llo_entity=llo1)
+        MembershipFactory(user=user, organization=existing_org)
 
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": str(existing_org.pk),
                 "llo_entity": str(llo2.pk),  # Different LLO
-            }
+            },
         )
 
         assert not form.is_valid()
@@ -295,13 +306,14 @@ class TestOrganizationSelectOrCreateForm:
             "Selected LLO Entity does not match the existing organization's LLO Entity."
         ]
 
-    def test_create_new_llo_entity_with_short_name(self):
+    def test_create_new_llo_entity_with_short_name(self, user: User):
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
                 "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO",
                 "llo_entity_short_name": "NL",
-            }
+            },
         )
         assert form.is_valid(), form.errors
         org, is_new_org = form.save()
@@ -309,26 +321,71 @@ class TestOrganizationSelectOrCreateForm:
         assert org.llo_entity.name == "New LLO"
         assert org.llo_entity.short_name == "NL"
 
-    def test_existing_llo_entity_short_name_not_updated(self):
+    def test_existing_llo_entity_short_name_not_updated(self, user: User):
         existing_llo = LLOEntityFactory(short_name="EL")
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
                 "llo_entity": str(existing_llo.pk),
                 "llo_entity_short_name": "CHANGED",
-            }
+            },
         )
         assert form.is_valid(), form.errors
         form.save()
         existing_llo.refresh_from_db()
         assert existing_llo.short_name == "EL"
 
-    def test_create_new_llo_entity_without_short_name_is_invalid(self):
+    def test_create_new_llo_entity_without_short_name_is_invalid(self, user: User):
         form = OrganizationSelectOrCreateForm(
+            user=user,
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
                 "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO",
-            }
+            },
         )
         assert not form.is_valid()
         assert "llo_entity_short_name" in form.errors
+
+    def test_org_outside_visible_orgs_cannot_be_selected(self, user: User):
+        other_llo = LLOEntity.objects.create(name="Other LLO")
+        other_org = Organization.objects.create(name="Other Org", llo_entity=other_llo)
+
+        form = OrganizationSelectOrCreateForm(
+            user=user,
+            data={
+                "org": str(other_org.pk),
+                "llo_entity": str(other_llo.pk),
+            },
+        )
+
+        assert not form.is_valid()
+        assert form.errors["org"] == [f"Select a valid choice. {other_org.pk} is not one of the available choices."]
+
+    def test_dropdown_data_excludes_orgs_the_user_cannot_see(self, user: User):
+        llo_entity = LLOEntity.objects.create(name="Shared LLO")
+        own_org = Organization.objects.create(name="Own Org", llo_entity=llo_entity)
+        MembershipFactory(user=user, organization=own_org)
+        Organization.objects.create(name="Someone Elses Org", llo_entity=llo_entity)
+
+        entity_wise_orgs = OrganizationSelectOrCreateForm(user=user).get_entity_wise_orgs()
+
+        assert entity_wise_orgs[str(llo_entity.id)]["organizations"] == [
+            {"id": own_org.id, "name": own_org.name, "slug": own_org.slug}
+        ]
+
+    @pytest.mark.parametrize("new_name", ["Existing Org", "existing org"])
+    def test_duplicate_org_name_is_rejected_even_when_not_visible(self, user: User, new_name):
+        llo_entity = LLOEntity.objects.create(name="Some LLO")
+        Organization.objects.create(name="Existing Org", llo_entity=llo_entity)
+
+        form = OrganizationSelectOrCreateForm(
+            user=user,
+            data={
+                "org": TOMSELECT_NEW_ENTRY_PREFIX + new_name,
+                "llo_entity": str(llo_entity.pk),
+            },
+        )
+
+        assert not form.is_valid()
+        assert form.errors["org"] == ["A workspace with this name already exists. Please choose a different name."]

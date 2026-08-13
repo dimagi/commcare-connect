@@ -7,6 +7,7 @@ from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
+from commcare_connect.organization.helpers import orgs_visible_to
 from commcare_connect.organization.models import (
     LLOEntity,
     Organization,
@@ -237,11 +238,20 @@ class OrganizationSelectOrCreateForm(forms.Form):
         ),
     )
 
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+        self.fields["org"].queryset = self.visible_orgs.order_by("name")
+
+    @property
+    def visible_orgs(self):
+        return orgs_visible_to(self.user)
+
     def get_entity_wise_orgs(self):
         data = {}
         qs = (
             LLOEntity.objects.prefetch_related(
-                Prefetch("organization_set", queryset=Organization.objects.only("id", "name", "slug"))
+                Prefetch("organization_set", queryset=self.visible_orgs.only("id", "name", "slug"))
             )
             .only("id", "name")
             .order_by("name")
@@ -254,6 +264,19 @@ class OrganizationSelectOrCreateForm(forms.Form):
                 ]
             }
         return data
+
+    def clean_org(self):
+        """Block duplicate workspace names platform-wide, not just among visible workspaces.
+
+        The field's own duplicate check only covers workspaces the user can see and select,
+        so on its own it would let a user create a workspace named after one they cannot see.
+        """
+        org = self.cleaned_data["org"]
+        if org and not org.pk and Organization.objects.filter(name__iexact=org.name).exists():
+            raise ValidationError(
+                gettext("A workspace with this name already exists. Please choose a different name.")
+            )
+        return org
 
     def clean(self):
         cleaned_data = super().clean()
