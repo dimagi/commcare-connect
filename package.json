@@ -22,7 +22,7 @@
     "htmx.org": "^2.0.9",
     "mapbox-gl": "^3.13.0",
     "mini-css-extract-plugin": "^2.4.5",
-    "open-chat-studio-widget": "^0.5.2",
+    "open-chat-studio-widget": "^0.11.0",
     "postcss": "^8.5.3",
     "postcss-loader": "^8.2.1",
     "sass": "^1.43.4",
