@@ -6,6 +6,11 @@ from django.utils.decorators import method_decorator
 from rest_framework.permissions import BasePermission
 
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.program.utils import (
+    opportunity_manage_org_ids,
+    request_can_manage_program,
+    request_can_view_program,
+)
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
@@ -46,12 +51,12 @@ def user_is_opportunity_admin(user, opportunity):
 
 
 def user_is_opportunity_pm(user, opportunity):
+    """Whether `user` is an admin of an org with PM-level oversight of `opportunity`."""
     if user.has_perm(ALL_ORG_ACCESS):
         return True
     return UserOrganizationMembership.objects.filter(
         user=user,
-        organization_id=opportunity.program.organization_id,
-        organization__program_manager=True,
+        organization_id__in=opportunity_manage_org_ids(opportunity),
         role=UserOrganizationMembership.Role.ADMIN,
     ).exists()
 
@@ -79,9 +84,7 @@ def _request_user_is_admin(request):
 
 
 def is_org_pm_or_all_access(request):
-    return (
-        request.org and request.org_membership and request.org_membership.is_admin and request.org.program_manager
-    ) or request.user.has_perm(ALL_ORG_ACCESS)
+    return request_can_manage_program(request)
 
 
 def _request_user_is_viewer(request):
@@ -106,6 +109,11 @@ def org_pm_required(view_func):
 
 def opportunity_pm_required(view_func):
     return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
+
+
+def program_viewer_required(view_func):
+    """Read-only gate: passes for any org with a manage or watcher relationship."""
+    return _get_decorated_function(view_func, request_can_view_program)
 
 
 def _get_decorated_function(view_func, permission_test_function):
@@ -170,5 +178,13 @@ class OrganizationUserMemberRoleMixin:
     """Mixin version of org_member_required decorator"""
 
     @method_decorator(org_member_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class ProgramViewerRequiredMixin:
+    """Mixin version of program_viewer_required decorator"""
+
+    @method_decorator(program_viewer_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
