@@ -15,8 +15,11 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.program.views import ProgramManagerMixin
+from commcare_connect.users.middleware import OrganizationMiddleware
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
+from commcare_connect.utils.test_utils import StubRequest, make_membership
 
 
 class BaseProgramTest:
@@ -279,3 +282,57 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
         response = self.client.get(edit_url)
         assert response.status_code == HTTPStatus.OK
         assert self.program.name.encode() in response.content
+
+
+class TestProgramManagerMixinAccess:
+    """ProgramManagerMixin gates on the manage relationship, not the program_manager flag."""
+
+    @pytest.fixture
+    def program_with_relations(self, program, funder_org, watcher_org):
+        program.funder = funder_org
+        program.save()
+        program.watchers.add(watcher_org)
+        return program
+
+    @pytest.mark.parametrize(
+        "relationship,role,expected",
+        [
+            ("program_org", "admin", True),
+            ("program_org", "member", False),
+            ("funder", "admin", True),
+            ("funder", "member", False),
+            ("watcher", "admin", False),
+            ("unrelated", "admin", False),
+        ],
+    )
+    def test_test_func(self, relationship, role, expected, program_with_relations, funder_org, watcher_org):
+        orgs = {
+            "program_org": program_with_relations.organization,
+            "funder": funder_org,
+            "watcher": watcher_org,
+            "unrelated": OrganizationFactory(),
+        }
+        org = orgs[relationship]
+        user = UserFactory()
+        membership = make_membership(org, user, role)
+
+        view = ProgramManagerMixin()
+        view.request = StubRequest(user=user, org=org, membership=membership, program=program_with_relations)
+
+        assert view.test_func() is expected
+
+
+class TestMiddlewareIsOpportunityPm:
+    def test_supervising_org_admin_gets_is_opportunity_pm(self, rf, program, supervisor_org, organization):
+        opp = OpportunityFactory(program=program, organization=organization, supervising_organization=supervisor_org)
+        user = UserFactory()
+        make_membership(supervisor_org, user, "admin")
+
+        request = rf.get("/")
+        request.user = user
+        OrganizationMiddleware(lambda r: None).process_view(
+            request, lambda r: None, [], {"org_slug": supervisor_org.slug, "opp_id": str(opp.pk)}
+        )
+
+        # request.is_opportunity_pm is a SimpleLazyObject, so `is True` would never hold.
+        assert bool(request.is_opportunity_pm) is True

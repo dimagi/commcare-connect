@@ -36,16 +36,12 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import is_org_pm
+from .utils import is_org_pm, request_can_manage_program
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
-        org_membership = getattr(self.request, "org_membership", None)
-        is_admin = getattr(org_membership, "is_admin", False)
-        org = getattr(self.request, "org", None)
-        program_manager = getattr(org, "program_manager", False)
-        return (org_membership is not None and is_admin and program_manager) or self.request.user.is_superuser
+        return request_can_manage_program(self.request)
 
 
 ALLOWED_ORDERINGS = {
