@@ -16,11 +16,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import Program
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
     MobileUserFactory,
+    OrganizationFactory,
     OrgWithUsersFactory,
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
@@ -153,6 +155,27 @@ def program_manager_org_user_member(program_manager_org) -> User:
 @pytest.fixture
 def program_manager_org_user_admin(program_manager_org) -> User:
     return program_manager_org.memberships.filter(role="admin").first().user
+
+
+@pytest.fixture
+def program(program_manager_org) -> Program:
+    return ProgramFactory(organization=program_manager_org)
+
+
+@pytest.fixture
+def funder_org(db) -> Organization:
+    return OrganizationFactory(funder=True)
+
+
+@pytest.fixture
+def watcher_org(db) -> Organization:
+    return OrganizationFactory()
+
+
+@pytest.fixture
+def supervisor_org(db) -> Organization:
+    """A participating Network Manager that supervises a single opportunity."""
+    return OrganizationFactory()
 
 
 @pytest.fixture(autouse=True)
