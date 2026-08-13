@@ -39,6 +39,15 @@ def organization_create(request):
     return render(request, "organization/organization_create.html", context={"form": form})
 
 
+@login_required
+def no_organization(request):
+    """Landing page for users who don't belong to any workspace yet."""
+    if request.user.memberships.exists():
+        return redirect("users:redirect")
+
+    return render(request, "organization/no_organization.html")
+
+
 @org_admin_required
 def organization_home(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)

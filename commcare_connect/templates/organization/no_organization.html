@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}
+  {% trans "Connect - No Workspace" %}
+{% endblock title %}
+{% block content %}
+  <div class="card_bg">
+    <div class="flex flex-col items-center justify-center gap-4 h-[80vh]">
+      <i class="fa-solid fa-box-open text-5xl text-gray-500"></i>
+      <p class="title text-brand-deep-purple text-center">{% trans "You are not part of a workspace yet" %}</p>
+      <p class="max-w-lg text-center text-gray-500 text-sm">
+        {% blocktrans %}
+          You are not currently a member of any workspaces. Please ask your administrator to invite you
+          to their workspace.
+          Otherwise, you can create a new workspace.
+        {% endblocktrans %}
+      </p>
+      <a href="{% url 'organization_create' %}"
+         class="button button-md primary-dark">{% trans "Create a Workspace" %}</a>
+    </div>
+  </div>
+{% endblock content %}

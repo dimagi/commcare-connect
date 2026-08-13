@@ -163,6 +163,32 @@ class TestOrganizationCreateView:
 
 
 @pytest.mark.django_db
+class TestNoOrganizationView:
+    def url(self):
+        return reverse("no_organization")
+
+    def test_membership_less_user_is_offered_org_creation(self, client, user):
+        client.force_login(user)
+        response = client.get(self.url())
+
+        assert response.status_code == 200
+        assert reverse("organization_create") in response.content.decode()
+
+    def test_member_is_redirected_to_their_workspace(self, client, org_user_member):
+        client.force_login(org_user_member)
+        response = client.get(self.url())
+
+        assert response.status_code == 302
+        assert response.url == reverse("users:redirect")
+
+    def test_anonymous_user_is_redirected_to_login(self, client):
+        response = client.get(self.url())
+
+        assert response.status_code == 302
+        assert reverse("account_login") in response.url
+
+
+@pytest.mark.django_db
 class TestAcceptInviteView:
     @staticmethod
     def _url(org_slug, token):

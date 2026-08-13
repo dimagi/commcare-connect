@@ -73,7 +73,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self):
         if not self.request.user.memberships.exists():
-            return reverse("home")
+            return reverse("no_organization")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
@@ -338,7 +338,7 @@ class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
 @require_GET
 def internal_features(request):
     if not request.user.show_internal_features:
-        return redirect("home")
+        return redirect("users:redirect")
 
     features = [
         {
