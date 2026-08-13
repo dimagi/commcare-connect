@@ -384,3 +384,37 @@ class TestManagedOpportunityUsesTheOpportunitysProgram:
         view = self._dispatch(rf, user, program.organization, membership, {"pk": str(program.program_id)})
 
         assert view.program == program
+
+
+class TestManageApplicationIsScopedToItsProgram:
+    def test_other_program_manager_org_cannot_manage_the_application(self, client, program):
+        """A PM-org admin unrelated to this program must not accept its applications."""
+        application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.APPLIED)
+        outsider_org = OrganizationFactory(program_manager=True)
+        user = UserFactory()
+        make_membership(outsider_org, user, "admin")
+        client.force_login(user)
+
+        url = reverse(
+            "program:manage_application",
+            kwargs={"org_slug": outsider_org.slug, "application_id": application.id, "action": "accept"},
+        )
+        assert client.post(url).status_code == 404
+
+        application.refresh_from_db()
+        assert application.status == ProgramApplicationStatus.APPLIED
+
+    def test_owning_program_org_can_manage_the_application(self, client, program):
+        application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.APPLIED)
+        user = UserFactory()
+        make_membership(program.organization, user, "admin")
+        client.force_login(user)
+
+        url = reverse(
+            "program:manage_application",
+            kwargs={"org_slug": program.organization.slug, "application_id": application.id, "action": "accept"},
+        )
+        assert client.post(url).status_code == 302
+
+        application.refresh_from_db()
+        assert application.status == ProgramApplicationStatus.ACCEPTED

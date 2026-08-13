@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
@@ -203,6 +203,13 @@ def invite_organization(request, org_slug, pk):
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
+    # This URL carries an application_id rather than a program pk, so @org_pm_required
+    # could only apply the program-manager-flag fallback. Check the caller against the
+    # program this application actually belongs to.
+    request._cached_program = application.program
+    if not request_can_manage_program(request):
+        raise Http404()
+
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
     status_mapping = {
