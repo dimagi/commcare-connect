@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.forms import EmailField
 from django.utils.translation import gettext_lazy as _
 
+from commcare_connect.organization.forms import validate_year_of_establishment
 from commcare_connect.organization.models import Organization
 
 User = get_user_model()
@@ -72,6 +73,9 @@ class OrganizationCreationForm(forms.ModelForm):
             "eoi_links",
             "notes",
         ]
+
+    def clean_year_of_establishment(self):
+        return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
 
 
 class ManualUserOTPForm(forms.Form):

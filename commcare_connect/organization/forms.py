@@ -2,30 +2,20 @@ from allauth.account.forms import SetPasswordForm
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Prefetch
-from django.utils.html import format_html
+from django.core.validators import EmailValidator, URLValidator
+from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import (
-    LLOEntity,
     Organization,
     OrganizationInvite,
 )
 from commcare_connect.users.models import User
-from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
-
-LLO_ENTITY_SHORT_NAME_HELP_TEXT = gettext_lazy(
-    "A brief abbreviation for the entity. This will be used to reference the organization in the Connect application."
-)
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 
 class OrganizationChangeForm(forms.ModelForm):
-    llo_entity = forms.ChoiceField(
-        choices=[(None, gettext("No LLO Entity linked."))], label=gettext("LLO Entity"), required=False, disabled=True
-    )
-
     class Meta:
         model = Organization
         fields = ("name", "program_manager")
@@ -51,38 +41,6 @@ class OrganizationChangeForm(forms.ModelForm):
         else:
             del self.fields["program_manager"]
 
-        layout_fields.append(layout.Field("llo_entity"))
-        instance_llo = getattr(self.instance, "llo_entity", None)
-        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            self.fields["llo_entity"] = CreatableModelChoiceField(
-                label=gettext("LLO Entity"),
-                queryset=LLOEntity.objects.order_by("name"),
-                widget=forms.Select(attrs={"x-ref": "llo_entity"}),
-                empty_label=gettext("Select a LLO Entity"),
-                required=False,
-                create_key_name="name",
-            )
-            self.fields["llo_entity"].initial = instance_llo
-            self.fields["llo_entity_short_name"] = forms.CharField(
-                label=format_html(
-                    '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
-                    gettext("LLO Entity Short Name"),
-                ),
-                max_length=40,
-                required=False,
-                widget=forms.TextInput(attrs={"x-ref": "llo_entity_short_name", ":required": "isNewEntity"}),
-                help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
-            )
-            layout_fields.append(
-                layout.Div(
-                    layout.Field("llo_entity_short_name"),
-                    **{"x-show": "isNewEntity", "x-cloak": True, "x-transition": True},
-                )
-            )
-        else:
-            if instance_llo:
-                self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
-
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
             *layout_fields,
@@ -92,33 +50,141 @@ class OrganizationChangeForm(forms.ModelForm):
             ),
         )
 
-    def clean_llo_entity(self):
-        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            return self.cleaned_data["llo_entity"]
-        return self.instance.llo_entity
 
-    def clean(self):
-        cleaned_data = super().clean()
-        llo_entity = cleaned_data.get("llo_entity")
-        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
-            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
-        return cleaned_data
+class OrganizationProfileForm(forms.ModelForm):
+    """Creates or edits a workspace, including the profile that used to live on the LLO entity."""
 
-    def save(self, commit=True):
-        org = super().save(commit=False)
-        llo_entity = self.cleaned_data.get("llo_entity")
-        short_name = self.cleaned_data.get("llo_entity_short_name") or None
+    class Meta:
+        model = Organization
+        fields = (
+            "name",
+            "short_name",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+        )
+        widgets = {
+            "countries": forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+            "primary_sectors": forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+            "regions": forms.Textarea(attrs={"rows": 3}),
+            "office_address": forms.Textarea(attrs={"rows": 3}),
+            "contact_emails": forms.Textarea(attrs={"rows": 3}),
+            "eoi_links": forms.Textarea(attrs={"rows": 3}),
+            "notes": forms.Textarea(attrs={"rows": 4}),
+        }
+        labels = {
+            "name": gettext_lazy("Workspace Name"),
+            "short_name": gettext_lazy("Short Name"),
+            "has_used_connect": gettext_lazy("Has Used CommCare Connect Before"),
+            "year_of_establishment": gettext_lazy("Year of Establishment"),
+            "team_size": gettext_lazy("Team Size"),
+            "flws_managed": gettext_lazy("Number of FLW's Managed"),
+            "primary_sectors": gettext_lazy("Primary Sectors"),
+            "office_address": gettext_lazy("Office Address"),
+            "contact_emails": gettext_lazy("Contact Emails"),
+            "eoi_links": gettext_lazy("EOI Links"),
+        }
+        help_texts = {
+            "name": gettext_lazy(
+                "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
+            ),
+            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
+        }
 
-        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            if llo_entity and not llo_entity.pk:
-                llo_entity.short_name = short_name
-                if commit:
-                    llo_entity.save()
-            org.llo_entity = llo_entity
+    def __init__(self, *args, submit_label=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = helper.FormHelper(self)
+        self.helper.layout = layout.Layout(
+            layout.Fieldset(
+                gettext("Basics"),
+                "name",
+                "short_name",
+                "has_used_connect",
+                "year_of_establishment",
+                "website",
+            ),
+            layout.Fieldset(
+                gettext("Operations"),
+                "team_size",
+                "flws_managed",
+                "countries",
+                "regions",
+                "primary_sectors",
+            ),
+            layout.Fieldset(
+                gettext("Contact & documents"),
+                "office_address",
+                "contact_emails",
+                "eoi_links",
+                "notes",
+            ),
+            layout.Div(
+                layout.Submit("submit", submit_label or gettext("Save"), css_class="button button-md primary-dark"),
+                css_class="flex justify-end",
+            ),
+        )
 
-        if commit:
-            org.save()
-        return org
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        duplicates = Organization.objects.filter(name__iexact=name)
+        if self.instance.pk:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise ValidationError(gettext("A workspace with this name already exists."))
+        return name
+
+    def clean_contact_emails(self):
+        return _clean_lines(
+            self.cleaned_data.get("contact_emails", ""),
+            EmailValidator(),
+            gettext("Invalid email(s): %(bad)s"),
+        )
+
+    def clean_eoi_links(self):
+        return _clean_lines(
+            self.cleaned_data.get("eoi_links", ""),
+            URLValidator(),
+            gettext("Invalid URL(s): %(bad)s"),
+        )
+
+    def clean_year_of_establishment(self):
+        return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
+
+
+def validate_year_of_establishment(year):
+    """Bounds the year against the calendar at call time, so the ceiling moves without a migration."""
+    if year is None:
+        return year
+    current = timezone.now().year
+    if year < 1800 or year > current:
+        raise ValidationError(
+            gettext("Year must be between 1800 and %(current)s."),
+            params={"current": current},
+        )
+    return year
+
+
+def _clean_lines(raw, validator, error_message):
+    """Validates one entry per line, returning them normalized back into a newline-separated string."""
+    entries = [line.strip() for line in raw.splitlines() if line.strip()]
+    bad = []
+    for entry in entries:
+        try:
+            validator(entry)
+        except ValidationError:
+            bad.append(entry)
+    if bad:
+        raise ValidationError(error_message, params={"bad": ", ".join(bad)})
+    return "\n".join(entries)
 
 
 class OrganizationInviteForm(forms.ModelForm):
@@ -207,81 +273,3 @@ class AddCredentialForm(forms.Form):
         user_data = self.cleaned_data["users"]
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
-
-
-class OrganizationSelectOrCreateForm(forms.Form):
-    llo_entity = CreatableModelChoiceField(
-        label=gettext_lazy("LLO Entity"),
-        queryset=LLOEntity.objects.order_by("name"),
-        widget=forms.Select(attrs={"x-ref": "llo_entity"}),
-        empty_label=gettext_lazy("Select a LLO Entity"),
-        create_key_name="name",
-    )
-    llo_entity_short_name = forms.CharField(
-        label=format_html(
-            '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
-            gettext_lazy("LLO Entity Short Name"),
-        ),
-        max_length=40,
-        required=False,
-        widget=forms.TextInput(attrs={":required": "isNewEntity"}),
-        help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
-    )
-    org = DynamicCreatableChoiceField(
-        queryset=Organization.objects.order_by("name"),
-        create_key_name="name",
-        widget=forms.Select(attrs={"x-ref": "org"}),
-        label=gettext_lazy("Workspace Name"),
-        help_text=gettext_lazy(
-            "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
-        ),
-    )
-
-    def get_entity_wise_orgs(self):
-        data = {}
-        qs = (
-            LLOEntity.objects.prefetch_related(
-                Prefetch("organization_set", queryset=Organization.objects.only("id", "name", "slug"))
-            )
-            .only("id", "name")
-            .order_by("name")
-        )
-
-        for entity in qs:
-            data[str(entity.id)] = {
-                "organizations": [
-                    {"id": org.id, "name": org.name, "slug": org.slug} for org in entity.organization_set.all()
-                ]
-            }
-        return data
-
-    def clean(self):
-        cleaned_data = super().clean()
-        org = cleaned_data.get("org")
-        llo_entity = cleaned_data.get("llo_entity")
-        if org and org.pk:
-            if llo_entity and org.llo_entity != llo_entity:
-                raise ValidationError(
-                    {
-                        "llo_entity": gettext(
-                            "Selected LLO Entity does not match the existing organization's LLO Entity."
-                        )
-                    }
-                )
-        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
-            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
-        return cleaned_data
-
-    def save(self, commit=True):
-        org = self.cleaned_data["org"]
-        llo_entity = self.cleaned_data["llo_entity"]
-        is_new_org = not org.pk
-        org.llo_entity = llo_entity
-        if commit:
-            if llo_entity and not llo_entity.pk:
-                if short_name := self.cleaned_data.get("llo_entity_short_name") or None:
-                    llo_entity.short_name = short_name
-                llo_entity.save()
-            if is_new_org:
-                org.save()
-        return org, is_new_org
