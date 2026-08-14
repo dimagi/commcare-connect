@@ -11,19 +11,6 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
-class LLOEntity(models.Model):
-    name = models.CharField(max_length=255, unique=True)
-    short_name = models.CharField(max_length=40, null=True, blank=True)
-
-    class Meta:
-        verbose_name_plural = "LLO Entities"
-
-    def __str__(self):
-        if self.short_name:
-            return f"{self.name} ({self.short_name})"
-        return f"{self.name}"
-
-
 def _current_year():
     return timezone.now().year
 
@@ -45,7 +32,6 @@ class Organization(BaseModel):
     )
     program_manager = models.BooleanField(default=False)
     funder = models.BooleanField(default=False)
-    llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
     short_name = models.CharField(max_length=40, null=True, blank=True)
     has_used_connect = models.BooleanField(default=False)
     year_of_establishment = models.PositiveSmallIntegerField(
