@@ -2156,6 +2156,7 @@ def resend_user_invites(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
+@org_member_required
 @require_POST
 @opportunity_required
 def sync_deliver_units(request, org_slug, opp_id):
@@ -3439,6 +3440,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
     return render(request, "opportunity/opportunity_delivery_stat.html", {"opp_stats": opp_stats})
 
 
+@org_viewer_required
 @require_POST
 @opportunity_required
 def exchange_rate_preview(request, org_slug, opp_id):
