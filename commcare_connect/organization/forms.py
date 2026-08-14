@@ -7,7 +7,6 @@ from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
-from commcare_connect.organization.helpers import orgs_visible_to
 from commcare_connect.organization.models import (
     LLOEntity,
     Organization,
@@ -241,17 +240,13 @@ class OrganizationSelectOrCreateForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user")
         super().__init__(*args, **kwargs)
-        self.fields["org"].queryset = self.visible_orgs.order_by("name")
-
-    @property
-    def visible_orgs(self):
-        return orgs_visible_to(self.user)
+        self.fields["org"].queryset = Organization.visible_to(self.user).order_by("name")
 
     def get_entity_wise_orgs(self):
         data = {}
         qs = (
             LLOEntity.objects.prefetch_related(
-                Prefetch("organization_set", queryset=self.visible_orgs.only("id", "name", "slug"))
+                Prefetch("organization_set", queryset=Organization.visible_to(self.user).only("id", "name", "slug"))
             )
             .only("id", "name")
             .order_by("name")

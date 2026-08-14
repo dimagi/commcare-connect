@@ -9,6 +9,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 
 class LLOEntity(models.Model):
@@ -72,6 +73,12 @@ class Organization(BaseModel):
 
     def __str__(self):
         return self.slug
+
+    @classmethod
+    def visible_to(cls, user):
+        if user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            return cls.objects.all()
+        return cls.objects.filter(memberships__user=user)
 
     def get_member_emails(self, exclude_viewer=False):
         member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")
