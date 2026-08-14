@@ -53,7 +53,25 @@ class UserSocialSignupForm(SocialSignupForm):
 class OrganizationCreationForm(forms.ModelForm):
     class Meta:
         model = Organization
-        fields = ["name", "program_manager", "llo_entity"]
+        fields = [
+            "name",
+            "short_name",
+            "program_manager",
+            "funder",
+            "verified",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+        ]
 
 
 class ManualUserOTPForm(forms.Form):

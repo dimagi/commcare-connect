@@ -1,9 +1,10 @@
 from django.contrib import admin
 from django.contrib.auth import admin as auth_admin
 from django.contrib.auth import get_user_model
+from django.db.models import Count
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.users.forms import OrganizationCreationForm, UserAdminChangeForm, UserAdminCreationForm
 from commcare_connect.users.models import ConnectIDUserLink
 
@@ -72,20 +73,31 @@ class UserOrganizationMembershipInline(admin.TabularInline):
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     form = OrganizationCreationForm
-    list_display = ["name", "created_by", "program_manager", "funder"]
-    search_fields = ["name"]
+    list_display = [
+        "name",
+        "short_name",
+        "created_by",
+        "program_manager",
+        "funder",
+        "verified",
+        "has_used_connect",
+        "member_count",
+    ]
+    search_fields = ["name", "short_name"]
     ordering = ["name"]
     inlines = [UserOrganizationMembershipInline]
-    list_filter = ["program_manager", "funder"]
+    list_filter = ["program_manager", "funder", "verified", "has_used_connect"]
+    filter_horizontal = ["countries"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_member_count=Count("members", distinct=True))
+
+    @admin.display(description=_("Members"), ordering="_member_count")
+    def member_count(self, obj):
+        return obj._member_count
 
 
 @admin.register(ConnectIDUserLink)
 class ConnectIDUserLinkAdmin(admin.ModelAdmin):
     list_display = ["user", "commcare_username", "domain"]
     ordering = ["user"]
-
-
-@admin.register(LLOEntity)
-class LLOEntityAdmin(admin.ModelAdmin):
-    list_display = ["name"]
-    search_fields = ["name"]
