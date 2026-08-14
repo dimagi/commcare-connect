@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Organization, PrimarySector, UserOrganizationMembership
 from commcare_connect.users.forms import OrganizationCreationForm, UserAdminChangeForm, UserAdminCreationForm
 from commcare_connect.users.models import ConnectIDUserLink
 
@@ -95,6 +95,21 @@ class OrganizationAdmin(admin.ModelAdmin):
     @admin.display(description=_("Members"), ordering="_member_count")
     def member_count(self, obj):
         return obj._member_count
+
+
+@admin.register(PrimarySector)
+class PrimarySectorAdmin(admin.ModelAdmin):
+    list_display = ["name", "slug", "description", "organization_count"]
+    search_fields = ["name", "slug", "description"]
+    ordering = ["name"]
+    prepopulated_fields = {"slug": ("name",)}
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_organization_count=Count("organization", distinct=True))
+
+    @admin.display(description=_("Workspaces"), ordering="_organization_count")
+    def organization_count(self, obj):
+        return obj._organization_count
 
 
 @admin.register(ConnectIDUserLink)
