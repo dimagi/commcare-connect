@@ -8,14 +8,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.organization.models import (
-    LLOEntity,
     Organization,
     OrganizationInvite,
     UserOrganizationMembership,
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
-from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
 
 
 @pytest.mark.django_db
@@ -123,47 +121,52 @@ class TestOrganizationCreateView:
     def url(self):
         return reverse("organization_create")
 
-    def test_existing_org_does_not_create_membership(self, client, user, organization):
-        existing_llo = LLOEntity.objects.create(name="Existing LLO")
-        organization.llo_entity = existing_llo
-        organization.save(update_fields=["llo_entity"])
-
-        permission = Permission.objects.get(codename="workspace_entity_management_access")
-        user.user_permissions.add(permission)
-
+    @staticmethod
+    def _login_with_create_permission(client, user):
+        user.user_permissions.add(Permission.objects.get(codename="workspace_entity_management_access"))
         client.force_login(user)
-        response = client.post(
-            self.url(),
-            data={
-                "org": str(organization.pk),
-                "llo_entity": str(existing_llo.pk),
-            },
-        )
-
-        assert response.status_code == 302
-        assert response.url == reverse("opportunity:list", args=(organization.slug,))
-        assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
 
     def test_new_org_creates_admin_membership(self, client, user):
-        existing_llo = LLOEntity.objects.create(name="New Org LLO")
-        permission = Permission.objects.get(codename="workspace_entity_management_access")
-        user.user_permissions.add(permission)
+        self._login_with_create_permission(client, user)
 
         org_name = f"New Workspace {user.pk}"
-        client.force_login(user)
-        response = client.post(
-            self.url(),
-            data={
-                "org": TOMSELECT_NEW_ENTRY_PREFIX + org_name,
-                "llo_entity": str(existing_llo.pk),
-            },
-        )
+        response = client.post(self.url(), data={"name": org_name})
 
         assert response.status_code == 302
         org = Organization.objects.get(name=org_name)
         assert response.url == reverse("opportunity:list", args=(org.slug,))
         membership = UserOrganizationMembership.objects.get(user=user, organization=org)
         assert membership.role == UserOrganizationMembership.Role.ADMIN
+
+    def test_profile_fields_are_saved(self, client, user):
+        self._login_with_create_permission(client, user)
+
+        org_name = f"Profiled Workspace {user.pk}"
+        response = client.post(
+            self.url(),
+            data={
+                "name": org_name,
+                "short_name": "PW",
+                "year_of_establishment": 2005,
+                "website": "https://example.com",
+                "contact_emails": "one@example.com",
+            },
+        )
+
+        assert response.status_code == 302
+        org = Organization.objects.get(name=org_name)
+        assert org.short_name == "PW"
+        assert org.year_of_establishment == 2005
+        assert org.contact_emails == "one@example.com"
+
+    def test_duplicate_name_does_not_create_org(self, client, user, organization):
+        self._login_with_create_permission(client, user)
+
+        response = client.post(self.url(), data={"name": organization.name})
+
+        assert response.status_code == 200
+        assert Organization.objects.filter(name=organization.name).count() == 1
+        assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
 
 
 @pytest.mark.django_db
