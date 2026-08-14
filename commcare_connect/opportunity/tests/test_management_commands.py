@@ -129,6 +129,27 @@ class TestBackfillInvoiceLineItems:
 
         assert CompletedWorkInvoice.objects.count() == 0
 
+    @pytest.mark.parametrize("status", [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM])
+    def test_ignores_work_on_cancelled_or_rejected_invoice(self, status):
+        opp = OpportunityFactory()
+        access = OpportunityAccessFactory(opportunity=opp)
+        payment_unit = PaymentUnitFactory(opportunity=opp)
+        invoice = PaymentInvoiceFactory(opportunity=opp, status=status)
+        work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            invoice=invoice,
+            saved_approved_count=2,
+            status="approved",
+            status_modified_date=datetime.datetime(2026, 3, 10, tzinfo=datetime.UTC),
+        )
+
+        call_command("backfill_invoice_line_items")
+
+        assert not CompletedWorkInvoice.objects.filter(completed_work=work).exists()
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 0
+
     def test_rerun_corrects_existing_row_when_more_approvals_land(self):
         opp = OpportunityFactory()
         invoice, work = _invoiced_work(opp, saved_approved_count=2)

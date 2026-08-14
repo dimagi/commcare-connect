@@ -2,7 +2,7 @@ from django.core.management import BaseCommand
 from django.db import transaction
 from django.db.models import F
 
-from commcare_connect.opportunity.models import CompletedWork, CompletedWorkInvoice, ExchangeRate
+from commcare_connect.opportunity.models import CompletedWork, CompletedWorkInvoice, ExchangeRate, InvoiceStatus
 from commcare_connect.utils.itertools import batched
 
 BATCH_SIZE = 1000
@@ -39,6 +39,7 @@ class Command(BaseCommand):
                 saved_approved_count__gt=F("invoiced_approved_count"),
                 invoice__service_delivery=True,
             )
+            .exclude(invoice__status__in=[InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM])
             .select_related("invoice", "opportunity_access__opportunity__currency")
             .order_by("id")
         )
@@ -91,8 +92,14 @@ class Command(BaseCommand):
                 .select_for_update(of=("self",))
             )
             # Re-derive under the lock: a concurrent write may have already caught a work up
-            # (or changed its delta) since the unlocked read that selected `works`.
-            to_process = [work for work in locked_works if work.saved_approved_count > work.invoiced_approved_count]
+            # (or changed its delta), or its invoice may have been cancelled/rejected, since the
+            # unlocked read that selected `works`.
+            to_process = [
+                work
+                for work in locked_works
+                if work.saved_approved_count > work.invoiced_approved_count
+                and work.invoice.status not in (InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM)
+            ]
             if not to_process:
                 return 0, 0
 
