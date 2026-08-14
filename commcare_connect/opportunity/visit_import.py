@@ -4,6 +4,7 @@ import textwrap
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
+from functools import partial
 from itertools import chain
 
 from django.core.cache import cache
@@ -482,7 +483,10 @@ def _create_payments(opportunity, payments_by_user, accesses, exchange_rates):
         Payment.objects.bulk_create(payments)
         for username in payments_by_user:
             update_work_payment_date(accesses[username])
-    send_payment_notification.delay(opportunity.id, [payment.pk for payment in payments])
+
+    transaction.on_commit(
+        partial(send_payment_notification.delay, opportunity.id, [payment.pk for payment in payments])
+    )
 
     return PaymentImportStatus(set(payments_by_user))
 
