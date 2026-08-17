@@ -193,6 +193,7 @@ from commcare_connect.opportunity.utils.completed_work import (
 )
 from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
 from commcare_connect.opportunity.visit_import import (
+    PAYMENT_IMPORT_FORMATS,
     ImportException,
     bulk_update_catchments,
     bulk_update_completed_work_status,
@@ -792,17 +793,24 @@ def export_users_for_payment(request, org_slug, opp_id):
 @require_POST
 def payment_import(request, org_slug=None, opp_id=None):
     file = request.FILES.get("payments")
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-
     redirect_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
+    redirect_to_tab = f"{redirect_url}?{request.GET.copy().urlencode()}"
+
+    file_format = get_file_extension(file)
+    if file_format not in PAYMENT_IMPORT_FORMATS:
+        supported_file_formats = ", ".join(file_format.upper() for file_format in PAYMENT_IMPORT_FORMATS)
+        messages.error(
+            request,
+            _("File format not supported. Please upload a %(supported)s file.")
+            % {"supported": supported_file_formats},
+        )
+        return redirect(redirect_to_tab)
 
     lock = cache.lock(get_payment_upload_key(request.opportunity.pk))
 
     if lock.locked():
-        messages.error(request, "Another payment import is in progress. Please try again later.")
-        return redirect(f"{redirect_url}?{request.GET.copy().urlencode()}")
+        messages.error(request, _("Another payment import is in progress. Please try again later."))
+        return redirect(redirect_to_tab)
 
     file_path = f"{request.opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
     saved_path = default_storage.save(file_path, file)

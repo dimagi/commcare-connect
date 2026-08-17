@@ -56,6 +56,9 @@ REVIEW_STATUS_COL = "program manager review"
 # Imported files carry a header line, so the first row of data is line 2 of the file.
 FIRST_DATA_ROW_NUMBER = 2
 
+# The file formats get_imported_dataset() is able to read.
+PAYMENT_IMPORT_FORMATS = ("csv", "xlsx")
+
 
 class ImportException(Exception):
     def __init__(self, message, rows=None, errors=None):

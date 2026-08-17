@@ -3112,6 +3112,34 @@ def test_payment_import_redirects_with_payment_task_id(mock_delay, client, organ
     assert "export_task_id=" not in response.url
 
 
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [
+        ("payments.pdf", "application/pdf"),
+        ("payments.txt", "text/plain"),
+        ("payments", "application/octet-stream"),
+        ("payments", ""),
+        (None, None),  # No file was selected at all.
+    ],
+)
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_rejects_unsupported_formats(
+    mock_delay, filename, content_type, client, organization, opportunity, org_user_member
+):
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    data = {}
+    if filename:
+        data["payments"] = SimpleUploadedFile(filename, b"not a spreadsheet", content_type=content_type)
+
+    response = client.post(url, data, follow=True)
+
+    assert response.status_code == 200
+    mock_delay.assert_not_called()
+    message = str(list(response.context["messages"])[0])
+    assert message == "File format not supported. Please upload a CSV, XLSX file."
+
+
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
     task = mock_async_result.return_value
