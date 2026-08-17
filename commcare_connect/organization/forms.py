@@ -73,8 +73,12 @@ class OrganizationProfileForm(forms.ModelForm):
             "notes",
         )
         widgets = {
-            "countries": forms.SelectMultiple(attrs={"data-tomselect": "1"}),
-            "primary_sectors": forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+            "countries": forms.SelectMultiple(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select countries")}
+            ),
+            "primary_sectors": forms.SelectMultiple(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select primary sectors")}
+            ),
             "regions": forms.Textarea(attrs={"rows": 3}),
             "office_address": forms.Textarea(attrs={"rows": 3}),
             "contact_emails": forms.Textarea(attrs={"rows": 3}),
