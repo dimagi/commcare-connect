@@ -184,11 +184,20 @@ def create_or_update_case(
 def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> None:
     """Update usercase properties on CommCare HQ for multiple users in a single bulk request.
 
-    All entries in `updates` must belong to the same opportunity. The domain, API key, and
-    HQ server are derived from the first entry and applied to the entire batch.
+    `updates` maps each worker's `OpportunityAccess` to the case update to apply to their
+    usercase, in the shape HQ's case API expects, e.g.::
+
+        {access: {"properties": {"task_case_id": ""}}}
+
+    All entries must belong to the same opportunity, since the domain, API key, and HQ server
+    are derived from the first entry and applied to the entire batch.
     """
     if not updates:
         return
+
+    opportunity_ids = {access.opportunity_id for access in updates}
+    if len(opportunity_ids) > 1:
+        raise ValueError(f"All updates must belong to the same opportunity, got {sorted(opportunity_ids)}.")
 
     first_access = next(iter(updates))
     domain = first_access.opportunity.deliver_app.cc_domain

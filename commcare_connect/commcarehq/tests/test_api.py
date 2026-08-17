@@ -253,6 +253,17 @@ class TestBulkUpdateUsercases:
         cases_data = mock_bulk.call_args[0][2]
         assert cases_data == [{"case_id": hq_case_id, "properties": {"prop": "value"}}]
 
+    def test_raises_when_updates_span_multiple_opportunities(self):
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        access = OpportunityAccessFactory(opportunity__api_key=api_key)
+        other_access = OpportunityAccessFactory(opportunity__api_key=api_key)
+
+        with patch("commcare_connect.commcarehq.api.bulk_create_or_update_cases") as mock_bulk:
+            with pytest.raises(ValueError, match="same opportunity"):
+                bulk_update_usercases({access: {"properties": {}}, other_access: {"properties": {}}})
+
+        mock_bulk.assert_not_called()
+
 
 @pytest.mark.django_db
 class TestBulkCreateOrUpdateCases:
