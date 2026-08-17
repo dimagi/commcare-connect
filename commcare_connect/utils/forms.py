@@ -1,6 +1,11 @@
+import re
+
 from django import forms
 
 TOMSELECT_NEW_ENTRY_PREFIX = "new:"
+
+# Matches any letter or digit (underscore excluded).
+ALPHANUMERIC_RE = re.compile(r"[^\W_]")
 
 
 def tomselect_resolve_creatable_value(value, queryset, field_name="pk"):
@@ -58,6 +63,11 @@ class CreatableModelChoiceField(forms.ModelChoiceField):
                 if self.required:
                     raise forms.ValidationError(self.error_messages["required"], code="required")
                 return None
+            if not ALPHANUMERIC_RE.search(value):
+                raise forms.ValidationError(
+                    "Enter a name that contains at least one letter or number.",
+                    code="not_alphanumeric",
+                )
             # Raise if an entry with this name already exists — the user explicitly
             # indicated intent to create, so a duplicate name is an error.
             if self.queryset.filter(**{self.create_key_name: value}).exists():
