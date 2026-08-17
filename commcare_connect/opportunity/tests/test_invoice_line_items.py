@@ -32,6 +32,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_invoice_line_items,
     group_line_items,
     rollback_invoice_line_items,
+    total_late_delta_units,
 )
 from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
 
@@ -451,6 +452,9 @@ class TestCancelledFirstBilling:
         assert row.billed_count == 1
         assert row.month == JAN  # its approval month
         assert row.is_delta is False
+        # Cancelling January released the unit's first billing, so re-billing it is a first billing
+        # again and not a late delta. The displayed count has to follow that, not the earlier invoice.
+        assert total_late_delta_units(get_invoice_line_items(reissued)) == 0
 
     def test_start_date_reaches_back_to_the_approval_month(self, cancelled_first_billing):
         access, _ = cancelled_first_billing
@@ -472,6 +476,7 @@ class TestInvoicedLineItems:
 
         by_name = {item.payment_unit_name: item for item in items}
         assert len(items) == 2
+        assert total_late_delta_units(items) == 0  # every work here is a first billing
         assert by_name[payment_unit.name].number_approved == 2
         assert by_name[payment_unit.name].flw_pay.local == Decimal("200")
         assert by_name[payment_unit.name].org_pay.local == Decimal("40")
@@ -561,6 +566,11 @@ class TestWorkPayRowReaders:
         late.save(update_fields=["saved_approved_count"])
         fresh = completed_work(access, payment_unit, approved_on=FEB_APPROVAL)
 
+        (previewed,) = get_billable_line_items(access.opportunity, FEB, FEB_END)
+        # total 2 new deliveries, 1 of which is a late delta
+        assert previewed.number_approved == 2
+        assert previewed.late_delta_units == 1
+
         february = billed_invoice(access.opportunity, FEB, FEB_END)
 
         rows = {row.completed_work: row for row in get_invoice_delivery_rows(february)}
@@ -570,6 +580,10 @@ class TestWorkPayRowReaders:
         assert rows[late].is_delta is True
         assert rows[fresh].billed_count == 1
         assert rows[fresh].is_delta is False
+
+        (frozen,) = get_invoice_line_items(february)
+        assert frozen.number_approved == 2
+        assert frozen.late_delta_units == 1
 
 
 @pytest.mark.django_db
