@@ -59,6 +59,9 @@ FIRST_DATA_ROW_NUMBER = 2
 # The file formats get_imported_dataset() is able to read.
 PAYMENT_IMPORT_FORMATS = ("csv", "xlsx")
 
+# Every column a payment import file must carry, in the order the export writes them.
+PAYMENT_COLS = [USERNAME_COL, AMOUNT_COL, PAYMENT_DATE_COL, PAYMENT_METHOD_COL, PAYMENT_OPERATOR_COL]
+
 
 class ImportException(Exception):
     def __init__(self, message, rows=None, errors=None):
@@ -309,17 +312,27 @@ def _get_header_index(headers: list[str], col_name: str, required=True) -> int:
 def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[list]):
     """Import payment rows, writing nothing at all unless every row in the file is payable."""
     opportunity = Opportunity.objects.get(id=opportunity_id)
-    headers = [header.lower() for header in headers]
-    if not headers:
-        raise ImportException("The uploaded file did not contain any headers")
+    columns = _payment_column_indexes([header.lower() for header in headers])
 
     exchange_rate_today = get_exchange_rate(opportunity.currency_code)
-    payments_by_user, accesses = _validate_payment_rows(opportunity, headers, rows)
+    payments_by_user, accesses = _validate_payment_rows(opportunity, columns, rows)
     exchange_rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today)
     return _create_payments(opportunity, payments_by_user, accesses, exchange_rates)
 
 
-def _validate_payment_rows(opportunity, headers, rows):
+def _payment_column_indexes(headers: list[str]) -> dict[str, int]:
+    indexes = {column: headers.index(column) for column in PAYMENT_COLS if column in headers}
+    if not indexes:
+        raise ImportException("The uploaded file did not contain any headers")
+
+    missing = [column for column in PAYMENT_COLS if column not in indexes]
+    if missing:
+        listed = ", ".join(f"'{column}'" for column in missing)
+        raise ImportException(f"Missing required column(s): {listed}")
+    return indexes
+
+
+def _validate_payment_rows(opportunity, columns, rows):
     """Check every row and raise if any of them cannot be paid.
 
     Returns the (row number, payment) pairs grouped by username, together with the
@@ -327,11 +340,11 @@ def _validate_payment_rows(opportunity, headers, rows):
     A row that failed to parse is kept with a payment of None until the raise, so that its username
     is checked too rather than only surfacing on the next upload.
     """
-    username_col_index = _get_header_index(headers, USERNAME_COL)
-    amount_col_index = _get_header_index(headers, AMOUNT_COL)
-    payment_date_col_index = _get_header_index(headers, PAYMENT_DATE_COL)
-    payment_method_col_index = _get_header_index(headers, PAYMENT_METHOD_COL)
-    payment_operator_col_index = _get_header_index(headers, PAYMENT_OPERATOR_COL)
+    username_col_index = columns[USERNAME_COL]
+    amount_col_index = columns[AMOUNT_COL]
+    payment_date_col_index = columns[PAYMENT_DATE_COL]
+    payment_method_col_index = columns[PAYMENT_METHOD_COL]
+    payment_operator_col_index = columns[PAYMENT_OPERATOR_COL]
 
     errors_by_reason = defaultdict(list)
     payments_by_user = defaultdict(list)

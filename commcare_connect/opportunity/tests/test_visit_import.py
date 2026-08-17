@@ -372,6 +372,39 @@ def test_bulk_update_payments(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("headers", "rows", "expected_message"),
+    [
+        # tablib reads the first row of a headerless file as its header row, so a file of nothing
+        # but data arrives with headers that happen to be someone's payment details.
+        (
+            ["testuser123", "50", "2025-01-15", "method", "operator"],
+            [["testuser456", "60", "2025-01-16", "method", "operator"]],
+            "The uploaded file did not contain any headers",
+        ),
+        ([], [], "The uploaded file did not contain any headers"),
+        (
+            ["Not", "A", "Payment", "File"],
+            [["a", "b", "c", "d"]],
+            "The uploaded file did not contain any headers",
+        ),
+        # Some payment columns are there, so this really is a payment file, just an incomplete one.
+        (
+            ["Username", "Payment Amount"],
+            [["testuser123", "50"]],
+            "Missing required column(s): 'payment date (yyyy-mm-dd)', 'payment method', 'payment operator'",
+        ),
+    ],
+)
+def test_bulk_update_payments_rejects_unusable_headers(opportunity: Opportunity, headers, rows, expected_message):
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, headers, rows)
+
+    assert excinfo.value.message == expected_message
+    assert not Payment.objects.filter(opportunity_access__opportunity=opportunity).exists()
+
+
+@pytest.mark.django_db
 def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
     mobile_user = MobileUserFactory.create(username="testuser123")
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
