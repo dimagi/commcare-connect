@@ -17,6 +17,8 @@ from commcare_connect.organization.merge import (
     MergeNotAllowed,
     _move_program_watchers,
     merge_organizations,
+    programs_hidden_by_merge,
+    relation_counts,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
@@ -67,7 +69,7 @@ class TestMergeGuards:
         assert Organization.objects.filter(pk=source.pk).exists()
 
     def test_apps_with_no_hq_server_still_conflict(self, source, target):
-        """``hq_server`` is nullable, and get_or_create matches two nulls with IS NULL."""
+        """``hq_server`` is nullable"""
         shared = dict(cc_app_id="shared-app", cc_domain="shared-domain", hq_server=None)
         CommCareAppFactory(organization=source, **shared)
         CommCareAppFactory(organization=target, **shared)
@@ -126,6 +128,33 @@ class TestProfileFields:
 
 def _profile_snapshot(organization: Organization) -> dict:
     return {field.attname: getattr(organization, field.attname) for field in organization._meta.concrete_fields}
+
+
+class TestProgramsHiddenByMerge:
+    """A non-program-manager target inherits the source's programs, but the UI hides them."""
+
+    def test_programs_the_target_cannot_show_are_reported(self, source, target):
+        ProgramFactory(organization=source, name="Zinc Supplementation")
+        ProgramFactory(organization=source, name="Antenatal Care")
+
+        assert programs_hidden_by_merge(source, target) == ["Antenatal Care", "Zinc Supplementation"]
+
+    def test_a_program_manager_target_hides_nothing(self, source):
+        target = OrganizationFactory(name="Target Workspace", program_manager=True)
+        ProgramFactory(organization=source, name="Zinc Supplementation")
+
+        assert programs_hidden_by_merge(source, target) == []
+
+    def test_a_source_without_programs_hides_nothing(self, source, target):
+        assert programs_hidden_by_merge(source, target) == []
+
+    def test_the_programs_survive_the_merge_on_the_target(self, source, target):
+        program = ProgramFactory(organization=source, name="Zinc Supplementation")
+
+        merge_organizations(source, target)
+
+        program.refresh_from_db()
+        assert program.organization == target
 
 
 class TestSimpleReassignments:
@@ -330,10 +359,6 @@ class TestPendingInvites:
 
         summary = merge_organizations(source, target)
 
-        # Discriminates against two distinct bugs: a no-op helper (counts stay 0, 0),
-        # and the helpers being called in the wrong order -- invites before memberships
-        # would not yet see the moved membership, so the invite would be MOVED (1, 0)
-        # rather than discarded.
         assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
         assert not OrganizationInvite.objects.filter(email="mover@example.com").exists()
         assert UserOrganizationMembership.objects.get(user=member).organization == target
@@ -362,12 +387,6 @@ class TestFeatureFlags:
         assert list(target_flag.organizations.all()) == [target]
 
     def test_shared_flag_keeps_the_target_membership(self, source, target):
-        """The source is removed from a shared flag without disturbing the target.
-
-        This is the only scenario that distinguishes `remove(source)` from
-        `clear()`; the latter would silently revoke the surviving workspace's
-        own flag membership.
-        """
         flag = FlagFactory()
         flag.organizations.add(source, target)
 
@@ -417,12 +436,6 @@ def test_every_application_status_has_a_precedence():
 
 class TestRelationCoverage:
     def test_every_relation_to_organization_is_accounted_for(self):
-        """Fails when a new FK or M2M to Organization is added without handling it.
-
-        Django creates Postgres foreign keys as DEFERRABLE INITIALLY DEFERRED, so
-        a relation the merge forgot would not raise inside a test transaction.
-        This compares the models against the module's own manifest instead.
-        """
         assert _incoming_relation_labels() == set(HANDLED_RELATIONS), (
             "The set of relations to Organization has changed. Handle any new relation in "
             "merge_organizations, then add it to HANDLED_RELATIONS — or drop the stale entry."
@@ -477,3 +490,22 @@ class TestRollback:
         assert membership.organization == source
         target.refresh_from_db()
         assert target.program_manager is False
+
+
+class TestRelationCounts:
+    def test_every_handled_relation_is_counted(self, source):
+        """The admin confirmation page cannot under-report a relation the merge knows about."""
+        assert set(relation_counts(source)) == set(HANDLED_RELATIONS)
+
+    def test_only_rows_pointing_at_this_organization_are_counted(self, source, target):
+        OpportunityFactory(organization=source)
+        OpportunityFactory(organization=source)
+        OpportunityFactory(organization=target)
+
+        assert relation_counts(source)["opportunity.Opportunity.organization"] == 2
+
+    def test_many_to_many_relations_are_counted(self, source):
+        flag = FlagFactory()
+        flag.organizations.add(source)
+
+        assert relation_counts(source)["flags.Flag.organizations"] == 1

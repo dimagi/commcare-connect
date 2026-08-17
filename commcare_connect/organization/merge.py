@@ -130,6 +130,27 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
     return summary
 
 
+def relation_counts(organization: Organization) -> dict[str, int]:
+    counts = {}
+    for label in HANDLED_RELATIONS:
+        app_label, model_name, field_name = label.split(".")
+        model = apps.get_model(app_label, model_name)
+        counts[label] = model._default_manager.filter(**{field_name: organization}).count()
+    return counts
+
+
+def programs_hidden_by_merge(source: Organization, target: Organization) -> list[str]:
+    """Names of the source's programs the target would own but not be able to show.
+
+    ``Program.organization`` is repointed like any other relation, but the program views sit behind
+    ``org_pm_required``, so a target that is not a program manager inherits the rows and hides them. Nothing is
+    lost: ticking "Program manager" on the survivor brings them all back.
+    """
+    if target.program_manager:
+        return []
+    return sorted(source.program_set.values_list("name", flat=True))
+
+
 def _reject_invalid_merge(source: Organization, target: Organization) -> None:
     if source.pk is None or target.pk is None:
         raise MergeNotAllowed("Both organizations must be saved before they can be merged.")
