@@ -88,7 +88,7 @@ class OrganizationProfileForm(forms.ModelForm):
         labels = {
             "name": gettext_lazy("Workspace Name"),
             "short_name": gettext_lazy("Short Name"),
-            "has_used_connect": gettext_lazy("Has Used CommCare Connect Before"),
+            "has_used_connect": gettext_lazy("Has Used CommCare Connect Before?"),
             "year_of_establishment": gettext_lazy("Year of Establishment"),
             "team_size": gettext_lazy("Team Size"),
             "flws_managed": gettext_lazy("Number of FLW's Managed"),
@@ -112,7 +112,10 @@ class OrganizationProfileForm(forms.ModelForm):
                 gettext("Basics"),
                 "name",
                 "short_name",
-                "has_used_connect",
+                layout.Field(
+                    "has_used_connect",
+                    wrapper_class="flex items-center gap-4 [&>label]:mb-0",
+                ),
                 "year_of_establishment",
                 "website",
             ),
