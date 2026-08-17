@@ -6,8 +6,9 @@ from django.core.cache import cache
 from django.utils import timezone
 from waffle.utils import get_cache, get_setting, keyfmt
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.tests.factories import FlagFactory
-from commcare_connect.opportunity.models import LabsRecord
+from commcare_connect.opportunity.models import CommCareApp, LabsRecord
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentFactory
 from commcare_connect.organization.merge import (
     APPLICATION_STATUS_PRECEDENCE,
@@ -52,6 +53,38 @@ class TestMergeGuards:
     def test_unsaved_organization_is_refused(self, target):
         with pytest.raises(MergeNotAllowed):
             merge_organizations(Organization(name="Never Saved"), target)
+
+    def test_a_commcare_app_both_workspaces_hold_is_refused(self, source, target):
+        """Merging would break the survivor's next get_or_create on that app."""
+        hq_server = HQServerFactory()
+        shared = dict(cc_app_id="shared-app", cc_domain="shared-domain", hq_server=hq_server)
+        CommCareAppFactory(organization=source, **shared)
+        CommCareAppFactory(organization=target, **shared)
+
+        with pytest.raises(MergeNotAllowed, match="shared-domain/shared-app"):
+            merge_organizations(source, target)
+
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+    def test_apps_with_no_hq_server_still_conflict(self, source, target):
+        """``hq_server`` is nullable, and get_or_create matches two nulls with IS NULL."""
+        shared = dict(cc_app_id="shared-app", cc_domain="shared-domain", hq_server=None)
+        CommCareAppFactory(organization=source, **shared)
+        CommCareAppFactory(organization=target, **shared)
+
+        with pytest.raises(MergeNotAllowed):
+            merge_organizations(source, target)
+
+    @pytest.mark.parametrize("differing_field", ["cc_app_id", "cc_domain", "hq_server"])
+    def test_apps_differing_in_any_key_field_are_allowed(self, source, target, differing_field):
+        shared = dict(cc_app_id="an-app", cc_domain="a-domain", hq_server=HQServerFactory())
+        CommCareAppFactory(organization=source, **shared)
+        other = {"cc_app_id": "other-app", "cc_domain": "other-domain", "hq_server": HQServerFactory()}
+        CommCareAppFactory(organization=target, **{**shared, differing_field: other[differing_field]})
+
+        merge_organizations(source, target)
+
+        assert CommCareApp.objects.filter(organization=target).count() == 2
 
 
 class TestSourceRemoval:

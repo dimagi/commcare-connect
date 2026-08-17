@@ -135,6 +135,20 @@ def _reject_invalid_merge(source: Organization, target: Organization) -> None:
         raise MergeNotAllowed("Both organizations must be saved before they can be merged.")
     if source.pk == target.pk:
         raise MergeNotAllowed("An organization cannot be merged into itself.")
+    _reject_shared_commcare_apps(source, target)
+
+
+def _reject_shared_commcare_apps(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would leave the target with two rows for one HQ app."""
+    app_key = ("cc_app_id", "cc_domain", "hq_server_id")
+    shared = set(source.apps.values_list(*app_key)) & set(target.apps.values_list(*app_key))
+    if shared:
+        conflicts = sorted({f"{cc_domain}/{cc_app_id}" for cc_app_id, cc_domain, _ in shared})
+        raise MergeNotAllowed(
+            f"Both workspaces are connected to the same CommCare app(s): {', '.join(conflicts)}. "
+            "Merging would leave the surviving workspace with duplicates that break "
+            "opportunity creation. Remove the redundant app from one workspace first."
+        )
 
 
 def _reassign_simple_relations(source: Organization, target: Organization) -> dict[str, int]:
