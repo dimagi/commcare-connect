@@ -18,7 +18,7 @@ from django.db.models.functions import Cast, Coalesce, Round
 
 from commcare_connect.opportunity.models import Opportunity, UserVisit, VisitValidationStatus
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import Program
+from commcare_connect.program.models import Program, ProgramApplicationStatus
 
 EXCLUDED_STATUS = [
     VisitValidationStatus.over_limit,
@@ -46,6 +46,23 @@ def eligible_watchers(program_organization, funder):
     if funder:
         excluded_ids.add(funder.pk)
     return Organization.objects.exclude(pk__in=excluded_ids).order_by("name")
+
+
+def eligible_supervising_organizations(program):
+    """Organizations that may be chosen to supervise an opportunity in `program`.
+
+    The program's own organization, its funder, and every organization with an accepted
+    ProgramApplication for the program. Eligibility is evaluated on each render, so an
+    organization that loses its accepted application stops being offered.
+    """
+    eligible = Q(pk=program.organization_id)
+    if program.funder_id:
+        eligible |= Q(pk=program.funder_id)
+    eligible |= Q(
+        programapplication__program=program,
+        programapplication__status=ProgramApplicationStatus.ACCEPTED,
+    )
+    return Organization.objects.filter(eligible).distinct().order_by("name")
 
 
 def calculate_safe_percentage(numerator, denominator):
