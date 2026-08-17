@@ -17,7 +17,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentUnitFactory,
 )
-from commcare_connect.program.forms import ProgramForm, funder_organizations
+from commcare_connect.program.forms import ProgramForm, funder_organizations, watcher_organizations
 from commcare_connect.program.models import Program, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory
@@ -408,3 +408,159 @@ class TestProgramFormFunderDisabled:
 
         assert updated.name == "Renamed Program"
         assert updated.funder == funder_org
+
+
+@pytest.mark.django_db
+class TestWatcherOrganizations:
+    def test_excludes_own_organization_and_funder(self, program_manager_org, funder_org, watcher_org):
+        result = watcher_organizations(program_manager_org, funder_org)
+
+        assert watcher_org in result
+        assert program_manager_org not in result
+        assert funder_org not in result
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestProgramFormWatchersEnabled:
+    def test_field_is_present(self, program_manager_org_user_admin, program_manager_org):
+        form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org)
+
+        assert "watchers" in form.fields
+
+    def test_save_persists_watchers(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type, watcher_org
+    ):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, watchers=[watcher_org.id]),
+        )
+
+        assert form.is_valid(), form.errors
+
+        assert list(form.save().watchers.all()) == [watcher_org]
+
+    def test_save_without_watchers(self, program_manager_org_user_admin, program_manager_org, delivery_type):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type),
+        )
+
+        assert form.is_valid(), form.errors
+
+        assert not form.save().watchers.exists()
+
+    def test_own_organization_is_rejected_as_watcher(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type
+    ):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, watchers=[program_manager_org.id]),
+        )
+
+        assert not form.is_valid()
+        assert "watchers" in form.errors
+
+    def test_funder_cannot_also_be_a_watcher(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type, funder_org
+    ):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, funder=funder_org.id, watchers=[funder_org.id]),
+        )
+
+        assert not form.is_valid()
+        assert form.errors["watchers"] == ["An organization cannot be both the funder and a watcher."]
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestProgramFormWatchersOnEdit:
+    @pytest.fixture
+    def watched_program(self, program, watcher_org):
+        program.watchers.set([watcher_org])
+        return program
+
+    def _edit_data(self, program, **overrides):
+        data = {
+            "name": program.name,
+            "description": program.description,
+            "delivery_type": program.delivery_type_id,
+            "budget": program.budget,
+            "currency": program.currency.code,
+            "country": program.country.code,
+            "start_date": program.start_date,
+            "end_date": program.end_date,
+        }
+        data.update(overrides)
+        return data
+
+    def test_watchers_can_be_changed(self, program_manager_org_user_admin, watched_program):
+        new_watcher = OrganizationFactory()
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=watched_program.organization,
+            instance=watched_program,
+            data=self._edit_data(watched_program, watchers=[new_watcher.id]),
+        )
+
+        assert form.is_valid(), form.errors
+
+        assert list(form.save().watchers.all()) == [new_watcher]
+
+    def test_current_funder_is_rejected_as_watcher(self, program_manager_org_user_admin, watched_program, funder_org):
+        watched_program.funder = funder_org
+        watched_program.save()
+
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=watched_program.organization,
+            instance=watched_program,
+            data=self._edit_data(watched_program, watchers=[funder_org.id]),
+        )
+
+        assert not form.is_valid()
+        assert "watchers" in form.errors
+
+
+@pytest.mark.django_db
+class TestProgramFormWatchersDisabled:
+    def test_field_is_absent_on_create(self, program_manager_org_user_admin, program_manager_org):
+        form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org)
+
+        assert "watchers" not in form.fields
+
+    def test_posted_watchers_are_ignored_on_create(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type, watcher_org
+    ):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, watchers=[watcher_org.id]),
+        )
+
+        assert form.is_valid(), form.errors
+
+        assert not form.save().watchers.exists()
+
+    def test_existing_watchers_survive_a_save(
+        self, program_manager_org_user_admin, program, watcher_org, delivery_type
+    ):
+        program.watchers.set([watcher_org])
+
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program.organization,
+            instance=program,
+            data=program_form_data(delivery_type, name="Renamed Program"),
+        )
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+
+        assert updated.name == "Renamed Program"
+        assert list(updated.watchers.all()) == [watcher_org]

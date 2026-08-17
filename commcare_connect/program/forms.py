@@ -16,6 +16,18 @@ def funder_organizations(program_organization):
     return Organization.objects.filter(funder=True).exclude(pk=program_organization.pk).order_by("name")
 
 
+def watcher_organizations(program_organization, funder):
+    """Organizations that may watch a program.
+
+    The program's own organization and its funder are excluded: both already hold a higher
+    access level than a watcher, so selecting them would have no effect.
+    """
+    excluded_ids = {program_organization.pk}
+    if funder:
+        excluded_ids.add(funder.pk)
+    return Organization.objects.exclude(pk__in=excluded_ids).order_by("name")
+
+
 class ProgramForm(forms.ModelForm):
     currency = forms.ModelChoiceField(
         label="Currency",
@@ -36,6 +48,12 @@ class ProgramForm(forms.ModelForm):
         widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label="Select a funder",
     )
+    watchers = forms.ModelMultipleChoiceField(
+        label="Watchers",
+        queryset=Organization.objects.none(),
+        required=False,
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+    )
 
     class Meta:
         model = Program
@@ -44,6 +62,7 @@ class ProgramForm(forms.ModelForm):
             "description",
             "delivery_type",
             "funder",
+            "watchers",
             "budget",
             "currency",
             "country",
@@ -61,12 +80,14 @@ class ProgramForm(forms.ModelForm):
             self._configure_access_fields()
         else:
             self.fields.pop("funder", None)
+            self.fields.pop("watchers", None)
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(*self._layout_fields())
 
     def _configure_access_fields(self):
         self.fields["funder"].queryset = funder_organizations(self.organization)
+        self.fields["watchers"].queryset = watcher_organizations(self.organization, self.instance.funder)
         if self.instance.pk:
             self._lock_funder_field()
 
@@ -100,6 +121,7 @@ class ProgramForm(forms.ModelForm):
             layout_fields.append(
                 Row(
                     Field("funder"),
+                    Field("watchers"),
                     css_class="grid grid-cols-2 gap-2",
                 )
             )
@@ -119,12 +141,23 @@ class ProgramForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        self._validate_dates(cleaned_data)
+        self._validate_funder_is_not_watcher(cleaned_data)
+        return cleaned_data
+
+    def _validate_dates(self, cleaned_data):
         start_date = cleaned_data.get("start_date")
         end_date = cleaned_data.get("end_date")
 
         if start_date and end_date and end_date <= start_date:
             self.add_error("end_date", "End date must be after the start date.")
-        return cleaned_data
+
+    def _validate_funder_is_not_watcher(self, cleaned_data):
+        funder = cleaned_data.get("funder")
+        watchers = cleaned_data.get("watchers")
+
+        if funder and watchers and funder in watchers:
+            self.add_error("watchers", "An organization cannot be both the funder and a watcher.")
 
     def save(self, commit=True):
         if not self.instance.pk:
