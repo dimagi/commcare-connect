@@ -4,8 +4,10 @@ import random
 import pytest
 from django.utils import timezone
 from factory.fuzzy import FuzzyText
+from waffle.testutils import override_switch
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
+from commcare_connect.flags.switch_names import ENABLE_PROGRAM_ACCESS_REDESIGN
 from commcare_connect.opportunity.forms import OpportunityFinalizeForm, OpportunityInitForm
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.tests.factories import (
@@ -16,6 +18,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.program.forms import ProgramForm
+from commcare_connect.program.helpers import eligible_funders
 from commcare_connect.program.models import Program, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory
@@ -24,6 +27,12 @@ from commcare_connect.users.tests.factories import OrganizationFactory
 @pytest.fixture
 def delivery_type():
     return DeliveryTypeFactory()
+
+
+@pytest.fixture
+def switch_enable_program_access_redesign_enabled():
+    with override_switch(ENABLE_PROGRAM_ACCESS_REDESIGN, active=True):
+        yield
 
 
 @pytest.mark.django_db
@@ -245,3 +254,158 @@ class TestOpportunityFinalizeForm:
             total_budget=5000,
         )
         assert "org_pay_per_visit" not in form.fields
+
+
+@pytest.mark.django_db
+class TestFunderOrganizations:
+    def test_includes_only_funders(self, program_manager_org, funder_org):
+        non_funder = OrganizationFactory()
+
+        result = eligible_funders(program_manager_org)
+
+        assert funder_org in result
+        assert non_funder not in result
+
+    def test_excludes_own_organization(self, program_manager_org):
+        program_manager_org.funder = True
+        program_manager_org.save()
+
+        assert program_manager_org not in eligible_funders(program_manager_org)
+
+
+def program_form_data(delivery_type, **overrides):
+    data = {
+        "name": "Test Program",
+        "description": "This is a test description.",
+        "delivery_type": delivery_type.id,
+        "budget": 10000,
+        "currency": "USD",
+        "country": "USA",
+        "start_date": timezone.now().date(),
+        "end_date": timezone.now().date() + timezone.timedelta(days=30),
+    }
+    data.update(overrides)
+    return data
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestProgramFormFunderEnabled:
+    def test_field_is_present(self, program_manager_org_user_admin, program_manager_org):
+        form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org)
+
+        assert "funder" in form.fields
+
+    def test_non_funder_organization_is_rejected(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type
+    ):
+        non_funder = OrganizationFactory()
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, funder=non_funder.id),
+        )
+
+        assert not form.is_valid()
+        assert "funder" in form.errors
+
+    def test_save_persists_funder(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type, funder_org
+    ):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, funder=funder_org.id),
+        )
+
+        assert form.is_valid(), form.errors
+        program = form.save()
+
+        assert program.funder == funder_org
+
+    def test_save_without_funder(self, program_manager_org_user_admin, program_manager_org, delivery_type):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type),
+        )
+
+        assert form.is_valid(), form.errors
+
+        assert form.save().funder is None
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestProgramFormFunderLockedOnEdit:
+    @pytest.fixture
+    def funded_program(self, program, funder_org):
+        program.funder = funder_org
+        program.save()
+        return program
+
+    def _edit_data(self, program, **overrides):
+        data = {
+            "name": program.name,
+            "description": program.description,
+            "delivery_type": program.delivery_type_id,
+            "budget": program.budget,
+            "currency": program.currency.code,
+            "country": program.country.code,
+            "start_date": program.start_date,
+            "end_date": program.end_date,
+        }
+        data.update(overrides)
+        return data
+
+    def test_posted_funder_is_ignored(self, program_manager_org_user_admin, funded_program, funder_org):
+        other_funder = OrganizationFactory(funder=True)
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=funded_program.organization,
+            instance=funded_program,
+            data=self._edit_data(funded_program, funder=other_funder.id),
+        )
+
+        assert form.is_valid(), form.errors
+        program = form.save()
+
+        assert program.funder == funder_org
+
+
+@pytest.mark.django_db
+class TestProgramFormFunderDisabled:
+    def test_field_is_absent_on_create(self, program_manager_org_user_admin, program_manager_org):
+        form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org)
+
+        assert "funder" not in form.fields
+
+    def test_posted_funder_is_ignored_on_create(
+        self, program_manager_org_user_admin, program_manager_org, delivery_type, funder_org
+    ):
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program_manager_org,
+            data=program_form_data(delivery_type, funder=funder_org.id),
+        )
+
+        assert form.is_valid(), form.errors
+
+        assert form.save().funder is None
+
+    def test_existing_funder_survives_a_save(self, program_manager_org_user_admin, program, funder_org, delivery_type):
+        program.funder = funder_org
+        program.save()
+
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=program.organization,
+            instance=program,
+            data=program_form_data(delivery_type, name="Renamed Program"),
+        )
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+
+        assert updated.name == "Renamed Program"
+        assert updated.funder == funder_org

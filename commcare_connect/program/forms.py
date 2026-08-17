@@ -1,8 +1,13 @@
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Button, Field, Layout, Row, Submit
 from django import forms
+from django.utils.translation import gettext_lazy as _
+from waffle import switch_is_active
 
+from commcare_connect.flags.switch_names import ENABLE_PROGRAM_ACCESS_REDESIGN
 from commcare_connect.opportunity.models import Country, Currency
+from commcare_connect.organization.models import Organization
+from commcare_connect.program.helpers import eligible_funders
 from commcare_connect.program.models import Program
 
 DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
@@ -21,6 +26,13 @@ class ProgramForm(forms.ModelForm):
         widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label="Select a country",
     )
+    funder = forms.ModelChoiceField(
+        label=_("Funder"),
+        queryset=Organization.objects.none(),
+        required=False,
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a funder"),
+    )
 
     class Meta:
         model = Program
@@ -28,6 +40,7 @@ class ProgramForm(forms.ModelForm):
             "name",
             "description",
             "delivery_type",
+            "funder",
             "budget",
             "currency",
             "country",
@@ -40,9 +53,31 @@ class ProgramForm(forms.ModelForm):
         self.user = kwargs.pop("user", None)
         self.organization = kwargs.pop("organization")
         super().__init__(*args, **kwargs)
+        self.program_access_redesign_enabled = switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN)
+        if self.program_access_redesign_enabled:
+            self._configure_funder_field()
+        else:
+            self.fields.pop("funder", None)
         self.helper = FormHelper(self)
         self.helper.form_tag = False
-        self.helper.layout = Layout(
+        self.helper.layout = Layout(*self._layout_fields())
+
+    def _configure_funder_field(self):
+        self.fields["funder"].queryset = eligible_funders(self.organization)
+        if self.instance.pk:
+            self._lock_funder_field()
+
+    def _lock_funder_field(self):
+        """The funder is chosen once, at creation.
+
+        Django ignores submitted data for a disabled field and falls back to the instance
+        value, so this is the enforcement, not merely a visual lock.
+        """
+        self.fields["funder"].disabled = True
+        self.fields["funder"].widget.attrs.pop("data-tomselect", None)
+
+    def _layout_fields(self):
+        layout_fields = [
             Field("name"),
             Field("description"),
             Field("delivery_type"),
@@ -57,6 +92,15 @@ class ProgramForm(forms.ModelForm):
                 Field("end_date"),
                 css_class="grid grid-cols-2 gap-2",
             ),
+        ]
+        if self.program_access_redesign_enabled:
+            layout_fields.append(
+                Row(
+                    Field("funder"),
+                    css_class="grid grid-cols-2 gap-2",
+                )
+            )
+        layout_fields.append(
             Row(
                 Button(
                     "close",
@@ -66,8 +110,9 @@ class ProgramForm(forms.ModelForm):
                 ),
                 Submit("submit", "Submit", css_class="button button-md primary-dark"),
                 css_class="flex gap-3 justify-end mt-4",
-            ),
+            )
         )
+        return layout_fields
 
     def clean(self):
         cleaned_data = super().clean()

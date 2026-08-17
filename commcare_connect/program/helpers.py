@@ -17,6 +17,7 @@ from django.db.models import (
 from django.db.models.functions import Cast, Coalesce, Round
 
 from commcare_connect.opportunity.models import Opportunity, UserVisit, VisitValidationStatus
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 
 EXCLUDED_STATUS = [
@@ -25,6 +26,14 @@ EXCLUDED_STATUS = [
 ]
 
 FILTER_FOR_VALID_VISIT_DATE = ~Q(opportunityaccess__uservisit__status__in=EXCLUDED_STATUS)
+
+
+def eligible_funders(program_organization):
+    """Organizations that may be chosen as a program's funder.
+
+    Funder organizations other than the program's own.
+    """
+    return Organization.objects.filter(funder=True).exclude(pk=program_organization.pk).order_by("name")
 
 
 def calculate_safe_percentage(numerator, denominator):
