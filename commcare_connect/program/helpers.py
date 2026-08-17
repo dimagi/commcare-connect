@@ -36,6 +36,18 @@ def eligible_funders(program_organization):
     return Organization.objects.filter(funder=True).exclude(pk=program_organization.pk).order_by("name")
 
 
+def eligible_watchers(program_organization, funder):
+    """Organizations that may be chosen as a program's watchers.
+
+    The program's own organization and its funder are excluded: both already hold a higher
+    access level than a watcher, so selecting them would have no effect.
+    """
+    excluded_ids = {program_organization.pk}
+    if funder:
+        excluded_ids.add(funder.pk)
+    return Organization.objects.exclude(pk__in=excluded_ids).order_by("name")
+
+
 def calculate_safe_percentage(numerator, denominator):
     return Case(
         When(**{denominator: 0}, then=Value(0)),  # Handle division by zero
