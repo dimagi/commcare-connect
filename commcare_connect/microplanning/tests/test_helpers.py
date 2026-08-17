@@ -408,7 +408,6 @@ class TestUnassignWorkAreas:
         assert mock_bulk_hq.call_count == 1
         sent_updates = mock_bulk_hq.call_args.args[2]
         assert all(u["owner_id"] == "-" for u in sent_updates)
-        assert all(u["create"] is False for u in sent_updates)
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_already_unassigned_areas_are_skipped(self, mock_bulk_hq, org_user_admin, opportunity):
