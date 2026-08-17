@@ -8,8 +8,6 @@ webservers:
       ansible_host: i-028041b238ae4e183
     celery0:
       ansible_host: i-0517c5593d6eb861e
-    celery2:
-      ansible_host: i-0abc62500bf452840
   vars:
     secrets_file: 'Ansible Secrets - Production'
     commcare_hq_url: 'https://www.commcarehq.org'

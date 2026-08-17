@@ -33,23 +33,6 @@ servers:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
     cmd: /start_celery
-    env:
-      clear:
-        CELERY_WORKER_BEAT: 'true'
-    labels:
-      traefik.enable: false
-    logging:
-      options:
-        awslogs-group: 'commcare-connect-celery'
-        tag: 'celery-{{.ID}}'
-
-  celery-workers:
-    hosts:
-      - i-0abc62500bf452840
-    options:
-      # create by ansible
-      env-file: '/home/connect/www/commcare-connect/docker.env'
-    cmd: /start_celery
     labels:
       traefik.enable: false
     logging:
