@@ -19,7 +19,11 @@ from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
 
-from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import (
+    AUTOMATIC_VISIT_VERIFICATION,
+    ENABLE_PROGRAM_ACCESS_REDESIGN,
+    OPPORTUNITY_CREDENTIALS,
+)
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -363,6 +367,23 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         return instance
 
 
+def supervising_organizations(program):
+    """Organizations eligible to supervise an opportunity in `program`.
+
+    The program's own organization, its funder, and every organization with an accepted
+    ProgramApplication for the program. Eligibility is evaluated on each render, so an
+    organization that loses its accepted application stops being offered.
+    """
+    eligible = Q(pk=program.organization_id)
+    if program.funder_id:
+        eligible |= Q(pk=program.funder_id)
+    eligible |= Q(
+        programapplication__program=program,
+        programapplication__status=ProgramApplicationStatus.ACCEPTED,
+    )
+    return Organization.objects.filter(eligible).distinct().order_by("name")
+
+
 class OpportunityInitForm(forms.ModelForm):
     app_hint_text = "Add required apps to the opportunity. All fields are mandatory."
     currency = forms.ModelChoiceField(
@@ -542,6 +563,22 @@ class OpportunityInitForm(forms.ModelForm):
         opportunity_details_row = self.helper.layout[0]
         opportunity_details_row.fields.insert(1, Column(Field("organization"), css_class="col-span-2"))
 
+        if switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
+            self._add_supervising_organization_field(opportunity_details_row)
+
+    def _add_supervising_organization_field(self, opportunity_details_row):
+        """The supervising organization oversees the work; it does not replace the
+        delivering organization chosen in `organization`. Both roles can coexist on the
+        same organization."""
+        self.fields["supervising_organization"] = forms.ModelChoiceField(
+            queryset=supervising_organizations(self.program),
+            required=True,
+            initial=self.program.organization,
+            widget=forms.Select(attrs={"data-tomselect": "1"}),
+            label=_("Supervising Organization"),
+        )
+        opportunity_details_row.fields.insert(2, Column(Field("supervising_organization"), css_class="col-span-2"))
+
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
@@ -618,6 +655,10 @@ class OpportunityInitForm(forms.ModelForm):
         opportunity.modified_by = self.user.email
 
         opportunity.organization = self.cleaned_data.get("organization")
+        # Absent from cleaned_data when the access redesign switch is off, in which case
+        # Opportunity.save() falls back to the program's organization.
+        if "supervising_organization" in self.cleaned_data:
+            opportunity.supervising_organization = self.cleaned_data["supervising_organization"]
         opportunity.program = self.program
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
@@ -679,6 +720,8 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         self._set_initial_app("deliver", getattr(opportunity, "deliver_app", None))
 
         self.fields["organization"].initial = opportunity.organization
+        if "supervising_organization" in self.fields:
+            self.fields["supervising_organization"].initial = opportunity.supervising_organization
 
         if self._has_existing_accesses:
             self._disabled_fields = (
@@ -741,6 +784,10 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
     def save(self, commit=True):
         opportunity = self.instance
         opportunity.organization = self.cleaned_data.get("organization")
+        # Absent from cleaned_data when the access redesign switch is off, leaving the
+        # opportunity's existing supervising organization untouched.
+        if "supervising_organization" in self.cleaned_data:
+            opportunity.supervising_organization = self.cleaned_data["supervising_organization"]
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
 

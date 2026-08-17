@@ -130,8 +130,8 @@ class Opportunity(BaseModel):
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def save(self, *args, **kwargs):
-        # Until the UI allows setting a supervising organization, default it to the program's
-        # owning organization.
+        # Form-driven creation sets this explicitly; the fallback covers programmatic
+        # creation paths (API, factories, data migrations) for this non-null column.
         if not self.supervising_organization_id:
             self.supervising_organization_id = self.program.organization_id
         super().save(*args, **kwargs)
