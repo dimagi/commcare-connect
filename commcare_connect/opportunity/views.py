@@ -243,6 +243,10 @@ logger = logging.getLogger(__name__)
 EXPORT_ROW_LIMIT = 10_000
 _NEXT_WORKER_TASKS = "worker_tasks"
 
+PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
+# Task id of the payment import whose outcome has already been shown to the user.
+PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
+
 
 def get_opportunity_or_404(pk, org_slug):
     opp = get_object_by_uuid_or_int(Opportunity.objects.all(), str(pk), uuid_field="opportunity_id")
@@ -835,6 +839,8 @@ def render_payment_import_progress(request, org_slug, task_id):
         response = HttpResponse()
         response["HX-Refresh"] = "true"
         return response
+    if finished:
+        claim_payment_import_outcome(request, task_id)
 
     context = {
         "finished": finished,
@@ -843,6 +849,19 @@ def render_payment_import_progress(request, org_slug, task_id):
         "status_url": reverse("opportunity:payment_import_status", args=(org_slug, task_id)),
     }
     return render(request, "opportunity/payment_import_modal.html", context)
+
+
+def claim_payment_import_outcome(request, task_id):
+    """Whether this request should show the import's outcome, claiming it if so.
+
+    A finished import reports itself from the task id left in the URL, so a refresh or a back
+    navigation would otherwise show the same banner or error modal again. The first request to
+    ask for an outcome claims it; later ones are told there is nothing left to show.
+    """
+    if request.session.get(PAYMENT_IMPORT_CLAIMED_SESSION_KEY) == task_id:
+        return False
+    request.session[PAYMENT_IMPORT_CLAIMED_SESSION_KEY] = task_id
+    return True
 
 
 @org_member_required
@@ -2952,17 +2971,24 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
 class WorkerPaymentsView(BaseWorkerListView):
     hx_template_name = "opportunity/payments.html"
     active_tab = "payments"
+    show_import_outcome = True
 
     def get(self, request, org_slug, opp_id):
-        # A finished import surfaces its result as a banner; a running one keeps the
-        # polling progress bar (added to context in get_extra_context).
+        # A finished import surfaces its result as a banner, or as the error modal opened by
+        # get_extra_context; a running one keeps the polling progress spinner.
         if not request.htmx and self._payment_import_complete():
-            self._add_payment_import_message()
+            self.show_import_outcome = claim_payment_import_outcome(request, self._payment_import_task_id)
+            if self.show_import_outcome:
+                self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
+
+    @property
+    def _payment_import_task_id(self):
+        return self.request.GET.get(PAYMENT_IMPORT_TASK_PARAM)
 
     @cached_property
     def _payment_import_task(self):
-        task_id = self.request.GET.get("payment_import_task_id")
+        task_id = self._payment_import_task_id
         if not task_id:
             return None
         task = AsyncResult(task_id)
@@ -3005,11 +3031,12 @@ class WorkerPaymentsView(BaseWorkerListView):
         return self._payment_import_result().get("errors") or {}
 
     def get_extra_context(self, opportunity, org_slug):
-        # Only keep polling while the import is still running; once complete the result
-        # is shown in an error modal.
-        task_id = self.request.GET.get("payment_import_task_id")
-        if task_id and self._payment_import_complete() and not self._payment_import_errors():
-            task_id = None
+        # Only keep polling while the import is still running. Once it is complete the only thing
+        # left to open is the error modal, and only for errors this load has not already shown.
+        task_id = self._payment_import_task_id
+        if task_id and self._payment_import_complete():
+            if not (self._payment_import_errors() and self.show_import_outcome):
+                task_id = None
         return {
             "export_form": PaymentExportForm(),
             "payment_import_task_id": task_id,

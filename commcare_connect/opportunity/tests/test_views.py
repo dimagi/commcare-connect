@@ -3275,6 +3275,65 @@ def test_worker_payments_stops_polling_once_import_succeeds(
     assert "payment_import_status" not in response.content.decode()
 
 
+@pytest.mark.parametrize("is_error", [False, True])
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_shows_import_banner_only_once(
+    mock_async_result, is_error, client, organization, opportunity, org_user_member
+):
+    """A refresh or a back navigation must not report the same import again."""
+    message = "No payments were uploaded." if is_error else "Payment status uploaded successfully for 3 users."
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": message, "is_error": is_error, "errors": {}}
+    task.info = {"message": message}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    first = client.get(url, {"payment_import_task_id": "task-xyz"})
+    assert message in first.content.decode()
+
+    # The task id is still in the URL, but its outcome has been shown and is not shown again.
+    repeat = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    assert repeat.status_code == 200
+    assert message not in repeat.content.decode()
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_worker_payments_shows_import_error_modal_only_once(
+    mock_status_async_result, mock_view_async_result, client, organization, opportunity, org_user_member
+):
+    """The errors are delivered by the modal endpoint, so a later page load must not reopen it."""
+    result = {
+        "message": "3 rows have errors",
+        "is_error": True,
+        "errors": {"Username is required": [3, 5]},
+    }
+    status_task = mock_status_async_result.return_value
+    status_task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id], "result": result}
+    status_task.info = {"message": result["message"]}
+    view_task = mock_view_async_result.return_value
+    view_task.args = [opportunity.id]
+    view_task.status = "SUCCESS"
+    view_task.result = result
+    view_task.info = {"message": result["message"]}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    status_url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    modal = client.get(status_url)
+    assert "Username is required" in modal.content.decode()
+
+    repeat = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    assert repeat.status_code == 200
+    # Nothing opens the modal endpoint again.
+    assert repeat.context["payment_import_task_id"] is None
+    assert "payment_import_status" not in repeat.content.decode()
+
+
 @mock.patch("commcare_connect.opportunity.views.AsyncResult")
 def test_worker_payments_reports_a_crashed_import_task(
     mock_async_result, client, organization, opportunity, org_user_member
