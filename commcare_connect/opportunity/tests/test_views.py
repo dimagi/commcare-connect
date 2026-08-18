@@ -67,7 +67,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView
+from commcare_connect.opportunity.views import OpportunityDashboard, WorkerPaymentsView, _metric_ratio
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
@@ -3169,3 +3169,85 @@ def test_worker_payments_shows_import_banner_on_reload(
     assert response.status_code == 200
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
+
+
+@pytest.mark.django_db
+class TestOpportunityDashboardHeaderContext:
+    def test_metrics_floor_worker_cap_before_scaling_deliveries(self, opportunity):
+        # 1000 / (3 * 100) = 3.33... connect workers -- deliberately non-integral, since
+        # number_of_users is a float whenever the budget doesn't divide evenly. The cap must be
+        # floored before scaling deliveries, or floating-point error inflates the result:
+        # 1000 / 300 * 3 evaluates to exactly 10.0 in Python, not the "intuitive" 9.999...
+        PaymentUnitFactory(opportunity=opportunity, max_total=3, amount=100, org_amount=0)
+        opportunity.total_budget = 1000
+        opportunity.save()
+
+        OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=250)
+        OpportunityAccessFactory(opportunity=opportunity, accepted=False, payment_accrued=0)
+
+        header = OpportunityDashboard().get_header_context(opportunity)
+
+        connect_workers, service_deliveries = header["metrics"]
+        assert connect_workers["actual"] == 1  # only the accepted access counts
+        assert connect_workers["cap"] == 3  # int(3.33...) -- must floor, not render the raw fraction
+        assert service_deliveries["cap"] == 9  # 3 (floored workers) * 3 (max_visits_per_user)
+        assert header["budget"] == {"actual": 250, "cap": 1000, "pct": 25}
+
+    def test_delivery_window_closed_when_opportunity_has_ended(self, opportunity):
+        opportunity.start_date = date(2020, 1, 1)
+        opportunity.end_date = date(2020, 1, 31)
+        opportunity.save()
+
+        window = OpportunityDashboard().get_delivery_window_context(opportunity)
+
+        assert window == {"pct": 100, "closed": True, "months_left": None}
+
+    def test_delivery_window_open_reports_months_left(self, opportunity):
+        today = now().date()
+        opportunity.start_date = today
+        opportunity.end_date = today + timedelta(days=90)
+        opportunity.save()
+
+        window = OpportunityDashboard().get_delivery_window_context(opportunity)
+
+        assert window["closed"] is False
+        assert window["pct"] == 0
+        assert window["months_left"] >= 1
+
+    def test_delivery_window_missing_end_date(self, opportunity):
+        opportunity.end_date = None
+        opportunity.save()
+
+        window = OpportunityDashboard().get_delivery_window_context(opportunity)
+
+        assert window == {"pct": 0, "closed": False, "months_left": None}
+
+    def test_delivery_window_ends_today_is_not_closed(self, opportunity):
+        # has_ended uses a strict `<`, so an opportunity ending today isn't "closed" yet even
+        # though the window reads as fully elapsed -- this combination must stay self-consistent
+        # now that "closed" and "pct" are computed from the same locally-captured today.
+        today = now().date()
+        opportunity.start_date = today - timedelta(days=1)
+        opportunity.end_date = today
+        opportunity.save()
+
+        window = OpportunityDashboard().get_delivery_window_context(opportunity)
+
+        assert window == {"pct": 100, "closed": False, "months_left": 1}
+
+
+@pytest.mark.parametrize(
+    ("actual", "cap", "expected"),
+    [
+        (0, 100, 0),
+        (50, 100, 50),
+        (100, 100, 100),
+        (150, 100, 100),  # over cap clamps to 100
+        (-10, 100, 0),  # negative clamps to 0
+        (1, 3, 33),
+        (0, 0, 0),  # no cap
+        (5, None, 0),  # no cap
+    ],
+)
+def test_metric_ratio(actual, cap, expected):
+    assert _metric_ratio(actual, cap) == {"actual": actual, "cap": cap, "pct": expected}

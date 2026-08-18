@@ -2,7 +2,7 @@
 {% load i18n %}
 {% block title %}{{ request.org }} - {{ object.name }}{% endblock %}
 {% block content %}
-  <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }}, showCatchmentImportModal: false, showCatchmentExportModal: false }"
+  <div x-data="{ showCatchmentImportModal: false, showCatchmentExportModal: false }"
        class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
     {% include 'components/breadcrumbs.html' with path=path %}
     {% if export_task_id %}
@@ -23,82 +23,7 @@
         </button>
       </div>
     {% endif %}
-    <div class="flex flex-col gap-8 w-full rounded-lg p-4"
-         :class="isTest ? 'bg-white shadow-xs' : 'bg-brand-deep-purple'">
-      <div class="flex items-center relative"
-           :class="{'gap-6': isTest}"
-           x-data="{ isOpen: false }">
-        <h3 class="text-sm font-medium text-brand-sky flex-1">{{ object.program.name }}</h3>
-        {% if object.is_test %}<span class="badge badge-md primary-light">Test</span>{% endif %}
-        {% if not request.org_membership.is_viewer %}
-          <i class="fa-solid cursor-pointer"
-             :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark' : 'fa-bars']"
-             @click="isOpen = !isOpen"></i>
-          <!-- Dropdown Menu -->
-          {% include "opportunity/opportunity_menu.html" with request=request opportunity=object is_opportunity_pm=request.is_opportunity_pm %}
-        {% endif %}
-      </div>
-      <div class="flex justify-between items-end">
-        <div class="flex flex-col gap-2">
-          <h1 class="text-2xl font-medium block"
-              :class="isTest? 'text-brand-deep-purple': 'text-white' ">{{ object.name }}</h1>
-          <p class="text-sm font-regular w-6/12"
-             :class="isTest ? 'text-gray-600' : 'text-gray-100'">{{ object.description }}</p>
-        </div>
-        <div class="flex mt-6">
-          <!-- Opportunity resources: payment unit, learn app deliver app and its display modal-->
-          <div x-cloak
-               class="flex gap-4"
-               x-data="{ showModal: false, selectedTab: '', selectedOption: '', historyLoaded: false, }"
-               x-init="$watch('showModal', value => { document.body.classList.toggle('overflow-hidden', value); if (value && !historyLoaded) { $dispatch('tabShown'); historyLoaded = true; } })">
-            <!-- apps list -->
-            {% for app in resources %}
-              <div class="min-w-48 flex flex-row items-center justify-between px-4 h-10 bg-brand-indigo rounded cursor-pointer"
-                   @click="showModal = !showModal; ; selectedTab = '{{ app.name }}'; selectedOption = '{{ app.name }}'">
-                <div class="flex items-center">
-                  <i class="fa-solid {{ app.icon }} text-white text-sm"></i>
-                  <h3 class="text-sm font-normal text-white flex-1 pl-2 whitespace-nowrap">{{ app.name }}</h3>
-                </div>
-                <h3 class="text-sm font-medium text-white">{{ app.count }}</h3>
-              </div>
-            {% endfor %}
-            <!-- Modal -->
-            {% include "opportunity/opportunity_resource_modal.html" with opportunity=object %}
-          </div>
-        </div>
-      </div>
-      <!-- opportunity info -->
-      <div class="p-4 rounded-lg w-full"
-           :class="isTest ? 'bg-slate-100' : 'bg-black/20'">
-        <div class="flex gap-2 w-full items-center justify-between">
-          {% for data in basic_details %}
-            <div class="flex gap-2 items-start">
-              <div :class="isTest? 'infocard-dark' : 'infocard-light'">
-                <i class="fa-solid {{ data.icon }}"
-                   :class="{'!text-brand-cornflower-blue': isTest}"></i>
-                <div>
-                  <h6 :class="{ '!text-brand-cornflower-blue': isTest }">{{ data.name }}</h6>
-                  <p>{{ data.count }}</p>
-                </div>
-              </div>
-            </div>
-            <!--Separator Between basic detail columns-->
-            {% if not forloop.last and forloop.counter != 2 %}
-              <div class="w-0.5 h-10 {% if not object.is_test %}bg-white{% else %}bg-slate-200{% endif %} bg-opacity-30"></div>
-            {% endif %}
-          {% endfor %}
-          <div>
-            {% if object.is_active %}
-              <span class="badge badge-md positive-dark">{% trans 'Active' %}</span>
-            {% elif object.active and object.has_ended %}
-              <span class="badge badge-md warning-dark">{% trans 'Ended' %}</span>
-            {% else %}
-              <span class="badge badge-md negative-dark">{% trans 'Inactive' %}</span>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
+    {% include "opportunity/opportunity_header.html" with object=object header=header %}
     <div>
       <!--Skeletons -->
       {% include "opportunity/opportunity_delivery_stat.html" with skeleton=True %}

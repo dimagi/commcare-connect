@@ -105,6 +105,7 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
+    get_opportunity_header_stats,
     get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_learn_table_data,
@@ -223,7 +224,11 @@ from commcare_connect.utils.celery import (
     render_export_status,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
-from commcare_connect.utils.datetime import get_start_end_date_range_with_time
+from commcare_connect.utils.datetime import (
+    get_elapsed_percent,
+    get_months_remaining,
+    get_start_end_date_range_with_time,
+)
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
@@ -472,17 +477,6 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
     def get_context_data(self, object, request, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        learn_module_count = LearnModule.objects.filter(app=object.learn_app).count()
-        deliver_unit_count = DeliverUnit.objects.filter(app=object.deliver_app).count()
-        payment_unit_count = object.paymentunit_set.count()
-
-        def safe_display(value):
-            if value is None:
-                return "---"
-            if isinstance(value, datetime.date):
-                return value.strftime("%Y-%m-%d")
-            return str(value)
-
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {
@@ -490,56 +484,72 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
                 "url": reverse("opportunity:detail", args=(request.org.slug, object.opportunity_id)),
             },
         ]
-
-        context["resources"] = [
-            {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open"},
-            {"name": "Deliver App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
-            {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
-        ]
-
-        context["basic_details"] = [
-            {
-                "name": "Delivery Type",
-                "count": safe_display(object.delivery_type and object.delivery_type.name),
-                "icon": "fa-file-circle-check",
-            },
-            {
-                "name": "Start Date",
-                "count": safe_display(object.start_date),
-                "icon": "fa-calendar-days",
-            },
-            {
-                "name": "End Date",
-                "count": safe_display(object.end_date),
-                "icon": "fa-arrow-right !text-brand-mango",  # color is also changed",
-            },
-            {
-                "name": "Max Connect Workers",
-                "count": header_with_tooltip(
-                    safe_display(int(object.number_of_users)), "Maximum allowed workers in the Opportunity"
-                ),
-                "icon": "fa-users",
-            },
-            {
-                "name": "Max Service Deliveries",
-                "count": header_with_tooltip(
-                    safe_display(int(object.allotted_visits)),
-                    "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
-                ),
-                "icon": "fa-gears",
-            },
-            {
-                "name": "Max Budget",
-                "count": header_with_tooltip(
-                    f"{object.currency_code} {intcomma(object.total_budget)}",
-                    "Maximum payments that can be made for workers and organization",
-                ),
-                "icon": "fa-money-bill",
-            },
-        ]
+        context["header"] = self.get_header_context(object)
         context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
         return context
+
+    def get_header_context(self, opportunity):
+        stats = get_opportunity_header_stats(opportunity)
+        # number_of_users can be fractional when the budget doesn't divide evenly across workers.
+        # Floor it *before* multiplying by max_visits_per_user below, not after: floating-point
+        # error can inflate a floor-after-multiply result (e.g. 1000/300*3 evaluates to exactly
+        # 10.0 in Python, not the "intuitive" 9.999...), silently overstating the deliveries cap.
+        workers_cap = int(opportunity.number_of_users)
+
+        return {
+            "ended_date": opportunity.end_date if opportunity.has_ended else None,
+            "resources": [
+                {
+                    "name": _("Learn App"),
+                    "tab": "Learn App",
+                    "icon": "fa-book-open",
+                    "count": LearnModule.objects.filter(app=opportunity.learn_app).count(),
+                },
+                {
+                    "name": _("Deliver App"),
+                    "tab": "Deliver App",
+                    "icon": "fa-clipboard-check",
+                    "count": DeliverUnit.objects.filter(app=opportunity.deliver_app).count(),
+                },
+                {
+                    "name": _("Payment Units"),
+                    "tab": "Payments Units",
+                    "icon": "fa-hand-holding-dollar",
+                    "count": opportunity.paymentunit_set.count(),
+                },
+            ],
+            "window": self.get_delivery_window_context(opportunity),
+            "metrics": [
+                {"label": _("Connect Workers"), **_metric_ratio(stats["workers_actual"], workers_cap)},
+                {
+                    "label": _("Service Deliveries"),
+                    **_metric_ratio(opportunity.approved_visits, workers_cap * opportunity.max_visits_per_user),
+                },
+            ],
+            "budget": _metric_ratio(stats["budget_actual"] or 0, opportunity.total_budget),
+        }
+
+    def get_delivery_window_context(self, opportunity):
+        start_date, end_date = opportunity.start_date, opportunity.end_date
+        if not start_date or not end_date:
+            return {"pct": 0, "closed": False, "months_left": None}
+
+        # Read "today" once and reuse it for both checks below (matches Opportunity.has_ended's
+        # own `end_date < now().date()`), rather than letting closed/pct/months_left each read
+        # the clock independently and risk disagreeing across a midnight boundary.
+        today = now().date()
+        closed = end_date < today
+        return {
+            "pct": 100 if closed else get_elapsed_percent(start_date, end_date, today),
+            "closed": closed,
+            "months_left": None if closed else max(get_months_remaining(end_date, today), 1),
+        }
+
+
+def _metric_ratio(actual, cap):
+    percent = (actual / cap) * 100 if cap else 0
+    return {"actual": actual, "cap": cap, "pct": max(0, min(100, round(percent)))}
 
 
 @org_member_required

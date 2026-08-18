@@ -740,6 +740,14 @@ def get_opportunity_worker_progress(opp_id):
     )
 
 
+def get_opportunity_header_stats(opportunity: Opportunity):
+    """Actual workers accepted and accrued budget, for the opportunity header's consumption strip."""
+    return OpportunityAccess.objects.filter(opportunity=opportunity).aggregate(
+        workers_actual=Count("id", filter=Q(accepted=True)),
+        budget_actual=Sum("payment_accrued"),
+    )
+
+
 def get_opportunity_funnel_progress(opp_id):
     claimed_job_subquery = Coalesce(
         Subquery(

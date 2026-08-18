@@ -10,6 +10,7 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
+    get_opportunity_header_stats,
     get_opportunity_worker_progress,
     get_worker_learn_table_data,
     get_worker_table_data,
@@ -468,6 +469,20 @@ def test_opportunity_worker_progress_stats(opportunity):
     assert result.total_accrued == 300
     assert result.total_paid == 100
     assert result.visits_since_yesterday == 2
+
+
+def test_get_opportunity_header_stats(opportunity):
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=250)
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=150)
+    # payment_accrued is intentionally summed across every access regardless of accepted status
+    # (accrual isn't gated on invite acceptance), unlike workers_actual which is. Giving this one
+    # a distinct, nonzero amount pins down that the sum really is unfiltered, rather than passing
+    # coincidentally because an excluded row happened to contribute zero either way.
+    OpportunityAccessFactory(opportunity=opportunity, accepted=False, payment_accrued=999)
+
+    stats = get_opportunity_header_stats(opportunity)
+
+    assert stats == {"workers_actual": 2, "budget_actual": 1399}
 
 
 @pytest.mark.django_db
