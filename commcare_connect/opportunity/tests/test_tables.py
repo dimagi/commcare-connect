@@ -9,6 +9,7 @@ from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWork,
+    ExchangeRate,
     Opportunity,
     OpportunityAccess,
     PaymentUnit,
@@ -24,7 +25,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserInviteFactory,
 )
-from commcare_connect.opportunity.utils.invoice_line_items import DeliveryRow, LineItem, Money
+from commcare_connect.opportunity.utils.invoice_line_items import LineItem, Money, WorkPayRow
 from commcare_connect.users.models import User
 
 
@@ -72,7 +73,7 @@ def test_invoice_deliveries_table_org_column_visibility(show_org):
 
 
 def test_invoice_deliveries_table_total_folds_in_org_pay():
-    delivery = DeliveryRow(
+    delivery = WorkPayRow(
         completed_work=CompletedWork(
             entity_name="Baby A",
             date_created=datetime.datetime(2026, 1, 10, tzinfo=datetime.UTC),
@@ -84,6 +85,7 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
         month=datetime.date(2026, 1, 1),
         flw_pay=Money(Decimal("40"), Decimal("4")),
         org_pay=Money(Decimal("10"), Decimal("1")),
+        exchange_rate=ExchangeRate(rate=Decimal("10")),
     )
     table = InvoiceDeliveriesTable("KES", [delivery], show_org=True)
 
