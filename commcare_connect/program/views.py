@@ -1,7 +1,6 @@
 from datetime import timedelta
 
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
 from django.http import HttpResponse
@@ -23,9 +22,11 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
+    OrgPMRequiredMixin,
+    ProgramManageAccessMixin,
     org_admin_required,
-    org_pm_required,
     org_viewer_required,
+    program_manage_access_required,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ProgramForm
@@ -38,16 +39,6 @@ from commcare_connect.program.tasks import (
 
 from .utils import is_org_pm
 
-
-class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        org_membership = getattr(self.request, "org_membership", None)
-        is_admin = getattr(org_membership, "is_admin", False)
-        org = getattr(self.request, "org", None)
-        program_manager = getattr(org, "program_manager", False)
-        return (org_membership is not None and is_admin and program_manager) or self.request.user.is_superuser
-
-
 ALLOWED_ORDERINGS = {
     "name": "name",
     "-name": "-name",
@@ -58,7 +49,7 @@ ALLOWED_ORDERINGS = {
 }
 
 
-class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
+class ProgramCreateOrUpdate(UpdateView):
     model = Program
     form_class = ProgramForm
     template_name = "program/program_form.html"
@@ -113,7 +104,15 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
         return reverse("program:home", kwargs={"org_slug": self.request.org.slug})
 
 
-class ManagedOpportunityList(ProgramManagerMixin, ListView):
+class ProgramCreate(OrgPMRequiredMixin, ProgramCreateOrUpdate):
+    """There is no program yet to have a relationship with, so it is the org that decides."""
+
+
+class ProgramUpdate(ProgramManageAccessMixin, ProgramCreateOrUpdate):
+    """Editing an existing program requires manage access on that program."""
+
+
+class ManagedOpportunityList(ProgramManageAccessMixin, ListView):
     model = Opportunity
     paginate_by = 10
     default_ordering = "name"
@@ -164,15 +163,15 @@ class ManagedOpportunityViewMixin:
         return kwargs
 
 
-class ManagedOpportunityInit(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInit):
+class ManagedOpportunityInit(ManagedOpportunityViewMixin, OpportunityInit):
     form_class = OpportunityInitForm
 
 
-class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInitUpdate):
+class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, OpportunityInitUpdate):
     form_class = OpportunityInitUpdateForm
 
 
-@org_pm_required
+@program_manage_access_required
 @require_POST
 def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
@@ -202,7 +201,7 @@ def invite_organization(request, org_slug, pk):
     return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
 
-@org_pm_required
+@program_manage_access_required
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
@@ -225,7 +224,7 @@ def manage_application(request, org_slug, application_id, action):
 
 
 @require_POST
-@org_admin_required
+@program_manage_access_required
 def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
     application = get_object_or_404(
         ProgramApplication, program_application_id=application_id, status=ProgramApplicationStatus.INVITED

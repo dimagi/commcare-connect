@@ -12,11 +12,46 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentFactory,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import (
+    OrganizationFactory,
+    ProgramManagerOrganisationFactory,
+    UserFactory,
+)
+from commcare_connect.utils.test_utils import make_membership
+
+Role = UserOrganizationMembership.Role
+
+# Access used for creating progra,. Only PM orgs can create the program.
+ORG_PM_ACCESS = [("owner", True), ("funder", False), ("other_pm", True)]
+PROGRAM_MANAGE_ACCESS = [("owner", True), ("funder", True), ("other_pm", False)]
+
+
+@pytest.fixture
+def program_actors(funder_org):
+    def _actors(program):
+        program.funder = funder_org
+        program.save()
+        return {
+            "owner": program.organization,
+            "funder": funder_org,
+            "other_pm": ProgramManagerOrganisationFactory(),
+        }
+
+    return _actors
+
+
+def act_as_admin(client, org):
+    user = UserFactory()
+    make_membership(org, user, Role.ADMIN)
+    client.force_login(user)
+
+
+def was_denied(response):
+    return response.status_code in (403, 404)
 
 
 class BaseProgramTest:
@@ -26,7 +61,9 @@ class BaseProgramTest:
         self.user = program_manager_org_user_admin
         self.client = client
         client.force_login(self.user)
-        self.list_url = reverse("program:home", kwargs={"org_slug": self.organization.slug})
+
+    def list_url(self, org):
+        return reverse("program:home", kwargs={"org_slug": org.slug})
 
 
 @pytest.mark.django_db
@@ -35,13 +72,21 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
     def test_setup(self):
         self.program = ProgramFactory.create(organization=self.organization)
         self.delivery_type = DeliveryTypeFactory.create()
-        self.init_url = reverse("program:init", kwargs={"org_slug": self.organization.slug})
-        self.edit_url = reverse(
-            "program:edit", kwargs={"org_slug": self.organization.slug, "pk": self.program.program_id}
-        )
 
-    def test_create_view(self):
-        response = self.client.get(self.init_url)
+    def init_url(self, org):
+        return reverse("program:init", kwargs={"org_slug": org.slug})
+
+    def edit_url(self, org):
+        return reverse("program:edit", kwargs={"org_slug": org.slug, "pk": self.program.program_id})
+
+    @pytest.mark.parametrize("actor,expected", ORG_PM_ACCESS)
+    def test_create_view(self, actor, expected, program_actors):
+        org = program_actors(self.program)[actor]
+        act_as_admin(self.client, org)
+        response = self.client.get(self.init_url(org))
+        if not expected:
+            assert was_denied(response), f"{actor} reached the create form: {response.status_code}"
+            return
         assert response.status_code == HTTPStatus.OK
         assert "program/program_form.html" in response.templates[0].name
 
@@ -56,7 +101,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "start_date": "2024-01-01",
             "end_date": "2024-12-31",
         }
-        response = self.client.post(self.init_url, data)
+        response = self.client.post(self.init_url(self.organization), data)
         assert response.status_code == HTTPStatus.FOUND
         new_program = Program.objects.get(name="New Program")
         assert new_program.name == "New Program"
@@ -64,10 +109,16 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         assert "Program 'New Program' created successfully." in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
-        assert response.url == self.list_url
+        assert response.url == reverse("program:home", kwargs={"org_slug": self.organization.slug})
 
-    def test_update_view(self):
-        response = self.client.get(self.edit_url)
+    @pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
+    def test_update_view(self, actor, expected, program_actors):
+        org = program_actors(self.program)[actor]
+        act_as_admin(self.client, org)
+        response = self.client.get(self.edit_url(org))
+        if not expected:
+            assert was_denied(response), f"{actor} reached the edit form: {response.status_code}"
+            return
         assert response.status_code == HTTPStatus.OK
         assert "program/program_form.html" in response.templates[0].name
 
@@ -83,7 +134,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "start_date": "2024-02-01",
             "end_date": "2024-11-30",
         }
-        response = self.client.post(self.edit_url, data)
+        response = self.client.post(self.edit_url(self.program.organization), data)
         assert response.status_code == HTTPStatus.FOUND
         old_org = self.program.organization.slug
         self.program.refresh_from_db()
@@ -93,7 +144,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         assert "Program 'Updated Program Name' updated successfully." in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
-        assert response.url == self.list_url
+        assert response.url == self.list_url(self.organization)
 
 
 @pytest.mark.django_db
@@ -102,25 +153,39 @@ class TestInviteOrganizationView(BaseProgramTest):
     def test_setup(self, organization: Organization):
         self.invite_organization = organization
         self.program = ProgramFactory.create(organization=self.organization)
-        self.valid_url = reverse(
+
+    def invite_url(self, org):
+        return reverse(
             "program:invite_organization",
             kwargs={
-                "org_slug": self.organization.slug,
+                "org_slug": org.slug,
                 "pk": self.program.program_id,
             },
         )
 
-    def test_successful_invitation(self):
+    @property
+    def valid_url(self):
+        return self.invite_url(self.organization)
+
+    @pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
+    def test_successful_invitation(self, actor, expected, program_actors):
+        org = program_actors(self.program)[actor]
+        act_as_admin(self.client, org)
         data = {
             "organization": self.invite_organization.slug,
         }
-        response = self.client.post(self.valid_url, data)
-        assert response.status_code == HttpResponseRedirect.status_code
-        assert ProgramApplication.objects.filter(
+        response = self.client.post(self.invite_url(org), data)
+        invited = ProgramApplication.objects.filter(
             program=self.program,
             organization=self.invite_organization,
             status=ProgramApplicationStatus.INVITED,
-        ).exists()
+        )
+        if not expected:
+            assert was_denied(response), f"{actor} invited an org: {response.status_code}"
+            assert not invited.exists()
+            return
+        assert response.status_code == HttpResponseRedirect.status_code
+        assert invited.exists()
         assert "Workspace invited successfully!" in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
@@ -177,7 +242,7 @@ class TestProgramHomeBudgetData(BaseProgramTest):
         self.expected_allocated_budget = sum(self.expected_application_budgets.values())
 
     def test_program_home_includes_budget_data(self):
-        response = self.client.get(self.list_url)
+        response = self.client.get(self.list_url(self.organization))
         assert response.status_code == HTTPStatus.OK
         programs = response.context["programs"]
         program = next((p for p in programs if p.id == self.program.id), None)
@@ -256,26 +321,38 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
     @pytest.fixture(autouse=True)
     def test_setup(self):
         self.program = ProgramFactory.create(organization=self.organization)
-        self.init_url = reverse(
-            "program:opportunity_init",
-            kwargs={"org_slug": self.organization.slug, "pk": self.program.program_id},
-        )
 
-    def test_opportunity_init_get_shows_program_notice(self):
-        response = self.client.get(self.init_url)
+    @pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
+    def test_opportunity_init_get_shows_program_notice(self, actor, expected, program_actors):
+        org = program_actors(self.program)[actor]
+        act_as_admin(self.client, org)
+        url = reverse(
+            "program:opportunity_init",
+            kwargs={"org_slug": org.slug, "pk": self.program.program_id},
+        )
+        response = self.client.get(url)
+        if not expected:
+            assert was_denied(response), f"{actor} reached opportunity init: {response.status_code}"
+            return
         assert response.status_code == HTTPStatus.OK
         assert self.program.name.encode() in response.content
 
-    def test_opportunity_init_edit_get(self):
+    @pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
+    def test_opportunity_init_edit_get(self, actor, expected, program_actors):
+        org = program_actors(self.program)[actor]
+        act_as_admin(self.client, org)
         opportunity = OpportunityFactory.create(organization=self.organization, program=self.program)
         edit_url = reverse(
             "program:opportunity_init_edit",
             kwargs={
-                "org_slug": self.organization.slug,
+                "org_slug": org.slug,
                 "pk": self.program.program_id,
                 "opp_id": opportunity.opportunity_id,
             },
         )
         response = self.client.get(edit_url)
+        if not expected:
+            assert was_denied(response), f"{actor} reached opportunity init edit: {response.status_code}"
+            return
         assert response.status_code == HTTPStatus.OK
         assert self.program.name.encode() in response.content

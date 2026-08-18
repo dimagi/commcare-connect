@@ -207,6 +207,7 @@ from commcare_connect.organization.decorators import (
     OrganizationUserMemberRoleMixin,
     OrganizationUserMixin,
     OrgPMRequiredMixin,
+    ProgramManageAccessMixin,
     _request_user_is_member,
     opportunity_pm_required,
     opportunity_required,
@@ -319,7 +320,7 @@ class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(OrgPMRequiredMixin, CreateView):
+class OpportunityInit(OpportunityObjectMixin, ProgramManageAccessMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -344,7 +345,7 @@ class OpportunityInit(OrgPMRequiredMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView):
+class OpportunityInitUpdate(OpportunityObjectMixin, ProgramManageAccessMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
