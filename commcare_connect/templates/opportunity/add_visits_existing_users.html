@@ -11,7 +11,6 @@
     const tabs = availableTabs.map(t => t.key);
     return {
       selectedTab: tabs.includes(initialTab) ? initialTab : 'existing_workers',
-      newUsersLoaded: false,
       setTab(tab) {
         this.selectedTab = tab;
 
@@ -19,12 +18,6 @@
         const url = new URL(window.location);
         url.searchParams.set('active_tab', tab);
         window.history.pushState({}, '', url);
-
-         // initially load the form once
-        if (tab === 'new_workers' && !this.newUsersLoaded) {
-          htmx.trigger('#new_user_container', 'loadNewUserForm');
-        }
-
       }
     }
   }
@@ -122,6 +115,7 @@
         {% for tab in tabs %}
           <li @click="setTab('{{ tab.key }}')"
               id="{{ tab.key }}-tab"
+              {% if tab.key == "new_workers" and request.GET.active_tab != "new_workers" %} hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}" hx-target="#new_user_container" hx-swap="innerHTML" hx-trigger="click once" {% endif %}
               :class="{ 'active': selectedTab === '{{ tab.key }}' }">
             <span>{{ tab.label }}</span>
             <div x-show="selectedTab === '{{ tab.key }}'"></div>
@@ -281,9 +275,7 @@
       <div x-show="selectedTab === 'new_workers'">
         <h3 class="mb-2">{% trans "Add Budget for New Connect Workers" %}</h3>
         <div id="new_user_container"
-             hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
-             hx-swap="innerHTML"
-             hx-trigger="loadNewUserForm from:body">
+             {% if request.GET.active_tab == "new_workers" %} hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}" hx-swap="innerHTML" hx-trigger="load" {% endif %}>
           <h2 class="text-center text-gray-500 italic animate-pulse py-4">{% trans "Loading..." %}</h2>
         </div>
       </div>
