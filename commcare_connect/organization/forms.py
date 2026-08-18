@@ -241,11 +241,13 @@ class OrganizationSelectOrCreateForm(forms.Form):
         self.user = kwargs.pop("user")
         super().__init__(*args, **kwargs)
         self.fields["org"].queryset = Organization.visible_to(self.user).order_by("name")
+        self.fields["llo_entity"].queryset = LLOEntity.visible_to(self.user).order_by("name")
 
     def get_entity_wise_orgs(self):
         data = {}
         qs = (
-            LLOEntity.objects.prefetch_related(
+            LLOEntity.visible_to(self.user)
+            .prefetch_related(
                 Prefetch("organization_set", queryset=Organization.visible_to(self.user).only("id", "name", "slug"))
             )
             .only("id", "name")
@@ -259,6 +261,19 @@ class OrganizationSelectOrCreateForm(forms.Form):
                 ]
             }
         return data
+
+    def clean_llo_entity(self):
+        """Block duplicate LLO Entity names platform-wide, not just among visible entities.
+
+        The field's own duplicate check only covers entities the user can see and select,
+        so on its own it would let a user create an entity named after one they cannot see.
+        """
+        llo_entity = self.cleaned_data["llo_entity"]
+        if llo_entity and not llo_entity.pk and LLOEntity.objects.filter(name__iexact=llo_entity.name).exists():
+            raise ValidationError(
+                gettext("An LLO Entity with this name already exists. Please choose a different name.")
+            )
+        return llo_entity
 
     def clean_org(self):
         """Block duplicate workspace names platform-wide, not just among visible workspaces.

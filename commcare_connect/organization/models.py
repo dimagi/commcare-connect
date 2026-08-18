@@ -24,6 +24,12 @@ class LLOEntity(models.Model):
             return f"{self.name} ({self.short_name})"
         return f"{self.name}"
 
+    @classmethod
+    def visible_to(cls, user):
+        if user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            return cls.objects.all()
+        return cls.objects.filter(organization__memberships__user=user).distinct()
+
 
 def _current_year():
     return timezone.now().year

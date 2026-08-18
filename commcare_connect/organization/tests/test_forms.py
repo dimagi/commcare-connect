@@ -100,15 +100,16 @@ class TestAddMembersView:
         assert messages[0].level_tag == "success"
 
 
+def grant_entity_management_perm(user: User) -> User:
+    app_label, codename = WORKSPACE_ENTITY_MANAGEMENT_ACCESS.split(".")
+    perm = Permission.objects.get(codename=codename, content_type__app_label=app_label)
+    user.user_permissions.add(perm)
+    # Django caches permissions on the user instance; fetch a fresh instance to clear the cache.
+    return User.objects.get(pk=user.pk)
+
+
 @pytest.mark.django_db
 class TestOrganizationChangeForm:
-    def _grant_entity_management_perm(self, user: User) -> User:
-        app_label, codename = WORKSPACE_ENTITY_MANAGEMENT_ACCESS.split(".")
-        perm = Permission.objects.get(codename=codename, content_type__app_label=app_label)
-        user.user_permissions.add(perm)
-        # Django caches permissions on the user instance; fetch a fresh instance to clear the cache.
-        return User.objects.get(pk=user.pk)
-
     def test_update_name(self, organization: Organization, user: User):
         form = OrganizationChangeForm(data={"name": "New Name"}, user=user, instance=organization)
         assert form.is_valid()
@@ -129,7 +130,7 @@ class TestOrganizationChangeForm:
         self, organization: Organization, user: User, permission, program_manager
     ):
         if permission is not None:
-            user = self._grant_entity_management_perm(user)
+            user = grant_entity_management_perm(user)
 
         llo_entity = LLOEntity.objects.create(name="Test LLO")
 
@@ -151,7 +152,7 @@ class TestOrganizationChangeForm:
     @pytest.mark.parametrize("permission", [None, WORKSPACE_ENTITY_MANAGEMENT_ACCESS])
     def test_create_llo_entity(self, organization: Organization, user: User, permission):
         if permission is not None:
-            user = self._grant_entity_management_perm(user)
+            user = grant_entity_management_perm(user)
 
         organization.save()
 
@@ -177,7 +178,7 @@ class TestOrganizationChangeForm:
             assert LLOEntity.objects.count() == 1
 
     def test_existing_llo_entity_short_name_not_updated(self, organization: Organization, user: User):
-        user = self._grant_entity_management_perm(user)
+        user = grant_entity_management_perm(user)
 
         llo_entity = LLOEntityFactory(short_name="OLD")
         organization.llo_entity = llo_entity
@@ -194,7 +195,7 @@ class TestOrganizationChangeForm:
         assert llo_entity.short_name == "OLD"
 
     def test_create_llo_entity_without_short_name_is_invalid(self, organization: Organization, user: User):
-        user = self._grant_entity_management_perm(user)
+        user = grant_entity_management_perm(user)
 
         form = OrganizationChangeForm(
             data={"name": organization.name, "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO Entity"},
@@ -236,6 +237,7 @@ class TestOrganizationSelectOrCreateForm:
 
     def test_llo_entity_exists_new_org_created(self, user: User):
         existing_llo = LLOEntity.objects.create(name="Existing LLO")
+        MembershipFactory(user=user, organization=Organization.objects.create(name="Own Org", llo_entity=existing_llo))
 
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
@@ -291,6 +293,9 @@ class TestOrganizationSelectOrCreateForm:
         llo2 = LLOEntity.objects.create(name="LLO Two")
         existing_org = Organization.objects.create(name="Org With LLO One", llo_entity=llo1)
         MembershipFactory(user=user, organization=existing_org)
+        MembershipFactory(
+            user=user, organization=Organization.objects.create(name="Org With LLO Two", llo_entity=llo2)
+        )
 
         form = OrganizationSelectOrCreateForm(
             user=user,
@@ -323,6 +328,7 @@ class TestOrganizationSelectOrCreateForm:
 
     def test_existing_llo_entity_short_name_not_updated(self, user: User):
         existing_llo = LLOEntityFactory(short_name="EL")
+        MembershipFactory(user=user, organization=Organization.objects.create(name="Own Org", llo_entity=existing_llo))
         form = OrganizationSelectOrCreateForm(
             user=user,
             data={
@@ -372,6 +378,61 @@ class TestOrganizationSelectOrCreateForm:
 
         assert entity_wise_orgs[str(llo_entity.id)]["organizations"] == [
             {"id": own_org.id, "name": own_org.name, "slug": own_org.slug}
+        ]
+
+    def test_llo_entity_outside_visible_entities_cannot_be_selected(self, user: User):
+        other_llo = LLOEntity.objects.create(name="Other LLO")
+        Organization.objects.create(name="Other Org", llo_entity=other_llo)
+
+        form = OrganizationSelectOrCreateForm(
+            user=user,
+            data={
+                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
+                "llo_entity": str(other_llo.pk),
+            },
+        )
+
+        assert not form.is_valid()
+        assert form.errors["llo_entity"] == [
+            f"Select a valid choice. {other_llo.pk} is not one of the available choices."
+        ]
+
+    def test_dropdown_data_excludes_entities_the_user_cannot_see(self, user: User):
+        own_llo = LLOEntity.objects.create(name="Own LLO")
+        MembershipFactory(user=user, organization=Organization.objects.create(name="Own Org", llo_entity=own_llo))
+        other_llo = LLOEntity.objects.create(name="Other LLO")
+        Organization.objects.create(name="Other Org", llo_entity=other_llo)
+
+        entity_wise_orgs = OrganizationSelectOrCreateForm(user=user).get_entity_wise_orgs()
+
+        assert list(entity_wise_orgs) == [str(own_llo.id)]
+
+    def test_entity_manager_sees_all_entities(self, user: User):
+        llo = LLOEntity.objects.create(name="Other LLO")
+        Organization.objects.create(name="Other Org", llo_entity=llo)
+        user = grant_entity_management_perm(user)
+
+        form = OrganizationSelectOrCreateForm(user=user)
+
+        assert list(form.fields["llo_entity"].queryset) == [llo]
+        assert list(form.get_entity_wise_orgs()) == [str(llo.id)]
+
+    @pytest.mark.parametrize("new_name", ["LLO Entity", "llo entity"])
+    def test_duplicate_llo_entity_name_is_rejected_even_when_not_visible(self, user: User, new_name):
+        LLOEntity.objects.create(name="LLO Entity")
+
+        form = OrganizationSelectOrCreateForm(
+            user=user,
+            data={
+                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
+                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + new_name,
+                "llo_entity_short_name": "LE",
+            },
+        )
+
+        assert not form.is_valid()
+        assert form.errors["llo_entity"] == [
+            "An LLO Entity with this name already exists. Please choose a different name."
         ]
 
     @pytest.mark.parametrize("new_name", ["Existing Org", "existing org"])

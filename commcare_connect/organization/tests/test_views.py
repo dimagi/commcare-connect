@@ -142,15 +142,15 @@ class TestOrganizationCreateView:
         assert UserOrganizationMembership.objects.filter(user=org_user_member, organization=organization).count() == 1
 
     def test_new_org_creates_admin_membership(self, client, user):
-        existing_llo = LLOEntity.objects.create(name="New Org LLO")
-
+        # A user with no memberships sees no existing LLO Entities, so they create one.
         org_name = f"New Workspace {user.pk}"
         client.force_login(user)
         response = client.post(
             self.url(),
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + org_name,
-                "llo_entity": str(existing_llo.pk),
+                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + f"New Org LLO {user.pk}",
+                "llo_entity_short_name": "NOL",
             },
         )
 
