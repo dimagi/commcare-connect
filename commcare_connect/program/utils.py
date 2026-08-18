@@ -1,5 +1,40 @@
+from enum import IntEnum
+
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+
+
+class AccessLevel(IntEnum):
+    NONE = 0
+    VIEW = 1
+    STANDARD = 2
+    MANAGE = 3
+
+    @staticmethod
+    def effective(org_level: "AccessLevel", user_level: "AccessLevel") -> "AccessLevel":
+        return min(org_level, user_level)
+
+
+def user_org_access(membership) -> AccessLevel:
+    if not membership:
+        return AccessLevel.NONE
+    if membership.is_admin:
+        return AccessLevel.MANAGE
+    if membership.is_member:
+        return AccessLevel.STANDARD
+    if membership.is_viewer:
+        return AccessLevel.VIEW
+    return AccessLevel.NONE
+
+
+def org_program_access(org, program) -> AccessLevel:
+    if not org or not program:
+        return AccessLevel.NONE
+    if org.id in (program.organization_id, program.funder_id):
+        return AccessLevel.MANAGE
+    if program.watchers.filter(id=org.id).exists():
+        return AccessLevel.VIEW
+    return AccessLevel.NONE
 
 
 @quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)

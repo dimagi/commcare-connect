@@ -1,6 +1,12 @@
 from django.contrib.auth.models import Permission
 from django.test import Client
 
+from commcare_connect.organization.models import UserOrganizationMembership
+
+
+def make_membership(organization, user, role):
+    return UserOrganizationMembership.objects.create(organization=organization, user=user, role=role)
+
 
 def check_basic_permissions(user, url, permission_codename, status_code=403):
     client = Client()
