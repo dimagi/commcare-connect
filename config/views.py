@@ -1,4 +1,9 @@
 from django.http import JsonResponse
+from django.shortcuts import render
+
+
+def csrf_failure(request, reason=""):
+    return render(request, "403.html", {"exception": reason}, status=403)
 
 
 def assetlinks_json(request):
