@@ -506,17 +506,24 @@ class TestInvoicedLineItems:
 
 
 @pytest.mark.django_db
-class TestDeliveryRows:
-    @pytest.mark.parametrize("issued", [False, True], ids=["billable", "invoiced"])
-    def test_carries_the_delta_and_the_delivery_it_came_from(self, billing_setup, issued):
+class TestWorkPayRowReaders:
+    def _invoice(self, opportunity, start_date=JAN, end_date=FEB_END):
+        return PaymentInvoiceFactory.build(
+            opportunity=opportunity,
+            service_delivery=True,
+            amount=0,
+            amount_usd=0,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    def test_reads_the_frozen_delta_and_the_delivery_it_came_from(self, billing_setup):
         access, payment_unit = billing_setup
         work = completed_work(access, payment_unit, approved=3, invoiced=1)
 
-        if issued:
-            invoice = billed_invoice(access.opportunity)
-            (row,) = get_invoice_delivery_rows(invoice)
-        else:
-            (row,) = get_billable_delivery_rows(access.opportunity, JAN, FEB_END)
+        invoice = self._invoice(access.opportunity)
+        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+        (row,) = get_invoice_delivery_rows(invoice)
 
         assert row.completed_work == work
         assert row.billed_count == 2  # the unbilled delta, not saved_approved_count
@@ -526,6 +533,7 @@ class TestDeliveryRows:
         assert row.org_pay.local == Decimal("40")
         assert row.total_pay.local == Decimal("240")
         assert row.total_pay.usd == Decimal("240")
+        assert row.exchange_rate.rate == Decimal("1")
 
     def test_issued_rows_stay_frozen_while_billable_rows_move_on(self, billing_setup):
         """Why there are two readers: an issued invoice's export shows what was billed, while the
