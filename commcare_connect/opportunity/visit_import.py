@@ -387,11 +387,15 @@ def _validate_payment_rows(opportunity, columns, rows):
 
 
 def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, payment_operator):
-    """The payment described by one row, or None when the row has nothing to pay.
+    """The payment described by one row, or None when the row has no amount at all.
+
+    An amount of zero is a payment of zero rather than a row to skip, so only a blank
+    amount means there is nothing to pay.
 
     Raises RowDataError listing every problem with the row rather than stopping at the first.
     """
-    if not amount_raw:
+    is_amount_blank = amount_raw is None or (isinstance(amount_raw, str) and not amount_raw.strip())
+    if is_amount_blank:
         return None
 
     error_reasons = []
@@ -402,6 +406,9 @@ def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, p
         amount = Decimal(str(amount_raw).strip())
     except InvalidOperation:
         error_reasons.append("Payment amount must be a number")
+    else:
+        if amount < 0:
+            error_reasons.append("Payment amount cannot be negative")
 
     payment_date = None
     if payment_date_raw:

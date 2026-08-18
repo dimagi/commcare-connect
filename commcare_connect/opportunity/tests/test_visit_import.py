@@ -505,6 +505,27 @@ def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("amount", "expected_reason"),
+    [
+        (-50, "Payment amount cannot be negative"),
+        ("-50", "Payment amount cannot be negative"),
+        ("-0.01", "Payment amount cannot be negative"),
+    ],
+)
+def test_bulk_update_payments_rejects_negative_amounts(opportunity: Opportunity, amount, expected_reason):
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    rows = [(payable.username, amount, "2025-01-15", "method", "operator")]
+
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert excinfo.value.errors == {expected_reason: [2]}
+    assert not Payment.objects.filter(opportunity_access__opportunity=opportunity).exists()
+
+
+@pytest.mark.django_db
 def test_exchange_rates_are_looked_up_once_per_distinct_date(opportunity: Opportunity):
     """Dated rows share a lookup per date; undated rows are keyed by None to today's rate."""
     jan = datetime.date(2025, 1, 15)
