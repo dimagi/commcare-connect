@@ -24,8 +24,7 @@ from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitU
 from commcare_connect.organization.decorators import (
     OrgPMRequiredMixin,
     ProgramManageAccessMixin,
-    org_admin_required,
-    org_viewer_required,
+    org_view_access_required,
     program_manage_access_required,
 )
 from commcare_connect.organization.models import Organization
@@ -256,7 +255,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
-@org_viewer_required
+@org_view_access_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
     if is_org_pm(request):
