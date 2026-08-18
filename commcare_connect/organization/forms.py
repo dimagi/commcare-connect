@@ -84,6 +84,7 @@ class OrganizationChangeForm(forms.ModelForm):
                 self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
 
         self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = layout.Layout(
             *layout_fields,
             layout.Div(

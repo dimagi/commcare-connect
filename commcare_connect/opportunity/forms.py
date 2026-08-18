@@ -1169,6 +1169,7 @@ class AddBudgetNewUsersForm(forms.Form):
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = Layout(
             Row(Field("add_users"), Field("total_budget"), css_class="grid grid-cols-2 gap-4"),
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
@@ -1279,6 +1280,7 @@ class PaymentUnitForm(forms.ModelForm):
         self.fields["org_amount"].required = bool(self.opportunity)
 
         self.helper = FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = Layout(
             Div(
                 Row(
