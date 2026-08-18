@@ -6,6 +6,8 @@ from django.utils.decorators import method_decorator
 from rest_framework.permissions import BasePermission
 
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.program.models import Program
+from commcare_connect.program.utils import AccessLevel, program_access_level_from_request
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
@@ -66,46 +68,66 @@ class IsProgramManagerAdmin(BasePermission):
         return user_is_program_manager_by_slug(request.user, org_slug)
 
 
-def _request_user_is_member(request):
+def _request_user_is_member(request, *args, **kwargs):
     return (request.org and request.org_membership and not request.org_membership.is_viewer) or request.user.has_perm(
         ALL_ORG_ACCESS
     )
 
 
-def _request_user_is_admin(request):
+def _request_user_is_admin(request, *args, **kwargs):
     return (
         request.org and request.org_membership and request.org_membership.role == UserOrganizationMembership.Role.ADMIN
     ) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
-def is_org_pm_or_all_access(request):
+def is_org_pm_or_all_access(request, *args, **kwargs):
     return (
         request.org and request.org_membership and request.org_membership.is_admin and request.org.program_manager
     ) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
-def _request_user_is_viewer(request):
+def _request_user_is_viewer(request, *args, **kwargs):
     return (request.org and request.org_membership) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
-def org_member_required(view_func):
+def org_member_required(view_func, *args, **kwargs):
     return _get_decorated_function(view_func, _request_user_is_member)
 
 
-def org_admin_required(view_func):
+def org_admin_required(view_func, *args, **kwargs):
     return _get_decorated_function(view_func, _request_user_is_admin)
 
 
-def org_viewer_required(view_func):
+def org_viewer_required(view_func, *args, **kwargs):
     return _get_decorated_function(view_func, _request_user_is_viewer)
 
 
-def org_pm_required(view_func):
+def org_pm_required(view_func, *args, **kwargs):
     return _get_decorated_function(view_func, is_org_pm_or_all_access)
 
 
-def opportunity_pm_required(view_func):
+def opportunity_pm_required(view_func, *args, **kwargs):
     return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
+
+
+def _program_access_level_gate(minimum, program_id_kwarg="pk"):
+    def decorator(view_func):
+        def has_required_access(request, *args, **kwargs):
+            program_id = kwargs.get(program_id_kwarg)
+            program = Program.objects.filter(program_id=program_id).first()
+
+            request.program = program
+
+            return program_access_level_from_request(request, program) >= minimum
+
+        return _get_decorated_function(view_func, has_required_access)
+
+    return decorator
+
+
+program_view_access_required = _program_access_level_gate(AccessLevel.VIEW)
+program_standard_access_required = _program_access_level_gate(AccessLevel.STANDARD)
+program_manage_access_required = _program_access_level_gate(AccessLevel.MANAGE)
 
 
 def _get_decorated_function(view_func, permission_test_function):
@@ -115,7 +137,7 @@ def _get_decorated_function(view_func, permission_test_function):
         if not user.is_authenticated:
             return HttpResponseRedirect("{}?next={}".format(reverse("account_login"), request.path))
 
-        if not permission_test_function(request):
+        if not permission_test_function(request, *args, **kwargs):
             raise Http404()
 
         return view_func(request, *args, **kwargs)
@@ -170,5 +192,17 @@ class OrganizationUserMemberRoleMixin:
     """Mixin version of org_member_required decorator"""
 
     @method_decorator(org_member_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class ProgramManageAccessMixin:
+    @method_decorator(program_manage_access_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class ProgramViewAccessMixin:
+    @method_decorator(program_view_access_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)

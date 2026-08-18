@@ -2,6 +2,7 @@ from enum import IntEnum
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 
 class AccessLevel(IntEnum):
@@ -35,6 +36,24 @@ def org_program_access(org, program) -> AccessLevel:
     if program.watchers.filter(id=org.id).exists():
         return AccessLevel.VIEW
     return AccessLevel.NONE
+
+
+def program_access_level_from_request(request, program) -> AccessLevel:
+    base_access = _base_access_level(request)
+    if base_access is not None:
+        return base_access
+
+    org_level = org_program_access(request.org, program)
+
+    return AccessLevel.effective(org_level, user_org_access(request.org_membership))
+
+
+def _base_access_level(request) -> AccessLevel | None:
+    if not request.org:
+        return AccessLevel.NONE
+    if request.user.has_perm(ALL_ORG_ACCESS):
+        return AccessLevel.MANAGE
+    return None
 
 
 @quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
