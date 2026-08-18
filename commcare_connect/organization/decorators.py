@@ -7,7 +7,11 @@ from rest_framework.permissions import BasePermission
 
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.program.models import Program
-from commcare_connect.program.utils import AccessLevel, program_access_level_from_request
+from commcare_connect.program.utils import (
+    AccessLevel,
+    org_access_level_from_request,
+    program_access_level_from_request,
+)
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
@@ -125,9 +129,23 @@ def _program_access_level_gate(minimum, program_id_kwarg="pk"):
     return decorator
 
 
+def _org_access_level_gate(minimum):
+    def decorator(view_func):
+        def has_required_access(request, *args, **kwargs):
+            return org_access_level_from_request(request) >= minimum
+
+        return _get_decorated_function(view_func, has_required_access)
+
+    return decorator
+
+
 program_view_access_required = _program_access_level_gate(AccessLevel.VIEW)
 program_standard_access_required = _program_access_level_gate(AccessLevel.STANDARD)
 program_manage_access_required = _program_access_level_gate(AccessLevel.MANAGE)
+
+org_view_access_required = _org_access_level_gate(AccessLevel.VIEW)
+org_standard_access_required = _org_access_level_gate(AccessLevel.STANDARD)
+org_manage_access_required = _org_access_level_gate(AccessLevel.MANAGE)
 
 
 def _get_decorated_function(view_func, permission_test_function):
@@ -172,10 +190,10 @@ def opportunity_required(view_func):
     return _inner
 
 
-class OrganizationUserMixin:
-    """Mixin version of org_viewer_required decorator"""
+class OrgViewAccessMixin:
+    """Mixin version of org_view_access_required decorator"""
 
-    @method_decorator(org_viewer_required)
+    @method_decorator(org_view_access_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 
@@ -204,5 +222,11 @@ class ProgramManageAccessMixin:
 
 class ProgramViewAccessMixin:
     @method_decorator(program_view_access_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class OrgManageAccessMixin:
+    @method_decorator(org_manage_access_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)

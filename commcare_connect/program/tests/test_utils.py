@@ -4,6 +4,7 @@ from django.test.client import RequestFactory
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.utils import (
     AccessLevel,
+    org_access_level_from_request,
     org_program_access,
     program_access_level_from_request,
     user_org_access,
@@ -130,3 +131,34 @@ class TestProgramAccessLevelFromRequest:
         membership = make_membership(program_manager_org, user, Role.ADMIN)
         request = make_request(user, org=program_manager_org, membership=membership)
         assert program_access_level_from_request(request, None) is AccessLevel.NONE
+
+
+class TestOrgAccessLevelFromRequest:
+    @pytest.mark.parametrize(
+        "role,expected",
+        [(Role.ADMIN, AccessLevel.MANAGE), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
+        ids=["admin", "member", "viewer"],
+    )
+    def test_role_is_the_level(self, role, expected, organization, user):
+        membership = make_membership(organization, user, role)
+        assert org_access_level_from_request(make_request(user, org=organization, membership=membership)) is expected
+
+    def test_no_membership_has_no_access(self, organization, user):
+        assert org_access_level_from_request(make_request(user, org=organization)) is AccessLevel.NONE
+
+    def test_all_org_access_manages(self, organization, user):
+        request = make_request(grant_all_org_access(user), org=organization)
+        assert org_access_level_from_request(request) is AccessLevel.MANAGE
+
+    def test_no_org_has_no_access_even_with_all_org_access(self, user):
+        """A slug that matches no org leaves nothing to act as, which ALL_ORG_ACCESS cannot supply."""
+        assert org_access_level_from_request(make_request(grant_all_org_access(user))) is AccessLevel.NONE
+
+    def test_the_program_manager_flag_is_irrelevant(self, program_manager_org, organization, user):
+        """Unlike the program resolver, nothing here consults the org's relationship to a program."""
+        pm_membership = make_membership(program_manager_org, user, Role.MEMBER)
+        plain_membership = make_membership(organization, user, Role.MEMBER)
+        pm_request = make_request(user, org=program_manager_org, membership=pm_membership)
+        plain_request = make_request(user, org=organization, membership=plain_membership)
+        assert org_access_level_from_request(pm_request) is org_access_level_from_request(plain_request)
+

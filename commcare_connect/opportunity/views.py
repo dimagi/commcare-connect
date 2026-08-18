@@ -205,8 +205,8 @@ from commcare_connect.opportunity.visit_import import (
 )
 from commcare_connect.organization.decorators import (
     OrganizationUserMemberRoleMixin,
-    OrganizationUserMixin,
     OrgPMRequiredMixin,
+    OrgViewAccessMixin,
     ProgramManageAccessMixin,
     _request_user_is_member,
     opportunity_pm_required,
@@ -289,7 +289,7 @@ class OrgContextSingleTableView(SingleTableView):
         return kwargs
 
 
-class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
+class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     model = Opportunity
     table_class = ProgramManagerOpportunityTable
     template_name = "opportunity/opportunities_list.html"
@@ -464,7 +464,7 @@ class OpportunityFinalize(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView
         return response
 
 
-class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, DetailView):
+class OpportunityDashboard(OpportunityObjectMixin, OrgViewAccessMixin, DetailView):
     model = Opportunity
     template_name = "opportunity/dashboard.html"
 
@@ -1516,7 +1516,7 @@ def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
     return HttpResponse(status=200)
 
 
-class OpportunityCompletedWorkTable(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
+class OpportunityCompletedWorkTable(OrgViewAccessMixin, OpportunityObjectMixin, SingleTableView):
     model = CompletedWork
     paginate_by = 25
     table_class = CompletedWorkTable
@@ -1804,7 +1804,7 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateView):
+class InvoiceCreateView(OrgViewAccessMixin, OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
     form_class = AutomatedPaymentInvoiceForm
@@ -1868,7 +1868,7 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().opportunity_id))
 
 
-class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailView):
+class InvoiceReviewView(OrgViewAccessMixin, OpportunityObjectMixin, DetailView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_detail.html"
 
@@ -2208,7 +2208,7 @@ def sync_deliver_units(request, org_slug, opp_id):
     return HttpResponse(content=message, status=status)
 
 
-class WorkerPageView(OrganizationUserMixin, OpportunityObjectMixin, TemplateView):
+class WorkerPageView(OrgViewAccessMixin, OpportunityObjectMixin, TemplateView):
     page_title = None
 
     def dispatch(self, request, *args, **kwargs):
@@ -2372,7 +2372,7 @@ class UserTasksView(WorkerPageView, FilterMixin):
         return context
 
 
-class WorkerTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
+class WorkerTableView(OrgViewAccessMixin, OpportunityObjectMixin, SingleTableView):
     redirect_url_name = None  # subclasses must set this to the parent page URL name
 
     def get_paginate_by(self, table_data):
@@ -2762,7 +2762,7 @@ def user_task_details(request, org_slug, opp_id, pk):
     )
 
 
-class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
+class BaseWorkerListView(OrgViewAccessMixin, OpportunityObjectMixin, View):
     template_name = "opportunity/opportunity_worker.html"
     hx_template_name = "opportunity/workers.html"
     active_tab = "workers"
@@ -3212,7 +3212,7 @@ def deliver_unit_table(request, org_slug=None, opp_id=None):
     )
 
 
-class OpportunityPaymentUnitTableView(OrganizationUserMixin, OpportunityObjectMixin, OrgContextSingleTableView):
+class OpportunityPaymentUnitTableView(OrgViewAccessMixin, OpportunityObjectMixin, OrgContextSingleTableView):
     model = PaymentUnit
     table_class = PaymentUnitTable
     template_name = "tables/single_table.html"
@@ -3698,7 +3698,7 @@ def visit_export_count(request, org_slug, opp_id):
     return HttpResponse(html)
 
 
-class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, FilterMixin, OrgContextSingleTableView):
+class AssignedTaskListView(OpportunityObjectMixin, OrgViewAccessMixin, FilterMixin, OrgContextSingleTableView):
     template_name = "opportunity/assigned_task_list.html"
     table_class = AssignedTaskListTable
     paginate_by = DEFAULT_PAGE_SIZE

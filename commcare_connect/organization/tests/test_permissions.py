@@ -3,7 +3,7 @@ from django.http import HttpResponse
 from django.urls import clear_url_caches, path, reverse
 from django.views import View
 
-from commcare_connect.opportunity.views import OrganizationUserMixin, OrgPMRequiredMixin
+from commcare_connect.opportunity.views import OrgPMRequiredMixin, OrgViewAccessMixin
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
 from commcare_connect.organization.urls import urlpatterns as org_url_patterns
 from commcare_connect.users.tests.factories import UserFactory
@@ -32,7 +32,7 @@ class TestAllOrgAccessPermission:
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 
-        class DummyOrgMemberView(OrganizationUserMixin, View):
+        class DummyOrgMemberView(OrgViewAccessMixin, View):
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 

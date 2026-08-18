@@ -48,6 +48,16 @@ def program_access_level_from_request(request, program) -> AccessLevel:
     return AccessLevel.effective(org_level, user_org_access(request.org_membership))
 
 
+def org_access_level_from_request(request) -> AccessLevel:
+    """Access level for org-related operations depends on the user's role.
+    Only the organization's users can access these operations.
+    """
+    base_access = _base_access_level(request)
+    if base_access is not None:
+        return base_access
+    return user_org_access(request.org_membership)
+
+
 def _base_access_level(request) -> AccessLevel | None:
     if not request.org:
         return AccessLevel.NONE
