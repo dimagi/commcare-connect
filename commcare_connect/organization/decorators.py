@@ -15,7 +15,7 @@ from commcare_connect.program.utils import (
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
-from .models import UserOrganizationMembership
+from .models import Organization, UserOrganizationMembership
 
 
 def user_is_org_admin(user, organization):
@@ -29,16 +29,15 @@ def user_is_org_admin(user, organization):
     ).exists()
 
 
-def user_is_program_manager_by_slug(user, org_slug):
-    """Check if user is admin of a program-manager org identified by slug, or has ALL_ORG_ACCESS."""
+def user_is_org_pm(user, organization):
+    """Creating programs takes two things: an org that is a program manager, and a caller who is its admin."""
     if user.has_perm(ALL_ORG_ACCESS):
         return True
-    return UserOrganizationMembership.objects.filter(
-        user=user,
-        organization__slug=org_slug,
-        organization__program_manager=True,
-        role=UserOrganizationMembership.Role.ADMIN,
-    ).exists()
+    return org_is_program_manager(organization) and user_is_org_admin(user, organization)
+
+
+def org_is_program_manager(organization):
+    return bool(organization and organization.program_manager)
 
 
 def user_is_opportunity_admin(user, opportunity):
@@ -62,14 +61,14 @@ def user_is_opportunity_pm(user, opportunity):
     ).exists()
 
 
-class IsProgramManagerAdmin(BasePermission):
-    """DRF permission: user must be admin of a program-manager organization."""
+class IsProgramManagerOrgAdmin(BasePermission):
+    """DRF twin of org_pm_required. There is no request.org here, so the acting org comes from the slug."""
 
     def has_permission(self, request, view):
         org_slug = request.data.get("organization") or view.kwargs.get("org_slug")
         if not org_slug:
             return False
-        return user_is_program_manager_by_slug(request.user, org_slug)
+        return user_is_org_pm(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
 def _request_user_is_member(request, *args, **kwargs):
@@ -85,9 +84,11 @@ def _request_user_is_admin(request, *args, **kwargs):
 
 
 def is_org_pm_or_all_access(request, *args, **kwargs):
-    return (
-        request.org and request.org_membership and request.org_membership.is_admin and request.org.program_manager
-    ) or request.user.has_perm(ALL_ORG_ACCESS)
+    """Same rule as user_is_org_pm."""
+    if request.user.has_perm(ALL_ORG_ACCESS):
+        return True
+    membership = request.org_membership
+    return org_is_program_manager(request.org) and bool(membership and membership.is_admin)
 
 
 def _request_user_is_viewer(request, *args, **kwargs):
