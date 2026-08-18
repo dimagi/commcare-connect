@@ -1,9 +1,10 @@
 from datetime import timedelta
 
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
@@ -24,6 +25,7 @@ from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitU
 from commcare_connect.organization.decorators import (
     OrgPMRequiredMixin,
     ProgramManageAccessMixin,
+    org_manage_access_required,
     org_view_access_required,
     program_manage_access_required,
 )
@@ -36,7 +38,7 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import is_org_pm
+from .utils import AccessLevel, is_org_pm, program_access_level_from_request
 
 ALLOWED_ORDERINGS = {
     "name": "name",
@@ -200,10 +202,13 @@ def invite_organization(request, org_slug, pk):
     return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
 
-@program_manage_access_required
+@login_required
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
+    if program_access_level_from_request(request, application.program) < AccessLevel.MANAGE:
+        raise Http404()
+
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
     status_mapping = {
@@ -223,11 +228,15 @@ def manage_application(request, org_slug, application_id, action):
 
 
 @require_POST
-@program_manage_access_required
+@org_manage_access_required
 def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
     application = get_object_or_404(
         ProgramApplication, program_application_id=application_id, status=ProgramApplicationStatus.INVITED
     )
+    # The invitee answers its own invitation, so the org in scope must be the invited one --
+    # the program's own orgs hold manage access over it and must not answer on its behalf.
+    if application.organization_id != request.org.id:
+        raise Http404()
 
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 

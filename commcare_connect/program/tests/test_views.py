@@ -358,3 +358,91 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
             return
         assert response.status_code == HTTPStatus.OK
         assert self.program.name.encode() in response.content
+
+
+@pytest.mark.django_db
+class TestManageApplicationView(BaseProgramTest):
+    """The program side accepting or rejecting an application to its program."""
+
+    @pytest.fixture(autouse=True)
+    def test_setup(self):
+        self.program = ProgramFactory.create(organization=self.organization)
+        self.application = ProgramApplicationFactory.create(
+            program=self.program,
+            organization=OrganizationFactory(),
+            status=ProgramApplicationStatus.APPLIED,
+        )
+
+    def manage_url(self, org, action):
+        return reverse(
+            "program:manage_application",
+            kwargs={"org_slug": org.slug, "application_id": self.application.id, "action": action},
+        )
+
+    @pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
+    def test_accept_application(self, actor, expected, program_actors):
+        org = program_actors(self.program)[actor]
+        act_as_admin(self.client, org)
+        response = self.client.post(self.manage_url(org, "accept"))
+        self.application.refresh_from_db()
+        if not expected:
+            assert was_denied(response), f"{actor} managed the application: {response.status_code}"
+            assert self.application.status == ProgramApplicationStatus.APPLIED
+            return
+        assert response.status_code == HttpResponseRedirect.status_code
+        assert response.url == reverse("program:home", kwargs={"org_slug": org.slug})
+        assert self.application.status == ProgramApplicationStatus.ACCEPTED
+
+
+@pytest.mark.django_db
+class TestApplyOrDeclineApplicationView:
+    """The invited side answering its own invitation, so the actor is the invitee, not the program."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, program: Program, client: Client):
+        self.program = program
+        self.invited = OrganizationFactory()
+        self.application = ProgramApplicationFactory.create(
+            program=program, organization=self.invited, status=ProgramApplicationStatus.INVITED
+        )
+        self.client = client
+
+    def answer_url(self, org, action):
+        return reverse(
+            "program:apply_or_decline_application",
+            kwargs={
+                "org_slug": org.slug,
+                "pk": self.program.program_id,
+                "application_id": self.application.program_application_id,
+                "action": action,
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "action,status",
+        [("apply", ProgramApplicationStatus.APPLIED), ("decline", ProgramApplicationStatus.DECLINED)],
+    )
+    def test_the_invited_org_answers_its_invitation(self, action, status):
+        act_as_admin(self.client, self.invited)
+        response = self.client.post(self.answer_url(self.invited, action))
+        assert response.status_code == HTTPStatus.OK
+        assert response.headers["HX-Redirect"] == reverse("program:home", kwargs={"org_slug": self.invited.slug})
+        self.application.refresh_from_db()
+        assert self.application.status == status
+
+    def test_a_viewer_cannot_answer(self):
+        user = UserFactory()
+        make_membership(self.invited, user, Role.VIEWER)
+        self.client.force_login(user)
+        response = self.client.post(self.answer_url(self.invited, "apply"))
+        assert was_denied(response)
+        self.application.refresh_from_db()
+        assert self.application.status == ProgramApplicationStatus.INVITED
+
+    def test_another_org_cannot_answer_someone_elses_invitation(self):
+        other_org = OrganizationFactory()
+        act_as_admin(self.client, other_org)
+        response = self.client.post(self.answer_url(other_org, "apply"))
+        assert was_denied(response)
+        self.application.refresh_from_db()
+        assert self.application.status == ProgramApplicationStatus.INVITED
