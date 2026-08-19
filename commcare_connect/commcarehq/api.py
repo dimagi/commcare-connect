@@ -114,10 +114,10 @@ def bulk_create_or_update_cases_by_work_areas(
     for wa in work_areas:
         case_data = dict(WorkAreaCaseSerializer(wa).data)
         case_data["owner_id"] = owner_id_by_username[wa.opportunity_access.user.username.lower()]
-        case_data["create"] = None  # UPSERT: HQ decides create vs update via external_id
         cases_data.append(case_data)
 
-    cases = bulk_create_or_update_cases(api_key, domain, cases_data)
+    # UPSERT: HQ decides create vs update via external_id
+    cases = bulk_create_or_update_cases(api_key, domain, cases_data, create=None)
 
     wa_by_id = {str(wa.pk): wa for wa in work_areas if wa.case_id is None}
     newly_created = []
@@ -136,13 +136,17 @@ def bulk_create_or_update_cases(
     api_key: HQApiKey,
     domain: str,
     cases_data: list[dict[str, Any]],
+    create: bool | None = False,
 ) -> list[CommCareCase]:
     url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
     headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
     cases = []
     with httpx.Client(headers=headers) as client:
         for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
-            chunk = cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]  # noqa: E203
+            chunk = [
+                {**case_data, "create": create}
+                for case_data in cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]  # noqa: E203
+            ]
             try:
                 response = client.post(url, json=chunk)
                 response.raise_for_status()
@@ -180,11 +184,20 @@ def create_or_update_case(
 def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> None:
     """Update usercase properties on CommCare HQ for multiple users in a single bulk request.
 
-    All entries in `updates` must belong to the same opportunity. The domain, API key, and
-    HQ server are derived from the first entry and applied to the entire batch.
+    `updates` maps each worker's `OpportunityAccess` to the case update to apply to their
+    usercase, in the shape HQ's case API expects, e.g.::
+
+        {access: {"properties": {"task_case_id": ""}}}
+
+    All entries must belong to the same opportunity, since the domain, API key, and HQ server
+    are derived from the first entry and applied to the entire batch.
     """
     if not updates:
         return
+
+    opportunity_ids = {access.opportunity_id for access in updates}
+    if len(opportunity_ids) > 1:
+        raise ValueError(f"All updates must belong to the same opportunity, got {sorted(opportunity_ids)}.")
 
     first_access = next(iter(updates))
     domain = first_access.opportunity.deliver_app.cc_domain
@@ -206,7 +219,7 @@ def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> N
             link.save()
         else:
             hq_case_id = link.hq_case_id
-        cases_data.append({"case_id": hq_case_id, "create": False, **data})
+        cases_data.append({"case_id": hq_case_id, **data})
 
     bulk_create_or_update_cases(api_key, domain, cases_data)
 

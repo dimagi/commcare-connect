@@ -1,3 +1,4 @@
+import json
 import uuid
 from unittest.mock import patch
 
@@ -5,6 +6,7 @@ import pytest
 
 from commcare_connect.commcarehq.api import (
     CommCareCase,
+    bulk_create_or_update_cases,
     bulk_create_or_update_cases_by_work_areas,
     bulk_update_usercases,
     create_or_update_case_by_work_area,
@@ -176,6 +178,7 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
             bulk_create_or_update_cases_by_work_areas([wa_with_stored, wa_to_fetch], opportunity)
 
         mock_fetch.assert_called_once()
+        assert mock_bulk.call_args.kwargs["create"] is None  # UPSERT keyed on external_id
         sent_cases = mock_bulk.call_args[0][2]
         owners_by_external_id = {c["external_id"]: c["owner_id"] for c in sent_cases}
         assert owners_by_external_id[str(wa_with_stored.id)] == stored_uuid
@@ -248,4 +251,36 @@ class TestBulkUpdateUsercases:
         mock_get_usercase.assert_called_once_with(access)
         mock_bulk.assert_called_once()
         cases_data = mock_bulk.call_args[0][2]
-        assert cases_data == [{"case_id": hq_case_id, "create": False, "properties": {"prop": "value"}}]
+        assert cases_data == [{"case_id": hq_case_id, "properties": {"prop": "value"}}]
+
+    def test_raises_when_updates_span_multiple_opportunities(self):
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        access = OpportunityAccessFactory(opportunity__api_key=api_key)
+        other_access = OpportunityAccessFactory(opportunity__api_key=api_key)
+
+        with patch("commcare_connect.commcarehq.api.bulk_create_or_update_cases") as mock_bulk:
+            with pytest.raises(ValueError, match="same opportunity"):
+                bulk_update_usercases({access: {"properties": {}}, other_access: {"properties": {}}})
+
+        mock_bulk.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestBulkCreateOrUpdateCases:
+    @pytest.mark.parametrize("create", [False, None, True])
+    def test_injects_create_flag_into_every_row(self, httpx_mock, create):
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        httpx_mock.add_response(json={"cases": []})
+
+        bulk_create_or_update_cases(
+            api_key,
+            DOMAIN,
+            [{"case_id": "case-1"}, {"case_id": "case-2"}],
+            create=create,
+        )
+
+        payload = json.loads(httpx_mock.get_requests()[0].content)
+        assert payload == [
+            {"case_id": "case-1", "create": create},
+            {"case_id": "case-2", "create": create},
+        ]
