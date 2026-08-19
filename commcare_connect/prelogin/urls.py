@@ -24,6 +24,7 @@ MARKETING_ROUTES = [
     "insights",
     "release-notes",
     "frontline-network",
+    "support-kmc",
 ]
 
 urlpatterns = [path(route, views.home, name=route or "home") for route in MARKETING_ROUTES]
