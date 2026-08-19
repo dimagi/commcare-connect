@@ -8,6 +8,7 @@ from commcare_connect.utils.itertools import batched
 BATCH_SIZE = 1000
 
 
+# TODO One time run command. Remove this once it has run.
 class Command(BaseCommand):
     help = (
         "Backfill CompletedWorkInvoice snapshots and invoiced_approved_count "
@@ -71,11 +72,11 @@ class Command(BaseCommand):
     def _simulate_batch(self, works):
         # Read-only
         rate_cache = {}
-        existing_by_work_id = self._existing_rows(works)
+        existing_work_invoice_rows = self._existing_work_invoice_rows(works)
         created = updated = 0
         for work in works:
-            self._row_values(work, existing_by_work_id.get(work.id), rate_cache)
-            if work.id in existing_by_work_id:
+            self._row_values(work, existing_work_invoice_rows.get(work.id), rate_cache)
+            if work.id in existing_work_invoice_rows:
                 updated += 1
             else:
                 created += 1
@@ -103,18 +104,18 @@ class Command(BaseCommand):
             if not to_process:
                 return 0, 0
 
-            existing_by_work_id = self._existing_rows(to_process)
+            existing_work_invoice_rows = self._existing_work_invoice_rows(to_process)
             to_create = []
             to_update = []
             for work in to_process:
-                existing_row = existing_by_work_id.get(work.id)
-                values = self._row_values(work, existing_row, rate_cache)
-                if existing_row is None:
+                work_invoice_row = existing_work_invoice_rows.get(work.id)
+                values = self._row_values(work, work_invoice_row, rate_cache)
+                if work_invoice_row is None:
                     to_create.append(CompletedWorkInvoice(invoice=work.invoice, completed_work=work, **values))
                 else:
                     for field, value in values.items():
-                        setattr(existing_row, field, value)
-                    to_update.append(existing_row)
+                        setattr(work_invoice_row, field, value)
+                    to_update.append(work_invoice_row)
                 work.invoiced_approved_count = work.saved_approved_count
 
             if to_create:
@@ -134,7 +135,7 @@ class Command(BaseCommand):
         return len(to_create), len(to_update)
 
     @staticmethod
-    def _existing_rows(works):
+    def _existing_work_invoice_rows(works):
         rows = CompletedWorkInvoice.objects.filter(completed_work_id__in=[work.id for work in works])
         return {row.completed_work_id: row for row in rows}
 
