@@ -19,13 +19,14 @@ CENTS = Decimal("0.01")
 def get_billable_completed_works_qs(opportunity, start_date, end_date):
     """Approved works that still have unbilled units.
 
-    `invoiced_approved_count` decides what is billable; the dates only *scope* it:
+    `invoiced_approved_count` decides what is billable; the dates only *scope* it, and the two bounds
+    are asymmetric:
 
-    - first-billing works (`invoiced_approved_count == 0`) are scoped by the window, where their
-      `status_modified_date` is meaningful;
-    - late deltas (already partly billed) bypass the window entirely. A late duplicate keeps the
-      work at `approved`, so its `status_modified_date` never moves off the original approval;
-      windowing that stale date would silently defer a delta that must bill now.
+    - `end_date` applies to every work, so a window that predates the approval never bills it.
+    - `start_date` applies only to first-billing works, where `status_modified_date` is the real
+      approval date. A late duplicate keeps the work at `approved`, so its `status_modified_date`
+      never moves off the original approval; lower-bounding that stale date would silently defer a
+      delta that must bill now.
     """
     if start_date is None or end_date is None:
         raise ValueError("start_date and end_date are required")
@@ -33,7 +34,7 @@ def get_billable_completed_works_qs(opportunity, start_date, end_date):
     return (
         billable_works_qs(opportunity)
         .filter(
-            Q(invoiced_approved_count__gt=0)
+            Q(invoiced_approved_count__gt=0, status_modified_date__date__lte=end_date)
             | Q(status_modified_date__date__gte=start_date, status_modified_date__date__lte=end_date)
         )
         .select_related("payment_unit__opportunity", "opportunity_access__user")
