@@ -48,7 +48,7 @@ def nm_audit_opp(managed_opportunity):
 )
 def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_opp):
     """Audit access for the network manager (the opportunity's delivery org) follows
-    @org_member_required: members and admins are allowed, viewers are denied. The same
+    @opp_standard_access_required: members and admins are allowed, viewers are denied. The same
     decorator gates all audit views, so the role behaviour is asserted once here."""
     user = UserFactory()
     UserOrganizationMembership.objects.create(user=user, organization=nm_audit_opp.organization, role=role)

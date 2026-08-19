@@ -76,7 +76,7 @@ def v2_export_client(api_client, org_user_member):
 
 @pytest.fixture
 def v2_write_client(api_client, org_user_admin):
-    """Write endpoints additionally require org-admin (mirroring org_admin_required on the
+    """Write endpoints additionally require org-admin (mirroring opp_manage_access_required on the
     equivalent htmx views), so member-level v2_export_client isn't enough for them."""
     _add_export_credentials(api_client, org_user_admin)
     _add_v2_header(api_client)
@@ -532,7 +532,7 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
         assert response.status_code == 404
 
     def test_member_role_returns_404(self, v2_export_client, opportunity):
-        """Mirrors org_admin_required on the equivalent htmx flows: plain membership isn't enough."""
+        """Mirrors opp_manage_access_required on the equivalent htmx flows: plain membership isn't enough."""
         response = v2_export_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
         assert response.status_code == 404
 

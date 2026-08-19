@@ -99,15 +99,19 @@ def _request_user_is_viewer(request, *args, **kwargs):
     return (request.org and request.org_membership) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
-def org_member_required(view_func, *args, **kwargs):
+# TODO: These 3 are widely used in the opportunity app, and we are renaming it to opportunity access decorators
+# in this commit for easier review. The next commit points at them at opportunity_access_level_from_request.
+
+
+def opp_standard_access_required(view_func):
     return _get_decorated_function(view_func, _request_user_is_member)
 
 
-def org_admin_required(view_func, *args, **kwargs):
+def opp_manage_access_required(view_func):
     return _get_decorated_function(view_func, _request_user_is_admin)
 
 
-def org_viewer_required(view_func, *args, **kwargs):
+def opp_view_access_required(view_func):
     return _get_decorated_function(view_func, _request_user_is_viewer)
 
 
@@ -223,6 +227,14 @@ class OrgViewAccessMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+class OppViewAccessMixin:
+    """Mixin version of opp_view_access_required."""
+
+    @method_decorator(opp_view_access_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
 class OrgPMRequiredMixin:
     """Mixin version of org_pm_required decorator"""
 
@@ -231,10 +243,10 @@ class OrgPMRequiredMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-class OrganizationUserMemberRoleMixin:
-    """Mixin version of org_member_required decorator"""
+class OppStandardAccessMixin:
+    """Mixin version of opp_standard_access_required."""
 
-    @method_decorator(org_member_required)
+    @method_decorator(opp_standard_access_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 
