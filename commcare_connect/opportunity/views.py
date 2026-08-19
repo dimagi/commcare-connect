@@ -417,14 +417,20 @@ class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
 
-    def dispatch(self, request, *args, **kwargs):
+    # Guarding get/post rather than dispatch keeps this behind the PM gate, which lives on the
+    # mixin's dispatch and would be skipped by an override that returns before calling super().
+    def get(self, request, *args, **kwargs):
+        return self._redirect_if_no_payment_units(request) or super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self._redirect_if_no_payment_units(request) or super().post(request, *args, **kwargs)
+
+    def _redirect_if_no_payment_units(self, request):
         self.object = self.get_object()
-        if not self.object.paymentunit_set.exists():
-            messages.warning(request, "Please configure payment units before setting budget")
-            return redirect(
-                "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.opportunity_id
-            )
-        return super().dispatch(request, *args, **kwargs)
+        if self.object.paymentunit_set.exists():
+            return None
+        messages.warning(request, "Please configure payment units before setting budget")
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.opportunity_id)
 
     def get_success_url(self):
         return reverse("opportunity:detail", args=(self.request.org.slug, self.object.opportunity_id))
