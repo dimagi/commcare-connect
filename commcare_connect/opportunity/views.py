@@ -204,20 +204,23 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
+    OppPMRequiredMixin,
     OppStandardAccessMixin,
     OppViewAccessMixin,
-    OrgPMRequiredMixin,
     OrgViewAccessMixin,
     ProgramManageAccessMixin,
-    _request_user_is_member,
     opp_manage_access_required,
     opp_standard_access_required,
     opp_view_access_required,
     opportunity_pm_required,
     opportunity_required,
-    org_pm_required,
 )
-from commcare_connect.program.utils import is_org_pm
+from commcare_connect.program.utils import (
+    AccessLevel,
+    is_opportunity_pm,
+    is_org_pm,
+    opportunity_access_level_from_request,
+)
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import (
@@ -274,13 +277,8 @@ class OpportunityObjectMixin:
         return self.get_opportunity()
 
 
-class OpportunityPMRequiredMixin(LoginRequiredMixin, OpportunityObjectMixin):
-    def dispatch(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return self.handle_no_permission()
-        if not request.is_opportunity_pm:
-            raise Http404(_("This page is not available."))
-        return super().dispatch(request, *args, **kwargs)
+class OpportunityPMRequiredMixin(OppPMRequiredMixin, OpportunityObjectMixin):
+    pass
 
 
 class OrgContextSingleTableView(SingleTableView):
@@ -414,7 +412,7 @@ class OpportunityEdit(OpportunityObjectMixin, OppStandardAccessMixin, UpdateView
         return form_kwargs
 
 
-class OpportunityFinalize(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView):
+class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -589,7 +587,7 @@ def review_visit_export(request, org_slug, opp_id):
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
-@org_member_required
+@opp_standard_access_required
 @require_GET
 def export_status(request, org_slug, task_id):
     def ownership_check(request, task_meta):
@@ -607,7 +605,7 @@ def export_status(request, org_slug, task_id):
     )
 
 
-@org_member_required
+@opp_standard_access_required
 @require_GET
 def download_export(request, org_slug, task_id):
     args = AsyncResult(task_id).args or []
@@ -828,7 +826,7 @@ def payment_import(request, org_slug=None, opp_id=None):
     return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
 
 
-@org_member_required
+@opp_standard_access_required
 @require_GET
 def render_payment_import_progress(request, org_slug, task_id):
     """Renders the payment import modal: a spinner while the import runs, then the row errors
@@ -1559,12 +1557,10 @@ def update_completed_work_status_import(request, org_slug=None, opp_id=None):
     return redirect("opportunity:detail", org_slug, opp_id)
 
 
-@login_required
+@opportunity_pm_required
 @opportunity_required
 @require_POST
 def suspend_user(request, org_slug=None, opp_id=None, pk=None):
-    if not (request.is_opportunity_pm):
-        raise Http404()
     access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=pk)
     access.suspended = True
     access.suspension_date = now()
@@ -1579,11 +1575,9 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
 
 
 @require_POST
-@login_required
+@opportunity_pm_required
 @opportunity_required
 def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
-    if not (request.is_opportunity_pm):
-        raise Http404()
     access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=pk)
     access.suspended = False
     access.save()
@@ -1943,7 +1937,7 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
         return _("Review Custom Invoice")
 
 
-@org_pm_required
+@opportunity_pm_required
 @opportunity_required
 @require_POST
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
@@ -2319,11 +2313,11 @@ class UserVisitVerificationView(WorkerPageView):
 
 def _can_manage_tasks(request, opportunity):
     """Permission to create, edit, or delete tasks."""
-    return _request_user_is_member(request) and request.is_opportunity_pm
+    return is_opportunity_pm(request, opportunity)
 
 
-def _can_edit_tasks(request):
-    return _request_user_is_member(request) or request.is_opportunity_pm
+def _can_edit_tasks(request, opportunity):
+    return opportunity_access_level_from_request(request, opportunity) >= AccessLevel.STANDARD
 
 
 def _task_redirect_url(request, org_slug, opp_id):
@@ -2756,7 +2750,7 @@ def user_task_details(request, org_slug, opp_id, pk):
             completed_task=completed_task,
             images=images,
             hq_link=hq_link,
-            can_edit_tasks=_can_edit_tasks(request),
+            can_edit_tasks=_can_edit_tasks(request, request.opportunity),
         ),
     )
 
@@ -3716,7 +3710,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMix
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["opp_id"] = self.get_opportunity().opportunity_id
-        kwargs["can_edit_tasks"] = _can_edit_tasks(self.request)
+        kwargs["can_edit_tasks"] = _can_edit_tasks(self.request, self.get_opportunity())
         kwargs["can_delete_tasks"] = _can_manage_tasks(self.request, self.get_opportunity())
         return kwargs
 
@@ -3805,9 +3799,8 @@ class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OppStandardAc
 
 
 @require_POST
-@opp_standard_access_required
-@opportunity_required
 @opportunity_pm_required
+@opportunity_required
 def create_task(request, org_slug, opp_id):
     opportunity = request.opportunity
     access = None
@@ -3853,9 +3846,8 @@ def create_task(request, org_slug, opp_id):
 
 
 @require_POST
-@opp_standard_access_required
-@opportunity_required
 @opportunity_pm_required
+@opportunity_required
 def delete_tasks(request, org_slug, opp_id):
     try:
         task_ids = [int(tid) for tid in request.POST.getlist("task_ids")]

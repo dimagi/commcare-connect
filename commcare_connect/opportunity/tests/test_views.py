@@ -69,7 +69,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.opportunity.views import WorkerPaymentsView
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
@@ -1561,16 +1561,19 @@ def test_update_invoice_invoice_ticket_link_restricted_access(
 
 
 @pytest.mark.django_db
-def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, program_manager_org_user_admin):
+@pytest.mark.parametrize("party", ["program_org", "funder", "supervisor"])
+def test_update_invoice_invoice_ticket_link_access(party, client, program_manager_org):
+    """Every relationship that reaches the opportunity from the program side may set the link."""
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     assert invoice.invoice_ticket_link is None
 
-    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+    acting_org = _program_side_org(party, opportunity, program_manager_org)
+    _act_as_admin_of(client, acting_org)
+    url = _update_invoice_invoice_ticket_link_url(acting_org, opportunity, invoice)
 
-    client.force_login(program_manager_org_user_admin)
     response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
     assert response.status_code == HTTPStatus.FOUND
-    assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
+    assert response.url == _invoice_review_url(acting_org, opportunity, invoice)
     messages = list(get_messages(response.wsgi_request))
     assert len(messages) == 1
     assert str(messages[0]) == "Invoice ticket link saved!"
@@ -1580,11 +1583,11 @@ def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, 
 
 
 @pytest.mark.django_db
-def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org, program_manager_org_user_admin):
+def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org):
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    _act_as_admin_of(client, program_manager_org)
     url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
 
-    client.force_login(program_manager_org_user_admin)
     response = client.post(url, data={"invoice_ticket_link": "https://www."})
     assert response.status_code == HTTPStatus.FOUND
     assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
@@ -1593,18 +1596,30 @@ def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org,
     assert str(messages[0]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."
 
 
-def _setup_data_for_invoice_ticket_link_update(program_manager_org):
-    program = ProgramFactory(organization=program_manager_org, budget=10000)
-    program_manager_org_opportunity = OpportunityFactory(
-        program=program,
-        organization=program_manager_org,
-    )
-    return (
-        PaymentInvoiceFactory(
-            opportunity=program_manager_org_opportunity,
-        ),
-        program_manager_org_opportunity,
-    )
+def _setup_data_for_invoice_ticket_link_update(pm_org):
+    """Delivered by a separate org, so pm_org is the program side(owner org, funder, supervisor)
+    here and not also the NM."""
+    program = ProgramFactory(organization=pm_org, budget=10000)
+    opportunity = OpportunityFactory(program=program, organization=OrganizationFactory())
+    return PaymentInvoiceFactory(opportunity=opportunity), opportunity
+
+
+def _program_side_org(party, opportunity, pm_org):
+    """The supervising org has to be set explicitly -- Opportunity.save defaults it to the program's."""
+    if party == "program_org":
+        return pm_org
+    org = OrganizationFactory()
+    if party == "funder":
+        opportunity.program.funder = org
+        opportunity.program.save()
+    else:
+        opportunity.supervising_organization = org
+        opportunity.save()
+    return org
+
+
+def _act_as_admin_of(client, org):
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
 
 
 def _update_invoice_invoice_ticket_link_url(org, opportunity, invoice):

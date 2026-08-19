@@ -75,18 +75,6 @@ class IsProgramManagerOrgAdmin(BasePermission):
         return user_is_org_pm(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
-def _request_user_is_member(request, *args, **kwargs):
-    return (request.org and request.org_membership and not request.org_membership.is_viewer) or request.user.has_perm(
-        ALL_ORG_ACCESS
-    )
-
-
-def _request_user_is_admin(request, *args, **kwargs):
-    return (
-        request.org and request.org_membership and request.org_membership.role == UserOrganizationMembership.Role.ADMIN
-    ) or request.user.has_perm(ALL_ORG_ACCESS)
-
-
 def is_org_pm_or_all_access(request, *args, **kwargs):
     """Same rule as user_is_org_pm."""
     if request.user.has_perm(ALL_ORG_ACCESS):
@@ -95,24 +83,18 @@ def is_org_pm_or_all_access(request, *args, **kwargs):
     return org_is_program_manager(request.org) and bool(membership and membership.is_admin)
 
 
-def _request_user_is_viewer(request, *args, **kwargs):
-    return (request.org and request.org_membership) or request.user.has_perm(ALL_ORG_ACCESS)
+def opp_view_access_required(view_func):
+    return _opportunity_access_level_gate(AccessLevel.VIEW)(view_func)
 
 
 # TODO: These 3 are widely used in the opportunity app, and we are renaming it to opportunity access decorators
 # in this commit for easier review. The next commit points at them at opportunity_access_level_from_request.
-
-
 def opp_standard_access_required(view_func):
-    return _get_decorated_function(view_func, _request_user_is_member)
+    return _opportunity_access_level_gate(AccessLevel.STANDARD)(view_func)
 
 
 def opp_manage_access_required(view_func):
-    return _get_decorated_function(view_func, _request_user_is_admin)
-
-
-def opp_view_access_required(view_func):
-    return _get_decorated_function(view_func, _request_user_is_viewer)
+    return _opportunity_access_level_gate(AccessLevel.MANAGE)(view_func)
 
 
 def org_pm_required(view_func, *args, **kwargs):
