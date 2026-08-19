@@ -14,6 +14,7 @@ class Command(BaseCommand):
         "Backfill CompletedWorkInvoice snapshots and invoiced_approved_count "
         "for service-delivery works with unbilled approved units."
     )
+    rate_cache = {}
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -47,6 +48,7 @@ class Command(BaseCommand):
         total = works_qs.count()
         self.stdout.write(f"Backfilling {total} invoiced work(s) with an unbilled delta...")
 
+        self.rate_cache = {}
         created = updated = 0
         for batch in batched(
             works_qs.iterator(chunk_size=batch_size),
@@ -71,11 +73,10 @@ class Command(BaseCommand):
 
     def _simulate_batch(self, works):
         # Read-only
-        rate_cache = {}
         existing_work_invoice_rows = self._existing_work_invoice_rows(works)
         created = updated = 0
         for work in works:
-            self._row_values(work, existing_work_invoice_rows.get(work.id), rate_cache)
+            self._row_values(work, existing_work_invoice_rows.get(work.id))
             if work.id in existing_work_invoice_rows:
                 updated += 1
             else:
@@ -83,7 +84,6 @@ class Command(BaseCommand):
         return created, updated
 
     def _write_batch(self, works):
-        rate_cache = {}
         with transaction.atomic():
             # Lock the works so concurrent approve/invoice processing can't change saved_*
             # values between our read and the invoiced_approved_count update below.
@@ -109,7 +109,7 @@ class Command(BaseCommand):
             to_update = []
             for work in to_process:
                 work_invoice_row = existing_work_invoice_rows.get(work.id)
-                values = self._row_values(work, work_invoice_row, rate_cache)
+                values = self._row_values(work, work_invoice_row)
                 if work_invoice_row is None:
                     to_create.append(CompletedWorkInvoice(invoice=work.invoice, completed_work=work, **values))
                 else:
@@ -139,7 +139,7 @@ class Command(BaseCommand):
         rows = CompletedWorkInvoice.objects.filter(completed_work_id__in=[work.id for work in works])
         return {row.completed_work_id: row for row in rows}
 
-    def _row_values(self, work, existing_row, rate_cache):
+    def _row_values(self, work, existing_row):
         values = {
             "billed_count": work.saved_approved_count,
             "flw_amount_local": work.saved_payment_accrued,
@@ -152,13 +152,12 @@ class Command(BaseCommand):
             # get_invoice_items' TruncMonth grouping.
             month = work.status_modified_date.date().replace(day=1)
             values["month"] = month
-            values["exchange_rate"] = self._exchange_rate(work, month, rate_cache)
+            values["exchange_rate"] = self._exchange_rate(work, month)
         return values
 
-    @staticmethod
-    def _exchange_rate(work, billed_month, rate_cache):
+    def _exchange_rate(self, work, billed_month):
         currency_code = work.opportunity_access.opportunity.currency_code
         key = (currency_code, billed_month)
-        if key not in rate_cache:
-            rate_cache[key] = ExchangeRate.latest_exchange_rate(currency_code, billed_month)
-        return rate_cache[key]
+        if key not in self.rate_cache:
+            self.rate_cache[key] = ExchangeRate.latest_exchange_rate(currency_code, billed_month)
+        return self.rate_cache[key]
