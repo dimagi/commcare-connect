@@ -193,7 +193,7 @@ def get_invoice_line_items(invoice):
     ]
 
 
-def get_invoice_delivery_rows(invoice):
+def get_invoice_delivery_rows_for_export(invoice):
     work_items = invoice.work_items.select_related(
         "completed_work__payment_unit__opportunity", "completed_work__opportunity_access__user", "exchange_rate"
     ).order_by("month", "completed_work__payment_unit__name")
@@ -210,7 +210,7 @@ def get_invoice_delivery_rows(invoice):
     ]
 
 
-def get_billable_delivery_rows(opportunity, start_date, end_date):
+def get_billable_delivery_rows_for_export(opportunity, start_date, end_date):
     works = get_billable_completed_works_qs(opportunity, start_date, end_date)
     return _build_billable_rows(works, opportunity.currency_code, end_date)
 

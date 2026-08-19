@@ -189,9 +189,9 @@ from commcare_connect.opportunity.tasks import (
 from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
-    get_billable_delivery_rows,
+    get_billable_delivery_rows_for_export,
     get_billable_line_items,
-    get_invoice_delivery_rows,
+    get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
 )
 from commcare_connect.opportunity.visit_import import (
@@ -3563,9 +3563,9 @@ def download_invoice_line_items(request, org_slug, opp_id):
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
     if invoice_id:
         invoice = get_object_or_404(PaymentInvoice, payment_invoice_id=invoice_id, opportunity=request.opportunity)
-        deliveries = get_invoice_delivery_rows(invoice)
+        deliveries = get_invoice_delivery_rows_for_export(invoice)
     else:
-        deliveries = get_billable_delivery_rows(request.opportunity, start_date, end_date)
+        deliveries = get_billable_delivery_rows_for_export(request.opportunity, start_date, end_date)
 
     show_org = any(delivery.org_pay.local for delivery in deliveries)
     table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries, show_org=show_org)

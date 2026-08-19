@@ -25,9 +25,9 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
-    get_billable_delivery_rows,
+    get_billable_delivery_rows_for_export,
     get_billable_line_items,
-    get_invoice_delivery_rows,
+    get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
     group_line_items,
 )
@@ -435,7 +435,7 @@ class TestWorkPayRowReaders:
 
         invoice = self._invoice(access.opportunity)
         bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
-        (row,) = get_invoice_delivery_rows(invoice)
+        (row,) = get_invoice_delivery_rows_for_export(invoice)
 
         assert row.completed_work == work
         assert row.billed_count == 2  # the unbilled delta, not saved_approved_count
@@ -457,8 +457,8 @@ class TestWorkPayRowReaders:
         work.saved_approved_count = 3
         work.save(update_fields=["saved_approved_count"])
 
-        (frozen,) = get_invoice_delivery_rows(invoice)
-        (billable,) = get_billable_delivery_rows(access.opportunity, FEB, FEB_END)
+        (frozen,) = get_invoice_delivery_rows_for_export(invoice)
+        (billable,) = get_billable_delivery_rows_for_export(access.opportunity, FEB, FEB_END)
 
         assert frozen.billed_count == 1
         assert frozen.total_pay.local == Decimal("120")
@@ -477,7 +477,7 @@ class TestWorkPayRowReaders:
         february = self._invoice(access.opportunity, start_date=FEB, end_date=FEB_END)
         bill_invoice(february, start_date=FEB, end_date=FEB_END)
 
-        rows = {row.completed_work: row for row in get_invoice_delivery_rows(february)}
+        rows = {row.completed_work: row for row in get_invoice_delivery_rows_for_export(february)}
 
         assert {row.month for row in rows.values()} == {FEB}
         assert rows[late].billed_count == 1
