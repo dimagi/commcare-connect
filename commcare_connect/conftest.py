@@ -172,6 +172,11 @@ def watcher_org(db) -> Organization:
     return OrganizationFactory()
 
 
+@pytest.fixture
+def supervisor_org(db) -> Organization:
+    return OrganizationFactory()
+
+
 @pytest.fixture(autouse=True)
 def ensure_currency_country_data(db):
     # These models get flushed in between tests; so make sure they exist

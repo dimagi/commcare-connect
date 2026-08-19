@@ -2299,9 +2299,8 @@ class TestTaskTypesConfig:
     MOCK_TASK_UNITS_PATH = "commcare_connect.opportunity.forms.get_task_units_for_app"
 
     @pytest.fixture
-    def opp(self, program_manager_org):
-        program = ProgramFactory(organization=program_manager_org)
-        return OpportunityFactory(program=program, organization=program_manager_org)
+    def opp(self, managed_opportunity):
+        return managed_opportunity
 
     @pytest.fixture
     def task_units(self):
@@ -2313,7 +2312,7 @@ class TestTaskTypesConfig:
         ]
 
     def _url(self, opp):
-        return reverse("opportunity:task_types_config", args=(opp.organization.slug, opp.opportunity_id))
+        return reverse("opportunity:task_types_config", args=(opp.program.organization.slug, opp.opportunity_id))
 
     def test_unauthenticated_redirects(self, client, opportunity, task_units):
         url = self._url(opportunity)
@@ -2382,7 +2381,9 @@ class TestTaskTypesConfig:
         return TaskTypeFactory(app=opp.deliver_app)
 
     def _edit_url(self, opp, task_type):
-        return reverse("opportunity:edit_task_type", args=(opp.organization.slug, opp.opportunity_id, task_type.pk))
+        return reverse(
+            "opportunity:edit_task_type", args=(opp.program.organization.slug, opp.opportunity_id, task_type.pk)
+        )
 
     def test_edit_task_type_get_returns_form(self, client, program_manager_org_user_admin, opp, task_type):
         client.force_login(program_manager_org_user_admin)
@@ -2613,16 +2614,16 @@ class TestEditAssignedTask:
 @pytest.mark.django_db
 class TestCreateTask:
     @pytest.fixture
-    def opportunity(self, program_manager_org):
-        program = ProgramFactory(organization=program_manager_org)
-        return OpportunityFactory(program=program, organization=program_manager_org)
+    def opportunity(self, managed_opportunity):
+        return managed_opportunity
 
     @pytest.fixture
     def access(self, opportunity):
         return OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
 
-    def _url(self, opportunity):
-        return reverse("opportunity:create_task", args=(opportunity.organization.slug, opportunity.opportunity_id))
+    def _url(self, opportunity, org=None):
+        org = org or opportunity.program.organization
+        return reverse("opportunity:create_task", args=(org.slug, opportunity.opportunity_id))
 
     def test_create_task_success(self, client, program_manager_org_user_admin, opportunity, access):
         client.force_login(program_manager_org_user_admin)
@@ -2737,24 +2738,25 @@ class TestCreateTask:
         user = request.getfixturevalue(user_fixture)
         opp = request.getfixturevalue(opportunity_fixture)
         client.force_login(user)
-        response = client.post(self._url(opp), data={})
+        # Mounted on the delivery org, so the no_pm_role case is denied as the NM it is.
+        response = client.post(self._url(opp, org=opp.organization), data={})
         assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 @pytest.mark.django_db
 class TestDeleteTasks:
     @pytest.fixture
-    def opportunity(self, program_manager_org):
-        program = ProgramFactory(organization=program_manager_org)
-        return OpportunityFactory(program=program, organization=program_manager_org)
+    def opportunity(self, managed_opportunity):
+        return managed_opportunity
 
     @pytest.fixture
     def assigned_tasks(self, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         return AssignedTaskFactory.create_batch(3, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
 
-    def _url(self, opportunity):
-        return reverse("opportunity:delete_tasks", args=(opportunity.organization.slug, opportunity.opportunity_id))
+    def _url(self, opportunity, org=None):
+        org = org or opportunity.program.organization
+        return reverse("opportunity:delete_tasks", args=(org.slug, opportunity.opportunity_id))
 
     def test_delete_tasks_success(self, client, program_manager_org_user_admin, opportunity, assigned_tasks):
         client.force_login(program_manager_org_user_admin)
@@ -2828,7 +2830,8 @@ class TestDeleteTasks:
         user = request.getfixturevalue(user_fixture)
         opp = request.getfixturevalue(opportunity_fixture)
         client.force_login(user)
-        response = client.post(self._url(opp), data={"task_ids": [1]})
+        # Mounted on the delivery org, so the no_pm_role case is denied as the NM it is.
+        response = client.post(self._url(opp, org=opp.organization), data={"task_ids": [1]})
         assert response.status_code == HTTPStatus.NOT_FOUND
 
     def test_delete_tasks_resets_hq_case_property(self, client, program_manager_org_user_admin, opportunity):

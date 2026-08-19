@@ -9,6 +9,10 @@ from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.program.models import Program
 from commcare_connect.program.utils import (
     AccessLevel,
+    is_opportunity_nm,
+    is_opportunity_pm,
+    opportunity_access_level_from_request,
+    opportunity_by_id,
     org_access_level_from_request,
     program_access_level_from_request,
 )
@@ -111,10 +115,6 @@ def org_pm_required(view_func, *args, **kwargs):
     return _get_decorated_function(view_func, is_org_pm_or_all_access)
 
 
-def opportunity_pm_required(view_func, *args, **kwargs):
-    return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
-
-
 def _program_access_level_gate(minimum, program_id_kwarg="pk"):
     def decorator(view_func):
         def has_required_access(request, *args, **kwargs):
@@ -122,12 +122,32 @@ def _program_access_level_gate(minimum, program_id_kwarg="pk"):
             program = Program.objects.filter(program_id=program_id).first()
 
             request.program = program
-
             return program_access_level_from_request(request, program) >= minimum
 
         return _get_decorated_function(view_func, has_required_access)
 
     return decorator
+
+
+def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
+    def decorator(view_func):
+        def permission_test(request, *args, **kwargs):
+            opp_id = kwargs.get(opp_id_kwarg)
+            opportunity = opportunity_by_id(opp_id) if opp_id else None
+            if opportunity:
+                request.opportunity = opportunity
+            return has_required_access(request, opportunity)
+
+        return _get_decorated_function(view_func, permission_test)
+
+    return decorator
+
+
+def _opportunity_access_level_gate(minimum, opp_id_kwarg="opp_id"):
+    return _opportunity_gate(
+        lambda request, opportunity: opportunity_access_level_from_request(request, opportunity) >= minimum,
+        opp_id_kwarg,
+    )
 
 
 def _org_access_level_gate(minimum):
@@ -147,6 +167,10 @@ program_manage_access_required = _program_access_level_gate(AccessLevel.MANAGE)
 org_view_access_required = _org_access_level_gate(AccessLevel.VIEW)
 org_standard_access_required = _org_access_level_gate(AccessLevel.STANDARD)
 org_manage_access_required = _org_access_level_gate(AccessLevel.MANAGE)
+
+# The party gates ask which side of the opportunity the org sits on, not how much access it has.
+opportunity_pm_required = _opportunity_gate(is_opportunity_pm)
+opportunity_nm_required = _opportunity_gate(is_opportunity_nm)
 
 
 def _get_decorated_function(view_func, permission_test_function):
@@ -229,5 +253,11 @@ class ProgramViewAccessMixin:
 
 class OrgManageAccessMixin:
     @method_decorator(org_manage_access_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class OppPMRequiredMixin:
+    @method_decorator(opportunity_pm_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
