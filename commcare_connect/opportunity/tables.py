@@ -84,8 +84,6 @@ class UserVisitTable(OrgContextTable):
     details = columns.Column(verbose_name="", empty_values=())
 
     def value_visit_date_export(self, value):
-        # DateTimeColumn.value() hardcodes isoformat(sep=" ") for exports, ignoring `format`.
-        # This keeps the "T" separator our CSV/Excel exports have always used.
         return value.isoformat() if value else value
 
     def render_details(self, record):
