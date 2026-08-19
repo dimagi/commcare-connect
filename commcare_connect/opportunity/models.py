@@ -84,6 +84,25 @@ class Country(models.Model):
         return self.name
 
 
+# Tracked separately from the fields=["active"] tracker below rather than by adding
+# supervising_organization to its field list: pghistory derives the event model name from
+# the fields, so extending it would rename OpportunityActiveEvent, which is referred to by
+# name in code.
+#
+# Both labels, "supervising_organization_insert" and "supervising_organization_update", are
+# given explicitly. A label must be unique among a model's trackers, and the
+# fields=["active"] tracker below already holds the default "update", so leaving this
+# tracker's UpdateEvent to default raises ValueError. Only that update label is strictly
+# required; "supervising_organization_insert" is named to match rather than left as the
+# default "insert", because the label is stored as pgh_label on every event row and a bare
+# "insert" beside "supervising_organization_update" would read inconsistently. It also
+# keeps the default "insert" free, which would otherwise collide if another field on this
+# model is tracked on insert later.
+@pghistory.track(
+    pghistory.InsertEvent("supervising_organization_insert"),
+    pghistory.UpdateEvent("supervising_organization_update"),
+    fields=["supervising_organization"],
+)
 @pghistory.track(pghistory.UpdateEvent(), fields=["active"])
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)

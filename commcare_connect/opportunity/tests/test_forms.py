@@ -33,6 +33,8 @@ from commcare_connect.opportunity.models import (
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    OpportunityActiveEvent,
+    OpportunitySupervisingOrganizationEvent,
     PaymentUnit,
     TaskTypeModeChoices,
 )
@@ -1687,3 +1689,33 @@ class TestSupervisingOrganizationDisabled(SupervisingOrganizationFormTestBase):
         updated.refresh_from_db()
 
         assert updated.supervising_organization == opportunity.organization
+
+
+@pytest.mark.django_db
+class TestSupervisingOrganizationAudit:
+    """Installed as database triggers, so changes are recorded regardless of the switch."""
+
+    def test_assignment_and_change_are_recorded(self, opportunity):
+        new_supervisor = OrganizationFactory()
+        original = opportunity.supervising_organization
+        opportunity.supervising_organization = new_supervisor
+        opportunity.save()
+
+        events = OpportunitySupervisingOrganizationEvent.objects.filter(pgh_obj=opportunity).order_by("pgh_id")
+
+        assert [event.supervising_organization_id for event in events] == [original.id, new_supervisor.id]
+
+    def test_unrelated_edit_records_nothing(self, opportunity):
+        starting_count = OpportunitySupervisingOrganizationEvent.objects.filter(pgh_obj=opportunity).count()
+
+        opportunity.name = "Renamed opportunity"
+        opportunity.save()
+
+        assert OpportunitySupervisingOrganizationEvent.objects.filter(pgh_obj=opportunity).count() == starting_count
+
+    def test_existing_active_history_is_unaffected(self, opportunity):
+        """The separate tracker must not disturb OpportunityActiveEvent."""
+        opportunity.active = not opportunity.active
+        opportunity.save()
+
+        assert OpportunityActiveEvent.objects.filter(pgh_obj=opportunity).exists()
