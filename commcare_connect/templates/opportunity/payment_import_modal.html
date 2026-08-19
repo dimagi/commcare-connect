@@ -1,0 +1,23 @@
+{% load i18n %}
+<div id="payment-import-modal" class="modal-backdrop">
+  <div class="modal">
+    <div class="header text-lg font-semibold text-brand-deep-purple flex justify-between items-center">
+      <h1>{% translate "Import Payment Records" %}</h1>
+    </div>
+    <div {% if not finished %} hx-get="{{ status_url }}" hx-trigger="every 2s" hx-target="#payment-import-modal" hx-swap="outerHTML" {% endif %}>
+      {% if not finished %}
+        <div class="flex flex-col items-center justify-center mt-4">
+          <i class="fa-solid fa-spinner animate-spin text-amber-500 text-5xl"></i>
+          <p class="text-sm text-gray-600 font-medium animate-pulse mt-4">
+            {% firstof progress.message _("Importing your payments… This may take a moment.") %}
+          </p>
+        </div>
+      {% else %}
+        {% include "components/import_errors.html" with errors=progress.errors records_label=records_label %}
+      {% endif %}
+      <div class="footer flex justify-end gap-2 p-4">
+        <a href="?" class="button button-md outline-style text-center">{% translate "Close" %}</a>
+      </div>
+    </div>
+  </div>
+</div>

@@ -679,7 +679,7 @@ def test_get_payment_import_result_message(seen_users, expect_error, expect_text
     from commcare_connect.opportunity.tasks import get_payment_import_result_message
     from commcare_connect.opportunity.visit_import import PaymentImportStatus
 
-    status = PaymentImportStatus(seen_users=seen_users, missing_users=set())
+    status = PaymentImportStatus(seen_users=seen_users)
     message, is_error = get_payment_import_result_message(status)
 
     assert is_error is expect_error

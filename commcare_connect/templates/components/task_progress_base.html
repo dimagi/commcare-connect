@@ -1,5 +1,5 @@
 <div class="flex items-center justify-center"
-     {% if not progress.complete %} hx-get="{% block poll_url %}{% endblock %}" hx-trigger="load delay:2s" hx-target="this" hx-swap="outerHTML" {% endif %}>
+     {% if not progress.complete and not progress.error %} hx-get="{% block poll_url %}{% endblock %}" hx-trigger="load delay:2s" hx-target="this" hx-swap="outerHTML" {% endif %}>
   {% if progress.error %}
     <div class="rounded-lg bg-red-100 text-red-700 px-4 py-3">
       <p class="font-medium">

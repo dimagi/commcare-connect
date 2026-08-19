@@ -4,6 +4,8 @@ import textwrap
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
+from functools import partial
+from itertools import chain
 
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
@@ -51,15 +53,30 @@ PAYMENT_METHOD_COL = "payment method"
 PAYMENT_OPERATOR_COL = "payment operator"
 REVIEW_STATUS_COL = "program manager review"
 
+# Imported files carry a header line, so the first row of data is line 2 of the file.
+FIRST_DATA_ROW_NUMBER = 2
+
+# The file formats get_imported_dataset() is able to read.
+PAYMENT_IMPORT_FORMATS = ("csv", "xlsx")
+
+# Every column a payment import file must carry, in the order the export writes them.
+PAYMENT_COLS = [USERNAME_COL, AMOUNT_COL, PAYMENT_DATE_COL, PAYMENT_METHOD_COL, PAYMENT_OPERATOR_COL]
+
 
 class ImportException(Exception):
-    def __init__(self, message, rows=None):
+    def __init__(self, message, rows=None, errors=None):
         self.message = message
         self.rows = rows
+        # {description: [row numbers]}
+        self.errors = errors or {}
 
 
 class RowDataError(Exception):
-    pass
+    """One or more problems with a single imported row."""
+
+    def __init__(self, *reasons):
+        super().__init__(*reasons)
+        self.reasons = list(reasons)
 
 
 class InvalidValueError(RowDataError):
@@ -106,29 +123,9 @@ class VisitImportStatus:
 @dataclass
 class PaymentImportStatus:
     seen_users: set[str]
-    missing_users: set[str]
 
     def __len__(self):
         return len(self.seen_users)
-
-    def get_missing_message(self):
-        joined = ", ".join(self.missing_users)
-        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        count = len(self.missing_users)
-        summary = ngettext(
-            "%(count)d username was not found:",
-            "%(count)d usernames were not found:",
-            count,
-        ) % {"count": count}
-        return format_html(
-            "<br>{}<br>{}",
-            summary,
-            format_html_join(
-                "<br>",
-                "{}",
-                ((u,) for u in missing),
-            ),
-        )
 
 
 @dataclass
@@ -313,127 +310,208 @@ def _get_header_index(headers: list[str], col_name: str, required=True) -> int:
 
 
 def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[list]):
+    """Import payment rows, writing nothing at all unless every row in the file is payable."""
     opportunity = Opportunity.objects.get(id=opportunity_id)
-    headers = [header.lower() for header in headers]
-    if not headers:
+    columns = _payment_column_indexes([header.lower() for header in headers])
+
+    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
+    payments_by_user, accesses = _validate_payment_rows(opportunity, columns, rows)
+    exchange_rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today)
+    return _create_payments(opportunity, payments_by_user, accesses, exchange_rates)
+
+
+def _payment_column_indexes(headers: list[str]) -> dict[str, int]:
+    column_to_index = {column: headers.index(column) for column in PAYMENT_COLS if column in headers}
+    if not column_to_index:
         raise ImportException("The uploaded file did not contain any headers")
 
-    username_col_index = _get_header_index(headers, USERNAME_COL)
-    amount_col_index = _get_header_index(headers, AMOUNT_COL)
-    payment_date_col_index = _get_header_index(headers, PAYMENT_DATE_COL)
-    payment_method_col_index = _get_header_index(headers, PAYMENT_METHOD_COL)
-    payment_operator_col_index = _get_header_index(headers, PAYMENT_OPERATOR_COL)
+    missing = [column for column in PAYMENT_COLS if column not in column_to_index]
+    if missing:
+        listed = ", ".join(f"'{column}'" for column in missing)
+        raise ImportException(f"Missing required column(s): {listed}")
+    return column_to_index
 
-    invalid_rows = []
+
+def _validate_payment_rows(opportunity, columns, rows):
+    """Check every row and raise if any of them cannot be paid.
+
+    Returns the (row number, payment) pairs grouped by username, together with the
+    OpportunityAccess each of those usernames resolves to so the write need not look them up again.
+    A row that failed to parse is kept with a payment of None until the raise, so that its username
+    is checked too rather than only surfacing on the next upload.
+    """
+    username_col_index = columns[USERNAME_COL]
+    amount_col_index = columns[AMOUNT_COL]
+    payment_date_col_index = columns[PAYMENT_DATE_COL]
+    payment_method_col_index = columns[PAYMENT_METHOD_COL]
+    payment_operator_col_index = columns[PAYMENT_OPERATOR_COL]
+
+    errors_by_reason = defaultdict(list)
     payments_by_user = defaultdict(list)
-    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
-    if not exchange_rate_today:
-        raise ImportException(f"Currency code {opportunity.currency_code} is invalid")
 
-    for row in rows:
+    for row_number, row in enumerate(rows, start=FIRST_DATA_ROW_NUMBER):
         row = list(row)
-        username = str(row[username_col_index])
-        amount_raw = row[amount_col_index]
-        payment_date_raw = row[payment_date_col_index]
-        payment_method = row[payment_method_col_index]
-        payment_operator = row[payment_operator_col_index]
-
-        if not amount_raw:
-            continue
-
-        if not username:
-            invalid_rows.append(([escape(r) for r in row], "username required"))
-            continue
-
+        username = str(row[username_col_index] or "").strip()
         try:
-            amount = Decimal(amount_raw)
-        except InvalidOperation:
-            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
-            continue
-
-        try:
-            if payment_date_raw:
-                if isinstance(payment_date_raw, datetime.datetime):
-                    payment_date = payment_date_raw.date()
-                else:
-                    payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
-            else:
-                payment_date = None
-        except ValueError:
-            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
-            continue
-
-        payment_row = {
-            "amount": amount,
-            "payment_date": payment_date,
-            "payment_method": payment_method,
-            "payment_operator": payment_operator,
-        }
-        user_last_payment = (
-            Payment.objects.filter(
-                opportunity_access__user__username=username,
-                opportunity_access__opportunity=opportunity,
+            payment = _parse_payment_row(
+                username=username,
+                amount_raw=row[amount_col_index],
+                payment_date_raw=row[payment_date_col_index],
+                payment_method=row[payment_method_col_index],
+                payment_operator=row[payment_operator_col_index],
             )
-            .order_by("-created_at")
-            .first()
-        )
-        date_paid = payment_date if payment_date else datetime.date.today()
-        if (
-            user_last_payment
-            and user_last_payment.amount == amount
-            and user_last_payment.date_paid.date() == date_paid
-        ):
-            invalid_rows.append(
-                (
-                    [escape(r) for r in row],
-                    "A payment for this user with the same amount and date already exists.",
-                )
-            )
-        payments_by_user[username].append(payment_row)
+        except RowDataError as e:
+            for reason in e.reasons:
+                errors_by_reason[reason].append(row_number)
+            if username:
+                payments_by_user[username].append((row_number, None))
+            continue
+        if payment is None:
+            continue
+        payments_by_user[payment.pop("username")].append((row_number, payment))
 
-    if invalid_rows:
-        error_details = [f"{reason}: {', '.join(cells)}" for cells, reason in invalid_rows]
-        count = len(invalid_rows)
-        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
-        raise ImportException(summary, "<br>".join(error_details))
-
-    seen_users = set()
-    payment_ids = []
-    with transaction.atomic():
-        usernames = payments_by_user.keys()
-        users = OpportunityAccess.objects.filter(
-            user__username__in=usernames, opportunity=opportunity, suspended=False
+    accesses = {
+        access.user.username: access
+        for access in OpportunityAccess.objects.filter(
+            user__username__in=payments_by_user, opportunity=opportunity
         ).select_related("user")
+    }
+    _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason)
 
-        for access in users:
-            username = access.user.username
-            if username not in payments_by_user:
+    if errors_by_reason:
+        count = len(set(chain.from_iterable(errors_by_reason.values())))
+        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
+        raise ImportException(summary, errors=dict(errors_by_reason))
+
+    return payments_by_user, accesses
+
+
+def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, payment_operator):
+    """The payment described by one row, or None when the row has no amount at all.
+
+    An amount of zero is a payment of zero rather than a row to skip, so only a blank
+    amount means there is nothing to pay.
+
+    Raises RowDataError listing every problem with the row rather than stopping at the first.
+    """
+    is_amount_blank = amount_raw is None or (isinstance(amount_raw, str) and not amount_raw.strip())
+    if is_amount_blank:
+        return None
+
+    error_reasons = []
+    if not username:
+        error_reasons.append("Username is required")
+
+    try:
+        amount = Decimal(str(amount_raw).strip())
+    except InvalidOperation:
+        error_reasons.append("Payment amount must be a number")
+    else:
+        if amount < 0:
+            error_reasons.append("Payment amount cannot be negative")
+
+    payment_date = None
+    if payment_date_raw:
+        if isinstance(payment_date_raw, datetime.datetime):
+            payment_date = payment_date_raw.date()
+        else:
+            try:
+                payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                error_reasons.append("Payment date must be in YYYY-MM-DD format")
+
+    if error_reasons:
+        raise RowDataError(*error_reasons)
+
+    return {
+        "username": username,
+        "amount": amount,
+        "payment_date": payment_date,
+        "payment_method": payment_method,
+        "payment_operator": payment_operator,
+    }
+
+
+def _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason):
+    """Record a row error for every row whose username cannot be paid, or that repeats a payment."""
+    for username, numbered_payments in payments_by_user.items():
+        access = accesses.get(username)
+        if access is None:
+            unpayable_reason = "Username was not found in this opportunity"
+        elif access.suspended:
+            unpayable_reason = "Worker is suspended"
+        else:
+            continue
+        errors_by_reason[unpayable_reason].extend(row_number for row_number, _ in numbered_payments)
+
+    last_payments = _last_payment_by_username(opportunity, payments_by_user)
+    for username, numbered_payments in payments_by_user.items():
+        last_payment = last_payments.get(username)
+        if not last_payment:
+            continue
+
+        for row_number, payment in numbered_payments:
+            if payment is None:  # The row failed to parse, so there is nothing to compare.
                 continue
-            for payment_row in payments_by_user[username]:
-                amount = payment_row["amount"]
-                payment_date = payment_row["payment_date"]
-                if payment_date:
-                    exchange_rate = get_exchange_rate(opportunity.currency_code, payment_date)
-                else:
-                    exchange_rate = exchange_rate_today
+            date_paid = payment["payment_date"] or datetime.date.today()
+            if last_payment.amount == payment["amount"] and last_payment.date_paid.date() == date_paid:
+                reason = "A payment for this user with the same amount and date already exists"
+                errors_by_reason[reason].append(row_number)
 
-                payment_data = {
-                    "opportunity_access": access,
-                    "amount": amount,
-                    "amount_usd": amount / exchange_rate,
-                    "payment_method": payment_row["payment_method"],
-                    "payment_operator": payment_row["payment_operator"],
-                }
-                if payment_date:
-                    payment_data["date_paid"] = payment_date
-                payment = Payment.objects.create(**payment_data)
-                payment_ids.append(payment.pk)
-            seen_users.add(username)
-            update_work_payment_date(access)
-    missing_users = set(usernames) - seen_users
-    send_payment_notification.delay(opportunity.id, payment_ids)
 
-    return PaymentImportStatus(seen_users, missing_users)
+def _last_payment_by_username(opportunity, usernames) -> dict[str, Payment]:
+    """The most recently created payment for each of these usernames, in a single query."""
+    payments = (
+        Payment.objects.filter(
+            opportunity_access__opportunity=opportunity,
+            opportunity_access__user__username__in=usernames,
+        )
+        .select_related("opportunity_access__user")
+        .order_by("opportunity_access__user__username", "-created_at")
+        .distinct("opportunity_access__user__username")
+    )
+    return {payment.opportunity_access.user.username: payment for payment in payments}
+
+
+def _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today):
+    """One rate lookup per distinct payment date, resolved before anything is written so that a
+    missing rate cannot abort the import half way through. None keys the rows that carried no date.
+    """
+    dates = {payment["payment_date"] for rows in payments_by_user.values() for _, payment in rows}
+    rates = {date: get_exchange_rate(opportunity.currency_code, date) for date in dates if date}
+    rates[None] = exchange_rate_today
+    return rates
+
+
+def _create_payments(opportunity, payments_by_user, accesses, exchange_rates):
+    """Write the validated rows. Only ever called once the whole file is known to be payable."""
+    payments = []
+    for username, numbered_payments in payments_by_user.items():
+        access = accesses[username]
+        for _row_number, payment_row in numbered_payments:
+            amount = payment_row["amount"]
+            payment_date = payment_row["payment_date"]
+            payment = Payment(
+                opportunity_access=access,
+                amount=amount,
+                amount_usd=amount / exchange_rates[payment_date],
+                payment_method=payment_row["payment_method"],
+                payment_operator=payment_row["payment_operator"],
+            )
+            if payment_date:
+                payment.date_paid = payment_date
+            payments.append(payment)
+
+    with transaction.atomic():
+        Payment.objects.bulk_create(payments)
+        for username in payments_by_user:
+            update_work_payment_date(accesses[username])
+
+    transaction.on_commit(
+        partial(send_payment_notification.delay, opportunity.id, [payment.pk for payment in payments])
+    )
+
+    return PaymentImportStatus(set(payments_by_user))
 
 
 def get_exchange_rate(currency_code, date=None):
