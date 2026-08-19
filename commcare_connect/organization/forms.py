@@ -270,9 +270,7 @@ class OrganizationSelectOrCreateForm(forms.Form):
         """
         llo_entity = self.cleaned_data["llo_entity"]
         if llo_entity and not llo_entity.pk and LLOEntity.objects.filter(name__iexact=llo_entity.name).exists():
-            raise ValidationError(
-                gettext("An LLO Entity with this name already exists. Please choose a different name.")
-            )
+            raise ValidationError(gettext("That LLO Entity name is not available. Please try another."))
         return llo_entity
 
     def clean_org(self):
@@ -283,9 +281,7 @@ class OrganizationSelectOrCreateForm(forms.Form):
         """
         org = self.cleaned_data["org"]
         if org and not org.pk and Organization.objects.filter(name__iexact=org.name).exists():
-            raise ValidationError(
-                gettext("A workspace with this name already exists. Please choose a different name.")
-            )
+            raise ValidationError(gettext("That workspace name is not available. Please try another."))
         return org
 
     def clean(self):

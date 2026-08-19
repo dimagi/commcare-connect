@@ -6,7 +6,10 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationSelectOrCreateForm
+from commcare_connect.organization.forms import (
+    OrganizationChangeForm,
+    OrganizationSelectOrCreateForm,
+)
 from commcare_connect.organization.models import LLOEntity, Organization, OrganizationInvite
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
@@ -431,9 +434,7 @@ class TestOrganizationSelectOrCreateForm:
         )
 
         assert not form.is_valid()
-        assert form.errors["llo_entity"] == [
-            "An LLO Entity with this name already exists. Please choose a different name."
-        ]
+        assert form.errors["llo_entity"] == ["That LLO Entity name is not available. Please try another."]
 
     @pytest.mark.parametrize("new_name", ["Existing Org", "existing org"])
     def test_duplicate_org_name_is_rejected_even_when_not_visible(self, user: User, new_name):
@@ -449,4 +450,4 @@ class TestOrganizationSelectOrCreateForm:
         )
 
         assert not form.is_valid()
-        assert form.errors["org"] == ["A workspace with this name already exists. Please choose a different name."]
+        assert form.errors["org"] == ["That workspace name is not available. Please try another."]
