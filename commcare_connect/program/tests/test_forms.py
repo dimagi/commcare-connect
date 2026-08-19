@@ -18,7 +18,12 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.program.forms import ProgramForm, funder_organizations, watcher_organizations
-from commcare_connect.program.models import Program, ProgramApplicationStatus
+from commcare_connect.program.models import (
+    Program,
+    ProgramApplicationStatus,
+    ProgramFunderEvent,
+    ProgramWatcherEvent,
+)
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory
 
@@ -564,3 +569,36 @@ class TestProgramFormWatchersDisabled:
 
         assert updated.name == "Renamed Program"
         assert list(updated.watchers.all()) == [watcher_org]
+
+
+@pytest.mark.django_db
+class TestProgramAccessAudit:
+    """The audit trail is installed as database triggers, so it records changes made from
+    anywhere, not only through the form or while the access redesign switch is on."""
+
+    def test_funder_assignment_and_change_are_recorded(self, program, funder_org):
+        other_funder = OrganizationFactory(funder=True)
+        program.funder = funder_org
+        program.save()
+        program.funder = other_funder
+        program.save()
+
+        events = ProgramFunderEvent.objects.filter(pgh_obj=program).order_by("pgh_id")
+
+        assert [event.funder_id for event in events] == [None, funder_org.id, other_funder.id]
+
+    def test_unrelated_program_edit_records_nothing(self, program):
+        starting_count = ProgramFunderEvent.objects.filter(pgh_obj=program).count()
+
+        program.name = "Renamed Program"
+        program.save()
+
+        assert ProgramFunderEvent.objects.filter(pgh_obj=program).count() == starting_count
+
+    def test_adding_and_removing_a_watcher_are_recorded(self, program, watcher_org):
+        program.watchers.add(watcher_org)
+        program.watchers.remove(watcher_org)
+
+        events = ProgramWatcherEvent.objects.filter(program=program, organization=watcher_org).order_by("pgh_id")
+
+        assert [event.pgh_label for event in events] == ["insert", "delete"]
