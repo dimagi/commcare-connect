@@ -95,6 +95,18 @@ class TestCreatableModelChoiceField:
         assert not form.is_valid()
         assert "entity" in form.errors
 
+    @pytest.mark.parametrize("name", ["!!!", "@#$ %^&", "___", "  -  "])
+    def test_new_name_without_alphanumeric_makes_form_invalid(self, name):
+        form = LLOEntityForm(data={"entity": TOMSELECT_NEW_ENTRY_PREFIX + name})
+        assert not form.is_valid()
+        assert form.errors["entity"] == ["Enter a name that contains at least one letter or number."]
+
+    @pytest.mark.parametrize("name", ["St. Mary's Clinic", "Dimagi, Inc.", "Health-Org 2026", "Ação Saúde"])
+    def test_new_name_with_alphanumeric_is_accepted(self, name):
+        form = LLOEntityForm(data={"entity": TOMSELECT_NEW_ENTRY_PREFIX + name})
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["entity"].name == name
+
     def test_to_field_name_respected(self):
         # Ensure to_field_name is passed through to tomselect_resolve_creatable_value
         entity = LLOEntity.objects.create(name="ByName")

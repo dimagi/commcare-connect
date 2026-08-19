@@ -123,15 +123,12 @@ class TestOrganizationCreateView:
     def url(self):
         return reverse("organization_create")
 
-    def test_existing_org_does_not_create_membership(self, client, user, organization):
+    def test_existing_org_does_not_create_membership(self, client, org_user_member, organization):
         existing_llo = LLOEntity.objects.create(name="Existing LLO")
         organization.llo_entity = existing_llo
         organization.save(update_fields=["llo_entity"])
 
-        permission = Permission.objects.get(codename="workspace_entity_management_access")
-        user.user_permissions.add(permission)
-
-        client.force_login(user)
+        client.force_login(org_user_member)
         response = client.post(
             self.url(),
             data={
@@ -142,20 +139,18 @@ class TestOrganizationCreateView:
 
         assert response.status_code == 302
         assert response.url == reverse("opportunity:list", args=(organization.slug,))
-        assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
+        assert UserOrganizationMembership.objects.filter(user=org_user_member, organization=organization).count() == 1
 
     def test_new_org_creates_admin_membership(self, client, user):
-        existing_llo = LLOEntity.objects.create(name="New Org LLO")
-        permission = Permission.objects.get(codename="workspace_entity_management_access")
-        user.user_permissions.add(permission)
-
+        # A user with no memberships sees no existing LLO Entities, so they create one.
         org_name = f"New Workspace {user.pk}"
         client.force_login(user)
         response = client.post(
             self.url(),
             data={
                 "org": TOMSELECT_NEW_ENTRY_PREFIX + org_name,
-                "llo_entity": str(existing_llo.pk),
+                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + f"New Org LLO {user.pk}",
+                "llo_entity_short_name": "NOL",
             },
         )
 
@@ -164,6 +159,33 @@ class TestOrganizationCreateView:
         assert response.url == reverse("opportunity:list", args=(org.slug,))
         membership = UserOrganizationMembership.objects.get(user=user, organization=org)
         assert membership.role == UserOrganizationMembership.Role.ADMIN
+        assert org.verified is False
+
+
+@pytest.mark.django_db
+class TestNoOrganizationView:
+    def url(self):
+        return reverse("no_organization")
+
+    def test_membership_less_user_is_offered_org_creation(self, client, user):
+        client.force_login(user)
+        response = client.get(self.url())
+
+        assert response.status_code == 200
+        assert reverse("organization_create") in response.content.decode()
+
+    def test_member_is_redirected_to_their_workspace(self, client, org_user_member):
+        client.force_login(org_user_member)
+        response = client.get(self.url())
+
+        assert response.status_code == 302
+        assert response.url == reverse("users:redirect")
+
+    def test_anonymous_user_is_redirected_to_login(self, client):
+        response = client.get(self.url())
+
+        assert response.status_code == 302
+        assert reverse("account_login") in response.url
 
 
 @pytest.mark.django_db

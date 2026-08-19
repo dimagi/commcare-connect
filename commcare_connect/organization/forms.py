@@ -238,11 +238,18 @@ class OrganizationSelectOrCreateForm(forms.Form):
         ),
     )
 
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+        self.fields["org"].queryset = Organization.visible_to(self.user).order_by("name")
+        self.fields["llo_entity"].queryset = LLOEntity.visible_to(self.user).order_by("name")
+
     def get_entity_wise_orgs(self):
         data = {}
         qs = (
-            LLOEntity.objects.prefetch_related(
-                Prefetch("organization_set", queryset=Organization.objects.only("id", "name", "slug"))
+            LLOEntity.visible_to(self.user)
+            .prefetch_related(
+                Prefetch("organization_set", queryset=Organization.visible_to(self.user).only("id", "name", "slug"))
             )
             .only("id", "name")
             .order_by("name")
@@ -255,6 +262,28 @@ class OrganizationSelectOrCreateForm(forms.Form):
                 ]
             }
         return data
+
+    def clean_llo_entity(self):
+        """Block duplicate LLO Entity names platform-wide, not just among visible entities.
+
+        The field's own duplicate check only covers entities the user can see and select,
+        so on its own it would let a user create an entity named after one they cannot see.
+        """
+        llo_entity = self.cleaned_data["llo_entity"]
+        if llo_entity and not llo_entity.pk and LLOEntity.objects.filter(name__iexact=llo_entity.name).exists():
+            raise ValidationError(gettext("That LLO Entity name is not available. Please try another."))
+        return llo_entity
+
+    def clean_org(self):
+        """Block duplicate workspace names platform-wide, not just among visible workspaces.
+
+        The field's own duplicate check only covers workspaces the user can see and select,
+        so on its own it would let a user create a workspace named after one they cannot see.
+        """
+        org = self.cleaned_data["org"]
+        if org and not org.pk and Organization.objects.filter(name__iexact=org.name).exists():
+            raise ValidationError(gettext("That workspace name is not available. Please try another."))
+        return org
 
     def clean(self):
         cleaned_data = super().clean()
