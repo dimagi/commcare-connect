@@ -321,15 +321,15 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
 
 def _payment_column_indexes(headers: list[str]) -> dict[str, int]:
-    indexes = {column: headers.index(column) for column in PAYMENT_COLS if column in headers}
-    if not indexes:
+    column_to_index = {column: headers.index(column) for column in PAYMENT_COLS if column in headers}
+    if not column_to_index:
         raise ImportException("The uploaded file did not contain any headers")
 
-    missing = [column for column in PAYMENT_COLS if column not in indexes]
+    missing = [column for column in PAYMENT_COLS if column not in column_to_index]
     if missing:
         listed = ", ".join(f"'{column}'" for column in missing)
         raise ImportException(f"Missing required column(s): {listed}")
-    return indexes
+    return column_to_index
 
 
 def _validate_payment_rows(opportunity, columns, rows):
