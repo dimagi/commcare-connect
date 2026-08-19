@@ -52,7 +52,7 @@ class OrganizationChangeForm(forms.ModelForm):
 
 
 class OrganizationProfileForm(forms.ModelForm):
-    """Creates or edits a workspace, including the profile that used to live on the LLO entity."""
+    """Creates or edits a workspace and its organization profile."""
 
     class Meta:
         model = Organization
@@ -104,12 +104,15 @@ class OrganizationProfileForm(forms.ModelForm):
             "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
         }
 
-    def __init__(self, *args, submit_label=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
         self.helper.layout = layout.Layout(
-            layout.Fieldset(
-                gettext("Basics"),
+            _wizard_step(
+                1,
+                gettext("Workspace"),
                 "name",
                 "short_name",
                 layout.Field(
@@ -119,7 +122,8 @@ class OrganizationProfileForm(forms.ModelForm):
                 "year_of_establishment",
                 "website",
             ),
-            layout.Fieldset(
+            _wizard_step(
+                2,
                 gettext("Operations"),
                 "team_size",
                 "flws_managed",
@@ -127,16 +131,13 @@ class OrganizationProfileForm(forms.ModelForm):
                 "regions",
                 "primary_sectors",
             ),
-            layout.Fieldset(
+            _wizard_step(
+                3,
                 gettext("Contact & documents"),
                 "office_address",
                 "contact_emails",
                 "eoi_links",
                 "notes",
-            ),
-            layout.Div(
-                layout.Submit("submit", submit_label or gettext("Save"), css_class="button button-md primary-dark"),
-                css_class="flex justify-end",
             ),
         )
 
@@ -165,6 +166,21 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def clean_year_of_establishment(self):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
+
+
+def _wizard_step(number, title, *fields):
+    """Wraps a field group as one wizard step.
+
+    `organizationWizard` shows one step at a time and lifts `data-step-title` into the step
+    indicator, so the title is named once here rather than repeated as a heading in the form.
+    """
+    return layout.Div(
+        layout.Fieldset("", *fields, aria_label=title),
+        css_class="wizard-step",
+        data_step_title=title,
+        x_show=f"step === {number}",
+        x_cloak=True,
+    )
 
 
 def validate_year_of_establishment(year):

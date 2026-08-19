@@ -30,7 +30,7 @@ from commcare_connect.utils.tables import get_validated_page_size
 @login_required
 @permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
-    form = OrganizationProfileForm(data=request.POST or None, submit_label=gettext("Create Workspace"))
+    form = OrganizationProfileForm(data=request.POST or None)
 
     if form.is_valid():
         org = form.save()

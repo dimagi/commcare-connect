@@ -9,13 +9,57 @@
 {% block javascript %}
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+  <script src="{% static 'bundles/js/org_creation_wizard-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block title %}
   {% trans "Connect - New Workspace" %}
 {% endblock title %}
 {% block content %}
-  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-4">
-    <div class="title text-brand-deep-purple">{% trans "Create a New Workspace" %}</div>
-    {% crispy form %}
+  <div class="container md:max-w-screen-lg mx-auto">
+    <form action="{% url 'organization_create' %}"
+          method="post"
+          x-data="organizationWizard()"
+          @submit="onSubmit">
+      {% csrf_token %}
+      <div class="card_bg flex flex-col gap-6">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <h1 class="title text-brand-deep-purple text-xl">{% trans "Create a New Workspace" %}</h1>
+          <ol class="flex items-center gap-2" aria-label="{% trans 'Progress' %}">
+            <template x-for="(title, index) in titles" :key="index">
+              <li class="flex items-center gap-2">
+                <span class="inline-flex size-8 items-center justify-center rounded-full text-sm font-medium"
+                      :class="index + 1 <= step ? 'primary-dark' : 'neutral'"
+                      :aria-current="index + 1 === step ? 'step' : false"
+                      x-text="index + 1"></span>
+                <span class="hidden text-sm font-medium sm:inline"
+                      :class="index + 1 <= step ? 'text-brand-deep-purple' : 'text-gray-400'"
+                      x-text="title"></span>
+                <span class="h-px w-6 bg-gray-200"
+                      x-show="index + 1 < titles.length"
+                      aria-hidden="true"></span>
+              </li>
+            </template>
+          </ol>
+        </div>
+        {% crispy form %}
+        <div class="flex items-center justify-between">
+          <button class="button button-md outline-style"
+                  type="button"
+                  x-show="step > 1"
+                  x-cloak
+                  @click="back">{% trans "Back" %}</button>
+          <div class="ms-auto">
+            <button class="button button-md primary-dark"
+                    type="button"
+                    x-show="step < totalSteps"
+                    @click="next">{% trans "Next" %}</button>
+            <button class="button button-md primary-dark"
+                    type="submit"
+                    x-show="step === totalSteps"
+                    x-cloak>{% trans "Create Workspace" %}</button>
+          </div>
+        </div>
+      </div>
+    </form>
   </div>
 {% endblock content %}
