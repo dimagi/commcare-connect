@@ -21,16 +21,14 @@ CENTS = Decimal("0.01")
 
 def get_billable_completed_works_qs(opportunity, start_date, end_date):
     """Approved works that still have unbilled units.
+    `saved_approved_count > invoiced_approved_count` decides what is billable.; the dates only *scope* it,
+    and the two bounds are asymmetric:
 
-    `saved_approved_count > invoiced_approved_count` decides what is billable.
-
-    - a work with no first billing is scoped by the window, where its `status_modified_date` is
-      meaningful. One approved outside the window is deferred, not billed, and waits for a window
-      that covers its approval month. Automated invoicing reaches back for it via
-      `get_start_date_for_invoice`; a hand-typed window will not.
-    - a late delta (a work already first-billed) bypasses the window entirely. A late duplicate
-      keeps the work at `approved`, so its `status_modified_date` never moves off the original
-      approval; windowing that stale date would silently defer a delta that must bill now.
+    - `end_date` applies to every work, so a window that predates the approval never bills it.
+    - `start_date` applies only to first-billing works, where `status_modified_date` is the real
+      approval date. A late duplicate keeps the work at `approved`, so its `status_modified_date`
+      never moves off the original approval; lower-bounding that stale date would silently defer a
+      delta that must bill now.
     """
     if start_date is None or end_date is None:
         raise ValueError("start_date and end_date are required")
@@ -38,7 +36,7 @@ def get_billable_completed_works_qs(opportunity, start_date, end_date):
     return (
         billable_works_qs(opportunity)
         .filter(
-            Q(has_first_billing=True)
+            Q(has_first_billing=True, status_modified_date__date__lte=end_date)
             | Q(status_modified_date__date__gte=start_date, status_modified_date__date__lte=end_date)
         )
         .select_related("payment_unit__opportunity", "opportunity_access__user")
@@ -202,7 +200,7 @@ def get_invoice_line_items(invoice):
     ]
 
 
-def get_invoice_delivery_rows(invoice):
+def get_invoice_delivery_rows_for_export(invoice):
     work_items = invoice.work_items.select_related(
         "completed_work__payment_unit__opportunity", "completed_work__opportunity_access__user", "exchange_rate"
     ).order_by("month", "completed_work__payment_unit__name")
@@ -220,7 +218,7 @@ def get_invoice_delivery_rows(invoice):
     ]
 
 
-def get_billable_delivery_rows(opportunity, start_date, end_date):
+def get_billable_delivery_rows_for_export(opportunity, start_date, end_date):
     works = get_billable_completed_works_qs(opportunity, start_date, end_date)
     return _build_billable_rows(works, opportunity.currency_code, end_date)
 
