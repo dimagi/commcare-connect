@@ -18,7 +18,6 @@ from commcare_connect.users.forms import OrganizationCreationForm
 
 MERGE_ACTION = "merge_workspaces"
 
-# Fields the target keeps and the source loses, so an admin can see what is about to be discarded.
 PROFILE_FIELDS = [
     ("Name", "name"),
     ("Slug", "slug"),
@@ -49,10 +48,8 @@ def merge_preview(organizations: list[Organization]) -> dict:
 
 
 def _hidden_programs_per_survivor(organizations: list[Organization]) -> list[list[str]]:
-    """One cell per column, answering "which programs go dark if I keep this workspace?".
-
-    The target is not chosen yet when the confirmation page renders, so every candidate is costed against the
-    other one.
+    """
+    Returns which programs will be hidden a given organization is to be elected as the surviving org.
     """
     return [
         sorted(

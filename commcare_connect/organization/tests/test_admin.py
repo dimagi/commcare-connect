@@ -148,7 +148,6 @@ class TestMergeActionExecution:
 
 @pytest.fixture
 def staff_client(client):
-    """A staff member who may edit workspaces in the admin, but is not a superuser."""
     staff = UserFactory(username="staff_member", is_staff=True)
     staff.user_permissions.set(Permission.objects.filter(content_type=ContentType.objects.get_for_model(Organization)))
     client.force_login(staff)
@@ -177,7 +176,6 @@ class TestMergeActionRequiresSuperuser:
         assert opportunity.organization == source
 
     def test_calling_the_action_directly_as_a_staff_member_is_denied(self, source, target):
-        """Belt and braces: the action refuses even if ``get_actions`` is bypassed or overridden."""
         admin = OrganizationAdmin(Organization, site)
         request = RequestFactory().post(reverse("admin:organization_organization_changelist"))
         request.user = UserFactory(username="staff_member", is_staff=True)
