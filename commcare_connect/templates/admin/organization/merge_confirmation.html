@@ -107,7 +107,9 @@
         <li>
           Feature flags are <strong>not</strong> transferred. The surviving workspace keeps only its own.
         </li>
-        <li>Where a user belongs to both workspaces, the surviving workspace's role wins.</li>
+        <li>
+          Where a user belongs to both workspaces, the surviving workspace's role wins, otherwise the workspace which the user has membership on.
+        </li>
         <li>
           A survivor that is not a <strong>Program manager</strong> inherits the other workspace's programs but hides
           them: they vanish from the UI and their visit review stops. Nothing is deleted &mdash; enabling
