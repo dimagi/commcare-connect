@@ -11,7 +11,6 @@ from commcare_connect.flags.tests.factories import FlagFactory
 from commcare_connect.opportunity.models import CommCareApp, LabsRecord
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentFactory
 from commcare_connect.organization.merge import (
-    APPLICATION_STATUS_PRECEDENCE,
     HANDLED_RELATIONS,
     SIMPLE_REASSIGNMENTS,
     MergeNotAllowed,
@@ -21,7 +20,11 @@ from commcare_connect.organization.merge import (
     relation_counts,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.models import (
+    APPLICATION_STATUS_PRECEDENCE,
+    ProgramApplication,
+    ProgramApplicationStatus,
+)
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.users.tests.factories import (
     MembershipFactory,

@@ -7,7 +7,7 @@ from django.apps import apps
 from django.db import transaction
 
 from commcare_connect.organization.models import Organization, OrganizationInvite
-from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.models import APPLICATION_STATUS_PRECEDENCE, ProgramApplication
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +64,6 @@ HANDLED_RELATIONS = frozenset(
         "program.ProgramApplication.organization",
     }
 )
-
-APPLICATION_STATUS_PRECEDENCE = [
-    ProgramApplicationStatus.REJECTED,
-    ProgramApplicationStatus.DECLINED,
-    ProgramApplicationStatus.INVITED,
-    ProgramApplicationStatus.APPLIED,
-    ProgramApplicationStatus.ACCEPTED,
-]
 
 
 @dataclass(frozen=True)
