@@ -1,14 +1,24 @@
 import pytest
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.contrib.admin.sites import site
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import PermissionDenied
+from django.test import RequestFactory
 from django.urls import reverse
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.tests.factories import FlagFactory
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory
-from commcare_connect.organization.admin import MERGE_ACTION, OrganizationMergeForm, merge_preview
+from commcare_connect.organization.admin import (
+    MERGE_ACTION,
+    OrganizationAdmin,
+    OrganizationMergeForm,
+    merge_preview,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ProgramFactory
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -134,3 +144,45 @@ class TestMergeActionExecution:
         assert Organization.objects.filter(pk__in=[source.pk, target.pk]).count() == 2
         messages = [str(m) for m in response.wsgi_request._messages]
         assert any("shared-domain/shared-app" in message for message in messages)
+
+
+@pytest.fixture
+def staff_client(client):
+    """A staff member who may edit workspaces in the admin, but is not a superuser."""
+    staff = UserFactory(username="staff_member", is_staff=True)
+    staff.user_permissions.set(Permission.objects.filter(content_type=ContentType.objects.get_for_model(Organization)))
+    client.force_login(staff)
+    return client
+
+
+class TestMergeActionRequiresSuperuser:
+    def test_the_action_is_offered_to_superusers_only(self, admin_user):
+        admin = OrganizationAdmin(Organization, site)
+        staff = UserFactory(username="staff_member", is_staff=True)
+        request = RequestFactory().get(reverse("admin:organization_organization_changelist"))
+
+        request.user = staff
+        assert MERGE_ACTION not in admin.get_actions(request)
+
+        request.user = admin_user
+        assert MERGE_ACTION in admin.get_actions(request)
+
+    def test_a_staff_member_cannot_run_the_action_from_the_changelist(self, staff_client, source, target):
+        opportunity = OpportunityFactory(organization=source)
+
+        _run_action(staff_client, [source, target], confirm="yes", target=target.pk)
+
+        assert Organization.objects.filter(pk__in=[source.pk, target.pk]).count() == 2
+        opportunity.refresh_from_db()
+        assert opportunity.organization == source
+
+    def test_calling_the_action_directly_as_a_staff_member_is_denied(self, source, target):
+        """Belt and braces: the action refuses even if ``get_actions`` is bypassed or overridden."""
+        admin = OrganizationAdmin(Organization, site)
+        request = RequestFactory().post(reverse("admin:organization_organization_changelist"))
+        request.user = UserFactory(username="staff_member", is_staff=True)
+
+        with pytest.raises(PermissionDenied):
+            admin.merge_workspaces(request, _selected(source, target))
+
+        assert Organization.objects.filter(pk__in=[source.pk, target.pk]).count() == 2
