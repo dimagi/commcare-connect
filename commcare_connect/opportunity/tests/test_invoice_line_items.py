@@ -42,6 +42,7 @@ MAR_END = date(2026, 3, 31)
 JAN_APPROVAL = datetime(2026, 1, 15, tzinfo=timezone.utc)
 FEB_APPROVAL = datetime(2026, 2, 20, tzinfo=timezone.utc)
 APR_APPROVAL = datetime(2026, 4, 2, tzinfo=timezone.utc)
+APR_END = date(2026, 4, 30)
 
 
 @pytest.fixture
@@ -113,21 +114,29 @@ def billable_rows(opportunity, start_date, end_date):
 
 @pytest.mark.django_db
 class TestBillableSelection:
+    APPROVED = CompletedWorkStatus.approved
+
     @pytest.mark.parametrize(
-        "approved, invoiced, status, window, billable",
+        "approved, invoiced, status, approved_on, window, billable",
         [
-            pytest.param(1, 0, CompletedWorkStatus.approved, (JAN, JAN_END), True, id="first-billing-in-window"),
-            pytest.param(1, 0, CompletedWorkStatus.approved, (FEB, FEB_END), False, id="first-billing-out-of-window"),
+            pytest.param(1, 0, APPROVED, JAN_APPROVAL, (JAN, JAN_END), True, id="first-billing-in-window"),
+            pytest.param(1, 0, APPROVED, JAN_APPROVAL, (FEB, FEB_END), False, id="first-billing-out-of-window"),
             # A late duplicate keeps status_modified_date at the original (January) approval, so the
-            # window can't sensibly apply -- it must bill on the next invoice regardless.
-            pytest.param(2, 1, CompletedWorkStatus.approved, (FEB, FEB_END), True, id="late-delta-bypasses-window"),
-            pytest.param(2, 2, CompletedWorkStatus.approved, (JAN, FEB_END), False, id="fully-billed"),
-            pytest.param(1, 0, CompletedWorkStatus.pending, (JAN, FEB_END), False, id="not-approved"),
+            # window's start can't sensibly apply -- it must bill on the next invoice regardless.
+            pytest.param(2, 1, APPROVED, JAN_APPROVAL, (FEB, FEB_END), True, id="late-delta-bypasses-window-start"),
+            # The window's end does apply: a back-dated invoice must not bill an approval that only
+            # landed in April. It bills on the next window that ends after it.
+            pytest.param(2, 1, APPROVED, APR_APPROVAL, (FEB, FEB_END), False, id="late-delta-after-window-end"),
+            pytest.param(2, 1, APPROVED, APR_APPROVAL, (FEB, APR_END), True, id="late-delta-inside-window-end"),
+            pytest.param(2, 2, APPROVED, JAN_APPROVAL, (JAN, FEB_END), False, id="fully-billed"),
+            pytest.param(1, 0, CompletedWorkStatus.pending, JAN_APPROVAL, (JAN, FEB_END), False, id="not-approved"),
         ],
     )
-    def test_billability(self, billing_setup, approved, invoiced, status, window, billable):
+    def test_billability(self, billing_setup, approved, invoiced, status, approved_on, window, billable):
         access, payment_unit = billing_setup
-        work = completed_work(access, payment_unit, approved=approved, invoiced=invoiced, status=status)
+        work = completed_work(
+            access, payment_unit, approved=approved, invoiced=invoiced, status=status, approved_on=approved_on
+        )
 
         qs = get_billable_completed_works_qs(access.opportunity, *window)
 
