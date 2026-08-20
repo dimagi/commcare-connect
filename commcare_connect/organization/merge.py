@@ -185,11 +185,7 @@ def _move_program_watchers(source: Organization, target: Organization) -> int:
 
 
 def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
-    """Move applications, keeping one row per program at the most advanced status.
-
-    ``(program, organization)`` is not unique in the database but ``invite_organization`` relies on it, calling
-    ``update_or_create``, which raises ``MultipleObjectsReturned`` the moment duplicates exist.
-    """
+    """Move applications, keeping one row per program at the most advanced status."""
     target_applications = {app.program_id: app for app in target.programapplication_set.all()}
 
     moved = 0

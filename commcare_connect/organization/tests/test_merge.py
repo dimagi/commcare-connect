@@ -245,24 +245,11 @@ class TestProgramApplications:
         summary = merge_organizations(source, target)
 
         applications = ProgramApplication.objects.filter(program=program)
-        assert applications.count() == 1, "duplicates would break invite_organization's update_or_create"
+        assert applications.count() == 1, "moving both would violate unique_program_application_per_organization"
         surviving = applications.get()
         assert surviving.organization == target
         assert surviving.status == expected
         assert summary.applications_deduped == 1
-
-    def test_duplicate_source_applications_collapse_to_one(self, source, target):
-        """The source can hold duplicates: nothing in the DB or admin prevents it."""
-        program = ProgramFactory()
-        ProgramApplicationFactory(program=program, organization=source, status=Status.INVITED)
-        ProgramApplicationFactory(program=program, organization=source, status=Status.ACCEPTED)
-
-        summary = merge_organizations(source, target)
-
-        applications = ProgramApplication.objects.filter(program=program)
-        assert applications.count() == 1
-        assert applications.get().status == Status.ACCEPTED
-        assert (summary.applications_moved, summary.applications_deduped) == (1, 1)
 
     def test_application_to_a_program_the_target_now_owns_is_removed(self, source, target):
         program = ProgramFactory(organization=source)

@@ -73,3 +73,11 @@ class ProgramApplication(BaseModel):
         choices=ProgramApplicationStatus.choices,
         default=ProgramApplicationStatus.INVITED,
     )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["program", "organization"],
+                name="unique_program_application_per_organization",
+            )
+        ]
