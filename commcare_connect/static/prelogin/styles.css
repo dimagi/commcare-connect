@@ -10214,12 +10214,12 @@ a.explore-card:hover {
   padding: clamp(60px, 6vw, 96px) 0;
 }
 .os-origins .wrap {
-  max-width: 1080px;
+  max-width: 1320px;
 }
 .os-origins-grid {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 48px;
+  grid-template-columns: 1.6fr 0.85fr 0.85fr;
+  gap: 32px;
   align-items: stretch;
 }
 .os-origins-story {
@@ -10252,9 +10252,10 @@ a.explore-card:hover {
   text-decoration-color: var(--indigo);
 }
 
-/* Devex press feature card */
+/* Press feature cards (Devex + further reading) */
 .os-press-card {
   display: flex;
+  position: relative;
 }
 .os-press-link {
   display: flex;
@@ -10313,6 +10314,22 @@ a.explore-card:hover {
 .os-press-link:hover .os-press-cta {
   color: var(--indigo-deep);
 }
+/* Temporary launch marker for the two press tiles added 2026-07 (EA Forum,
+   Dimagi KMC blog). Remove the `is-new` class from both once they've aged out. */
+.os-press-card.is-new::after {
+  content: 'NEW';
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  background: var(--mango);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  z-index: 1;
+}
 
 /* Funders & investors row */
 .os-funders {
@@ -10363,7 +10380,39 @@ a.explore-card:hover {
   transform: translateY(-2px);
 }
 
+/* KMC portfolio page: "closing the post-discharge gap" further-reading band.
+   Reuses the .os-press-card component at its default (full) size. */
+.section.kmc-press-band {
+  background: var(--paper-warm);
+}
+.kmc-press-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 48px;
+  align-items: stretch;
+}
+.kmc-press-text {
+  align-self: center;
+}
+.kmc-press-text h2 {
+  font-size: var(--fs-h2);
+  font-weight: 300;
+  margin: 0 0 20px;
+}
+.kmc-press-text p {
+  color: var(--ink-3);
+  font-size: var(--fs-lede);
+  line-height: 1.6;
+  font-weight: 300;
+  max-width: 54ch;
+  margin: 0;
+}
+
 @media (max-width: 860px) {
+  .kmc-press-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
   .os-origins-grid {
     grid-template-columns: 1fr;
     gap: 32px;
