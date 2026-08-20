@@ -13,8 +13,8 @@ from commcare_connect.utils.datetime import get_end_date_previous_month, get_mon
 def get_start_date_for_invoice(opportunity):
     """Return the invoice window start.
 
-    Use the earliest unbilled approval for works awaiting a first billing. If only late deltas
-    are billable, use the invoiced month.
+    Use the earliest unbilled approval for works awaiting first billing.
+    If only late deltas are billable, use the previous month as the start date.
     """
     aggregates = billable_works_qs(opportunity).aggregate(
         first_billing_date=Min("status_modified_date", filter=Q(has_first_billing=False)),

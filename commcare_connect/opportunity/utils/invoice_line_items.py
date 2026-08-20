@@ -20,15 +20,18 @@ CENTS = Decimal("0.01")
 
 
 def get_billable_completed_works_qs(opportunity, start_date, end_date):
-    """Approved works that still have unbilled units.
-    `saved_approved_count > invoiced_approved_count` decides what is billable.; the dates only *scope* it,
-    and the two bounds are asymmetric:
+    """Approved works with unbilled units.
 
-    - `end_date` applies to every work, so a window that predates the approval never bills it.
-    - `start_date` applies only to first-billing works, where `status_modified_date` is the real
-      approval date. A late duplicate keeps the work at `approved`, so its `status_modified_date`
-      never moves off the original approval; lower-bounding that stale date would silently defer a
-      delta that must bill now.
+    A work is billable when `saved_approved_count > invoiced_approved_count`.
+
+    - First-time billing: the work's approval date is captured, so the work
+      must fall within the invoice date window.
+
+    - Subsequent billing: additional duplicate deliveries do not update the
+      approval date. These works are billed in a subsequent invoice, as they
+      arrived after the first billing and are not restricted by `start_date`.
+      `end_date` still applies to prevent a new duplicate work from being billed
+      before its first billing period.
     """
     if start_date is None or end_date is None:
         raise ValueError("start_date and end_date are required")
@@ -250,18 +253,18 @@ def rollback_invoice_line_items(invoice):
 
         works = []
         for work in CompletedWork.objects.select_for_update(of=("self",)).filter(id__in=billed_by_work):
-            released = billed_by_work[work.id]
-            if released > work.invoiced_approved_count:
+            work_billed_count = billed_by_work[work.id]
+            if work_billed_count > work.invoiced_approved_count:
                 # Only reachable if the watermark and the rows have already diverged. Clamping keeps
                 # the cancel working, but the divergence itself is a bug worth seeing.
                 logger.error(
                     "Invoice %s releases %s units of completed work %s but only %s are invoiced; clamping to 0.",
                     invoice.id,
-                    released,
+                    work_billed_count,
                     work.id,
                     work.invoiced_approved_count,
                 )
-            work.invoiced_approved_count = max(0, work.invoiced_approved_count - released)
+            work.invoiced_approved_count = max(0, work.invoiced_approved_count - work_billed_count)
             works.append(work)
         CompletedWork.objects.bulk_update(works, ["invoiced_approved_count"])
         invoice.work_items.all().delete()
