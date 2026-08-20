@@ -243,7 +243,7 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
     taken_emails = {email.lower() for email in target.invites.values_list("email", flat=True)}
     taken_emails |= {email.lower() for email in target.memberships.values_list("user__email", flat=True) if email}
 
-    moved = 0
+    moving = []
     discarded = 0
     for invite in source.invites.all():
         is_live = invite.status == OrganizationInvite.Status.INVITED and not invite.is_expired
@@ -251,12 +251,11 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
             discarded += 1
             continue
 
-        invite.organization = target
-        invite.save(update_fields=["organization"])
+        moving.append(invite.pk)
         taken_emails.add(invite.email.lower())
-        moved += 1
 
-    return moved, discarded
+    OrganizationInvite.objects.filter(pk__in=moving).update(organization=target)
+    return len(moving), discarded
 
 
 def _clear_flag_memberships(source: Organization) -> int:
