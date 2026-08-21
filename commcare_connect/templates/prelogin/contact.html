@@ -58,7 +58,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
           rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'prelogin/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=7">
     <link rel="stylesheet" href="{% static 'prelogin/contact.css' %}">
   </head>
   <body>
@@ -105,7 +105,7 @@
           <a href="{% url 'prelogin:the-opportunity' %}">The Opportunity</a>
           <a href="{% url 'prelogin:platform' %}">Platform</a>
           <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
-          <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
+          <a href="{% url 'prelogin:insights' %}">Insights</a>
           <div class="nav-cta">
             <a href="{% url 'account_login' %}" class="btn btn-ghost">Sign In</a>
             <a href="{% url 'account_signup' %}" class="btn btn-primary">Sign Up</a>
@@ -125,7 +125,7 @@
         <a href="{% url 'prelogin:the-opportunity' %}">The Opportunity</a>
         <a href="{% url 'prelogin:platform' %}">Platform</a>
         <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
-        <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
+        <a href="{% url 'prelogin:insights' %}">Insights</a>
         <a href="{% url 'account_login' %}" class="mobile-nav-cta-secondary">Sign In</a>
         <a href="{% url 'account_signup' %}" class="mobile-nav-cta">Sign Up</a>
       </nav>
@@ -235,9 +235,6 @@
               <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
             </li>
             <li>
-              <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
-            </li>
-            <li>
               <a href="{% url 'prelogin:insights' %}">Insights</a>
             </li>
           </ul>
@@ -246,18 +243,26 @@
           <span class="foot-col-label eyebrow">For Organizations</span>
           <ul>
             <li>
-              <a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509"
-                 target="_blank"
-                 rel="noopener">Help Site &#8599;</a>
-            </li>
-            <li>
-              <a href="{% url 'prelogin:release-notes' %}">Release Notes</a>
+              <a href="{% url 'prelogin:frontline-network' %}">Join the Network</a>
             </li>
             <li>
               <a href="{% url 'account_signup' %}">Sign Up</a>
             </li>
             <li>
               <a href="{% url 'account_login' %}">Sign In</a>
+            </li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <span class="foot-col-label eyebrow">Support</span>
+          <ul>
+            <li>
+              <a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509"
+                 target="_blank"
+                 rel="noopener">Help Site &#8599;</a>
+            </li>
+            <li>
+              <a href="{% url 'prelogin:release-notes' %}">Release Notes</a>
             </li>
           </ul>
         </div>
@@ -274,12 +279,6 @@
           <ul>
             <li>
               <a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi &#8599;</a>
-            </li>
-            <li>
-              <a href="https://dimagi.com/blog/" target="_blank" rel="noopener">Blog</a>
-            </li>
-            <li>
-              <a href="https://www.dimagi.com/podcast/" target="_blank" rel="noopener">Podcast</a>
             </li>
           </ul>
         </div>
@@ -303,6 +302,6 @@
             type="text/javascript"
             src="https://js.hsforms.net/forms/embed/v2.js"></script>
     <script src="{% static 'prelogin/contact-form.js' %}"></script>
-    <script src="{% static 'prelogin/app.js' %}"></script>
+    <script src="{% static 'prelogin/app.js' %}?v=7"></script>
   </body>
 </html>
