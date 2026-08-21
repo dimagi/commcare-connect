@@ -3,8 +3,8 @@ from django.contrib.auth import admin as auth_admin
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
-from commcare_connect.users.forms import OrganizationCreationForm, UserAdminChangeForm, UserAdminCreationForm
+from commcare_connect.organization.models import LLOEntity
+from commcare_connect.users.forms import UserAdminChangeForm, UserAdminCreationForm
 from commcare_connect.users.models import ConnectIDUserLink
 
 User = get_user_model()
@@ -62,21 +62,6 @@ class UserAdmin(auth_admin.UserAdmin):
             },
         ),
     )
-
-
-class UserOrganizationMembershipInline(admin.TabularInline):
-    list_display = ["organization", "user", "role"]
-    model = UserOrganizationMembership
-
-
-@admin.register(Organization)
-class OrganizationAdmin(admin.ModelAdmin):
-    form = OrganizationCreationForm
-    list_display = ["name", "created_by", "program_manager", "funder"]
-    search_fields = ["name"]
-    ordering = ["name"]
-    inlines = [UserOrganizationMembershipInline]
-    list_filter = ["program_manager", "funder"]
 
 
 @admin.register(ConnectIDUserLink)
