@@ -5,9 +5,12 @@ from functools import cached_property
 
 from django.apps import apps
 from django.db import transaction
+from django.db.models import Q
 
+from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import APPLICATION_STATUS_PRECEDENCE, ProgramApplication
+from commcare_connect.program.utils import clear_managed_opp_cache
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +91,7 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
     Raises ``MergeNotAllowed`` before any change is made; any other exception rolls the whole merge back.
     """
     _reject_invalid_merge(source, target)
+    stale_opportunities = _opportunities_cached_against(source)
 
     with transaction.atomic():
         reassigned = _reassign_simple_relations(source, target)
@@ -101,6 +105,8 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         members_moved, members_dropped = _merge_memberships(source, target)
         invites_moved, invites_dropped = _move_pending_invites(source, target)
         flags_cleared = _clear_flag_memberships(source)
+
+        transaction.on_commit(lambda: _clear_opportunity_caches(stale_opportunities))
 
         summary = MergeSummary(
             source_slug=source.slug,
@@ -260,3 +266,24 @@ def _clear_flag_memberships(source: Organization) -> int:
     for flag in flags:
         flag.organizations.remove(source)
     return len(flags)
+
+
+def _opportunities_cached_against(source: Organization) -> list[Opportunity]:
+    """Opportunities whose ``get_managed_opp`` entry holds a reference to the source.
+
+    That cache stores the opportunity with its program and the program's organization attached, so a merge
+    invalidates it.
+    """
+    return list(
+        Opportunity.objects.filter(
+            Q(organization=source)
+            | Q(supervising_organization=source)
+            | Q(program__organization=source)
+            | Q(program__funder=source)
+        ).only("id", "opportunity_id")
+    )
+
+
+def _clear_opportunity_caches(opportunities: Sequence[Opportunity]) -> None:
+    for opportunity in opportunities:
+        clear_managed_opp_cache(opportunity)

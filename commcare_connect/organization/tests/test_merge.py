@@ -3,6 +3,7 @@ from unittest import mock
 
 import pytest
 from django.core.cache import cache
+from django.test import TestCase
 from django.utils import timezone
 from waffle.utils import get_cache, get_setting, keyfmt
 
@@ -26,6 +27,7 @@ from commcare_connect.program.models import (
     ProgramApplicationStatus,
 )
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.program.utils import get_managed_opp
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -397,6 +399,89 @@ class TestFeatureFlags:
         merge_organizations(source, target)
 
         assert get_cache().get(cache_key) is None
+
+
+class TestManagedOpportunityCache:
+    """
+    ``get_managed_opp`` caches the opportunity with its program's organization attached for 24h.
+    """
+
+    def setup_method(self):
+        cache.clear()
+
+    @pytest.fixture
+    def delivered_opportunity(self, source):
+        program = ProgramFactory(organization=source)
+        return OpportunityFactory(organization=OrganizationFactory(), program=program)
+
+    def test_program_organization_is_refreshed_for_a_managed_opportunity(self, source, target, delivered_opportunity):
+        opp_id = str(delivered_opportunity.pk)
+        assert get_managed_opp(opp_id).program.organization == source
+
+        _merge_and_run_commit_hooks(source, target)
+
+        assert get_managed_opp(opp_id).program.organization == target
+
+    def test_organization_is_refreshed_for_the_sources_own_opportunity(self, source, target):
+        opportunity = OpportunityFactory(organization=source)
+        opp_id = str(opportunity.pk)
+        assert get_managed_opp(opp_id).organization_id == source.pk
+
+        _merge_and_run_commit_hooks(source, target)
+
+        assert get_managed_opp(opp_id).organization_id == target.pk
+
+    def test_supervised_and_funded_opportunities_are_refreshed(self, source, target):
+        supervised = OpportunityFactory(supervising_organization=source)
+        funded = OpportunityFactory(program=ProgramFactory(funder=source))
+        assert get_managed_opp(str(supervised.pk)).supervising_organization_id == source.pk
+        assert get_managed_opp(str(funded.pk)).program.funder_id == source.pk
+
+        _merge_and_run_commit_hooks(source, target)
+
+        assert get_managed_opp(str(supervised.pk)).supervising_organization_id == target.pk
+        assert get_managed_opp(str(funded.pk)).program.funder_id == target.pk
+
+    def test_every_form_of_the_identifier_is_cleared(self, source, target, delivered_opportunity):
+        opp_ids = [
+            delivered_opportunity.pk,
+            str(delivered_opportunity.pk),
+            delivered_opportunity.opportunity_id,
+            str(delivered_opportunity.opportunity_id),
+        ]
+        for opp_id in opp_ids:
+            assert get_managed_opp(opp_id).program.organization == source
+
+        _merge_and_run_commit_hooks(source, target)
+
+        for opp_id in opp_ids:
+            assert get_managed_opp.get_cached_value(opp_id) is Ellipsis, f"{opp_id!r} was left cached"
+
+    def test_an_unrelated_opportunity_stays_cached(self, source, target):
+        unrelated = OpportunityFactory()
+        assert get_managed_opp(str(unrelated.pk)) is not None
+
+        _merge_and_run_commit_hooks(source, target)
+
+        assert get_managed_opp.get_cached_value(str(unrelated.pk)) is not Ellipsis
+
+    def test_cache_survives_a_rolled_back_merge(self, source, target, delivered_opportunity):
+        opp_id = str(delivered_opportunity.pk)
+        assert get_managed_opp(opp_id).program.organization == source
+
+        with mock.patch(
+            "commcare_connect.organization.merge._clear_flag_memberships",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                _merge_and_run_commit_hooks(source, target)
+
+        assert get_managed_opp.get_cached_value(opp_id) is not Ellipsis
+
+
+def _merge_and_run_commit_hooks(source, target):
+    with TestCase.captureOnCommitCallbacks(execute=True):
+        return merge_organizations(source, target)
 
 
 def _incoming_relation_labels():
