@@ -62,6 +62,7 @@ from commcare_connect.opportunity.utils.invoice import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
+from commcare_connect.program.utils import request_supervises_opportunity
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
@@ -136,6 +137,23 @@ class OpportunityUserInviteForm(forms.Form):
         return self._validate_and_parse_users(user_data)
 
 
+def supervising_organizations(program):
+    """Organizations eligible to supervise an opportunity in `program`.
+
+    The program's own organization, its funder, and every organization with an accepted
+    ProgramApplication for the program. Eligibility is evaluated on each render, so an
+    organization that loses its accepted application stops being offered.
+    """
+    eligible = Q(pk=program.organization_id)
+    if program.funder_id:
+        eligible |= Q(pk=program.funder_id)
+    eligible |= Q(
+        programapplication__program=program,
+        programapplication__status=ProgramApplicationStatus.ACCEPTED,
+    )
+    return Organization.objects.filter(eligible).distinct().order_by("name")
+
+
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
     currency = forms.ModelChoiceField(
         label=_("Currency"),
@@ -165,8 +183,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.latest_active_history_event = kwargs.pop("latest_active_history_event", None)
+        self.request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
         self.opportunity = self.instance
+        self.show_supervising_organization = self._can_edit_supervising_organization()
+        if self.show_supervising_organization:
+            self._add_supervising_organization_field()
 
         self.fields["users"].required = False
         layout_fields = [
@@ -183,6 +205,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                     Field("name", wrapper_class="w-full"),
                     Field("short_description", wrapper_class="w-full"),
                     Field("description", wrapper_class="w-full"),
+                    *(
+                        [Field("supervising_organization", wrapper_class="w-full")]
+                        if self.show_supervising_organization
+                        else []
+                    ),
                 ),
                 Column(
                     Field("delivery_type"),
@@ -334,6 +361,28 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
         return self._validate_and_parse_users(user_data)
 
+    def _can_edit_supervising_organization(self):
+        """Only an org with PM-level oversight may reassign it.
+
+        This form is reachable by any member of the opportunity's own organization, so
+        without this check the delivering Network Manager could reassign oversight of its
+        own opportunity and remove the program manager.
+        """
+        if self.request is None or not switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
+            return False
+        if not self.instance.pk or not self.instance.managed:
+            return False
+        return request_supervises_opportunity(self.request, self.instance)
+
+    def _add_supervising_organization_field(self):
+        self.fields["supervising_organization"] = forms.ModelChoiceField(
+            queryset=supervising_organizations(self.instance.program),
+            required=True,
+            initial=self.instance.supervising_organization,
+            widget=forms.Select(attrs={"data-tomselect": "1"}),
+            label=_("Supervising Organization"),
+        )
+
     def clean_active(self):
         active = self.cleaned_data["active"]
         if active and not self.currently_active:
@@ -347,6 +396,9 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         return active
 
     def save(self, commit=True):
+        # Attached at runtime, so absent from Meta.fields and skipped by construct_instance.
+        if "supervising_organization" in self.cleaned_data:
+            self.instance.supervising_organization = self.cleaned_data["supervising_organization"]
         instance = super().save(commit=commit)
         if not switch_is_active(OPPORTUNITY_CREDENTIALS):
             return instance
@@ -365,23 +417,6 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             },
         )
         return instance
-
-
-def supervising_organizations(program):
-    """Organizations eligible to supervise an opportunity in `program`.
-
-    The program's own organization, its funder, and every organization with an accepted
-    ProgramApplication for the program. Eligibility is evaluated on each render, so an
-    organization that loses its accepted application stops being offered.
-    """
-    eligible = Q(pk=program.organization_id)
-    if program.funder_id:
-        eligible |= Q(pk=program.funder_id)
-    eligible |= Q(
-        programapplication__program=program,
-        programapplication__status=ProgramApplicationStatus.ACCEPTED,
-    )
-    return Organization.objects.filter(eligible).distinct().order_by("name")
 
 
 class OpportunityInitForm(forms.ModelForm):
