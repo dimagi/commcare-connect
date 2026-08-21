@@ -152,6 +152,7 @@ class TestOrganizationCreateView:
         org = Organization.objects.get(name=org_name)
         assert org.short_name == "PW"
         assert org.year_of_establishment == 2005
+        assert org.website == "https://example.com"
         assert org.contact_emails == "one@example.com"
 
     def test_duplicate_name_does_not_create_org(self, client, user, organization):
@@ -160,6 +161,7 @@ class TestOrganizationCreateView:
         response = client.post(self.url(), data={"name": organization.name})
 
         assert response.status_code == 200
+        assert "name" in response.context["form"].errors
         assert Organization.objects.filter(name=organization.name).count() == 1
         assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
 

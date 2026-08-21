@@ -18,6 +18,7 @@
   <div class="container md:max-w-screen-lg mx-auto">
     <form action="{% url 'organization_create' %}"
           method="post"
+          novalidate
           x-data="organizationWizard()"
           @submit="onSubmit">
       {% csrf_token %}
