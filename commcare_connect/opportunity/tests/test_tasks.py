@@ -48,6 +48,7 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    CompletedWorkInvoiceFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -332,6 +333,10 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             mock.patch("commcare_connect.opportunity.tasks.get_end_date_previous_month") as mock_end_date,
             mock.patch("commcare_connect.opportunity.tasks.generate_invoice_number") as mock_invoice_number,
             mock.patch(
+                "commcare_connect.opportunity.tasks.OPPORTUNITY_AUTO_INVOICE_START_DATE",
+                datetime.date(2020, 1, 1),
+            ),
+            mock.patch(
                 "commcare_connect.opportunity.models.ExchangeRate.latest_exchange_rate",
                 create=True,
             ) as mock_latest_exchange_rate,
@@ -455,8 +460,28 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert completed_work.invoiced_approved_count == 0
         assert not CompletedWorkInvoice.objects.exists()
 
+    def test_no_invoice_for_opportunity_starting_before_the_cutoff(self):
+        cutoff = datetime.date(2026, 1, 1)
+        opportunity = OpportunityFactory(active=True, is_test=False, start_date=cutoff - datetime.timedelta(days=1))
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 5),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
+        )
+
+        with mock.patch("commcare_connect.opportunity.tasks.OPPORTUNITY_AUTO_INVOICE_START_DATE", cutoff):
+            generate_automated_service_delivery_invoice()
+
+        assert PaymentInvoice.objects.count() == 0
+        assert not CompletedWorkInvoice.objects.exists()
+
     def test_late_delta_bills_on_the_next_automated_invoice(self):
-        opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2023, 1, 1))
         payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"), org_amount=0)
         access = OpportunityAccessFactory(opportunity=opportunity)
         work = CompletedWorkFactory(
@@ -467,19 +492,30 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             saved_approved_count=1,
             invoiced_approved_count=1,
         )
+        # November was already billed, so the first-billing snapshot prevents the next
+        # unit from being treated as a first billing and backdating to November.
+        earlier_invoice = CompletedWorkInvoiceFactory(
+            invoice__opportunity=opportunity,
+            completed_work=work,
+            billed_count=1,
+            month=datetime.date(2023, 11, 1),
+            is_delta=False,
+        ).invoice
+        new_invoices = PaymentInvoice.objects.exclude(pk=earlier_invoice.pk)
 
         generate_automated_service_delivery_invoice()
-        assert PaymentInvoice.objects.count() == 0  # fully billed: no empty invoice is left behind
+        assert not new_invoices.exists()  # fully billed: no empty invoice is left behind
 
         work.saved_approved_count = 2
         work.save(update_fields=["saved_approved_count"])
 
         generate_automated_service_delivery_invoice()
 
-        invoice = PaymentInvoice.objects.get(opportunity=opportunity)
+        invoice = new_invoices.get(opportunity=opportunity)
         row = invoice.work_items.get()
         assert row.billed_count == 1
         assert row.month == datetime.date(2024, 1, 1)  # the billing month, not November 2023
+        assert row.is_delta is True
         assert invoice.start_date == datetime.date(2024, 1, 1)  # the window start, which is the billed month
         assert invoice.end_date == datetime.date(2024, 1, 31)
         assert invoice.amount == Decimal("100.00")

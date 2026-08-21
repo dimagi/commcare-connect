@@ -1,9 +1,10 @@
 import datetime
+import logging
 from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from django.db import transaction
-from django.db.models import F, Max, Q, Sum
+from django.db.models import Exists, F, Max, OuterRef, Q, Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -13,20 +14,24 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.utils.datetime import get_month_start_date
 
+logger = logging.getLogger(__name__)
+
 CENTS = Decimal("0.01")
 
 
 def get_billable_completed_works_qs(opportunity, start_date, end_date):
-    """Approved works that still have unbilled units.
+    """Approved works with unbilled units.
 
-    `invoiced_approved_count` decides what is billable; the dates only *scope* it, and the two bounds
-    are asymmetric:
+    A work is billable when `saved_approved_count > invoiced_approved_count`.
 
-    - `end_date` applies to every work, so a window that predates the approval never bills it.
-    - `start_date` applies only to first-billing works, where `status_modified_date` is the real
-      approval date. A late duplicate keeps the work at `approved`, so its `status_modified_date`
-      never moves off the original approval; lower-bounding that stale date would silently defer a
-      delta that must bill now.
+    - First-time billing: the work's approval date is captured, so the work
+      must fall within the invoice date window.
+
+    - Subsequent billing: additional duplicate deliveries do not update the
+      approval date. These works are billed in a subsequent invoice, as they
+      arrived after the first billing and are not restricted by `start_date`.
+      `end_date` still applies to prevent a new duplicate work from being billed
+      before its first billing period.
     """
     if start_date is None or end_date is None:
         raise ValueError("start_date and end_date are required")
@@ -34,7 +39,7 @@ def get_billable_completed_works_qs(opportunity, start_date, end_date):
     return (
         billable_works_qs(opportunity)
         .filter(
-            Q(invoiced_approved_count__gt=0, status_modified_date__date__lte=end_date)
+            Q(has_first_billing=True, status_modified_date__date__lte=end_date)
             | Q(status_modified_date__date__gte=start_date, status_modified_date__date__lte=end_date)
         )
         .select_related("payment_unit__opportunity", "opportunity_access__user")
@@ -47,6 +52,8 @@ def billable_works_qs(opportunity):
         opportunity_access__opportunity=opportunity,
         status=CompletedWorkStatus.approved,
         saved_approved_count__gt=F("invoiced_approved_count"),
+    ).annotate(
+        has_first_billing=Exists(CompletedWorkInvoice.objects.filter(completed_work=OuterRef("pk"), is_delta=False))
     )
 
 
@@ -86,6 +93,7 @@ class WorkPayRow:
     flw_pay: Money
     org_pay: Money
     exchange_rate: ExchangeRate
+    is_delta: bool
 
     @property
     def total_pay(self) -> Money:
@@ -116,6 +124,7 @@ def _build_billable_rows(works, currency_code, end_date):
                 flw_pay=Money.from_local_amount(Decimal(billed_count * work.payment_unit.amount), rate),
                 org_pay=Money.from_local_amount(Decimal(billed_count * work.payment_unit.org_amount), rate),
                 exchange_rate=exchange_rate,
+                is_delta=work.has_first_billing,
             )
         )
     return rows
@@ -206,6 +215,7 @@ def get_invoice_delivery_rows_for_export(invoice):
             flw_pay=Money(item.flw_amount_local, item.flw_amount_usd),
             org_pay=Money(item.org_amount_local, item.org_amount_usd),
             exchange_rate=item.exchange_rate,
+            is_delta=item.is_delta,
         )
         for item in work_items
     ]
@@ -235,6 +245,31 @@ def bill_invoice(invoice, start_date, end_date):
     return rows
 
 
+def rollback_invoice_line_items(invoice):
+    with transaction.atomic():
+        billed_by_work = dict(invoice.work_items.values_list("completed_work_id", "billed_count"))
+        if not billed_by_work:
+            return
+
+        works = []
+        for work in CompletedWork.objects.select_for_update(of=("self",)).filter(id__in=billed_by_work):
+            work_billed_count = billed_by_work[work.id]
+            if work_billed_count > work.invoiced_approved_count:
+                # Only reachable if the watermark and the rows have already diverged. Clamping keeps
+                # the cancel working, but the divergence itself is a bug worth seeing.
+                logger.error(
+                    "Invoice %s releases %s units of completed work %s but only %s are invoiced; clamping to 0.",
+                    invoice.id,
+                    work_billed_count,
+                    work.id,
+                    work.invoiced_approved_count,
+                )
+            work.invoiced_approved_count = max(0, work.invoiced_approved_count - work_billed_count)
+            works.append(work)
+        CompletedWork.objects.bulk_update(works, ["invoiced_approved_count"])
+        invoice.work_items.all().delete()
+
+
 def _freeze_line_items(invoice, rows):
     # For display only: show the latest billed month's rate on the invoice.
     invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
@@ -257,6 +292,7 @@ def _freeze_line_items(invoice, rows):
                 org_amount_local=row.org_pay.local,
                 org_amount_usd=row.org_pay.usd,
                 exchange_rate=row.exchange_rate,
+                is_delta=row.is_delta,
             )
             for row in rows
         ]
@@ -271,10 +307,10 @@ def _freeze_line_items(invoice, rows):
 
 
 def _billed_month(work, end_date):
-    """First billing keeps the work's real approval month, so catch-up months stay accurate; a late
-    delta takes the billing month, because its `status_modified_date` is frozen at the original
+    """A first billing keeps the work's real approval month, so catch-up months stay accurate; a
+    late delta takes the billing month, because its `status_modified_date` is frozen at the original
     approval (it only moves on a *status* change, and a late duplicate stays `approved`).
     """
-    if work.invoiced_approved_count == 0 and work.status_modified_date:
+    if not work.has_first_billing and work.status_modified_date:
         return get_month_start_date(work.status_modified_date)
     return get_month_start_date(end_date)
