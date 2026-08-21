@@ -4,7 +4,13 @@ from django.urls import clear_url_caches, path, reverse
 from django.views import View
 
 from commcare_connect.opportunity.views import OrganizationUserMixin, OrgPMRequiredMixin
-from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
+from commcare_connect.organization.decorators import (
+    ProgramViewerRequiredMixin,
+    org_admin_required,
+    org_member_required,
+    org_viewer_required,
+    program_viewer_required,
+)
 from commcare_connect.organization.urls import urlpatterns as org_url_patterns
 from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.test_utils import check_basic_permissions
@@ -36,6 +42,14 @@ class TestAllOrgAccessPermission:
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 
+        class DummyProgramViewerView(ProgramViewerRequiredMixin, View):
+            def get(self, request, *args, **kwargs):
+                return HttpResponse("OK")
+
+        @program_viewer_required
+        def dummy_program_viewer_view(request, org_slug):
+            return HttpResponse("OK")
+
         # Add dummy views to URLs
         org_url_patterns.extend(
             [
@@ -44,10 +58,23 @@ class TestAllOrgAccessPermission:
                 path("member_fbv/", dummy_member_view, name="member_fbv"),
                 path("member_cbv/", DummyOrgViewerView.as_view(), name="member_cbv"),
                 path("viewer_cbv/", DummyOrgMemberView.as_view(), name="viewer_cbv"),
+                path("program_viewer_fbv/", dummy_program_viewer_view, name="program_viewer_fbv"),
+                path("program_viewer_cbv/", DummyProgramViewerView.as_view(), name="program_viewer_cbv"),
             ]
         )
 
-    @pytest.mark.parametrize("url_name", ["admin_fbv", "viewer_fbv", "member_fbv", "member_cbv", "viewer_cbv"])
+    @pytest.mark.parametrize(
+        "url_name",
+        [
+            "admin_fbv",
+            "viewer_fbv",
+            "member_fbv",
+            "member_cbv",
+            "viewer_cbv",
+            "program_viewer_fbv",
+            "program_viewer_cbv",
+        ],
+    )
     def test_permissions(self, url_name, organization):
         url = reverse(f"organization:{url_name}", args=(organization.slug,))
         check_basic_permissions(UserFactory(), url, "all_org_access", 404)

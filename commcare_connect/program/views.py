@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
@@ -36,16 +36,12 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import is_org_pm
+from .utils import is_org_pm, program_from_request, request_can_manage_program
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
-        org_membership = getattr(self.request, "org_membership", None)
-        is_admin = getattr(org_membership, "is_admin", False)
-        org = getattr(self.request, "org", None)
-        program_manager = getattr(org, "program_manager", False)
-        return (org_membership is not None and is_admin and program_manager) or self.request.user.is_superuser
+        return request_can_manage_program(self.request)
 
 
 ALLOWED_ORDERINGS = {
@@ -139,9 +135,10 @@ class ManagedOpportunityViewMixin:
     program = None
 
     def dispatch(self, request, *args, **kwargs):
-        try:
-            self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
-        except Program.DoesNotExist:
+        # Shared with the access gate, so the view and the gate cannot disagree about
+        # which program is in scope: the opportunity's on edit, the pk's on create.
+        self.program = program_from_request(request)
+        if self.program is None:
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)
@@ -206,6 +203,13 @@ def invite_organization(request, org_slug, pk):
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
+    # This URL carries an application_id rather than a program pk, so @org_pm_required
+    # could only apply the program-manager-flag fallback. Check the caller against the
+    # program this application actually belongs to.
+    request._cached_program = application.program
+    if not request_can_manage_program(request):
+        raise Http404()
+
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
     status_mapping = {
