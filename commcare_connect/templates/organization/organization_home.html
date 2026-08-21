@@ -58,7 +58,7 @@
       <div x-show="selectedTab === 'members'"
            id="invoice_members_container"
            class="w-full"
-           hx-get="{% url 'organization:org_member_table' request.org.slug %}?{% querystring %}"
+           hx-get="{% url 'organization:org_member_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
            hx-trigger="loadMembers from:body"></div>
       <div x-show="selectedTab === 'members'"

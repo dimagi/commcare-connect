@@ -1,12 +1,11 @@
 from typing import Any
 
 from allauth.account.adapter import DefaultAccountAdapter
-from allauth.account.utils import user_email
-from allauth.exceptions import ImmediateHttpResponse
+from allauth.account.utils import filter_users_by_email, user_email
+from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
-from allauth.utils import email_address_exists
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -48,7 +47,11 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         return next_url if is_safe_redirect_url(request, next_url) else None
 
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin):
-        if sociallogin.is_existing:
+        if sociallogin.account.pk:
+            # This exact SocialAccount has already signed in before; allow reauthentication.
+            # (sociallogin.is_existing checks the resolved *user*, which can also become
+            # true for a brand-new social account matched to an existing user by email --
+            # exactly the case _reject_if_email_already_registered below needs to catch.)
             return
         if sociallogin.state.get("process") == AuthProcess.CONNECT:
             return  # linking a new provider account to an already-authenticated user is always allowed
@@ -64,7 +67,7 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
 
     def _reject_if_email_already_registered(self, request: HttpRequest, sociallogin: SocialLogin):
         email = user_email(sociallogin.user)
-        if email and email_address_exists(email):
+        if email and filter_users_by_email(email):
             messages.error(request, _("Unable to sign in with SSO. Please sign in with your email and password."))
             raise ImmediateHttpResponse(redirect("account_login"))
 

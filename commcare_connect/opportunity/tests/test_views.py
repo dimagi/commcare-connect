@@ -77,6 +77,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.users.tests.test_connections import _create_social_app
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -2507,6 +2508,7 @@ class TestEditAssignedTask:
         return reverse("opportunity:edit_assigned_task", args=(opp.organization.slug, opp.opportunity_id, task.pk))
 
     def test_list_page_renders_edit_button(self, client, program_manager_org_user_admin, opp, assigned_task):
+        _create_social_app("ocs")
         client.force_login(program_manager_org_user_admin)
         url = reverse("opportunity:assigned_task_list", args=(opp.organization.slug, opp.opportunity_id))
         response = client.get(url)
@@ -2679,6 +2681,7 @@ class TestCreateTask:
         assert any("chatbot" in str(m).lower() for m in msgs)
 
     def test_create_task_invalid_form(self, client, program_manager_org_user_admin, opportunity):
+        _create_social_app("ocs")
         client.force_login(program_manager_org_user_admin)
         response = client.post(self._url(opportunity), data={})
         assert response.status_code == HTTPStatus.OK

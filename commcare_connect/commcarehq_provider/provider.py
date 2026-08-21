@@ -1,6 +1,8 @@
 from allauth.socialaccount.providers.base import ProviderAccount
 from allauth.socialaccount.providers.oauth2.provider import OAuth2Provider
 
+from .views import CommcareHQOAuth2Adapter
+
 
 class CommcareHQAccount(ProviderAccount):
     def to_str(self):
@@ -11,6 +13,7 @@ class CommcareHQProvider(OAuth2Provider):
     id = "commcarehq"
     name = "commcarehq"
     account_class = CommcareHQAccount
+    oauth2_adapter_class = CommcareHQOAuth2Adapter
 
     def get_default_scope(self):
         return ["access_apis"]
