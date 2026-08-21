@@ -14,6 +14,8 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
+EARLIEST_ESTABLISHMENT_YEAR = 1800
+
 
 class OrganizationChangeForm(forms.ModelForm):
     class Meta:
@@ -189,10 +191,10 @@ def validate_year_of_establishment(year):
     if year is None:
         return year
     current = timezone.now().year
-    if year < 1800 or year > current:
+    if year < EARLIEST_ESTABLISHMENT_YEAR or year > current:
         raise ValidationError(
-            gettext("Year must be between 1800 and %(current)s."),
-            params={"current": current},
+            gettext("Year must be between %(earliest)s and %(current)s."),
+            params={"earliest": EARLIEST_ESTABLISHMENT_YEAR, "current": current},
         )
     return year
 
