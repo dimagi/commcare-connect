@@ -50,6 +50,16 @@ def target():
     return OrganizationFactory(name="Target Workspace")
 
 
+@pytest.fixture
+def failing_merge():
+    """Break the merge at its last step, once every earlier step has already run."""
+    with mock.patch(
+        "commcare_connect.organization.merge._clear_flag_memberships",
+        side_effect=RuntimeError("boom"),
+    ):
+        yield
+
+
 class TestMergeGuards:
     def test_self_merge_is_refused(self, source):
         with pytest.raises(MergeNotAllowed):
@@ -61,10 +71,14 @@ class TestMergeGuards:
         with pytest.raises(MergeNotAllowed):
             merge_organizations(Organization(name="Never Saved"), target)
 
-    def test_a_commcare_app_both_workspaces_hold_is_refused(self, source, target):
-        """Merging would break the survivor's next get_or_create on that app."""
-        hq_server = HQServerFactory()
-        shared = dict(cc_app_id="shared-app", cc_domain="shared-domain", hq_server=hq_server)
+    @pytest.mark.parametrize("with_hq_server", [True, False], ids=["hq_server", "no_hq_server"])
+    def test_a_commcare_app_both_workspaces_hold_is_refused(self, source, target, with_hq_server):
+        """Merging would break the survivor's next get_or_create on that app. ``hq_server`` is nullable."""
+        shared = dict(
+            cc_app_id="shared-app",
+            cc_domain="shared-domain",
+            hq_server=HQServerFactory() if with_hq_server else None,
+        )
         CommCareAppFactory(organization=source, **shared)
         CommCareAppFactory(organization=target, **shared)
 
@@ -72,15 +86,6 @@ class TestMergeGuards:
             merge_organizations(source, target)
 
         assert Organization.objects.filter(pk=source.pk).exists()
-
-    def test_apps_with_no_hq_server_still_conflict(self, source, target):
-        """``hq_server`` is nullable"""
-        shared = dict(cc_app_id="shared-app", cc_domain="shared-domain", hq_server=None)
-        CommCareAppFactory(organization=source, **shared)
-        CommCareAppFactory(organization=target, **shared)
-
-        with pytest.raises(MergeNotAllowed):
-            merge_organizations(source, target)
 
     @pytest.mark.parametrize("differing_field", ["cc_app_id", "cc_domain", "hq_server"])
     def test_apps_differing_in_any_key_field_are_allowed(self, source, target, differing_field):
@@ -300,25 +305,26 @@ class TestPendingInvites:
         assert invite.organization == target
         assert summary.invites_moved == 1
 
-    @pytest.mark.parametrize("status", [OrganizationInvite.Status.ACCEPTED, OrganizationInvite.Status.REVOKED])
-    def test_invite_that_is_not_pending_is_discarded(self, source, target, status):
-        invite = OrganizationInviteFactory(organization=source, status=status)
+    @pytest.mark.parametrize(
+        "not_live",
+        [
+            pytest.param(lambda: {"status": OrganizationInvite.Status.ACCEPTED}, id="accepted"),
+            pytest.param(lambda: {"status": OrganizationInvite.Status.REVOKED}, id="revoked"),
+            pytest.param(
+                lambda: {"date_modified": timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)},
+                id="expired",
+            ),
+        ],
+    )
+    def test_invite_that_is_not_live_is_discarded(self, source, target, not_live):
+        invite = OrganizationInviteFactory(organization=source)
+        # date_modified is auto_now, so bypass save() to set these.
+        OrganizationInvite.objects.filter(pk=invite.pk).update(**not_live())
 
         summary = merge_organizations(source, target)
 
         # The row check alone cannot fail: OrganizationInvite.organization is CASCADE,
         # so source.delete() removes it either way. The counters are what discriminate.
-        assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
-        assert not OrganizationInvite.objects.filter(pk=invite.pk).exists()
-
-    def test_expired_invite_is_discarded(self, source, target):
-        invite = OrganizationInviteFactory(organization=source)
-        stale = timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
-        # date_modified is auto_now, so bypass save() to age the row.
-        OrganizationInvite.objects.filter(pk=invite.pk).update(date_modified=stale)
-
-        summary = merge_organizations(source, target)
-
         assert (summary.invites_moved, summary.invites_discarded) == (0, 1)
         assert not OrganizationInvite.objects.filter(pk=invite.pk).exists()
 
@@ -360,32 +366,23 @@ class TestFeatureFlags:
     def setup_method(self):
         cache.clear()
 
-    def test_target_does_not_inherit_the_source_flags(self, source, target):
+    @pytest.mark.parametrize(
+        ("held_by", "survivors", "flags_cleared"),
+        [
+            pytest.param(["source"], [], 1, id="source_only"),
+            pytest.param(["source", "target"], ["target"], 1, id="shared"),
+            pytest.param(["target"], ["target"], 0, id="target_only"),
+        ],
+    )
+    def test_a_flag_keeps_only_its_target_membership(self, source, target, held_by, survivors, flags_cleared):
+        workspaces = {"source": source, "target": target}
         flag = FlagFactory()
-        flag.organizations.add(source)
+        flag.organizations.add(*[workspaces[name] for name in held_by])
 
         summary = merge_organizations(source, target)
 
-        assert not target.flag_set.filter(pk=flag.pk).exists()
-        assert list(flag.organizations.all()) == []
-        assert summary.flags_cleared == 1
-
-    def test_existing_target_flags_are_untouched(self, source, target):
-        target_flag = FlagFactory()
-        target_flag.organizations.add(target)
-
-        merge_organizations(source, target)
-
-        assert list(target_flag.organizations.all()) == [target]
-
-    def test_shared_flag_keeps_the_target_membership(self, source, target):
-        flag = FlagFactory()
-        flag.organizations.add(source, target)
-
-        summary = merge_organizations(source, target)
-
-        assert list(flag.organizations.all()) == [target]
-        assert summary.flags_cleared == 1
+        assert list(flag.organizations.all()) == [workspaces[name] for name in survivors]
+        assert summary.flags_cleared == flags_cleared
 
     def test_flag_organization_cache_is_flushed(self, source, target):
         flag = FlagFactory()
@@ -414,33 +411,41 @@ class TestManagedOpportunityCache:
         program = ProgramFactory(organization=source)
         return OpportunityFactory(organization=OrganizationFactory(), program=program)
 
-    def test_program_organization_is_refreshed_for_a_managed_opportunity(self, source, target, delivered_opportunity):
-        opp_id = str(delivered_opportunity.pk)
-        assert get_managed_opp(opp_id).program.organization == source
+    @pytest.mark.parametrize(
+        ("make_opportunity", "organization_id"),
+        [
+            pytest.param(
+                lambda org: OpportunityFactory(organization=org),
+                lambda opp: opp.organization_id,
+                id="organization",
+            ),
+            pytest.param(
+                lambda org: OpportunityFactory(supervising_organization=org),
+                lambda opp: opp.supervising_organization_id,
+                id="supervising_organization",
+            ),
+            pytest.param(
+                lambda org: OpportunityFactory(program=ProgramFactory(organization=org)),
+                lambda opp: opp.program.organization_id,
+                id="program__organization",
+            ),
+            pytest.param(
+                lambda org: OpportunityFactory(program=ProgramFactory(funder=org)),
+                lambda opp: opp.program.funder_id,
+                id="program__funder",
+            ),
+        ],
+    )
+    def test_every_organization_the_cached_row_references_is_refreshed(
+        self, source, target, make_opportunity, organization_id
+    ):
+        """One case per clause in _opportunities_cached_against."""
+        opp_id = str(make_opportunity(source).pk)
+        assert organization_id(get_managed_opp(opp_id)) == source.pk
 
         _merge_and_run_commit_hooks(source, target)
 
-        assert get_managed_opp(opp_id).program.organization == target
-
-    def test_organization_is_refreshed_for_the_sources_own_opportunity(self, source, target):
-        opportunity = OpportunityFactory(organization=source)
-        opp_id = str(opportunity.pk)
-        assert get_managed_opp(opp_id).organization_id == source.pk
-
-        _merge_and_run_commit_hooks(source, target)
-
-        assert get_managed_opp(opp_id).organization_id == target.pk
-
-    def test_supervised_and_funded_opportunities_are_refreshed(self, source, target):
-        supervised = OpportunityFactory(supervising_organization=source)
-        funded = OpportunityFactory(program=ProgramFactory(funder=source))
-        assert get_managed_opp(str(supervised.pk)).supervising_organization_id == source.pk
-        assert get_managed_opp(str(funded.pk)).program.funder_id == source.pk
-
-        _merge_and_run_commit_hooks(source, target)
-
-        assert get_managed_opp(str(supervised.pk)).supervising_organization_id == target.pk
-        assert get_managed_opp(str(funded.pk)).program.funder_id == target.pk
+        assert organization_id(get_managed_opp(opp_id)) == target.pk
 
     def test_every_form_of_the_identifier_is_cleared(self, source, target, delivered_opportunity):
         opp_ids = [
@@ -465,16 +470,12 @@ class TestManagedOpportunityCache:
 
         assert get_managed_opp.get_cached_value(str(unrelated.pk)) is not Ellipsis
 
-    def test_cache_survives_a_rolled_back_merge(self, source, target, delivered_opportunity):
+    def test_cache_survives_a_rolled_back_merge(self, source, target, delivered_opportunity, failing_merge):
         opp_id = str(delivered_opportunity.pk)
         assert get_managed_opp(opp_id).program.organization == source
 
-        with mock.patch(
-            "commcare_connect.organization.merge._clear_flag_memberships",
-            side_effect=RuntimeError("boom"),
-        ):
-            with pytest.raises(RuntimeError, match="boom"):
-                _merge_and_run_commit_hooks(source, target)
+        with pytest.raises(RuntimeError, match="boom"):
+            _merge_and_run_commit_hooks(source, target)
 
         assert get_managed_opp.get_cached_value(opp_id) is not Ellipsis
 
@@ -546,17 +547,13 @@ class TestRelationCoverage:
 
 
 class TestRollback:
-    def test_any_error_rolls_the_whole_merge_back(self, target):
+    def test_any_error_rolls_the_whole_merge_back(self, target, failing_merge):
         source = OrganizationFactory(name="Rollback Source", program_manager=True)
         opportunity = OpportunityFactory(organization=source)
         membership = MembershipFactory(organization=source, role="member")
 
-        with mock.patch(
-            "commcare_connect.organization.merge._clear_flag_memberships",
-            side_effect=RuntimeError("boom"),
-        ):
-            with pytest.raises(RuntimeError, match="boom"):
-                merge_organizations(source, target)
+        with pytest.raises(RuntimeError, match="boom"):
+            merge_organizations(source, target)
 
         assert Organization.objects.filter(pk=source.pk).exists()
         opportunity.refresh_from_db()
