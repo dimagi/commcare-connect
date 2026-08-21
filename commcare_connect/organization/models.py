@@ -11,25 +11,6 @@ from commcare_connect.utils.db import BaseModel, slugify_uniquely
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 
-class LLOEntity(models.Model):
-    name = models.CharField(max_length=255, unique=True)
-    short_name = models.CharField(max_length=40, null=True, blank=True)
-
-    class Meta:
-        verbose_name_plural = "LLO Entities"
-
-    def __str__(self):
-        if self.short_name:
-            return f"{self.name} ({self.short_name})"
-        return f"{self.name}"
-
-    @classmethod
-    def visible_to(cls, user):
-        if user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            return cls.objects.all()
-        return cls.objects.filter(organization__memberships__user=user).distinct()
-
-
 class PrimarySector(models.Model):
     name = models.CharField(max_length=255)
     slug = models.CharField(max_length=255)
@@ -47,7 +28,6 @@ class Organization(BaseModel):
     )
     program_manager = models.BooleanField(default=False)
     funder = models.BooleanField(default=False)
-    llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
     short_name = models.CharField(max_length=40, null=True, blank=True)
     has_used_connect = models.BooleanField(default=False)
     year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
