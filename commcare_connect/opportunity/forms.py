@@ -48,6 +48,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.tables import header_with_tooltip
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
@@ -1610,6 +1611,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
         required=False,
     )
+    # Derived for display only, so `disabled` rather than `readonly`: Django then ignores whatever
+    # is posted, and a stale figure can never add a field error that blocks the invoice.
+    late_delta_units = forms.IntegerField(
+        required=False,
+        disabled=True,
+        widget=forms.NumberInput(),
+    )
     description = forms.CharField(
         label="",
         widget=forms.Textarea(attrs={"rows": 3}),
@@ -1645,6 +1653,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
         self.line_items_table = kwargs.pop("line_items_table", None)
+        self.late_delta_units = kwargs.pop("late_delta_units", 0)
         self.status = kwargs.pop("status", InvoiceStatus.PENDING_NM_REVIEW)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
@@ -1676,6 +1685,15 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 currency_code=self.opportunity.currency_code or "Local Currency"
             )
             self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
+
+            self.fields["late_delta_units"].label = header_with_tooltip(
+                format_html('{} <i class="fa-solid fa-circle-info text-gray-400"></i>', _("Catch-up Units")),
+                _(
+                    "Additional deliveries for work that an earlier invoice already billed. They were "
+                    "approved after that invoice was issued, so they are billed here."
+                ),
+            )
+            self.fields["late_delta_units"].initial = self.late_delta_units
 
             self.fields["description"].widget.attrs.update(
                 {
@@ -1759,6 +1777,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 },
             ),
         ]
+
+        if not self.read_only:
+            third_row.append(
+                Div(
+                    Field("late_delta_units", **{"x-model": "lateDeltaUnits"}),
+                    **{"x-show": "lateDeltaUnits > 0", "x-cloak": ""},
+                )
+            )
+        elif self.late_delta_units:
+            third_row.append(Field("late_delta_units"))
 
         return [
             Div(
