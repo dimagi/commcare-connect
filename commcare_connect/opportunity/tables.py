@@ -72,9 +72,7 @@ class UserVisitTable(OrgContextTable):
     visit_id = columns.Column("Visit ID", accessor="xform_id", visible=False)
     username = columns.Column("Username", accessor="user__username", visible=False)
     form_json = columns.Column("Form JSON", accessor="form_json", visible=False)
-    visit_date_export = columns.DateTimeColumn(
-        verbose_name="Visit date", accessor="visit_date", format="c", visible=False
-    )
+    visit_date_export = DMYTColumn(verbose_name="Visit date", accessor="visit_date", visible=False)
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
     justification = columns.Column("Justification", accessor="justification", visible=False)
     duration = columns.Column("Duration", accessor="duration", visible=False)
@@ -84,6 +82,9 @@ class UserVisitTable(OrgContextTable):
     entity_name = columns.Column("Entity Name", accessor="entity_name")
     flag_reason = columns.Column("Flags", accessor="flag_reason", empty_values=({}, None))
     details = columns.Column(verbose_name="", empty_values=())
+
+    def value_visit_date_export(self, value):
+        return value.isoformat() if value else value
 
     def render_details(self, record):
         url = reverse(
@@ -1563,7 +1564,7 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
             "rejected",
             "action",
         )
-        order_by = ("user.name", "-last_active")
+        order_by = ("user__name", "-last_active")
         row_attrs = {"class": "group"}
 
     def __init__(self, *args, **kwargs):

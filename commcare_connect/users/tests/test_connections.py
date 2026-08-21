@@ -36,6 +36,8 @@ def test_account_for_provider(accounts, provider_id, expect_match):
 
 @pytest.mark.django_db
 def test_connections_page_offers_to_connect_unconnected_providers(client, user):
+    _create_social_app("ocs")
+    _create_social_app("commcarehq")
     client.force_login(user)
 
     response = client.get(reverse("socialaccount_connections"))
@@ -62,6 +64,7 @@ def test_connections_page_shows_connected_account_with_disconnect_option(client,
 @pytest.mark.django_db
 @pytest.mark.parametrize("provider", ["ocs", "commcarehq"])
 def test_connect_button_posts_instead_of_linking(client, user, provider):
+    _create_social_app(provider)
     client.force_login(user)
     login_url = reverse(f"{provider}_login")
 

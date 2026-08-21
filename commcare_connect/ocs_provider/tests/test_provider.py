@@ -1,3 +1,6 @@
+from allauth.socialaccount.models import SocialApp
+from django.test import RequestFactory
+
 from commcare_connect.ocs_provider.provider import OcsProvider
 
 
@@ -18,7 +21,8 @@ def test_extract_uid_uses_sub():
 
 def test_pkce_is_enabled_with_s256_challenge():
     # OCS requires PKCE; allauth only emits a challenge when PKCE is enabled on the provider.
-    provider = OcsProvider.__new__(OcsProvider)
+    app = SocialApp(provider="ocs", name="ocs", client_id="ocs-client", secret="ocs-secret")
+    provider = OcsProvider(RequestFactory().get("/"), app=app)
     params = provider.get_pkce_params()
     assert params["code_challenge_method"] == "S256"
     assert params["code_challenge"]
