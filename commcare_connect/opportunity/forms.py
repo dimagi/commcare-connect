@@ -10,7 +10,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Min, Q, Sum, TextChoices
+from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -26,8 +26,6 @@ from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     AudioAttachment,
     CommCareApp,
-    CompletedWork,
-    CompletedWorkStatus,
     Country,
     CredentialConfiguration,
     Currency,
@@ -50,12 +48,12 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1713,32 +1711,6 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             )
             self.fields["date_of_expense"].required = True
 
-    def get_start_date_for_invoice(self):
-        date = (
-            CompletedWork.objects.filter(
-                invoice__isnull=True,
-                opportunity_access__opportunity=self.opportunity,
-                status=CompletedWorkStatus.approved,
-            )
-            .aggregate(earliest_date=Min("status_modified_date"))
-            .get("earliest_date")
-        )
-
-        start_date = date
-        if date:
-            start_date = date.date()
-        else:
-            start_date = self.opportunity.start_date
-
-        return start_date.replace(day=1)
-
-    def get_end_date_for_invoice(self, start_date):
-        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
-
-        if start_date > last_day_previous_month:
-            return datetime.date.today() - datetime.timedelta(days=1)
-        return last_day_previous_month
-
     def get_form_layout(self):
         if self.is_service_delivery:
             invoice_form_fields = self.service_delivery_invoice_fields
@@ -1916,17 +1888,28 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
-        instance.amount_usd = self.cleaned_data["amount_usd"]
-        instance.amount = self.cleaned_data["amount"]
+        if not self.is_service_delivery:
+            instance.amount = self.cleaned_data["amount"]
+            instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
-        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.service_delivery = self.is_service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
         instance.status = self.status
 
-        if commit:
+        if not commit:
+            return instance
+
+        if self.is_service_delivery:
+            # Save the invoice totals from the rows just frozen (or 0 if nothing was billable).
+            # Preview totals are only for display and may be stale; persisted totals must come
+            # from the same read that created the invoice line items so they always match.
+            rows = bill_invoice(instance, start_date=instance.start_date, end_date=instance.end_date)
+            if not rows:
+                instance.amount = 0
+                instance.amount_usd = 0
+                instance.save()
+        else:
             instance.save()
-            if self.is_service_delivery:
-                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
 
         return instance
 
