@@ -53,6 +53,17 @@ class ProgramApplicationStatus(models.TextChoices):
     DECLINED = "declined", _("Declined")
 
 
+# Ranked least to most advanced. Every status above must appear here; a workspace merge keeps the most advanced
+# of two applications to the same program.
+APPLICATION_STATUS_PRECEDENCE = [
+    ProgramApplicationStatus.REJECTED,
+    ProgramApplicationStatus.DECLINED,
+    ProgramApplicationStatus.INVITED,
+    ProgramApplicationStatus.APPLIED,
+    ProgramApplicationStatus.ACCEPTED,
+]
+
+
 class ProgramApplication(BaseModel):
     program_application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     program = models.ForeignKey(Program, on_delete=models.CASCADE)
@@ -62,3 +73,11 @@ class ProgramApplication(BaseModel):
         choices=ProgramApplicationStatus.choices,
         default=ProgramApplicationStatus.INVITED,
     )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["program", "organization"],
+                name="unique_program_application_per_organization",
+            )
+        ]
