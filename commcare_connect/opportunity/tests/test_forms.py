@@ -9,7 +9,11 @@ from django.core.cache import cache
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
-from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import (
+    AUTOMATIC_VISIT_VERIFICATION,
+    ENABLE_PROGRAM_ACCESS_REDESIGN,
+    OPPORTUNITY_CREDENTIALS,
+)
 from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
@@ -22,12 +26,15 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     PaymentUnitForm,
+    supervising_organizations,
 )
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWork,
     CompletedWorkStatus,
     CredentialConfiguration,
+    OpportunityActiveEvent,
+    OpportunitySupervisingOrganizationEvent,
     PaymentUnit,
     TaskTypeModeChoices,
 )
@@ -44,9 +51,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     TaskTypeFactory,
 )
+from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.program.utils import opportunity_manage_org_ids
 from commcare_connect.users.models import UserCredential
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
+from commcare_connect.utils.test_utils import StubRequest, make_membership
 
 
 @pytest.fixture
@@ -1333,3 +1344,407 @@ class TestPaymentUnitFormBudgetValidation:
         assert form.is_valid() == expect_valid
         if not expect_valid:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
+
+
+@pytest.fixture
+def switch_enable_program_access_redesign_enabled():
+    cache.clear()
+    with override_switch(ENABLE_PROGRAM_ACCESS_REDESIGN, active=True):
+        yield
+    cache.clear()
+
+
+@pytest.mark.django_db
+class TestSupervisingOrganizations:
+    def test_includes_program_organization(self, opportunity):
+        assert opportunity.program.organization in supervising_organizations(opportunity.program)
+
+    def test_includes_funder(self, opportunity, funder_org):
+        program = opportunity.program
+        program.funder = funder_org
+        program.save()
+
+        assert funder_org in supervising_organizations(program)
+
+    def test_includes_accepted_applicant(self, opportunity):
+        applicant = OrganizationFactory()
+        ProgramApplicationFactory(
+            organization=applicant, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
+        )
+
+        assert applicant in supervising_organizations(opportunity.program)
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            ProgramApplicationStatus.INVITED,
+            ProgramApplicationStatus.APPLIED,
+            ProgramApplicationStatus.REJECTED,
+            ProgramApplicationStatus.DECLINED,
+        ],
+    )
+    def test_excludes_applicant_without_accepted_status(self, opportunity, status):
+        applicant = OrganizationFactory()
+        ProgramApplicationFactory(organization=applicant, program=opportunity.program, status=status)
+
+        assert applicant not in supervising_organizations(opportunity.program)
+
+    def test_excludes_unrelated_organization(self, opportunity):
+        assert OrganizationFactory() not in supervising_organizations(opportunity.program)
+
+    def test_program_without_funder_does_not_error(self, opportunity):
+        program = opportunity.program
+        program.funder = None
+        program.save()
+
+        assert program.organization in supervising_organizations(program)
+
+    def test_results_are_distinct(self, opportunity):
+        applicant = OrganizationFactory()
+        for _unused in range(2):
+            ProgramApplicationFactory(
+                organization=applicant, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
+            )
+
+        ids = [org.id for org in supervising_organizations(opportunity.program)]
+
+        assert len(ids) == len(set(ids))
+
+
+class SupervisingOrganizationFormTestBase:
+    """Shared form-data builders for the supervising organization tests."""
+
+    @pytest.fixture(autouse=True)
+    def program_application(self, opportunity):
+        return ProgramApplicationFactory(
+            organization=opportunity.organization,
+            program=opportunity.program,
+            status=ProgramApplicationStatus.ACCEPTED,
+        )
+
+    def _form_data(self, opportunity, include_locked_fields=True, **overrides):
+        """Build a valid payload.
+
+        `include_locked_fields` must be False once Connect Workers have joined: the form
+        rejects submissions that carry the app and HQ fields it has locked.
+        """
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+        data = {
+            "name": "Brand new opportunity",
+            "description": "Description",
+            "short_description": "Short",
+            "learn_app_description": "Learn description",
+            "learn_app_passing_score": 70,
+            "organization": opportunity.organization.pk,
+        }
+        if include_locked_fields:
+            data.update(
+                {
+                    "hq_server": opportunity.hq_server.id,
+                    "api_key": str(opportunity.api_key.id),
+                    "learn_app_domain": learn_app.cc_domain,
+                    "learn_app": json.dumps({"id": learn_app.cc_app_id, "name": learn_app.name}),
+                    "deliver_app_domain": deliver_app.cc_domain,
+                    "deliver_app": json.dumps({"id": deliver_app.cc_app_id, "name": deliver_app.name}),
+                }
+            )
+        data.update(overrides)
+        return data
+
+    def _create_form(self, opportunity, **overrides):
+        return OpportunityInitForm(
+            data=self._form_data(opportunity, **overrides),
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+    def _update_form(self, opportunity, include_locked_fields=True, **overrides):
+        return OpportunityInitUpdateForm(
+            data=self._form_data(
+                opportunity,
+                include_locked_fields=include_locked_fields,
+                name=opportunity.name,
+                **overrides,
+            ),
+            instance=opportunity,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestSupervisingOrganizationEnabled(SupervisingOrganizationFormTestBase):
+    def test_initial_is_program_organization_on_create(self, opportunity):
+        form = OpportunityInitForm(
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+        assert "supervising_organization" in form.fields
+        assert form.fields["supervising_organization"].initial == opportunity.program.organization
+
+    def test_ineligible_organization_is_rejected(self, opportunity):
+        form = self._create_form(opportunity, supervising_organization=OrganizationFactory().pk)
+
+        assert not form.is_valid()
+        assert "supervising_organization" in form.errors
+
+    def test_supervisor_does_not_replace_the_delivering_organization(self, opportunity):
+        form = self._create_form(opportunity, supervising_organization=opportunity.program.organization_id)
+
+        assert form.is_valid(), form.errors
+        new_opportunity = form.save()
+
+        assert new_opportunity.organization == opportunity.organization
+        assert new_opportunity.supervising_organization == opportunity.program.organization
+
+    def test_delivering_organization_may_also_supervise(self, opportunity):
+        form = self._create_form(opportunity, supervising_organization=opportunity.organization.pk)
+
+        assert form.is_valid(), form.errors
+        new_opportunity = form.save()
+
+        assert new_opportunity.organization == opportunity.organization
+        assert new_opportunity.supervising_organization == opportunity.organization
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestSupervisingOrganizationOnEdit(SupervisingOrganizationFormTestBase):
+    def test_initial_is_current_supervisor(self, opportunity):
+        opportunity.supervising_organization = opportunity.organization
+        opportunity.save()
+
+        form = OpportunityInitUpdateForm(
+            instance=opportunity,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+        assert form.fields["supervising_organization"].initial == opportunity.organization
+
+    def test_changing_supervisor_moves_oversight(self, opportunity):
+        previous = OrganizationFactory()
+        ProgramApplicationFactory(
+            organization=previous, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
+        )
+        opportunity.supervising_organization = previous
+        opportunity.save()
+
+        form = self._update_form(opportunity, supervising_organization=opportunity.organization.pk)
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == opportunity.organization
+        assert opportunity.organization.id in opportunity_manage_org_ids(updated)
+        assert previous.id not in opportunity_manage_org_ids(updated)
+
+    def test_remains_editable_after_workers_have_joined(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+
+        form = self._update_form(
+            opportunity,
+            include_locked_fields=False,
+            supervising_organization=opportunity.organization.pk,
+        )
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == opportunity.organization
+
+    def test_stale_supervisor_must_be_reassigned(self, opportunity):
+        """An org that loses its accepted application stops being a valid supervisor.
+
+        The delivering organization keeps its own application, so only the supervising
+        organization field is affected.
+        """
+        stale_supervisor = OrganizationFactory()
+        application = ProgramApplicationFactory(
+            organization=stale_supervisor,
+            program=opportunity.program,
+            status=ProgramApplicationStatus.ACCEPTED,
+        )
+        opportunity.supervising_organization = stale_supervisor
+        opportunity.save()
+        application.status = ProgramApplicationStatus.REJECTED
+        application.save()
+
+        stale_form = self._update_form(opportunity, supervising_organization=stale_supervisor.pk)
+
+        assert not stale_form.is_valid()
+        assert "supervising_organization" in stale_form.errors
+
+        fixed_form = self._update_form(opportunity, supervising_organization=opportunity.program.organization_id)
+
+        assert fixed_form.is_valid(), fixed_form.errors
+
+
+@pytest.mark.django_db
+class TestSupervisingOrganizationDisabled(SupervisingOrganizationFormTestBase):
+    @pytest.fixture(autouse=True)
+    def clear_switch_cache(self):
+        cache.clear()
+
+    def test_field_is_absent_on_create(self, opportunity):
+        form = OpportunityInitForm(
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+        assert "supervising_organization" not in form.fields
+
+    def test_field_is_absent_on_edit(self, opportunity):
+        form = OpportunityInitUpdateForm(
+            instance=opportunity,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+        assert "supervising_organization" not in form.fields
+
+    def test_posted_value_is_ignored_on_create(self, opportunity):
+        form = self._create_form(opportunity, supervising_organization=OrganizationFactory().pk)
+
+        assert form.is_valid(), form.errors
+
+        assert form.save().supervising_organization == opportunity.program.organization
+
+    def test_existing_supervisor_is_unchanged_on_edit(self, opportunity):
+        opportunity.supervising_organization = opportunity.organization
+        opportunity.save()
+
+        form = self._update_form(opportunity, supervising_organization=OrganizationFactory().pk)
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == opportunity.organization
+
+
+@pytest.mark.django_db
+class TestSupervisingOrganizationAudit:
+    """Installed as database triggers, so changes are recorded regardless of the switch."""
+
+    def test_assignment_and_change_are_recorded(self, opportunity):
+        new_supervisor = OrganizationFactory()
+        original = opportunity.supervising_organization
+        opportunity.supervising_organization = new_supervisor
+        opportunity.save()
+
+        events = OpportunitySupervisingOrganizationEvent.objects.filter(pgh_obj=opportunity).order_by("pgh_id")
+
+        assert [event.supervising_organization_id for event in events] == [original.id, new_supervisor.id]
+
+    def test_unrelated_edit_records_nothing(self, opportunity):
+        starting_count = OpportunitySupervisingOrganizationEvent.objects.filter(pgh_obj=opportunity).count()
+
+        opportunity.name = "Renamed opportunity"
+        opportunity.save()
+
+        assert OpportunitySupervisingOrganizationEvent.objects.filter(pgh_obj=opportunity).count() == starting_count
+
+    def test_existing_active_history_is_unaffected(self, opportunity):
+        """The separate tracker must not disturb OpportunityActiveEvent."""
+        opportunity.active = not opportunity.active
+        opportunity.save()
+
+        assert OpportunityActiveEvent.objects.filter(pgh_obj=opportunity).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestSupervisingOrganizationOnChangeForm:
+    """OpportunityChangeForm is the Edit page a program manager actually reaches.
+
+    It is guarded only by org membership, so the field must be withheld from the
+    delivering organization to keep it from reassigning oversight of its own opportunity.
+    """
+
+    @pytest.fixture
+    def managed_opportunity(self, opportunity):
+        opportunity.managed = True
+        opportunity.save()
+        ProgramApplicationFactory(
+            organization=opportunity.organization,
+            program=opportunity.program,
+            status=ProgramApplicationStatus.ACCEPTED,
+        )
+        return opportunity
+
+    def _request_for(self, org, role=UserOrganizationMembership.Role.ADMIN):
+        user = UserFactory()
+        return StubRequest(user=user, org=org, membership=make_membership(org, user, role))
+
+    def _form(self, opportunity, request, **overrides):
+        data = {
+            "name": opportunity.name,
+            "description": "Updated description",
+            "short_description": "Updated short",
+            "active": True,
+            "currency": opportunity.currency.code,
+            "country": opportunity.country,
+            "is_test": opportunity.is_test,
+            "delivery_type": opportunity.delivery_type_id,
+            "supervising_organization": opportunity.supervising_organization_id,
+        }
+        data.update(overrides)
+        return OpportunityChangeForm(data=data, instance=opportunity, request=request)
+
+    def test_program_manager_can_reassign(self, managed_opportunity):
+        request = self._request_for(managed_opportunity.program.organization)
+
+        form = self._form(
+            managed_opportunity,
+            request,
+            supervising_organization=managed_opportunity.organization.pk,
+        )
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == managed_opportunity.organization
+
+    def test_delivering_organization_cannot_see_or_set_it(self, managed_opportunity):
+        original = managed_opportunity.supervising_organization
+        request = self._request_for(managed_opportunity.organization)
+
+        form = self._form(
+            managed_opportunity,
+            request,
+            supervising_organization=managed_opportunity.organization.pk,
+        )
+
+        assert "supervising_organization" not in form.fields
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == original
+
+    def test_absent_for_unmanaged_opportunity(self, opportunity):
+        opportunity.managed = False
+        opportunity.save()
+        request = self._request_for(opportunity.program.organization)
+
+        form = OpportunityChangeForm(instance=opportunity, request=request)
+
+        assert "supervising_organization" not in form.fields
+
+    def test_absent_without_a_request(self, managed_opportunity):
+        form = OpportunityChangeForm(instance=managed_opportunity)
+
+        assert "supervising_organization" not in form.fields
