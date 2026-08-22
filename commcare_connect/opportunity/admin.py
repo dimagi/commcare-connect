@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunitySupervisingOrganizationEvent,
     Payment,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,
@@ -28,6 +29,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
 )
 from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_units
+from commcare_connect.utils.admin import AuditEventAdmin, audited_object
 
 # Register your models here.
 
@@ -212,3 +214,28 @@ class TaskTypeAdmin(admin.ModelAdmin):
 class AssignedTaskAdmin(admin.ModelAdmin):
     list_display = ["task_type", "opportunity_access", "status", "completed_at"]
     search_fields = ["task_type__name", "opportunity_access__user__username"]
+
+
+@admin.register(OpportunitySupervisingOrganizationEvent)
+class OpportunitySupervisingOrganizationEventAdmin(AuditEventAdmin):
+    list_display = ("pgh_created_at", "opportunity", "supervising_organization", "pgh_label", "changed_by")
+    list_filter = (
+        "pgh_label",
+        ("supervising_organization", admin.RelatedOnlyFieldListFilter),
+        ("pgh_obj__program", admin.RelatedOnlyFieldListFilter),
+    )
+    search_fields = ("pgh_obj__name", "supervising_organization__name")
+    fields = (
+        "pgh_created_at",
+        "opportunity",
+        "supervising_organization",
+        "pgh_label",
+        "changed_by",
+        "changed_by_email",
+    )
+    readonly_fields = fields
+
+    opportunity = audited_object("pgh_obj", "Opportunity")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("pgh_obj", "supervising_organization")
