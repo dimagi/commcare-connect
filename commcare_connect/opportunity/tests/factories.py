@@ -301,6 +301,24 @@ class ExchangeRateFactory(DjangoModelFactory):
         model = "opportunity.ExchangeRate"
 
 
+class CompletedWorkInvoiceFactory(DjangoModelFactory):
+    invoice = SubFactory(PaymentInvoiceFactory)
+    completed_work = SubFactory(
+        CompletedWorkFactory,
+        opportunity_access__opportunity=SelfAttribute("...invoice.opportunity"),
+    )
+    month = LazyFunction(lambda: date.today().replace(day=1))
+    billed_count = 1
+    flw_amount_local = 0
+    flw_amount_usd = 0
+    org_amount_local = 0
+    org_amount_usd = 0
+    exchange_rate = SubFactory(ExchangeRateFactory)
+
+    class Meta:
+        model = "opportunity.CompletedWorkInvoice"
+
+
 class CredentialConfigurationFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
 
