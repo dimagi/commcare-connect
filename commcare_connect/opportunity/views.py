@@ -1354,7 +1354,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             if fj_form.is_valid() and fj_form.cleaned_data != {}:
                 fj_form.instance.opportunity = request.opportunity
                 fj_form.save()
-        messages.success(request, "Verification flags saved successfully.")
+        messages.success(request, "Verification rules saved successfully.")
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
@@ -1363,9 +1363,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
         },
         {
-            "title": _("Verification Rules Configuration")
-            if request.opportunity.automatic_visit_verification
-            else _("Verification Flags Configuration"),
+            "title": _("Verification Rules Configuration"),
             "url": request.path,
         },
     ]
