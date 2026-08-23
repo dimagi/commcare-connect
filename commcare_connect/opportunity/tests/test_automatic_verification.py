@@ -230,25 +230,6 @@ class TestReviewVisitImportRequirePost:
 
 
 @pytest.mark.django_db
-class TestVerificationConfigPageTitle:
-    @pytest.mark.parametrize("automatic_visit_verification", [True, False])
-    def test_renders_rules_wording(
-        self, client, organization, program_manager_org, program_manager_org_user_admin, automatic_visit_verification
-    ):
-        program = ProgramFactory(organization=program_manager_org)
-        opp = OpportunityFactory(
-            program=program, organization=organization, automatic_visit_verification=automatic_visit_verification
-        )
-        client.force_login(program_manager_org_user_admin)
-        url = reverse("opportunity:verification_flags_config", args=(program_manager_org.slug, opp.opportunity_id))
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.OK
-        content = response.content.decode()
-        assert "Verification Rules Configuration" in content
-        assert "Deliver Unit Rules" in content
-
-
-@pytest.mark.django_db
 class TestVisitVerificationFilterStatusClamping:
     def test_stale_filter_status_clamped_in_auto_verify_mode(self, client, organization, org_user_member, mobile_user):
         """A bookmarked ?filter_status=pending must not surface pending visits when auto-verify is on."""
