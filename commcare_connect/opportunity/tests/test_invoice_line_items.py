@@ -13,6 +13,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
+    CompletedWorkInvoiceFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
     PaymentInvoiceFactory,
@@ -30,6 +31,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
     group_line_items,
+    rollback_invoice_line_items,
 )
 from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
 
@@ -63,7 +65,7 @@ def completed_work(
     approved_on=JAN_APPROVAL,
     status=CompletedWorkStatus.approved,
 ):
-    return CompletedWorkFactory(
+    work = CompletedWorkFactory(
         opportunity_access=access,
         payment_unit=payment_unit,
         status=status,
@@ -71,6 +73,34 @@ def completed_work(
         invoiced_approved_count=invoiced,
         status_modified_date=approved_on,
     )
+    if invoiced:
+        CompletedWorkInvoiceFactory(
+            invoice__opportunity=access.opportunity,
+            completed_work=work,
+            billed_count=invoiced,
+            month=get_month_start_date(approved_on),
+            is_delta=False,
+        )
+    return work
+
+
+def service_delivery_invoice(opportunity, start_date=JAN, end_date=FEB_END):
+    """An unsaved service delivery invoice. `bill_invoice` saves it, and only if there is a delta."""
+    return PaymentInvoiceFactory.build(
+        opportunity=opportunity,
+        service_delivery=True,
+        amount=0,
+        amount_usd=0,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+def billed_invoice(opportunity, start_date=JAN, end_date=FEB_END):
+    """A service delivery invoice with its line items already frozen."""
+    invoice = service_delivery_invoice(opportunity, start_date, end_date)
+    bill_invoice(invoice, start_date=start_date, end_date=end_date)
+    return invoice
 
 
 class TestMoney:
@@ -229,35 +259,24 @@ class TestLineItemGrouping:
 
 @pytest.mark.django_db
 class TestCreateInvoiceLineItems:
-    def _invoice(self, opportunity, start_date=JAN, end_date=FEB_END):
-        return PaymentInvoiceFactory.build(
-            opportunity=opportunity,
-            service_delivery=True,
-            amount=0,
-            amount_usd=0,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
     @pytest.mark.parametrize(
-        "approved, invoiced, expected_month",
+        "approved, invoiced, expected_month, expected_delta",
         [
-            pytest.param(2, 0, JAN, id="first-billing"),
-            pytest.param(3, 1, FEB, id="late-delta"),
+            pytest.param(2, 0, JAN, False, id="first-billing"),
+            pytest.param(3, 1, FEB, True, id="late-delta"),
         ],
     )
     def test_snapshots_the_delta_and_advances_the_invoiced_count(
-        self, billing_setup, approved, invoiced, expected_month
+        self, billing_setup, approved, invoiced, expected_month, expected_delta
     ):
         access, payment_unit = billing_setup
         work = completed_work(access, payment_unit, approved=approved, invoiced=invoiced)
-        invoice = self._invoice(access.opportunity)
-
-        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+        invoice = billed_invoice(access.opportunity)
 
         row = CompletedWorkInvoice.objects.get(invoice=invoice, completed_work=work)
         assert row.billed_count == 2  # both cases have two unbilled units
         assert row.month == expected_month
+        assert row.is_delta is expected_delta
         assert row.flw_amount_local == Decimal("200")
         assert row.flw_amount_usd == Decimal("200")
         assert row.org_amount_local == Decimal("40")
@@ -287,9 +306,7 @@ class TestCreateInvoiceLineItems:
             ExchangeRateFactory(currency_code=currency_code, rate=rate, rate_date=date(2020, 1, 1))
         for _ in range(work_count):
             completed_work(access, payment_unit)
-        invoice = self._invoice(access.opportunity)
-
-        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+        invoice = billed_invoice(access.opportunity)
 
         invoice.refresh_from_db()
         assert invoice.amount == expected_local  # local amounts never round
@@ -307,9 +324,7 @@ class TestCreateInvoiceLineItems:
         months that happened to be billable."""
         access, payment_unit = billing_setup
         completed_work(access, payment_unit, approved_on=FEB_APPROVAL)
-        invoice = self._invoice(access.opportunity, start_date=JAN, end_date=FEB_END)
-
-        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+        invoice = billed_invoice(access.opportunity, JAN, FEB_END)
 
         invoice.refresh_from_db()
         assert invoice.start_date == JAN
@@ -319,13 +334,14 @@ class TestCreateInvoiceLineItems:
     def test_nothing_billable_writes_no_invoice_at_all(self, billing_setup):
         access, payment_unit = billing_setup
         completed_work(access, payment_unit, approved=1, invoiced=1)  # fully billed
-        invoice = self._invoice(access.opportunity)
+        invoice = service_delivery_invoice(access.opportunity)
+        # Only what the earlier billing left behind; this call must add nothing to either table.
+        before = (PaymentInvoice.objects.count(), CompletedWorkInvoice.objects.count())
 
         assert bill_invoice(invoice, start_date=JAN, end_date=FEB_END) == []
 
         assert invoice.pk is None
-        assert not PaymentInvoice.objects.filter(opportunity=access.opportunity).exists()
-        assert not CompletedWorkInvoice.objects.exists()
+        assert (PaymentInvoice.objects.count(), CompletedWorkInvoice.objects.count()) == before
 
     @pytest.mark.parametrize(
         "second_window, expected_month",
@@ -341,15 +357,13 @@ class TestCreateInvoiceLineItems:
         attributed to that invoice's month, and leaves the first invoice untouched."""
         access, payment_unit = billing_setup
         work = completed_work(access, payment_unit)
-        january = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
-        bill_invoice(january, start_date=JAN, end_date=JAN_END)
+        january = billed_invoice(access.opportunity, JAN, JAN_END)
 
         work.saved_approved_count = 2
         work.save(update_fields=["saved_approved_count"])
 
         start_date, end_date = second_window
-        later = self._invoice(access.opportunity, start_date=start_date, end_date=end_date)
-        bill_invoice(later, start_date=start_date, end_date=end_date)
+        later = billed_invoice(access.opportunity, start_date, end_date)
 
         january.refresh_from_db()
         later.refresh_from_db()
@@ -364,6 +378,96 @@ class TestCreateInvoiceLineItems:
 
 
 @pytest.mark.django_db
+class TestRollbackInvoiceLineItems:
+    def test_deletes_the_rows_and_reopens_the_work(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit, approved=2)
+        invoice = billed_invoice(access.opportunity)
+
+        rollback_invoice_line_items(invoice)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 0
+        assert not invoice.work_items.exists()
+        assert list(get_billable_completed_works_qs(access.opportunity, JAN, FEB_END)) == [work]
+
+    def test_cancelling_one_of_two_covering_invoices_rolls_back_only_its_portion(self, billing_setup):
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit)
+        january = billed_invoice(access.opportunity, JAN, JAN_END)
+        work.saved_approved_count = 3
+        work.save(update_fields=["saved_approved_count"])
+        february = billed_invoice(access.opportunity, FEB, FEB_END)
+
+        rollback_invoice_line_items(february)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 1  # January's billing survives
+        assert january.work_items.count() == 1
+        assert not february.work_items.exists()
+
+    def test_rollback_is_a_no_op_for_an_invoice_with_no_rows(self, billing_setup):
+        access, _ = billing_setup
+        invoice = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, end_date=FEB_END)
+
+        rollback_invoice_line_items(invoice)  # must not raise
+
+        assert not invoice.work_items.exists()
+
+
+@pytest.mark.django_db
+class TestCancelledFirstBilling:
+    @pytest.fixture
+    def cancelled_first_billing(self, billing_setup):
+        """January first-bills one unit, February bills a late duplicate,
+        then January is cancelled. One unit is billable again and `invoiced` sits at 1, not 0."""
+        access, payment_unit = billing_setup
+        work = completed_work(access, payment_unit, approved=1, approved_on=JAN_APPROVAL)
+        january = billed_invoice(access.opportunity, JAN, JAN_END)
+        work.saved_approved_count = 2
+        work.save(update_fields=["saved_approved_count"])
+        february = billed_invoice(access.opportunity, FEB, FEB_END)
+
+        rollback_invoice_line_items(january)
+
+        work.refresh_from_db()
+        assert work.invoiced_approved_count == 1  # February's billing still counts
+        assert [row.is_delta for row in february.work_items.all()] == [True]
+        return access, work
+
+    @pytest.mark.parametrize(
+        "window, billable",
+        [
+            # Re-issuing the cancelled period picks the unit back up...
+            pytest.param((JAN, JAN_END), True, id="reissued-same-period"),
+            # ...but a window that does not cover January defers it, the same as any work still
+            # awaiting a first billing. Automated invoicing self-heals this via its start date.
+            pytest.param((MAR, MAR_END), False, id="later-custom-window-defers-it"),
+        ],
+    )
+    def test_selection_windows_the_work_again(self, cancelled_first_billing, window, billable):
+        access, work = cancelled_first_billing
+
+        qs = get_billable_completed_works_qs(access.opportunity, *window)
+
+        assert list(qs) == ([work] if billable else [])
+
+    def test_rebilling_attributes_it_to_its_approval_month(self, cancelled_first_billing):
+        access, _ = cancelled_first_billing
+        reissued = billed_invoice(access.opportunity, JAN, MAR_END)
+
+        row = reissued.work_items.get()
+        assert row.billed_count == 1
+        assert row.month == JAN  # its approval month
+        assert row.is_delta is False
+
+    def test_start_date_reaches_back_to_the_approval_month(self, cancelled_first_billing):
+        access, _ = cancelled_first_billing
+
+        assert get_start_date_for_invoice(access.opportunity) == JAN
+
+
+@pytest.mark.django_db
 class TestInvoicedLineItems:
     def test_reads_frozen_rows_grouped_by_payment_unit_and_month(self, billing_setup):
         access, payment_unit = billing_setup
@@ -371,15 +475,7 @@ class TestInvoicedLineItems:
         completed_work(access, payment_unit)
         completed_work(access, payment_unit)
         completed_work(access, other_unit)
-        invoice = PaymentInvoiceFactory(
-            opportunity=access.opportunity,
-            service_delivery=True,
-            amount=0,
-            amount_usd=0,
-            start_date=JAN,
-            end_date=FEB_END,
-        )
-        bill_invoice(invoice, start_date=JAN, end_date=FEB_END)
+        invoice = billed_invoice(access.opportunity, JAN, FEB_END)
 
         items = get_invoice_line_items(invoice)
 
@@ -401,15 +497,7 @@ class TestInvoicedLineItems:
         """The drift acceptance case: recomputing saved_* after issue must not move the line items."""
         access, payment_unit = billing_setup
         work = completed_work(access, payment_unit)
-        invoice = PaymentInvoiceFactory(
-            opportunity=access.opportunity,
-            service_delivery=True,
-            amount=0,
-            amount_usd=0,
-            start_date=JAN,
-            end_date=JAN_END,
-        )
-        bill_invoice(invoice, start_date=JAN, end_date=JAN_END)
+        invoice = billed_invoice(access.opportunity, JAN, JAN_END)
 
         work.saved_approved_count = 5
         work.saved_payment_accrued = 500
@@ -449,6 +537,7 @@ class TestWorkPayRowReaders:
         assert row.completed_work == work
         assert row.billed_count == 2  # the unbilled delta, not saved_approved_count
         assert row.month == FEB  # a late delta bills under the invoice's month
+        assert row.is_delta is True
         assert row.flw_pay.local == Decimal("200")
         assert row.org_pay.local == Decimal("40")
         assert row.total_pay.local == Decimal("240")
@@ -460,8 +549,7 @@ class TestWorkPayRowReaders:
         preview shows what is still owed."""
         access, payment_unit = billing_setup
         work = completed_work(access, payment_unit, status=CompletedWorkStatus.approved, approved=1, invoiced=0)
-        invoice = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
-        bill_invoice(invoice, start_date=JAN, end_date=JAN_END)
+        invoice = billed_invoice(access.opportunity, JAN, JAN_END)
 
         work.saved_approved_count = 3
         work.save(update_fields=["saved_approved_count"])
@@ -477,20 +565,20 @@ class TestWorkPayRowReaders:
     def test_a_month_mixes_first_billings_and_deltas(self, billing_setup):
         access, payment_unit = billing_setup
         late = completed_work(access, payment_unit, approved_on=JAN_APPROVAL, approved=1, invoiced=0)
-        january = self._invoice(access.opportunity, start_date=JAN, end_date=JAN_END)
-        bill_invoice(january, start_date=JAN, end_date=JAN_END)
+        billed_invoice(access.opportunity, JAN, JAN_END)
         late.saved_approved_count = 2
         late.save(update_fields=["saved_approved_count"])
         fresh = completed_work(access, payment_unit, approved_on=FEB_APPROVAL)
 
-        february = self._invoice(access.opportunity, start_date=FEB, end_date=FEB_END)
-        bill_invoice(february, start_date=FEB, end_date=FEB_END)
+        february = billed_invoice(access.opportunity, FEB, FEB_END)
 
         rows = {row.completed_work: row for row in get_invoice_delivery_rows_for_export(february)}
 
         assert {row.month for row in rows.values()} == {FEB}
         assert rows[late].billed_count == 1
+        assert rows[late].is_delta is True
         assert rows[fresh].billed_count == 1
+        assert rows[fresh].is_delta is False
 
 
 @pytest.mark.django_db
@@ -638,3 +726,17 @@ class TestBillableLineItemsAcrossMonths:
         assert item.total_pay.local == total_local
         assert item.exchange_rate == expected_rate
         assert item.total_pay.usd == (total_local / expected_rate).quantize(CENTS, rounding=ROUND_HALF_EVEN)
+
+
+@pytest.mark.django_db
+def test_invoicing_never_writes_the_legacy_invoice_fk(billing_setup):
+    """The FK column stays for rollback/old pods but is write-dead; it is dropped in a later release."""
+    access, payment_unit = billing_setup
+    work = completed_work(access, payment_unit)
+    invoice = billed_invoice(access.opportunity, JAN, FEB_END)
+    work.refresh_from_db()
+    assert work.invoice_id is None
+
+    rollback_invoice_line_items(invoice)
+    work.refresh_from_db()
+    assert work.invoice_id is None

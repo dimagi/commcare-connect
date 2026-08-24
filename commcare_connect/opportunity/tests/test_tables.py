@@ -86,6 +86,7 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
         flw_pay=Money(Decimal("40"), Decimal("4")),
         org_pay=Money(Decimal("10"), Decimal("1")),
         exchange_rate=ExchangeRate(rate=Decimal("10")),
+        is_delta=True,
     )
     table = InvoiceDeliveriesTable("KES", [delivery], show_org=True)
 
@@ -97,7 +98,6 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
     assert row["Org Pay (KES)"] == 10
     assert row["Total Pay (KES)"] == 50  # 40 + 10
     assert row["Total Pay (USD)"] == 5  # 4 + 1
-    assert row["Billing Month"] == datetime.date(2026, 1, 1)
 
 
 def _make_table(opportunity, per_page=25):

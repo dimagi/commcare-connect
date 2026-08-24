@@ -52,6 +52,7 @@ from commcare_connect.opportunity.tests.factories import (
     AudioAttachmentFactory,
     BlobMetaFactory,
     CompletedWorkFactory,
+    CompletedWorkInvoiceFactory,
     DeliverUnitFactory,
     FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
@@ -1622,6 +1623,23 @@ def _invoice_review_url(org, opportunity, invoice):
 
 @pytest.mark.django_db
 class TestInvoiceUpdateStatus:
+    def _billed_works(self, opportunity, invoice, count=2):
+        """`count` works whose only billing is this invoice, as invoicing would leave them."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        works = [
+            CompletedWorkFactory(
+                opportunity_access=access,
+                payment_unit=payment_unit,
+                saved_approved_count=1,
+                invoiced_approved_count=1,
+            )
+            for _ in range(count)
+        ]
+        for work in works:
+            CompletedWorkInvoiceFactory(invoice=invoice, completed_work=work, billed_count=1)
+        return works
+
     @pytest.fixture
     def nm_organization(self):
         return OrgWithUsersFactory()
@@ -1684,10 +1702,7 @@ class TestInvoiceUpdateStatus:
             nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-002"
         )
 
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        payment_unit = PaymentUnitFactory(opportunity=opportunity)
-        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
-        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_1, completed_work_2 = self._billed_works(opportunity, invoice)
 
         client.force_login(nm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
@@ -1707,13 +1722,15 @@ class TestInvoiceUpdateStatus:
 
         completed_work_1.refresh_from_db()
         completed_work_2.refresh_from_db()
-        assert completed_work_1.invoice is None
-        assert completed_work_2.invoice is None
+        assert completed_work_1.invoiced_approved_count == 0
+        assert completed_work_2.invoiced_approved_count == 0
+        assert not invoice.work_items.exists()
 
     def test_pm_approve_for_payment_success(self, client, nm_organization, pm_organization, pm_user_admin):
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-001"
         )
+        (completed_work,) = self._billed_works(opportunity, invoice, count=1)
 
         client.force_login(pm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
@@ -1730,15 +1747,16 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.READY_TO_PAY
         assert invoice.description == "Approved for payment"
+        # Only cancel and reject release line items; approving must leave the billing frozen.
+        completed_work.refresh_from_db()
+        assert completed_work.invoiced_approved_count == 1
+        assert invoice.work_items.count() == 1
 
     def test_pm_reject_invoice_success(self, client, nm_organization, pm_organization, pm_user_admin):
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-002"
         )
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        payment_unit = PaymentUnitFactory(opportunity=opportunity)
-        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
-        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_1, completed_work_2 = self._billed_works(opportunity, invoice)
 
         client.force_login(pm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
@@ -1758,8 +1776,9 @@ class TestInvoiceUpdateStatus:
 
         completed_work_1.refresh_from_db()
         completed_work_2.refresh_from_db()
-        assert completed_work_1.invoice is None
-        assert completed_work_2.invoice is None
+        assert completed_work_1.invoiced_approved_count == 0
+        assert completed_work_2.invoiced_approved_count == 0
+        assert not invoice.work_items.exists()
 
     def test_invalid_status_transition(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(
