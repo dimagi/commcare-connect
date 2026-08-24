@@ -496,7 +496,15 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
         # 10.0 in Python, not the "intuitive" 9.999...), silently overstating the deliveries cap.
         workers_cap = int(opportunity.number_of_users)
 
+        # A plain theme name, not a resolved set of classes/colors -- the four
+        # .opp-header--<theme> rule sets in tailwind.css decide how each one looks.
+        if opportunity.is_test:
+            theme = "inactive-test" if not opportunity.is_active else "active-test"
+        else:
+            theme = "inactive" if not opportunity.is_active else "active"
+
         return {
+            "theme": theme,
             "ended_date": opportunity.end_date if opportunity.has_ended else None,
             "resources": [
                 {

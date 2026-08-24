@@ -859,88 +859,31 @@ select:disabled,
 }
 
 /*--- Opportunity header -------------------------
-   State lives on the root `.opp-header` element as plain modifier classes
-   (`--test`, `--inactive`) driven straight from the raw `is_test`/`is_active`
-   data; every themed descendant just reads the CSS variables that modifier
-   sets, so the template/CSS decide how to render rather than being handed a
-   pre-resolved theme object. ------------------------- */
+   Four self-contained theme classes -- .opp-header--active/--inactive (live
+   surface) and .opp-header--active-test/--inactive-test (Test surface) --
+   picked by a single string the view computes from is_test/is_active
+   (OpportunityDashboard.get_header_context). Each themed descendant's color
+   for a given theme is one direct rule away (`.opp-header--<theme>
+   .opp-header-<part> { color: ... }`), not a variable lookup chain; rules
+   shared by more than one theme are simply grouped with a comma selector.
+   ------------------------- */
 @layer components {
   .opp-header {
-    --opp-hero-bg: var(--color-brand-deep-purple);
-    --opp-hero-border: transparent;
-    --opp-accent: var(--color-brand-sky);
-    --opp-title: #fff;
-    --opp-description: rgb(255 255 255 / 72%);
-    --opp-well-bg: rgb(0 0 0 / 20%);
-    --opp-divider: rgb(255 255 255 / 20%);
-    --opp-track-bg: rgb(255 255 255 / 18%);
-    --opp-value: #fff;
-    --opp-subvalue: rgb(255 255 255 / 55%);
-    --opp-counter-bg: rgb(255 255 255 / 10%);
-    --opp-counter-border: rgb(255 255 255 / 22%);
-    --opp-counter-text: #fff;
-    --opp-counter-icon: var(--color-brand-sky);
-    --opp-btn-border: rgb(255 255 255 / 28%);
-    --opp-btn-bg: rgb(255 255 255 / 8%);
-    --opp-btn-text: #fff;
-    --opp-btn-hover-bg: rgb(255 255 255 / 20%);
-    --opp-bar-fill: var(--color-brand-sky);
-    --opp-bar-fill-budget: var(--color-brand-marigold);
-    --opp-ended-note: rgb(255 255 255 / 50%);
-
     @apply relative overflow-hidden rounded-xl;
-    background: var(--opp-hero-bg);
-    border: 1px solid var(--opp-hero-border);
   }
 
-  .opp-header--test {
-    --opp-hero-border: var(--color-brand-border-light);
-    --opp-accent: var(--color-brand-indigo);
-    --opp-title: var(--color-brand-deep-purple);
-    --opp-description: #6b7280;
-    --opp-well-bg: #f8fafc;
-    --opp-divider: var(--color-brand-border-light);
-    --opp-track-bg: var(--color-brand-border-light);
-    --opp-value: var(--color-brand-deep-purple);
-    --opp-subvalue: var(--color-brand-blue-light);
-    --opp-counter-bg: var(--color-brand-indigo);
-    --opp-counter-border: var(--color-brand-indigo);
-    --opp-counter-text: #fff;
-    --opp-counter-icon: #fff;
-    --opp-btn-border: #9ca3af;
-    --opp-btn-bg: #f9fafb;
-    --opp-btn-text: var(--color-brand-deep-purple);
-    --opp-btn-hover-bg: #f1f5f9;
-    --opp-bar-fill: var(--color-brand-indigo);
-    --opp-ended-note: var(--color-brand-blue-light);
-    background: #fff;
-  }
-
+  .opp-header--active,
   .opp-header--inactive {
-    --opp-title: rgb(255 255 255 / 82%);
-    --opp-description: rgb(255 255 255 / 60%);
-    --opp-track-bg: rgb(255 255 255 / 16%);
-    --opp-value: rgb(255 255 255 / 85%);
-    --opp-subvalue: rgb(255 255 255 / 50%);
-    --opp-counter-bg: rgb(255 255 255 / 8%);
-    --opp-counter-border: rgb(255 255 255 / 18%);
-    --opp-counter-text: rgb(255 255 255 / 80%);
-    --opp-bar-fill: rgb(255 255 255 / 45%);
-    --opp-bar-fill-budget: rgb(255 255 255 / 45%);
+    background: var(--color-brand-deep-purple);
   }
 
-  .opp-header--test.opp-header--inactive {
-    --opp-accent: var(--color-brand-blue-light);
-    --opp-title: #6b7280;
-    --opp-description: var(--color-brand-blue-light);
-    --opp-well-bg: #f1f5f9;
-    --opp-value: #6b7280;
-    --opp-counter-bg: #e0e7ff;
-    --opp-counter-border: #e0e7ff;
-    --opp-counter-text: #4f46e5;
-    --opp-counter-icon: #4f46e5;
-    --opp-bar-fill: #cbd5e1;
-    --opp-bar-fill-budget: #cbd5e1;
+  .opp-header--active-test,
+  .opp-header--inactive-test {
+    background: #fff;
+    border: 1px solid var(--color-brand-border-light);
+  }
+
+  .opp-header--inactive-test {
     background: #f9fafb;
   }
 
@@ -949,28 +892,226 @@ select:disabled,
     background: rgb(0 0 0 / 18%);
   }
 
-  .opp-header--inactive:not(.opp-header--test) .opp-header-overlay {
+  .opp-header--inactive .opp-header-overlay {
     @apply block;
   }
 
-  .opp-header-accent {
-    color: var(--opp-accent);
+  .opp-header--active .opp-header-accent,
+  .opp-header--inactive .opp-header-accent {
+    color: var(--color-brand-sky);
   }
 
-  .opp-header-title {
-    color: var(--opp-title);
+  .opp-header--active-test .opp-header-accent {
+    color: var(--color-brand-indigo);
   }
 
-  .opp-header-description {
-    color: var(--opp-description);
+  .opp-header--inactive-test .opp-header-accent {
+    color: var(--color-brand-blue-light);
   }
 
-  .opp-header-well {
-    background: var(--opp-well-bg);
+  .opp-header--active .opp-header-title {
+    color: #fff;
   }
 
-  .opp-header-divider {
-    border-color: var(--opp-divider);
+  .opp-header--inactive .opp-header-title {
+    color: rgb(255 255 255 / 82%);
+  }
+
+  .opp-header--active-test .opp-header-title {
+    color: var(--color-brand-deep-purple);
+  }
+
+  .opp-header--inactive-test .opp-header-title {
+    color: #6b7280;
+  }
+
+  .opp-header--active .opp-header-description {
+    color: rgb(255 255 255 / 72%);
+  }
+
+  .opp-header--inactive .opp-header-description {
+    color: rgb(255 255 255 / 60%);
+  }
+
+  .opp-header--active-test .opp-header-description {
+    color: #6b7280;
+  }
+
+  .opp-header--inactive-test .opp-header-description {
+    color: var(--color-brand-blue-light);
+  }
+
+  .opp-header--active .opp-header-well,
+  .opp-header--inactive .opp-header-well {
+    background: rgb(0 0 0 / 20%);
+  }
+
+  .opp-header--active-test .opp-header-well {
+    background: #f8fafc;
+  }
+
+  .opp-header--inactive-test .opp-header-well {
+    background: #f1f5f9;
+  }
+
+  .opp-header--active .opp-header-divider,
+  .opp-header--inactive .opp-header-divider {
+    border-color: rgb(255 255 255 / 20%);
+  }
+
+  .opp-header--active-test .opp-header-divider,
+  .opp-header--inactive-test .opp-header-divider {
+    border-color: var(--color-brand-border-light);
+  }
+
+  .opp-header--active .opp-header-bar-track {
+    background: rgb(255 255 255 / 18%);
+  }
+
+  .opp-header--inactive .opp-header-bar-track {
+    background: rgb(255 255 255 / 16%);
+  }
+
+  .opp-header--active-test .opp-header-bar-track,
+  .opp-header--inactive-test .opp-header-bar-track {
+    background: var(--color-brand-border-light);
+  }
+
+  .opp-header--active .opp-header-metric-value {
+    color: #fff;
+  }
+
+  .opp-header--inactive .opp-header-metric-value {
+    color: rgb(255 255 255 / 85%);
+  }
+
+  .opp-header--active-test .opp-header-metric-value {
+    color: var(--color-brand-deep-purple);
+  }
+
+  .opp-header--inactive-test .opp-header-metric-value {
+    color: #6b7280;
+  }
+
+  .opp-header--active .opp-header-metric-subvalue {
+    color: rgb(255 255 255 / 55%);
+  }
+
+  .opp-header--inactive .opp-header-metric-subvalue {
+    color: rgb(255 255 255 / 50%);
+  }
+
+  .opp-header--active-test .opp-header-metric-subvalue,
+  .opp-header--inactive-test .opp-header-metric-subvalue {
+    color: var(--color-brand-blue-light);
+  }
+
+  .opp-header--active .opp-header-counter {
+    background: rgb(255 255 255 / 10%);
+    border-color: rgb(255 255 255 / 22%);
+    color: #fff;
+  }
+
+  .opp-header--inactive .opp-header-counter {
+    background: rgb(255 255 255 / 8%);
+    border-color: rgb(255 255 255 / 18%);
+    color: rgb(255 255 255 / 80%);
+  }
+
+  .opp-header--active-test .opp-header-counter {
+    background: var(--color-brand-indigo);
+    border-color: var(--color-brand-indigo);
+    color: #fff;
+  }
+
+  .opp-header--inactive-test .opp-header-counter {
+    background: #e0e7ff;
+    border-color: #e0e7ff;
+    color: #4f46e5;
+  }
+
+  .opp-header--active .opp-header-counter-icon,
+  .opp-header--inactive .opp-header-counter-icon {
+    color: var(--color-brand-sky);
+  }
+
+  .opp-header--active-test .opp-header-counter-icon {
+    color: #fff;
+  }
+
+  .opp-header--inactive-test .opp-header-counter-icon {
+    color: #4f46e5;
+  }
+
+  .opp-header--active .opp-header-action,
+  .opp-header--inactive .opp-header-action,
+  .opp-header--active .opp-header-action-icon,
+  .opp-header--inactive .opp-header-action-icon {
+    background: rgb(255 255 255 / 8%);
+    border-color: rgb(255 255 255 / 28%);
+    color: #fff;
+  }
+
+  .opp-header--active .opp-header-action:hover,
+  .opp-header--inactive .opp-header-action:hover,
+  .opp-header--active .opp-header-action-icon:hover,
+  .opp-header--inactive .opp-header-action-icon:hover {
+    background: rgb(255 255 255 / 20%);
+  }
+
+  .opp-header--active-test .opp-header-action,
+  .opp-header--inactive-test .opp-header-action,
+  .opp-header--active-test .opp-header-action-icon,
+  .opp-header--inactive-test .opp-header-action-icon {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    color: var(--color-brand-deep-purple);
+  }
+
+  .opp-header--active-test .opp-header-action:hover,
+  .opp-header--inactive-test .opp-header-action:hover,
+  .opp-header--active-test .opp-header-action-icon:hover,
+  .opp-header--inactive-test .opp-header-action-icon:hover {
+    background: #f1f5f9;
+  }
+
+  .opp-header--active .opp-header-bar-fill {
+    background: var(--color-brand-sky);
+  }
+
+  .opp-header--inactive .opp-header-bar-fill {
+    background: rgb(255 255 255 / 45%);
+  }
+
+  .opp-header--active-test .opp-header-bar-fill {
+    background: var(--color-brand-indigo);
+  }
+
+  .opp-header--inactive-test .opp-header-bar-fill {
+    background: #cbd5e1;
+  }
+
+  .opp-header--active .opp-header-bar-fill--budget,
+  .opp-header--active-test .opp-header-bar-fill--budget {
+    background: var(--color-brand-marigold);
+  }
+
+  .opp-header--inactive .opp-header-bar-fill--budget {
+    background: rgb(255 255 255 / 45%);
+  }
+
+  .opp-header--inactive-test .opp-header-bar-fill--budget {
+    background: #cbd5e1;
+  }
+
+  .opp-header--active .opp-header-ended-note,
+  .opp-header--inactive .opp-header-ended-note {
+    color: rgb(255 255 255 / 50%);
+  }
+
+  .opp-header--active-test .opp-header-ended-note,
+  .opp-header--inactive-test .opp-header-ended-note {
+    color: var(--color-brand-blue-light);
   }
 
   .opp-header-icon {
@@ -983,33 +1124,18 @@ select:disabled,
 
   .opp-header-action {
     @apply inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-xs-plus font-medium transition-all duration-300;
-    background: var(--opp-btn-bg);
-    border-color: var(--opp-btn-border);
-    color: var(--opp-btn-text);
   }
 
   .opp-header-action-icon {
     @apply inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border transition-all duration-300;
-    background: var(--opp-btn-bg);
-    border-color: var(--opp-btn-border);
-    color: var(--opp-btn-text);
-  }
-
-  .opp-header-action:hover,
-  .opp-header-action-icon:hover {
-    background: var(--opp-btn-hover-bg);
   }
 
   .opp-header-counter {
     @apply inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs-plus font-medium;
-    background: var(--opp-counter-bg);
-    border-color: var(--opp-counter-border);
-    color: var(--opp-counter-text);
   }
 
   .opp-header-counter-icon {
     @apply text-2xs;
-    color: var(--opp-counter-icon);
   }
 
   .opp-header-metric-cell {
@@ -1022,29 +1148,17 @@ select:disabled,
 
   .opp-header-metric-value {
     @apply text-sm font-medium;
-    color: var(--opp-value);
   }
 
   .opp-header-metric-subvalue {
     @apply text-xs-plus font-normal;
-    color: var(--opp-subvalue);
   }
 
   .opp-header-bar-track {
     @apply h-[3px] rounded-[2px];
-    background: var(--opp-track-bg);
   }
 
   .opp-header-bar-fill {
     @apply h-full rounded-[2px];
-    background: var(--opp-bar-fill);
-  }
-
-  .opp-header-bar-fill--budget {
-    background: var(--opp-bar-fill-budget);
-  }
-
-  .opp-header-ended-note {
-    color: var(--opp-ended-note);
   }
 }
