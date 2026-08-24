@@ -175,10 +175,10 @@ def _get_decorated_function(view_func, permission_test_function):
 
 
 def opportunity_required(view_func):
-    """
-    Decorator that fetches the opportunity from URL parameters (opp_id and org_slug)
-    and attaches it to request.opportunity. Raises Http404 if the opportunity doesn't
-    exist or doesn't belong to the organization.
+    """Fetch the opportunity named by the URL and attach it to request.opportunity.
+
+    Object lookup only. Who may reach it is the gate's question, and every view carrying
+    this decorator has one.
     """
 
     @wraps(view_func)
@@ -189,13 +189,8 @@ def opportunity_required(view_func):
         if not org_slug:
             raise Http404("Organization slug not provided.")
 
-        opp = get_object_by_uuid_or_int(Opportunity.objects.all(), opp_id, uuid_field="opportunity_id")
-
-        if opp.organization.slug == org_slug or opp.program.organization.slug == org_slug:
-            request.opportunity = opp
-            return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
-
-        raise Http404("Opportunity not found.")
+        request.opportunity = get_object_by_uuid_or_int(Opportunity.objects.all(), opp_id, uuid_field="opportunity_id")
+        return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
 
     _inner._has_opportunity_required_decorator = True
     return _inner

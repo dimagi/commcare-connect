@@ -220,6 +220,7 @@ from commcare_connect.program.utils import (
     is_opportunity_pm,
     is_org_pm,
     opportunity_access_level_from_request,
+    opportunity_by_id,
 )
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
@@ -256,21 +257,20 @@ PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
 
 
-def get_opportunity_or_404(pk, org_slug):
-    opp = get_object_by_uuid_or_int(Opportunity.objects.all(), str(pk), uuid_field="opportunity_id")
+def get_opportunity_or_404(opp_id):
+    opportunity = opportunity_by_id(opp_id)
 
-    if opp.organization.slug == org_slug or opp.program.organization.slug == org_slug:
-        return opp
-
-    raise Http404("Opportunity not found.")
+    if not opportunity:
+        raise Http404("Opportunity not found.")
+    return opportunity
 
 
 class OpportunityObjectMixin:
     def get_opportunity(self):
         if not hasattr(self, "_opportunity"):
-            opp_id = self.kwargs.get("opp_id")
-            org_slug = self.kwargs.get("org_slug")
-            self._opportunity = get_opportunity_or_404(opp_id, org_slug)
+            self._opportunity = get_object_by_uuid_or_int(
+                Opportunity.objects.all(), str(self.kwargs.get("opp_id")), uuid_field="opportunity_id"
+            )
         return self._opportunity
 
     def get_object(self, queryset=None):
@@ -2372,7 +2372,7 @@ class WorkerTableView(OppViewAccessMixin, OpportunityObjectMixin, SingleTableVie
         return get_validated_page_size(self.request)
 
     def dispatch(self, request, *args, **kwargs):
-        self.opportunity = get_opportunity_or_404(kwargs["opp_id"], kwargs["org_slug"])
+        self.opportunity = self.get_opportunity()
         response = super().dispatch(request, *args, **kwargs)
         url = reverse(self.redirect_url_name, args=[request.org.slug, self.kwargs["opp_id"]])
         query_params = request.GET.urlencode()

@@ -66,7 +66,7 @@ def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_op
 def test_unrelated_org_admin_cannot_access_audit(client, nm_audit_opp):
     """An admin of an org unrelated to the opportunity is denied both ways: via the
     opportunity's slug (not a member of that org) and via their own org's slug (the
-    opportunity doesn't belong to it, so opportunity_required rejects it)."""
+    opportunity does not belong to it)."""
     other_org = OrgWithUsersFactory()
     other_admin = other_org.memberships.filter(role="admin").first().user
     client.force_login(other_admin)
