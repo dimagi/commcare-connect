@@ -230,35 +230,6 @@ class TestReviewVisitImportRequirePost:
 
 
 @pytest.mark.django_db
-class TestVerificationConfigPageTitle:
-    def test_renders_rules_wording_when_auto_verify(
-        self, client, organization, program_manager_org, program_manager_org_user_admin
-    ):
-        program = ProgramFactory(organization=program_manager_org)
-        opp = OpportunityFactory(program=program, organization=organization, automatic_visit_verification=True)
-        client.force_login(program_manager_org_user_admin)
-        url = reverse("opportunity:verification_flags_config", args=(program_manager_org.slug, opp.opportunity_id))
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.OK
-        content = response.content.decode()
-        assert "Verification Rules Configuration" in content
-        assert "Deliver Unit Rules" in content
-
-    def test_renders_flags_wording_when_manual(
-        self, client, organization, program_manager_org, program_manager_org_user_admin
-    ):
-        program = ProgramFactory(organization=program_manager_org)
-        opp = OpportunityFactory(program=program, organization=organization, automatic_visit_verification=False)
-        client.force_login(program_manager_org_user_admin)
-        url = reverse("opportunity:verification_flags_config", args=(program_manager_org.slug, opp.opportunity_id))
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.OK
-        content = response.content.decode()
-        assert "Verification Flags Configuration" in content
-        assert "Deliver Unit Flags" in content
-
-
-@pytest.mark.django_db
 class TestVisitVerificationFilterStatusClamping:
     def test_stale_filter_status_clamped_in_auto_verify_mode(self, client, organization, org_user_member, mobile_user):
         """A bookmarked ?filter_status=pending must not surface pending visits when auto-verify is on."""

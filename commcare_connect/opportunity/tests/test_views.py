@@ -1892,7 +1892,7 @@ class TestVerificationFlagsConfig:
         )
         assert response.status_code == HTTPStatus.OK
         messages = [m.message for m in get_messages(response.wsgi_request)]
-        assert "Verification flags saved successfully." in messages
+        assert "Verification rules saved successfully." in messages
 
     def test_post_creates_form_json_rule_for_managed_opp(
         self, client, program_manager_org, program_manager_org_user_admin
