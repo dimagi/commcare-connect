@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Max, Q, Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -77,8 +77,8 @@ class Money:
 
 
 @dataclass(frozen=True)
-class BillableRow:
-    """One work's unbilled delta, priced and attributed to a month."""
+class WorkPayRow:
+    """One work's delta for a month, priced."""
 
     completed_work: CompletedWork
     billed_count: int
@@ -93,7 +93,7 @@ class BillableRow:
 
 
 def _build_billable_rows(works, currency_code, end_date):
-    """Price each billable work's delta into a `BillableRow`.
+    """Price each billable work's delta into a `WorkPayRow`.
 
     `end_date` serves two purposes: it bounds the first-billing works selected
     and determines the month to which a late delta is attributed.
@@ -109,7 +109,7 @@ def _build_billable_rows(works, currency_code, end_date):
         billed_count = work.saved_approved_count - work.invoiced_approved_count
         rate = exchange_rate.rate
         rows.append(
-            BillableRow(
+            WorkPayRow(
                 completed_work=work,
                 billed_count=billed_count,
                 month=month,
@@ -163,6 +163,57 @@ def group_line_items(rows):
 def get_billable_line_items(opportunity, start_date, end_date):
     works = get_billable_completed_works_qs(opportunity, start_date, end_date)
     return group_line_items(_build_billable_rows(works, opportunity.currency_code, end_date))
+
+
+def get_invoice_line_items(invoice):
+    records = (
+        invoice.work_items.values("completed_work__payment_unit", "month")
+        .annotate(
+            payment_unit_name=F("completed_work__payment_unit__name"),
+            number_approved=Sum("billed_count"),
+            flw_local=Sum("flw_amount_local"),
+            org_local=Sum("org_amount_local"),
+            flw_usd=Sum("flw_amount_usd"),
+            org_usd=Sum("org_amount_usd"),
+            # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
+            rate=Max("exchange_rate__rate"),
+        )
+        .order_by("month", "payment_unit_name")
+    )
+
+    return [
+        LineItem(
+            month=record["month"],
+            payment_unit_name=record["payment_unit_name"],
+            number_approved=record["number_approved"],
+            flw_pay=Money(record["flw_local"], record["flw_usd"]),
+            org_pay=Money(record["org_local"], record["org_usd"]),
+            exchange_rate=record["rate"],
+        )
+        for record in records
+    ]
+
+
+def get_invoice_delivery_rows_for_export(invoice):
+    work_items = invoice.work_items.select_related(
+        "completed_work__payment_unit__opportunity", "completed_work__opportunity_access__user", "exchange_rate"
+    ).order_by("month", "completed_work__payment_unit__name")
+    return [
+        WorkPayRow(
+            completed_work=item.completed_work,
+            billed_count=item.billed_count,
+            month=item.month,
+            flw_pay=Money(item.flw_amount_local, item.flw_amount_usd),
+            org_pay=Money(item.org_amount_local, item.org_amount_usd),
+            exchange_rate=item.exchange_rate,
+        )
+        for item in work_items
+    ]
+
+
+def get_billable_delivery_rows_for_export(opportunity, start_date, end_date):
+    works = get_billable_completed_works_qs(opportunity, start_date, end_date)
+    return _build_billable_rows(works, opportunity.currency_code, end_date)
 
 
 def bill_invoice(invoice, start_date, end_date):
