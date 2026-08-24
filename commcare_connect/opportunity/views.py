@@ -587,14 +587,16 @@ def review_visit_export(request, org_slug, opp_id):
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
-@opp_standard_access_required
+@login_required
 @require_GET
 def export_status(request, org_slug, task_id):
     def ownership_check(request, task_meta):
         args = task_meta.get("args") or []
         if not args:
             raise Http404("Export not found.")
-        get_opportunity_or_404(org_slug=org_slug, pk=args[0])
+        opportunity = get_opportunity_or_404(args[0])
+        if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
+            raise Http404()
 
     return render_export_status(
         request,
@@ -605,13 +607,15 @@ def export_status(request, org_slug, task_id):
     )
 
 
-@opp_standard_access_required
+@login_required
 @require_GET
 def download_export(request, org_slug, task_id):
     args = AsyncResult(task_id).args or []
     if not args:
         raise Http404("Export not found.")
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=args[0])
+    opportunity = get_opportunity_or_404(args[0])
+    if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
+        raise Http404()
     op_slug = slugify(opportunity.name)
     return download_export_file(
         task_id=task_id,
@@ -826,7 +830,7 @@ def payment_import(request, org_slug=None, opp_id=None):
     return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
 
 
-@opp_standard_access_required
+@login_required
 @require_GET
 def render_payment_import_progress(request, org_slug, task_id):
     """Renders the payment import modal: a spinner while the import runs, then the row errors
@@ -834,7 +838,9 @@ def render_payment_import_progress(request, org_slug, task_id):
     its outcome shows up as a standard banner."""
 
     def ownership_check(request, task_meta):
-        get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
+        opportunity = get_opportunity_or_404(task_meta.get("args")[0])
+        if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
+            raise Http404()
 
     progress = get_task_progress(request, task_id, ownership_check)
     finished = progress["complete"] or progress.get("error")

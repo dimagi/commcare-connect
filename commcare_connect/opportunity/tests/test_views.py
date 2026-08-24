@@ -3180,16 +3180,32 @@ def test_payment_import_rejects_unsupported_formats(
     assert message == "File format not supported. Please upload a CSV, XLSX file."
 
 
+# A watcher org's ceiling is VIEW, which is below the STANDARD the export floor asks for.
+@pytest.mark.parametrize("relationship,allowed", [("delivery", True), ("watcher", False), ("unrelated", False)])
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
-def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
+def test_payment_import_status_in_progress(
+    mock_async_result, relationship, allowed, client, organization, opportunity, org_user_member
+):
+    """The URL carries a task id, so the acting org is checked against the task's own opportunity."""
     task = mock_async_result.return_value
     task._get_task_meta.return_value = {"status": "PROGRESS", "args": [opportunity.id]}
     task.info = {"message": "Payment Record Import is in progress."}
-    client.force_login(org_user_member)
-    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    acting_org, user = organization, org_user_member
+    if relationship != "delivery":
+        acting_org = OrganizationFactory()
+        user = MembershipFactory(organization=acting_org, role=UserOrganizationMembership.Role.MEMBER).user
+        if relationship == "watcher":
+            opportunity.program.watchers.add(acting_org)
+
+    client.force_login(user)
+    url = reverse("opportunity:payment_import_status", args=(acting_org.slug, "task-xyz"))
 
     response = client.get(url)
 
+    if not allowed:
+        assert response.status_code == 404, f"{relationship} org reached another org's import"
+        return
     content = response.content.decode()
     assert response.status_code == 200
     assert "Payment Record Import is in progress." in content
