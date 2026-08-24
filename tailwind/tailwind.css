@@ -875,12 +875,18 @@ select:disabled,
   .opp-header--active,
   .opp-header--inactive {
     background: var(--color-brand-deep-purple);
+    border: 1px solid transparent;
   }
 
   .opp-header--active-test,
   .opp-header--inactive-test {
-    background: #fff;
     border: 1px solid var(--color-brand-border-light);
+  }
+
+  /* Each has its own background (not comma-grouped with a later override) so neither
+     value depends on CSS source order -- both selectors have equal specificity. */
+  .opp-header--active-test {
+    background: #fff;
   }
 
   .opp-header--inactive-test {
@@ -1021,13 +1027,11 @@ select:disabled,
   .opp-header--active-test .opp-header-counter {
     background: var(--color-brand-indigo);
     border-color: var(--color-brand-indigo);
-    color: #fff;
   }
 
   .opp-header--inactive-test .opp-header-counter {
     background: #e0e7ff;
     border-color: #e0e7ff;
-    color: #4f46e5;
   }
 
   .opp-header--active .opp-header-counter-icon,
@@ -1035,10 +1039,14 @@ select:disabled,
     color: var(--color-brand-sky);
   }
 
+  /* Icon color always matches the counter's own text color for a given theme, so the two
+     are grouped here rather than each repeating the same literal separately. */
+  .opp-header--active-test .opp-header-counter,
   .opp-header--active-test .opp-header-counter-icon {
     color: #fff;
   }
 
+  .opp-header--inactive-test .opp-header-counter,
   .opp-header--inactive-test .opp-header-counter-icon {
     color: #4f46e5;
   }
@@ -1079,16 +1087,8 @@ select:disabled,
     background: var(--color-brand-sky);
   }
 
-  .opp-header--inactive .opp-header-bar-fill {
-    background: rgb(255 255 255 / 45%);
-  }
-
   .opp-header--active-test .opp-header-bar-fill {
     background: var(--color-brand-indigo);
-  }
-
-  .opp-header--inactive-test .opp-header-bar-fill {
-    background: #cbd5e1;
   }
 
   .opp-header--active .opp-header-bar-fill--budget,
@@ -1096,10 +1096,14 @@ select:disabled,
     background: var(--color-brand-marigold);
   }
 
+  /* Inactive themes go uniformly grey/desaturated -- the metric bar and the budget bar
+     share the same fill color here, so they're grouped rather than repeating the literal. */
+  .opp-header--inactive .opp-header-bar-fill,
   .opp-header--inactive .opp-header-bar-fill--budget {
     background: rgb(255 255 255 / 45%);
   }
 
+  .opp-header--inactive-test .opp-header-bar-fill,
   .opp-header--inactive-test .opp-header-bar-fill--budget {
     background: #cbd5e1;
   }

@@ -3173,6 +3173,32 @@ def test_worker_payments_shows_import_banner_on_reload(
 
 @pytest.mark.django_db
 class TestOpportunityDashboardHeaderContext:
+    @pytest.mark.parametrize(
+        ("is_test", "is_active", "expected_theme"),
+        [
+            (False, True, "active"),
+            (False, False, "inactive"),
+            (True, True, "active-test"),
+            (True, False, "inactive-test"),
+        ],
+    )
+    def test_theme_from_is_test_and_is_active(self, opportunity, is_test, is_active, expected_theme):
+        # get_header_context also computes workers_cap via Opportunity.number_of_users, which
+        # divides by zero with no payment units at all -- unrelated to theme, but still needs
+        # a payment unit to reach the theme computation without raising.
+        PaymentUnitFactory(opportunity=opportunity, max_total=1, amount=1, org_amount=0)
+        opportunity.is_test = is_test
+        opportunity.active = is_active
+        if not is_active:
+            # is_active is derived (not a plain field) -- also ends the opportunity so
+            # Opportunity.is_active actually evaluates to False, not just `active`.
+            opportunity.end_date = date(2020, 1, 1)
+        opportunity.save()
+
+        header = OpportunityDashboard().get_header_context(opportunity)
+
+        assert header["theme"] == expected_theme
+
     def test_metrics_floor_worker_cap_before_scaling_deliveries(self, opportunity):
         # 1000 / (3 * 100) = 3.33... connect workers -- deliberately non-integral, since
         # number_of_users is a float whenever the budget doesn't divide evenly. The cap must be
