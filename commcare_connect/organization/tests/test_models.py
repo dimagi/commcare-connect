@@ -113,6 +113,10 @@ class TestUserOrganizationMembership:
 
 @pytest.mark.django_db
 class TestOrganizationInvite:
+    def test_expiry_date_is_expiry_days_after_last_update(self, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        assert invite.expiry_date == invite.date_modified + timedelta(days=OrganizationInvite.EXPIRY_DAYS)
+
     def test_not_expired_when_freshly_created(self, organization):
         invite = OrganizationInviteFactory(organization=organization)
         assert not invite.is_expired

@@ -148,10 +148,13 @@ class OrganizationInvite(BaseModel):
         return f"Invite for {self.email} to {self.organization}"
 
     @property
+    def expiry_date(self):
+        """Re-inviting bumps date_modified, which restarts the window."""
+        return self.date_modified + timedelta(days=self.EXPIRY_DAYS)
+
+    @property
     def is_expired(self):
-        return self.status == self.Status.INVITED and self.date_modified < timezone.now() - timedelta(
-            days=self.EXPIRY_DAYS
-        )
+        return self.status == self.Status.INVITED and timezone.now() > self.expiry_date
 
     @classmethod
     def send_invite(cls, organization, email, role, invited_by):
