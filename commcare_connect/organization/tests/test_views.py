@@ -376,6 +376,16 @@ class TestResendInviteView:
         assert response.status_code == 404
         send_mock.assert_not_called()
 
+    def test_refused_resend_reports_the_cooldown_in_a_message(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="jo@example.com")
+        client.force_login(org_user_admin)
+
+        with self._cooldown_of(minutes=5), patch("commcare_connect.organization.views.send_org_invite"):
+            content = client.post(self._url(organization.slug, invite.pk)).content.decode()
+
+        assert 'hx-swap-oob="beforeend:#messages"' in content
+        assert "An invite was just sent to jo@example.com." in content
+
     def test_member_cannot_resend_invite(self, client, org_user_member, organization):
         invite = OrganizationInviteFactory(organization=organization)
         self._past_cooldown(invite)

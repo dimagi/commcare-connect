@@ -193,7 +193,12 @@ def resend_invite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
     )
-    if not invite.is_in_resend_cooldown:
+    if invite.is_in_resend_cooldown:
+        messages.warning(
+            request,
+            gettext("An invite was just sent to {email}. Try again in a few minutes.").format(email=invite.email),
+        )
+    else:
         OrganizationInvite.send_invite(
             organization=invite.organization,
             email=invite.email,
@@ -201,6 +206,7 @@ def resend_invite(request, org_slug, invite_id):
             invited_by=request.user,
         )
         send_org_invite(invite_id=invite.pk)
+        messages.success(request, gettext("Invite resent to {email}.").format(email=invite.email))
     return _render_pending_invites(request)
 
 
@@ -213,6 +219,7 @@ def revoke_invite(request, org_slug, invite_id):
     invite.status = OrganizationInvite.Status.REVOKED
     invite.modified_by = request.user.email
     invite.save(update_fields=["status", "modified_by", "date_modified"])
+    messages.success(request, gettext("Invite to {email} revoked.").format(email=invite.email))
     return _render_pending_invites(request)
 
 
