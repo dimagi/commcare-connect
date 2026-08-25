@@ -74,10 +74,10 @@ class MergeSummary:
     source_slug: str
     target_slug: str
     reassigned: dict[str, int] = field(default_factory=dict)
-    programs_watched: int = 0
-    applications_moved: int = 0
-    applications_deduped: int = 0
-    self_applications_removed: int = 0
+    watchers_moved: int = 0
+    program_applications_moved: int = 0
+    program_applications_deduped: int = 0
+    self_program_applications_removed: int = 0
     memberships_moved: int = 0
     memberships_discarded: int = 0
     invites_moved: int = 0
@@ -91,17 +91,18 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
     Raises ``MergeNotAllowed`` before any change is made; any other exception rolls the whole merge back.
     """
     _reject_invalid_merge(source, target)
-    stale_opportunities = _opportunities_cached_against(source)
+    stale_opportunities = _opportunities_linked_to_source(source)
 
     with transaction.atomic():
         reassigned = _reassign_simple_relations(source, target)
-        watched = _move_program_watchers(source, target)
-        apps_moved, apps_deduped = _merge_program_applications(source, target)
-        # Ordering below matters. Self-applications: after Program.organization is repointed (which is what makes a
-        # program target-owned) and after the application merge (which would otherwise move a source application in
-        # and recreate the row). Invites: after memberships, so the "already a member" check sees the moved rows.
+        moved_watchers_count = _move_program_watchers(source, target)
+        program_applications_moved, program_applications_deduped = _merge_program_applications(source, target)
+        # Ordering below matters. Self program applications: after Program.organization is repointed (which is what
+        # makes a program target-owned) and after the program application merge (which would otherwise move a source
+        # program application in and recreate the row). Invites: after memberships, so the "already a member" check
+        # sees the moved rows.
         # Flags: before the delete, because m2m_changed is what flushes waffle's cache.
-        self_apps = _remove_self_applications(target)
+        self_program_applications_removed = _remove_self_program_applications(target)
         members_moved, members_dropped = _merge_memberships(source, target)
         invites_moved, invites_dropped = _move_pending_invites(source, target)
         flags_cleared = _clear_flag_memberships(source)
@@ -112,10 +113,10 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             source_slug=source.slug,
             target_slug=target.slug,
             reassigned=reassigned,
-            programs_watched=watched,
-            applications_moved=apps_moved,
-            applications_deduped=apps_deduped,
-            self_applications_removed=self_apps,
+            watchers_moved=moved_watchers_count,
+            program_applications_moved=program_applications_moved,
+            program_applications_deduped=program_applications_deduped,
+            self_program_applications_removed=self_program_applications_removed,
             memberships_moved=members_moved,
             memberships_discarded=members_dropped,
             invites_moved=invites_moved,
@@ -149,7 +150,7 @@ def _reject_shared_commcare_apps(source: Organization, target: Organization) -> 
         )
 
 
-def _opportunities_cached_against(source: Organization) -> list[Opportunity]:
+def _opportunities_linked_to_source(source: Organization) -> list[Opportunity]:
     """Opportunities whose ``get_managed_opp`` entry holds a reference to the source.
 
     That cache stores the opportunity with its program and the program's organization attached, so a merge
@@ -179,33 +180,36 @@ def _move_program_watchers(source: Organization, target: Organization) -> int:
 
     ``add`` is idempotent, so a program both organizations watched needs no explicit deduplication.
     """
-    watched = list(source.watched_programs.all())
-    target.watched_programs.add(*watched)
+    watched_programs = list(source.watched_programs.all())
+    target.watched_programs.add(*watched_programs)
     source.watched_programs.clear()
-    return len(watched)
+    return len(watched_programs)
 
 
 def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
-    """Move applications, keeping one row per program at the most advanced status."""
-    target_applications = {app.program_id: app for app in target.programapplication_set.all()}
+    """Move program applications, keeping one row per program at the most advanced status."""
+    target_program_applications = {
+        program_application.program_id: program_application
+        for program_application in target.programapplication_set.all()
+    }
 
     moved = 0
     deduped = 0
-    for application in source.programapplication_set.all():
-        existing = target_applications.get(application.program_id)
+    for program_application in source.programapplication_set.all():
+        existing = target_program_applications.get(program_application.program_id)
         if existing is None:
-            application.organization = target
-            application.save(update_fields=["organization"])
-            target_applications[application.program_id] = application
+            program_application.organization = target
+            program_application.save(update_fields=["organization"])
+            target_program_applications[program_application.program_id] = program_application
             moved += 1
             continue
 
-        # Keep the application that's the most 'advanced'
-        surviving_status = _most_advanced_status(existing.status, application.status)
+        # Keep the program application that's the most 'advanced'
+        surviving_status = _most_advanced_status(existing.status, program_application.status)
         if surviving_status != existing.status:
             existing.status = surviving_status
             existing.save(update_fields=["status"])
-        application.delete()
+        program_application.delete()
         deduped += 1
 
     return moved, deduped
@@ -215,10 +219,10 @@ def _most_advanced_status(*statuses: str) -> str:
     return max(statuses, key=APPLICATION_STATUS_PRECEDENCE.index)
 
 
-def _remove_self_applications(target: Organization) -> int:
-    """Drop applications an organization holds to a program it now owns.
+def _remove_self_program_applications(target: Organization) -> int:
+    """Drop program applications an organization holds to a program it now owns.
 
-    Repointing ``Program.organization`` can leave the target holding an application to its own program, a row
+    Repointing ``Program.organization`` can leave the target holding a program application to its own program, a row
     ``invite_organization`` refuses to create in the first place.
     """
     deleted, _ = ProgramApplication.objects.filter(organization=target, program__organization=target).delete()
@@ -240,7 +244,7 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
     taken_emails = {email.lower() for email in target.invites.values_list("email", flat=True)}
     taken_emails |= {email.lower() for email in target.memberships.values_list("user__email", flat=True) if email}
 
-    moving = []
+    to_be_moved = []
     discarded = 0
     for invite in source.invites.all():
         is_live = invite.status == OrganizationInvite.Status.INVITED and not invite.is_expired
@@ -248,11 +252,11 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
             discarded += 1
             continue
 
-        moving.append(invite.pk)
+        to_be_moved.append(invite.pk)
         taken_emails.add(invite.email.lower())
 
-    OrganizationInvite.objects.filter(pk__in=moving).update(organization=target)
-    return len(moving), discarded
+    OrganizationInvite.objects.filter(pk__in=to_be_moved).update(organization=target)
+    return len(to_be_moved), discarded
 
 
 def _clear_flag_memberships(source: Organization) -> int:

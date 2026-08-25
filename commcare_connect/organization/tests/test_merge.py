@@ -209,7 +209,7 @@ class TestProgramWatchers:
         summary = merge_organizations(source, target)
 
         assert list(program.watchers.all()) == [target]
-        assert summary.programs_watched == 1
+        assert summary.watchers_moved == 1
 
     def test_no_duplicate_when_both_organizations_watch(self, source, target):
         program = ProgramFactory()
@@ -231,8 +231,8 @@ class TestProgramApplications:
 
         application.refresh_from_db()
         assert application.organization == target
-        assert summary.applications_moved == 1
-        assert summary.applications_deduped == 0
+        assert summary.program_applications_moved == 1
+        assert summary.program_applications_deduped == 0
 
     @pytest.mark.parametrize(
         ("source_status", "target_status", "expected"),
@@ -256,7 +256,7 @@ class TestProgramApplications:
         surviving = applications.get()
         assert surviving.organization == target
         assert surviving.status == expected
-        assert summary.applications_deduped == 1
+        assert summary.program_applications_deduped == 1
 
     def test_application_to_a_program_the_target_now_owns_is_removed(self, source, target):
         program = ProgramFactory(organization=source)
@@ -267,7 +267,7 @@ class TestProgramApplications:
         program.refresh_from_db()
         assert program.organization == target
         assert not ProgramApplication.objects.filter(program=program).exists()
-        assert summary.self_applications_removed == 1
+        assert summary.self_program_applications_removed == 1
 
 
 class TestMemberships:
@@ -439,7 +439,7 @@ class TestManagedOpportunityCache:
     def test_every_organization_the_cached_row_references_is_refreshed(
         self, source, target, make_opportunity, organization_id
     ):
-        """One case per clause in _opportunities_cached_against."""
+        """One case per clause in _opportunities_linked_to_source."""
         opp_id = str(make_opportunity(source).pk)
         assert organization_id(get_managed_opp(opp_id)) == source.pk
 
