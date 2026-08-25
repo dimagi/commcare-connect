@@ -230,6 +230,10 @@ def _remove_self_program_applications(target: Organization) -> int:
 
 
 def _merge_memberships(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the source's memberships, dropping the ones for users the target already has.
+
+    A user in both workspaces keeps the target's role, even where the source gave them a stronger one.
+    """
     target_user_ids = set(target.memberships.values_list("user_id", flat=True))
     source_memberships = source.memberships.all()
 
