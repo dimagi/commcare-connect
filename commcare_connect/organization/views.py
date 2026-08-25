@@ -189,6 +189,23 @@ def _accept_invite_for_new_user(request, invite, org_slug):
 
 @api_view(["POST"])
 @org_admin_required
+def resend_invite(request, org_slug, invite_id):
+    invite = get_object_or_404(
+        OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
+    )
+    if not invite.is_in_resend_cooldown:
+        OrganizationInvite.send_invite(
+            organization=invite.organization,
+            email=invite.email,
+            role=invite.role,
+            invited_by=request.user,
+        )
+        send_org_invite(invite_id=invite.pk)
+    return _render_pending_invites(request)
+
+
+@api_view(["POST"])
+@org_admin_required
 def revoke_invite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
