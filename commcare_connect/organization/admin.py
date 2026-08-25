@@ -33,7 +33,9 @@ def workspace_label(organization: Organization) -> str:
     return f"{organization.name} ({organization.slug})"
 
 
-def merge_preview(organizations: list[Organization]) -> dict:
+def merge_preview(source: Organization, target: Organization) -> dict:
+    """Side-by-side comparison of the two selected workspaces, in the column order the page renders."""
+    organizations = [source, target]
     counts = [relation_counts(organization) for organization in organizations]
     return {
         "column_headers": [workspace_label(organization) for organization in organizations],
@@ -43,22 +45,18 @@ def merge_preview(organizations: list[Organization]) -> dict:
         ],
         "count_rows": [(label, [count[label] for count in counts]) for label in sorted(HANDLED_RELATIONS)],
         "flag_names": [sorted(organization.flag_set.values_list("name", flat=True)) for organization in organizations],
-        "hidden_programs": _hidden_programs_per_survivor(organizations),
+        "hidden_programs": _hidden_programs_per_candidate(source, target),
     }
 
 
-def _hidden_programs_per_survivor(organizations: list[Organization]) -> list[list[str]]:
-    """
-    Returns which programs will be hidden a given organization is to be elected as the surviving org.
+def _hidden_programs_per_candidate(source: Organization, target: Organization) -> list[list[str]]:
+    """Programs each workspace would hide, in column order, if it were the one kept.
+
+    The arguments are swapped in the first call: keeping ``source`` means merging ``target`` into it.
     """
     return [
-        sorted(
-            program
-            for other in organizations
-            if other.pk != survivor.pk
-            for program in programs_hidden_by_merge(other, survivor)
-        )
-        for survivor in organizations
+        programs_hidden_by_merge(target, source),
+        programs_hidden_by_merge(source, target),
     ]
 
 
@@ -150,7 +148,7 @@ class OrganizationAdmin(admin.ModelAdmin):
         organizations = list(selected)
         context = {
             **self.admin_site.each_context(request),
-            **merge_preview(organizations),
+            **merge_preview(*organizations),
             "title": "Merge workspaces",
             "opts": self.model._meta,
             "media": self.media + form.media,

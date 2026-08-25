@@ -56,14 +56,14 @@ class TestOrganizationMergeForm:
 
 class TestMergePreview:
     def test_profile_rows_pair_each_field_across_both_workspaces(self, source, target):
-        preview = merge_preview([source, target])
+        preview = merge_preview(source, target)
 
         assert ("Name", [source.name, target.name]) in preview["profile_rows"]
 
     def test_count_rows_pair_each_relation_across_both_workspaces(self, source, target):
         OpportunityFactory(organization=source)
 
-        preview = merge_preview([source, target])
+        preview = merge_preview(source, target)
 
         assert ("opportunity.Opportunity.organization", [1, 0]) in preview["count_rows"]
 
@@ -71,14 +71,14 @@ class TestMergePreview:
         flag = FlagFactory(name="a-source-only-flag")
         flag.organizations.add(source)
 
-        preview = merge_preview([source, target])
+        preview = merge_preview(source, target)
 
         assert preview["flag_names"] == [["a-source-only-flag"], []]
 
     def test_hidden_programs_are_listed_against_the_workspace_that_would_survive(self, source, target):
         ProgramFactory(organization=source, name="Zinc Supplementation")
 
-        preview = merge_preview([source, target])
+        preview = merge_preview(source, target)
 
         assert preview["hidden_programs"] == [[], ["Zinc Supplementation"]]
 
@@ -86,7 +86,7 @@ class TestMergePreview:
         target = OrganizationFactory(name="Target Workspace", program_manager=True)
         ProgramFactory(organization=source, name="Zinc Supplementation")
 
-        preview = merge_preview([source, target])
+        preview = merge_preview(source, target)
 
         assert preview["hidden_programs"] == [[], []]
 
