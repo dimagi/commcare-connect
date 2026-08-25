@@ -174,9 +174,43 @@ class TestOrganizationInvite:
         assert reinvited.token != old_token
         assert not reinvited.is_expired
 
+    def test_send_invite_refuses_inside_the_resend_cooldown(self, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="fresh@example.com")
+        old_token = invite.token
+
+        refused = OrganizationInvite.send_invite(
+            organization=organization,
+            email="fresh@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=UserFactory(email="admin@example.com"),
+        )
+
+        assert refused is None
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+    def test_send_invite_refuses_a_revoked_invite_inside_the_cooldown(self, organization):
+        invite = OrganizationInviteFactory(
+            organization=organization, email="revoked@example.com", status=OrganizationInvite.Status.REVOKED
+        )
+
+        refused = OrganizationInvite.send_invite(
+            organization=organization,
+            email="revoked@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=UserFactory(email="admin@example.com"),
+        )
+
+        assert refused is None
+        invite.refresh_from_db()
+        assert invite.status == OrganizationInvite.Status.REVOKED
+
     def test_send_invite_preserves_original_created_by_on_reinvite(self, organization):
         invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
         original_created_by = invite.created_by
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - OrganizationInvite.RESEND_COOLDOWN - timedelta(minutes=1)
+        )
         admin = UserFactory(email="admin@example.com")
 
         reinvited = OrganizationInvite.send_invite(

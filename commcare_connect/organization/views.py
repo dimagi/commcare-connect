@@ -88,8 +88,16 @@ def add_members_form(request, org_slug):
             role=form.cleaned_data["role"],
             invited_by=request.user,
         )
-        send_org_invite(invite_id=invite.pk)
-        messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
+        if invite is None:
+            messages.warning(
+                request,
+                gettext("An invite was just sent to {email}. Try again in a few minutes.").format(
+                    email=form.cleaned_data["email"]
+                ),
+            )
+        else:
+            send_org_invite(invite_id=invite.pk)
+            messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
     else:
         error = next(iter(form.errors.values()))[0] if form.errors else gettext("Unable to send invite.")
         messages.error(request, error)
@@ -193,20 +201,20 @@ def resend_invite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
     )
-    if invite.is_in_resend_cooldown:
+    resent_invite = OrganizationInvite.send_invite(
+        organization=invite.organization,
+        email=invite.email,
+        role=invite.role,
+        invited_by=request.user,
+    )
+    if resent_invite is None:
         messages.warning(
             request,
             gettext("An invite was just sent to {email}. Try again in a few minutes.").format(email=invite.email),
         )
     else:
-        OrganizationInvite.send_invite(
-            organization=invite.organization,
-            email=invite.email,
-            role=invite.role,
-            invited_by=request.user,
-        )
-        send_org_invite(invite_id=invite.pk)
-        messages.success(request, gettext("Invite resent to {email}.").format(email=invite.email))
+        send_org_invite(invite_id=resent_invite.pk)
+        messages.success(request, gettext("Invite resent to {email}.").format(email=resent_invite.email))
     return _render_pending_invites(request)
 
 

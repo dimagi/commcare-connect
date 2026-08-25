@@ -164,7 +164,15 @@ class OrganizationInvite(BaseModel):
 
     @classmethod
     def send_invite(cls, organization, email, role, invited_by):
-        """Creates a pending invite, or resets an existing one (revoked/accepted/lapsed) to pending."""
+        """Creates a pending invite, or refreshes any existing one for this address.
+
+        An existing invite is reset to pending whatever state it was in — revoked, accepted,
+        lapsed, or still pending, which is the resend case.
+        """
+        existing = cls.objects.filter(organization=organization, email=email).first()
+        if existing and existing.is_in_resend_cooldown:
+            return None
+
         invite, created = cls.objects.update_or_create(
             organization=organization,
             email=email,
