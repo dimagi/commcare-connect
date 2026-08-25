@@ -83,6 +83,18 @@ brew install weasyprint
 sudo apt-get install -y binutils libproj-dev gdal-bin
 ```
 
+**Enabling the PostGIS extension**
+
+No migration creates the `postgis` extension. The `inv up` setup works because the
+`postgis/postgis` image enables it for you when it initialises the database.
+
+If you are using your own PostgreSQL instead, create the extension in the target database
+before migrating, or the first spatial migration will fail:
+
+```bash
+psql -d commcare_connect -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
+
     # start docker services
     $ inv up
 
