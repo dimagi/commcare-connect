@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -116,6 +117,17 @@ class TestOrganizationInvite:
     def test_expiry_date_is_expiry_days_after_last_update(self, organization):
         invite = OrganizationInviteFactory(organization=organization)
         assert invite.expiry_date == invite.date_modified + timedelta(days=OrganizationInvite.EXPIRY_DAYS)
+
+    @pytest.mark.parametrize("minutes_ago,in_cooldown", [(1, True), (10, False)])
+    def test_resend_cooldown_lapses_after_the_cooldown_window(self, organization, minutes_ago, in_cooldown):
+        invite = OrganizationInviteFactory(organization=organization)
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - timedelta(minutes=minutes_ago)
+        )
+        invite.refresh_from_db()
+        # Pinned so the test covers the window logic, not whatever RESEND_COOLDOWN is tuned to.
+        with patch.object(OrganizationInvite, "RESEND_COOLDOWN", timedelta(minutes=5)):
+            assert invite.is_in_resend_cooldown is in_cooldown
 
     def test_not_expired_when_freshly_created(self, organization):
         invite = OrganizationInviteFactory(organization=organization)

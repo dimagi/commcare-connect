@@ -158,6 +158,10 @@ class OrganizationInviteForm(forms.ModelForm):
         if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
             raise ValidationError(gettext("This person is already a member of this workspace."))
 
+        existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
+        if existing and existing.status == OrganizationInvite.Status.INVITED and existing.is_in_resend_cooldown:
+            raise ValidationError(gettext("An invite was just sent to this address. Try again in a few minutes."))
+
         return email
 
 

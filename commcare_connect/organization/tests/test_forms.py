@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -84,6 +85,24 @@ class TestAddMembersView:
         assert existing_invite.role == "admin"
         assert existing_invite.date_modified > stale_modified
         assert OrganizationInvite.objects.filter(organization=organization, email=existing_invite.email).count() == 1
+
+    @pytest.mark.django_db
+    def test_reinvite_rejected_while_the_invite_is_in_resend_cooldown(self, organization):
+        existing_invite = OrganizationInviteFactory(
+            organization=organization, email="pending@example.com", role="member"
+        )
+        old_token = existing_invite.token
+
+        with patch.object(OrganizationInvite, "RESEND_COOLDOWN", timedelta(minutes=5)):
+            response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "error"
+        assert "was just sent" in str(messages[0])
+        existing_invite.refresh_from_db()
+        assert existing_invite.token == old_token
+        assert existing_invite.role == "member"
 
     @pytest.mark.django_db
     def test_reinvite_after_expiry_resets_existing_invite(self, organization):

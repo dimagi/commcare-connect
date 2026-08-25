@@ -128,6 +128,7 @@ class UserOrganizationMembership(models.Model):
 
 class OrganizationInvite(BaseModel):
     EXPIRY_DAYS = 7
+    RESEND_COOLDOWN = timedelta(minutes=5)
 
     class Status(models.TextChoices):
         INVITED = "invited", _("Invited")
@@ -151,6 +152,11 @@ class OrganizationInvite(BaseModel):
     def expiry_date(self):
         """Re-inviting bumps date_modified, which restarts the window."""
         return self.date_modified + timedelta(days=self.EXPIRY_DAYS)
+
+    @property
+    def is_in_resend_cooldown(self):
+        """Throttles resends so a re-invite cannot be used to hammer an address."""
+        return timezone.now() < self.date_modified + self.RESEND_COOLDOWN
 
     @property
     def is_expired(self):
