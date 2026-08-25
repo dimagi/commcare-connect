@@ -7,6 +7,7 @@ import pytest
 from allauth.socialaccount.models import SocialAccount
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
+from django.test.client import RequestFactory
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
@@ -51,12 +52,14 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     TaskTypeFactory,
 )
+from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import AccessLevel, org_opportunity_access
 from commcare_connect.users.models import UserCredential
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
+from commcare_connect.utils.test_utils import make_membership
 
 
 @pytest.fixture
@@ -1719,3 +1722,93 @@ class TestSupervisingOrganizationAudit:
         opportunity.save()
 
         assert OpportunityActiveEvent.objects.filter(pgh_obj=opportunity).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
+class TestSupervisingOrganizationOnChangeForm:
+    """OpportunityChangeForm is the Edit page a program manager actually reaches.
+
+    It is guarded only by org membership, so the field must be withheld from the
+    delivering organization to keep it from reassigning oversight of its own opportunity.
+    """
+
+    @pytest.fixture
+    def managed_opportunity(self, opportunity):
+        opportunity.managed = True
+        opportunity.save()
+        ProgramApplicationFactory(
+            organization=opportunity.organization,
+            program=opportunity.program,
+            status=ProgramApplicationStatus.ACCEPTED,
+        )
+        return opportunity
+
+    def _request_for(self, org, role=UserOrganizationMembership.Role.ADMIN):
+        user = UserFactory()
+        request = RequestFactory().get("/")
+        request.user = user
+        request.org = org
+        request.org_membership = make_membership(org, user, role)
+        return request
+
+    def _form(self, opportunity, request, **overrides):
+        data = {
+            "name": opportunity.name,
+            "description": "Updated description",
+            "short_description": "Updated short",
+            "active": True,
+            "currency": opportunity.currency.code,
+            "country": opportunity.country,
+            "is_test": opportunity.is_test,
+            "delivery_type": opportunity.delivery_type_id,
+            "supervising_organization": opportunity.supervising_organization_id,
+        }
+        data.update(overrides)
+        return OpportunityChangeForm(data=data, instance=opportunity, request=request)
+
+    def test_program_manager_can_reassign(self, managed_opportunity):
+        request = self._request_for(managed_opportunity.program.organization)
+
+        form = self._form(
+            managed_opportunity,
+            request,
+            supervising_organization=managed_opportunity.organization.pk,
+        )
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == managed_opportunity.organization
+
+    def test_delivering_organization_cannot_see_or_set_it(self, managed_opportunity):
+        original = managed_opportunity.supervising_organization
+        request = self._request_for(managed_opportunity.organization)
+
+        form = self._form(
+            managed_opportunity,
+            request,
+            supervising_organization=managed_opportunity.organization.pk,
+        )
+
+        assert "supervising_organization" not in form.fields
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        updated.refresh_from_db()
+
+        assert updated.supervising_organization == original
+
+    def test_absent_for_unmanaged_opportunity(self, opportunity):
+        opportunity.managed = False
+        opportunity.save()
+        request = self._request_for(opportunity.program.organization)
+
+        form = OpportunityChangeForm(instance=opportunity, request=request)
+
+        assert "supervising_organization" not in form.fields
+
+    def test_absent_without_a_request(self, managed_opportunity):
+        form = OpportunityChangeForm(instance=managed_opportunity)
+
+        assert "supervising_organization" not in form.fields

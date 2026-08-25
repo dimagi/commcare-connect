@@ -409,6 +409,7 @@ class OpportunityEdit(OpportunityObjectMixin, OppStandardAccessMixin, UpdateView
 
     def get_form_kwargs(self, *args, **kwargs):
         form_kwargs = super().get_form_kwargs(*args, **kwargs)
+        form_kwargs["request"] = self.request
         if self.active_history_events:
             form_kwargs.update({"latest_active_history_event": self.active_history_events[0]})
         return form_kwargs
