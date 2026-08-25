@@ -327,7 +327,12 @@ def test_opportunity_delivery_stats(opportunity):
     payment_due = total_accrued - total_paid
 
     # total deliveries=4 deliveries_from_yesterday=3
-    cw = CompletedWorkFactory(opportunity_access=oa1, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa1,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa1,
@@ -342,6 +347,8 @@ def test_opportunity_delivery_stats(opportunity):
         status_modified_date=now(),
         status=CompletedWorkStatus.approved,
         saved_payment_accrued=10,
+        saved_completed_count=1,
+        saved_approved_count=1,
     )
     UserVisitFactory.create(
         opportunity=opportunity,
@@ -362,7 +369,12 @@ def test_opportunity_delivery_stats(opportunity):
         visit_date=today,
     )
 
-    cw = CompletedWorkFactory(opportunity_access=oa1, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa1,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa2,
@@ -372,7 +384,12 @@ def test_opportunity_delivery_stats(opportunity):
         review_created_on=now() - timedelta(days=2),
     )
 
-    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa2,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa2,
@@ -383,7 +400,12 @@ def test_opportunity_delivery_stats(opportunity):
     )
 
     # case nm approved first but rejected later so review_created_on will not be null in this case.
-    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa2,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa2,
@@ -391,6 +413,15 @@ def test_opportunity_delivery_stats(opportunity):
         completed_work=cw,
         visit_date=day_before_yesterday,
         review_created_on=now(),
+    )
+
+    # a CompletedWork with 2 duplicate approved visits should add 2 to total_deliveries, not 1
+    CompletedWorkFactory(
+        opportunity_access=oa1,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
     )
 
     # recent date paid will be today total paid should be 150
@@ -413,7 +444,7 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.deliveries_from_yesterday == 3
     assert result.accrued_since_yesterday == 10
     assert result.most_recent_delivery == today
-    assert result.total_deliveries == 5
+    assert result.total_deliveries == 7
     assert result.recent_payment == today
     assert result.workers_invited == 3
     assert result.pending_invites == 1
@@ -438,12 +469,22 @@ def test_opportunity_worker_progress_stats(opportunity):
     PaymentFactory(opportunity_access=access, date_paid=today, amount=100)
 
     # Total deliveries = 4
-    CompletedWorkFactory.create_batch(2, opportunity_access=access, status=CompletedWorkStatus.pending)
-    CompletedWorkFactory.create_batch(1, opportunity_access=access, status=CompletedWorkStatus.approved)
-    CompletedWorkFactory.create_batch(1, opportunity_access=access, status=CompletedWorkStatus.rejected)
+    CompletedWorkFactory.create_batch(
+        2, opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1
+    )
+    CompletedWorkFactory.create_batch(
+        1,
+        opportunity_access=access,
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=1,
+        saved_approved_count=1,
+    )
+    CompletedWorkFactory.create_batch(
+        1, opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1
+    )
 
     # Visits since yesterday = 2
-    cw = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1)
     UserVisitFactory(
         opportunity=opportunity,
         opportunity_access=access,
@@ -459,11 +500,19 @@ def test_opportunity_worker_progress_stats(opportunity):
         visit_date=yesterday,
     )
 
+    # A CompletedWork with 2 duplicate approved visits should add 2 to total/approved deliveries, not 1.
+    CompletedWorkFactory(
+        opportunity_access=access,
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
+    )
+
     result = get_opportunity_worker_progress(opportunity.id)
 
     assert result.id == opportunity.id
-    assert result.total_deliveries == 5
-    assert result.approved_deliveries == 1
+    assert result.total_deliveries == 7
+    assert result.approved_deliveries == 3
     assert result.rejected_deliveries == 1
     assert result.total_accrued == 300
     assert result.total_paid == 100
