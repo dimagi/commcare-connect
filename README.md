@@ -139,7 +139,8 @@ Some useful command are available via the `tasks.py` file:
 
 **Test the OAuth2 flow**
 
-- Set `COMMCARE_HQ_URL=https://staging.commcarehq.org` in your `.env` file and restart the server.
+- Confirm `COMMCARE_HQ_URL` points at `https://staging.commcarehq.org`. That is the default, so
+  you only need to set it in `.env` if you have overridden it.
 - Navigate to http://[my-unique-subdomain].ngrok-free.app/accounts/login/
 - Click the "Log in with CommCare HQ" button
 - You should be redirected to CommCare HQ to log in
@@ -237,16 +238,16 @@ celery -A config.celery_app worker -B -l info
 
 ## Deployment
 
-The following details how to deploy this application.
+The application runs as Docker containers on EC2, deployed with [Kamal](https://kamal-deploy.org/).
+Ansible provisions the instances and manages the container env files. See
+[deploy/README.md](deploy/README.md) for the full picture, including the tooling you need
+installed to deploy or change Django settings.
 
-The application is running on AWS. Deploying new version of the app can be done via the "Deploy" workflow
-on Github Actions.
+Deploying a new version of the app can be done via the "Deploy" workflow on GitHub Actions.
 
-Should the deploy fail you can view the logs via the [AWS console][aws_console].
+Container logs are shipped to CloudWatch, and can also be read directly with `kamal app logs`.
 
-[aws_console]: https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/using-features.logging.html?icmpid=docs_elasticbeanstalk_console
-
-For details on how this actions is configured see:
+For details on how this action is configured see:
 
 - https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/
 - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
@@ -258,7 +259,7 @@ which is connected to the staging environment of CommCare HQ at
 [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
 
 - Update [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml) with the branches you need to include.
-- Run `.deploy/rebuildstaging` to build the `autostaging` branch
+- Run `deploy/rebuildstaging` to build the `autostaging` branch
 - After this, you can deploy to the staging environment by manually running the `deploy`
   [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
