@@ -147,17 +147,53 @@ Some useful command are available via the `tasks.py` file:
 
 ### Setting Up Your Users
 
-- To create a **normal user account**, just go to Sign Up and fill out the form. Once you submit it, you'll see a "Verify Your E-mail Address" page. Go to your console to see a simulated email verification message. Copy the link into your browser. Now the user's email should be verified and ready to go.
+On a fresh database `/accounts/login/` and `/accounts/signup/` both return a 500. Their
+template renders a "Log in with CommCare HQ" button, which raises `SocialApp.DoesNotExist`
+until a `commcarehq` social app exists. So create one before signing anybody up:
 
-- To create a **superuser account**, use this command:
+1.  Create a superuser. `--email` is not accepted, because the custom `User` model sets
+    `REQUIRED_FIELDS = []`; set the address afterwards in the admin if you need one.
 
-      $ python manage.py createsuperuser
+        $ ./manage.py createsuperuser
 
-- To promote a user to superuser, use this command:
+2.  Log in at http://localhost:8000/admin/login/. That page uses Django's own template, so it
+    still works while the allauth pages are broken.
 
-      $ python manage.py promote_user_to_superuser <email>
+3.  Add a social app with provider `commcarehq` at
+    http://localhost:8000/admin/socialaccount/socialapp/ and attach it to the current site.
+    Placeholder values for Client ID and Secret are fine unless you are actually testing the
+    OAuth flow — for that, see [Setting up auth with CommCare HQ](#setting-up-auth-with-commcare-hq).
+
+The allauth pages work from then on.
+
+- To create a **normal user account**, go to Sign Up and fill out the form. Local settings use
+  `ACCOUNT_EMAIL_VERIFICATION = "optional"`, so you are logged straight in; the confirmation
+  email is still printed to the console if you want to verify the address.
+
+- To promote an existing user to superuser, use this command:
+
+      $ ./manage.py promote_user_to_superuser <email>
 
 For convenience, you can keep your normal user logged in on Chrome and your superuser logged in on Firefox (or similar), so that you can see how the site behaves for both kinds of users.
+
+### Sample Data
+
+To populate a local database with organizations, opportunities, visits and payments:
+
+    # generate_sample_data <num_visits> <org_slug>
+    $ ./manage.py generate_sample_data 50 demo-org
+
+The organization is created if the slug does not already exist. Each run first deletes the
+existing opportunities, visits, payments and programs belonging to the two organizations it is
+about to use. Two optional flags are available:
+
+- `--invited_org_slug` — reuse a specific organization as the invited org. Without it, a new
+  invited org with a random slug is created on every run, and the previous one is left behind.
+- `--managed_opportunities` — how many managed opportunities to create (default 3)
+
+Adding yourself to the generated organization is a separate step, either through
+`/admin/organization/userorganizationmembership/` or the organization's own member admin
+pages.
 
 ### Test coverage
 
