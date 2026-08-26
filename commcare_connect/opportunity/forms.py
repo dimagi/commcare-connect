@@ -1681,14 +1681,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             self.fields["status"].initial = self.instance.get_status_display()
 
         if self.is_service_delivery:
-            self.fields["amount"].label = _("Amount ({currency_code})").format(
+            self.fields["amount"].label = gettext("Amount ({currency_code})").format(
                 currency_code=self.opportunity.currency_code or "Local Currency"
             )
-            self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
+            self.fields["amount"].help_text = gettext("Local currency is determined by the opportunity.")
 
             self.fields["late_delta_units"].label = header_with_tooltip(
-                format_html('{} <i class="fa-solid fa-circle-info text-gray-400"></i>', _("Additional Deliveries")),
-                _(
+                format_html(
+                    '{} <i class="fa-solid fa-circle-info text-gray-400"></i>', gettext("Additional Deliveries")
+                ),
+                gettext(
                     "Additional deliveries for previously billed work. These were delivered or approved "
                     "after the previous invoice was issued and are included on this invoice."
                 ),
@@ -1697,7 +1699,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
             self.fields["description"].widget.attrs.update(
                 {
-                    "placeholder": _("Describe service delivery details, references, or notes..."),
+                    "placeholder": gettext("Describe service delivery details, references, or notes..."),
                 }
             )
 
@@ -1719,10 +1721,10 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 }
             )
             self.fields["description"].required = True
-            self.fields["description"].label = _("Justification")
+            self.fields["description"].label = gettext("Justification")
             self.fields["description"].widget.attrs.update(
                 {
-                    "placeholder": _("Provide a justification for this expense..."),
+                    "placeholder": gettext("Provide a justification for this expense..."),
                 }
             )
             self.fields["date_of_expense"].required = True
@@ -1736,7 +1738,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", _("Submit"), css_class="button button-md primary-dark"),
+                    Submit("submit", gettext("Submit"), css_class="button button-md primary-dark"),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -1797,7 +1799,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
             self.line_items,
             Fieldset(
-                _("Service Delivery Notes"),
+                gettext("Service Delivery Notes"),
                 Field("description", **{"x-ref": "description"}),
             ),
         ]
@@ -1813,7 +1815,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         second_row = [
             Field(
                 "amount",
-                label=_("Amount"),
+                label=gettext("Amount"),
                 **{
                     "x-ref": "amount",
                     "x-model": "amount",
