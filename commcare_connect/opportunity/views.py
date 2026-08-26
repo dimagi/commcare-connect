@@ -218,7 +218,6 @@ from commcare_connect.organization.decorators import (
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
-    is_org_pm,
     opportunity_access_level_from_request,
     opportunity_by_id,
 )
@@ -757,7 +756,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
 @opp_standard_access_required
 @opportunity_required
 def add_budget_new_users(request, org_slug=None, opp_id=None):
-    program_manager = is_org_pm(request)
+    program_manager = is_opportunity_pm(request, request.opportunity)
 
     form = AddBudgetNewUsersForm(
         opportunity=request.opportunity,

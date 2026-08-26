@@ -195,6 +195,50 @@ def test_add_budget_existing_users_for_managed_opportunity(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "org_role,expected",
+    [
+        ("program_owner", True),
+        ("supervising", True),
+        ("funder", True),
+        ("delivery", False),
+    ],
+)
+def test_add_budget_new_users_by_org_role(client, program_manager_org, organization, org_role, expected):
+    """Only orgs managing the opportunity from the program side (program owner, supervising, funder)
+    may add budget for new users; the delivery org cannot."""
+    program = ProgramFactory(organization=program_manager_org, budget=1000)
+    opportunity = OpportunityFactory(program=program, organization=organization, total_budget=100)
+    acting_org = program_manager_org
+
+    if org_role == "delivery":
+        acting_org = organization
+    elif org_role == "supervising":
+        acting_org = OrgWithUsersFactory()
+        opportunity.supervising_organization = acting_org
+        opportunity.save()
+    elif org_role == "funder":
+        acting_org = OrgWithUsersFactory()
+        program.funder = acting_org
+        program.save()
+
+    admin = acting_org.memberships.filter(role="admin").first().user
+    client.force_login(admin)
+
+    url = reverse("opportunity:add_budget_new_users", args=(acting_org.slug, opportunity.pk))
+    response = client.post(url, data={"total_budget": 150})
+
+    assert response.status_code == HTTPStatus.OK
+    opportunity.refresh_from_db()
+    if expected:
+        assert response.headers.get("HX-Redirect")
+        assert opportunity.total_budget == 150
+    else:
+        assert "Only program managers are allowed" in response.content.decode()
+        assert opportunity.total_budget == 100
+
+
+@pytest.mark.django_db
 def test_add_budget_existing_users_per_visit_cost_includes_org_amount(
     organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
 ):
