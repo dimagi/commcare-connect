@@ -1687,10 +1687,10 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
 
             self.fields["late_delta_units"].label = header_with_tooltip(
-                format_html('{} <i class="fa-solid fa-circle-info text-gray-400"></i>', _("Catch-up Units")),
+                format_html('{} <i class="fa-solid fa-circle-info text-gray-400"></i>', _("Additional Deliveries")),
                 _(
-                    "Additional deliveries for work that an earlier invoice already billed. They were "
-                    "approved after that invoice was issued, so they are billed here."
+                    "Additional deliveries for previously billed work. These were delivered or approved "
+                    "after the previous invoice was issued and are included on this invoice."
                 ),
             )
             self.fields["late_delta_units"].initial = self.late_delta_units
