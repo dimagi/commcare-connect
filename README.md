@@ -148,24 +148,15 @@ Some useful command are available via the `tasks.py` file:
 
 ### Setting Up Your Users
 
-On a fresh database `/accounts/login/` and `/accounts/signup/` both return a 500. Their
-template renders a "Log in with CommCare HQ" button, which raises `SocialApp.DoesNotExist`
-until a `commcarehq` social app exists. So create one before signing anybody up:
+No social app setup is needed: the "Log in with CommCare HQ" button only appears once a
+`commcarehq` social app exists (see
+[Setting up auth with CommCare HQ](#setting-up-auth-with-commcare-hq)).
 
-1.  Create a superuser. `--email` is not accepted, because the custom `User` model sets
-    `REQUIRED_FIELDS = []`; set the address afterwards in the admin if you need one.
+- To create a **superuser**, run the command below. `--email` is not accepted, because the
+  custom `User` model sets `REQUIRED_FIELDS = []`; set the address afterwards in the admin if
+  you need one.
 
-        $ ./manage.py createsuperuser
-
-2.  Log in at http://localhost:8000/admin/login/. That page uses Django's own template, so it
-    still works while the allauth pages are broken.
-
-3.  Add a social app with provider `commcarehq` at
-    http://localhost:8000/admin/socialaccount/socialapp/ and attach it to the current site.
-    Placeholder values for Client ID and Secret are fine unless you are actually testing the
-    OAuth flow — for that, see [Setting up auth with CommCare HQ](#setting-up-auth-with-commcare-hq).
-
-The allauth pages work from then on.
+      $ ./manage.py createsuperuser
 
 - To create a **normal user account**, go to Sign Up and fill out the form. Local settings use
   `ACCOUNT_EMAIL_VERIFICATION = "optional"`, so you are logged straight in; the confirmation
