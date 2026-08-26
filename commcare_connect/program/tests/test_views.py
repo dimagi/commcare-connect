@@ -359,6 +359,23 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
         assert response.status_code == HTTPStatus.OK
         assert self.program.name.encode() in response.content
 
+    def test_opportunity_init_edit_denies_opportunity_from_another_program(self, program_actors):
+        """Managing this program doesn't grant access to another program's opportunity via the same URL."""
+        org = program_actors(self.program)["owner"]
+        act_as_admin(self.client, org)
+        other_program = ProgramFactory.create(organization=OrganizationFactory())
+        opportunity = OpportunityFactory.create(organization=OrganizationFactory(), program=other_program)
+        edit_url = reverse(
+            "program:opportunity_init_edit",
+            kwargs={
+                "org_slug": org.slug,
+                "pk": self.program.program_id,
+                "opp_id": opportunity.opportunity_id,
+            },
+        )
+        response = self.client.get(edit_url)
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
 
 @pytest.mark.django_db
 class TestManageApplicationView(BaseProgramTest):

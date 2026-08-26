@@ -171,6 +171,9 @@ class ManagedOpportunityInit(ManagedOpportunityViewMixin, OpportunityInit):
 class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, OpportunityInitUpdate):
     form_class = OpportunityInitUpdateForm
 
+    def get_opportunity_queryset(self):
+        return Opportunity.objects.filter(program=self.program)
+
 
 @program_manage_access_required
 @require_POST

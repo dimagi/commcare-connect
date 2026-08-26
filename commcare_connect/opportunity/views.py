@@ -266,10 +266,13 @@ def get_opportunity_or_404(opp_id):
 
 
 class OpportunityObjectMixin:
+    def get_opportunity_queryset(self):
+        return Opportunity.objects.all()
+
     def get_opportunity(self):
         if not hasattr(self, "_opportunity"):
             self._opportunity = get_object_by_uuid_or_int(
-                Opportunity.objects.all(), str(self.kwargs.get("opp_id")), uuid_field="opportunity_id"
+                self.get_opportunity_queryset(), str(self.kwargs.get("opp_id")), uuid_field="opportunity_id"
             )
         return self._opportunity
 
