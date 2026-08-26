@@ -236,7 +236,7 @@ installed to deploy or change Django settings.
 
 Deploying a new version of the app can be done via the "Deploy" workflow on GitHub Actions.
 
-Container logs are shipped to CloudWatch, and can also be read directly with `kamal app logs`.
+Container logs are shipped to CloudWatch, and can also be read directly with `cd deploy && kamal app logs`.
 
 For details on how this action is configured see:
 
