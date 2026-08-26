@@ -69,6 +69,18 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
     return org_program_access(org, opportunity.program)
 
 
+def opportunity_managing_org_ids(opportunity) -> set:
+    """Every org with MANAGE access to this opportunity, independent of any request."""
+    org_ids = {
+        opportunity.organization_id,
+        opportunity.supervising_organization_id,
+        opportunity.program.organization_id,
+    }
+    if opportunity.program.funder_id:
+        org_ids.add(opportunity.program.funder_id)
+    return org_ids
+
+
 def opportunity_by_id(opp_id) -> Opportunity | None:
     queryset = Opportunity.objects.select_related("program", "organization")
     try:

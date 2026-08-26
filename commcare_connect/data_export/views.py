@@ -73,13 +73,13 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.decorators import user_is_opportunity_admin, user_is_opportunity_pm
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program
+from commcare_connect.program.utils import opportunity_managing_org_ids
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
 BULK_MAX_ITEMS = 100  # JSON bulk-update: per-item FK validation + possible HQ sync/notification
@@ -95,6 +95,28 @@ class BaseDataExportView(APIView):
 class BaseDataWriteView(APIView):
     permission_classes = [IsAuthenticated, TokenHasScope]
     required_scopes = ["write"]
+
+
+def user_is_opportunity_admin(user, opportunity):
+    """Admin of any org that can manage this opportunity, from either the delivery or program side."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=opportunity_managing_org_ids(opportunity),
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+def user_is_opportunity_pm(user, opportunity):
+    """Admin of an org that manages this opportunity from the program side, i.e. not the delivery org."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=opportunity_managing_org_ids(opportunity) - {opportunity.organization_id},
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
 
 
 class OpportunityPermissionMixin:
@@ -218,7 +240,10 @@ def _get_opportunity_or_404(user, opp_id):
     try:
         return (
             Opportunity.objects.filter(
-                Q(organization__memberships__user=user) | Q(program__organization__memberships__user=user),
+                Q(organization__memberships__user=user)
+                | Q(supervising_organization__memberships__user=user)
+                | Q(program__organization__memberships__user=user)
+                | Q(program__funder__memberships__user=user),
                 id=opp_id,
             )
             .distinct()
