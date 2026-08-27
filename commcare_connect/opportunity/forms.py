@@ -10,7 +10,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Min, Q, Sum, TextChoices
+from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -19,15 +19,17 @@ from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
 
-from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import (
+    AUTOMATIC_VISIT_VERIFICATION,
+    ENABLE_PROGRAM_ACCESS_REDESIGN,
+    OPPORTUNITY_CREDENTIALS,
+)
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
     CommCareApp,
-    CompletedWork,
-    CompletedWorkStatus,
     Country,
     CredentialConfiguration,
     Currency,
@@ -50,14 +52,16 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
+from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
@@ -161,8 +165,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.latest_active_history_event = kwargs.pop("latest_active_history_event", None)
+        self.request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
         self.opportunity = self.instance
+        if self._can_edit_supervising_organization():
+            self._add_supervising_organization_field()
 
         self.fields["users"].required = False
         layout_fields = [
@@ -179,6 +186,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                     Field("name", wrapper_class="w-full"),
                     Field("short_description", wrapper_class="w-full"),
                     Field("description", wrapper_class="w-full"),
+                    *(
+                        [Field("supervising_organization", wrapper_class="w-full")]
+                        if "supervising_organization" in self.fields
+                        else []
+                    ),
                 ),
                 Column(
                     Field("delivery_type"),
@@ -330,6 +342,29 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
         return self._validate_and_parse_users(user_data)
 
+    def _can_edit_supervising_organization(self):
+        """Only an org with PM-level oversight may reassign it.
+
+        This form is reachable by any member of the opportunity's own organization, so
+        without this check the delivering Network Manager could reassign oversight of its
+        own opportunity and remove the program manager. `is_opportunity_pm` excludes that
+        organization by definition, which is exactly the distinction needed here.
+        """
+        if self.request is None or not switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
+            return False
+        if not self.instance.pk or not self.instance.managed:
+            return False
+        return is_opportunity_pm(self.request, self.instance)
+
+    def _add_supervising_organization_field(self):
+        self.fields["supervising_organization"] = forms.ModelChoiceField(
+            queryset=eligible_supervising_organizations(self.instance.program),
+            required=True,
+            initial=self.instance.supervising_organization,
+            widget=forms.Select(attrs={"data-tomselect": "1"}),
+            label=_("Supervising Organization"),
+        )
+
     def clean_active(self):
         active = self.cleaned_data["active"]
         if active and not self.currently_active:
@@ -343,6 +378,9 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         return active
 
     def save(self, commit=True):
+        # Attached at runtime, so absent from Meta.fields and skipped by construct_instance.
+        if "supervising_organization" in self.cleaned_data:
+            self.instance.supervising_organization = self.cleaned_data["supervising_organization"]
         instance = super().save(commit=commit)
         if not switch_is_active(OPPORTUNITY_CREDENTIALS):
             return instance
@@ -404,6 +442,9 @@ class OpportunityInitForm(forms.ModelForm):
             ),
         )
 
+        if switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
+            self._add_supervising_organization_field()
+
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
@@ -417,6 +458,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("name"),
                     Field("short_description"),
                     Field("description"),
+                    *([Field("supervising_organization")] if "supervising_organization" in self.fields else []),
                 ),
                 Column(
                     Field("currency"),
@@ -542,6 +584,18 @@ class OpportunityInitForm(forms.ModelForm):
         opportunity_details_row = self.helper.layout[0]
         opportunity_details_row.fields.insert(1, Column(Field("organization"), css_class="col-span-2"))
 
+    def _add_supervising_organization_field(self):
+        """The supervising organization oversees the work; it does not replace the
+        delivering organization chosen in `organization`. Both roles can coexist on the
+        same organization."""
+        self.fields["supervising_organization"] = forms.ModelChoiceField(
+            queryset=eligible_supervising_organizations(self.program),
+            required=True,
+            initial=self.program.organization,
+            widget=forms.Select(attrs={"data-tomselect": "1"}),
+            label=_("Supervising Organization"),
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
@@ -618,6 +672,10 @@ class OpportunityInitForm(forms.ModelForm):
         opportunity.modified_by = self.user.email
 
         opportunity.organization = self.cleaned_data.get("organization")
+        # Absent from cleaned_data when the access redesign switch is off, in which case
+        # Opportunity.save() falls back to the program's organization.
+        if "supervising_organization" in self.cleaned_data:
+            opportunity.supervising_organization = self.cleaned_data["supervising_organization"]
         opportunity.program = self.program
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
@@ -679,6 +737,8 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         self._set_initial_app("deliver", getattr(opportunity, "deliver_app", None))
 
         self.fields["organization"].initial = opportunity.organization
+        if "supervising_organization" in self.fields:
+            self.fields["supervising_organization"].initial = opportunity.supervising_organization
 
         if self._has_existing_accesses:
             self._disabled_fields = (
@@ -741,6 +801,10 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
     def save(self, commit=True):
         opportunity = self.instance
         opportunity.organization = self.cleaned_data.get("organization")
+        # Absent from cleaned_data when the access redesign switch is off, leaving the
+        # opportunity's existing supervising organization untouched.
+        if "supervising_organization" in self.cleaned_data:
+            opportunity.supervising_organization = self.cleaned_data["supervising_organization"]
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
 
@@ -1713,32 +1777,6 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             )
             self.fields["date_of_expense"].required = True
 
-    def get_start_date_for_invoice(self):
-        date = (
-            CompletedWork.objects.filter(
-                invoice__isnull=True,
-                opportunity_access__opportunity=self.opportunity,
-                status=CompletedWorkStatus.approved,
-            )
-            .aggregate(earliest_date=Min("status_modified_date"))
-            .get("earliest_date")
-        )
-
-        start_date = date
-        if date:
-            start_date = date.date()
-        else:
-            start_date = self.opportunity.start_date
-
-        return start_date.replace(day=1)
-
-    def get_end_date_for_invoice(self, start_date):
-        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
-
-        if start_date > last_day_previous_month:
-            return datetime.date.today() - datetime.timedelta(days=1)
-        return last_day_previous_month
-
     def get_form_layout(self):
         if self.is_service_delivery:
             invoice_form_fields = self.service_delivery_invoice_fields
@@ -1916,17 +1954,28 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
-        instance.amount_usd = self.cleaned_data["amount_usd"]
-        instance.amount = self.cleaned_data["amount"]
+        if not self.is_service_delivery:
+            instance.amount = self.cleaned_data["amount"]
+            instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
-        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.service_delivery = self.is_service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
         instance.status = self.status
 
-        if commit:
+        if not commit:
+            return instance
+
+        if self.is_service_delivery:
+            # Save the invoice totals from the rows just frozen (or 0 if nothing was billable).
+            # Preview totals are only for display and may be stale; persisted totals must come
+            # from the same read that created the invoice line items so they always match.
+            rows = bill_invoice(instance, start_date=instance.start_date, end_date=instance.end_date)
+            if not rows:
+                instance.amount = 0
+                instance.amount_usd = 0
+                instance.save()
+        else:
             instance.save()
-            if self.is_service_delivery:
-                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
 
         return instance
 

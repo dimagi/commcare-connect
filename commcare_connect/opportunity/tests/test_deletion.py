@@ -3,7 +3,7 @@ from django.db import IntegrityError
 
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.deletion import OPPORTUNITY_DELETIONS, ModelDeletion, delete_opportunity
-from commcare_connect.opportunity.models import LabsRecord, Opportunity, Payment
+from commcare_connect.opportunity.models import CompletedWorkInvoice, LabsRecord, Opportunity, Payment
 from commcare_connect.opportunity.tests import factories
 
 
@@ -86,3 +86,15 @@ def test_delete_opportunity_is_atomic(monkeypatch):
     assert result is False
     assert Opportunity.objects.filter(pk=opportunity_id).exists()
     assert opportunity.completedmodule_set.exists()
+
+
+@pytest.mark.django_db
+def test_delete_opportunity_removes_snapshot_rows():
+    access = factories.OpportunityAccessFactory()
+    opportunity = access.opportunity
+    invoice = factories.PaymentInvoiceFactory(opportunity=opportunity)
+    work = factories.CompletedWorkFactory(opportunity_access=access)
+    factories.CompletedWorkInvoiceFactory(invoice=invoice, completed_work=work)
+
+    assert delete_opportunity(opportunity) is True
+    assert not CompletedWorkInvoice.objects.exists()

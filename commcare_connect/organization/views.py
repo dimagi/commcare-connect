@@ -12,7 +12,7 @@ from django.views.decorators.http import require_GET
 from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
-from commcare_connect.organization.decorators import org_admin_required
+from commcare_connect.organization.decorators import org_manage_access_required
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
@@ -47,7 +47,7 @@ def no_organization(request):
     return render(request, "organization/no_organization.html")
 
 
-@org_admin_required
+@org_manage_access_required
 def organization_home(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
 
@@ -75,7 +75,7 @@ def organization_home(request, org_slug):
 
 
 @api_view(["POST"])
-@org_admin_required
+@org_manage_access_required
 def add_members_form(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
     form = OrganizationInviteForm(request.POST or None, organization=org)
@@ -97,7 +97,7 @@ def add_members_form(request, org_slug):
 
 
 @api_view(["POST"])
-@org_admin_required
+@org_manage_access_required
 def remove_members(request, org_slug):
     membership_ids = request.POST.getlist("membership_ids")
     base_url = reverse("organization:home", args=(org_slug,))
@@ -187,7 +187,7 @@ def _accept_invite_for_new_user(request, invite, org_slug):
 
 
 @api_view(["POST"])
-@org_admin_required
+@org_manage_access_required
 def revoke_invite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
@@ -199,7 +199,7 @@ def revoke_invite(request, org_slug, invite_id):
 
 
 @require_GET
-@org_admin_required
+@org_manage_access_required
 def org_member_table(request, org_slug=None):
     members = UserOrganizationMembership.objects.filter(organization=request.org)
     table = OrgMemberTable(members)
@@ -208,7 +208,7 @@ def org_member_table(request, org_slug=None):
 
 
 @require_GET
-@org_admin_required
+@org_manage_access_required
 def org_pending_invites_table(request, org_slug=None):
     return _render_pending_invites(request)
 

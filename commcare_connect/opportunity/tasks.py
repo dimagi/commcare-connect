@@ -57,12 +57,9 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import (
-    get_uninvoiced_visit_items,
-    link_invoice_to_completed_works,
-    update_status,
-)
+from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
+from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
@@ -75,6 +72,7 @@ logger = logging.getLogger(__name__)
 
 OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
 OPPORTUNITY_AUTO_ARCHIVE_DAYS = 30
+OPPORTUNITY_AUTO_INVOICE_START_DATE = datetime.date(2026, 1, 1)
 SYSTEM = "system"
 
 
@@ -671,61 +669,45 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
 @celery_app.task()
 def generate_automated_service_delivery_invoice():
     CHUNK_SIZE = 100
-    invoices_chunk = []
     end_date_prev_month = get_end_date_previous_month()
 
-    opp_start_date = datetime.date(2026, 1, 1)
     created_invoices_ids = []
 
-    for opportunity in Opportunity.objects.filter(active=True, is_test=False, start_date__gte=opp_start_date).iterator(
-        chunk_size=CHUNK_SIZE
-    ):
-        start_date = get_start_date_for_invoice(opportunity)
-        # Below indicates there are no uninvoiced completed works to invoice in previous month or earlier
-        if start_date > end_date_prev_month:
+    for opportunity in Opportunity.objects.filter(
+        active=True, is_test=False, start_date__gte=OPPORTUNITY_AUTO_INVOICE_START_DATE
+    ).iterator(chunk_size=CHUNK_SIZE):
+        window_start = get_start_date_for_invoice(opportunity)
+        # Below indicates there are no unbilled completed works to invoice in previous month or earlier
+        if window_start > end_date_prev_month:
             continue
 
-        invoice_number = generate_invoice_number()
-        line_items = get_uninvoiced_visit_items(opportunity, start_date, end_date_prev_month)
-        if not line_items:
-            continue
-
-        total_local_amount = sum(item["total_amount_local"] for item in line_items)
-        total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
-        exchange_rate = ExchangeRate.latest_exchange_rate(line_items[-1]["currency"], line_items[-1]["month"])
-
-        payment_invoice = PaymentInvoice(
-            opportunity=opportunity,
-            amount=total_local_amount,
-            amount_usd=total_usd_amount,
-            date=datetime.datetime.utcnow(),
-            start_date=start_date,
-            end_date=end_date_prev_month,
-            status=InvoiceStatus.PENDING_NM_REVIEW,
-            invoice_number=invoice_number,
-            service_delivery=True,
-            exchange_rate=exchange_rate,
-        )
-        invoices_chunk.append(payment_invoice)
-
-        if len(invoices_chunk) == CHUNK_SIZE:
-            created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
-            invoices_chunk = []
-
-    if invoices_chunk:
-        created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
+        invoice_id = _bill_opportunity(opportunity, window_start, end_date_prev_month)
+        if invoice_id:
+            created_invoices_ids.append(invoice_id)
 
     _send_auto_invoice_created_notification(created_invoices_ids)
 
 
-def _bulk_create_and_link_invoices(invoices_chunk):
-    invoice_ids = []
+def _bill_opportunity(opportunity, window_start, end_date):
+    """Bill one opportunity for this window: create its service delivery invoice and freeze its
+    line items in a single transaction. Returns the invoice id, or None if nothing was billable.
+
+    Scoped to one opportunity so the FOR UPDATE locks are released as soon as that opportunity is
+    done, instead of being held across a whole batch.
+    """
+    invoice = PaymentInvoice(
+        opportunity=opportunity,
+        date=datetime.datetime.utcnow(),
+        start_date=window_start,
+        end_date=end_date,
+        status=InvoiceStatus.PENDING_NM_REVIEW,
+        invoice_number=generate_invoice_number(),
+        service_delivery=True,
+    )
     with transaction.atomic():
-        invoice_objs = PaymentInvoice.objects.bulk_create(invoices_chunk)
-        for invoice in invoice_objs:
-            link_invoice_to_completed_works(invoice, start_date=invoice.start_date, end_date=invoice.end_date)
-            invoice_ids.append(invoice.id)
-    return invoice_ids
+        if not bill_invoice(invoice, start_date=window_start, end_date=end_date):
+            return None
+        return invoice.id
 
 
 def _send_auto_invoice_created_notification(invoice_ids):

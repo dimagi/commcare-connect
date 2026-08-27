@@ -109,6 +109,10 @@ class UserOrganizationMembership(models.Model):
         return self.role == self.Role.ADMIN
 
     @property
+    def is_member(self):
+        return self.role == self.Role.MEMBER
+
+    @property
     def is_viewer(self):
         return self.role == self.Role.VIEWER
 

@@ -84,6 +84,25 @@ class Country(models.Model):
         return self.name
 
 
+# Tracked separately from the fields=["active"] tracker below rather than by adding
+# supervising_organization to its field list: pghistory derives the event model name from
+# the fields, so extending it would rename OpportunityActiveEvent, which is referred to by
+# name in code.
+#
+# Both labels, "supervising_organization_insert" and "supervising_organization_update", are
+# given explicitly. A label must be unique among a model's trackers, and the
+# fields=["active"] tracker below already holds the default "update", so leaving this
+# tracker's UpdateEvent to default raises ValueError. Only that update label is strictly
+# required; "supervising_organization_insert" is named to match rather than left as the
+# default "insert", because the label is stored as pgh_label on every event row and a bare
+# "insert" beside "supervising_organization_update" would read inconsistently. It also
+# keeps the default "insert" free, which would otherwise collide if another field on this
+# model is tracked on insert later.
+@pghistory.track(
+    pghistory.InsertEvent("supervising_organization_insert"),
+    pghistory.UpdateEvent("supervising_organization_update"),
+    fields=["supervising_organization"],
+)
 @pghistory.track(pghistory.UpdateEvent(), fields=["active"])
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
@@ -130,8 +149,8 @@ class Opportunity(BaseModel):
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def save(self, *args, **kwargs):
-        # Until the UI allows setting a supervising organization, default it to the program's
-        # owning organization.
+        # Form-driven creation sets this explicitly; the fallback covers programmatic
+        # creation paths (API, factories, data migrations) for this non-null column.
         if not self.supervising_organization_id:
             self.supervising_organization_id = self.program.organization_id
         super().save(*args, **kwargs)
@@ -778,9 +797,6 @@ class PaymentInvoice(models.Model):
     def get_status_display(self):
         return InvoiceStatus.get_label(self.status)
 
-    def unlink_completed_works(self):
-        CompletedWork.objects.filter(invoice=self).update(invoice=None)
-
 
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
@@ -843,6 +859,10 @@ class CompletedWork(models.Model):
     )
     saved_org_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
+    )
+    invoiced_approved_count = models.IntegerField(
+        default=0,
+        help_text=gettext_lazy("Approved units already billed on a live invoice."),
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -939,6 +959,49 @@ class CompletedWork(models.Model):
     def completion_date(self):
         visit = self.uservisit_set.order_by("visit_date").last()
         return visit.visit_date if visit else None
+
+
+class CompletedWorkInvoice(BaseModel):
+    """Frozen per-work billing record: how much of one CompletedWork was billed on one PaymentInvoice.
+
+    One row per (invoice, completed_work). Snapshotted at invoice creation (and backfilled for legacy
+    invoices) so invoice line items are read from frozen rows instead of recomputed from
+    CompletedWork.saved_* on every view. Stores both FLW pay and org (workspace) pay.
+    """
+
+    invoice = models.ForeignKey(
+        PaymentInvoice,
+        on_delete=models.PROTECT,
+        related_name="work_items",
+    )
+    completed_work = models.ForeignKey(
+        CompletedWork,
+        on_delete=models.PROTECT,
+        related_name="invoice_items",
+    )
+    month = models.DateField(
+        help_text=gettext_lazy("First of the month the billed units are attributed to (period attribution).")
+    )
+    billed_count = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text=gettext_lazy("Approved units billed on THIS invoice (delta)."),
+    )
+    flw_amount_local = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    flw_amount_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    org_amount_local = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    org_amount_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    exchange_rate = models.ForeignKey(
+        ExchangeRate,
+        on_delete=models.PROTECT,
+        related_name="completed_work_invoices",
+        help_text=gettext_lazy("ExchangeRate row used for this row's month."),
+    )
+    # True when this billing represents additional approved work
+    # obtained after the initial billing.
+    is_delta = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ("invoice", "completed_work")
 
 
 class VisitReviewStatus(models.TextChoices):

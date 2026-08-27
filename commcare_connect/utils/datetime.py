@@ -2,12 +2,18 @@ import calendar
 import datetime
 
 from dateutil.relativedelta import relativedelta
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 
 
 def is_date_before(date: datetime.datetime, days: int):
     before_date = now() - datetime.timedelta(days=days)
     return date.date() == before_date.date()
+
+
+def get_month_start_date(value: datetime.date | datetime.datetime) -> datetime.date:
+    if isinstance(value, datetime.datetime):
+        value = localdate(value)
+    return value.replace(day=1)
 
 
 def get_month_series(from_date: datetime.date, to_date: datetime.date):
