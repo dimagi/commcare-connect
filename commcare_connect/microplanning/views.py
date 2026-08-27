@@ -48,10 +48,12 @@ from waffle.decorators import waffle_flag
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
+    MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
     REQUIRED_DELIVER_UNIT_SLUGS,
     WORK_AREA_STATUS_COLORS,
+    WORKAREA_MIN_ZOOM,
 )
 from commcare_connect.microplanning.coverage_progress import (
     IN_SCOPE_WORK_AREA,
@@ -110,8 +112,6 @@ from .tasks import (
 )
 
 logger = logging.getLogger(__name__)
-
-WORKAREA_MIN_ZOOM = 6
 
 STATEMENT_TIMEOUT = "30s"
 PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a query
@@ -259,6 +259,7 @@ def microplanning_home(request, *args, **kwargs):
         "implementation_areas_url": implementation_areas_url,
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
+        "max_autozoom_zoom": MAX_AUTOZOOM_ZOOM,
         "edit_work_area_url": edit_work_area_url,
         "user_visit_data_url": user_visit_data_url,
         "download_url": download_url,
