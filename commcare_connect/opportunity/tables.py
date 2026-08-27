@@ -54,6 +54,22 @@ def header_with_tooltip(label, tooltip_text):
     )
 
 
+def value_with_icon_tooltip(display_value, tooltip_html, theme=None):
+    """Render `display_value` followed by an info icon carrying a rich HTML tooltip.
+
+    `tooltip_html` should come from a rendered template (see e.g. `exchange_rate_tooltip.html`),
+    not be built up as a string in Python.
+    """
+    theme_modifier = f".theme.{theme}" if theme else ""
+    return format_html(
+        '{} <i class="fa-solid fa-circle-info text-gray-400 ml-1" '
+        'x-data x-tooltip.raw.html.interactive{theme_modifier}="{tooltip}"></i>',
+        display_value,
+        theme_modifier=mark_safe(theme_modifier),
+        tooltip=mark_safe(tooltip_html),
+    )
+
+
 class OpportunityContextTable(OrgContextTable):
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id", None)
