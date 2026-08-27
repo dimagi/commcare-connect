@@ -175,7 +175,7 @@ class Command(BaseCommand):
                     Opportunity.objects.all(), options["opp_id"], uuid_field="opportunity_id"
                 )
             except Http404:
-                raise CommandError(f"No opportunity matches --opp-id {options['opp_id']!r}")
+                raise CommandError(f"No opportunity matches --opp-id {options['opp_id']!r}") from None
             self.stdout.write(f"Using existing opportunity: {opportunity.name}")
             return opportunity, False
         return self.ensure_demo_opportunity(options["org_slug"]), not options["org_slug"]
