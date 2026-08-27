@@ -783,8 +783,16 @@ def workareas_bounds(request, org_slug, opp_id):
     # joins and GROUP BY those annotations would force.
     queryset = WorkArea.objects.filter(opportunity=request.opportunity)
     filtered = WorkAreaMapFilterSet(request.GET, queryset=queryset, opportunity=request.opportunity).qs
-    extent = filtered.aggregate(extent=Extent("boundary"))["extent"]
-    return JsonResponse({"bounds": extent})
+    return JsonResponse({"bounds": work_area_bounds(filtered)})
+
+
+def work_area_bounds(queryset):
+    """``[xmin, ymin, xmax, ymax]`` covering ``queryset``, or None when it is empty.
+
+    Mapbox's ``fitBounds`` takes this shape directly, so it doubles as the "where should the map
+    look?" answer — no separate centroid needed.
+    """
+    return queryset.aggregate(extent=Extent("boundary"))["extent"]
 
 
 @require_GET
@@ -1095,13 +1103,16 @@ class ModifyWorkAreaUpdateView(UpdateView):
 @waffle_flag(MICROPLANNING)
 def get_work_areas_for_assignment(request, org_slug, opp_id):
     group_ids = request.GET.getlist("group_id")
-    work_areas = list(
-        WorkArea.objects.filter(
-            opportunity=request.opportunity,
-            work_area_group_id__in=group_ids,
-        ).values("id", "building_count", "expected_visit_count", "status", group_id=F("work_area_group_id"))
+    queryset = WorkArea.objects.filter(
+        opportunity=request.opportunity,
+        work_area_group_id__in=group_ids,
     )
-    return JsonResponse({"work_areas": work_areas})
+    work_areas = list(
+        queryset.values("id", "building_count", "expected_visit_count", "status", group_id=F("work_area_group_id"))
+    )
+    # Assignment mode selects these client-side rather than through the tile filters, so the map
+    # can't get their extent from workareas_bounds; it rides along here to drive the auto-zoom.
+    return JsonResponse({"work_areas": work_areas, "bounds": work_area_bounds(queryset)})
 
 
 @require_GET
@@ -1109,13 +1120,12 @@ def get_work_areas_for_assignment(request, org_slug, opp_id):
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
-    work_areas = list(
-        WorkArea.objects.filter(
-            opportunity=request.opportunity,
-            opportunity_access_id=assignee_id,
-        ).values("id", "building_count", "expected_visit_count", "status")
+    queryset = WorkArea.objects.filter(
+        opportunity=request.opportunity,
+        opportunity_access_id=assignee_id,
     )
-    return JsonResponse({"work_areas": work_areas})
+    work_areas = list(queryset.values("id", "building_count", "expected_visit_count", "status"))
+    return JsonResponse({"work_areas": work_areas, "bounds": work_area_bounds(queryset)})
 
 
 @require_GET

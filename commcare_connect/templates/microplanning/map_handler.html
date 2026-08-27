@@ -487,10 +487,11 @@
                 this.updateFlwSummary();
             },
 
-            // Fetches (and caches) a group's work areas. Concurrent or repeat calls for the
-            // same group share one in-flight/cached request instead of re-fetching, since
-            // group membership doesn't change during a session.
-            async fetchGroupWorkAreas(groupId) {
+            // Fetches (and caches) one group's assignment payload: its work areas plus their
+            // extent, for the auto-zoom. Concurrent or repeat calls for the same group share one
+            // in-flight/cached request instead of re-fetching, since group membership doesn't
+            // change during a session.
+            async fetchGroupData(groupId) {
                 // Normalize to string for consistency from different callers
                 groupId = String(groupId);
                 if (!this.groupWorkAreasCache.has(groupId)) {
@@ -502,7 +503,6 @@
                             if (!resp.ok) throw new Error(`Failed to load group work areas (status ${resp.status})`);
                             return resp.json();
                         })
-                        .then(data => data.work_areas)
                         .catch(e => {
                             this.groupWorkAreasCache.delete(groupId);
                             throw e;
@@ -510,6 +510,11 @@
                     this.groupWorkAreasCache.set(groupId, promise);
                 }
                 return this.groupWorkAreasCache.get(groupId);
+            },
+
+            // Most callers only care about membership; they share the cache above.
+            async fetchGroupWorkAreas(groupId) {
+                return (await this.fetchGroupData(groupId)).work_areas;
             },
 
             invalidateGroupWorkAreasCache() {
@@ -571,9 +576,13 @@
                     selectionId: this.selectedGroupIds,
                     // Fetch each selected group through the same cached fetcher clicks use,
                     // so a group picked here and also clicked on the map (or vice versa)
-                    // only ever fetches once, then merge the per-group results together.
-                    fetchWorkAreas: () => Promise.all(this.selectedGroupIds.map(id => this.fetchGroupWorkAreas(id)))
-                        .then(arrays => arrays.flat()),
+                    // only ever fetches once, then merge the per-group results — and the
+                    // per-group extents, into one box covering them all — together.
+                    fetchSelection: () => Promise.all(this.selectedGroupIds.map(id => this.fetchGroupData(id)))
+                        .then(results => ({
+                            workAreas: results.flatMap(result => result.work_areas),
+                            bounds: results.reduce((box, result) => this.combineBounds(box, result.bounds), null),
+                        })),
                     errorMsg: "{% translate 'Failed to load group work areas' %}",
                 });
             },
@@ -586,18 +595,19 @@
                     // Not cached: unlike group membership, an assignee's work areas change
                     // during a session (that's the point of this workflow), so a stale
                     // cached list here would hide assignments just made this session.
-                    fetchWorkAreas: () => fetch('{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId))
+                    fetchSelection: () => fetch('{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId))
                         .then(resp => {
                             if (!resp.ok) throw new Error(`Failed to load FLW work areas (status ${resp.status})`);
                             return resp.json();
                         })
-                        .then(data => data.work_areas),
+                        .then(data => ({ workAreas: data.work_areas, bounds: data.bounds })),
                     errorMsg: "{% translate 'Failed to load FLW work areas' %}",
                 });
             },
 
-            // Replaces the selection contributed by one filter (a group or an FLW).
-            async replaceFilterSelection({ trackingSet, selectionId, fetchWorkAreas, errorMsg }) {
+            // Replaces the selection contributed by one filter (a group or an FLW). `fetchSelection`
+            // resolves to `{ workAreas, bounds }`; the bounds frame the new selection on the map.
+            async replaceFilterSelection({ trackingSet, selectionId, fetchSelection, errorMsg }) {
                 for (const id of trackingSet) {
                     this.selectedWorkAreas.delete(id);
                     this.setWorkAreaState(id, { assignment_selected: false });
@@ -610,18 +620,25 @@
                     return;
                 }
 
+                // Claim the auto-zoom slot before awaiting, on the same counter
+                // fetchWorkAreaBounds() uses. These bounds ride along on the selection response
+                // rather than coming from that fetch, so without this a slow reply here could land
+                // after — and undo — the fit from a search or filter the user has since used.
+                const requestId = this.invalidateBoundsRequest();
+
                 // Show the summary spinner while this filter's areas load. Until they
                 // land, flwFilterWorkAreaIds is empty, so the live delta would transiently
                 // count the FLW's own existing areas as "new" and inflate the total.
                 this.flwSummaryLoading = true;
                 try {
-                    const workAreas = await fetchWorkAreas();
+                    const { workAreas, bounds } = await fetchSelection();
                     for (const wa of workAreas) {
                         this.selectedWorkAreas.add(wa.id);
                         trackingSet.add(wa.id);
                         this.workAreaProperties.set(wa.id, wa);
                         this.setWorkAreaState(wa.id, { assignment_selected: true });
                     }
+                    if (requestId === this.boundsRequestId) this.zoomToBounds(bounds);
                 } catch (e) {
                     this.showToast(errorMsg, true);
                 }
@@ -902,6 +919,7 @@
                 const query = this.currentTileQuery();
                 this.pendingTileQuery = query;
                 this.applyTileQuery(query);
+                this.zoomToQuery(query);
             },
 
             init() {
