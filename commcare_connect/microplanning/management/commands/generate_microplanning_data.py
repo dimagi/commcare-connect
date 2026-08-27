@@ -411,30 +411,55 @@ class Command(BaseCommand):
             self.stdout.write(f"Cleared {deleted} existing work area rows")
 
     def ensure_payment_units(self, opportunity):
-        """Two payment units, each with one deliver unit — drives the Payment Unit map filter."""
+        """Two payment units, each with one deliver unit — drives the Payment Unit map filter.
+
+        The two pair up: each seeded visit records a deliver unit against a completed work keyed on
+        a payment unit, and a completed work whose payment unit does not own the deliver unit its
+        visits carry never completes. The slugs are fixed by the coverage metrics, so an --opp-id
+        opportunity may already own a deliver unit using one of them — that deliver unit's own
+        payment unit is then the one to pair it with, rather than a second one seeded alongside it.
+        """
         units = []
         for index, (name, slug) in enumerate(PAYMENT_UNITS):
-            payment_unit, _ = PaymentUnit.objects.get_or_create(
-                opportunity=opportunity,
-                name=name,
-                defaults={
-                    "description": f"Seeded {name}",
-                    "amount": 5 + index,
-                    "org_amount": 2,
-                    "max_daily": 10,
-                    "max_total": 100,
-                },
+            deliver_unit = DeliverUnit.objects.filter(app=opportunity.deliver_app, slug=slug).first()
+            payment_unit = self.existing_payment_unit(deliver_unit, opportunity) or self.seeded_payment_unit(
+                opportunity, name, index
             )
-            deliver_unit, _ = DeliverUnit.objects.get_or_create(
-                app=opportunity.deliver_app,
-                slug=slug,
-                defaults={"payment_unit": payment_unit, "name": f"{name} DU"},
-            )
-            if deliver_unit.payment_unit_id is None:
+            if deliver_unit is None:
+                deliver_unit = DeliverUnit.objects.create(
+                    app=opportunity.deliver_app, slug=slug, name=f"{name} DU", payment_unit=payment_unit
+                )
+            elif deliver_unit.payment_unit_id != payment_unit.id:
                 deliver_unit.payment_unit = payment_unit
                 deliver_unit.save(update_fields=["payment_unit"])
             units.append((payment_unit, deliver_unit))
         return units
+
+    def existing_payment_unit(self, deliver_unit, opportunity):
+        """The payment unit `deliver_unit` already belongs to, if it is one this opportunity owns.
+
+        A deliver unit hanging off another opportunity's payment unit means the deliver app is
+        shared, and pairing seeded visits across opportunities that way would be worse than
+        repointing it.
+        """
+        if deliver_unit is None or deliver_unit.payment_unit_id is None:
+            return None
+        payment_unit = deliver_unit.payment_unit
+        return payment_unit if payment_unit.opportunity_id == opportunity.id else None
+
+    def seeded_payment_unit(self, opportunity, name, index):
+        payment_unit, _ = PaymentUnit.objects.get_or_create(
+            opportunity=opportunity,
+            name=name,
+            defaults={
+                "description": f"Seeded {name}",
+                "amount": 5 + index,
+                "org_amount": 2,
+                "max_daily": 10,
+                "max_total": 100,
+            },
+        )
+        return payment_unit
 
     def ensure_workers(self, opportunity, count):
         accesses = []
