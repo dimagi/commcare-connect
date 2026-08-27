@@ -1,57 +1,39 @@
 import django_tables2 as tables
-from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
-from commcare_connect.opportunity.tables import IndexColumn
 from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
+from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
+
+ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
+ROLE_BADGE_TEMPLATE = "organization/role_badge.html"
 
 
 class OrgMemberTable(tables.Table):
-    select = tables.CheckBoxColumn(
-        accessor="pk",
-        attrs={
-            "th__input": {
-                "@click": "toggleSelectAll()",
-                "x-model": "selectAll",
-                "name": "select_all",
-                "type": "checkbox",
-                "class": "checkbox",
-            },
-            "td__input": {
-                "x-model": "selected",
-                "@click.stop": "",  # used to stop click propagation
-                "name": "row_select",
-                "type": "checkbox",
-                "class": "checkbox",
-                "value": lambda record: record.pk,
-                "id": lambda record: f"row_checkbox_{record.pk}",
-                ":disabled": lambda record: f"currentUserMembershipId === '{record.pk}'",
-            },
-        },
+    select = select_column(
+        td_extra={":disabled": lambda record: f"currentUserMembershipId === '{record.pk}'"},
     )
     use_view_url = True
     index = IndexColumn()
-    user = columns.Column(verbose_name="member", accessor="user__email")
-    role = tables.Column()
+    user = columns.Column(verbose_name=_("Member"), accessor="user__email")
+    role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
 
     class Meta:
         model = UserOrganizationMembership
         fields = ("role", "user")
         sequence = ("select", "index", "user", "role")
 
-    def render_role(self, value):
-        return format_html("<div class=' underline underline-offset-4'>{}</div>", value)
-
 
 class PendingInviteTable(tables.Table):
     index = IndexColumn()
-    email = tables.Column()
-    role = tables.Column()
-    date_modified = columns.DateColumn(verbose_name="Invited on")
-    expiry_date = columns.DateColumn(verbose_name="Expires on", orderable=False)
+    email = tables.Column(verbose_name=_("Email"))
+    role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
+    date_modified = DMYTColumn(verbose_name=_("Invited on"))
+    expiry_date = DMYTColumn(verbose_name=_("Expires on"), orderable=False)
     actions = columns.TemplateColumn(
         verbose_name="",
         orderable=False,
+        attrs=ACTION_COLUMN_ATTRS,
         template_name="organization/pending_invite_actions.html",
     )
 
@@ -59,6 +41,4 @@ class PendingInviteTable(tables.Table):
         model = OrganizationInvite
         fields = ("email", "role", "date_modified")
         sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
-
-    def render_role(self, record):
-        return format_html("<div class=' underline underline-offset-4'>{}</div>", record.get_role_display())
+        empty_text = _("No pending invites.")

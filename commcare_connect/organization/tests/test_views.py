@@ -6,9 +6,9 @@ from urllib.parse import unquote
 import pytest
 from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
-from django.template.defaultfilters import date as date_filter
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.timezone import localtime
 
 from commcare_connect.organization.models import (
     LLOEntity,
@@ -19,6 +19,7 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
+from commcare_connect.utils.tables import DATE_TIME_FORMAT
 
 
 @pytest.mark.django_db
@@ -451,7 +452,7 @@ class TestPendingInvitesTableView:
         content = client.get(self._url(organization.slug)).content.decode()
 
         assert "Expires on" in content
-        assert date_filter(invite.expiry_date, "SHORT_DATE_FORMAT") in content
+        assert localtime(invite.expiry_date).strftime(DATE_TIME_FORMAT) in content
 
     @pytest.mark.parametrize("minutes_ago,disabled", [(1, True), (10, False)])
     def test_reinvite_button_is_disabled_during_the_cooldown(
