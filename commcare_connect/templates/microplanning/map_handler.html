@@ -7,6 +7,7 @@
             highlightedWorkAreaId: null,
             isHoveringWorkArea: false,
             hintTimeout: null,
+            toastTimeout: null,
             showWorkAreaEditModal: false,
             showReviewInaccessibilityModal: false,
             showVisits: false,
@@ -214,7 +215,10 @@
                 document.getElementById('toast-icon').className = `fa-solid ${isError ? 'fa-circle-xmark' : 'fa-circle-check'} text-lg`;
                 toast.classList.remove('bg-green-600', 'bg-red-600', 'opacity-0');
                 toast.classList.add(isError ? 'bg-red-600' : 'bg-green-600', 'opacity-100');
-                setTimeout(() => {
+                // One shared element, so the previous toast's hide timer would otherwise fire on
+                // this message — hiding a 3s error after 500ms when a short toast preceded it.
+                clearTimeout(this.toastTimeout);
+                this.toastTimeout = setTimeout(() => {
                     toast.classList.remove('opacity-100');
                     toast.classList.add('opacity-0');
                 }, duration);
@@ -265,16 +269,28 @@
                 // with Object.assign, so an explicit `duration: undefined` overwrites the default
                 // instead of falling back to it — leaving the camera with a NaN zoom.
                 if (!animate) options.duration = 0;
+                // Work area tiles are not served below the layer's minzoom, so a fit wide enough
+                // to drop under it lands on a viewport where nothing renders. fitBounds has no
+                // floor of its own, so take the camera it would use and, only when that camera is
+                // too far out, override its zoom — the framing is sacrificed to keep the layer
+                // visible. A fit that already clears the floor is left exactly as it was.
+                const camera = this.map.cameraForBounds(bounds, options);
+                if (camera && camera.zoom < {{ workarea_min_zoom }}) {
+                    options.center = camera.center;
+                    options.zoom = {{ workarea_min_zoom }};
+                }
                 this.map.fitBounds(bounds, options);
             },
 
             // Fits the map to `query`'s work areas. A null bounds means the filters match nothing:
-            // hold the viewport and say so, rather than leaving an unexplained no-op.
+            // hold the viewport and say so, rather than leaving an unexplained no-op. With no
+            // filters set there is nothing to blame it on — an opportunity with no work areas yet
+            // is the expected state before an import, so that case stays silent.
             zoomToQuery(query, options) {
                 return this.fetchWorkAreaBounds(query).then((bounds) => {
                     if (bounds === undefined) return;  // superseded, or the request failed
                     if (bounds === null) {
-                        this.showToast("{% translate 'No work areas match these filters.' %}", true);
+                        if (query) this.showToast("{% translate 'No work areas match these filters.' %}", true);
                         return;
                     }
                     this.zoomToBounds(bounds, options);
