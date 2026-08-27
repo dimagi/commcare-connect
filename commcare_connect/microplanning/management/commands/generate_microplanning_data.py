@@ -346,35 +346,47 @@ class Command(BaseCommand):
         self.stdout.write(f"Flag {MICROPLANNING} enabled for this opportunity")
 
     def check_names_available(self, opportunity, options):
-        """Fail early when --keep-existing would recreate names the opportunity already has.
+        """Fail early when --keep-existing would recreate rows the opportunity already has.
 
-        Every generated name is deterministic, so a second run with the same --clusters keeps the
+        Every generated name is deterministic, so a second run with the same options keeps the
         previous run's rows and then tries to recreate them. Three per-opportunity unique
-        constraints sit in the way — the implementation area name is simply the first one reached.
-        Checking up front turns an opaque IntegrityError into something actionable.
+        constraints sit in the way, and all three are checked: an opportunity whose areas came
+        from elsewhere can collide on the work area slug alone, without either name matching.
         """
         clusters = [cluster_name(index) for index in range(options["clusters"])]
-        taken = list(
-            ImplementationArea.objects.filter(
-                opportunity=opportunity, name__in=[implementation_area_name(name) for name in clusters]
-            ).values_list("name", flat=True)
-        ) + list(
-            WorkAreaGroup.objects.filter(
-                opportunity=opportunity,
-                name__in=[
-                    group_name(cluster, index)
-                    for cluster in clusters
-                    for index in range(options["groups_per_cluster"])
-                ],
-            ).values_list("name", flat=True)
-        )
+        taken = [
+            *self.taken_values(
+                ImplementationArea,
+                opportunity,
+                "name",
+                [implementation_area_name(cluster) for cluster in clusters],
+            ),
+            *self.taken_values(
+                WorkAreaGroup,
+                opportunity,
+                "name",
+                [group_name(cluster, index) for cluster in clusters for index in range(options["groups_per_cluster"])],
+            ),
+            *self.taken_values(
+                WorkArea,
+                opportunity,
+                "slug",
+                [work_area_slug(cluster, index) for cluster in clusters for index in range(options["grid"] ** 2)],
+            ),
+        ]
         if taken:
             shown = ", ".join(sorted(taken)[:3])
             more = ", …" if len(taken) > 3 else ""
             raise CommandError(
-                f"--keep-existing would recreate names this opportunity already has ({shown}{more}). "
+                f"--keep-existing would recreate rows this opportunity already has ({shown}{more}). "
                 "Drop --keep-existing to replace the seeded areas, or use a different --clusters count."
             )
+
+    def taken_values(self, model, opportunity, field, values):
+        """Which of `values` this opportunity already uses for `field`."""
+        return list(
+            model.objects.filter(opportunity=opportunity, **{f"{field}__in": values}).values_list(field, flat=True)
+        )
 
     def clear_areas(self, opportunity):
         """Make the command re-runnable.
@@ -502,7 +514,7 @@ class Command(BaseCommand):
                     opportunity_access=access,
                     implementation_area=cluster.implementation_area,
                     implementation_area_name=cluster.implementation_area.name,
-                    slug=f"{cluster.name.lower()}-wa-{cell_index + 1:02d}",
+                    slug=work_area_slug(cluster.name, cell_index),
                     ward=group.ward,
                     centroid=Point(x1 + CELL_SIZE / 2, y1 + CELL_SIZE / 2, srid=SRID),
                     boundary=box(x1, y1, x1 + CELL_SIZE, y1 + CELL_SIZE),
@@ -602,6 +614,10 @@ def implementation_area_name(cluster):
 
 def group_name(cluster, index):
     return f"{cluster} Group {index + 1}"
+
+
+def work_area_slug(cluster, index):
+    return f"{cluster.lower()}-wa-{index + 1:02d}"
 
 
 def cluster_origin(index):
