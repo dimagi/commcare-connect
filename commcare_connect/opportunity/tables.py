@@ -2,6 +2,7 @@ import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
+from dateutil.relativedelta import relativedelta
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import CharField, Value
 from django.db.models.functions import Coalesce, NullIf
@@ -33,6 +34,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
     TEXT_CENTER_ATTR,
@@ -1771,6 +1773,7 @@ class InvoiceLineItemsTable(tables.Table):
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.currency = currency
         if currency:
             self.columns["flw_amount_local"].column.verbose_name = _("FLW Pay (%(currency)s)") % {"currency": currency}
             self.columns["org_amount_local"].column.verbose_name = _("Org Pay (%(currency)s)") % {"currency": currency}
@@ -1799,6 +1802,24 @@ class InvoiceLineItemsTable(tables.Table):
 
     def render_month(self, value):
         return value.strftime("%B %Y")
+
+    def render_exchange_rate(self, value, record):
+        EXCHANGE_RATE_LEARN_MORE_URL = (
+            "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3214934056/Managing+Currencies+in+Connect"
+        )
+        rate_date = record.exchange_rate_date
+        tooltip_html = render_to_string(
+            "opportunity/partials/exchange_rate_tooltip.html",
+            {
+                "rate": value,
+                "currency": self.currency,
+                "rate_date": rate_date,
+                "next_update_date": get_month_start_date(rate_date) + relativedelta(months=1) if rate_date else None,
+                "fetched_at": record.exchange_rate_fetched_at,
+                "learn_more_url": EXCHANGE_RATE_LEARN_MORE_URL,
+            },
+        )
+        return value_with_icon_tooltip(str(value), tooltip_html, theme="dark")
 
 
 class InvoiceDeliveriesTable(tables.Table):

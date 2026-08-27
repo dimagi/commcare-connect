@@ -138,6 +138,8 @@ class LineItem:
     flw_pay: Money
     org_pay: Money
     exchange_rate: Decimal
+    exchange_rate_date: datetime.date | None = None
+    exchange_rate_fetched_at: datetime.datetime | None = None
 
     @property
     def total_pay(self) -> Money:
@@ -156,6 +158,8 @@ def group_line_items(rows):
                 "flw_pay": Money.zero(),
                 "org_pay": Money.zero(),
                 "exchange_rate": row.exchange_rate.rate,
+                "exchange_rate_date": row.exchange_rate.rate_date,
+                "exchange_rate_fetched_at": row.exchange_rate.fetched_at,
             },
         )
         group["number_approved"] += row.billed_count
@@ -186,6 +190,8 @@ def get_invoice_line_items(invoice):
             org_usd=Sum("org_amount_usd"),
             # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
             rate=Max("exchange_rate__rate"),
+            rate_date=Max("exchange_rate__rate_date"),
+            rate_fetched_at=Max("exchange_rate__fetched_at"),
         )
         .order_by("month", "payment_unit_name")
     )
@@ -198,6 +204,8 @@ def get_invoice_line_items(invoice):
             flw_pay=Money(record["flw_local"], record["flw_usd"]),
             org_pay=Money(record["org_local"], record["org_usd"]),
             exchange_rate=record["rate"],
+            exchange_rate_date=record["rate_date"],
+            exchange_rate_fetched_at=record["rate_fetched_at"],
         )
         for record in records
     ]
