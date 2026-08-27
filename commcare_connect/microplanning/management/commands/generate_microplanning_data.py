@@ -169,8 +169,8 @@ class Command(BaseCommand):
     def resolve_opportunity(self, options):
         """The caller's existing opportunity, or the demo one (created on first run).
 
-        Returns the opportunity and whether its workspace is one this command owns — a caller's
-        own workspace is only ever read, never reconfigured.
+        Returns the opportunity and whether its workspace is one this command owns — a workspace
+        the caller supplied is only ever read, never reconfigured, on this run or a later one.
         """
         if options["opp_id"]:
             try:
@@ -181,16 +181,17 @@ class Command(BaseCommand):
                 raise CommandError(f"No opportunity matches --opp-id {options['opp_id']!r}") from None
             self.stdout.write(f"Using existing opportunity: {opportunity.name}")
             return opportunity, False
-        return self.ensure_demo_opportunity(options["org_slug"]), not options["org_slug"]
+        return self.ensure_demo_opportunity(options["org_slug"])
 
     def ensure_demo_opportunity(self, org_slug):
-        org = self.ensure_demo_org(org_slug)
+        """The demo opportunity, and whether its workspace is one this command owns."""
+        org, owns_workspace = self.ensure_demo_org(org_slug)
         hq_server = self.ensure_hq_server()
         opportunity = org.opportunities.filter(name=DEMO_OPP_NAME).first()
         if opportunity:
             self.backfill_hq_server(opportunity, hq_server)
             self.stdout.write(f"Using existing demo opportunity in {org.slug}")
-            return opportunity
+            return opportunity, owns_workspace
 
         currency = Currency.objects.filter(code="USD").first()
         country = Country.objects.filter(code="USA").first()
@@ -234,7 +235,7 @@ class Command(BaseCommand):
             end_date=today + timedelta(days=120),
         )
         self.stdout.write(f"Created demo opportunity in {org.slug}")
-        return opportunity
+        return opportunity, owns_workspace
 
     def ensure_demo_org(self, org_slug):
         """Reuse whichever workspace already holds the demo opportunity, else make one.
@@ -243,6 +244,11 @@ class Command(BaseCommand):
         Organization.save() replaces any slug passed in with slugify_uniquely(name), so the slug
         is not a usable lookup key and matching on name alone breaks once a run has left a
         duplicate behind.
+
+        Also returns whether the workspace is this command's own, which is a question about the
+        workspace rather than about this run's arguments: once a --org-slug run has put the demo
+        opportunity in the caller's workspace, a later run without the flag finds it there again,
+        and must still not reconfigure it.
         """
         if org_slug:
             org = Organization.objects.filter(slug=org_slug).first()
@@ -251,7 +257,7 @@ class Command(BaseCommand):
         else:
             existing = Opportunity.objects.filter(name=DEMO_OPP_NAME).select_related("organization").first()
             org = existing.organization if existing else Organization.objects.create(name=DEMO_ORG_NAME)
-        return org
+        return org, org.name == DEMO_ORG_NAME
 
     def ensure_program_manager(self, org, owns_workspace):
         """Assignment Mode needs an admin membership in a *program manager* workspace.
