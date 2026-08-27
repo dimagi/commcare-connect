@@ -14,6 +14,7 @@
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
+            boundsRequestId: 0,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -219,6 +220,80 @@
                 }, duration);
             },
 
+            // The one place that answers "which work areas is the map showing?". Both modes' tile
+            // sources and the auto-zoom fit all read it, so a fit can never frame a different set
+            // than the tiles do.
+            currentTileQuery() {
+                if (this.assignmentMode) {
+                    // No filter sidebar here — the query is composed from the unassigned toggle and
+                    // the search box, which apply together.
+                    const params = new URLSearchParams();
+                    if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
+                    const option = this.searchSelection();
+                    if (option) params.set(option.filter_name, option.object_id);
+                    return params.toString();
+                }
+                return new URLSearchParams(new FormData(this.$refs.filterForm)).toString();
+            },
+
+            invalidateBoundsRequest() {
+                return ++this.boundsRequestId;
+            },
+
+            // Bounding box of the work areas matching `query`, or null when nothing matches. Work
+            // areas arrive as vector tiles, so their geometry only exists server-side. Superseded
+            // responses resolve to undefined, so a slow reply can't yank the viewport away from a
+            // filter the user has since changed.
+            fetchWorkAreaBounds(query) {
+                const requestId = this.invalidateBoundsRequest();
+                const baseUrl = '{{ bounds_url|escapejs }}';
+                return fetch(query ? `${baseUrl}?${query}` : baseUrl)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load work area bounds');
+                        return res.json();
+                    })
+                    .then((data) => (requestId === this.boundsRequestId ? data.bounds : undefined))
+                    .catch(() => undefined);
+            },
+
+            // `animate: false` for the initial fit, which should already be in place by the time
+            // the user sees the map; filter-driven fits animate so the movement is followable.
+            zoomToBounds(bounds, { animate = true } = {}) {
+                if (!this.map || !bounds) return;
+                const options = { padding: 40, maxZoom: {{ max_autozoom_zoom }} };
+                // Omit `duration` entirely to animate. Mapbox merges the options over its defaults
+                // with Object.assign, so an explicit `duration: undefined` overwrites the default
+                // instead of falling back to it — leaving the camera with a NaN zoom.
+                if (!animate) options.duration = 0;
+                this.map.fitBounds(bounds, options);
+            },
+
+            // Fits the map to `query`'s work areas. A null bounds means the filters match nothing:
+            // hold the viewport and say so, rather than leaving an unexplained no-op.
+            zoomToQuery(query, options) {
+                return this.fetchWorkAreaBounds(query).then((bounds) => {
+                    if (bounds === undefined) return;  // superseded, or the request failed
+                    if (bounds === null) {
+                        this.showToast("{% translate 'No work areas match these filters.' %}", true);
+                        return;
+                    }
+                    this.zoomToBounds(bounds, options);
+                });
+            },
+
+            // Smallest box containing both, for callers that collect bounds piecemeal (assignment
+            // mode fetches one work area group at a time). Either side may be absent.
+            combineBounds(a, b) {
+                if (!a) return b ?? null;
+                if (!b) return a;
+                return [
+                    Math.min(a[0], b[0]),
+                    Math.min(a[1], b[1]),
+                    Math.max(a[2], b[2]),
+                    Math.max(a[3], b[3]),
+                ];
+            },
+
             applyTileQuery(query) {
                 const source = this.map?.getSource('workareas');
                 if (!source) return false;
@@ -235,8 +310,7 @@
             },
 
             applyFilters() {
-                const form = this.$refs.filterForm;
-                const query = new URLSearchParams(new FormData(form)).toString();
+                const query = this.currentTileQuery();
                 this.filterQuery = query;
                 this.pendingTileQuery = query;
                 this.clearSelectedFeature(); // Clear selection on filter change
@@ -808,16 +882,9 @@
                 }
             },
 
-            // Assignment mode's equivalent of applyFilters(): it has no filter form to read, so
-            // the tiles query is composed from its two inputs — the unassigned toggle and the
-            // search box — which apply together.
+            // Assignment mode's equivalent of applyFilters().
             applyAssignmentModeFilters() {
-                const params = new URLSearchParams();
-                if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
-                const option = this.searchSelection();
-                if (option) params.set(option.filter_name, option.object_id);
-
-                const query = params.toString();
+                const query = this.currentTileQuery();
                 this.pendingTileQuery = query;
                 this.applyTileQuery(query);
             },
@@ -1083,8 +1150,7 @@
 
                 this.$watch('showVisits', (visible) => {
                     if (visible && !visitsLayerAdded) {
-                        const form = this.$refs.filterForm;
-                        const query = new URLSearchParams(new FormData(form)).toString();
+                        const query = this.currentTileQuery();
                         const visitTilesUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
                         this.map.addSource('user-visits', {
                             type: 'vector',
@@ -1164,16 +1230,15 @@
                             });
                         }
 
-                        // Zoom using precomputed bounds
-                        if (data.workarea_bounds) {
-                            this.map.fitBounds(data.workarea_bounds, {
-                                padding: 40,
-                                duration: 0
-                            });
-                        }
-
                     })
                     .catch(err => console.error(err));
+
+                // Frame the opportunity. Deliberately not awaited alongside the group outlines
+                // above: this is the cheap query of the two, and the fit shouldn't wait on the
+                // per-group unions. No toast if there are no work areas yet — an empty map is the
+                // expected state before an import, not a failed filter.
+                this.fetchWorkAreaBounds(this.pendingTileQuery ?? '')
+                    .then(bounds => this.zoomToBounds(bounds, { animate: false }));
 
                 // Implementation Areas are a standalone, toggleable overlay independent of
                 // Work Areas. Their setup lives in its own method to keep initializeMap focused.
