@@ -315,8 +315,23 @@
                 this.pendingTileQuery = query;
                 this.clearSelectedFeature(); // Clear selection on filter change
                 this.invalidateWorkAreaDetailRequest();
+                this.enableVisitsForDateFilter(query);
                 this.applyTileQuery(query);
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
+                // Every filter here narrows the work areas, so any of them is worth a re-fit —
+                // including the search box, which reaches this via onSearchChanged().
+                this.zoomToQuery(query);
+            },
+
+            // A visit date range only shows its effect through the visits layer, so switch the
+            // layer on rather than leave the filter looking inert. Setting showVisits fires its
+            // watcher, which builds the visit source from currentTileQuery() — the same query.
+            enableVisitsForDateFilter(query) {
+                if (this.showVisits) return;
+                const params = new URLSearchParams(query);
+                if (params.get('start_date') || params.get('end_date')) {
+                    this.showVisits = true;
+                }
             },
 
             onSearchChanged() {
