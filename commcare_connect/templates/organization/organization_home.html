@@ -22,7 +22,12 @@
       {% endblocktrans %}
     </span>
   </div>
-  <div class="w-full flex flex-col gap-4" x-cloak x-data="orgTabs()">
+  <!-- htmx binds its triggers on DOMContentLoaded, after Alpine has already started, so the
+       initial members fetch waits on htmx's own ready event rather than orgTabs.init(). -->
+  <div class="w-full flex flex-col gap-4"
+       x-cloak
+       x-data="orgTabs()"
+       @htmx:load.window.once="loadTabContent(selectedTab)">
     <!-- Tabs -->
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <ul class="tabs">
@@ -112,7 +117,6 @@
 
       init() {
         this.updateUrl(this.selectedTab);
-        this.loadTabContent(this.selectedTab);
 
         this.$watch('selectedTab', (value) => {
           this.updateUrl(value);
