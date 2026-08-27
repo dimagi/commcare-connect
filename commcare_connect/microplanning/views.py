@@ -192,6 +192,11 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
+    bounds_url = reverse(
+        "microplanning:workareas_bounds",
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
+    )
+
     search_options_url = reverse(
         "microplanning:search_options",
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
@@ -273,6 +278,7 @@ def microplanning_home(request, *args, **kwargs):
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
+        "bounds_url": bounds_url,
         "search_options_url": search_options_url,
         "work_area_detail_url": work_area_detail_url,
     }
@@ -755,8 +761,30 @@ def workareas_group_geojson(request, org_slug, opp_id):
             .annotate(geojson=AsGeoJSON(Union("boundary")))
         )
     ]
-    extent = qs.aggregate(extent=Extent("boundary"))["extent"]
-    return JsonResponse({"group_features": group_features, "workarea_bounds": extent})
+    return JsonResponse({"group_features": group_features})
+
+
+@require_GET
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def workareas_bounds(request, org_slug, opp_id):
+    """Bounding box of the work areas matching the map's current filters, for auto-zoom.
+
+    Work areas reach the map as vector tiles, so the browser never holds their geometry and cannot
+    work out where a filtered selection sits. This takes the same query params as
+    ``WorkAreaTileView`` and returns the extent of the same queryset, so a fit always frames exactly
+    what the tiles are showing.
+
+    ``bounds`` is null when nothing matches — the caller leaves the viewport alone.
+    """
+    # The tile layer starts from map_work_areas(), but its annotations are display fields only and
+    # no filter reads them, so the un-annotated queryset matches the same rows without the extra
+    # joins and GROUP BY those annotations would force.
+    queryset = WorkArea.objects.filter(opportunity=request.opportunity)
+    filtered = WorkAreaMapFilterSet(request.GET, queryset=queryset, opportunity=request.opportunity).qs
+    extent = filtered.aggregate(extent=Extent("boundary"))["extent"]
+    return JsonResponse({"bounds": extent})
 
 
 @require_GET

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from django import forms
+from django.contrib.gis.geos import Point, Polygon
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
@@ -30,6 +31,7 @@ from commcare_connect.microplanning.const import (
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm
 from commcare_connect.microplanning.models import (
+    SRID,
     ImplementationArea,
     InaccessibilityRequestStatus,
     WorkArea,
@@ -256,6 +258,165 @@ class TestImplementationAreasGeojson(BaseMicroplanningFlagTest):
         response = client.get(self.url(organization.slug, opportunity.opportunity_id))
         names = [f["properties"]["name"] for f in response.json()["implementation_area_features"]]
         assert names == ["Mine"]
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        assert client.get(self.url(organization.slug, opportunity.opportunity_id)).status_code == 404
+
+
+@pytest.mark.django_db
+class TestWorkAreasGroupGeojson(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:workareas_group_geojson",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_a_feature_per_group(self, client, org_user_admin, organization, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=None)
+        client.force_login(org_user_admin)
+
+        payload = client.get(self.url(organization.slug, opportunity.opportunity_id)).json()
+
+        assert [f["properties"]["group_id"] for f in payload["group_features"]] == [group.id]
+
+    def test_serves_outlines_only(self, client, org_user_admin, organization, opportunity):
+        """Bounds moved to workareas_bounds, which applies the map's filters; this view is outlines."""
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        payload = client.get(self.url(organization.slug, opportunity.opportunity_id)).json()
+
+        assert set(payload) == {"group_features"}
+
+
+@pytest.mark.django_db
+class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
+    """The map's auto-zoom source: the extent of whatever the current filters match."""
+
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:workareas_bounds",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def work_area_at(self, opportunity, x, y, **kwargs):
+        """A 1x1 degree work area with its lower-left corner at (x, y).
+
+        The factory gives every work area the same fixed boundary, so filtering could never be seen
+        to narrow the extent; these tests place each one deliberately instead.
+        """
+        return WorkAreaFactory(
+            opportunity=opportunity,
+            boundary=Polygon(((x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1), (x, y)), srid=SRID),
+            centroid=Point(x + 0.5, y + 0.5, srid=SRID),
+            **kwargs,
+        )
+
+    def get_bounds(self, client, org_user_admin, organization, opportunity, params=None):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id), data=params or {})
+        assert response.status_code == 200
+        return response.json()["bounds"]
+
+    def test_unfiltered_covers_every_work_area(self, client, org_user_admin, organization, opportunity):
+        self.work_area_at(opportunity, 10, 20)
+        self.work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity)
+
+        assert bounds == [10, 20, 41, 51]
+
+    def test_status_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        self.work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
+        self.work_area_at(opportunity, 40, 50, status=WorkAreaStatus.NOT_VISITED)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"status": WorkAreaStatus.VISITED})
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_work_area_group_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        self.work_area_at(opportunity, 10, 20, work_area_group=group)
+        self.work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"work_area_group": group.id})
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_implementation_area_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        implementation_area = ImplementationAreaFactory(opportunity=opportunity)
+        self.work_area_at(opportunity, 10, 20, implementation_area=implementation_area)
+        self.work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(
+            client, org_user_admin, organization, opportunity, {"implementation_area": implementation_area.id}
+        )
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_work_area_filter_returns_just_that_area(self, client, org_user_admin, organization, opportunity):
+        """The search box's path: picking one work area sets the hidden `work_area` filter."""
+        target = self.work_area_at(opportunity, 10, 20)
+        self.work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"work_area": target.id})
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_visit_date_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        """The uservisit-joining, DISTINCT-ed case — duplicate rows must not disturb the extent."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        in_range = self.work_area_at(opportunity, 10, 20)
+        out_of_range = self.work_area_at(opportunity, 40, 50)
+        # Two visits on the in-range area, so the join duplicates its row.
+        for _ in range(2):
+            UserVisitFactory(
+                opportunity=opportunity,
+                user=access.user,
+                work_area=in_range,
+                visit_date=datetime(2025, 6, 1, tzinfo=timezone.utc),
+            )
+        UserVisitFactory(
+            opportunity=opportunity,
+            user=access.user,
+            work_area=out_of_range,
+            visit_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
+
+        bounds = self.get_bounds(
+            client,
+            org_user_admin,
+            organization,
+            opportunity,
+            {"start_date": "2025-05-01", "end_date": "2025-07-01"},
+        )
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_no_matches_returns_null(self, client, org_user_admin, organization, opportunity):
+        self.work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
+
+        bounds = self.get_bounds(
+            client, org_user_admin, organization, opportunity, {"status": WorkAreaStatus.INACCESSIBLE}
+        )
+
+        assert bounds is None
+
+    def test_no_work_areas_returns_null(self, client, org_user_admin, organization, opportunity):
+        assert self.get_bounds(client, org_user_admin, organization, opportunity) is None
+
+    def test_scoped_to_opportunity(self, client, org_user_admin, organization, opportunity):
+        self.work_area_at(opportunity, 10, 20)
+        other_opp = OpportunityFactory(organization=organization)
+        self.work_area_at(other_opp, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity)
+
+        assert bounds == [10, 20, 11, 21]
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_flag_required(self, client, org_user_admin, organization, opportunity):
