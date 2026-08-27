@@ -121,8 +121,8 @@ class Command(BaseCommand):
             action="store_true",
             help=(
                 "Add to the opportunity's existing work areas instead of replacing them. Intended for "
-                "an opportunity whose areas came from elsewhere; re-running the generated clusters this "
-                "way collides on the per-opportunity unique work area group name."
+                "an opportunity whose areas came from elsewhere; re-running the same clusters this way "
+                "is refused, since their generated names already exist."
             ),
         )
         parser.add_argument("--seed", type=int, default=42, help="Random seed, for reproducible geometry")
@@ -153,7 +153,9 @@ class Command(BaseCommand):
             if not options["no_admin"]:
                 self.ensure_admin(opportunity.organization)
             self.ensure_flag(opportunity)
-            if not options["keep_existing"]:
+            if options["keep_existing"]:
+                self.check_names_available(opportunity, options)
+            else:
                 self.clear_areas(opportunity)
 
             payment_units = self.ensure_payment_units(opportunity)
@@ -343,6 +345,37 @@ class Command(BaseCommand):
         flag.opportunities.add(opportunity)
         self.stdout.write(f"Flag {MICROPLANNING} enabled for this opportunity")
 
+    def check_names_available(self, opportunity, options):
+        """Fail early when --keep-existing would recreate names the opportunity already has.
+
+        Every generated name is deterministic, so a second run with the same --clusters keeps the
+        previous run's rows and then tries to recreate them. Three per-opportunity unique
+        constraints sit in the way — the implementation area name is simply the first one reached.
+        Checking up front turns an opaque IntegrityError into something actionable.
+        """
+        clusters = [cluster_name(index) for index in range(options["clusters"])]
+        taken = list(
+            ImplementationArea.objects.filter(
+                opportunity=opportunity, name__in=[implementation_area_name(name) for name in clusters]
+            ).values_list("name", flat=True)
+        ) + list(
+            WorkAreaGroup.objects.filter(
+                opportunity=opportunity,
+                name__in=[
+                    group_name(cluster, index)
+                    for cluster in clusters
+                    for index in range(options["groups_per_cluster"])
+                ],
+            ).values_list("name", flat=True)
+        )
+        if taken:
+            shown = ", ".join(sorted(taken)[:3])
+            more = ", …" if len(taken) > 3 else ""
+            raise CommandError(
+                f"--keep-existing would recreate names this opportunity already has ({shown}{more}). "
+                "Drop --keep-existing to replace the seeded areas, or use a different --clusters count."
+            )
+
     def clear_areas(self, opportunity):
         """Make the command re-runnable.
 
@@ -435,7 +468,7 @@ class Command(BaseCommand):
         span = grid * CELL_SIZE
         return ImplementationArea.objects.create(
             opportunity=opportunity,
-            name=f"{name} Implementation Area",
+            name=implementation_area_name(name),
             centroid=Point(lon0 + span / 2, lat0 + span / 2, srid=SRID),
             boundary=box(lon0 - CELL_SIZE, lat0 - CELL_SIZE, lon0 + span + CELL_SIZE, lat0 + span + CELL_SIZE),
         )
@@ -444,7 +477,7 @@ class Command(BaseCommand):
         return [
             WorkAreaGroup.objects.create(
                 opportunity=opportunity,
-                name=f"{cluster} Group {i + 1}",
+                name=group_name(cluster, i),
                 ward=f"{cluster.lower()}-ward-{i + 1}",
             )
             for i in range(count)
@@ -561,6 +594,14 @@ def cluster_name(index):
     """A single word: the name is lower-cased straight into the work area slug and the ward, both
     SlugFields, and bulk_create does not validate them."""
     return CLUSTER_NAMES[index] if index < len(CLUSTER_NAMES) else f"Region{index + 1}"
+
+
+def implementation_area_name(cluster):
+    return f"{cluster} Implementation Area"
+
+
+def group_name(cluster, index):
+    return f"{cluster} Group {index + 1}"
 
 
 def cluster_origin(index):
