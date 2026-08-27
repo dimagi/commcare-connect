@@ -1395,6 +1395,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         form = response.context["form"]
         assert form.line_items_table is None
+        assert response.context["line_item_count"] is None
 
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]

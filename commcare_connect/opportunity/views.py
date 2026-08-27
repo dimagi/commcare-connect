@@ -1884,12 +1884,14 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         invoice = self.object
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
+        form = self.get_form()
         context.update(
             {
                 "opportunity": opportunity,
-                "form": self.get_form(),
+                "form": form,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
