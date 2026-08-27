@@ -379,7 +379,8 @@ class Command(BaseCommand):
             more = ", …" if len(taken) > 3 else ""
             raise CommandError(
                 f"--keep-existing would recreate rows this opportunity already has ({shown}{more}). "
-                "Drop --keep-existing to replace the seeded areas, or use a different --clusters count."
+                "Drop --keep-existing to delete every work area on this opportunity, imported ones "
+                "included, and seed from scratch — or seed a different opportunity."
             )
 
     def taken_values(self, model, opportunity, field, values):
