@@ -42,6 +42,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -595,6 +596,9 @@ class Command(BaseCommand):
                         entity_id=completed_work.entity_id,
                         entity_name=completed_work.entity_name,
                         status=VisitValidationStatus.approved,
+                        # Auto-approval sets both together, and CompletedWork.approved_count only
+                        # counts a visit that agrees — leaving this pending accrues no payment.
+                        review_status=VisitReviewStatus.agree,
                         visit_date=now - timedelta(days=random.randint(0, 90), hours=n),
                         # The visit tile view parses this as "<lat> <lon> <alt> <accuracy>".
                         location=f"{lat} {lon} 0 5",
