@@ -58,6 +58,9 @@
           </div>
         {% endwith %}
       {% endfor %}
+      {% if not socialaccount_providers %}
+        <p class="card_description">{% translate "No third-party accounts can be linked on this server." %}</p>
+      {% endif %}
     </div>
   </div>
 {% endblock content %}

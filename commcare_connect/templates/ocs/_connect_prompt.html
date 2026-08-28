@@ -1,9 +1,16 @@
-{% load socialaccount i18n %}
+{% load socialaccount socialaccount_extras i18n %}
+{% configured_provider 'ocs' as ocs %}
 <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800"
      role="alert">
-  <p class="mb-2 text-sm">{% translate "Connect your Open Chat Studio account to configure or assign OCS tasks." %}</p>
-  <button type="submit"
-          form="ocs-connect-form"
-          formaction="{% provider_login_url 'ocs' process='connect' next=next_url %}"
-          class="button button-md primary-dark">{% translate "Connect OCS account" %}</button>
+  {% if ocs %}
+    <p class="mb-2 text-sm">{% translate "Connect your Open Chat Studio account to configure or assign OCS tasks." %}</p>
+    <button type="submit"
+            form="ocs-connect-form"
+            formaction="{% provider_login_url ocs process='connect' next=next_url %}"
+            class="button button-md primary-dark">{% translate "Connect OCS account" %}</button>
+  {% else %}
+    <p class="text-sm">
+      {% translate "Open Chat Studio is not configured on this server, so OCS tasks are unavailable." %}
+    </p>
+  {% endif %}
 </div>

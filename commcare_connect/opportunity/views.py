@@ -194,6 +194,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
     rollback_invoice_line_items,
+    total_late_delta_units,
 )
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
@@ -1923,8 +1924,10 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         )
 
         line_items_table = None
+        late_delta_units = 0
         if invoice.service_delivery:
             line_items = get_invoice_line_items(invoice)
+            late_delta_units = total_late_delta_units(line_items)
             show_org = any(item.org_pay.local for item in line_items)
             line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
@@ -1932,6 +1935,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
             opportunity=opportunity,
             invoice_type=invoice_type,
             line_items_table=line_items_table,
+            late_delta_units=late_delta_units,
             read_only=True,
             is_opportunity_pm=self.request.is_opportunity_pm,
         )
@@ -3602,6 +3606,7 @@ def invoice_items(request, *args, **kwargs):
             "line_items_table_html": html,
             "total_amount": total.local,
             "total_usd_amount": total.usd,
+            "late_delta_units": total_late_delta_units(line_items),
         }
     )
 

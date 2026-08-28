@@ -47,6 +47,7 @@ def test_invoice_line_items_table_reads_money_off_line_items():
         month=datetime.date(2026, 1, 1),
         payment_unit_name="Household visit",
         number_approved=2,
+        late_delta_units=0,
         flw_pay=Money(Decimal("40"), Decimal("4")),
         org_pay=Money(Decimal("10"), Decimal("1")),
         exchange_rate=Decimal("10"),

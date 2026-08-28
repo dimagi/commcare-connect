@@ -1,8 +1,23 @@
+from allauth.socialaccount.adapter import get_adapter
+from allauth.socialaccount.models import SocialApp
 from django import template
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
 register = template.Library()
+
+
+@register.simple_tag(takes_context=True)
+def configured_provider(context, provider_id):
+    """Return the provider for ``provider_id``, or None if no social app is configured.
+
+    ``{% provider_login_url %}`` raises ``SocialApp.DoesNotExist`` for an unconfigured
+    provider, so templates that offer a single named provider need to check first.
+    """
+    try:
+        return get_adapter().get_provider(context.get("request"), provider_id)
+    except SocialApp.DoesNotExist:
+        return None
 
 
 @register.filter

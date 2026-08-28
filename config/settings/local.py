@@ -23,6 +23,10 @@ DEBUG_TOOLBAR_CONFIG = {
 }
 INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]
 
+# django-allauth
+# ------------------------------------------------------------------------------
+ACCOUNT_EMAIL_VERIFICATION = "optional"
+
 # Celery
 # ------------------------------------------------------------------------------
 CELERY_TASK_ALWAYS_EAGER = True
