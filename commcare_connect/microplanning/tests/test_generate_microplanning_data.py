@@ -3,6 +3,12 @@ from django.core.management import call_command
 
 from commcare_connect.microplanning.const import SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.management.commands.generate_microplanning_data import Command
+from commcare_connect.microplanning.models import (
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.opportunity.models import CompletedWork, UserVisit, VisitReviewStatus
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, PaymentUnitFactory
 
@@ -67,3 +73,28 @@ def test_seeded_visits_accrue_payment():
     completed_works = CompletedWork.objects.filter(uservisit__in=visits).distinct()
     assert completed_works
     assert all(cw.approved_count > 0 and cw.payment_accrued > 0 for cw in completed_works)
+
+
+@pytest.mark.django_db
+def test_every_requested_inaccessible_area_has_a_pending_request():
+    call_command(
+        "generate_microplanning_data",
+        clusters=1,
+        grid=4,
+        groups_per_cluster=2,
+        workers=1,
+        inaccessible_requests=3,
+        no_admin=True,
+        force=True,
+    )
+
+    requested = WorkArea.objects.filter(status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+    pending = WorkAreaInaccessibilityRequest.objects.filter(status=InaccessibilityRequestStatus.PENDING)
+
+    assert requested.count() == 3
+    assert sorted(pending.values_list("work_area_id", flat=True)) == sorted(requested.values_list("id", flat=True))
+    # Distinct visit dates, so the sidebar's oldest-first ordering has something to order by.
+    assert len(set(pending.values_list("date_of_visit", flat=True))) == 3
+    # Unassigned areas are out of scope for every microplanning metric, so a seeded request must
+    # never sit on one.
+    assert not requested.filter(opportunity_access__isnull=True).exists()
