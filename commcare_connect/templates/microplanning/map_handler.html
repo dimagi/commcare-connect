@@ -643,19 +643,22 @@
                 }
                 trackingSet.clear();
 
+                const hasSelection = Array.isArray(selectionId) ? selectionId.length > 0 : !!selectionId;
+                if (!hasSelection) {
+                    this.updateFlwSummary();
+                    // Clearing the filter widens the map back to everything the tile query shows,
+                    // so widen the camera to match instead of leaving it parked on the group or
+                    // FLW that was just dropped. Its bounds fetch claims the auto-zoom slot
+                    // synchronously, which also drops this filter's own previous reply if that
+                    // one is still in flight.
+                    return this.zoomToQuery(this.currentTileQuery());
+                }
+
                 // Claim the auto-zoom slot before awaiting, on the same counter
                 // fetchWorkAreaBounds() uses. These bounds ride along on the selection response
                 // rather than coming from that fetch, so without this a slow reply here could land
                 // after — and undo — the fit from a search or filter the user has since used.
-                // Claimed ahead of the empty-selection return too, so clearing this filter while
-                // its own previous fetch is in flight can't let that reply fit to what was cleared.
                 const requestId = this.invalidateBoundsRequest();
-
-                const hasSelection = Array.isArray(selectionId) ? selectionId.length > 0 : !!selectionId;
-                if (!hasSelection) {
-                    this.updateFlwSummary();
-                    return;
-                }
 
                 // Show the summary spinner while this filter's areas load. Until they
                 // land, flwFilterWorkAreaIds is empty, so the live delta would transiently
