@@ -406,16 +406,64 @@
           </aside>
         {% endif %}
         {% if inaccessible_mode %}
+          {{ inaccessibility_requests|json_script:"inaccessibility-requests-data" }}
           <aside class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0 rounded-lg">
-            <h2 class="text-lg font-semibold">{% translate "Inaccessibility Requests" %}</h2>
-            <p class="mb-3 text-xs text-gray-500">{% translate "Work areas with status Request for Inaccessible." %}</p>
-            <div class="flex flex-col items-center justify-center text-center text-gray-400 gap-2 py-8">
-              <i class="fa-regular fa-circle-check text-3xl"></i>
-              <p class="text-sm">{% translate "No outstanding inaccessibility requests." %}</p>
+            <div class="flex items-baseline justify-between gap-2">
+              <h2 class="text-lg font-semibold">{% translate "Inaccessibility Requests" %}</h2>
+              <span class="shrink-0 text-xs text-gray-500"
+                    x-text="reviewedRequestsLabel()"></span>
             </div>
+            <p class="mb-3 text-xs text-gray-500">{% translate "Work areas with status Request for Inaccessible." %}</p>
+            <template x-if="inaccessibilityRequests.length === 0">
+              <div class="flex flex-col items-center justify-center text-center text-gray-400 gap-2 py-8">
+                <i class="fa-regular fa-circle-check text-3xl"></i>
+                <p class="text-sm">{% translate "No outstanding inaccessibility requests." %}</p>
+              </div>
+            </template>
+            <ul class="flex flex-col gap-2">
+              <template x-for="pendingRequest in inaccessibilityRequests"
+                        :key="pendingRequest.work_area_id">
+                <li>
+                  <button type="button"
+                          class="flex w-full gap-3 rounded-lg border px-3 py-3 text-left"
+                          :class="selectedInaccessibilityRequestId === pendingRequest.work_area_id ? 'border-brand-deep-purple bg-gray-50' : 'border-gray-200 hover:bg-gray-50'"
+                          @click="openInaccessibilityReview(pendingRequest.work_area_id)">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-100">
+                      <template x-if="pendingRequest.photo_blob_id">
+                        {# Full-size photos shrunk to a 40px square, so only fetch the ones on screen. #}
+                        <img :src="attachmentUrl(pendingRequest.photo_blob_id)"
+                             alt=""
+                             loading="lazy"
+                             decoding="async"
+                             class="h-full w-full object-cover">
+                      </template>
+                      <template x-if="!pendingRequest.photo_blob_id">
+                        <i class="fa-regular fa-image text-gray-400"></i>
+                      </template>
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="flex items-center justify-between gap-2">
+                        <span class="truncate text-sm font-semibold text-brand-deep-purple"
+                              x-text="pendingRequest.slug"></span>
+                        <span class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                              x-text="pendingRequest.pending_label"></span>
+                      </span>
+                      <span class="block truncate text-sm text-gray-700"
+                            x-text="pendingRequest.flw_name || '—'"></span>
+                      <span class="block truncate text-xs text-gray-500"
+                            x-text="requestRowDetails(pendingRequest)"></span>
+                    </span>
+                  </button>
+                </li>
+              </template>
+            </ul>
           </aside>
           <aside class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0 rounded-lg">
-            <h2 class="text-lg font-semibold mb-2">{% translate "Review Inaccessibility Request" %}</h2>
+            <div class="flex items-baseline justify-between gap-2 mb-2">
+              <h2 class="text-lg font-semibold">{% translate "Review Inaccessibility Request" %}</h2>
+              <span class="shrink-0 text-sm font-semibold text-brand-deep-purple"
+                    x-text="selectedInaccessibilityRequestSlug"></span>
+            </div>
             <template x-if="!showInaccessibilityReview">
               <div class="flex flex-col items-center justify-center h-[80%] text-center text-gray-400 gap-2 py-8">
                 <i class="fa-regular fa-rectangle-list text-3xl"></i>
