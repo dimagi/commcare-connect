@@ -9,7 +9,7 @@
             hintTimeout: null,
             toastTimeout: null,
             showWorkAreaEditModal: false,
-            showReviewInaccessibilityModal: false,
+            showInaccessibilityReview: false,
             showVisits: false,
             showImplementationAreas: false,
             filterQuery: '',
@@ -21,6 +21,7 @@
 
             // Inaccessibility review mode state
             inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
+            selectedInaccessibilityRequestId: null,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -187,12 +188,12 @@
                 }
             },
 
-            openReviewInaccessibilityModal(workAreaId) {
+            openInaccessibilityReview(workAreaId) {
                 const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
                 const url = reviewUrl + workAreaId + '/';
                 const fragment = document.getElementById('review-inaccessibility-fragment');
                 // Clear any previously loaded content so an errored fetch (htmx does not swap
-                // non-2xx responses) can't leave a stale or blank modal behind.
+                // non-2xx responses) can't leave a stale or blank panel behind.
                 fragment.innerHTML = '';
                 htmx.ajax('GET', url, { target: '#review-inaccessibility-fragment', swap: 'innerHTML' })
                     .then(() => {
@@ -203,9 +204,19 @@
                             );
                             return;
                         }
-                        this.showReviewInaccessibilityModal = true;
-                        setTimeout(() => window.reviewInaccessibilityMap?.resize(), 0);
+                        this.selectInaccessibilityRequestOnMap(workAreaId);
+                        this.showInaccessibilityReview = true;
                     });
+            },
+
+            // The request under review is the only area outlined in the selected colour, which is
+            // how the reviewer tells it apart from the other pending requests on the map.
+            selectInaccessibilityRequestOnMap(workAreaId) {
+                if (this.selectedInaccessibilityRequestId !== null) {
+                    this.setWorkAreaState(this.selectedInaccessibilityRequestId, { selected: false });
+                }
+                this.selectedInaccessibilityRequestId = workAreaId;
+                this.setWorkAreaState(workAreaId, { selected: true });
             },
 
             getDownloadUrl() {
@@ -999,8 +1010,11 @@
                     if (this.selectedFeature && this.selectedFeature._id === data.id) {
                         this.selectedFeature = { ...this.selectedFeature, status: data.status };
                     }
-                    this.setWorkAreaState(data.id, { status: data.status });
-                    this.showReviewInaccessibilityModal = false;
+                    this.setWorkAreaState(data.id, { status: data.status, selected: false });
+                    if (this.selectedInaccessibilityRequestId === data.id) {
+                        this.selectedInaccessibilityRequestId = null;
+                    }
+                    this.showInaccessibilityReview = false;
                     this.showToast("{% translate 'Work area review saved.' %}");
                 });
 
@@ -1322,6 +1336,15 @@
                     // In assignment mode: plain click selects/deselects the whole Work Area
                     // Group by default; shift+click (or a work area with no group) targets
                     // just this one work area.
+                    // Clicking a request is how the review panel is reached; other areas have no
+                    // panel to fill in this mode.
+                    if (this.inaccessibleMode) {
+                        if (feature.properties.status === 'REQUEST_FOR_INACCESSIBLE') {
+                            this.openInaccessibilityReview(id);
+                        }
+                        return;
+                    }
+
                     if (this.assignmentMode) {
                         if (e.originalEvent.shiftKey || feature.properties.group_id == null) {
                             this.toggleWorkAreaSelection(id, feature.properties);
