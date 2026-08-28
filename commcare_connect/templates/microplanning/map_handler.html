@@ -15,6 +15,9 @@
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
 
+            // Inaccessibility review mode state
+            inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
+
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
             selectedWorkAreas: new Set(),
