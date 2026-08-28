@@ -8,6 +8,7 @@ from django.db.models import CharField, Value
 from django.db.models.functions import Coalesce, NullIf
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
@@ -1808,13 +1809,18 @@ class InvoiceLineItemsTable(tables.Table):
             "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3214934056/Managing+Currencies+in+Connect"
         )
         rate_date = record.exchange_rate_date
+        next_update_date = get_month_start_date(rate_date) + relativedelta(months=1) if rate_date else None
+        if next_update_date and next_update_date <= timezone.localdate():
+            # A stale fallback rate (looked up from a much older month) shouldn't claim an
+            # update date that's already passed -- we don't know when it'll actually refresh.
+            next_update_date = None
         tooltip_html = render_to_string(
             "opportunity/partials/exchange_rate_tooltip.html",
             {
                 "rate": value,
                 "currency": self.currency,
                 "rate_date": rate_date,
-                "next_update_date": get_month_start_date(rate_date) + relativedelta(months=1) if rate_date else None,
+                "next_update_date": next_update_date,
                 "fetched_at": record.exchange_rate_fetched_at,
                 "learn_more_url": EXCHANGE_RATE_LEARN_MORE_URL,
             },
