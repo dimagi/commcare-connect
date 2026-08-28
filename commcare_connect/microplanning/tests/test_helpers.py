@@ -8,6 +8,7 @@ from django.utils import formats, timezone, translation
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.helpers import (
     assign_work_areas_and_sync_to_hq,
+    denied_inaccessibility_work_area_ids,
     exclude_work_areas_for_opportunity,
     pending_inaccessibility_requests,
     unassign_work_areas_for_opportunity,
@@ -816,3 +817,32 @@ class TestPendingInaccessibilityRequests:
         assert pending_inaccessibility_requests(opportunity) == [
             self.expected_row(pending_request, days_outstanding=4, photo_blob_id=photo.blob_id)
         ]
+
+
+@pytest.mark.django_db
+class TestDeniedInaccessibilityWorkAreaIds:
+    @pytest.mark.parametrize(
+        ("work_area_status", "still_denied"),
+        [
+            (WorkAreaStatus.NOT_VISITED, True),
+            (WorkAreaStatus.VISITED, True),
+            (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, False),
+            (WorkAreaStatus.INACCESSIBLE, False),
+        ],
+        ids=["not_visited", "visited", "re_requested", "approved_since"],
+    )
+    def test_excludes_areas_that_moved_on_from_the_denial(self, opportunity, work_area_status, still_denied):
+        work_area = WorkAreaFactory(opportunity=opportunity, status=work_area_status)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area, status=InaccessibilityRequestStatus.DENIED)
+
+        result = denied_inaccessibility_work_area_ids(opportunity)
+
+        assert result == ([work_area.id] if still_denied else [])
+
+    def test_lists_an_area_denied_more_than_once_only_once(self, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
+        WorkAreaInaccessibilityRequestFactory.create_batch(
+            2, work_area=work_area, status=InaccessibilityRequestStatus.DENIED
+        )
+
+        assert denied_inaccessibility_work_area_ids(opportunity) == [work_area.id]

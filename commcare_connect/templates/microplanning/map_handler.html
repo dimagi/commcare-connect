@@ -19,9 +19,11 @@
             statusMeta: {},
             hoveredWorkArea: null,
 
-            // Inaccessibility review mode state
+            // Inaccessible mode state
             inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
             inaccessibilityRequests: [],
+            deniedInaccessibilityWorkAreaIds: [],
+            inaccessibilityColors: {},
             selectedInaccessibilityRequestId: null,
             selectedInaccessibilityRequestSlug: '',
             reviewedRequestCount: 0,
@@ -211,6 +213,33 @@
                         this.selectInaccessibilityRequestOnMap(workAreaId);
                         this.showInaccessibilityReview = true;
                     });
+            },
+
+            // Inaccessibility Review colours every area by its review outcome instead of by group,
+            // so the map reads the same way as the key beside it.
+            buildInaccessibleFillPaint() {
+                const status = ['coalesce', ['feature-state', 'status'], ['get', 'status']];
+                return {
+                    'fill-color': [
+                        'case',
+                        ['boolean', ['feature-state', 'hovered'], false],
+                        '#ffffff',
+                        ['==', status, 'REQUEST_FOR_INACCESSIBLE'],
+                        this.inaccessibilityColors.requested,
+                        ['==', status, 'INACCESSIBLE'],
+                        this.inaccessibilityColors.approved,
+                        ['boolean', ['feature-state', 'inaccessibility_denied'], false],
+                        this.inaccessibilityColors.denied,
+                        this.inaccessibilityColors.other
+                    ],
+                    'fill-opacity': 0.85
+                };
+            },
+
+            applyDeniedInaccessibilityState() {
+                for (const id of this.deniedInaccessibilityWorkAreaIds) {
+                    this.setWorkAreaState(id, { inaccessibility_denied: true });
+                }
             },
 
             // The request under review is the only area outlined in the selected colour, which is
@@ -1002,6 +1031,16 @@
                     const requestsEl = document.getElementById('inaccessibility-requests-data');
                     if (requestsEl) this.inaccessibilityRequests = JSON.parse(requestsEl.textContent);
                     this.totalRequestCount = this.inaccessibilityRequests.length;
+
+                    const deniedEl = document.getElementById('denied-inaccessibility-data');
+                    if (deniedEl) this.deniedInaccessibilityWorkAreaIds = JSON.parse(deniedEl.textContent);
+
+                    const legendEl = document.getElementById('inaccessibility-legend-data');
+                    if (legendEl) {
+                        for (const entry of JSON.parse(legendEl.textContent)) {
+                            this.inaccessibilityColors[entry.key] = entry.color;
+                        }
+                    }
                 }
 
                 if (this.assignmentMode) {
@@ -1043,7 +1082,11 @@
                     if (this.selectedFeature && this.selectedFeature._id === data.id) {
                         this.selectedFeature = { ...this.selectedFeature, status: data.status };
                     }
-                    this.setWorkAreaState(data.id, { status: data.status, selected: false });
+                    this.setWorkAreaState(data.id, {
+                        status: data.status,
+                        selected: false,
+                        inaccessibility_denied: data.status === 'NOT_VISITED',
+                    });
                     this.inaccessibilityRequests = this.inaccessibilityRequests.filter(
                         (pendingRequest) => pendingRequest.work_area_id !== data.id
                     );
@@ -1130,7 +1173,7 @@
                     type: 'fill',
                     source: 'workareas',
                     'source-layer': 'workareas',
-                    paint: {
+                    paint: this.inaccessibleMode ? this.buildInaccessibleFillPaint() : {
                         'fill-color': [
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
@@ -1227,6 +1270,49 @@
                         ]
                     }
                 });
+
+                // Highlights the areas awaiting review. Opacity keys off feature-state so a
+                // reviewed area drops out at once; a layer filter cannot read feature-state.
+                if (this.inaccessibleMode) {
+                    this.applyDeniedInaccessibilityState();
+                    // Tile reloads on pan/zoom drop feature state, so it goes back on.
+                    this.map.on('sourcedata', (e) => {
+                        if (e.sourceId === 'workareas' && e.isSourceLoaded) {
+                            this.applyDeniedInaccessibilityState();
+                        }
+                    });
+
+                    this.map.addLayer({
+                        id: 'workareas-inaccessible-requested',
+                        type: 'line',
+                        source: 'workareas',
+                        'source-layer': 'workareas',
+                        paint: {
+                            'line-color': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false],
+                                '#7c3aed',
+                                '#f97316'
+                            ],
+                            'line-width': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false],
+                                5,
+                                3
+                            ],
+                            'line-opacity': [
+                                'case',
+                                [
+                                    '==',
+                                    ['coalesce', ['feature-state', 'status'], ['get', 'status']],
+                                    'REQUEST_FOR_INACCESSIBLE'
+                                ],
+                                1,
+                                0
+                            ]
+                        }
+                    });
+                }
 
                 // Black highlight for assignment mode multi-select
                 if (this.assignmentMode) {
@@ -1374,8 +1460,6 @@
                     // In assignment mode: plain click selects/deselects the whole Work Area
                     // Group by default; shift+click (or a work area with no group) targets
                     // just this one work area.
-                    // Clicking a request is how the review panel is reached; other areas have no
-                    // panel to fill in this mode.
                     if (this.inaccessibleMode) {
                         if (feature.properties.status === 'REQUEST_FOR_INACCESSIBLE') {
                             this.openInaccessibilityReview(id);

@@ -48,6 +48,7 @@ from waffle.decorators import waffle_flag
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
+    INACCESSIBILITY_LEGEND,
     MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
@@ -70,6 +71,7 @@ from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWork
 from commcare_connect.microplanning.helpers import (
     MAP_WORK_AREA_FIELDS,
     assign_work_areas_and_sync_to_hq,
+    denied_inaccessibility_work_area_ids,
     exclude_work_areas_for_opportunity,
     map_work_areas,
     pct,
@@ -238,8 +240,8 @@ def microplanning_home(request, *args, **kwargs):
     is_program_manager = is_org_pm_or_all_access(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
     inaccessible_mode = is_program_manager and bool(request.GET.get("inaccessible_mode"))
-    # Drives both the entry button's count and the queue the mode renders, so the two can never
-    # disagree.
+    # Drives both the entry button's count and the list Inaccessible Mode renders, so the two
+    # can never disagree.
     inaccessibility_requests = pending_inaccessibility_requests(opportunity) if is_program_manager else []
 
     filterset = WorkAreaMapFilterSet(
@@ -292,6 +294,10 @@ def microplanning_home(request, *args, **kwargs):
         "inaccessibility_requests": inaccessibility_requests,
         "inaccessible_request_count": len(inaccessibility_requests),
         "attachment_url_base": attachment_url_base,
+        "inaccessibility_legend": INACCESSIBILITY_LEGEND,
+        "denied_inaccessibility_work_area_ids": (
+            denied_inaccessibility_work_area_ids(opportunity) if inaccessible_mode else []
+        ),
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "bounds_url": bounds_url,
         "search_options_url": search_options_url,
