@@ -269,11 +269,16 @@ class OpportunityObjectMixin:
         return Opportunity.objects.all()
 
     def get_opportunity(self):
-        if not hasattr(self, "_opportunity"):
-            self._opportunity = get_object_by_uuid_or_int(
-                self.get_opportunity_queryset(), str(self.kwargs.get("opp_id")), uuid_field="opportunity_id"
-            )
-        return self._opportunity
+        if cached := getattr(self.request, "opportunity", None):
+            return cached
+
+        opportunity = get_object_by_uuid_or_int(
+            self.get_opportunity_queryset(),
+            str(self.kwargs.get("opp_id")),
+            uuid_field="opportunity_id",
+        )
+        self.request.opportunity = opportunity
+        return opportunity
 
     def get_object(self, queryset=None):
         return self.get_opportunity()

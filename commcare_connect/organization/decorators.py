@@ -66,8 +66,6 @@ def opp_view_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.VIEW)(view_func)
 
 
-# TODO: These 3 are widely used in the opportunity app, and we are renaming it to opportunity access decorators
-# in this commit for easier review. The next commit points at them at opportunity_access_level_from_request.
 def opp_standard_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.STANDARD)(view_func)
 
