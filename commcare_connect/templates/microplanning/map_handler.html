@@ -290,11 +290,24 @@
                 return this.fetchWorkAreaBounds(query).then((bounds) => {
                     if (bounds === undefined) return;  // superseded, or the request failed
                     if (bounds === null) {
-                        if (query) this.showToast("{% translate 'No work areas match these filters.' %}", true);
+                        if (this.hasActiveFilters(query)) {
+                            this.showToast("{% translate 'No work areas match these filters.' %}", true);
+                        }
                         return;
                     }
                     this.zoomToBounds(bounds, options);
                 });
+            },
+
+            // Whether `query` actually narrows anything. A serialized filter form is never the
+            // empty string — the hidden work_area field, the payment unit select and both date
+            // inputs each contribute a `name=` pair while blank — so the question has to be asked
+            // of the values, not of the querystring's length.
+            hasActiveFilters(query) {
+                for (const [, value] of new URLSearchParams(query)) {
+                    if (value) return true;
+                }
+                return false;
             },
 
             // Smallest box containing both, for callers that collect bounds piecemeal (assignment
@@ -630,17 +643,19 @@
                 }
                 trackingSet.clear();
 
+                // Claim the auto-zoom slot before awaiting, on the same counter
+                // fetchWorkAreaBounds() uses. These bounds ride along on the selection response
+                // rather than coming from that fetch, so without this a slow reply here could land
+                // after — and undo — the fit from a search or filter the user has since used.
+                // Claimed ahead of the empty-selection return too, so clearing this filter while
+                // its own previous fetch is in flight can't let that reply fit to what was cleared.
+                const requestId = this.invalidateBoundsRequest();
+
                 const hasSelection = Array.isArray(selectionId) ? selectionId.length > 0 : !!selectionId;
                 if (!hasSelection) {
                     this.updateFlwSummary();
                     return;
                 }
-
-                // Claim the auto-zoom slot before awaiting, on the same counter
-                // fetchWorkAreaBounds() uses. These bounds ride along on the selection response
-                // rather than coming from that fetch, so without this a slow reply here could land
-                // after — and undo — the fit from a search or filter the user has since used.
-                const requestId = this.invalidateBoundsRequest();
 
                 // Show the summary spinner while this filter's areas load. Until they
                 // land, flwFilterWorkAreaIds is empty, so the live delta would transiently
