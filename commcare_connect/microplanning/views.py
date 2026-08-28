@@ -1265,7 +1265,7 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         photo = None
     return render(
         request,
-        "microplanning/review_inaccessibility_modal.html",
+        "microplanning/review_inaccessibility_panel.html",
         context={
             "work_area": work_area,
             "inaccessibility_request": inacc_request,
