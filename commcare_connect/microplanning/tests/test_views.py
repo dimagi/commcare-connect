@@ -1548,7 +1548,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
 
     @pytest.mark.parametrize(
         "status",
@@ -1580,7 +1580,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
         photo = response.context["photo"]
         assert photo is not None
         assert photo.name == "photo.jpg"
