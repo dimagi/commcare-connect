@@ -1751,6 +1751,55 @@ class TestAssignmentModeContext:
         assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
 
 
+@pytest.mark.django_db
+class TestInaccessibleModeContext:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity, opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity, opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    def test_program_manager_can_enter_the_mode(
+        self,
+        client,
+        settings,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        work_area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area)
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, str(managed_opportunity.opportunity_id)),
+            {"inaccessible_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        assert response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 1
+
+    def test_mode_is_closed_to_non_program_managers(self, client, settings, organization, org_user_admin, opportunity):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area)
+        client.force_login(org_user_admin)
+
+        response = client.get(
+            self.url(organization.slug, str(opportunity.opportunity_id)),
+            {"inaccessible_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        assert not response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 0
+
+
 class TestGetWorkAreasForAssignment:
     @pytest.fixture(autouse=True)
     def setup_flag(self, managed_opportunity):

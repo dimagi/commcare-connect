@@ -230,6 +230,12 @@ def microplanning_home(request, *args, **kwargs):
 
     is_program_manager = is_org_pm_or_all_access(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
+    inaccessible_mode = is_program_manager and bool(request.GET.get("inaccessible_mode"))
+    inaccessible_request_count = (
+        WorkArea.objects.filter(opportunity_id=opportunity.id, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE).count()
+        if is_program_manager
+        else 0
+    )
 
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
@@ -277,6 +283,8 @@ def microplanning_home(request, *args, **kwargs):
         "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
+        "inaccessible_mode": inaccessible_mode,
+        "inaccessible_request_count": inaccessible_request_count,
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "bounds_url": bounds_url,
         "search_options_url": search_options_url,
