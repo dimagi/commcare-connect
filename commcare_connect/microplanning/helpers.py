@@ -3,6 +3,7 @@ import logging
 import pghistory
 from django.db import transaction
 from django.db.models import Count, F, Q
+from django.utils import formats, timezone
 from django.utils.translation import gettext
 
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
@@ -12,8 +13,15 @@ from commcare_connect.microplanning.const import (
     HQ_UNASSIGN_BULK_CHUNK_SIZE,
     SEARCH_KIND_FILTERS,
 )
-from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.models import VisitValidationStatus
+from commcare_connect.microplanning.models import (
+    ImplementationArea,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
+from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
@@ -74,6 +82,59 @@ def map_work_areas(opportunity):
 def work_area_detail(opportunity, work_area_id):
     """One work area's map fields, or None if it isn't in this opportunity."""
     return map_work_areas(opportunity).filter(id=work_area_id).values(*MAP_WORK_AREA_FIELDS).first()
+
+
+def pending_inaccessibility_requests(opportunity):
+    """Work areas awaiting an inaccessibility review, longest outstanding first.
+
+    The review sidebar renders these rows from JSON rather than through template filters, so the
+    date and the pending label arrive display-ready. "Pending" counts from the date of visit the
+    worker reported, the only date the request carries.
+    """
+    today = timezone.localdate()
+    pending_requests = (
+        WorkAreaInaccessibilityRequest.objects.filter(
+            status=InaccessibilityRequestStatus.PENDING,
+            work_area__opportunity=opportunity,
+            work_area__status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+        )
+        .order_by("date_of_visit")
+        .values(
+            "work_area_id",
+            "xform_id",
+            "date_of_visit",
+            "work_area__slug",
+            "work_area__work_area_group__name",
+            "work_area__implementation_area_name",
+            "opportunity_access__user__name",
+        )
+    )
+    photo_blob_ids = inaccessibility_photo_blob_ids([request["xform_id"] for request in pending_requests])
+    return [
+        {
+            "work_area_id": pending_request["work_area_id"],
+            "slug": pending_request["work_area__slug"],
+            "group_name": pending_request["work_area__work_area_group__name"],
+            "implementation_area_name": pending_request["work_area__implementation_area_name"],
+            "flw_name": pending_request["opportunity_access__user__name"],
+            "date_of_visit": formats.date_format(pending_request["date_of_visit"]),
+            "pending_label": gettext("{days}d pending").format(days=(today - pending_request["date_of_visit"]).days),
+            "photo_blob_id": photo_blob_ids.get(pending_request["xform_id"]),
+        }
+        for pending_request in pending_requests
+    ]
+
+
+def inaccessibility_photo_blob_ids(xform_ids):
+    """One blob id per form that submitted a photo, for the list's thumbnails.
+
+    A form can carry more than one attachment; the sidebar shows a single thumbnail, so the first
+    blob found for a form wins.
+    """
+    blob_ids = {}
+    for parent_id, blob_id in BlobMeta.objects.filter(parent_id__in=xform_ids).values_list("parent_id", "blob_id"):
+        blob_ids.setdefault(parent_id, blob_id)
+    return blob_ids
 
 
 def work_area_search_options(opportunity):

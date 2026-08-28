@@ -71,6 +71,7 @@ from commcare_connect.microplanning.helpers import (
     exclude_work_areas_for_opportunity,
     map_work_areas,
     pct,
+    pending_inaccessibility_requests,
     unassign_work_areas_for_opportunity,
     work_area_detail,
     work_area_search_options,
@@ -202,6 +203,12 @@ def microplanning_home(request, *args, **kwargs):
         args=[request.org.slug, opportunity.opportunity_id, 0],
     ).replace("/0/", "/")
 
+    # The review sidebar builds photo thumbnail URLs by appending a blob id to this.
+    attachment_url_base = reverse(
+        "opportunity:fetch_attachment",
+        args=[request.org.slug, opportunity.opportunity_id, "BLOB_ID"],
+    ).replace("BLOB_ID", "")
+
     status_meta = {
         status.value: {
             "label": status.label,
@@ -226,11 +233,9 @@ def microplanning_home(request, *args, **kwargs):
     is_program_manager = is_org_pm_or_all_access(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
     inaccessible_mode = is_program_manager and bool(request.GET.get("inaccessible_mode"))
-    inaccessible_request_count = (
-        WorkArea.objects.filter(opportunity_id=opportunity.id, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE).count()
-        if is_program_manager
-        else 0
-    )
+    # Drives both the entry button's count and the queue the mode renders, so the two can never
+    # disagree.
+    inaccessibility_requests = pending_inaccessibility_requests(opportunity) if is_program_manager else []
 
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
@@ -278,7 +283,9 @@ def microplanning_home(request, *args, **kwargs):
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
         "inaccessible_mode": inaccessible_mode,
-        "inaccessible_request_count": inaccessible_request_count,
+        "inaccessibility_requests": inaccessibility_requests,
+        "inaccessible_request_count": len(inaccessibility_requests),
+        "attachment_url_base": attachment_url_base,
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "search_options_url": search_options_url,
         "work_area_detail_url": work_area_detail_url,

@@ -1621,6 +1621,7 @@ class TestInaccessibleModeContext:
         assert response.status_code == 200
         assert response.context["inaccessible_mode"]
         assert response.context["inaccessible_request_count"] == 1
+        assert response.context["inaccessibility_requests"][0]["work_area_id"] == work_area.id
 
     def test_mode_is_closed_to_non_program_managers(self, client, settings, organization, org_user_admin, opportunity):
         settings.MAPBOX_TOKEN = "test-mapbox-token"

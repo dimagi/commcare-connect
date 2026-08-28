@@ -17,7 +17,11 @@
 
             // Inaccessibility review mode state
             inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
+            inaccessibilityRequests: [],
             selectedInaccessibilityRequestId: null,
+            selectedInaccessibilityRequestSlug: '',
+            reviewedRequestCount: 0,
+            totalRequestCount: 0,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -212,7 +216,30 @@
                     this.setWorkAreaState(this.selectedInaccessibilityRequestId, { selected: false });
                 }
                 this.selectedInaccessibilityRequestId = workAreaId;
+                this.selectedInaccessibilityRequestSlug = this.inaccessibilityRequests.find(
+                    (pendingRequest) => pendingRequest.work_area_id === workAreaId
+                )?.slug ?? '';
                 this.setWorkAreaState(workAreaId, { selected: true });
+            },
+
+            // "3 of 12 reviewed" — the total is what the queue held when the page loaded, so the
+            // count keeps making sense as reviewed rows leave the list.
+            reviewedRequestsLabel() {
+                return '{% translate "{reviewed} of {total} reviewed" %}'
+                    .replace('{reviewed}', this.reviewedRequestCount)
+                    .replace('{total}', this.totalRequestCount);
+            },
+
+            requestRowDetails(pendingRequest) {
+                return [
+                    pendingRequest.date_of_visit,
+                    pendingRequest.implementation_area_name,
+                    pendingRequest.group_name,
+                ].filter(Boolean).join(' · ');
+            },
+
+            attachmentUrl(blobId) {
+                return '{{ attachment_url_base|escapejs }}' + blobId;
             },
 
             getDownloadUrl() {
@@ -844,6 +871,12 @@
                 this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
                 this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
 
+                if (this.inaccessibleMode) {
+                    const requestsEl = document.getElementById('inaccessibility-requests-data');
+                    if (requestsEl) this.inaccessibilityRequests = JSON.parse(requestsEl.textContent);
+                    this.totalRequestCount = this.inaccessibilityRequests.length;
+                }
+
                 if (this.assignmentMode) {
                     const assigneesEl = document.getElementById('assignees-data');
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
@@ -884,9 +917,14 @@
                         this.selectedFeature = { ...this.selectedFeature, status: data.status };
                     }
                     this.setWorkAreaState(data.id, { status: data.status, selected: false });
+                    this.inaccessibilityRequests = this.inaccessibilityRequests.filter(
+                        (pendingRequest) => pendingRequest.work_area_id !== data.id
+                    );
                     if (this.selectedInaccessibilityRequestId === data.id) {
                         this.selectedInaccessibilityRequestId = null;
+                        this.selectedInaccessibilityRequestSlug = '';
                     }
+                    this.reviewedRequestCount += 1;
                     this.showInaccessibilityReview = false;
                     this.showToast("{% translate 'Work area review saved.' %}");
                 });
