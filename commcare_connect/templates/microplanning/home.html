@@ -371,11 +371,6 @@
                   </div>
                 </dl>
                 <div class="mt-4 flex justify-end gap-2">
-                  <button x-show="selectedFeature.status === 'REQUEST_FOR_INACCESSIBLE'"
-                          class="button button-md button-outline-rounded"
-                          @click="openReviewInaccessibilityModal(selectedFeature._id)">
-                    {% translate "Review Inaccessible" %}
-                  </button>
                   <button class="button button-md button-outline-rounded"
                           @click="openWorkAreaEditModal(selectedFeature._id)">
                     <i class="fa-regular fa-pen-to-square"></i>
@@ -388,15 +383,6 @@
                        class="modal-backdrop">
                     <div class="modal relative" @click.stop>
                       <div id="work-area-form"></div>
-                    </div>
-                  </div>
-                  <div x-show="showReviewInaccessibilityModal"
-                       x-cloak
-                       @click.self="showReviewInaccessibilityModal = false"
-                       x-effect="if (showReviewInaccessibilityModal) $nextTick(() => $el.scrollTop = 0)"
-                       class="modal-backdrop">
-                    <div class="modal modal-lg relative" @click.stop>
-                      <div id="review-inaccessibility-fragment"></div>
                     </div>
                   </div>
                 </div>
@@ -415,10 +401,15 @@
           </aside>
           <aside class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0 rounded-lg">
             <h2 class="text-lg font-semibold mb-2">{% translate "Review Inaccessibility Request" %}</h2>
-            <div class="flex flex-col items-center justify-center h-[80%] text-center text-gray-400 gap-2 py-8">
-              <i class="fa-regular fa-rectangle-list text-3xl"></i>
-              <p class="text-sm">{% translate "Select a request to review it." %}</p>
-            </div>
+            <template x-if="!showInaccessibilityReview">
+              <div class="flex flex-col items-center justify-center h-[80%] text-center text-gray-400 gap-2 py-8">
+                <i class="fa-regular fa-rectangle-list text-3xl"></i>
+                <p class="text-sm">{% translate "Select a request to review it." %}</p>
+              </div>
+            </template>
+            <div x-show="showInaccessibilityReview"
+                 x-cloak
+                 id="review-inaccessibility-fragment"></div>
           </aside>
         {% endif %}
         {% if assignment_mode %}

@@ -1350,7 +1350,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
-class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
+class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
     def get_url(self, org_slug, opp_id, work_area_id):
         return reverse(
             "microplanning:review_inaccessibility_request",
@@ -1380,7 +1380,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         )
         return work_area, inacc_request
 
-    def test_get_modal_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
+    def test_get_panel_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
         work_area, _ = pending_wa
         client.force_login(org_user_admin)
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
@@ -1397,7 +1397,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         ],
         ids=["not_visited", "visited", "inaccessible"],
     )
-    def test_get_modal_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
+    def test_get_panel_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)

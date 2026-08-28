@@ -1257,7 +1257,9 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
     inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest, work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
+        work_area=work_area,
+        status=InaccessibilityRequestStatus.PENDING,
     )
     try:
         photo = BlobMeta.objects.get(parent_id=inacc_request.xform_id)
@@ -1270,11 +1272,6 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
             "work_area": work_area,
             "inaccessibility_request": inacc_request,
             "photo": photo,
-            "boundary_geojson": json.loads(work_area.boundary.geojson),
-            "request_location_geojson": (
-                json.loads(inacc_request.location.geojson) if inacc_request.location else None
-            ),
-            "mapbox_api_key": settings.MAPBOX_TOKEN,
         },
     )
 
