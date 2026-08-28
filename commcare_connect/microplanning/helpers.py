@@ -125,6 +125,23 @@ def pending_inaccessibility_requests(opportunity):
     ]
 
 
+def denied_inaccessibility_work_area_ids(opportunity):
+    """Work areas whose inaccessibility request was denied and not since re-raised.
+
+    A denial returns the area to Not Visited, which the tiles cannot tell apart from an area nobody
+    ever raised a request on — so the key's "Denied" colour has to be driven by these ids.
+    """
+    return list(
+        WorkAreaInaccessibilityRequest.objects.filter(
+            status=InaccessibilityRequestStatus.DENIED,
+            work_area__opportunity=opportunity,
+        )
+        .exclude(work_area__status__in=[WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.INACCESSIBLE])
+        .values_list("work_area_id", flat=True)
+        .distinct()
+    )
+
+
 def inaccessibility_photo_blob_ids(xform_ids):
     """One blob id per form that submitted a photo, for the list's thumbnails.
 
