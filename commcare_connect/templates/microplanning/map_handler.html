@@ -1399,6 +1399,12 @@
                 this.showBuildingsLoadingMarker(bbox);
                 try {
                     const res = await fetch(`${buildingsUrl}?bbox=${bbox.join(',')}`);
+                    // Guidance, not a failure: the toggle stays on, so zooming in loads the
+                    // footprints without the user asking again.
+                    if (res.status === 422) {
+                        this.showToast("{% translate 'Zoom in to load building data.' %}", true);
+                        return;
+                    }
                     if (!res.ok) throw new Error('Failed to fetch building data');
                     const data = await res.json();
                     this.addBuildingsArea(data.bbox, data.features ?? []);

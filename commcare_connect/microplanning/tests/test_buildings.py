@@ -173,6 +173,13 @@ def test_the_cap_admits_the_largest_viewport_we_support():
     assert count_covering_grid_tiles(*_viewport_bbox(*LARGEST_SCREEN_PX, BUILDING_MIN_ZOOM)) <= MAX_BUILDING_GRID_TILES
 
 
+def test_a_screen_past_the_cap_comes_inside_it_by_zooming_in():
+    too_big = (5120, 2880)  # a 5K display; a 4K one at 80% browser zoom covers the same ground
+
+    assert count_covering_grid_tiles(*_viewport_bbox(*too_big, BUILDING_MIN_ZOOM)) > MAX_BUILDING_GRID_TILES
+    assert count_covering_grid_tiles(*_viewport_bbox(*too_big, BUILDING_MIN_ZOOM + 1)) <= MAX_BUILDING_GRID_TILES
+
+
 def _viewport_bbox(screen_width_px, screen_height_px, zoom, west=8.65, south=9.05):
     """
     The bbox the map would ask for on a screen of this size, at this zoom.

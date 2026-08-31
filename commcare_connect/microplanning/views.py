@@ -827,7 +827,7 @@ def buildings_geojson(request, org_slug, opp_id):
     try:
         return JsonResponse(buildings_for_bbox(*bbox))
     except AreaTooLarge:
-        return JsonResponse({"error": _("Requested area is too large.")}, status=400)
+        return JsonResponse({"error": _("Requested area is too large.")}, status=422)
     except BuildingDataUnavailable:
         logger.exception("Could not fetch building data for bbox %s", bbox)
         return JsonResponse({"error": _("Building data is unavailable right now.")}, status=503)

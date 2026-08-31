@@ -271,10 +271,13 @@ class TestBuildingsGeojson(BaseMicroplanningFlagTest):
         assert response.status_code == 400
         assert response.json()["error"]
 
-    def test_too_large_an_area_is_rejected(self, client, org_user_admin, organization, opportunity):
+    def test_too_large_an_area_is_reported_apart_from_a_malformed_one(
+        self, client, org_user_admin, organization, opportunity
+    ):
+        """422, not the 400 a bad bbox gets: the map asks the user to zoom in only for this one."""
         client.force_login(org_user_admin)
         response = client.get(self.url(organization.slug, opportunity.opportunity_id), {"bbox": "3.0,4.0,14.0,14.0"})
-        assert response.status_code == 400
+        assert response.status_code == 422
         assert "too large" in response.json()["error"]
 
     def test_unavailable_upstream_is_reported_as_503(self, client, org_user_admin, organization, opportunity):
