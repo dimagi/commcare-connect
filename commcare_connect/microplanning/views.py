@@ -765,7 +765,7 @@ def workareas_group_geojson(request, org_slug, opp_id):
 
 
 @require_GET
-@org_admin_required
+@opp_manage_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def workareas_bounds(request, org_slug, opp_id):
