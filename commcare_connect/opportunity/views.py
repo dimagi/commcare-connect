@@ -851,6 +851,9 @@ def render_payment_import_progress(request, org_slug, task_id):
     its outcome shows up as a standard banner."""
 
     def ownership_check(request, task_meta):
+        args = task_meta.get("args") or []
+        if not args:
+            raise Http404("Import not found.")
         opportunity = get_opportunity_or_404(task_meta.get("args")[0])
         if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
             raise Http404()

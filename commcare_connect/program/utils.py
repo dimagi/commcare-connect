@@ -51,6 +51,8 @@ def program_access_level_from_request(request, program) -> AccessLevel:
 
 
 def opportunity_access_level_from_request(request, opportunity) -> AccessLevel:
+    if not opportunity:
+        return AccessLevel.NONE
     base_access = _base_access_level(request)
     if base_access is not None:
         return base_access
