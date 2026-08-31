@@ -11423,7 +11423,7 @@ a.explore-card:hover {
   font-size: 13px;
   font-weight: 500;
 }
-.blog-result-count #blogResultN {
+.blog-result-count #insightsResultN {
   color: #fff;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
