@@ -244,10 +244,7 @@
                 return ++this.boundsRequestId;
             },
 
-            // Bounding box of the work areas matching `query`, or null when nothing matches. Work
-            // areas arrive as vector tiles, so their geometry only exists server-side. Superseded
-            // responses resolve to undefined, so a slow reply can't yank the viewport away from a
-            // filter the user has since changed.
+            // Bounding box of the work areas matching `query`, or null when nothing matches.
             fetchWorkAreaBounds(query) {
                 const requestId = this.invalidateBoundsRequest();
                 const baseUrl = '{{ bounds_url|escapejs }}';
@@ -256,6 +253,7 @@
                         if (!res.ok) throw new Error('Failed to load work area bounds');
                         return res.json();
                     })
+                    // Ignore responses if the request has been superseded.
                     .then((data) => (requestId === this.boundsRequestId ? data.bounds : undefined))
                     .catch(() => undefined);
             },
@@ -269,11 +267,7 @@
                 // with Object.assign, so an explicit `duration: undefined` overwrites the default
                 // instead of falling back to it — leaving the camera with a NaN zoom.
                 if (!animate) options.duration = 0;
-                // Work area tiles are not served below the layer's minzoom, so a fit wide enough
-                // to drop under it lands on a viewport where nothing renders. fitBounds has no
-                // floor of its own, so take the camera it would use and, only when that camera is
-                // too far out, override its zoom — the framing is sacrificed to keep the layer
-                // visible. A fit that already clears the floor is left exactly as it was.
+                // Work area tiles are not served below the layer's minzoom, so check the camera zoom and reset if we're below the minimum.
                 const camera = this.map.cameraForBounds(bounds, options);
                 if (camera && camera.zoom < {{ workarea_min_zoom }}) {
                     options.center = camera.center;
@@ -282,10 +276,6 @@
                 this.map.fitBounds(bounds, options);
             },
 
-            // Fits the map to `query`'s work areas. A null bounds means the filters match nothing:
-            // hold the viewport and say so, rather than leaving an unexplained no-op. With no
-            // filters set there is nothing to blame it on — an opportunity with no work areas yet
-            // is the expected state before an import, so that case stays silent.
             zoomToQuery(query, options) {
                 return this.fetchWorkAreaBounds(query).then((bounds) => {
                     if (bounds === undefined) return;  // superseded, or the request failed
@@ -301,8 +291,7 @@
 
             // Whether `query` actually narrows anything. A serialized filter form is never the
             // empty string — the hidden work_area field, the payment unit select and both date
-            // inputs each contribute a `name=` pair while blank — so the question has to be asked
-            // of the values, not of the querystring's length.
+            // inputs each contribute a `name=` pair while blank.
             hasActiveFilters(query) {
                 for (const [, value] of new URLSearchParams(query)) {
                     if (value) return true;
