@@ -51,6 +51,7 @@ urlpatterns = [
         views.implementation_areas_geojson,
         name="implementation_areas_geojson",
     ),
+    path("<slug:opp_id>/buildings/", views.buildings_geojson, name="buildings_geojson"),
     path("<slug:opp_id>/cluster_work_areas/", views.cluster_work_areas, name="cluster_work_areas"),
     path("<slug:opp_id>/clear_work_areas/", views.clear_work_areas, name="clear_work_areas"),
     path("<slug:opp_id>/clear_work_area_groups/", views.clear_work_area_groups, name="clear_work_area_groups"),

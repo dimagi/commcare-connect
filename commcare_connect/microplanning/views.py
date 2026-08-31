@@ -47,7 +47,9 @@ from waffle.decorators import waffle_flag
 
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.microplanning.buildings import buildings_for_bbox, parse_bbox
 from commcare_connect.microplanning.const import (
+    BUILDING_MIN_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
     REQUIRED_DELIVER_UNIT_SLUGS,
@@ -59,6 +61,7 @@ from commcare_connect.microplanning.coverage_progress import (
     annotate_approved_visit_counts,
     missing_deliver_units,
 )
+from commcare_connect.microplanning.exceptions import AreaTooLarge, BuildingDataUnavailable
 from commcare_connect.microplanning.filters import (
     CoverageProgressFilterSet,
     UserVisitMapFilterSet,
@@ -197,6 +200,10 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
+    buildings_url = reverse(
+        "microplanning:buildings_geojson", kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id}
+    )
+
     work_area_detail_url = reverse(
         "microplanning:work_area_detail",
         args=[request.org.slug, opportunity.opportunity_id, 0],
@@ -257,8 +264,10 @@ def microplanning_home(request, *args, **kwargs):
         "visit_tiles_url": visit_tiles_url,
         "groups_url": groups_url,
         "implementation_areas_url": implementation_areas_url,
+        "buildings_url": buildings_url,
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
+        "building_min_zoom": BUILDING_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
         "user_visit_data_url": user_visit_data_url,
         "download_url": download_url,
@@ -800,6 +809,28 @@ def implementation_areas_geojson(request, org_slug, opp_id):
         )
     ]
     return JsonResponse({"implementation_area_features": features})
+
+
+# Reading from Overture takes seconds, and ATOMIC_REQUESTS would otherwise hold a database
+# transaction open for all of it. This view only reads, so it does not need one.
+@transaction.non_atomic_requests
+@require_GET
+@org_admin_required
+@opportunity_required
+@waffle_flag(MICROPLANNING)
+def buildings_geojson(request, org_slug, opp_id):
+    try:
+        bbox = parse_bbox(request.GET.get("bbox"))
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+    try:
+        return JsonResponse(buildings_for_bbox(*bbox))
+    except AreaTooLarge:
+        return JsonResponse({"error": _("Requested area is too large.")}, status=400)
+    except BuildingDataUnavailable:
+        logger.exception("Could not fetch building data for bbox %s", bbox)
+        return JsonResponse({"error": _("Building data is unavailable right now.")}, status=503)
 
 
 @org_admin_required
