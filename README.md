@@ -83,6 +83,18 @@ brew install weasyprint
 sudo apt-get install -y binutils libproj-dev gdal-bin
 ```
 
+**Enabling the PostGIS extension**
+
+No migration creates the `postgis` extension. The `inv up` setup works because the
+`postgis/postgis` image enables it for you when it initialises the database.
+
+If you are using your own PostgreSQL instead, create the extension in the target database
+before migrating, or the first spatial migration will fail:
+
+```bash
+psql -d commcare_connect -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
+
     # start docker services
     $ inv up
 
@@ -127,7 +139,8 @@ Some useful command are available via the `tasks.py` file:
 
 **Test the OAuth2 flow**
 
-- Set `COMMCARE_HQ_URL=https://staging.commcarehq.org` in your `.env` file and restart the server.
+- Confirm `COMMCARE_HQ_URL` points at `https://staging.commcarehq.org`. That is the default, so
+  you only need to set it in `.env` if you have overridden it.
 - Navigate to http://[my-unique-subdomain].ngrok-free.app/accounts/login/
 - Click the "Log in with CommCare HQ" button
 - You should be redirected to CommCare HQ to log in
@@ -135,17 +148,44 @@ Some useful command are available via the `tasks.py` file:
 
 ### Setting Up Your Users
 
-- To create a **normal user account**, just go to Sign Up and fill out the form. Once you submit it, you'll see a "Verify Your E-mail Address" page. Go to your console to see a simulated email verification message. Copy the link into your browser. Now the user's email should be verified and ready to go.
+No social app setup is needed: the "Log in with CommCare HQ" button only appears once a
+`commcarehq` social app exists (see
+[Setting up auth with CommCare HQ](#setting-up-auth-with-commcare-hq)).
 
-- To create a **superuser account**, use this command:
+- To create a **superuser**, run the command below. `--email` is not accepted, because the
+  custom `User` model sets `REQUIRED_FIELDS = []`; set the address afterwards in the admin if
+  you need one.
 
-      $ python manage.py createsuperuser
+      $ ./manage.py createsuperuser
 
-- To promote a user to superuser, use this command:
+- To create a **normal user account**, go to Sign Up and fill out the form. Local settings use
+  `ACCOUNT_EMAIL_VERIFICATION = "optional"`, so you are logged straight in; the confirmation
+  email is still printed to the console if you want to verify the address.
 
-      $ python manage.py promote_user_to_superuser <email>
+- To promote an existing user to superuser, use this command:
+
+      $ ./manage.py promote_user_to_superuser <email>
 
 For convenience, you can keep your normal user logged in on Chrome and your superuser logged in on Firefox (or similar), so that you can see how the site behaves for both kinds of users.
+
+### Sample Data
+
+To populate a local database with organizations, opportunities, visits and payments:
+
+    # generate_sample_data <num_visits> <org_slug>
+    $ ./manage.py generate_sample_data 50 demo-org
+
+The organization is created if the slug does not already exist. Each run first deletes the
+existing opportunities, visits, payments and programs belonging to the two organizations it is
+about to use. Two optional flags are available:
+
+- `--invited_org_slug` — reuse a specific organization as the invited org. Without it, a new
+  invited org with a random slug is created on every run, and the previous one is left behind.
+- `--managed_opportunities` — how many managed opportunities to create (default 3)
+
+Adding yourself to the generated organization is a separate step, either through
+`/admin/organization/userorganizationmembership/` or the organization's own member admin
+pages.
 
 ### Test coverage
 
@@ -189,16 +229,16 @@ celery -A config.celery_app worker -B -l info
 
 ## Deployment
 
-The following details how to deploy this application.
+The application runs as Docker containers on EC2, deployed with [Kamal](https://kamal-deploy.org/).
+Ansible provisions the instances and manages the container env files. See
+[deploy/README.md](deploy/README.md) for the full picture, including the tooling you need
+installed to deploy or change Django settings.
 
-The application is running on AWS. Deploying new version of the app can be done via the "Deploy" workflow
-on Github Actions.
+Deploying a new version of the app can be done via the "Deploy" workflow on GitHub Actions.
 
-Should the deploy fail you can view the logs via the [AWS console][aws_console].
+Container logs are shipped to CloudWatch, and can also be read directly with `cd deploy && kamal app logs`.
 
-[aws_console]: https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/using-features.logging.html?icmpid=docs_elasticbeanstalk_console
-
-For details on how this actions is configured see:
+For details on how this action is configured see:
 
 - https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/
 - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
@@ -210,7 +250,7 @@ which is connected to the staging environment of CommCare HQ at
 [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
 
 - Update [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml) with the branches you need to include.
-- Run `.deploy/rebuildstaging` to build the `autostaging` branch
+- Run `deploy/rebuildstaging` to build the `autostaging` branch
 - After this, you can deploy to the staging environment by manually running the `deploy`
   [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
