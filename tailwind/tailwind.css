@@ -518,6 +518,14 @@
   }
 }
 
+/*--- map loading marker ------------------------- */
+/* Spinner pinned to the map over the area a layer is currently being fetched for. */
+@layer components {
+  .map-loading-marker {
+    @apply flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-brand-deep-purple shadow-md;
+  }
+}
+
 /*--- simple toggle switch ------------------------- */
 @layer components {
   .simple-toggle {
