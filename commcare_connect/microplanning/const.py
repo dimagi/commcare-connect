@@ -27,6 +27,12 @@ SERVICE_DELIVERY_UNIT_SLUG = "services_delivery_unit"
 NO_CHILDREN_WORK_AREA_UNIT_SLUG = "no-children-wa"
 REQUIRED_DELIVER_UNIT_SLUGS = (SERVICE_DELIVERY_UNIT_SLUG, NO_CHILDREN_WORK_AREA_UNIT_SLUG)
 
+# Zoom levels for the microplanning map. Work area tiles are not served below MIN, so a fit that
+# zooms out past it blanks the layer; MAX_AUTOZOOM keeps a fit onto a single work area (a few
+# hundred metres across) from landing at street level.
+WORKAREA_MIN_ZOOM = 6
+MAX_AUTOZOOM_ZOOM = 14
+
 MAX_EXCLUDE_WORK_AREAS = 200
 MAX_UNASSIGN_WORK_AREAS = 200
 HQ_BULK_CHUNK_SIZE = 50
