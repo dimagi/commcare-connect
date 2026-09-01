@@ -34,7 +34,7 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 
 
@@ -435,9 +435,33 @@ class WorkAreaDataSerializer(serializers.ModelSerializer):
 
 
 class LLOEntityDataSerializer(serializers.ModelSerializer):
+    """Exports the organization profile that used to be modelled as a separate LLO entity."""
+
+    countries = serializers.SlugRelatedField(many=True, read_only=True, slug_field="code")
+    primary_sectors = serializers.SlugRelatedField(many=True, read_only=True, slug_field="slug")
+    members = serializers.SlugRelatedField(many=True, read_only=True, slug_field="email")
+
     class Meta:
-        model = LLOEntity
-        fields = ["id", "name", "short_name"]
+        model = Organization
+        fields = [
+            "id",
+            "name",
+            "short_name",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+            "verified",
+            "members",
+        ]
 
 
 class AuditReportDataSerializer(serializers.ModelSerializer):

@@ -180,6 +180,7 @@
     </div>
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]"
          x-data="mapController()">
+      {{ status_meta|json_script:"status-meta-data" }}
       <!-- Map section -->
       <div id="map-wrapper"
            x-ref="mapContainer"
@@ -197,6 +198,22 @@
             {% translate "Click to select group · Shift+click to select single area" %}
           </div>
         {% endif %}
+        <dl x-show="hoveredWorkArea"
+            x-cloak
+            class="absolute bottom-4 right-2 z-40 pointer-events-none grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white shadow-lg max-w-xs">
+          <dt class="opacity-75">{% translate "Work Area" %}</dt>
+          <dd x-text="hoveredWorkArea?.slug ?? '—'">
+          </dd>
+          <dt class="opacity-75">{% translate "Work Area Group" %}</dt>
+          <dd x-text="hoveredWorkArea?.group_name ?? '—'">
+          </dd>
+          <dt class="opacity-75">{% translate "Implementation Area" %}</dt>
+          <dd x-text="hoveredWorkArea?.implementation_area_name || '—'">
+          </dd>
+          <dt class="opacity-75">{% translate "Status" %}</dt>
+          <dd x-text="hoveredWorkArea?.statusLabel ?? '—'">
+          </dd>
+        </dl>
         <div id="map" class="w-full h-full"></div>
       </div>
       <!-- Sidebars (stacked) -->
@@ -290,7 +307,6 @@
           </aside>
           <aside id="lower-sidebar"
                  class="bg-white shadow-md p-4 xl:flex-1 min-h-0 overflow-auto rounded-lg">
-            {{ status_meta|json_script:"status-meta-data" }}
             <h2 class="text-lg font-semibold mb-2">{% translate "Select Work Area" %}</h2>
             <template x-if="!selectedFeature">
               <div class="flex flex-col items-center justify-center h-[80%] text-center text-gray-400 gap-2 py-8">
@@ -337,8 +353,7 @@
                         x-text="selectedFeature.building_count ?? '—'">
                     </dd>
                   </div>
-                  <div class="flex items-center gap-4"
-                       x-data="{statusMeta: JSON.parse(document.getElementById('status-meta-data').textContent)}">
+                  <div class="flex items-center gap-4">
                     <dt class="text-sm text-gray-500 shrink-0">{% translate "Status" %}</dt>
                     <dd class="flex-1 min-w-0">
                       <span class="block w-full text-center text-sm font-semibold rounded-lg px-3 py-2"
