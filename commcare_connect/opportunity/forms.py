@@ -48,7 +48,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tables import header_with_tooltip
+from commcare_connect.opportunity.tables import header_with_tooltip, value_with_icon_tooltip
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
@@ -1699,6 +1699,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             )
             self.fields["late_delta_units"].initial = self.late_delta_units
 
+            if (
+                self.read_only
+                and self.instance.pk
+                and self.instance.exchange_rate_id
+                and self.instance.amount_usd is not None
+            ):
+                self.fields["amount_usd"].label = value_with_icon_tooltip(
+                    self.fields["amount_usd"].label, self._amount_usd_tooltip_html(), theme="dark"
+                )
+
             self.fields["description"].widget.attrs.update(
                 {
                     "placeholder": gettext("Describe service delivery details, references, or notes..."),
@@ -1730,6 +1740,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 }
             )
             self.fields["date_of_expense"].required = True
+
+    def _amount_usd_tooltip_html(self):
+        return render_to_string("opportunity/partials/amount_usd_tooltip.html")
 
     def get_form_layout(self):
         if self.is_service_delivery:
