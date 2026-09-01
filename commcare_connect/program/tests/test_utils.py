@@ -139,6 +139,11 @@ class TestProgramAccessLevelFromRequest:
         request = make_request(user, org=program_manager_org, membership=membership)
         assert program_access_level_from_request(request, None) is AccessLevel.NONE
 
+    def test_all_org_access_with_no_program_has_no_access(self, organization, user):
+        """Nothing to have a relationship with, so not even ALL_ORG_ACCESS gets in."""
+        request = make_request(grant_all_org_access(user), org=organization)
+        assert program_access_level_from_request(request, None) is AccessLevel.NONE
+
 
 class TestOrgAccessLevelFromRequest:
     @pytest.mark.parametrize(
@@ -237,6 +242,10 @@ class TestOpportunityAccessLevelFromRequest:
 
     def test_no_opportunity_has_no_access(self, organization, user):
         request = make_request(user, org=organization, membership=make_membership(organization, user, Role.ADMIN))
+        assert opportunity_access_level_from_request(request, None) is AccessLevel.NONE
+
+    def test_all_org_access_with_no_opportunity_has_no_access(self, organization, user):
+        request = make_request(grant_all_org_access(user), org=organization)
         assert opportunity_access_level_from_request(request, None) is AccessLevel.NONE
 
     def test_all_org_access_overrides_an_unrelated_org(self, managed_opp, user):

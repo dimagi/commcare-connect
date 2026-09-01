@@ -40,26 +40,26 @@ def org_program_access(org, program) -> AccessLevel:
     return AccessLevel.NONE
 
 
-def program_access_level_from_request(request, program) -> AccessLevel:
+def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:
+    if not resource:
+        return AccessLevel.NONE
+
     base_access = _base_access_level(request)
     if base_access is not None:
         return base_access
 
-    org_level = org_program_access(request.org, program)
+    org_level = org_access_fn(request.org, resource)
+    user_level = user_org_access(request.org_membership)
 
-    return AccessLevel.effective(org_level, user_org_access(request.org_membership))
+    return AccessLevel.effective(org_level, user_level)
+
+
+def program_access_level_from_request(request, program) -> AccessLevel:
+    return _resource_access_level(request, program, org_program_access)
 
 
 def opportunity_access_level_from_request(request, opportunity) -> AccessLevel:
-    if not opportunity:
-        return AccessLevel.NONE
-    base_access = _base_access_level(request)
-    if base_access is not None:
-        return base_access
-
-    org_level = org_opportunity_access(request.org, opportunity)
-
-    return AccessLevel.effective(org_level, user_org_access(request.org_membership))
+    return _resource_access_level(request, opportunity, org_opportunity_access)
 
 
 def org_opportunity_access(org, opportunity) -> AccessLevel:
