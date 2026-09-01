@@ -1885,12 +1885,14 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         invoice = self.object
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
+        form = self.get_form()
         context.update(
             {
                 "opportunity": opportunity,
-                "form": self.get_form(),
+                "form": form,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -2009,14 +2011,26 @@ def invoice_update_status(request, org_slug, opp_id):
     if error:
         return HttpResponseBadRequest(error)
 
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW and request.POST.get("attestation") != "true":
+        return HttpResponseBadRequest(_("You must certify the invoice before submitting."))
+
     invoice.status = new_status
+    update_fields = ["status", "description"] if invoice.service_delivery else ["status"]
     if invoice.service_delivery:
         invoice.description = description
-        invoice.save(update_fields=["status", "description"])
-        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            rollback_invoice_line_items(invoice)
+
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW:
+        with pghistory.context(
+            username=request.user.username,
+            user_email=request.user.email,
+            attestation_certified=True,
+        ):
+            invoice.save(update_fields=update_fields)
     else:
-        invoice.save(update_fields=["status"])
+        invoice.save(update_fields=update_fields)
+
+    if invoice.service_delivery and new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+        rollback_invoice_line_items(invoice)
 
     messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 

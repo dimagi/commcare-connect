@@ -15,6 +15,8 @@
       showDownloadButton: false,
       showCancelModal: false,
       showRejectModal: false,
+      showSubmitModal: false,
+      certifyChecked: false,
 
       init() {
         if (this.isServiceDelivery) {
@@ -97,12 +99,13 @@
         return url.toString();
       },
 
-      submitInvoice(newStatus) {
+      submitInvoice(newStatus, extraValues = {}) {
         htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           values: {
               invoice_id: this.invoiceId,
               description: this.$refs.description ? this.$refs.description.value : "",
-              new_status: newStatus
+              new_status: newStatus,
+              ...extraValues
           },
         });
       },
@@ -123,6 +126,16 @@
       confirmRejectInvoice() {
         this.showRejectModal = false;
         this.submitInvoice('rejected_by_pm');
+      },
+
+      openSubmitInvoiceModal() {
+        this.certifyChecked = false;
+        this.showSubmitModal = true;
+      },
+
+      confirmSubmitInvoice() {
+        this.showSubmitModal = false;
+        this.submitInvoice('pending_pm_review', { attestation: true });
       },
 
     }));

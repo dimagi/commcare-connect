@@ -1395,6 +1395,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         form = response.context["form"]
         assert form.line_items_table is None
+        assert response.context["line_item_count"] is None
 
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
@@ -1689,6 +1690,7 @@ class TestInvoiceUpdateStatus:
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.PENDING_PM_REVIEW,
                 "description": "Ready for PM review",
+                "attestation": "true",
             },
         )
 
@@ -1696,6 +1698,34 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
         assert invoice.description == "Ready for PM review"
+
+        status_event = invoice.status_events.last()
+        assert status_event.pgh_context.metadata["attestation_certified"] is True
+        assert status_event.pgh_context.metadata["username"] == nm_user_admin.username
+
+    @pytest.mark.parametrize("attestation", [None, "false", "0", ""])
+    def test_nm_submit_to_pm_without_attestation_fails(
+        self, client, nm_organization, nm_user_admin, pm_organization, attestation
+    ):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-005"
+        )
+
+        data = {
+            "invoice_id": invoice.payment_invoice_id,
+            "new_status": InvoiceStatus.PENDING_PM_REVIEW,
+            "description": "Ready for PM review",
+        }
+        if attestation is not None:
+            data["attestation"] = attestation
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(url, data=data)
+
+        assert response.status_code == 400
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
 
     def test_nm_cancel_invoice_success(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(
