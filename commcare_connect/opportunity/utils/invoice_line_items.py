@@ -5,6 +5,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 
 from django.db import transaction
 from django.db.models import Exists, F, Max, OuterRef, Q, Sum
+from django.db.models.functions import Coalesce
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -135,9 +136,12 @@ class LineItem:
     month: datetime.date
     payment_unit_name: str
     number_approved: int
+    late_delta_units: int
     flw_pay: Money
     org_pay: Money
     exchange_rate: Decimal
+    exchange_rate_date: datetime.date | None = None
+    exchange_rate_fetched_at: datetime.datetime | None = None
 
     @property
     def total_pay(self) -> Money:
@@ -153,12 +157,17 @@ def group_line_items(rows):
             {
                 "payment_unit_name": payment_unit.name,
                 "number_approved": 0,
+                "late_delta_units": 0,
                 "flw_pay": Money.zero(),
                 "org_pay": Money.zero(),
                 "exchange_rate": row.exchange_rate.rate,
+                "exchange_rate_date": row.exchange_rate.rate_date,
+                "exchange_rate_fetched_at": row.exchange_rate.fetched_at,
             },
         )
         group["number_approved"] += row.billed_count
+        if row.is_delta:
+            group["late_delta_units"] += row.billed_count
         group["flw_pay"] += row.flw_pay
         group["org_pay"] += row.org_pay
 
@@ -167,6 +176,11 @@ def group_line_items(rows):
         return (month, group["payment_unit_name"])
 
     return [LineItem(month=month, **group) for (month, _), group in sorted(groups.items(), key=display_order)]
+
+
+def total_late_delta_units(line_items):
+    """Additional deliveries billed here for work that an earlier invoice already billed."""
+    return sum(item.late_delta_units for item in line_items)
 
 
 def get_billable_line_items(opportunity, start_date, end_date):
@@ -180,12 +194,15 @@ def get_invoice_line_items(invoice):
         .annotate(
             payment_unit_name=F("completed_work__payment_unit__name"),
             number_approved=Sum("billed_count"),
+            late_delta_units=Coalesce(Sum("billed_count", filter=Q(is_delta=True)), 0),
             flw_local=Sum("flw_amount_local"),
             org_local=Sum("org_amount_local"),
             flw_usd=Sum("flw_amount_usd"),
             org_usd=Sum("org_amount_usd"),
             # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
             rate=Max("exchange_rate__rate"),
+            rate_date=Max("exchange_rate__rate_date"),
+            rate_fetched_at=Max("exchange_rate__fetched_at"),
         )
         .order_by("month", "payment_unit_name")
     )
@@ -195,9 +212,12 @@ def get_invoice_line_items(invoice):
             month=record["month"],
             payment_unit_name=record["payment_unit_name"],
             number_approved=record["number_approved"],
+            late_delta_units=record["late_delta_units"],
             flw_pay=Money(record["flw_local"], record["flw_usd"]),
             org_pay=Money(record["org_local"], record["org_usd"]),
             exchange_rate=record["rate"],
+            exchange_rate_date=record["rate_date"],
+            exchange_rate_fetched_at=record["rate_fetched_at"],
         )
         for record in records
     ]

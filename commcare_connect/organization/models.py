@@ -2,7 +2,6 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -31,10 +30,6 @@ class LLOEntity(models.Model):
         return cls.objects.filter(organization__memberships__user=user).distinct()
 
 
-def _current_year():
-    return timezone.now().year
-
-
 class PrimarySector(models.Model):
     name = models.CharField(max_length=255)
     slug = models.CharField(max_length=255)
@@ -55,11 +50,7 @@ class Organization(BaseModel):
     llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
     short_name = models.CharField(max_length=40, null=True, blank=True)
     has_used_connect = models.BooleanField(default=False)
-    year_of_establishment = models.PositiveSmallIntegerField(
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(1800), MaxValueValidator(_current_year() + 1)],
-    )
+    year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
     team_size = models.PositiveIntegerField(null=True, blank=True)
     flws_managed = models.PositiveIntegerField(null=True, blank=True)
     countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")

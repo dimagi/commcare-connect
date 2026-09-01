@@ -58,6 +58,8 @@
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
+            statusMeta: {},
+            hoveredWorkArea: null,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -871,6 +873,8 @@
                     this.initializeMap();
                 });
 
+                this.statusMeta = JSON.parse(document.getElementById('status-meta-data').textContent);
+
                 this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
                 this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
 
@@ -1278,6 +1282,7 @@
                 });
 
                 // Tracks the currently hovered feature to apply white fill highlight
+                // and show a details overlay (`hoveredWorkArea`) with the work area's key details.
                 let hoveredId = null;
                 this.map.on('mousemove', 'workareas-fill', (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
@@ -1291,6 +1296,14 @@
                     }
                     hoveredId = newId;
                     this.setWorkAreaState(hoveredId, { hovered: true });
+
+                    const props = feature.properties;
+                    this.hoveredWorkArea = {
+                        slug: props.slug,
+                        group_name: props.group_name,
+                        implementation_area_name: props.implementation_area_name,
+                        statusLabel: this.statusMeta[props.status]?.label ?? props.status
+                    };
                 });
 
                 this.map.on('mouseleave', 'workareas-fill', () => {
@@ -1300,6 +1313,7 @@
                         this.setWorkAreaState(hoveredId, { hovered: false });
                         hoveredId = null;
                     }
+                    this.hoveredWorkArea = null;
                 });
             },
 
