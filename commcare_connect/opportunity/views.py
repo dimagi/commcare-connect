@@ -186,13 +186,18 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.completed_work import (
-    get_invoiced_visit_items,
-    get_uninvoiced_completed_works_qs,
-    get_uninvoiced_visit_items,
-)
 from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    Money,
+    get_billable_delivery_rows_for_export,
+    get_billable_line_items,
+    get_invoice_delivery_rows_for_export,
+    get_invoice_line_items,
+    rollback_invoice_line_items,
+    total_late_delta_units,
+)
 from commcare_connect.opportunity.visit_import import (
+    PAYMENT_IMPORT_FORMATS,
     ImportException,
     bulk_update_catchments,
     bulk_update_completed_work_status,
@@ -241,6 +246,10 @@ logger = logging.getLogger(__name__)
 
 EXPORT_ROW_LIMIT = 10_000
 _NEXT_WORKER_TASKS = "worker_tasks"
+
+PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
+# Task id of the payment import whose outcome has already been shown to the user.
+PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
 
 
 def get_opportunity_or_404(pk, org_slug):
@@ -792,17 +801,24 @@ def export_users_for_payment(request, org_slug, opp_id):
 @require_POST
 def payment_import(request, org_slug=None, opp_id=None):
     file = request.FILES.get("payments")
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-
     redirect_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
+    redirect_to_tab = f"{redirect_url}?{request.GET.copy().urlencode()}"
+
+    file_format = get_file_extension(file)
+    if file_format not in PAYMENT_IMPORT_FORMATS:
+        supported_file_formats = ", ".join(file_format.upper() for file_format in PAYMENT_IMPORT_FORMATS)
+        messages.error(
+            request,
+            _("File format not supported. Please upload a %(supported)s file.")
+            % {"supported": supported_file_formats},
+        )
+        return redirect(redirect_to_tab)
 
     lock = cache.lock(get_payment_upload_key(request.opportunity.pk))
 
     if lock.locked():
-        messages.error(request, "Another payment import is in progress. Please try again later.")
-        return redirect(f"{redirect_url}?{request.GET.copy().urlencode()}")
+        messages.error(request, _("Another payment import is in progress. Please try again later."))
+        return redirect(redirect_to_tab)
 
     file_path = f"{request.opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
     saved_path = default_storage.save(file_path, file)
@@ -814,19 +830,42 @@ def payment_import(request, org_slug=None, opp_id=None):
 @org_member_required
 @require_GET
 def render_payment_import_progress(request, org_slug, task_id):
-    """Polled by the payments page while a payment import runs; on completion it shows a
-    'View status' link that reloads the page so the result appears as a standard banner."""
+    """Renders the payment import modal: a spinner while the import runs, then the row errors
+    that stopped it. An import that finishes without row errors refreshes the page instead, so
+    its outcome shows up as a standard banner."""
 
     def ownership_check(request, task_meta):
         get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
 
     progress = get_task_progress(request, task_id, ownership_check)
+    finished = progress["complete"] or progress.get("error")
+    if finished and not progress["errors"]:
+        response = HttpResponse()
+        response["HX-Refresh"] = "true"
+        return response
+    if finished:
+        claim_payment_import_outcome(request, task_id)
+
     context = {
-        "task_id": task_id,
+        "finished": finished,
         "progress": progress,
+        "records_label": _("Payments"),
         "status_url": reverse("opportunity:payment_import_status", args=(org_slug, task_id)),
     }
-    return render(request, "opportunity/payment_import_progress.html", context)
+    return render(request, "opportunity/payment_import_modal.html", context)
+
+
+def claim_payment_import_outcome(request, task_id):
+    """Whether this request should show the import's outcome, claiming it if so.
+
+    A finished import reports itself from the task id left in the URL, so a refresh or a back
+    navigation would otherwise show the same banner or error modal again. The first request to
+    ask for an outcome claims it; later ones are told there is nothing left to show.
+    """
+    if request.session.get(PAYMENT_IMPORT_CLAIMED_SESSION_KEY) == task_id:
+        return False
+    request.session[PAYMENT_IMPORT_CLAIMED_SESSION_KEY] = task_id
+    return True
 
 
 @org_member_required
@@ -1319,7 +1358,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             if fj_form.is_valid() and fj_form.cleaned_data != {}:
                 fj_form.instance.opportunity = request.opportunity
                 fj_form.save()
-        messages.success(request, "Verification flags saved successfully.")
+        messages.success(request, "Verification rules saved successfully.")
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
@@ -1328,9 +1367,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
         },
         {
-            "title": _("Verification Rules Configuration")
-            if request.opportunity.automatic_visit_verification
-            else _("Verification Flags Configuration"),
+            "title": _("Verification Rules Configuration"),
             "url": request.path,
         },
     ]
@@ -1848,12 +1885,14 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         invoice = self.object
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
+        form = self.get_form()
         context.update(
             {
                 "opportunity": opportunity,
-                "form": self.get_form(),
+                "form": form,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -1887,15 +1926,18 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         )
 
         line_items_table = None
+        late_delta_units = 0
         if invoice.service_delivery:
-            completed_works = get_invoiced_visit_items(invoice)
-            show_org = any(item["org_amount_local"] for item in completed_works)
-            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, completed_works, show_org=show_org)
+            line_items = get_invoice_line_items(invoice)
+            late_delta_units = total_late_delta_units(line_items)
+            show_org = any(item.org_pay.local for item in line_items)
+            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
             instance=invoice,
             opportunity=opportunity,
             invoice_type=invoice_type,
             line_items_table=line_items_table,
+            late_delta_units=late_delta_units,
             read_only=True,
             is_opportunity_pm=self.request.is_opportunity_pm,
         )
@@ -1969,14 +2011,26 @@ def invoice_update_status(request, org_slug, opp_id):
     if error:
         return HttpResponseBadRequest(error)
 
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW and request.POST.get("attestation") != "true":
+        return HttpResponseBadRequest(_("You must certify the invoice before submitting."))
+
     invoice.status = new_status
+    update_fields = ["status", "description"] if invoice.service_delivery else ["status"]
     if invoice.service_delivery:
         invoice.description = description
-        invoice.save(update_fields=["status", "description"])
-        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            invoice.unlink_completed_works()
+
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW:
+        with pghistory.context(
+            username=request.user.username,
+            user_email=request.user.email,
+            attestation_certified=True,
+        ):
+            invoice.save(update_fields=update_fields)
     else:
-        invoice.save(update_fields=["status"])
+        invoice.save(update_fields=update_fields)
+
+    if invoice.service_delivery and new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+        rollback_invoice_line_items(invoice)
 
     messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
@@ -2156,6 +2210,7 @@ def resend_user_invites(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
+@org_member_required
 @require_POST
 @opportunity_required
 def sync_deliver_units(request, org_slug, opp_id):
@@ -2936,17 +2991,24 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
 class WorkerPaymentsView(BaseWorkerListView):
     hx_template_name = "opportunity/payments.html"
     active_tab = "payments"
+    show_import_outcome = True
 
     def get(self, request, org_slug, opp_id):
-        # A finished import surfaces its result as a banner; a running one keeps the
-        # polling progress bar (added to context in get_extra_context).
+        # A finished import surfaces its result as a banner, or as the error modal opened by
+        # get_extra_context; a running one keeps the polling progress spinner.
         if not request.htmx and self._payment_import_complete():
-            self._add_payment_import_message()
+            self.show_import_outcome = claim_payment_import_outcome(request, self._payment_import_task_id)
+            if self.show_import_outcome:
+                self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
+
+    @property
+    def _payment_import_task_id(self):
+        return self.request.GET.get(PAYMENT_IMPORT_TASK_PARAM)
 
     @cached_property
     def _payment_import_task(self):
-        task_id = self.request.GET.get("payment_import_task_id")
+        task_id = self._payment_import_task_id
         if not task_id:
             return None
         task = AsyncResult(task_id)
@@ -2967,19 +3029,34 @@ class WorkerPaymentsView(BaseWorkerListView):
         if task.status == CELERY_TASK_FAILURE:
             messages.error(self.request, _("The payment import failed. Please try again."))
             return
+        if self._payment_import_errors():
+            return
         message = get_task_progress_message(task)
         if not message:
             return
-        is_error = (task.result or {}).get("is_error")
+        is_error = self._payment_import_result().get("is_error")
         add_message = messages.error if is_error else messages.success
-        add_message(self.request, mark_safe(message))
+        add_message(self.request, message)
+
+    def _payment_import_result(self):
+        """The import task's progress meta, or {} when there is no task or it crashed.
+
+        A task that failed carries the exception in `result` rather than the meta dict.
+        """
+        result = getattr(self._payment_import_task, "result", None)
+        return result if isinstance(result, dict) else {}
+
+    def _payment_import_errors(self):
+        """Row errors from the import task, as {description: [row numbers]}."""
+        return self._payment_import_result().get("errors") or {}
 
     def get_extra_context(self, opportunity, org_slug):
-        # Only keep polling while the import is still running; once complete the result
-        # is shown as a banner instead of the progress bar.
-        task_id = self.request.GET.get("payment_import_task_id")
+        # Only keep polling while the import is still running. Once it is complete the only thing
+        # left to open is the error modal, and only for errors this load has not already shown.
+        task_id = self._payment_import_task_id
         if task_id and self._payment_import_complete():
-            task_id = None
+            if not (self._payment_import_errors() and self.show_import_outcome):
+                task_id = None
         return {
             "export_form": PaymentExportForm(),
             "payment_import_task_id": task_id,
@@ -3333,7 +3410,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "icon": "fa-clipboard-list",
             "name": _("Services Delivered"),
             "status": _("Total"),
-            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far excluding duplicates")),
+            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far")),
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
@@ -3439,6 +3516,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
     return render(request, "opportunity/opportunity_delivery_stat.html", {"opp_stats": opp_stats})
 
 
+@org_viewer_required
 @require_POST
 @opportunity_required
 def exchange_rate_preview(request, org_slug, opp_id):
@@ -3526,10 +3604,10 @@ def invoice_items(request, *args, **kwargs):
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
-    total_local_amount = sum(item["total_amount_local"] for item in line_items)
-    total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
-    show_org = any(item["org_amount_local"] for item in line_items)
+    line_items = get_billable_line_items(request.opportunity, start_date, end_date)
+    # An empty window has nothing to sum, so seed with zero rather than sum()'s int 0.
+    total = sum((item.total_pay for item in line_items), Money.zero())
+    show_org = any(item.org_pay.local for item in line_items)
 
     html = render_to_string(
         "opportunity/partials/invoice_line_items.html",
@@ -3540,8 +3618,9 @@ def invoice_items(request, *args, **kwargs):
     return JsonResponse(
         {
             "line_items_table_html": html,
-            "total_amount": total_local_amount,
-            "total_usd_amount": total_usd_amount,
+            "total_amount": total.local,
+            "total_usd_amount": total.usd,
+            "late_delta_units": total_late_delta_units(line_items),
         }
     )
 
@@ -3560,14 +3639,12 @@ def download_invoice_line_items(request, org_slug, opp_id):
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
     if invoice_id:
-        deliveries = CompletedWork.objects.filter(
-            invoice__payment_invoice_id=invoice_id,
-            opportunity_access__opportunity=request.opportunity,
-        )
+        invoice = get_object_or_404(PaymentInvoice, payment_invoice_id=invoice_id, opportunity=request.opportunity)
+        deliveries = get_invoice_delivery_rows_for_export(invoice)
     else:
-        deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
+        deliveries = get_billable_delivery_rows_for_export(request.opportunity, start_date, end_date)
 
-    show_org = deliveries.filter(saved_org_payment_accrued__gt=0).exists()
+    show_org = any(delivery.org_pay.local for delivery in deliveries)
     table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries, show_org=show_org)
     export_format = "csv"
     exporter = TableExport(export_format, table)

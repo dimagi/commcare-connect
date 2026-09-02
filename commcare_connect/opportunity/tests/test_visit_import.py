@@ -3,7 +3,6 @@ import random
 import re
 from datetime import timedelta
 from decimal import Decimal
-from itertools import chain
 from unittest import mock
 
 import pytest
@@ -41,12 +40,12 @@ from commcare_connect.opportunity.visit_import import (
     REVIEW_STATUS_COL,
     VISIT_ID_COL,
     ImportException,
-    PaymentImportStatus,
     ReviewVisitRowData,
     VisitData,
     _bulk_update_catchments,
     _bulk_update_completed_work_status,
     _bulk_update_visit_review_status,
+    _exchange_rates_by_payment_date,
     bulk_update_payments,
     bulk_update_visit_status,
     get_data_by_visit_id,
@@ -325,7 +324,6 @@ def test_get_status_by_visit_id(headers, rows, expected):
 @pytest.mark.django_db
 def test_bulk_update_payments(opportunity: Opportunity):
     mobile_user_seen = MobileUserFactory.create_batch(5)
-    mobile_user_missing = MobileUserFactory.create_batch(5)
     access_objects = []
     for mobile_user in mobile_user_seen:
         access_objects.append(OpportunityAccessFactory(opportunity=opportunity, user=mobile_user))
@@ -343,7 +341,7 @@ def test_bulk_update_payments(opportunity: Opportunity):
     )
 
     payment_date = "2025-01-15"
-    for index, mobile_user in enumerate(chain(mobile_user_seen, mobile_user_missing)):
+    for index, mobile_user in enumerate(mobile_user_seen):
         dataset.append(
             (
                 mobile_user.username,
@@ -359,7 +357,6 @@ def test_bulk_update_payments(opportunity: Opportunity):
     payment_import_status = bulk_update_payments(opportunity.pk, dataset.headers, list(dataset))
 
     assert payment_import_status.seen_users == {user.username for user in mobile_user_seen}
-    assert payment_import_status.missing_users == {user.username for user in mobile_user_missing}
 
     assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 5
 
@@ -372,6 +369,39 @@ def test_bulk_update_payments(opportunity: Opportunity):
             assert payment.date_paid.strftime("%Y-%m-%d") == payment_date
         assert payment.payment_method == f"method-{index}"
         assert payment.payment_operator == f"operator-{index}"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("headers", "rows", "expected_message"),
+    [
+        # tablib reads the first row of a headerless file as its header row, so a file of nothing
+        # but data arrives with headers that happen to be someone's payment details.
+        (
+            ["testuser123", "50", "2025-01-15", "method", "operator"],
+            [["testuser456", "60", "2025-01-16", "method", "operator"]],
+            "The uploaded file did not contain any headers",
+        ),
+        ([], [], "The uploaded file did not contain any headers"),
+        (
+            ["Not", "A", "Payment", "File"],
+            [["a", "b", "c", "d"]],
+            "The uploaded file did not contain any headers",
+        ),
+        # Some payment columns are there, so this really is a payment file, just an incomplete one.
+        (
+            ["Username", "Payment Amount"],
+            [["testuser123", "50"]],
+            "Missing required column(s): 'payment date (yyyy-mm-dd)', 'payment method', 'payment operator'",
+        ),
+    ],
+)
+def test_bulk_update_payments_rejects_unusable_headers(opportunity: Opportunity, headers, rows, expected_message):
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, headers, rows)
+
+    assert excinfo.value.message == expected_message
+    assert not Payment.objects.filter(opportunity_access__opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db
@@ -424,11 +454,117 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
 
     assert "1 row has errors" in str(excinfo.value.message)
 
-    error_details = excinfo.value.rows
-    expected_error_substring = "A payment for this user with the same amount and date already exists."
-    assert expected_error_substring in error_details
-    assert "(['" not in error_details  # readable "reason: cells", not a raw Python tuple
+    # The duplicate is the first data row, which is line 2 of the file once the header is counted.
+    assert excinfo.value.errors == {"A payment for this user with the same amount and date already exists": [2]}
     assert Payment.objects.count() == 1
+
+
+PAYMENT_IMPORT_HEADERS = [
+    "Username",
+    "Payment Amount",
+    "Payment Date (YYYY-MM-DD)",
+    "Payment Method",
+    "Payment Operator",
+]
+
+
+@pytest.mark.django_db
+def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
+    """Unreadable rows and unpayable usernames are reported together, and nothing is written."""
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    suspended_user = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=suspended_user, suspended=True)
+    unknown_user = MobileUserFactory.create()
+
+    rows = [
+        (payable.username, "abc", "2025-01-15", "method", "operator"),  # row 2
+        (None, 50, "2025-01-15", "method", "operator"),  # row 3
+        (payable.username, 50, "15-01-2025", "method", "operator"),  # row 4
+        ("   ", 50, "2025-01-15", "method", "operator"),  # row 5
+        (unknown_user.username, 50, "2025-01-15", "method", "operator"),  # row 6
+        (suspended_user.username, 50, "2025-01-15", "method", "operator"),  # row 7
+        (payable.username, 50, "2025-01-15", "method", "operator"),  # row 8, valid
+        (unknown_user.username, "abc", "2025-01-15", "method", "operator"),  # row 9, two problems
+    ]
+
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert excinfo.value.message == "7 rows have errors"
+    assert excinfo.value.errors == {
+        "Payment amount must be a number": [2, 9],
+        "Username is required": [3, 5],
+        "Payment date must be in YYYY-MM-DD format": [4],
+        # Row 9 is reported here too, rather than only once its amount is fixed.
+        "Username was not found in this opportunity": [6, 9],
+        "Worker is suspended": [7],
+    }
+    # Not even the one valid row is written.
+    assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("amount", "expected_reason"),
+    [
+        (-50, "Payment amount cannot be negative"),
+        ("-50", "Payment amount cannot be negative"),
+        ("-0.01", "Payment amount cannot be negative"),
+    ],
+)
+def test_bulk_update_payments_rejects_negative_amounts(opportunity: Opportunity, amount, expected_reason):
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    rows = [(payable.username, amount, "2025-01-15", "method", "operator")]
+
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert excinfo.value.errors == {expected_reason: [2]}
+    assert not Payment.objects.filter(opportunity_access__opportunity=opportunity).exists()
+
+
+@pytest.mark.django_db
+def test_exchange_rates_are_looked_up_once_per_distinct_date(opportunity: Opportunity):
+    """Dated rows share a lookup per date; undated rows are keyed by None to today's rate."""
+    jan = datetime.date(2025, 1, 15)
+    feb = datetime.date(2025, 2, 20)
+    payments_by_user = {
+        "alice": [(2, {"payment_date": jan}), (3, {"payment_date": feb})],
+        "bob": [(4, {"payment_date": jan}), (5, {"payment_date": None})],
+    }
+
+    with mock.patch(
+        "commcare_connect.opportunity.visit_import.get_exchange_rate", return_value=Decimal("2")
+    ) as get_rate:
+        rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, Decimal("3"))
+
+    assert rates == {jan: Decimal("2"), feb: Decimal("2"), None: Decimal("3")}
+    # Four rows, two distinct dates: the undated row reuses the rate passed in.
+    assert sorted(call.args[1] for call in get_rate.call_args_list) == [jan, feb]
+
+
+@pytest.mark.django_db
+def test_bulk_update_payments_writes_nothing_when_a_rate_is_missing(opportunity: Opportunity):
+    """The reason rates are resolved up front: a missing one must not abort a part-written import."""
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    rows = [
+        (payable.username, 50, "2025-01-15", "method", "operator"),
+        (payable.username, 60, "2025-02-20", "method", "operator"),
+    ]
+
+    def rate_for(currency_code, date=None):
+        if date == datetime.date(2025, 2, 20):
+            raise ImportException("Rate not found for opportunity currency")
+        return Decimal("2")
+
+    with mock.patch("commcare_connect.opportunity.visit_import.get_exchange_rate", side_effect=rate_for):
+        with pytest.raises(ImportException):
+            bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
 
 
 @pytest.fixture
@@ -1031,20 +1167,3 @@ class TestBulkReviewVisitImport:
             assert visit.review_status_modified_date >= before_update
         for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in locked_visits]):
             assert visit.review_status_modified_date == locked_modified_dates[visit.xform_id]
-
-
-@pytest.mark.parametrize(
-    ("missing_users", "expected"),
-    [
-        ({"ghost"}, "1 username was not found:"),
-        ({"ghost1", "ghost2"}, "2 usernames were not found:"),
-    ],
-)
-def test_payment_import_missing_message_pluralization(missing_users, expected):
-    status = PaymentImportStatus(seen_users={"alice"}, missing_users=missing_users)
-
-    message = status.get_missing_message()
-
-    assert expected in message
-    for user in missing_users:
-        assert user in message

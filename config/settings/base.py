@@ -159,6 +159,7 @@ MIDDLEWARE = [
     "django_htmx.middleware.HtmxMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
     "commcare_connect.users.middleware.OrganizationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -207,6 +208,7 @@ TEMPLATES = [
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",
                 "commcare_connect.web.context_processors.session_tracking_context",
+                "commcare_connect.web.context_processors.hubspot_context",
             ],
         },
     }
@@ -225,6 +227,7 @@ FIXTURE_DIRS = (str(APPS_DIR / "fixtures"),)
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
+CSRF_FAILURE_VIEW = "config.views.csrf_failure"
 X_FRAME_OPTIONS = "DENY"
 
 # EMAIL
@@ -306,9 +309,8 @@ CELERY_TASK_TRACK_STARTED = True
 # django-allauth
 # ------------------------------------------------------------------------------
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)
-ACCOUNT_AUTHENTICATION_METHOD = "username_email"
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_LOGIN_METHODS = {"username", "email"}
+ACCOUNT_SIGNUP_FIELDS = ["username", "email*", "password1*", "password2*"]
 # ensures that user display is resolved from the user.__str__ method
 ACCOUNT_USER_DISPLAY = str
 ACCOUNT_USER_MODEL_USERNAME_FIELD = "username"
@@ -425,3 +427,6 @@ CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
 
 # LiveSession Settings
 LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
+
+# HubSpot Settings
+HUBSPOT_API_ID = env("HUBSPOT_API_ID", default="")

@@ -1,10 +1,16 @@
 from datetime import timedelta
 
 import pytest
+from django.contrib.auth.models import Permission
 from django.db import IntegrityError
 from django.utils import timezone
 
-from commcare_connect.organization.models import LLOEntity, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    Organization,
+    OrganizationInvite,
+    UserOrganizationMembership,
+)
+from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -13,20 +19,14 @@ from commcare_connect.users.tests.factories import (
 )
 
 
-class TestLLOEntity:
-    def test_str_without_short_name(self):
-        entity = LLOEntity(name="World Health Organization")
-        assert str(entity) == "World Health Organization"
-
-    def test_str_with_short_name(self):
-        entity = LLOEntity(name="World Health Organization", short_name="WHO")
-        assert str(entity) == "World Health Organization (WHO)"
-
-    @pytest.mark.django_db
-    def test_name_must_be_unique(self):
-        LLOEntity.objects.create(name="Unique LLO")
-        with pytest.raises(IntegrityError):
-            LLOEntity.objects.create(name="Unique LLO")
+def _user_with_privilege(privilege: str | None, own_org: Organization) -> User:
+    user = UserFactory(is_superuser=privilege == "superuser")
+    if privilege == "member":
+        MembershipFactory(user=user, organization=own_org)
+    if privilege == "permission":
+        user.user_permissions.add(Permission.objects.get(codename="workspace_entity_management_access"))
+        user = User.objects.get(pk=user.pk)  # drop the cached permissions
+    return user
 
 
 @pytest.mark.django_db
@@ -62,6 +62,21 @@ class TestOrganization:
         if expect_viewer:
             expected.append(viewer.email)
         assert sorted(emails) == sorted(expected)
+
+    @pytest.mark.parametrize(
+        "privilege, visible",
+        [
+            (None, set()),
+            ("member", {"own"}),
+            ("permission", {"own", "other"}),
+            ("superuser", {"own", "other"}),
+        ],
+    )
+    def test_visible_to(self, privilege, visible):
+        orgs = {"own": OrganizationFactory(), "other": OrganizationFactory()}
+        user = _user_with_privilege(privilege, orgs["own"])
+
+        assert set(Organization.visible_to(user)) == {orgs[key] for key in visible}
 
 
 @pytest.mark.django_db

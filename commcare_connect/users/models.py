@@ -32,8 +32,8 @@ class User(AbstractUser):
     username_validator = UnicodeUsernameValidator()
 
     user_id = models.UUIDField(editable=False, default=uuid4, unique=True)
-    # First and last name do not cover name patterns around the globe
-    name = models.CharField(_("Name of User"), blank=True, max_length=255)
+    # First and last name do not cover name patterns around the globe.
+    name = models.TextField(_("Name of User"), blank=True)
     first_name = None  # type: ignore
     last_name = None  # type: ignore
     email = models.EmailField(_("email address"), null=True, blank=True)
@@ -79,6 +79,7 @@ class User(AbstractUser):
             ("product_features_access", "Can access and manage product features (flags and switches)"),
             ("manage_internal_permissions", "Can manage internal permissions for users"),
             ("invoice_report_access", "Access the Invoice reports dashboard"),
+            ("llo_entity_internal_access", "Can access the internal LLO organization profile export"),
         ]
 
     def __str__(self):

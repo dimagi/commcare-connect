@@ -154,7 +154,7 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
     for i in range(0, len(needs_hq), HQ_BULK_CHUNK_SIZE):
         chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]  # noqa: E203
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
-        updates = [{"case_id": str(wa.case_id), "owner_id": "-", "create": False} for wa in chunk]
+        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:
             with transaction.atomic(), pghistory.context(**pghistory_ctx):
                 _bulk_exclude(chunk, user, exclusion_reason)
@@ -269,7 +269,7 @@ def unassign_work_areas_for_opportunity(opportunity, work_area_ids, user):
 
     for chunk in batched(needs_hq, HQ_UNASSIGN_BULK_CHUNK_SIZE):
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
-        updates = [{"case_id": str(wa.case_id), "owner_id": "-", "create": False} for wa in chunk]
+        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:
             with transaction.atomic(), pghistory.context(**pghistory_ctx):
                 _bulk_unassign(chunk)

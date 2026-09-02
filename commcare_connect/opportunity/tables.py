@@ -2,11 +2,13 @@ import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
+from dateutil.relativedelta import relativedelta
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import CharField, Value
 from django.db.models.functions import Coalesce, NullIf
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
@@ -33,6 +35,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
     TEXT_CENTER_ATTR,
@@ -54,6 +57,22 @@ def header_with_tooltip(label, tooltip_text):
     )
 
 
+def value_with_icon_tooltip(display_value, tooltip_html, theme=None):
+    """Render `display_value` followed by an info icon carrying a rich HTML tooltip.
+
+    `tooltip_html` should come from a rendered template (see e.g. `exchange_rate_tooltip.html`),
+    not be built up as a string in Python.
+    """
+    theme_modifier = f".theme.{theme}" if theme else ""
+    return format_html(
+        '{} <i class="fa-solid fa-circle-info text-gray-400 ml-1" '
+        'x-data x-tooltip.raw.html.interactive{theme_modifier}="{tooltip}"></i>',
+        display_value,
+        theme_modifier=mark_safe(theme_modifier),
+        tooltip=mark_safe(tooltip_html),
+    )
+
+
 class OpportunityContextTable(OrgContextTable):
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id", None)
@@ -72,9 +91,7 @@ class UserVisitTable(OrgContextTable):
     visit_id = columns.Column("Visit ID", accessor="xform_id", visible=False)
     username = columns.Column("Username", accessor="user__username", visible=False)
     form_json = columns.Column("Form JSON", accessor="form_json", visible=False)
-    visit_date_export = columns.DateTimeColumn(
-        verbose_name="Visit date", accessor="visit_date", format="c", visible=False
-    )
+    visit_date_export = DMYTColumn(verbose_name="Visit date", accessor="visit_date", visible=False)
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
     justification = columns.Column("Justification", accessor="justification", visible=False)
     duration = columns.Column("Duration", accessor="duration", visible=False)
@@ -84,6 +101,9 @@ class UserVisitTable(OrgContextTable):
     entity_name = columns.Column("Entity Name", accessor="entity_name")
     flag_reason = columns.Column("Flags", accessor="flag_reason", empty_values=({}, None))
     details = columns.Column(verbose_name="", empty_values=())
+
+    def value_visit_date_export(self, value):
+        return value.isoformat() if value else value
 
     def render_details(self, record):
         url = reverse(
@@ -1563,7 +1583,7 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
             "rejected",
             "action",
         )
-        order_by = ("user.name", "-last_active")
+        order_by = ("user__name", "-last_active")
         row_attrs = {"class": "group"}
 
     def __init__(self, *args, **kwargs):
@@ -1746,14 +1766,15 @@ class InvoiceLineItemsTable(tables.Table):
     month = tables.Column(verbose_name=gettext_lazy("Month"))
     payment_unit_name = tables.Column(verbose_name=gettext_lazy("Payment Unit"))
     number_approved = tables.Column(verbose_name=gettext_lazy("Number Approved"))
-    flw_amount_local = tables.Column(verbose_name=gettext_lazy("FLW Pay (local)"))
-    org_amount_local = tables.Column(verbose_name=gettext_lazy("Org Pay (local)"))
-    total_amount_local = tables.Column(verbose_name=gettext_lazy("Total Pay (local)"))
+    flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay (local)"))
+    org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay (local)"))
+    total_amount_local = tables.Column(accessor="total_pay__local", verbose_name=gettext_lazy("Total Pay (local)"))
     exchange_rate = tables.Column(verbose_name=gettext_lazy("Exchange Rate"))
-    total_amount_usd = tables.Column(verbose_name=gettext_lazy("Total Pay (USD)"))
+    total_amount_usd = tables.Column(accessor="total_pay__usd", verbose_name=gettext_lazy("Total Pay (USD)"))
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.currency = currency
         if currency:
             self.columns["flw_amount_local"].column.verbose_name = _("FLW Pay (%(currency)s)") % {"currency": currency}
             self.columns["org_amount_local"].column.verbose_name = _("Org Pay (%(currency)s)") % {"currency": currency}
@@ -1776,29 +1797,57 @@ class InvoiceLineItemsTable(tables.Table):
 
     class Meta:
         orderable = False
-        empty_text = "No invoice items found."
+        empty_text = gettext_lazy("No invoice items found.")
         attrs = {"class": "min-w-full rounded-lg shadow-md bg-white", "thead": {"class": "bg-gray-100"}}
         row_attrs = {"class": "even:bg-gray-50 text-gray-800 hover:bg-gray-100"}
 
     def render_month(self, value):
         return value.strftime("%B %Y")
 
+    def render_exchange_rate(self, value, record):
+        EXCHANGE_RATE_LEARN_MORE_URL = (
+            "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3214934056/Managing+Currencies+in+Connect"
+        )
+        rate_date = record.exchange_rate_date
+        next_update_date = get_month_start_date(rate_date) + relativedelta(months=1) if rate_date else None
+        if next_update_date and next_update_date <= timezone.localdate():
+            # A stale fallback rate (looked up from a much older month) shouldn't claim an
+            # update date that's already passed -- we don't know when it'll actually refresh.
+            next_update_date = None
+        tooltip_html = render_to_string(
+            "opportunity/partials/exchange_rate_tooltip.html",
+            {
+                "rate": value,
+                "currency": self.currency,
+                "rate_date": rate_date,
+                "next_update_date": next_update_date,
+                "fetched_at": record.exchange_rate_fetched_at,
+                "learn_more_url": EXCHANGE_RATE_LEARN_MORE_URL,
+            },
+        )
+        return value_with_icon_tooltip(str(value), tooltip_html, theme="dark")
+
 
 class InvoiceDeliveriesTable(tables.Table):
-    date_approved = DMYTColumn(verbose_name=gettext_lazy("Date Approved"), accessor="status_modified_date")
-    opportunity = tables.Column(verbose_name=gettext_lazy("Opportunity"), accessor="payment_unit__opportunity__name")
-    approved_count = tables.Column(verbose_name=gettext_lazy("Approved Deliveries"), accessor="saved_approved_count")
-    flw_amount_local = tables.Column(verbose_name=gettext_lazy("FLW Pay"), accessor="saved_payment_accrued")
-    org_amount_local = tables.Column(verbose_name=gettext_lazy("Org Pay"), accessor="saved_org_payment_accrued")
-    total_amount_local = tables.Column(
-        verbose_name=gettext_lazy("Total Pay"), accessor="saved_payment_accrued", empty_values=()
+    payment_unit = tables.Column(
+        accessor="completed_work__payment_unit__name", verbose_name=gettext_lazy("Payment Unit")
     )
-    total_amount_usd = tables.Column(
-        verbose_name=gettext_lazy("Total Pay (USD)"), accessor="saved_payment_accrued_usd", empty_values=()
+    opportunity = tables.Column(
+        accessor="completed_work__payment_unit__opportunity__name", verbose_name=gettext_lazy("Opportunity")
     )
-    entity_name = tables.Column(verbose_name=gettext_lazy("Beneficiary"), accessor="entity_name")
-    date_created = DMYTColumn(verbose_name=gettext_lazy("Date of Delivery"), accessor="date_created")
-    username = tables.Column(verbose_name=gettext_lazy("Worker"), accessor="opportunity_access__user__name")
+    entity_name = tables.Column(accessor="completed_work__entity_name", verbose_name=gettext_lazy("Beneficiary"))
+    username = tables.Column(
+        accessor="completed_work__opportunity_access__user__name", verbose_name=gettext_lazy("Worker")
+    )
+    date_created = DMYTColumn(accessor="completed_work__date_created", verbose_name=gettext_lazy("Date of Delivery"))
+    date_approved = DMYTColumn(
+        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("Date Approved")
+    )
+    approved_count = tables.Column(accessor="billed_count", verbose_name=gettext_lazy("Approved Deliveries"))
+    flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay"))
+    org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay"))
+    total_amount_local = tables.Column(accessor="total_pay__local", verbose_name=gettext_lazy("Total Pay"))
+    total_amount_usd = tables.Column(accessor="total_pay__usd", verbose_name=gettext_lazy("Total Pay (USD)"))
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1813,8 +1862,7 @@ class InvoiceDeliveriesTable(tables.Table):
             self.columns["org_amount_local"].column.exclude_from_export = True
 
     class Meta:
-        model = CompletedWork
-        fields = ("payment_unit",)
+        orderable = False
         sequence = (
             "payment_unit",
             "opportunity",
@@ -1828,12 +1876,6 @@ class InvoiceDeliveriesTable(tables.Table):
             "total_amount_local",
             "total_amount_usd",
         )
-
-    def value_total_amount_local(self, record):
-        return (record.saved_payment_accrued or 0) + (record.saved_org_payment_accrued or 0)
-
-    def value_total_amount_usd(self, record):
-        return (record.saved_payment_accrued_usd or 0) + (record.saved_org_payment_accrued_usd or 0)
 
 
 _task_select_td_extra = {

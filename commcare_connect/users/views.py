@@ -1,7 +1,6 @@
 import uuid
 from urllib.parse import urlencode
 
-from allauth.account.models import transaction
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
@@ -9,6 +8,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
@@ -73,7 +73,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self):
         if not self.request.user.memberships.exists():
-            return reverse("home")
+            return reverse("no_organization")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
@@ -306,6 +306,19 @@ class ResendInvitesView(ClientProtectedResourceMixin, View):
         return HttpResponse(status=200)
 
 
+@method_decorator(csrf_exempt, name="dispatch")
+class UpdateUserProfileView(ClientProtectedResourceMixin, View):
+    """Called by PersonalID when a user changes their profile."""
+
+    def post(self, request, *args, **kwargs):
+        username = (request.POST.get("username") or "").strip()
+        name = (request.POST.get("name") or "").strip()
+        if not username or not name:
+            return JsonResponse({"error": "invalid username or name"}, status=400)
+        updated = User.objects.filter(username=username).update(name=name)
+        return JsonResponse({"updated": bool(updated)})
+
+
 class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     template_name = "pages/connect_user_otp.html"
     form_class = ManualUserOTPForm
@@ -338,7 +351,7 @@ class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
 @require_GET
 def internal_features(request):
     if not request.user.show_internal_features:
-        return redirect("home")
+        return redirect("users:redirect")
 
     features = [
         {

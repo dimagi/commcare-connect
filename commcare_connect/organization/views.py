@@ -4,7 +4,7 @@ from allauth.account import app_settings as allauth_account_settings
 from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext
@@ -17,28 +17,34 @@ from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationInviteForm,
-    OrganizationSelectOrCreateForm,
+    OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
-@permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
-    form = OrganizationSelectOrCreateForm(data=request.POST or None)
+    form = OrganizationProfileForm(data=request.POST or None)
 
     if form.is_valid():
-        org, is_new_org = form.save()
-        if is_new_org:
-            org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        org = form.save()
+        org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})
+
+
+@login_required
+def no_organization(request):
+    """Landing page for users who don't belong to any workspace yet."""
+    if request.user.memberships.exists():
+        return redirect("users:redirect")
+
+    return render(request, "organization/no_organization.html")
 
 
 @org_admin_required

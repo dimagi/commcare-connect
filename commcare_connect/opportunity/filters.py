@@ -84,6 +84,7 @@ class CSRFExemptForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()
         self.helper.disable_csrf = True
+        self.helper.form_tag = False
 
 
 class YesNoFilter(django_filters.BooleanFilter):

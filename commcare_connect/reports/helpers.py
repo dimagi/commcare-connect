@@ -103,7 +103,7 @@ def get_table_data_for_year_month(
     to_date=None,
     delivery_type=None,
     program=None,
-    llo=None,
+    organization=None,
     opportunity=None,
     country=None,
     period=None,
@@ -111,6 +111,8 @@ def get_table_data_for_year_month(
     """Return KPI report rows aggregated by month or quarter.
 
     Args:
+        organization: Rollups are per-workspace until the duplicate workspaces that used
+                      to share an LLO entity are merged.
         period: "monthly" (default) or "quarterly". In quarterly mode all DB queries
                 use TruncQuarter so averages are true weighted averages, not
                 average-of-monthly-averages. The date range is automatically expanded
@@ -170,9 +172,9 @@ def get_table_data_for_year_month(
     if program:
         filter_kwargs.update({"opportunity_access__opportunity__program": program})
         filter_kwargs_nm.update({"invoice__opportunity__program": program})
-    if llo:
-        filter_kwargs.update({"opportunity_access__opportunity__organization__llo_entity": llo})
-        filter_kwargs_nm.update({"invoice__opportunity__organization__llo_entity": llo})
+    if organization:
+        filter_kwargs.update({"opportunity_access__opportunity__organization": organization})
+        filter_kwargs_nm.update({"invoice__opportunity__organization": organization})
     if opportunity:
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})

@@ -10,7 +10,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Min, Q, Sum, TextChoices
+from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -26,8 +26,6 @@ from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     AudioAttachment,
     CommCareApp,
-    CompletedWork,
-    CompletedWorkStatus,
     Country,
     CredentialConfiguration,
     Currency,
@@ -50,12 +48,13 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
+from commcare_connect.opportunity.tables import header_with_tooltip, value_with_icon_tooltip
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1169,6 +1168,7 @@ class AddBudgetNewUsersForm(forms.Form):
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = Layout(
             Row(Field("add_users"), Field("total_budget"), css_class="grid grid-cols-2 gap-4"),
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
@@ -1279,6 +1279,7 @@ class PaymentUnitForm(forms.ModelForm):
         self.fields["org_amount"].required = bool(self.opportunity)
 
         self.helper = FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = Layout(
             Div(
                 Row(
@@ -1612,6 +1613,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
         required=False,
     )
+    # Derived for display only, so `disabled` rather than `readonly`: Django then ignores whatever
+    # is posted, and a stale figure can never add a field error that blocks the invoice.
+    late_delta_units = forms.IntegerField(
+        required=False,
+        disabled=True,
+        widget=forms.NumberInput(),
+    )
     description = forms.CharField(
         label="",
         widget=forms.Textarea(attrs={"rows": 3}),
@@ -1647,6 +1655,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
         self.line_items_table = kwargs.pop("line_items_table", None)
+        self.late_delta_units = kwargs.pop("late_delta_units", 0)
         self.status = kwargs.pop("status", InvoiceStatus.PENDING_NM_REVIEW)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
@@ -1674,14 +1683,35 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             self.fields["status"].initial = self.instance.get_status_display()
 
         if self.is_service_delivery:
-            self.fields["amount"].label = _("Amount ({currency_code})").format(
+            self.fields["amount"].label = gettext("Amount ({currency_code})").format(
                 currency_code=self.opportunity.currency_code or "Local Currency"
             )
-            self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
+            self.fields["amount"].help_text = gettext("Local currency is determined by the opportunity.")
+
+            self.fields["late_delta_units"].label = header_with_tooltip(
+                format_html(
+                    '{} <i class="fa-solid fa-circle-info text-gray-400"></i>', gettext("Additional Deliveries")
+                ),
+                gettext(
+                    "Additional deliveries for previously billed work. These were delivered or approved "
+                    "after the previous invoice was issued and are included on this invoice."
+                ),
+            )
+            self.fields["late_delta_units"].initial = self.late_delta_units
+
+            if (
+                self.read_only
+                and self.instance.pk
+                and self.instance.exchange_rate_id
+                and self.instance.amount_usd is not None
+            ):
+                self.fields["amount_usd"].label = value_with_icon_tooltip(
+                    self.fields["amount_usd"].label, self._amount_usd_tooltip_html(), theme="dark"
+                )
 
             self.fields["description"].widget.attrs.update(
                 {
-                    "placeholder": _("Describe service delivery details, references, or notes..."),
+                    "placeholder": gettext("Describe service delivery details, references, or notes..."),
                 }
             )
 
@@ -1703,39 +1733,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 }
             )
             self.fields["description"].required = True
-            self.fields["description"].label = _("Justification")
+            self.fields["description"].label = gettext("Justification")
             self.fields["description"].widget.attrs.update(
                 {
-                    "placeholder": _("Provide a justification for this expense..."),
+                    "placeholder": gettext("Provide a justification for this expense..."),
                 }
             )
             self.fields["date_of_expense"].required = True
 
-    def get_start_date_for_invoice(self):
-        date = (
-            CompletedWork.objects.filter(
-                invoice__isnull=True,
-                opportunity_access__opportunity=self.opportunity,
-                status=CompletedWorkStatus.approved,
-            )
-            .aggregate(earliest_date=Min("status_modified_date"))
-            .get("earliest_date")
-        )
-
-        start_date = date
-        if date:
-            start_date = date.date()
-        else:
-            start_date = self.opportunity.start_date
-
-        return start_date.replace(day=1)
-
-    def get_end_date_for_invoice(self, start_date):
-        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
-
-        if start_date > last_day_previous_month:
-            return datetime.date.today() - datetime.timedelta(days=1)
-        return last_day_previous_month
+    def _amount_usd_tooltip_html(self):
+        return render_to_string("opportunity/partials/amount_usd_tooltip.html")
 
     def get_form_layout(self):
         if self.is_service_delivery:
@@ -1746,7 +1753,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", _("Submit"), css_class="button button-md primary-dark"),
+                    Submit("submit", gettext("Submit"), css_class="button button-md primary-dark"),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -1788,6 +1795,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         ]
 
+        if not self.read_only:
+            third_row.append(
+                Div(
+                    Field("late_delta_units", **{"x-model": "lateDeltaUnits"}),
+                    **{"x-show": "lateDeltaUnits > 0", "x-cloak": ""},
+                )
+            )
+        elif self.late_delta_units:
+            third_row.append(Field("late_delta_units"))
+
         return [
             Div(
                 Div(*first_row, css_class="grid grid-cols-3 gap-6"),
@@ -1797,7 +1814,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
             self.line_items,
             Fieldset(
-                _("Service Delivery Notes"),
+                gettext("Service Delivery Notes"),
                 Field("description", **{"x-ref": "description"}),
             ),
         ]
@@ -1813,7 +1830,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         second_row = [
             Field(
                 "amount",
-                label=_("Amount"),
+                label=gettext("Amount"),
                 **{
                     "x-ref": "amount",
                     "x-model": "amount",
@@ -1914,17 +1931,28 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
-        instance.amount_usd = self.cleaned_data["amount_usd"]
-        instance.amount = self.cleaned_data["amount"]
+        if not self.is_service_delivery:
+            instance.amount = self.cleaned_data["amount"]
+            instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
-        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.service_delivery = self.is_service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
         instance.status = self.status
 
-        if commit:
+        if not commit:
+            return instance
+
+        if self.is_service_delivery:
+            # Save the invoice totals from the rows just frozen (or 0 if nothing was billable).
+            # Preview totals are only for display and may be stale; persisted totals must come
+            # from the same read that created the invoice line items so they always match.
+            rows = bill_invoice(instance, start_date=instance.start_date, end_date=instance.end_date)
+            if not rows:
+                instance.amount = 0
+                instance.amount_usd = 0
+                instance.save()
+        else:
             instance.save()
-            if self.is_service_delivery:
-                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
 
         return instance
 

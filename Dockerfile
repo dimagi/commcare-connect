@@ -11,7 +11,7 @@ FROM node:26-bookworm AS build-node
 RUN node -v && npm -v
 WORKDIR /app
 COPY . /app
-RUN npm install
+RUN npm ci
 RUN npm run build
 
 FROM python:3.11-slim-bookworm

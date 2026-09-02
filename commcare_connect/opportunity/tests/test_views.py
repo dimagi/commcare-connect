@@ -52,6 +52,7 @@ from commcare_connect.opportunity.tests.factories import (
     AudioAttachmentFactory,
     BlobMetaFactory,
     CompletedWorkFactory,
+    CompletedWorkInvoiceFactory,
     DeliverUnitFactory,
     FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
@@ -77,6 +78,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.users.tests.test_connections import _create_social_app
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -730,6 +732,31 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+@pytest.mark.django_db
+def test_get_opportunity_list_data_counts_duplicate_approved_deliveries(organization):
+    today = now().date()
+    opportunity = OpportunityFactory(
+        organization=organization, end_date=today + timedelta(days=1), active=True, archived=False
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1)
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1)
+    # A CompletedWork with 2 approved (duplicate) visits should count as 2 deliveries, not 1.
+    CompletedWorkFactory(
+        opportunity_access=access,
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
+    )
+
+    queryset = OpportunityData(organization, True, {}).get_data()
+    opp = next(item for item in queryset if item.id == opportunity.id)
+
+    assert opp.total_deliveries == 4
+    assert opp.verified_deliveries == 2
 
 
 @pytest.mark.django_db
@@ -1393,6 +1420,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         form = response.context["form"]
         assert form.line_items_table is None
+        assert response.context["line_item_count"] is None
 
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
@@ -1621,6 +1649,23 @@ def _invoice_review_url(org, opportunity, invoice):
 
 @pytest.mark.django_db
 class TestInvoiceUpdateStatus:
+    def _billed_works(self, opportunity, invoice, count=2):
+        """`count` works whose only billing is this invoice, as invoicing would leave them."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        works = [
+            CompletedWorkFactory(
+                opportunity_access=access,
+                payment_unit=payment_unit,
+                saved_approved_count=1,
+                invoiced_approved_count=1,
+            )
+            for _ in range(count)
+        ]
+        for work in works:
+            CompletedWorkInvoiceFactory(invoice=invoice, completed_work=work, billed_count=1)
+        return works
+
     @pytest.fixture
     def nm_organization(self):
         return OrgWithUsersFactory()
@@ -1670,6 +1715,7 @@ class TestInvoiceUpdateStatus:
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.PENDING_PM_REVIEW,
                 "description": "Ready for PM review",
+                "attestation": "true",
             },
         )
 
@@ -1678,15 +1724,40 @@ class TestInvoiceUpdateStatus:
         assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
         assert invoice.description == "Ready for PM review"
 
+        status_event = invoice.status_events.last()
+        assert status_event.pgh_context.metadata["attestation_certified"] is True
+        assert status_event.pgh_context.metadata["username"] == nm_user_admin.username
+
+    @pytest.mark.parametrize("attestation", [None, "false", "0", ""])
+    def test_nm_submit_to_pm_without_attestation_fails(
+        self, client, nm_organization, nm_user_admin, pm_organization, attestation
+    ):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-005"
+        )
+
+        data = {
+            "invoice_id": invoice.payment_invoice_id,
+            "new_status": InvoiceStatus.PENDING_PM_REVIEW,
+            "description": "Ready for PM review",
+        }
+        if attestation is not None:
+            data["attestation"] = attestation
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(url, data=data)
+
+        assert response.status_code == 400
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
+
     def test_nm_cancel_invoice_success(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-002"
         )
 
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        payment_unit = PaymentUnitFactory(opportunity=opportunity)
-        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
-        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_1, completed_work_2 = self._billed_works(opportunity, invoice)
 
         client.force_login(nm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
@@ -1706,13 +1777,15 @@ class TestInvoiceUpdateStatus:
 
         completed_work_1.refresh_from_db()
         completed_work_2.refresh_from_db()
-        assert completed_work_1.invoice is None
-        assert completed_work_2.invoice is None
+        assert completed_work_1.invoiced_approved_count == 0
+        assert completed_work_2.invoiced_approved_count == 0
+        assert not invoice.work_items.exists()
 
     def test_pm_approve_for_payment_success(self, client, nm_organization, pm_organization, pm_user_admin):
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-001"
         )
+        (completed_work,) = self._billed_works(opportunity, invoice, count=1)
 
         client.force_login(pm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
@@ -1729,15 +1802,16 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.READY_TO_PAY
         assert invoice.description == "Approved for payment"
+        # Only cancel and reject release line items; approving must leave the billing frozen.
+        completed_work.refresh_from_db()
+        assert completed_work.invoiced_approved_count == 1
+        assert invoice.work_items.count() == 1
 
     def test_pm_reject_invoice_success(self, client, nm_organization, pm_organization, pm_user_admin):
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-002"
         )
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        payment_unit = PaymentUnitFactory(opportunity=opportunity)
-        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
-        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_1, completed_work_2 = self._billed_works(opportunity, invoice)
 
         client.force_login(pm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
@@ -1757,8 +1831,9 @@ class TestInvoiceUpdateStatus:
 
         completed_work_1.refresh_from_db()
         completed_work_2.refresh_from_db()
-        assert completed_work_1.invoice is None
-        assert completed_work_2.invoice is None
+        assert completed_work_1.invoiced_approved_count == 0
+        assert completed_work_2.invoiced_approved_count == 0
+        assert not invoice.work_items.exists()
 
     def test_invalid_status_transition(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(
@@ -1872,7 +1947,7 @@ class TestVerificationFlagsConfig:
         )
         assert response.status_code == HTTPStatus.OK
         messages = [m.message for m in get_messages(response.wsgi_request)]
-        assert "Verification flags saved successfully." in messages
+        assert "Verification rules saved successfully." in messages
 
     def test_post_creates_form_json_rule_for_managed_opp(
         self, client, program_manager_org, program_manager_org_user_admin
@@ -2507,6 +2582,7 @@ class TestEditAssignedTask:
         return reverse("opportunity:edit_assigned_task", args=(opp.organization.slug, opp.opportunity_id, task.pk))
 
     def test_list_page_renders_edit_button(self, client, program_manager_org_user_admin, opp, assigned_task):
+        _create_social_app("ocs")
         client.force_login(program_manager_org_user_admin)
         url = reverse("opportunity:assigned_task_list", args=(opp.organization.slug, opp.opportunity_id))
         response = client.get(url)
@@ -2679,6 +2755,7 @@ class TestCreateTask:
         assert any("chatbot" in str(m).lower() for m in msgs)
 
     def test_create_task_invalid_form(self, client, program_manager_org_user_admin, opportunity):
+        _create_social_app("ocs")
         client.force_login(program_manager_org_user_admin)
         response = client.post(self._url(opportunity), data={})
         assert response.status_code == HTTPStatus.OK
@@ -3112,6 +3189,34 @@ def test_payment_import_redirects_with_payment_task_id(mock_delay, client, organ
     assert "export_task_id=" not in response.url
 
 
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [
+        ("payments.pdf", "application/pdf"),
+        ("payments.txt", "text/plain"),
+        ("payments", "application/octet-stream"),
+        ("payments", ""),
+        (None, None),  # No file was selected at all.
+    ],
+)
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_rejects_unsupported_formats(
+    mock_delay, filename, content_type, client, organization, opportunity, org_user_member
+):
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    data = {}
+    if filename:
+        data["payments"] = SimpleUploadedFile(filename, b"not a spreadsheet", content_type=content_type)
+
+    response = client.post(url, data, follow=True)
+
+    assert response.status_code == 200
+    mock_delay.assert_not_called()
+    message = str(list(response.context["messages"])[0])
+    assert message == "File format not supported. Please upload a CSV, XLSX file."
+
+
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
     task = mock_async_result.return_value
@@ -3126,23 +3231,53 @@ def test_payment_import_status_in_progress(mock_async_result, client, organizati
     assert response.status_code == 200
     assert "Payment Record Import is in progress." in content
     assert "hx-get" in content  # keeps polling while not complete
+    # A task that never resolves would otherwise leave the backdrop blocking the page for good.
+    assert "Close" in content
 
 
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
-def test_payment_import_status_complete_shows_reload_link(
+def test_payment_import_status_complete_without_errors_refreshes_page(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
+    """Nothing to show in the modal, so the page reloads and reports the outcome as a banner."""
     task = mock_async_result.return_value
-    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task._get_task_meta.return_value = {
+        "status": "SUCCESS",
+        "args": [opportunity.id],
+        "result": {"message": "done", "is_error": False, "errors": {}},
+    }
     task.info = {"message": "done"}
     client.force_login(org_user_member)
     url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
 
     response = client.get(url)
 
+    assert response["HX-Refresh"] == "true"
+    assert response.content == b""
+
+
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_payment_import_status_complete_with_errors_shows_modal(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    errors = {"Username is required": [3, 5], "Payment amount must be a number": [2]}
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {
+        "status": "SUCCESS",
+        "args": [opportunity.id],
+        "result": {"message": "3 rows have errors", "is_error": True, "errors": errors},
+    }
+    task.info = {"message": "3 rows have errors"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
     content = response.content.decode()
-    assert "All done! View status." in content
-    assert "payment_import_task_id=task-xyz" in content
+    assert "HX-Refresh" not in response
+    assert "Username is required" in content
+    assert "3, 5" in content
+    assert "Error Description" in content
     assert "hx-get" not in content  # polling stops once complete
 
 
@@ -3169,3 +3304,130 @@ def test_worker_payments_shows_import_banner_on_reload(
     assert response.status_code == 200
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_opens_modal_for_import_errors(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {
+        "message": "3 rows have errors",
+        "is_error": True,
+        "errors": {"Username is required": [3, 5], "Payment amount must be a number": [2]},
+    }
+    task.info = {"message": "3 rows have errors"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    # The task id is kept so the modal endpoint is called; the errors themselves render there.
+    assert response.context["payment_import_task_id"] == "task-xyz"
+    assert "payment-import-modal-container" in content
+    # The summary is not also shown as a banner.
+    assert "bg-message-error" not in content
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_stops_polling_once_import_succeeds(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    """Without this the modal endpoint would ask for a refresh on every load, looping forever."""
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": "Payment status uploaded successfully for 3 users.", "is_error": False, "errors": {}}
+    task.info = {"message": "Payment status uploaded successfully for 3 users."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    assert response.context["payment_import_task_id"] is None
+    assert "payment_import_status" not in response.content.decode()
+
+
+@pytest.mark.parametrize("is_error", [False, True])
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_shows_import_banner_only_once(
+    mock_async_result, is_error, client, organization, opportunity, org_user_member
+):
+    """A refresh or a back navigation must not report the same import again."""
+    message = "No payments were uploaded." if is_error else "Payment status uploaded successfully for 3 users."
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "SUCCESS"
+    task.result = {"message": message, "is_error": is_error, "errors": {}}
+    task.info = {"message": message}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    first = client.get(url, {"payment_import_task_id": "task-xyz"})
+    assert message in first.content.decode()
+
+    # The task id is still in the URL, but its outcome has been shown and is not shown again.
+    repeat = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    assert repeat.status_code == 200
+    assert message not in repeat.content.decode()
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
+def test_worker_payments_shows_import_error_modal_only_once(
+    mock_status_async_result, mock_view_async_result, client, organization, opportunity, org_user_member
+):
+    """The errors are delivered by the modal endpoint, so a later page load must not reopen it."""
+    result = {
+        "message": "3 rows have errors",
+        "is_error": True,
+        "errors": {"Username is required": [3, 5]},
+    }
+    status_task = mock_status_async_result.return_value
+    status_task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id], "result": result}
+    status_task.info = {"message": result["message"]}
+    view_task = mock_view_async_result.return_value
+    view_task.args = [opportunity.id]
+    view_task.status = "SUCCESS"
+    view_task.result = result
+    view_task.info = {"message": result["message"]}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    status_url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    modal = client.get(status_url)
+    assert "Username is required" in modal.content.decode()
+
+    repeat = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    assert repeat.status_code == 200
+    # Nothing opens the modal endpoint again.
+    assert repeat.context["payment_import_task_id"] is None
+    assert "payment_import_status" not in repeat.content.decode()
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_reports_a_crashed_import_task(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    """A task that died carries the exception in `result`, not the progress meta dict."""
+    task = mock_async_result.return_value
+    task.args = [opportunity.id]
+    task.status = "FAILURE"
+    task.result = ValueError("worker died")
+    task.info = ValueError("worker died")
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "The payment import failed. Please try again." in content
+    # Nothing left to poll for, so the modal is not opened again.
+    assert response.context["payment_import_task_id"] is None

@@ -8,12 +8,15 @@
       endDate: "{% firstof form.instance.end_date|date:'Y-m-d' form.end_date.value '' %}",
       amount: "{{ form.amount.value|default:'null' }}",
       usdAmount: "{{ form.amount_usd.value|default:'null' }}",
+      lateDeltaUnits: {{ form.late_delta_units.value|default:0 }},
       isServiceDelivery: "{{ is_service_delivery|yesno:'true,false' }}" == 'true',
       isReadOnly: "{{ is_read_only|yesno:'true,false'}}" == "true",
       invoiceId: "{{ form.instance.payment_invoice_id|default:'' }}",
       showDownloadButton: false,
       showCancelModal: false,
       showRejectModal: false,
+      showSubmitModal: false,
+      certifyChecked: false,
 
       init() {
         if (this.isServiceDelivery) {
@@ -67,9 +70,12 @@
           document.getElementById('invoice-line-items-wrapper').innerHTML = data.line_items_table_html;
           this.amount = data.total_amount;
           this.usdAmount = data.total_usd_amount;
+          this.lateDeltaUnits = data.late_delta_units;
           this.showDownloadButton = true;
         }).catch(error => {
           console.error('Error fetching invoice items:', error);
+          // Nothing known about the window, so drop the count rather than leave a stale one showing.
+          this.lateDeltaUnits = null;
           this.showDownloadButton = false;
         });
       },
@@ -93,12 +99,13 @@
         return url.toString();
       },
 
-      submitInvoice(newStatus) {
+      submitInvoice(newStatus, extraValues = {}) {
         htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           values: {
               invoice_id: this.invoiceId,
               description: this.$refs.description ? this.$refs.description.value : "",
-              new_status: newStatus
+              new_status: newStatus,
+              ...extraValues
           },
         });
       },
@@ -119,6 +126,16 @@
       confirmRejectInvoice() {
         this.showRejectModal = false;
         this.submitInvoice('rejected_by_pm');
+      },
+
+      openSubmitInvoiceModal() {
+        this.certifyChecked = false;
+        this.showSubmitModal = true;
+      },
+
+      confirmSubmitInvoice() {
+        this.showSubmitModal = false;
+        this.submitInvoice('pending_pm_review', { attestation: true });
       },
 
     }));

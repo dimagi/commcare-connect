@@ -7,13 +7,12 @@ from django.views.generic import TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
-from commcare_connect.organization.views import organization_create
+from commcare_connect.organization.views import no_organization, organization_create
 
 from . import views
 
 urlpatterns = [
     path("", include("commcare_connect.prelogin.urls")),
-    path("home/", TemplateView.as_view(template_name="pages/home.html"), name="home"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     # Marketing robots.txt + sitemap.xml. Exported (verbatim) from
     # dimagi-internal/connect-prelogin into templates/prelogin/ by
@@ -40,6 +39,7 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     # Your stuff: custom urls includes go here
     path("register/organization/", organization_create, name="organization_create"),
+    path("no-organization/", no_organization, name="no_organization"),
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),

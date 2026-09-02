@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 
 class LLOEntity(models.Model):
@@ -22,6 +23,21 @@ class LLOEntity(models.Model):
             return f"{self.name} ({self.short_name})"
         return f"{self.name}"
 
+    @classmethod
+    def visible_to(cls, user):
+        if user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            return cls.objects.all()
+        return cls.objects.filter(organization__memberships__user=user).distinct()
+
+
+class PrimarySector(models.Model):
+    name = models.CharField(max_length=255)
+    slug = models.CharField(max_length=255)
+    description = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.name
+
 
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
@@ -32,6 +48,20 @@ class Organization(BaseModel):
     program_manager = models.BooleanField(default=False)
     funder = models.BooleanField(default=False)
     llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
+    short_name = models.CharField(max_length=40, null=True, blank=True)
+    has_used_connect = models.BooleanField(default=False)
+    year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
+    team_size = models.PositiveIntegerField(null=True, blank=True)
+    flws_managed = models.PositiveIntegerField(null=True, blank=True)
+    countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")
+    regions = models.TextField(blank=True)
+    primary_sectors = models.ManyToManyField(PrimarySector, null=True, blank=True)
+    website = models.URLField(blank=True)
+    office_address = models.TextField(blank=True)
+    contact_emails = models.TextField(blank=True, help_text=_("One email address per line."))
+    eoi_links = models.TextField(blank=True, help_text=_("One EOI link per line."))
+    notes = models.TextField(blank=True)
+    verified = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.id:
@@ -40,6 +70,12 @@ class Organization(BaseModel):
 
     def __str__(self):
         return self.slug
+
+    @classmethod
+    def visible_to(cls, user):
+        if user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            return cls.objects.all()
+        return cls.objects.filter(memberships__user=user)
 
     def get_member_emails(self, exclude_viewer=False):
         member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")

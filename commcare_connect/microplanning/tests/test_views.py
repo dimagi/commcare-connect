@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv as csv_mod
 import io
 import json
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import mock
@@ -400,6 +401,27 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         ia_response = client.get(f"{base}?task_id=abc&area_type=implementation_area")
         assert ia_response.context["import_status_url"] == ia_status
         assert ia_status.encode() in ia_response.content
+
+    @mock.patch("commcare_connect.microplanning.views.AsyncResult")
+    def test_import_status_renders_errors_as_table(
+        self, mock_async_result, client: Client, organization, org_user_admin, opportunity
+    ):
+        task = mock_async_result.return_value
+        task.ready.return_value = True
+        task.successful.return_value = True
+        task.result = {"errors": {"Centroid must be in 'lon lat' format": [4, 17]}}
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        response = client.get(url, {"task_id": str(uuid.uuid4())})
+
+        content = response.content.decode()
+        assert "Centroid must be in &#x27;lon lat&#x27; format" in content  # autoescaped, not marked safe
+        assert "4, 17" in content
+        assert "Error Description" in content
 
     def test_rerun_and_clear_buttons_shown_post_clustering(self, client, org_user_admin, opportunity):
         """After clustering (groups exist) with no FLW assignments, rerun/clear controls are offered."""

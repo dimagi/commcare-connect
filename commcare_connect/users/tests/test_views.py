@@ -17,7 +17,13 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.users.tests.factories import UserFactory
-from commcare_connect.users.views import UserRedirectView, UserToggleView, UserUpdateView, create_user_link_view
+from commcare_connect.users.views import (
+    UpdateUserProfileView,
+    UserRedirectView,
+    UserToggleView,
+    UserUpdateView,
+    create_user_link_view,
+)
 from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
@@ -81,7 +87,7 @@ class TestUserRedirectView:
         request.org = None
 
         view.request = request
-        assert view.get_redirect_url() == "/home/"
+        assert view.get_redirect_url() == "/no-organization/"
 
     def test_get_redirect_url_for_org_user(
         self, organization: Organization, org_user_member: User, rf: RequestFactory
@@ -417,3 +423,47 @@ class TestPermissionManagement:
         response = client.get(reverse("users:internal_features"))
         assert response.status_code == 200
         assert "Permission Management" in response.content.decode()
+
+
+class TestUpdateUserProfileView:
+    def _post(self, rf, data):
+        request = rf.post("/fake-url/", data=data)
+        with mock.patch(
+            "oauth2_provider.views.mixins.ClientProtectedResourceMixin.authenticate_client"
+        ) as authenticate_client:
+            authenticate_client.return_value = True
+            return UpdateUserProfileView.as_view()(request)
+
+    @pytest.mark.parametrize("name", ["New Name", "  New Name  "], ids=["plain", "padded"])
+    def test_updates_name(self, mobile_user: User, rf: RequestFactory, name):
+        response = self._post(rf, {"username": mobile_user.username, "name": name})
+
+        mobile_user.refresh_from_db()
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"updated": True}
+        assert mobile_user.name == "New Name"
+
+    def test_unknown_username_reports_no_update(self, rf: RequestFactory):
+        response = self._post(rf, {"username": "not-a-connectid-user", "name": "New Name"})
+
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"updated": False}
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"name": "New Name"},
+            {"username": "   ", "name": "New Name"},
+            {"username": "a-worker"},
+            {"username": "a-worker", "name": "   "},
+        ],
+        ids=["no_username", "blank_username", "no_name", "blank_name"],
+    )
+    def test_invalid_data_is_a_bad_request(self, rf: RequestFactory, data):
+        worker = UserFactory(username="a-worker", name="Old Name")
+
+        response = self._post(rf, data)
+
+        worker.refresh_from_db()
+        assert response.status_code == 400
+        assert worker.name == "Old Name"

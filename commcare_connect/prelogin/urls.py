@@ -24,6 +24,8 @@ MARKETING_ROUTES = [
     "insights",
     "release-notes",
     "frontline-network",
+    "support-kmc",
+    "blog",
 ]
 
 urlpatterns = [path(route, views.home, name=route or "home") for route in MARKETING_ROUTES]
@@ -32,6 +34,21 @@ urlpatterns = [path(route, views.home, name=route or "home") for route in MARKET
 # client router resolves the slug to the right program section.
 urlpatterns += [
     re_path(r"^portfolio/[\w-]+$", views.home, name="portfolio-detail"),
+]
+
+# Machine-readable feed of native Connect blog posts, fetched cross-origin by
+# dimagi.com/blog (see views.blog_manifest). Registered before the /blog/<slug>
+# route below; the slug pattern excludes dots, so "manifest.json" wouldn't match
+# it anyway, but keeping this first makes the precedence explicit.
+urlpatterns += [
+    path("blog/manifest.json", views.blog_manifest, name="blog-manifest"),
+]
+
+# Blog post detail pages: /blog/<slug>. Same SPA template; the client router
+# resolves the slug to the right post section. Keep each post's data-page and
+# ROUTE_META in app.js in sync, and add the URL to sitemap.xml.
+urlpatterns += [
+    re_path(r"^blog/[\w-]+$", views.home, name="blog-detail"),
 ]
 
 # Contact page — standalone template (not the SPA). Two URLs so both the clean
