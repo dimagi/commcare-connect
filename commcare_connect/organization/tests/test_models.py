@@ -118,9 +118,18 @@ class TestOrganizationInvite:
         invite = OrganizationInviteFactory(organization=organization)
         assert invite.expiry_date == invite.date_modified + timedelta(days=OrganizationInvite.EXPIRY_DAYS)
 
-    @pytest.mark.parametrize("minutes_ago,in_cooldown", [(1, True), (10, False)])
-    def test_resend_cooldown_lapses_after_the_cooldown_window(self, organization, minutes_ago, in_cooldown):
-        invite = OrganizationInviteFactory(organization=organization)
+    @pytest.mark.parametrize(
+        "status,minutes_ago,in_cooldown",
+        [
+            (OrganizationInvite.Status.INVITED, 1, True),
+            (OrganizationInvite.Status.INVITED, 10, False),
+            # Only a pending invite can be resent, so nothing else is ever throttled.
+            (OrganizationInvite.Status.REVOKED, 1, False),
+            (OrganizationInvite.Status.ACCEPTED, 1, False),
+        ],
+    )
+    def test_only_pending_invites_are_in_resend_cooldown(self, organization, status, minutes_ago, in_cooldown):
+        invite = OrganizationInviteFactory(organization=organization, status=status)
         OrganizationInvite.objects.filter(pk=invite.pk).update(
             date_modified=timezone.now() - timedelta(minutes=minutes_ago)
         )
@@ -189,21 +198,23 @@ class TestOrganizationInvite:
         invite.refresh_from_db()
         assert invite.token == old_token
 
-    def test_send_invite_refuses_a_revoked_invite_inside_the_cooldown(self, organization):
+    def test_send_invite_reinstates_a_revoked_invite_inside_the_cooldown(self, organization):
+        """Re-inviting a revoked address is a fresh decision, not a resend, so the cooldown does not apply."""
         invite = OrganizationInviteFactory(
             organization=organization, email="revoked@example.com", status=OrganizationInvite.Status.REVOKED
         )
+        old_token = invite.token
 
-        refused = OrganizationInvite.send_invite(
+        reinvited = OrganizationInvite.send_invite(
             organization=organization,
             email="revoked@example.com",
             role=UserOrganizationMembership.Role.MEMBER,
             invited_by=UserFactory(email="admin@example.com"),
         )
 
-        assert refused is None
-        invite.refresh_from_db()
-        assert invite.status == OrganizationInvite.Status.REVOKED
+        assert reinvited.pk == invite.pk
+        assert reinvited.status == OrganizationInvite.Status.INVITED
+        assert reinvited.token != old_token
 
     def test_send_invite_preserves_original_created_by_on_reinvite(self, organization):
         invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")

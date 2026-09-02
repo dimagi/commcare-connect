@@ -155,8 +155,12 @@ class OrganizationInvite(BaseModel):
 
     @property
     def is_in_resend_cooldown(self):
-        """Throttles resends so a re-invite cannot be used to hammer an address."""
-        return timezone.now() < self.date_modified + self.RESEND_COOLDOWN
+        """Throttles resends so a re-invite cannot be used to hammer an address.
+
+        Only a pending invite can be resent — re-inviting a revoked or accepted address
+        is a fresh decision rather than a resend, so the window does not apply to it.
+        """
+        return self.status == self.Status.INVITED and timezone.now() < self.date_modified + self.RESEND_COOLDOWN
 
     @property
     def is_expired(self):
