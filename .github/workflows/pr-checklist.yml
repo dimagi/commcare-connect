@@ -1,0 +1,37 @@
+name: PR Checklist
+
+# Blocks merging until the author confirms the PR is safe to deploy.
+# Runs on `edited` too, so re-running is just a matter of ticking the box.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: ['main']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-confirmation:
+    name: Deploy confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the deployment checkbox is ticked
+        # Dependabot opens PRs without the template, so it can't tick the box.
+        if: github.actor != 'dependabot[bot]'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s' "$PR_BODY" | tr -d '\r' | grep -qiE '^[[:space:]]*-[[:space:]]*\[x\][[:space:]]*This PR can be deployed'; then
+            echo "Ready for deployment."
+            exit 0
+          fi
+
+          echo "::error::The \"This PR can be deployed\" checkbox in the PR description is not ticked."
+          echo ""
+          echo "Before merging to main, confirm this change can be deployed as-is."
+          echo "If it needs configuration, commands, or other manual steps, describe"
+          echo "them in the PR description and coordinate with whoever will deploy."
+          echo ""
+          echo "Then tick the box in the Deployment section of the PR description:"
+          echo "  - [x] This PR can be deployed: ..."
+          exit 1
