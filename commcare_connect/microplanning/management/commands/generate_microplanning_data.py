@@ -60,7 +60,10 @@ CLUSTER_NAMES = ["North", "Central", "South", "East", "West", "Northeast", "Nort
 CLUSTER_ORIGIN = (4.0, 5.0)  # lon, lat — southwest corner of the first cluster
 CLUSTER_SPACING = 3.5  # degrees between cluster origins; wide enough that zooming is visible
 CLUSTERS_PER_ROW = 3
-CELL_SIZE = 0.04  # degrees per work area side
+CELL_SIZE = 0.04  # degrees per work area side, ~4.4km — the scale of a real imported area
+# Sizes small enough that fitting one area wants a zoom past MAX_AUTOZOOM_ZOOM, for exercising
+# that cap: ~900m and ~170m on a side.
+SMALL_CELL_SIZES = (0.008, 0.0015)
 
 ASSIGNED_STATUSES = [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, WorkAreaStatus.EXPECTED_VISIT_REACHED]
 UNASSIGNED_STATUSES = [
@@ -85,6 +88,7 @@ class Cluster(NamedTuple):
 
     name: str
     origin: tuple  # (lon, lat) of the southwest corner
+    cell_size: float  # degrees per work area side
     implementation_area: ImplementationArea
     groups: list
     assignee: OpportunityAccess | None
@@ -111,6 +115,18 @@ class Command(BaseCommand):
             "--grid", type=int, default=4, help="Work areas per cluster side, so grid^2 per cluster (default 4)"
         )
         parser.add_argument("--groups-per-cluster", type=int, default=2, help="Work area groups per cluster")
+        parser.add_argument(
+            "--cell-size",
+            type=float,
+            nargs="+",
+            default=[CELL_SIZE],
+            metavar="DEGREES",
+            help=(
+                "Work area side length in degrees. Several values are cycled over the clusters, so "
+                f"one opportunity can hold areas at different scales — e.g. --cell-size {CELL_SIZE} "
+                f"{' '.join(str(size) for size in SMALL_CELL_SIZES)}"
+            ),
+        )
         parser.add_argument("--workers", type=int, default=3, help="Mobile workers to create and assign areas to")
         parser.add_argument(
             "--no-admin",
@@ -141,6 +157,8 @@ class Command(BaseCommand):
             )
         if options["clusters"] < 1 or options["grid"] < 1 or options["groups_per_cluster"] < 1:
             raise CommandError("--clusters, --grid and --groups-per-cluster must all be at least 1")
+        if any(size <= 0 for size in options["cell_size"]):
+            raise CommandError("--cell-size values must all be greater than 0")
 
         random.seed(options["seed"])
 
@@ -491,31 +509,35 @@ class Command(BaseCommand):
             cluster = self.build_cluster(opportunity, index, accesses, options)
             work_areas += self.create_cluster_areas(opportunity, cluster, options["grid"])
             self.stdout.write(
-                f"Cluster {cluster.name}: {options['grid'] ** 2} work areas in {len(cluster.groups)} groups"
+                f"Cluster {cluster.name}: {options['grid'] ** 2} work areas of {cluster.cell_size}° "
+                f"in {len(cluster.groups)} groups"
             )
         return work_areas
 
     def build_cluster(self, opportunity, index, accesses, options):
         name = cluster_name(index)
         origin = cluster_origin(index)
+        cell_sizes = options["cell_size"]
+        cell_size = cell_sizes[index % len(cell_sizes)]
         return Cluster(
             name=name,
             origin=origin,
-            implementation_area=self.create_implementation_area(opportunity, name, origin, options["grid"]),
+            cell_size=cell_size,
+            implementation_area=self.create_implementation_area(opportunity, name, origin, options["grid"], cell_size),
             groups=self.create_groups(opportunity, name, options["groups_per_cluster"]),
             # One cluster per worker, so the Assignee filter and "Show only unassigned" both
             # have something to show. Clusters beyond the worker count stay unassigned.
             assignee=accesses[index] if index < len(accesses) else None,
         )
 
-    def create_implementation_area(self, opportunity, name, origin, grid):
+    def create_implementation_area(self, opportunity, name, origin, grid, cell_size):
         lon0, lat0 = origin
-        span = grid * CELL_SIZE
+        span = grid * cell_size
         return ImplementationArea.objects.create(
             opportunity=opportunity,
             name=implementation_area_name(name),
             centroid=Point(lon0 + span / 2, lat0 + span / 2, srid=SRID),
-            boundary=box(lon0 - CELL_SIZE, lat0 - CELL_SIZE, lon0 + span + CELL_SIZE, lat0 + span + CELL_SIZE),
+            boundary=box(lon0 - cell_size, lat0 - cell_size, lon0 + span + cell_size, lat0 + span + cell_size),
         )
 
     def create_groups(self, opportunity, cluster, count):
@@ -530,11 +552,12 @@ class Command(BaseCommand):
 
     def create_cluster_areas(self, opportunity, cluster, grid):
         lon0, lat0 = cluster.origin
+        cell_size = cluster.cell_size
         pending = []
 
         for cell_index in range(grid * grid):
             row, col = divmod(cell_index, grid)
-            x1, y1 = lon0 + col * CELL_SIZE, lat0 + row * CELL_SIZE
+            x1, y1 = lon0 + col * cell_size, lat0 + row * cell_size
             group = cluster.groups[cell_index * len(cluster.groups) // (grid * grid)]
             # Only the cluster's first group is assigned, so every cluster holds a mix.
             access = cluster.assignee if group is cluster.groups[0] else None
@@ -549,8 +572,8 @@ class Command(BaseCommand):
                     implementation_area_name=cluster.implementation_area.name,
                     slug=work_area_slug(cluster.name, cell_index),
                     ward=group.ward,
-                    centroid=Point(x1 + CELL_SIZE / 2, y1 + CELL_SIZE / 2, srid=SRID),
-                    boundary=box(x1, y1, x1 + CELL_SIZE, y1 + CELL_SIZE),
+                    centroid=Point(x1 + cell_size / 2, y1 + cell_size / 2, srid=SRID),
+                    boundary=box(x1, y1, x1 + cell_size, y1 + cell_size),
                     building_count=random.randint(80, 300),
                     # Small on purpose: create_visits() has to be able to reach this target for
                     # the areas it marks EXPECTED_VISIT_REACHED.
