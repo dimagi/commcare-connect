@@ -128,7 +128,7 @@ class UserOrganizationMembership(models.Model):
 
 class OrganizationInvite(BaseModel):
     EXPIRY_DAYS = 7
-    RESEND_COOLDOWN = timedelta(minutes=5)
+    REINVITE_COOLDOWN = timedelta(minutes=5)
 
     class Status(models.TextChoices):
         INVITED = "invited", _("Invited")
@@ -154,13 +154,13 @@ class OrganizationInvite(BaseModel):
         return self.date_modified + timedelta(days=self.EXPIRY_DAYS)
 
     @property
-    def is_in_resend_cooldown(self):
-        """Throttles resends so a re-invite cannot be used to hammer an address.
+    def is_in_reinvite_cooldown(self):
+        """Throttles reinvites so the invite mail cannot be used to hammer an address.
 
-        Only a pending invite can be resent — re-inviting a revoked or accepted address
-        is a fresh decision rather than a resend, so the window does not apply to it.
+        Only a pending invite can be reinvited — reinviting a revoked or accepted address
+        is a fresh decision rather than a retry, so the window does not apply to it.
         """
-        return self.status == self.Status.INVITED and timezone.now() < self.date_modified + self.RESEND_COOLDOWN
+        return self.status == self.Status.INVITED and timezone.now() < self.date_modified + self.REINVITE_COOLDOWN
 
     @property
     def is_expired(self):
@@ -171,10 +171,10 @@ class OrganizationInvite(BaseModel):
         """Creates a pending invite, or refreshes any existing one for this address.
 
         An existing invite is reset to pending whatever state it was in — revoked, accepted,
-        lapsed, or still pending, which is the resend case.
+        lapsed, or still pending, which is the reinvite case.
         """
         existing = cls.objects.filter(organization=organization, email=email).first()
-        if existing and existing.is_in_resend_cooldown:
+        if existing and existing.is_in_reinvite_cooldown:
             return None
 
         invite, created = cls.objects.update_or_create(

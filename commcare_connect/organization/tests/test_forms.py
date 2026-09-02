@@ -87,13 +87,13 @@ class TestAddMembersView:
         assert OrganizationInvite.objects.filter(organization=organization, email=existing_invite.email).count() == 1
 
     @pytest.mark.django_db
-    def test_reinvite_rejected_while_the_invite_is_in_resend_cooldown(self, organization):
+    def test_reinvite_rejected_while_the_invite_is_in_cooldown(self, organization):
         existing_invite = OrganizationInviteFactory(
             organization=organization, email="pending@example.com", role="member"
         )
         old_token = existing_invite.token
 
-        with patch.object(OrganizationInvite, "RESEND_COOLDOWN", timedelta(minutes=5)):
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
             response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
 
         messages = list(response.context["messages"])

@@ -123,20 +123,20 @@ class TestOrganizationInvite:
         [
             (OrganizationInvite.Status.INVITED, 1, True),
             (OrganizationInvite.Status.INVITED, 10, False),
-            # Only a pending invite can be resent, so nothing else is ever throttled.
+            # Only a pending invite can be reinvited, so nothing else is ever throttled.
             (OrganizationInvite.Status.REVOKED, 1, False),
             (OrganizationInvite.Status.ACCEPTED, 1, False),
         ],
     )
-    def test_only_pending_invites_are_in_resend_cooldown(self, organization, status, minutes_ago, in_cooldown):
+    def test_only_pending_invites_are_in_reinvite_cooldown(self, organization, status, minutes_ago, in_cooldown):
         invite = OrganizationInviteFactory(organization=organization, status=status)
         OrganizationInvite.objects.filter(pk=invite.pk).update(
             date_modified=timezone.now() - timedelta(minutes=minutes_ago)
         )
         invite.refresh_from_db()
-        # Pinned so the test covers the window logic, not whatever RESEND_COOLDOWN is tuned to.
-        with patch.object(OrganizationInvite, "RESEND_COOLDOWN", timedelta(minutes=5)):
-            assert invite.is_in_resend_cooldown is in_cooldown
+        # Pinned so the test covers the window logic, not whatever REINVITE_COOLDOWN is tuned to.
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            assert invite.is_in_reinvite_cooldown is in_cooldown
 
     def test_not_expired_when_freshly_created(self, organization):
         invite = OrganizationInviteFactory(organization=organization)
@@ -183,7 +183,7 @@ class TestOrganizationInvite:
         assert reinvited.token != old_token
         assert not reinvited.is_expired
 
-    def test_send_invite_refuses_inside_the_resend_cooldown(self, organization):
+    def test_send_invite_refuses_inside_the_reinvite_cooldown(self, organization):
         invite = OrganizationInviteFactory(organization=organization, email="fresh@example.com")
         old_token = invite.token
 
@@ -199,7 +199,7 @@ class TestOrganizationInvite:
         assert invite.token == old_token
 
     def test_send_invite_reinstates_a_revoked_invite_inside_the_cooldown(self, organization):
-        """Re-inviting a revoked address is a fresh decision, not a resend, so the cooldown does not apply."""
+        """Reinviting a revoked address is a fresh decision, not a retry, so the cooldown does not apply."""
         invite = OrganizationInviteFactory(
             organization=organization, email="revoked@example.com", status=OrganizationInvite.Status.REVOKED
         )
@@ -220,7 +220,7 @@ class TestOrganizationInvite:
         invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
         original_created_by = invite.created_by
         OrganizationInvite.objects.filter(pk=invite.pk).update(
-            date_modified=timezone.now() - OrganizationInvite.RESEND_COOLDOWN - timedelta(minutes=1)
+            date_modified=timezone.now() - OrganizationInvite.REINVITE_COOLDOWN - timedelta(minutes=1)
         )
         admin = UserFactory(email="admin@example.com")
 

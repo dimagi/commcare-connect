@@ -197,24 +197,24 @@ def _accept_invite_for_new_user(request, invite, org_slug):
 
 @api_view(["POST"])
 @org_admin_required
-def resend_invite(request, org_slug, invite_id):
+def reinvite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
     )
-    resent_invite = OrganizationInvite.send_invite(
+    new_invite = OrganizationInvite.send_invite(
         organization=invite.organization,
         email=invite.email,
         role=invite.role,
         invited_by=request.user,
     )
-    if resent_invite is None:
+    if new_invite is None:
         messages.warning(
             request,
             gettext("An invite was just sent to {email}. Try again in a few minutes.").format(email=invite.email),
         )
     else:
-        send_org_invite(invite_id=resent_invite.pk)
-        messages.success(request, gettext("Invite resent to {email}.").format(email=resent_invite.email))
+        send_org_invite(invite_id=new_invite.pk)
+        messages.success(request, gettext("New invite sent to {email}.").format(email=new_invite.email))
     return _render_pending_invites(request)
 
 

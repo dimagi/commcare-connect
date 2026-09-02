@@ -2,14 +2,14 @@
 <div class="flex gap-2 justify-end">
   <button type="button"
           class="button button-sm outline-style"
-          hx-post="{% url 'organization:resend_invite' record.organization.slug record.pk %}"
+          hx-post="{% url 'organization:reinvite' record.organization.slug record.pk %}"
           hx-target="#pending_invites_container"
           hx-swap="innerHTML"
-          {% if record.is_in_resend_cooldown %}disabled{% endif %}>
-    {% if record.is_in_resend_cooldown %}
+          {% if record.is_in_reinvite_cooldown %}disabled{% endif %}>
+    {% if record.is_in_reinvite_cooldown %}
       {% translate "Just sent" %}
     {% else %}
-      {% translate "Resend" %}
+      {% translate "Reinvite" %}
     {% endif %}
   </button>
   <button type="button"

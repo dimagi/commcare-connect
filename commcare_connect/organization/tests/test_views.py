@@ -318,24 +318,24 @@ class TestRevokeInviteView:
 
 
 @pytest.mark.django_db
-class TestResendInviteView:
+class TestReinviteView:
     @staticmethod
     def _url(org_slug, invite_id):
-        return reverse("organization:resend_invite", args=(org_slug, invite_id))
+        return reverse("organization:reinvite", args=(org_slug, invite_id))
 
     @staticmethod
     def _cooldown_of(minutes):
-        """Pinned so these tests cover the throttle logic, not whatever RESEND_COOLDOWN is tuned to."""
-        return patch.object(OrganizationInvite, "RESEND_COOLDOWN", timedelta(minutes=minutes))
+        """Pinned so these tests cover the throttle logic, not whatever REINVITE_COOLDOWN is tuned to."""
+        return patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=minutes))
 
     @staticmethod
     def _past_cooldown(invite):
         OrganizationInvite.objects.filter(pk=invite.pk).update(
-            date_modified=timezone.now() - OrganizationInvite.RESEND_COOLDOWN - timedelta(minutes=1)
+            date_modified=timezone.now() - OrganizationInvite.REINVITE_COOLDOWN - timedelta(minutes=1)
         )
         invite.refresh_from_db()
 
-    def test_admin_resend_issues_a_new_token_and_expiry(self, client, org_user_admin, organization):
+    def test_admin_reinvite_issues_a_new_token_and_expiry(self, client, org_user_admin, organization):
         invite = OrganizationInviteFactory(organization=organization, role="member")
         self._past_cooldown(invite)
         old_token, old_modified = invite.token, invite.date_modified
@@ -351,7 +351,7 @@ class TestResendInviteView:
         assert invite.date_modified > old_modified
         assert invite.role == "member"
 
-    def test_resend_is_refused_during_the_cooldown(self, client, org_user_admin, organization):
+    def test_reinvite_is_refused_during_the_cooldown(self, client, org_user_admin, organization):
         invite = OrganizationInviteFactory(organization=organization)
         old_token = invite.token
         client.force_login(org_user_admin)
@@ -365,7 +365,7 @@ class TestResendInviteView:
         assert invite.token == old_token
 
     @pytest.mark.parametrize("status", [OrganizationInvite.Status.ACCEPTED, OrganizationInvite.Status.REVOKED])
-    def test_only_pending_invites_can_be_resent(self, client, org_user_admin, organization, status):
+    def test_only_pending_invites_can_be_reinvited(self, client, org_user_admin, organization, status):
         invite = OrganizationInviteFactory(organization=organization, status=status)
         self._past_cooldown(invite)
         client.force_login(org_user_admin)
@@ -376,7 +376,7 @@ class TestResendInviteView:
         assert response.status_code == 404
         send_mock.assert_not_called()
 
-    def test_refused_resend_reports_the_cooldown_in_a_message(self, client, org_user_admin, organization):
+    def test_refused_reinvite_reports_the_cooldown_in_a_message(self, client, org_user_admin, organization):
         invite = OrganizationInviteFactory(organization=organization, email="jo@example.com")
         client.force_login(org_user_admin)
 
@@ -386,7 +386,7 @@ class TestResendInviteView:
         assert 'hx-swap-oob="beforeend:#messages"' in content
         assert "An invite was just sent to jo@example.com." in content
 
-    def test_member_cannot_resend_invite(self, client, org_user_member, organization):
+    def test_member_cannot_reinvite(self, client, org_user_member, organization):
         invite = OrganizationInviteFactory(organization=organization)
         self._past_cooldown(invite)
         old_token = invite.token
@@ -454,7 +454,7 @@ class TestPendingInvitesTableView:
         assert date_filter(invite.expiry_date, "SHORT_DATE_FORMAT") in content
 
     @pytest.mark.parametrize("minutes_ago,disabled", [(1, True), (10, False)])
-    def test_resend_button_is_disabled_during_the_cooldown(
+    def test_reinvite_button_is_disabled_during_the_cooldown(
         self, client, org_user_admin, organization, minutes_ago, disabled
     ):
         invite = OrganizationInviteFactory(organization=organization)
@@ -463,12 +463,12 @@ class TestPendingInvitesTableView:
         )
         client.force_login(org_user_admin)
 
-        with patch.object(OrganizationInvite, "RESEND_COOLDOWN", timedelta(minutes=5)):
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
             content = client.get(self._url(organization.slug)).content.decode()
 
-        resend_url = reverse("organization:resend_invite", args=(organization.slug, invite.pk))
-        button = re.search(r"<button[^>]*" + re.escape(resend_url) + r"[^>]*>", content)
-        assert button, "resend button was not rendered"
+        reinvite_url = reverse("organization:reinvite", args=(organization.slug, invite.pk))
+        button = re.search(r"<button[^>]*" + re.escape(reinvite_url) + r"[^>]*>", content)
+        assert button, "reinvite button was not rendered"
         assert ("disabled" in button.group(0)) is disabled
 
     def test_member_cannot_access(self, client, org_user_member, organization):
