@@ -19,7 +19,7 @@ EXPORT_FILENAME_PATTERNS = [
     re.compile(
         r"(exports/)?\d{4}-\d{2}-\d{2}T.*_("
         r"visit_export|review_visit_export|payment_export|"
-        r"user_status|deliver_status|work_status|payment_verification|catchment_area"
+        r"user_status|deliver_status|work_status|payment_verification"
         r")\.\w+"
     ),
     re.compile(r"(exports/)?invoice-report-[\w-]+\.csv"),

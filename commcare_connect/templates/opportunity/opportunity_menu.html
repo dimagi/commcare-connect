@@ -24,19 +24,6 @@
       <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.opportunity_id %}"
          class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "View Invoices" %}</a>
     </li>
-    <li x-data="{showMoreOptions: false}">
-      <a class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-         @click="showMoreOptions = true">{% translate "Catchment Areas" %}</a>
-      <div x-show="showMoreOptions"
-           x-cloak
-           @click.away="showMoreOptions = false"
-           class="ms-4">
-        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-           @click="showCatchmentImportModal = true">{% translate "Import" %}</a>
-        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-           @click="showCatchmentExportModal = true">{% translate "Export" %}</a>
-      </div>
-    </li>
     {% if not opportunity.has_ended %}
       <li>
         <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}"
