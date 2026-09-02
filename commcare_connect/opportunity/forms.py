@@ -1419,7 +1419,7 @@ class SendMessageMobileUsersForm(forms.Form):
 class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
     class Meta:
         model = OpportunityVerificationFlags
-        fields = ("duplicate", "gps", "location", "form_submission_start", "form_submission_end", "catchment_areas")
+        fields = ("duplicate", "gps", "location", "form_submission_start", "form_submission_end")
         widgets = {
             "form_submission_start": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
@@ -1430,13 +1430,11 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_start": _("Start Time"),
             "form_submission_end": _("End Time"),
             "location": _("Location Distance"),
-            "catchment_areas": _("Catchment Area"),
         }
         help_texts = {
             "location": _("Minimum distance between form locations (metres)"),
             "duplicate": _("Flag duplicate form submissions for an entity."),
             "gps": _("Flag forms with no location information."),
-            "catchment_areas": _("Flag forms outside a users's assigned catchment area"),
         }
 
     def __init__(self, *args, **kwargs):
@@ -1460,7 +1458,7 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         )
 
         if self.auto_verify:
-            for field_name in ("duplicate", "gps", "catchment_areas", "location"):
+            for field_name in ("duplicate", "gps", "location"):
                 self.fields.pop(field_name, None)
             self.helper.layout = Layout(form_submission_hour_fields)
         else:
@@ -1468,7 +1466,6 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
                 Row(
                     Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
                     Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
-                    Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
                     css_class="grid grid-cols-3 gap-2",
                 ),
                 Row(Field("location")),
@@ -1476,7 +1473,6 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             )
             self.fields["duplicate"].required = False
             self.fields["gps"].required = False
-            self.fields["catchment_areas"].required = False
         if self.instance:
             self.fields["form_submission_start"].initial = self.instance.form_submission_start
             self.fields["form_submission_end"].initial = self.instance.form_submission_end
@@ -1486,7 +1482,6 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         if self.auto_verify:
             instance.duplicate = False
             instance.gps = False
-            instance.catchment_areas = False
             instance.location = 0
         if commit:
             instance.save()

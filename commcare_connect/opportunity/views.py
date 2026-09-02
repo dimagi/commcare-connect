@@ -173,7 +173,6 @@ from commcare_connect.opportunity.tasks import (
     bulk_update_payments_task,
     bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
-    generate_catchment_area_export,
     generate_deliver_status_export,
     generate_payment_export,
     generate_review_visit_export,
@@ -199,7 +198,6 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
     ImportException,
-    bulk_update_catchments,
     bulk_update_completed_work_status,
     bulk_update_visit_review_status,
     update_payment_accrued,
@@ -546,7 +544,6 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
                 "icon": "fa-money-bill",
             },
         ]
-        context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
         return context
 
@@ -1616,35 +1613,6 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
     return render(
         request, "opportunity/suspended_users.html", dict(table=table, opportunity=request.opportunity, path=path)
     )
-
-
-@org_member_required
-@opportunity_required
-def export_catchment_area(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
-    if not form.is_valid():
-        messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opp_id)
-
-    export_format = form.cleaned_data["format"]
-    result = generate_catchment_area_export.delay(request.opportunity.pk, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
-
-
-@org_member_required
-@opportunity_required
-@require_POST
-def import_catchment_area(request, org_slug=None, opp_id=None):
-    file = request.FILES.get("catchments")
-    try:
-        status = bulk_update_catchments(request.opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"{len(status)} catchment areas were updated successfully and {status.new_catchments} were created."
-        messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, opp_id)
 
 
 @org_member_required

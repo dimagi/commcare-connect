@@ -16,7 +16,6 @@ from django_tables2 import columns
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
-    CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
@@ -296,47 +295,6 @@ class SuspendedUsersTable(tables.Table):
             "opportunity/partials/revoke_suspension.html",
             {"revoke_url": revoke_url, "page_url": page_url, "has_suspension_perm": self.has_suspension_perm},
             request=self.context.request,
-        )
-
-
-class CatchmentAreaTable(tables.Table):
-    username = columns.Column(accessor="opportunity_access__user__username", verbose_name="Username")
-    name_of_user = columns.Column(accessor="opportunity_access__user__name", verbose_name="Name")
-    phone_number = columns.Column(accessor="opportunity_access__user__phone_number", verbose_name="Phone Number")
-    name = columns.Column(verbose_name="Area name")
-    active = columns.Column(verbose_name="Active")
-    latitude = columns.Column(verbose_name="Latitude")
-    longitude = columns.Column(verbose_name="Longitude")
-    radius = columns.Column(verbose_name="Radius")
-    site_code = columns.Column(verbose_name="Site code")
-
-    def render_active(self, value):
-        return "Yes" if value else "No"
-
-    class Meta:
-        model = CatchmentArea
-        fields = (
-            "username",
-            "site_code",
-            "name",
-            "name_of_user",
-            "phone_number",
-            "active",
-            "latitude",
-            "longitude",
-            "radius",
-        )
-        orderable = False
-        sequence = (
-            "username",
-            "name_of_user",
-            "phone_number",
-            "name",
-            "site_code",
-            "active",
-            "latitude",
-            "longitude",
-            "radius",
         )
 
 
