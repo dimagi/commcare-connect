@@ -59,6 +59,10 @@ DEMO_ADMIN_PASSWORD = "mpadmin"
 CLUSTER_NAMES = ["North", "Central", "South", "East", "West", "Northeast", "Northwest", "Southeast"]
 CLUSTER_ORIGIN = (4.0, 5.0)  # lon, lat — southwest corner of the first cluster
 CLUSTER_SPACING = 3.5  # degrees between cluster origins; wide enough that zooming is visible
+# The default origin is open ocean, which is fine for geometry but gives the basemap nothing to
+# draw. Judging a zoom level needs streets and buildings underneath, so --origin can drop the
+# clusters on a real city — this one is central Kota, matching a QA dataset.
+KOTA_ORIGIN = (75.8648, 25.2138)
 CLUSTERS_PER_ROW = 3
 CELL_SIZE = 0.04  # degrees per work area side, ~4.4km — the scale of a real imported area
 # Sizes small enough that fitting one area wants a zoom past MAX_AUTOZOOM_ZOOM, for exercising
@@ -127,6 +131,28 @@ class Command(BaseCommand):
                 f"{' '.join(str(size) for size in SMALL_CELL_SIZES)}"
             ),
         )
+        parser.add_argument(
+            "--origin",
+            type=float,
+            nargs=2,
+            default=list(CLUSTER_ORIGIN),
+            metavar=("LON", "LAT"),
+            help=(
+                "Southwest corner of the first cluster. The default sits in open ocean, where the "
+                "basemap is blank; pass somewhere built-up to judge zoom against real streets — "
+                f"e.g. --origin {KOTA_ORIGIN[0]} {KOTA_ORIGIN[1]} for central Kota"
+            ),
+        )
+        parser.add_argument(
+            "--cluster-spacing",
+            type=float,
+            default=CLUSTER_SPACING,
+            metavar="DEGREES",
+            help=(
+                f"Distance between cluster origins (default {CLUSTER_SPACING}). Worth shrinking "
+                "alongside --origin, so every cluster stays over the same city"
+            ),
+        )
         parser.add_argument("--workers", type=int, default=3, help="Mobile workers to create and assign areas to")
         parser.add_argument(
             "--no-admin",
@@ -159,6 +185,11 @@ class Command(BaseCommand):
             raise CommandError("--clusters, --grid and --groups-per-cluster must all be at least 1")
         if any(size <= 0 for size in options["cell_size"]):
             raise CommandError("--cell-size values must all be greater than 0")
+        if options["cluster_spacing"] <= 0:
+            raise CommandError("--cluster-spacing must be greater than 0")
+        lon, lat = options["origin"]
+        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            raise CommandError(f"--origin {lon} {lat} is not a lon/lat pair — note the order is longitude first")
 
         random.seed(options["seed"])
 
@@ -516,7 +547,7 @@ class Command(BaseCommand):
 
     def build_cluster(self, opportunity, index, accesses, options):
         name = cluster_name(index)
-        origin = cluster_origin(index)
+        origin = cluster_origin(index, options["origin"], options["cluster_spacing"])
         cell_sizes = options["cell_size"]
         cell_size = cell_sizes[index % len(cell_sizes)]
         return Cluster(
@@ -679,12 +710,12 @@ def work_area_slug(cluster, index):
     return f"{cluster.lower()}-wa-{index + 1:02d}"
 
 
-def cluster_origin(index):
-    """Southwest corner of a cluster, laid out on a widely spaced grid."""
-    lon0, lat0 = CLUSTER_ORIGIN
+def cluster_origin(index, origin, spacing):
+    """Southwest corner of a cluster, laid out on a grid `spacing` degrees apart."""
+    lon0, lat0 = origin
     return (
-        lon0 + (index % CLUSTERS_PER_ROW) * CLUSTER_SPACING,
-        lat0 + (index // CLUSTERS_PER_ROW) * CLUSTER_SPACING,
+        lon0 + (index % CLUSTERS_PER_ROW) * spacing,
+        lat0 + (index // CLUSTERS_PER_ROW) * spacing,
     )
 
 

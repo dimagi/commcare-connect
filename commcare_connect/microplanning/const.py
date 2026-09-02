@@ -17,10 +17,11 @@ NO_CHILDREN_WORK_AREA_UNIT_SLUG = "no-children-wa"
 REQUIRED_DELIVER_UNIT_SLUGS = (SERVICE_DELIVERY_UNIT_SLUG, NO_CHILDREN_WORK_AREA_UNIT_SLUG)
 
 # Zoom levels for the microplanning map. Work area tiles are not served below MIN, so a fit that
-# zooms out past it blanks the layer; MAX_AUTOZOOM keeps a fit onto a single work area (a few
-# hundred metres across) from landing at street level.
+# zooms out past it blanks the layer. MAX_AUTOZOOM caps the other end, pinning zoom when the work
+# areas are very small e.g. <100m.
+# The range of MapBox zoom is 0-22. See https://docs.mapbox.com/help/glossary/zoom-level/.
 WORKAREA_MIN_ZOOM = 6
-MAX_AUTOZOOM_ZOOM = 14
+MAX_AUTOZOOM_ZOOM = 18
 
 MAX_EXCLUDE_WORK_AREAS = 200
 MAX_UNASSIGN_WORK_AREAS = 200
