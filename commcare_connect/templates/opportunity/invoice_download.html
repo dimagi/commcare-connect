@@ -1,87 +1,170 @@
-{% load static i18n %}
+{% load static i18n humanize %}
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <style>
       body {
         font-family: sans-serif;
+        color: #1a1a1a;
       }
-      .header div {
-        width: 100%;
-        text-align: center;
+      .container {
+        max-width: 700px;
+        margin: 0 auto;
+      }
+      .title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 24px;
+      }
+      .logo img {
+        height: 56px;
+      }
+      h1.invoice-title {
+        margin: 0;
+        font-size: 28px;
+      }
+      .section {
+        margin-bottom: 20px;
+      }
+      .section p {
+        margin: 2px 0;
+      }
+      .section-heading {
+        font-weight: bold;
+        margin-bottom: 6px;
       }
       .table-container {
-        margin-top: 20px;
+        margin-top: 24px;
       }
-      .full-width-table {
+      .service-table {
         width: 100%;
-        border-collapse: collapse; /* Collapses borders into a single line */
-        margin-bottom: 20px; /* Add margin below the table */
+        border-collapse: collapse;
       }
-      .full-width-table td {
-        border: 1px solid; /* Add borders for visibility */
-        padding: 12px;
+      .service-table th,
+      .service-table td {
         text-align: left;
-        width: 50%;
+        padding: 8px 0;
+      }
+      .service-table th:last-child,
+      .service-table td:last-child {
+        text-align: right;
+        white-space: nowrap;
+        padding-left: 24px;
+        width: 1%;
+      }
+      .service-table thead th {
+        border-bottom: 1px solid #1a1a1a;
+      }
+      .service-table .total-row td {
+        border-top: 1px solid #1a1a1a;
+        font-weight: bold;
+      }
+      .notes {
+        margin-top: 24px;
+      }
+      .notes p {
+        margin: 4px 0;
+      }
+      .authorization {
+        margin-top: 24px;
+        border-top: 1px solid #1a1a1a;
+        padding-top: 12px;
+      }
+      .authorization p {
+        margin: 2px 0;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="header">
-        <div class="org">{% trans "Organization" %}: {{ request.opportunity.organization.name|default:"" }}</div>
-        <div class="opportunity">{% trans "Opportunity" %}: {{ request.opportunity.name }}</div>
+      <div class="title-row">
+        <h1 class="invoice-title">{% trans "Invoice" %}</h1>
+        <div class="logo">
+          <img src="{% static 'images/logo-color.svg' %}"
+               alt="{% trans 'Connect' %}" />
+        </div>
+      </div>
+      <div class="section">
+        <p>
+          <strong>{{ request.opportunity.organization.name|default:"" }}</strong>
+        </p>
+        {% if request.opportunity.organization.office_address %}
+          <p>{{ request.opportunity.organization.office_address }}</p>
+        {% endif %}
+      </div>
+      <div class="section">
+        <p>{% trans "Invoice number" %}: {{ invoice.invoice_number }}</p>
+        <p>{% trans "Invoice date" %}: {{ invoice.date|default:"" }}</p>
+        <p>{% trans "Payment terms" %}: {% trans "Net 30" %}</p>
+        <p>{% trans "Invoice status" %}: {{ invoice.get_status_display }}</p>
+        <p>
+          {% trans "Paid" %}:
+          {% if invoice.is_paid %}
+            {% trans "Paid" %}
+          {% else %}
+            {% trans "Pending" %}
+          {% endif %}
+        </p>
+        {% if invoice.is_paid %}
+          <p>{% trans "Payment date" %}: {{ invoice.payment.date_paid }}</p>
+        {% endif %}
+      </div>
+      <div class="section">
+        <p class="section-heading">{% trans "Bill to" %}</p>
+        <p>{% trans "Dimagi, Inc." %}</p>
+        <p>{% trans "245 Main Street, 2nd Floor" %}</p>
+        <p>{% trans "Cambridge, MA 02142, USA" %}</p>
+        <p>+1 617.649.2214</p>
+      </div>
+      <div class="section">
+        <p>{% trans "Opportunity" %}: {{ request.opportunity.name }}</p>
+        <p>{% trans "Invoice type" %}: {{ invoice.invoice_type.label }}</p>
+        <p>{% trans "Opportunity ID" %}: {{ request.opportunity.opportunity_id }}</p>
       </div>
       <div class="table-container">
-        <table class="full-width-table">
-          <tr>
-            <td>{% trans "Invoice Number" %}</td>
-            <td>{{ invoice.invoice_number }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Amount" %}</td>
-            <td>{{ invoice.amount|default:"" }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Amount (USD)" %}</td>
-            <td>{{ invoice.amount_usd|default:"" }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Rate" %}</td>
-            <td>
-              {% if invoice.exchange_rate %}{{ invoice.exchange_rate.rate }}{% endif %}
-            </td>
-          </tr>
-          <tr>
-            <td>{% trans "Date" %}</td>
-            <td>{{ invoice.date|default:"" }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Invoice Status" %}</td>
-            <td>{{ invoice.get_status_display }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Paid" %}</td>
-            <td>
-              {% if invoice.is_paid %}
-                {% trans "Paid" %}
-              {% else %}
-                {% trans "Pending" %}
-              {% endif %}
-            </td>
-          </tr>
-          {% if invoice.is_paid %}
+        <table class="service-table">
+          <thead>
             <tr>
-              <td>{% trans "Payment Date" %}</td>
-              <td>{{ invoice.payment.date_paid }}</td>
+              <th>{% trans "Description of services" %}</th>
+              <th>{% blocktrans with currency=request.opportunity.currency_code %}Amount ({{ currency }}){% endblocktrans %}</th>
             </tr>
-          {% endif %}
-          <tr>
-            <td>{% trans "Invoice Type" %}</td>
-            <td>{{ invoice.invoice_type.label }}</td>
-          </tr>
+          </thead>
+          <tbody>
+            {% for line in service_summary_lines %}
+              <tr>
+                <td>{{ line.label }}</td>
+                <td>{{ line.amount_local|floatformat:2|intcomma }}</td>
+              </tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td>{% trans "Total due" %}</td>
+              <td>{{ request.opportunity.currency_code }} {{ invoice.amount|default:0|floatformat:2|intcomma }}</td>
+            </tr>
+            <tr>
+              <td>
+                {% blocktrans with rate=invoice.exchange_rate.rate|floatformat:2 %}USD equivalent (rate {{ rate }}){% endblocktrans %}
+              </td>
+              <td>
+                <strong>USD {{ invoice.amount_usd|default:0|floatformat:2|intcomma }}</strong>
+              </td>
+            </tr>
+          </tbody>
         </table>
       </div>
+      <div class="notes">
+        <p>{% trans "If your banking details have changed, please notify us before this invoice is processed." %}</p>
+      </div>
+      {% if invoice.approval_event %}
+        <div class="authorization">
+          <p class="section-heading">{% trans "Authorization" %}</p>
+          <p>
+            {% blocktrans with name=invoice.approved_by timestamp=invoice.approval_event.pgh_created_at %}
+              Authorized by {{ name }} on {{ timestamp }}, confirming this invoice's information is current.
+            {% endblocktrans %}
+          </p>
+        </div>
+      {% endif %}
     </div>
   </body>
 </html>

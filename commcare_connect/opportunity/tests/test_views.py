@@ -6,6 +6,7 @@ from unittest import mock
 from urllib.parse import urlencode
 from uuid import uuid4
 
+import pghistory
 import pytest
 from django.contrib.messages import get_messages
 from django.core.files.base import ContentFile
@@ -1461,6 +1462,64 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
         assert response.status_code == 404
         assert "No PaymentInvoice matches the given query." in str(response.content)
+
+    def test_context_includes_service_summary_lines(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        summary_lines = response.context["service_summary_lines"]
+        assert len(summary_lines) == 1
+        assert summary_lines[0].amount_local == invoice.amount
+
+    def test_context_includes_service_summary_lines_for_custom_invoice(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+        custom_invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            service_delivery=False,
+            amount=200.00,
+            invoice_number="CUSTOM-001",
+            date=date(2025, 11, 1),
+        )
+
+        response = self._send_request(client, user, opportunity, custom_invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        summary_lines = response.context["service_summary_lines"]
+        assert len(summary_lines) == 1
+        assert summary_lines[0].amount_local == custom_invoice.amount
+
+    def test_context_invoice_exposes_approval_once_approved(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        with pghistory.context(username=user.username, user_email=user.email):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        context_invoice = response.context["invoice"]
+        assert context_invoice.approval_event.pgh_context.metadata["username"] == user.username
+        assert context_invoice.approved_by == user.name
+
+    def test_context_invoice_has_no_approval_when_not_yet_approved(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        context_invoice = response.context["invoice"]
+        assert context_invoice.approval_event is None
+        assert context_invoice.approved_by is None
 
 
 class TestAddPaymentUnitView:
