@@ -12,10 +12,17 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-  <p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">{{ request.org.name }}</p>
-  <div class="flex flex-col max-w-screen-lg mx-auto gap-2"
-       x-cloak
-       x-data="orgTabs()">
+  <div class="flex items-center gap-3 my-5">
+    <h1 class="text-2xl font-medium text-brand-deep-purple">{{ request.org.name }}</h1>
+    <span class="badge badge-md primary-light">
+      {% blocktrans count counter=member_count %}
+        {{ counter }} Member
+      {% plural %}
+        {{ counter }} Members
+      {% endblocktrans %}
+    </span>
+  </div>
+  <div class="w-full flex flex-col gap-4" x-cloak x-data="orgTabs()">
     <!-- Tabs -->
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <ul class="tabs">
@@ -33,22 +40,28 @@
       </ul>
       <!-- Options -->
       <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
-        <button class="button button-md bg-red-600 hover:bg-red-700 text-white"
+        <span x-show="selected.length > 0" class="hint">
+          <span x-text="selected.length"></span> {% trans 'selected' %}
+        </span>
+        <button class="button button-md negative-outline"
                 :disabled="selected.length === 0"
                 @click="showConfirmRemoveMembershipModal = true">
           <i class="fa-solid fa-trash"></i>
           {% trans 'Remove Member(s)' %}
         </button>
-        <button class="button button-md outline-style"
-                @click="showAddMemberModal = true">{% trans 'Add Members' %}</button>
+        <button class="button button-md primary-dark"
+                @click="showAddMemberModal = true">
+          <i class="fa-solid fa-plus"></i>
+          {% trans 'Add Members' %}
+        </button>
       </div>
     </div>
     <!-- Tab Content Containers -->
     <div class="w-full">
       <!-- Details Content (Already rendered) -->
       <div x-show="selectedTab === 'details'" class="w-full mt-6">
-        <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">{% trans 'Workspace' %}</h2>
-        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-10">
+        <h2 class="card_title mb-4">{% trans 'Workspace' %}</h2>
+        <div class="card_bg mb-10">
           <form method="post" class="bg-white">
             {% csrf_token %}
             {% crispy form %}
