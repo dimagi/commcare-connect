@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from allauth.socialaccount.models import SocialAccount
+from crispy_forms.utils import render_crispy_form
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
 from django.utils.timezone import now
@@ -934,10 +935,49 @@ class TestAutomatedPaymentInvoiceForm:
             invoice_type="service_delivery",
             read_only=True,
             line_items_table=mock_table,
+            late_delta_units=3,
             is_opportunity_pm=False,
         )
 
         assert form.line_items_table == mock_table
+        assert form.fields["late_delta_units"].initial == 3
+        # Derived for display, so nothing posted for it can reach cleaned_data or raise an error.
+        assert form.fields["late_delta_units"].disabled is True
+
+    @pytest.mark.parametrize(
+        "read_only, late_delta_units, visibility",
+        [
+            pytest.param(True, 3, "visible", id="saved-with-late-deltas"),
+            pytest.param(True, 0, "absent", id="saved-without-late-deltas"),
+            # The create form has no count until the fetch returns, so it always renders the field
+            # and lets Alpine decide whether to reveal it.
+            pytest.param(False, 0, "gated", id="create-form"),
+        ],
+    )
+    def test_late_delta_units_field_shows_only_when_there_are_late_deltas(
+        self, valid_opportunity, read_only, late_delta_units, visibility
+    ):
+        kwargs = {}
+        if read_only:
+            kwargs["instance"] = PaymentInvoiceFactory(
+                opportunity=valid_opportunity,
+                service_delivery=True,
+                start_date=datetime.date(2025, 10, 1),
+                end_date=datetime.date(2025, 10, 31),
+            )
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            read_only=read_only,
+            late_delta_units=late_delta_units,
+            is_opportunity_pm=False,
+            **kwargs,
+        )
+
+        html = render_crispy_form(form)
+        assert ("id_late_delta_units" in html) is (visibility != "absent")
+        assert ('x-show="lateDeltaUnits &gt; 0"' in html) is (visibility == "gated")
 
 
 @pytest.mark.django_db
