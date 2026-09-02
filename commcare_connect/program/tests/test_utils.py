@@ -9,11 +9,11 @@ from commcare_connect.program.utils import (
     is_opportunity_pm,
     opportunity_access_level_from_request,
     opportunity_by_id,
+    org_access_for_program,
     org_access_level_from_request,
     org_opportunity_access,
-    org_program_access,
     program_access_level_from_request,
-    user_org_access,
+    user_access_for_org,
 )
 from commcare_connect.users.tests.factories import OrganizationFactory
 from commcare_connect.utils.test_utils import grant_all_org_access, make_membership
@@ -50,31 +50,31 @@ class TestUserOrgAccess:
         ids=["admin", "member", "viewer"],
     )
     def test_role_maps_to_level(self, role, expected, organization, user):
-        assert user_org_access(make_membership(organization, user, role)) is expected
+        assert user_access_for_org(make_membership(organization, user, role)) is expected
 
     def test_no_membership_has_no_level(self):
-        assert user_org_access(None) is AccessLevel.NONE
+        assert user_access_for_org(None) is AccessLevel.NONE
 
 
 class TestOrgProgramAccess:
     def test_program_org_manages(self, program):
-        assert org_program_access(program.organization, program) is AccessLevel.MANAGE
+        assert org_access_for_program(program.organization, program) is AccessLevel.MANAGE
 
     def test_funder_manages(self, program, funder_org):
         program.funder = funder_org
         program.save()
-        assert org_program_access(funder_org, program) is AccessLevel.MANAGE
+        assert org_access_for_program(funder_org, program) is AccessLevel.MANAGE
 
     def test_watcher_only_views(self, program, watcher_org):
         program.watchers.add(watcher_org)
-        assert org_program_access(watcher_org, program) is AccessLevel.VIEW
+        assert org_access_for_program(watcher_org, program) is AccessLevel.VIEW
 
     def test_unrelated_org_has_nothing(self, program, organization):
-        assert org_program_access(organization, program) is AccessLevel.NONE
+        assert org_access_for_program(organization, program) is AccessLevel.NONE
 
     @pytest.mark.parametrize("org,program_", [(None, True), (True, None)], ids=["no_org", "no_program"])
     def test_missing_side_has_nothing(self, org, program_, program, organization):
-        assert org_program_access(organization if org else None, program if program_ else None) is AccessLevel.NONE
+        assert org_access_for_program(organization if org else None, program if program_ else None) is AccessLevel.NONE
 
 
 def make_request(user, org=None, membership=None):
