@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Check the deployment checkbox is ticked
         # Dependabot opens PRs without the template, so it can't tick the box.
-        if: github.actor != 'dependabot[bot]'
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
