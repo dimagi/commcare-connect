@@ -778,6 +778,28 @@ class PaymentInvoice(models.Model):
     def get_status_display(self):
         return InvoiceStatus.get_label(self.status)
 
+    @cached_property
+    def approval_event(self):
+        return (
+            self.status_events.filter(status=InvoiceStatus.READY_TO_PAY)
+            .select_related("pgh_context")
+            .order_by("-pgh_created_at", "-pgh_id")
+            .first()
+        )
+
+    @cached_property
+    def approved_by(self):
+        event = self.approval_event
+        if not event:
+            return None
+
+        email = event.pgh_context.metadata.get("user_email")
+        if not email:
+            return event.pgh_context.metadata.get("username", "")
+
+        user = User.objects.filter(email=email).first()
+        return user.name if user else email
+
 
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)

@@ -2,6 +2,7 @@ import datetime
 from datetime import date, timedelta
 from unittest import mock
 
+import pghistory
 import pytest
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
@@ -38,7 +39,7 @@ from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -112,6 +113,56 @@ class TestPaymentInvoice:
         # assert expected status value for the recent event for each record
         for invoice in created_invoices:
             assert invoice.status_events.last().status == InvoiceStatus.PENDING_PM_REVIEW
+
+    def test_approval_event_is_none_before_any_approval(self):
+        invoice = PaymentInvoiceFactory()
+
+        assert invoice.approval_event is None
+        assert invoice.approved_by is None
+
+    def test_approval_event_returns_the_latest_ready_to_pay_event(self):
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username="pm_first"):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        invoice.status = InvoiceStatus.REJECTED_BY_PM
+        invoice.save(update_fields=["status"])
+
+        with pghistory.context(username="pm_second"):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.approval_event.pgh_context.metadata["username"] == "pm_second"
+
+    def test_approved_by_resolves_the_users_name_from_the_audited_email(self):
+        user = UserFactory(name="Jane PM", email="jane@example.com")
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username=user.username, user_email=user.email):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.approved_by == "Jane PM"
+
+    def test_approved_by_falls_back_to_the_email_when_no_user_matches_it(self):
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username="pm_deleted", user_email="deleted@example.com"):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.approved_by == "deleted@example.com"
+
+    def test_approved_by_falls_back_to_the_username_when_no_email_was_audited(self):
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username="pm_no_email"):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.approved_by == "pm_no_email"
 
 
 @pytest.mark.django_db
