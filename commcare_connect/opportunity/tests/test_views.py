@@ -735,6 +735,31 @@ def test_opportunity_list_excludes_archived(organization):
 
 
 @pytest.mark.django_db
+def test_get_opportunity_list_data_counts_duplicate_approved_deliveries(organization):
+    today = now().date()
+    opportunity = OpportunityFactory(
+        organization=organization, end_date=today + timedelta(days=1), active=True, archived=False
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1)
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1)
+    # A CompletedWork with 2 approved (duplicate) visits should count as 2 deliveries, not 1.
+    CompletedWorkFactory(
+        opportunity_access=access,
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
+    )
+
+    queryset = OpportunityData(organization, True, {}).get_data()
+    opp = next(item for item in queryset if item.id == opportunity.id)
+
+    assert opp.total_deliveries == 4
+    assert opp.verified_deliveries == 2
+
+
+@pytest.mark.django_db
 def test_tiered_queryset_basic():
     users = [User.objects.create(username=f"user{i}") for i in range(5)]
     user_ids = [u.id for u in users]
