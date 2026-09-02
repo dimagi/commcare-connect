@@ -78,13 +78,13 @@
            class="w-full"
            hx-get="{% url 'organization:org_member_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
-           hx-trigger="loadMembers from:body"></div>
+           hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
       <div x-show="selectedTab === 'members'"
            id="pending_invites_container"
            class="w-full"
            hx-get="{% url 'organization:pending_invites_table' request.org.slug %}"
            hx-swap="innerHTML"
-           hx-trigger="loadMembers from:body"></div>
+           hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
     </div>
     {% include "components/organization_home_page/add_org_member_modal.html" %}
     {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
@@ -97,7 +97,9 @@
     Alpine.data('orgTabs', () => ({
       selectedTab: '{{ request.GET.active_tab|default:"details" }}',
       showAddMemberModal: false,
-      isHistoryAvailable: false,
+      // The `load` trigger on the containers has already fetched the tables when we
+      // land on the members tab, so a later switch back must not refetch them.
+      isHistoryAvailable: {{ members_tab_active|yesno:"true,false" }},
       isNewEntity: false,
       selected: [],
       selectAll: false,
