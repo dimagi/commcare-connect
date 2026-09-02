@@ -1,6 +1,6 @@
 {% load django_tables2 %}
 {% load i18n %}
-{% include "components/messages_oob.html" %}
+<div hx-swap-oob="beforeend:#messages">{% include "components/messages.html" %}</div>
 <div class="flex flex-col gap-2 mt-6">
   <div class="flex items-center gap-2">
     <h2 class="card_title">{% trans "Pending Invites" %}</h2>
