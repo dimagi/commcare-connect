@@ -52,6 +52,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.tables import header_with_tooltip, value_with_icon_tooltip
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
@@ -1678,6 +1679,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
         required=False,
     )
+    # Derived for display only, so `disabled` rather than `readonly`: Django then ignores whatever
+    # is posted, and a stale figure can never add a field error that blocks the invoice.
+    late_delta_units = forms.IntegerField(
+        required=False,
+        disabled=True,
+        widget=forms.NumberInput(),
+    )
     description = forms.CharField(
         label="",
         widget=forms.Textarea(attrs={"rows": 3}),
@@ -1713,6 +1721,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
         self.line_items_table = kwargs.pop("line_items_table", None)
+        self.late_delta_units = kwargs.pop("late_delta_units", 0)
         self.status = kwargs.pop("status", InvoiceStatus.PENDING_NM_REVIEW)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
@@ -1740,14 +1749,35 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             self.fields["status"].initial = self.instance.get_status_display()
 
         if self.is_service_delivery:
-            self.fields["amount"].label = _("Amount ({currency_code})").format(
+            self.fields["amount"].label = gettext("Amount ({currency_code})").format(
                 currency_code=self.opportunity.currency_code or "Local Currency"
             )
-            self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
+            self.fields["amount"].help_text = gettext("Local currency is determined by the opportunity.")
+
+            self.fields["late_delta_units"].label = header_with_tooltip(
+                format_html(
+                    '{} <i class="fa-solid fa-circle-info text-gray-400"></i>', gettext("Additional Deliveries")
+                ),
+                gettext(
+                    "Additional deliveries for previously billed work. These were delivered or approved "
+                    "after the previous invoice was issued and are included on this invoice."
+                ),
+            )
+            self.fields["late_delta_units"].initial = self.late_delta_units
+
+            if (
+                self.read_only
+                and self.instance.pk
+                and self.instance.exchange_rate_id
+                and self.instance.amount_usd is not None
+            ):
+                self.fields["amount_usd"].label = value_with_icon_tooltip(
+                    self.fields["amount_usd"].label, self._amount_usd_tooltip_html(), theme="dark"
+                )
 
             self.fields["description"].widget.attrs.update(
                 {
-                    "placeholder": _("Describe service delivery details, references, or notes..."),
+                    "placeholder": gettext("Describe service delivery details, references, or notes..."),
                 }
             )
 
@@ -1769,13 +1799,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 }
             )
             self.fields["description"].required = True
-            self.fields["description"].label = _("Justification")
+            self.fields["description"].label = gettext("Justification")
             self.fields["description"].widget.attrs.update(
                 {
-                    "placeholder": _("Provide a justification for this expense..."),
+                    "placeholder": gettext("Provide a justification for this expense..."),
                 }
             )
             self.fields["date_of_expense"].required = True
+
+    def _amount_usd_tooltip_html(self):
+        return render_to_string("opportunity/partials/amount_usd_tooltip.html")
 
     def get_form_layout(self):
         if self.is_service_delivery:
@@ -1786,7 +1819,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", _("Submit"), css_class="button button-md primary-dark"),
+                    Submit("submit", gettext("Submit"), css_class="button button-md primary-dark"),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -1828,6 +1861,16 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         ]
 
+        if not self.read_only:
+            third_row.append(
+                Div(
+                    Field("late_delta_units", **{"x-model": "lateDeltaUnits"}),
+                    **{"x-show": "lateDeltaUnits > 0", "x-cloak": ""},
+                )
+            )
+        elif self.late_delta_units:
+            third_row.append(Field("late_delta_units"))
+
         return [
             Div(
                 Div(*first_row, css_class="grid grid-cols-3 gap-6"),
@@ -1837,7 +1880,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
             self.line_items,
             Fieldset(
-                _("Service Delivery Notes"),
+                gettext("Service Delivery Notes"),
                 Field("description", **{"x-ref": "description"}),
             ),
         ]
@@ -1853,7 +1896,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         second_row = [
             Field(
                 "amount",
-                label=_("Amount"),
+                label=gettext("Amount"),
                 **{
                     "x-ref": "amount",
                     "x-model": "amount",

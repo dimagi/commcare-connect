@@ -2,6 +2,7 @@
 {% load static %}
 {% load i18n %}
 {% load socialaccount %}
+{% load socialaccount_extras %}
 {% block head_title %}
   {% translate "Sign In" %}
 {% endblock %}
@@ -64,22 +65,25 @@
         </button>
       </div>
     </form>
-    <span class="text-sm text-gray-400 text-center">or</span>
-    <div class="space-y-2 place-items-center">
-      <form method="post"
-            action="{% provider_login_url "commcarehq" process="login" %}">
-        <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer"
-                type="submit">
-          {% csrf_token %}
-          <div class="w-6 h-6">
-            <img src="{% static 'images/commcare-logo-color.svg' %}"
-                 alt="Compact Logo"
-                 class="w-full">
-          </div>
-          <span class="text-sm">Login with CommCareHQ</span>
-        </button>
-      </form>
-    </div>
+    {% configured_provider "commcarehq" as commcarehq %}
+    {% if commcarehq %}
+      <span class="text-sm text-gray-400 text-center">or</span>
+      <div class="space-y-2 place-items-center">
+        <form method="post"
+              action="{% provider_login_url commcarehq process="login" %}">
+          <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer"
+                  type="submit">
+            {% csrf_token %}
+            <div class="w-6 h-6">
+              <img src="{% static 'images/commcare-logo-color.svg' %}"
+                   alt="Compact Logo"
+                   class="w-full">
+            </div>
+            <span class="text-sm">Login with CommCareHQ</span>
+          </button>
+        </form>
+      </div>
+    {% endif %}
     <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
       Don't have an account?
       <a href="{{ signup_url }}" class="text-brand-indigo font-medium">Signup</a>

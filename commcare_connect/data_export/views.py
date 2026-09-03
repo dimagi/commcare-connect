@@ -73,13 +73,13 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program
 from commcare_connect.program.utils import opportunity_managing_org_ids
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, LLO_ENTITY_INTERNAL_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
 BULK_MAX_ITEMS = 100  # JSON bulk-update: per-item FK validation + possible HQ sync/notification
@@ -720,15 +720,17 @@ class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
 
 
 class LLOEntityDataView(BaseDataExportListViewV2):
+    """Exports organization profiles. Kept under the `llo_entity` name for existing consumers."""
+
     serializer_class = LLOEntityDataSerializer
 
     def check_permissions(self, request):
         super().check_permissions(request)
-        if not request.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+        if not request.user.has_perm(LLO_ENTITY_INTERNAL_ACCESS):
             raise NotFound
 
     def get_queryset(self, *args, **kwargs):
-        return LLOEntity.objects.all()
+        return Organization.objects.prefetch_related("countries", "primary_sectors", "members")
 
 
 class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):

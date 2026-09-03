@@ -54,20 +54,10 @@ class IsProgramManagerOrgAdmin(BasePermission):
         return user_is_org_pm(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
-def is_org_pm_or_all_access(request, *args, **kwargs):
-    """Same rule as user_is_org_pm."""
-    if request.user.has_perm(ALL_ORG_ACCESS):
-        return True
-    membership = request.org_membership
-    return org_is_program_manager(request.org) and bool(membership and membership.is_admin)
-
-
 def opp_view_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.VIEW)(view_func)
 
 
-# TODO: These 3 are widely used in the opportunity app, and we are renaming it to opportunity access decorators
-# in this commit for easier review. The next commit points at them at opportunity_access_level_from_request.
 def opp_standard_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.STANDARD)(view_func)
 
@@ -77,7 +67,9 @@ def opp_manage_access_required(view_func):
 
 
 def org_pm_required(view_func, *args, **kwargs):
-    return _get_decorated_function(view_func, is_org_pm_or_all_access)
+    return _get_decorated_function(
+        view_func, lambda request, *args, **kwargs: user_is_org_pm(request.user, request.org)
+    )
 
 
 def _program_access_level_gate(minimum, program_id_kwarg="pk"):
@@ -97,10 +89,12 @@ def _program_access_level_gate(minimum, program_id_kwarg="pk"):
 def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
     def decorator(view_func):
         def permission_test(request, *args, **kwargs):
-            opp_id = kwargs.get(opp_id_kwarg)
-            opportunity = opportunity_by_id(opp_id) if opp_id else None
-            if opportunity:
-                request.opportunity = opportunity
+            opportunity = getattr(request, "opportunity", None)
+            if opportunity is None:
+                opp_id = kwargs.get(opp_id_kwarg)
+                opportunity = opportunity_by_id(opp_id) if opp_id else None
+                if opportunity:
+                    request.opportunity = opportunity
             return has_required_access(request, opportunity)
 
         return _get_decorated_function(view_func, permission_test)
@@ -168,7 +162,10 @@ def opportunity_required(view_func):
         if not org_slug:
             raise Http404("Organization slug not provided.")
 
-        request.opportunity = get_object_by_uuid_or_int(Opportunity.objects.all(), opp_id, uuid_field="opportunity_id")
+        if getattr(request, "opportunity", None) is None:
+            request.opportunity = get_object_by_uuid_or_int(
+                Opportunity.objects.all(), opp_id, uuid_field="opportunity_id"
+            )
         return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
 
     _inner._has_opportunity_required_decorator = True

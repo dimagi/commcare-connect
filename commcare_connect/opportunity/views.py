@@ -194,6 +194,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
     rollback_invoice_line_items,
+    total_late_delta_units,
 )
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
@@ -269,11 +270,16 @@ class OpportunityObjectMixin:
         return Opportunity.objects.all()
 
     def get_opportunity(self):
-        if not hasattr(self, "_opportunity"):
-            self._opportunity = get_object_by_uuid_or_int(
-                self.get_opportunity_queryset(), str(self.kwargs.get("opp_id")), uuid_field="opportunity_id"
-            )
-        return self._opportunity
+        if cached := getattr(self.request, "opportunity", None):
+            return cached
+
+        opportunity = get_object_by_uuid_or_int(
+            self.get_opportunity_queryset(),
+            str(self.kwargs.get("opp_id")),
+            uuid_field="opportunity_id",
+        )
+        self.request.opportunity = opportunity
+        return opportunity
 
     def get_object(self, queryset=None):
         return self.get_opportunity()
@@ -847,6 +853,9 @@ def render_payment_import_progress(request, org_slug, task_id):
     its outcome shows up as a standard banner."""
 
     def ownership_check(request, task_meta):
+        args = task_meta.get("args") or []
+        if not args:
+            raise Http404("Import not found.")
         opportunity = get_opportunity_or_404(task_meta.get("args")[0])
         if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
             raise Http404()
@@ -1893,12 +1902,14 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
         invoice = self.object
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
+        form = self.get_form()
         context.update(
             {
                 "opportunity": opportunity,
-                "form": self.get_form(),
+                "form": form,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -1932,8 +1943,10 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
         )
 
         line_items_table = None
+        late_delta_units = 0
         if invoice.service_delivery:
             line_items = get_invoice_line_items(invoice)
+            late_delta_units = total_late_delta_units(line_items)
             show_org = any(item.org_pay.local for item in line_items)
             line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
@@ -1941,6 +1954,7 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
             opportunity=opportunity,
             invoice_type=invoice_type,
             line_items_table=line_items_table,
+            late_delta_units=late_delta_units,
             read_only=True,
             is_opportunity_pm=self.request.is_opportunity_pm,
         )
@@ -2014,14 +2028,26 @@ def invoice_update_status(request, org_slug, opp_id):
     if error:
         return HttpResponseBadRequest(error)
 
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW and request.POST.get("attestation") != "true":
+        return HttpResponseBadRequest(_("You must certify the invoice before submitting."))
+
     invoice.status = new_status
+    update_fields = ["status", "description"] if invoice.service_delivery else ["status"]
     if invoice.service_delivery:
         invoice.description = description
-        invoice.save(update_fields=["status", "description"])
-        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            rollback_invoice_line_items(invoice)
+
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW:
+        with pghistory.context(
+            username=request.user.username,
+            user_email=request.user.email,
+            attestation_certified=True,
+        ):
+            invoice.save(update_fields=update_fields)
     else:
-        invoice.save(update_fields=["status"])
+        invoice.save(update_fields=update_fields)
+
+    if invoice.service_delivery and new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+        rollback_invoice_line_items(invoice)
 
     messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
@@ -3401,7 +3427,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "icon": "fa-clipboard-list",
             "name": _("Services Delivered"),
             "status": _("Total"),
-            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far excluding duplicates")),
+            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far")),
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
@@ -3611,6 +3637,7 @@ def invoice_items(request, *args, **kwargs):
             "line_items_table_html": html,
             "total_amount": total.local,
             "total_usd_amount": total.usd,
+            "late_delta_units": total_late_delta_units(line_items),
         }
     )
 

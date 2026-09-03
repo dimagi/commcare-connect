@@ -8,17 +8,27 @@ from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 
 class AccessLevel(IntEnum):
+    """How much a request may do to a resource (program/opportunity/org).
+
+    NONE: no access.
+    VIEW: read-only (e.g. a program watcher).
+    STANDARD: normal member access (e.g. a delivery org's day-to-day work on its own opportunity).
+    MANAGE: full control, including changing the resource itself.
+    """
+
     NONE = 0
     VIEW = 1
     STANDARD = 2
     MANAGE = 3
 
     @staticmethod
-    def effective(org_level: "AccessLevel", user_level: "AccessLevel") -> "AccessLevel":
-        return min(org_level, user_level)
+    def effective(level_a: "AccessLevel", level_b: "AccessLevel") -> "AccessLevel":
+        """Return the weaker of two access levels."""
+        return min(level_a, level_b)
 
 
-def user_org_access(membership) -> AccessLevel:
+def user_access_for_org(membership) -> AccessLevel:
+    """What the user's role within the org allows: admin -> MANAGE, member -> STANDARD, viewer -> VIEW."""
     if not membership:
         return AccessLevel.NONE
     if membership.is_admin:
@@ -30,7 +40,8 @@ def user_org_access(membership) -> AccessLevel:
     return AccessLevel.NONE
 
 
-def org_program_access(org, program) -> AccessLevel:
+def org_access_for_program(org, program) -> AccessLevel:
+    """What the org's relationship to the program allows: owner/funder -> MANAGE, watcher -> VIEW."""
     if not org or not program:
         return AccessLevel.NONE
     if org.id in (program.organization_id, program.funder_id):
@@ -40,24 +51,26 @@ def org_program_access(org, program) -> AccessLevel:
     return AccessLevel.NONE
 
 
-def program_access_level_from_request(request, program) -> AccessLevel:
+def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:
+    if not resource:
+        return AccessLevel.NONE
+
     base_access = _base_access_level(request)
     if base_access is not None:
         return base_access
 
-    org_level = org_program_access(request.org, program)
+    org_level = org_access_fn(request.org, resource)
+    user_level = user_access_for_org(request.org_membership)
 
-    return AccessLevel.effective(org_level, user_org_access(request.org_membership))
+    return AccessLevel.effective(org_level, user_level)
+
+
+def program_access_level_from_request(request, program) -> AccessLevel:
+    return _resource_access_level(request, program, org_access_for_program)
 
 
 def opportunity_access_level_from_request(request, opportunity) -> AccessLevel:
-    base_access = _base_access_level(request)
-    if base_access is not None:
-        return base_access
-
-    org_level = org_opportunity_access(request.org, opportunity)
-
-    return AccessLevel.effective(org_level, user_org_access(request.org_membership))
+    return _resource_access_level(request, opportunity, org_opportunity_access)
 
 
 def org_opportunity_access(org, opportunity) -> AccessLevel:
@@ -66,7 +79,7 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
         return AccessLevel.NONE
     if org.id in (opportunity.organization_id, opportunity.supervising_organization_id):
         return AccessLevel.MANAGE
-    return org_program_access(org, opportunity.program)
+    return org_access_for_program(org, opportunity.program)
 
 
 def opportunity_managing_org_ids(opportunity) -> set:
@@ -96,7 +109,7 @@ def org_access_level_from_request(request) -> AccessLevel:
     base_access = _base_access_level(request)
     if base_access is not None:
         return base_access
-    return user_org_access(request.org_membership)
+    return user_access_for_org(request.org_membership)
 
 
 def _base_access_level(request) -> AccessLevel | None:

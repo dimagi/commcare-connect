@@ -1,3 +1,4 @@
+import json
 import pathlib
 
 import pytest
@@ -53,3 +54,13 @@ class TestContactPage:
         content = pathlib.Path(path).read_text()
         assert "503070" in content  # portalId
         assert "ca08edba-5d8f-4386-b5e9-d6b026c14599" in content  # formId
+
+
+class TestBlogManifest:
+    def test_returns_hardcoded_static_file(self, client):
+        resp = client.get(reverse("prelogin:blog-manifest"))
+        assert resp.status_code == 200
+        assert resp["Access-Control-Allow-Origin"] == "https://dimagi.com"
+        data = json.loads(resp.content)
+        assert data["count"] == len(data["posts"])
+        assert data["posts"][0]["slug"]
