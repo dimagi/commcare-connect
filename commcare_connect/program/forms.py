@@ -15,16 +15,16 @@ DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
 
 class ProgramForm(forms.ModelForm):
     currency = forms.ModelChoiceField(
-        label="Currency",
+        label=_("Currency"),
         queryset=Currency.objects.order_by("code"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
-        empty_label="Select a currency",
+        empty_label=_("Select a currency"),
     )
     country = forms.ModelChoiceField(
-        label="Country",
+        label=_("Country"),
         queryset=Country.objects.order_by("name"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
-        empty_label="Select a country",
+        empty_label=_("Select a country"),
     )
     funder = forms.ModelChoiceField(
         label=_("Funder"),
@@ -117,11 +117,11 @@ class ProgramForm(forms.ModelForm):
             Row(
                 Button(
                     "close",
-                    "Close",
+                    _("Close"),
                     css_class="button button-md outline-style",
                     **{"@click": "showProgramAddModal = showProgramEditModal = false"},
                 ),
-                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                Submit("submit", _("Submit"), css_class="button button-md primary-dark"),
                 css_class="flex gap-3 justify-end mt-4",
             )
         )
@@ -138,7 +138,7 @@ class ProgramForm(forms.ModelForm):
         end_date = cleaned_data.get("end_date")
 
         if start_date and end_date and end_date <= start_date:
-            self.add_error("end_date", "End date must be after the start date.")
+            self.add_error("end_date", _("End date must be after the start date."))
 
     def _validate_funder_is_not_watcher(self, cleaned_data):
         funder = cleaned_data.get("funder")
