@@ -22,13 +22,11 @@ TEST_RUNNER = "django.test.runner.DiscoverRunner"
 
 # CACHES
 # ------------------------------------------------------------------------------
-# Give tests their own Redis database. Sharing one with a local dev server leaked waffle
-# switch state both ways. A switch toggled in the dev admin was cached and then read back by
-# the test suite, failing tests that expect it off. In the other direction, a test reading a
-# switch that does not exist in the test database makes waffle create it as inactive
-# (WAFFLE_CREATE_MISSING_SWITCHES) and cache False; the flush that would invalidate that is
-# scheduled via transaction.on_commit, which never runs because the test transaction is
-# rolled back, so the dev server goes on reading the orphaned False.
+# Give tests their own Redis database. Sharing one with a local dev server leaks cached state
+# both ways.
+# The values a test writes outlives it because the invalidation that would clear
+# the cache is typically scheduled via transaction.on_commit, which never runs when the test
+# transaction is rolled back.
 #
 # Only the database index changes. The django-redis backend is kept because code under test
 # calls cache.lock(), which is a django-redis extension that LocMemCache does not provide.
