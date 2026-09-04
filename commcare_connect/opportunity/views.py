@@ -3194,9 +3194,13 @@ def worker_flag_counts(request, org_slug, opp_id):
     counts = dict(Counter(all_flags))
 
     completed_work_ids = visits.values_list("completed_work_id", flat=True)
-    duplicate_count = CompletedWork.objects.filter(id__in=completed_work_ids, saved_completed_count__gt=1).count()
-    if duplicate_count:
-        counts["Duplicate"] = duplicate_count
+
+    # Do not show duplicates for opportunities with automatic visit verification,
+    # as the duplicate flag is no longer used.
+    if not request.opportunity.automatic_visit_verification:
+        duplicate_count = CompletedWork.objects.filter(id__in=completed_work_ids, saved_completed_count__gt=1).count()
+        if duplicate_count:
+            counts["Duplicate"] = duplicate_count
 
     return render(
         request,
