@@ -48,23 +48,17 @@ class PendingInviteTable(tables.Table):
     email = tables.Column()
     role = tables.Column()
     date_modified = columns.DateColumn(verbose_name="Invited on")
-    revoke = columns.TemplateColumn(
+    expiry_date = columns.DateColumn(verbose_name="Expires on", orderable=False)
+    actions = columns.TemplateColumn(
         verbose_name="",
         orderable=False,
-        template_code="""
-            {% load i18n %}
-            <button type="button" class="button button-sm outline-style text-red-600"
-                hx-post="{% url 'organization:revoke_invite' record.organization.slug record.pk %}"
-                hx-target="#pending_invites_container" hx-swap="innerHTML">
-                {% translate "Revoke" %}
-            </button>
-        """,
+        template_name="organization/pending_invite_actions.html",
     )
 
     class Meta:
         model = OrganizationInvite
         fields = ("email", "role", "date_modified")
-        sequence = ("index", "email", "role", "date_modified", "revoke")
+        sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
 
     def render_role(self, record):
         return format_html("<div class=' underline underline-offset-4'>{}</div>", record.get_role_display())

@@ -103,6 +103,7 @@ class UserOrganizationMembership(models.Model):
 
 class OrganizationInvite(BaseModel):
     EXPIRY_DAYS = 7
+    REINVITE_COOLDOWN = timedelta(minutes=5)
 
     class Status(models.TextChoices):
         INVITED = "invited", _("Invited")
@@ -123,14 +124,34 @@ class OrganizationInvite(BaseModel):
         return f"Invite for {self.email} to {self.organization}"
 
     @property
+    def expiry_date(self):
+        """Re-inviting bumps date_modified, which restarts the window."""
+        return self.date_modified + timedelta(days=self.EXPIRY_DAYS)
+
+    @property
+    def is_in_reinvite_cooldown(self):
+        """Throttles reinvites so the invite mail cannot be used to hammer an address.
+
+        Only a pending invite can be reinvited — reinviting a revoked or accepted address
+        is a fresh decision rather than a retry, so the window does not apply to it.
+        """
+        return self.status == self.Status.INVITED and timezone.now() < self.date_modified + self.REINVITE_COOLDOWN
+
+    @property
     def is_expired(self):
-        return self.status == self.Status.INVITED and self.date_modified < timezone.now() - timedelta(
-            days=self.EXPIRY_DAYS
-        )
+        return self.status == self.Status.INVITED and timezone.now() > self.expiry_date
 
     @classmethod
     def send_invite(cls, organization, email, role, invited_by):
-        """Creates a pending invite, or resets an existing one (revoked/accepted/lapsed) to pending."""
+        """Creates a pending invite, or refreshes any existing one for this address.
+
+        An existing invite is reset to pending whatever state it was in — revoked, accepted,
+        lapsed, or still pending, which is the reinvite case.
+        """
+        existing = cls.objects.filter(organization=organization, email=email).first()
+        if existing and existing.is_in_reinvite_cooldown:
+            return None
+
         invite, created = cls.objects.update_or_create(
             organization=organization,
             email=email,

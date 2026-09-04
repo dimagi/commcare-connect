@@ -1,9 +1,12 @@
+import re
 from datetime import timedelta
+from unittest.mock import patch
 from urllib.parse import unquote
 
 import pytest
 from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
+from django.template.defaultfilters import date as date_filter
 from django.urls import reverse
 from django.utils import timezone
 
@@ -319,6 +322,90 @@ class TestRevokeInviteView:
 
 
 @pytest.mark.django_db
+class TestReinviteView:
+    @staticmethod
+    def _url(org_slug, invite_id):
+        return reverse("organization:reinvite", args=(org_slug, invite_id))
+
+    @staticmethod
+    def _cooldown_of(minutes):
+        """Pinned so these tests cover the throttle logic, not whatever REINVITE_COOLDOWN is tuned to."""
+        return patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=minutes))
+
+    @staticmethod
+    def _past_cooldown(invite):
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - OrganizationInvite.REINVITE_COOLDOWN - timedelta(minutes=1)
+        )
+        invite.refresh_from_db()
+
+    def test_admin_reinvite_issues_a_new_token_and_expiry(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization, role="member")
+        self._past_cooldown(invite)
+        old_token, old_modified = invite.token, invite.date_modified
+        client.force_login(org_user_admin)
+
+        with patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 200
+        send_mock.assert_called_once_with(invite_id=invite.pk)
+        invite.refresh_from_db()
+        assert invite.token != old_token
+        assert invite.date_modified > old_modified
+        assert invite.role == "member"
+
+    def test_reinvite_is_refused_during_the_cooldown(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        old_token = invite.token
+        client.force_login(org_user_admin)
+
+        with self._cooldown_of(minutes=5), patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 200
+        send_mock.assert_not_called()
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+    @pytest.mark.parametrize("status", [OrganizationInvite.Status.ACCEPTED, OrganizationInvite.Status.REVOKED])
+    def test_only_pending_invites_can_be_reinvited(self, client, org_user_admin, organization, status):
+        invite = OrganizationInviteFactory(organization=organization, status=status)
+        self._past_cooldown(invite)
+        client.force_login(org_user_admin)
+
+        with patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 404
+        send_mock.assert_not_called()
+
+    def test_refused_reinvite_reports_the_cooldown_in_a_message(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="jo@example.com")
+        client.force_login(org_user_admin)
+
+        with self._cooldown_of(minutes=5), patch("commcare_connect.organization.views.send_org_invite"):
+            content = client.post(self._url(organization.slug, invite.pk)).content.decode()
+
+        assert 'hx-swap-oob="beforeend:#messages"' in content
+        assert "An invite was just sent to jo@example.com." in content
+
+    def test_member_cannot_reinvite(self, client, org_user_member, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        self._past_cooldown(invite)
+        old_token = invite.token
+        client.force_login(org_user_member)
+
+        with patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 404
+        send_mock.assert_not_called()
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+
+@pytest.mark.django_db
 class TestOrgMemberTableView:
     @staticmethod
     def _url(org_slug):
@@ -360,6 +447,33 @@ class TestPendingInvitesTableView:
         assert response.status_code == 200
         assert pending.email.encode() in response.content
         assert expired.email.encode() not in response.content
+
+    def test_table_shows_the_expiry_date(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        client.force_login(org_user_admin)
+
+        content = client.get(self._url(organization.slug)).content.decode()
+
+        assert "Expires on" in content
+        assert date_filter(invite.expiry_date, "SHORT_DATE_FORMAT") in content
+
+    @pytest.mark.parametrize("minutes_ago,disabled", [(1, True), (10, False)])
+    def test_reinvite_button_is_disabled_during_the_cooldown(
+        self, client, org_user_admin, organization, minutes_ago, disabled
+    ):
+        invite = OrganizationInviteFactory(organization=organization)
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - timedelta(minutes=minutes_ago)
+        )
+        client.force_login(org_user_admin)
+
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            content = client.get(self._url(organization.slug)).content.decode()
+
+        reinvite_url = reverse("organization:reinvite", args=(organization.slug, invite.pk))
+        button = re.search(r"<button[^>]*" + re.escape(reinvite_url) + r"[^>]*>", content)
+        assert button, "reinvite button was not rendered"
+        assert ("disabled" in button.group(0)) is disabled
 
     def test_member_cannot_access(self, client, org_user_member, organization):
         client.force_login(org_user_member)
