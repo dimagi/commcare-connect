@@ -309,6 +309,9 @@
                     if (option) params.set(option.filter_name, option.object_id);
                     return params.toString();
                 }
+                // Inaccessibility review renders no filter sidebar either, and never narrows the
+                // tiles: every work area shows, with the pending requests picked out by colour.
+                if (this.inaccessibleMode) return '';
                 return new URLSearchParams(new FormData(this.$refs.filterForm)).toString();
             },
 
