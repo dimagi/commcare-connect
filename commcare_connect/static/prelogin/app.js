@@ -19,6 +19,7 @@ const LEGACY_ROUTES = {
   '/join': '/frontline-network',
   '/product-updates': '/release-notes',
   '/programs': '/portfolio',
+  '/blog': '/insights', // the blog listing was merged into the Insights page
 };
 
 // Map a legacy path/slug to its current route. Exact aliases win; otherwise the
@@ -60,9 +61,11 @@ function collectRoutes() {
 // whole path (minus a trailing slash) is the base.
 function computeBase() {
   const p = location.pathname.replace(/\/index\.html$/, '/');
-  const candidates = ROUTES.filter((r) => r !== '/').sort(
-    (a, b) => b.length - a.length,
-  );
+  // Legacy paths (e.g. /blog) are full routes too, not deployment subpaths —
+  // include them so a direct load of one resolves to base "" and redirects.
+  const candidates = ROUTES.concat(Object.keys(LEGACY_ROUTES))
+    .filter((r) => r !== '/')
+    .sort((a, b) => b.length - a.length);
   for (const r of candidates) {
     if (p.length >= r.length && p.slice(p.length - r.length) === r) {
       return p.slice(0, p.length - r.length);
@@ -116,12 +119,35 @@ const ROUTE_META = {
     desc: 'Hundreds of frontline organizations already deliver services and get paid for verified work through Connect. See why they join and run programs on the network.',
   },
   '/insights': {
-    title: 'Insights | Connect by Dimagi',
-    desc: 'What’s working, what isn’t, and how the Connect model keeps shifting. Research and learnings from frontline service delivery.',
+    title: 'Connect Insights | Connect by Dimagi',
+    desc: 'Stories, results, conversations, and evidence from the organizations and Frontline Workers delivering verified services through Connect.',
   },
   '/release-notes': {
     title: 'Release notes | Connect by Dimagi',
     desc: 'Release notes for the Connect platform, published with each major update to the mobile app and web tools.',
+  },
+  '/blog/closing-the-post-discharge-gap-kmc': {
+    title:
+      'Closing the post-discharge gap with Connect Kangaroo Mother Care | Connect by Dimagi',
+    desc: 'Trained Frontline Workers carry Kangaroo Mother Care into the home, closing the dangerous gap that opens when families of small and vulnerable newborns leave the hospital.',
+  },
+  '/blog/usaid-div-child-health-nigeria': {
+    title:
+      'USAID Development Innovation Ventures and Dimagi partner on child health in northern Nigeria | Connect by Dimagi',
+    desc: 'A new grant will scale and rigorously evaluate Connect, delivering Vitamin A and oral rehydration solution to children where coverage is lowest.',
+  },
+  '/blog/givewell-child-health-nigeria': {
+    title:
+      'GiveWell awards Dimagi funding to scale child health delivery in Nigeria | Connect by Dimagi',
+    desc: 'GiveWell has awarded Dimagi more than $1 million to scale verified child health delivery across northern Nigeria, funding over 300,000 visits in 18 months.',
+  },
+  '/blog/connect-100000-service-deliveries': {
+    title: 'Connect reaches 100,000 service deliveries | Connect by Dimagi',
+    desc: 'Across seven countries, Frontline Workers delivered more than 100,000 verified services, a foundation for scaling to millions of visits a year.',
+  },
+  '/blog/connect-2023-year-in-review': {
+    title: 'Connect: a year in review | Connect by Dimagi',
+    desc: 'The first year of designing and testing Connect: 77,000 clients reached, $161,000 paid to Frontline Workers, and the learn, deliver, verify, pay model proven in the field.',
   },
   '/portfolio/child-health-campaign': {
     title: 'Child Health Campaigns | Connect by Dimagi',
@@ -219,11 +245,9 @@ function render(path, search) {
     .forEach((a) => {
       a.classList.toggle('active', a.dataset.route === path);
     });
-  // Insights deep-linking: ?program=… &activity=… preselect the filters. The
-  // search is threaded in (not read off location) so it works on file:// too,
-  // where the URL can't carry a query. Falls back to the live URL on direct hits.
-  if (currentRoute === '/insights') {
-    applyInsightFiltersFromQuery(
+  // Insights deep links: /insights?program= / ?activity= pre-apply the filter.
+  if (currentRoute === '/insights' && window.__applyInsightsDeepLink) {
+    window.__applyInsightsDeepLink(
       typeof search === 'string' ? search : location.search,
     );
   }
@@ -466,72 +490,9 @@ function setupNavToggle() {
 }
 window.addEventListener('DOMContentLoaded', setupNavToggle);
 
-// Insights, two-axis filter (Program Type × Frontline Activity)
-let activeProgram = 'all';
-let activeLDVP = 'all';
-
-// The URL is the FULL filter spec for the insights page: ?program=<chc|kmc|ecd>
-// and ?activity=<learn|deliver|verify|pay> (the LDVP axis). An axis with no (or
-// an unknown) param resets to "all", so a deep-link like ?program=chc never
-// inherits a stale filter left over from an earlier pill click. Called by
-// render() whenever /insights is shown.
-function applyInsightFiltersFromQuery(search) {
-  const params = new URLSearchParams(search || '');
-  [
-    { axis: 'program', value: params.get('program') || 'all' },
-    { axis: 'ldvp', value: params.get('activity') || 'all' },
-  ].forEach(({ axis, value }) => {
-    const group = document.querySelector(
-      '.filter-pills[data-filter-group="' + axis + '"]',
-    );
-    if (!group) return;
-    // Fall back to "all" if the requested value isn't a real pill.
-    const pill =
-      group.querySelector('.pill[data-filter-value="' + value + '"]') ||
-      group.querySelector('.pill[data-filter-value="all"]');
-    if (!pill) return;
-    const resolved = pill.getAttribute('data-filter-value');
-    group
-      .querySelectorAll('.pill')
-      .forEach((p) => p.classList.remove('active'));
-    pill.classList.add('active');
-    if (axis === 'program') activeProgram = resolved;
-    else activeLDVP = resolved;
-  });
-  applyInsightFilters();
-}
-
-function applyInsightFilters() {
-  document
-    .querySelectorAll('[data-page="/insights"] .insight-row')
-    .forEach((row) => {
-      const programs = (row.dataset.programs || '')
-        .split(/\s+/)
-        .filter(Boolean);
-      const ldvps = (row.dataset.ldvp || '').split(/\s+/).filter(Boolean);
-      const programMatch =
-        activeProgram === 'all' || programs.includes(activeProgram);
-      const ldvpMatch = activeLDVP === 'all' || ldvps.includes(activeLDVP);
-      row.classList.toggle('is-hidden', !(programMatch && ldvpMatch));
-    });
-}
-
-document.addEventListener('click', (e) => {
-  const pill = e.target.closest('.filter-pills .pill');
-  if (!pill) return;
-  const type = pill.dataset.filterType;
-  const value = pill.dataset.filterValue;
-  if (!type || !value) return;
-  // Insights page filters only
-  if (type !== 'program' && type !== 'ldvp') return;
-  if (type === 'program') activeProgram = value;
-  if (type === 'ldvp') activeLDVP = value;
-  pill.parentElement
-    .querySelectorAll('.pill')
-    .forEach((p) => p.classList.remove('active'));
-  pill.classList.add('active');
-  applyInsightFilters();
-});
+// (The legacy Insights pill-filter code lived here. The Insights page now
+// filters its evidence rows through the dropdown bar in insightsFilters(),
+// so the old pill handler + applyInsightFilters/*FromQuery were removed.)
 
 // Picker lists: click selects, auto-cycles every 5s
 document.addEventListener('click', (e) => {
@@ -1145,6 +1106,363 @@ document.addEventListener('click', (e) => {
   }
   function init() {
     document.querySelectorAll('[data-page="/support-kmc"]').forEach(setup);
+  }
+  if (document.readyState !== 'loading') init();
+  else document.addEventListener('DOMContentLoaded', init);
+})();
+
+// Insights page: ONE filter bar (Search, Type, Program, Activity) over all
+// content — blog/podcast cards and evidence data rows. Sections hide when they
+// have no visible items. /insights?program=…/?activity=… pre-apply the filter.
+(function insightsFilters() {
+  function init() {
+    const page = document.querySelector('[data-page="/insights"]');
+    if (!page) return;
+    const band = page.querySelector('.blog-filter-band');
+    if (!band) return;
+    const dds = Array.from(band.querySelectorAll('.blog-dd'));
+    const searchInput = band.querySelector('.blog-search-input');
+    const countWrap = band.querySelector('.blog-result-count');
+    const countEl = countWrap ? countWrap.firstElementChild : null;
+    const clearBtn = band.querySelector('.blog-clear');
+    const chipsWrap = band.querySelector('.active-chips');
+    const emptyEl = page.querySelector('.blog-empty');
+    const blogSection = page.querySelector('.blog-grid-section');
+    const evidenceSection = page.querySelector('.insights-evidence');
+
+    const cards = Array.from(page.querySelectorAll('.blog-card'));
+    const rows = Array.from(page.querySelectorAll('.insight-row'));
+    const items = cards.concat(rows);
+    if (!dds.length || !items.length) return;
+
+    // Date-sort the blog/podcast cards (newest first).
+    if (cards.length) {
+      const grid = cards[0].parentElement;
+      const dateOf = (el) => {
+        const t = el.querySelector('time[datetime]');
+        return t ? t.getAttribute('datetime') : '';
+      };
+      cards
+        .slice()
+        .sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+        .forEach((el) => grid.appendChild(el));
+    }
+
+    const isRow = (it) => it.classList.contains('insight-row');
+    const asList = (s) => (s || '').split(/\s+/).filter(Boolean);
+    // Per-item dimension values. Blog cards use data-type / data-program; the
+    // evidence rows are type "evidence" and carry data-programs / data-ldvp.
+    const DIMS = [
+      {
+        key: 'type',
+        get: (it) => (isRow(it) ? ['evidence'] : asList(it.dataset.type)),
+      },
+      {
+        key: 'program',
+        get: (it) => asList(it.dataset.program || it.dataset.programs),
+      },
+      {
+        key: 'activity',
+        get: (it) => asList(it.dataset.activity || it.dataset.ldvp),
+      },
+    ];
+
+    const searchText = new Map();
+    items.forEach((it) => {
+      const txt = isRow(it)
+        ? it.textContent
+        : ['h3', '.blog-card-excerpt', '.blog-tag']
+            .map((s) => {
+              const e = it.querySelector(s);
+              return e ? e.textContent : '';
+            })
+            .join(' ');
+      searchText.set(it, txt.toLowerCase());
+    });
+
+    const state = { q: '', qRaw: '' };
+    DIMS.forEach((d) => {
+      state[d.key] = 'all';
+      state[d.key + 'Label'] = '';
+    });
+
+    function closeAllDropdowns(except) {
+      dds.forEach((dd) => {
+        if (dd === except) return;
+        dd.classList.remove('is-open');
+        const menu = dd.querySelector('.blog-dd-menu');
+        const trig = dd.querySelector('.blog-dd-trigger');
+        if (menu) menu.hidden = true;
+        if (trig) trig.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function setDropdown(key, value, fallbackLabel) {
+      const dd = dds.find((d) => d.dataset.dim === key);
+      if (!dd) return;
+      const options = Array.from(dd.querySelectorAll('.blog-dd-option'));
+      const opt = options.find((o) => o.dataset.value === value);
+      options.forEach((o) => {
+        const on = o === opt;
+        o.classList.toggle('is-active', on);
+        o.setAttribute('aria-selected', String(on));
+      });
+      const label = opt ? opt.textContent.trim() : fallbackLabel || value;
+      dd.querySelector('.blog-dd-value').textContent =
+        value === 'all' || !opt ? 'All' : label;
+      state[key] = value;
+      state[key + 'Label'] = value === 'all' ? '' : label;
+    }
+
+    function renderChips() {
+      const active = [];
+      DIMS.forEach((d) => {
+        if (state[d.key] !== 'all')
+          active.push({ key: d.key, label: state[d.key + 'Label'] });
+      });
+      if (state.q) active.push({ key: 'q', label: '“' + state.qRaw + '”' });
+      if (chipsWrap) {
+        chipsWrap.innerHTML = '';
+        active.forEach((a) => {
+          const chip = document.createElement('span');
+          chip.className = 'active-chip';
+          chip.textContent = a.label;
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.className = 'active-chip-x';
+          x.setAttribute('aria-label', 'Remove filter ' + a.label);
+          x.textContent = '×';
+          x.addEventListener('click', () => {
+            if (a.key === 'q') {
+              state.q = '';
+              state.qRaw = '';
+              if (searchInput) searchInput.value = '';
+            } else {
+              setDropdown(a.key, 'all');
+            }
+            apply();
+          });
+          chip.appendChild(x);
+          chipsWrap.appendChild(chip);
+        });
+        chipsWrap.hidden = active.length === 0;
+      }
+      if (clearBtn) clearBtn.hidden = active.length === 0;
+    }
+
+    function apply() {
+      let shown = 0;
+      let cardsShown = 0;
+      let rowsShown = 0;
+      items.forEach((it) => {
+        let ok = true;
+        for (const d of DIMS) {
+          if (state[d.key] === 'all') continue;
+          if (!d.get(it).includes(state[d.key])) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok && state.q && !(searchText.get(it) || '').includes(state.q))
+          ok = false;
+        it.classList.toggle('is-hidden', !ok);
+        if (ok) {
+          shown++;
+          if (isRow(it)) rowsShown++;
+          else cardsShown++;
+        }
+      });
+      if (countEl) countEl.textContent = String(shown);
+      if (blogSection) blogSection.hidden = cardsShown === 0;
+      if (evidenceSection) evidenceSection.hidden = rowsShown === 0;
+      if (emptyEl) emptyEl.hidden = shown !== 0;
+      renderChips();
+    }
+
+    function clearAll() {
+      DIMS.forEach((d) => setDropdown(d.key, 'all'));
+      state.q = '';
+      state.qRaw = '';
+      if (searchInput) searchInput.value = '';
+      apply();
+    }
+
+    dds.forEach((dd) => {
+      const key = dd.dataset.dim;
+      const trig = dd.querySelector('.blog-dd-trigger');
+      const menu = dd.querySelector('.blog-dd-menu');
+      trig.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const willOpen = !dd.classList.contains('is-open');
+        closeAllDropdowns(dd);
+        dd.classList.toggle('is-open', willOpen);
+        menu.hidden = !willOpen;
+        trig.setAttribute('aria-expanded', String(willOpen));
+      });
+      dd.querySelectorAll('.blog-dd-option').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          setDropdown(key, opt.dataset.value);
+          dd.classList.remove('is-open');
+          menu.hidden = true;
+          trig.setAttribute('aria-expanded', 'false');
+          apply();
+        });
+      });
+    });
+
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        state.qRaw = searchInput.value.trim();
+        state.q = state.qRaw.toLowerCase();
+        apply();
+      });
+    }
+    if (clearBtn) clearBtn.addEventListener('click', clearAll);
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.blog-dd')) closeAllDropdowns(null);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAllDropdowns(null);
+    });
+    if (emptyEl) {
+      const reset = emptyEl.querySelector('.blog-empty-reset');
+      if (reset) reset.addEventListener('click', clearAll);
+    }
+
+    // Deep links from the program / platform pages.
+    const PROGRAM_LABELS = {
+      chc: 'Child Health Campaign',
+      kmc: 'Kangaroo Mother Care',
+      ecd: 'Early Childhood Development',
+    };
+    const ACTIVITY_LABELS = {
+      learn: 'Learn',
+      deliver: 'Deliver',
+      verify: 'Verify',
+      pay: 'Pay',
+    };
+    function applyDeepLink(search) {
+      const p = new URLSearchParams(search || '');
+      const program = p.get('program');
+      const activity = p.get('activity');
+      // Reset each time so a plain /insights is a clean, unfiltered view.
+      DIMS.forEach((d) => setDropdown(d.key, 'all'));
+      state.q = '';
+      state.qRaw = '';
+      if (searchInput) searchInput.value = '';
+      if (program) setDropdown('program', program, PROGRAM_LABELS[program]);
+      if (activity)
+        setDropdown('activity', activity, ACTIVITY_LABELS[activity]);
+      apply();
+    }
+    window.__applyInsightsDeepLink = applyDeepLink;
+    applyDeepLink(location.search);
+
+    // Cross-site cards (Connect-tagged podcasts pulled live from dimagi.com)
+    // arrive after init. Fold them into the same cards/items/searchText the
+    // filter already uses, re-sort by date, and re-apply the current filter so
+    // they behave exactly like the server-rendered cards. Event listeners are
+    // bound once, above, so this never double-binds them.
+    window.__insightsAddCards = function (newCards) {
+      if (!newCards || !newCards.length || !cards.length) return;
+      const grid = cards[0].parentElement;
+      newCards.forEach((el) => {
+        grid.appendChild(el);
+        cards.push(el);
+        items.push(el);
+        const txt = ['h3', '.blog-card-excerpt', '.blog-tag']
+          .map((s) => {
+            const e = el.querySelector(s);
+            return e ? e.textContent : '';
+          })
+          .join(' ');
+        searchText.set(el, txt.toLowerCase());
+      });
+      const dateOf = (el) => {
+        const t = el.querySelector('time[datetime]');
+        return t ? t.getAttribute('datetime') : '';
+      };
+      cards
+        .slice()
+        .sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+        .forEach((el) => grid.appendChild(el));
+      apply();
+    };
+  }
+  if (document.readyState !== 'loading') init();
+  else document.addEventListener('DOMContentLoaded', init);
+})();
+
+// Connect-tagged podcasts, pulled LIVE from dimagi.com on page load instead of
+// a monthly cron that scraped the dimagi podcast page and opened a PR.
+// dimagi.com publishes /podcast/connect-manifest.json (CORS-open to this
+// origin); this fetches it, builds link-out cards, and hands them to the
+// Insights filter via __insightsAddCards, so a newly Connect-tagged episode
+// shows up here on the next page load with nothing to merge. If the fetch fails
+// (offline, or the feed isn't deployed yet) the page just shows the blog cards.
+(function loadConnectPodcasts() {
+  const MANIFEST_URL = 'https://dimagi.com/podcast/connect-manifest.json';
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : s;
+    return d.innerHTML;
+  }
+  // Light touch-ups so dimagi's wording reads in Connect's voice.
+  function clean(s) {
+    return (s || '')
+      .replace(/CommCare Connect/g, 'Connect')
+      .replace(/\s*[—–]\s*/g, ', ');
+  }
+  function buildCard(ep) {
+    const a = document.createElement('a');
+    a.className = 'blog-card blog-card--podcast';
+    a.href = ep.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.dataset.type = 'podcast';
+    a.dataset.program = '';
+    const tag = ep.episodeNumber
+      ? 'Podcast · Episode ' + ep.episodeNumber
+      : 'Podcast';
+    a.innerHTML =
+      '<div class="blog-card-media">' +
+      '<img src="' +
+      esc(ep.coverImage || '') +
+      '" alt="High-Impact Growth podcast cover art" loading="lazy">' +
+      '<span class="blog-card-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>' +
+      '</div>' +
+      '<div class="blog-card-body">' +
+      '<div class="blog-card-meta">' +
+      '<span class="blog-tag">' +
+      esc(tag) +
+      '</span>' +
+      '<time datetime="' +
+      esc(ep.date || '') +
+      '">' +
+      esc((ep.dateLabel || '').toUpperCase()) +
+      '</time>' +
+      '</div>' +
+      '<h3>' +
+      esc(clean(ep.title)) +
+      '</h3>' +
+      '<p class="blog-card-excerpt">' +
+      esc(clean(ep.description)) +
+      '</p>' +
+      '<span class="blog-card-more">Listen on the Dimagi podcast ↗</span>' +
+      '</div>';
+    return a;
+  }
+  function init() {
+    const page = document.querySelector('[data-page="/insights"]');
+    if (!page || !page.querySelector('.blog-grid')) return;
+    fetch(MANIFEST_URL)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !data.episodes || !data.episodes.length) return;
+        const cards = data.episodes.map(buildCard);
+        if (window.__insightsAddCards) window.__insightsAddCards(cards);
+      })
+      .catch(() => {});
   }
   if (document.readyState !== 'loading') init();
   else document.addEventListener('DOMContentLoaded', init);

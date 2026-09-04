@@ -2,7 +2,6 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -10,29 +9,6 @@ from django.utils.translation import gettext_lazy as _
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
-
-
-class LLOEntity(models.Model):
-    name = models.CharField(max_length=255, unique=True)
-    short_name = models.CharField(max_length=40, null=True, blank=True)
-
-    class Meta:
-        verbose_name_plural = "LLO Entities"
-
-    def __str__(self):
-        if self.short_name:
-            return f"{self.name} ({self.short_name})"
-        return f"{self.name}"
-
-    @classmethod
-    def visible_to(cls, user):
-        if user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            return cls.objects.all()
-        return cls.objects.filter(organization__memberships__user=user).distinct()
-
-
-def _current_year():
-    return timezone.now().year
 
 
 class PrimarySector(models.Model):
@@ -52,14 +28,9 @@ class Organization(BaseModel):
     )
     program_manager = models.BooleanField(default=False)
     funder = models.BooleanField(default=False)
-    llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
     short_name = models.CharField(max_length=40, null=True, blank=True)
     has_used_connect = models.BooleanField(default=False)
-    year_of_establishment = models.PositiveSmallIntegerField(
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(1800), MaxValueValidator(_current_year() + 1)],
-    )
+    year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
     team_size = models.PositiveIntegerField(null=True, blank=True)
     flws_managed = models.PositiveIntegerField(null=True, blank=True)
     countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")

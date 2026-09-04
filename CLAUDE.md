@@ -1,6 +1,6 @@
 # CommCare Connect
 
-Django 4.2 + PostGIS monolith for managing community health worker opportunities, payments, and workflows. Integrates with CommCare HQ and ConnectID services.
+Django 5.2 + PostGIS monolith for managing community health worker opportunities, payments, and workflows. Integrates with CommCare HQ and ConnectID services.
 
 ## Commands
 
@@ -47,7 +47,7 @@ inv translations
 - **Feature flags**: django-waffle with custom `Flag` model; constants in `commcare_connect/flags/switch_names.py`
 - **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion)
 - **Database**: PostgreSQL + PostGIS. `ATOMIC_REQUESTS = True` (all requests are transactions)
-- **Deployment**: Kamal (Docker-based) + Ansible. NOT Elastic Beanstalk despite README mention
+- **Deployment**: Kamal (Docker-based) + Ansible on EC2. See `deploy/README.md`
 
 ### Key directories
 
@@ -102,8 +102,9 @@ config/
 ## Gotchas
 
 - **PostGIS required everywhere** (including tests). Local dev needs `gdal`, `geos`, `proj` system libs. On macOS, set `GDAL_LIBRARY_PATH` and `GEOS_LIBRARY_PATH` in `.env`
+- **`.env` leaks into test settings**: `base.py` calls `env.read_env(BASE_DIR / ".env")`, so local `.env` values also apply under `config.settings.test`. An _empty_ value overrides a code default with `""` rather than falling back — `CONNECTID_URL=` breaks the suite. CI has no `.env`, so these failures are local-only
 - **`--reuse-db` + Currency/Country data**: These models get flushed between tests. The `ensure_currency_country_data` autouse fixture handles this — don't remove it
 - **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups
 - **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
-- **Webpack bundle tracker**: Frontend builds write `webpack-stats.json`. Templates reference bundles from `staticfiles/bundles/`
+- **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages

@@ -208,6 +208,7 @@ TEMPLATES = [
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",
                 "commcare_connect.web.context_processors.session_tracking_context",
+                "commcare_connect.web.context_processors.hubspot_context",
             ],
         },
     }
@@ -292,6 +293,10 @@ if USE_TZ:
     CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_keepalive": True,
+    "health_check_interval": 30,
+}
 CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_BACKEND_ALWAYS_RETRY = True
 CELERY_RESULT_BACKEND_MAX_RETRIES = 10
@@ -426,3 +431,6 @@ CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
 
 # LiveSession Settings
 LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
+
+# HubSpot Settings
+HUBSPOT_API_ID = env("HUBSPOT_API_ID", default="")

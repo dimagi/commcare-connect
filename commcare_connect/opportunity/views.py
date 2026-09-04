@@ -194,6 +194,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
     rollback_invoice_line_items,
+    total_late_delta_units,
 )
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
@@ -1357,7 +1358,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             if fj_form.is_valid() and fj_form.cleaned_data != {}:
                 fj_form.instance.opportunity = request.opportunity
                 fj_form.save()
-        messages.success(request, "Verification flags saved successfully.")
+        messages.success(request, "Verification rules saved successfully.")
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
@@ -1366,9 +1367,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
         },
         {
-            "title": _("Verification Rules Configuration")
-            if request.opportunity.automatic_visit_verification
-            else _("Verification Flags Configuration"),
+            "title": _("Verification Rules Configuration"),
             "url": request.path,
         },
     ]
@@ -1886,12 +1885,14 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         invoice = self.object
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
+        form = self.get_form()
         context.update(
             {
                 "opportunity": opportunity,
-                "form": self.get_form(),
+                "form": form,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -1925,8 +1926,10 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         )
 
         line_items_table = None
+        late_delta_units = 0
         if invoice.service_delivery:
             line_items = get_invoice_line_items(invoice)
+            late_delta_units = total_late_delta_units(line_items)
             show_org = any(item.org_pay.local for item in line_items)
             line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
@@ -1934,6 +1937,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
             opportunity=opportunity,
             invoice_type=invoice_type,
             line_items_table=line_items_table,
+            late_delta_units=late_delta_units,
             read_only=True,
             is_opportunity_pm=self.request.is_opportunity_pm,
         )
@@ -2007,14 +2011,26 @@ def invoice_update_status(request, org_slug, opp_id):
     if error:
         return HttpResponseBadRequest(error)
 
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW and request.POST.get("attestation") != "true":
+        return HttpResponseBadRequest(_("You must certify the invoice before submitting."))
+
     invoice.status = new_status
+    update_fields = ["status", "description"] if invoice.service_delivery else ["status"]
     if invoice.service_delivery:
         invoice.description = description
-        invoice.save(update_fields=["status", "description"])
-        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            rollback_invoice_line_items(invoice)
+
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW:
+        with pghistory.context(
+            username=request.user.username,
+            user_email=request.user.email,
+            attestation_certified=True,
+        ):
+            invoice.save(update_fields=update_fields)
     else:
-        invoice.save(update_fields=["status"])
+        invoice.save(update_fields=update_fields)
+
+    if invoice.service_delivery and new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+        rollback_invoice_line_items(invoice)
 
     messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
@@ -3394,7 +3410,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "icon": "fa-clipboard-list",
             "name": _("Services Delivered"),
             "status": _("Total"),
-            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far excluding duplicates")),
+            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far")),
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
@@ -3604,6 +3620,7 @@ def invoice_items(request, *args, **kwargs):
             "line_items_table_html": html,
             "total_amount": total.local,
             "total_usd_amount": total.usd,
+            "late_delta_units": total_late_delta_units(line_items),
         }
     )
 
