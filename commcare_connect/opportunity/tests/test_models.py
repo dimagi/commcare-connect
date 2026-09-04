@@ -114,55 +114,84 @@ class TestPaymentInvoice:
         for invoice in created_invoices:
             assert invoice.status_events.last().status == InvoiceStatus.PENDING_PM_REVIEW
 
-    def test_approval_event_is_none_before_any_approval(self):
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_is_none_before_the_transition_happens(self, prop, status):
         invoice = PaymentInvoiceFactory()
 
-        assert invoice.approval_event is None
-        assert invoice.approved_by is None
+        assert getattr(invoice, prop) is None
 
-    def test_approval_event_returns_the_latest_ready_to_pay_event(self):
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_uses_the_latest_transition_to_that_status(self, prop, status):
         invoice = PaymentInvoiceFactory()
 
-        with pghistory.context(username="pm_first"):
-            invoice.status = InvoiceStatus.READY_TO_PAY
+        with pghistory.context(username="first"):
+            invoice.status = status
             invoice.save(update_fields=["status"])
 
         invoice.status = InvoiceStatus.REJECTED_BY_PM
         invoice.save(update_fields=["status"])
 
-        with pghistory.context(username="pm_second"):
-            invoice.status = InvoiceStatus.READY_TO_PAY
+        with pghistory.context(username="second"):
+            invoice.status = status
             invoice.save(update_fields=["status"])
 
-        assert invoice.approval_event.pgh_context.metadata["username"] == "pm_second"
+        certification = getattr(invoice, prop)
+        latest_event = invoice.status_events.filter(status=status).latest("pgh_created_at")
+        assert certification["name"] == "second"
+        assert certification["certified_at"] == latest_event.pgh_created_at
 
-    def test_approved_by_resolves_the_users_name_from_the_audited_email(self):
-        user = UserFactory(name="Jane PM", email="jane@example.com")
+    def test_nm_and_pm_certifications_are_recorded_independently(self):
+        nm = UserFactory(name="Nadia NM", email="nadia@example.com")
+        pm = UserFactory(name="Priya PM", email="priya@example.com")
         invoice = PaymentInvoiceFactory()
 
-        with pghistory.context(username=user.username, user_email=user.email):
+        with pghistory.context(username=nm.username, user_email=nm.email):
+            invoice.status = InvoiceStatus.PENDING_PM_REVIEW
+            invoice.save(update_fields=["status"])
+        with pghistory.context(username=pm.username, user_email=pm.email):
             invoice.status = InvoiceStatus.READY_TO_PAY
             invoice.save(update_fields=["status"])
 
-        assert invoice.approved_by == "Jane PM"
+        assert invoice.nm_certification["name"] == "Nadia NM (nadia@example.com)"
+        assert invoice.pm_certification["name"] == "Priya PM (priya@example.com)"
 
-    def test_approved_by_falls_back_to_the_email_when_no_user_matches_it(self):
+    @pytest.mark.parametrize(
+        "context, expected_name",
+        [
+            pytest.param(
+                {"username": "jane", "user_email": "jane@example.com"},
+                "Jane PM (jane@example.com)",
+                id="resolves-user-name",
+            ),
+            pytest.param(
+                {"username": "pm_deleted", "user_email": "deleted@example.com"},
+                "deleted@example.com",
+                id="falls-back-to-email",
+            ),
+            pytest.param({"username": "pm_no_email"}, "pm_no_email", id="falls-back-to-username"),
+        ],
+    )
+    def test_certifier_name_resolution(self, context, expected_name):
+        UserFactory(name="Jane PM", email="jane@example.com")
         invoice = PaymentInvoiceFactory()
 
-        with pghistory.context(username="pm_deleted", user_email="deleted@example.com"):
+        with pghistory.context(**context):
             invoice.status = InvoiceStatus.READY_TO_PAY
             invoice.save(update_fields=["status"])
 
-        assert invoice.approved_by == "deleted@example.com"
-
-    def test_approved_by_falls_back_to_the_username_when_no_email_was_audited(self):
-        invoice = PaymentInvoiceFactory()
-
-        with pghistory.context(username="pm_no_email"):
-            invoice.status = InvoiceStatus.READY_TO_PAY
-            invoice.save(update_fields=["status"])
-
-        assert invoice.approved_by == "pm_no_email"
+        assert invoice.pm_certification["name"] == expected_name
 
 
 @pytest.mark.django_db

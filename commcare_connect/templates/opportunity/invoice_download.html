@@ -155,13 +155,25 @@
       <div class="notes">
         <p>{% trans "If your banking details have changed, please notify us before this invoice is processed." %}</p>
       </div>
-      {% if invoice.approval_event %}
+      {% if invoice.nm_certification or invoice.pm_certification %}
         <div class="authorization">
           <p class="section-heading">{% trans "Authorization" %}</p>
+          {% if invoice.nm_certification %}
+            <p>
+              {% blocktrans with name=invoice.nm_certification.name timestamp=invoice.nm_certification.certified_at|date:"j F Y \a\t H:i e" %}
+                Submitted by {{ name }} on {{ timestamp }}.
+              {% endblocktrans %}
+            </p>
+          {% endif %}
+          {% if invoice.pm_certification %}
+            <p>
+              {% blocktrans with name=invoice.pm_certification.name timestamp=invoice.pm_certification.certified_at|date:"j F Y \a\t H:i e" %}
+                Authorized by {{ name }} on {{ timestamp }}.
+              {% endblocktrans %}
+            </p>
+          {% endif %}
           <p>
-            {% blocktrans with name=invoice.approved_by timestamp=invoice.approval_event.pgh_created_at %}
-              Authorized by {{ name }} on {{ timestamp }}, confirming this invoice's information is current.
-            {% endblocktrans %}
+            {% trans "By submitting and authorizing this invoice, the above users attested that the organization, contact and banking details shown are current and correct." %}
           </p>
         </div>
       {% endif %}
