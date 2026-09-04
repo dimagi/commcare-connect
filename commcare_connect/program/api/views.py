@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.tasks import sync_learn_modules_and_deliver_units
-from commcare_connect.organization.decorators import IsProgramManagerAdmin, user_is_org_admin
+from commcare_connect.organization.decorators import IsProgramManagerOrgAdmin, user_is_org_admin
 from commcare_connect.program.api.serializers import (
     ManagedOpportunityCreateSerializer,
     ManagedOpportunityResponseSerializer,
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProgramCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsProgramManagerAdmin]
+    permission_classes = [IsAuthenticated, IsProgramManagerOrgAdmin]
 
     def post(self, request):
         serializer = ProgramCreateSerializer(data=request.data, context={"request": request})

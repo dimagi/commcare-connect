@@ -69,7 +69,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.opportunity.views import WorkerPaymentsView
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
@@ -192,6 +192,50 @@ def test_add_budget_existing_users_for_managed_opportunity(
     form = response.context["form"]
     assert "number_of_visits" in form.errors
     assert form.errors["number_of_visits"][0] == "The number of visits being increased exceeds the opportunity budget."
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "org_role,expected",
+    [
+        ("program_owner", True),
+        ("supervising", True),
+        ("funder", True),
+        ("delivery", False),
+    ],
+)
+def test_add_budget_new_users_by_org_role(client, program_manager_org, organization, org_role, expected):
+    """Only orgs managing the opportunity from the program side (program owner, supervising, funder)
+    may add budget for new users; the delivery org cannot."""
+    program = ProgramFactory(organization=program_manager_org, budget=1000)
+    opportunity = OpportunityFactory(program=program, organization=organization, total_budget=100)
+    acting_org = program_manager_org
+
+    if org_role == "delivery":
+        acting_org = organization
+    elif org_role == "supervising":
+        acting_org = OrgWithUsersFactory()
+        opportunity.supervising_organization = acting_org
+        opportunity.save()
+    elif org_role == "funder":
+        acting_org = OrgWithUsersFactory()
+        program.funder = acting_org
+        program.save()
+
+    admin = acting_org.memberships.filter(role="admin").first().user
+    client.force_login(admin)
+
+    url = reverse("opportunity:add_budget_new_users", args=(acting_org.slug, opportunity.pk))
+    response = client.post(url, data={"total_budget": 150})
+
+    assert response.status_code == HTTPStatus.OK
+    opportunity.refresh_from_db()
+    if expected:
+        assert response.headers.get("HX-Redirect")
+        assert opportunity.total_budget == 150
+    else:
+        assert "Only program managers are allowed" in response.content.decode()
+        assert opportunity.total_budget == 100
 
 
 @pytest.mark.django_db
@@ -1587,16 +1631,19 @@ def test_update_invoice_invoice_ticket_link_restricted_access(
 
 
 @pytest.mark.django_db
-def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, program_manager_org_user_admin):
+@pytest.mark.parametrize("party", ["program_org", "funder", "supervisor"])
+def test_update_invoice_invoice_ticket_link_access(party, client, program_manager_org):
+    """Every relationship that reaches the opportunity from the program side may set the link."""
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     assert invoice.invoice_ticket_link is None
 
-    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+    acting_org = _program_side_org(party, opportunity, program_manager_org)
+    _act_as_admin_of(client, acting_org)
+    url = _update_invoice_invoice_ticket_link_url(acting_org, opportunity, invoice)
 
-    client.force_login(program_manager_org_user_admin)
     response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
     assert response.status_code == HTTPStatus.FOUND
-    assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
+    assert response.url == _invoice_review_url(acting_org, opportunity, invoice)
     messages = list(get_messages(response.wsgi_request))
     assert len(messages) == 1
     assert str(messages[0]) == "Invoice ticket link saved!"
@@ -1606,11 +1653,11 @@ def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, 
 
 
 @pytest.mark.django_db
-def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org, program_manager_org_user_admin):
+def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org):
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    _act_as_admin_of(client, program_manager_org)
     url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
 
-    client.force_login(program_manager_org_user_admin)
     response = client.post(url, data={"invoice_ticket_link": "https://www."})
     assert response.status_code == HTTPStatus.FOUND
     assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
@@ -1619,18 +1666,30 @@ def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org,
     assert str(messages[0]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."
 
 
-def _setup_data_for_invoice_ticket_link_update(program_manager_org):
-    program = ProgramFactory(organization=program_manager_org, budget=10000)
-    program_manager_org_opportunity = OpportunityFactory(
-        program=program,
-        organization=program_manager_org,
-    )
-    return (
-        PaymentInvoiceFactory(
-            opportunity=program_manager_org_opportunity,
-        ),
-        program_manager_org_opportunity,
-    )
+def _setup_data_for_invoice_ticket_link_update(pm_org):
+    """Delivered by a separate org, so pm_org is the program side(owner org, funder, supervisor)
+    here and not also the NM."""
+    program = ProgramFactory(organization=pm_org, budget=10000)
+    opportunity = OpportunityFactory(program=program, organization=OrganizationFactory())
+    return PaymentInvoiceFactory(opportunity=opportunity), opportunity
+
+
+def _program_side_org(party, opportunity, pm_org):
+    """The supervising org has to be set explicitly -- Opportunity.save defaults it to the program's."""
+    if party == "program_org":
+        return pm_org
+    org = OrganizationFactory()
+    if party == "funder":
+        opportunity.program.funder = org
+        opportunity.program.save()
+    else:
+        opportunity.supervising_organization = org
+        opportunity.save()
+    return org
+
+
+def _act_as_admin_of(client, org):
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
 
 
 def _update_invoice_invoice_ticket_link_url(org, opportunity, invoice):
@@ -2354,9 +2413,8 @@ class TestTaskTypesConfig:
     MOCK_TASK_UNITS_PATH = "commcare_connect.opportunity.forms.get_task_units_for_app"
 
     @pytest.fixture
-    def opp(self, program_manager_org):
-        program = ProgramFactory(organization=program_manager_org)
-        return OpportunityFactory(program=program, organization=program_manager_org)
+    def opp(self, managed_opportunity):
+        return managed_opportunity
 
     @pytest.fixture
     def task_units(self):
@@ -2368,7 +2426,7 @@ class TestTaskTypesConfig:
         ]
 
     def _url(self, opp):
-        return reverse("opportunity:task_types_config", args=(opp.organization.slug, opp.opportunity_id))
+        return reverse("opportunity:task_types_config", args=(opp.program.organization.slug, opp.opportunity_id))
 
     def test_unauthenticated_redirects(self, client, opportunity, task_units):
         url = self._url(opportunity)
@@ -2437,7 +2495,9 @@ class TestTaskTypesConfig:
         return TaskTypeFactory(app=opp.deliver_app)
 
     def _edit_url(self, opp, task_type):
-        return reverse("opportunity:edit_task_type", args=(opp.organization.slug, opp.opportunity_id, task_type.pk))
+        return reverse(
+            "opportunity:edit_task_type", args=(opp.program.organization.slug, opp.opportunity_id, task_type.pk)
+        )
 
     def test_edit_task_type_get_returns_form(self, client, program_manager_org_user_admin, opp, task_type):
         client.force_login(program_manager_org_user_admin)
@@ -2668,16 +2728,16 @@ class TestEditAssignedTask:
 @pytest.mark.django_db
 class TestCreateTask:
     @pytest.fixture
-    def opportunity(self, program_manager_org):
-        program = ProgramFactory(organization=program_manager_org)
-        return OpportunityFactory(program=program, organization=program_manager_org)
+    def opportunity(self, managed_opportunity):
+        return managed_opportunity
 
     @pytest.fixture
     def access(self, opportunity):
         return OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
 
-    def _url(self, opportunity):
-        return reverse("opportunity:create_task", args=(opportunity.organization.slug, opportunity.opportunity_id))
+    def _url(self, opportunity, org=None):
+        org = org or opportunity.program.organization
+        return reverse("opportunity:create_task", args=(org.slug, opportunity.opportunity_id))
 
     def test_create_task_success(self, client, program_manager_org_user_admin, opportunity, access):
         client.force_login(program_manager_org_user_admin)
@@ -2792,24 +2852,25 @@ class TestCreateTask:
         user = request.getfixturevalue(user_fixture)
         opp = request.getfixturevalue(opportunity_fixture)
         client.force_login(user)
-        response = client.post(self._url(opp), data={})
+        # Mounted on the delivery org, so the no_pm_role case is denied as the NM it is.
+        response = client.post(self._url(opp, org=opp.organization), data={})
         assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 @pytest.mark.django_db
 class TestDeleteTasks:
     @pytest.fixture
-    def opportunity(self, program_manager_org):
-        program = ProgramFactory(organization=program_manager_org)
-        return OpportunityFactory(program=program, organization=program_manager_org)
+    def opportunity(self, managed_opportunity):
+        return managed_opportunity
 
     @pytest.fixture
     def assigned_tasks(self, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         return AssignedTaskFactory.create_batch(3, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
 
-    def _url(self, opportunity):
-        return reverse("opportunity:delete_tasks", args=(opportunity.organization.slug, opportunity.opportunity_id))
+    def _url(self, opportunity, org=None):
+        org = org or opportunity.program.organization
+        return reverse("opportunity:delete_tasks", args=(org.slug, opportunity.opportunity_id))
 
     def test_delete_tasks_success(self, client, program_manager_org_user_admin, opportunity, assigned_tasks):
         client.force_login(program_manager_org_user_admin)
@@ -2883,7 +2944,8 @@ class TestDeleteTasks:
         user = request.getfixturevalue(user_fixture)
         opp = request.getfixturevalue(opportunity_fixture)
         client.force_login(user)
-        response = client.post(self._url(opp), data={"task_ids": [1]})
+        # Mounted on the delivery org, so the no_pm_role case is denied as the NM it is.
+        response = client.post(self._url(opp, org=opp.organization), data={"task_ids": [1]})
         assert response.status_code == HTTPStatus.NOT_FOUND
 
     def test_delete_tasks_resets_hq_case_property(self, client, program_manager_org_user_admin, opportunity):
@@ -3217,16 +3279,32 @@ def test_payment_import_rejects_unsupported_formats(
     assert message == "File format not supported. Please upload a CSV, XLSX file."
 
 
+# A watcher org's ceiling is VIEW, which is below the STANDARD the export floor asks for.
+@pytest.mark.parametrize("relationship,allowed", [("delivery", True), ("watcher", False), ("unrelated", False)])
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
-def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
+def test_payment_import_status_in_progress(
+    mock_async_result, relationship, allowed, client, organization, opportunity, org_user_member
+):
+    """The URL carries a task id, so the acting org is checked against the task's own opportunity."""
     task = mock_async_result.return_value
     task._get_task_meta.return_value = {"status": "PROGRESS", "args": [opportunity.id]}
     task.info = {"message": "Payment Record Import is in progress."}
-    client.force_login(org_user_member)
-    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    acting_org, user = organization, org_user_member
+    if relationship != "delivery":
+        acting_org = OrganizationFactory()
+        user = MembershipFactory(organization=acting_org, role=UserOrganizationMembership.Role.MEMBER).user
+        if relationship == "watcher":
+            opportunity.program.watchers.add(acting_org)
+
+    client.force_login(user)
+    url = reverse("opportunity:payment_import_status", args=(acting_org.slug, "task-xyz"))
 
     response = client.get(url)
 
+    if not allowed:
+        assert response.status_code == 404, f"{relationship} org reached another org's import"
+        return
     content = response.content.decode()
     assert response.status_code == 200
     assert "Payment Record Import is in progress." in content
