@@ -1,16 +1,7 @@
 {% extends "base.html" %}
-{% load static %}
 {% load crispy_forms_tags %}
 {% load django_tables2 %}
 {% load i18n %}
-{% block css %}
-  {{ block.super }}
-  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
-{% endblock %}
-{% block javascript %}
-  {{ block.super }}
-  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-{% endblock javascript %}
 {% block content %}
   <div class="flex items-center gap-3 my-5">
     <h1 class="text-2xl font-medium text-brand-deep-purple">{{ request.org.name }}</h1>
@@ -97,10 +88,8 @@
     Alpine.data('orgTabs', () => ({
       selectedTab: '{{ request.GET.active_tab|default:"details" }}',
       showAddMemberModal: false,
-      // The `load` trigger on the containers has already fetched the tables when we
-      // land on the members tab, so a later switch back must not refetch them.
-      isHistoryAvailable: {{ members_tab_active|yesno:"true,false" }},
       isNewEntity: false,
+      isHistoryAvailable: false,
       selected: [],
       selectAll: false,
       showConfirmRemoveMembershipModal: false,
@@ -123,13 +112,6 @@
         this.$watch('selectedTab', (value) => {
           this.updateUrl(value);
           this.loadTabContent(value);
-        });
-
-        document.addEventListener('tomselect-elements:initialized', () => {
-          if (!this.$refs.llo_entity) return;
-          this.$refs.llo_entity.tomselect.on('change', (value) => {
-            this.isNewEntity = value ? value.startsWith('new:') : false;
-          });
         });
       },
 

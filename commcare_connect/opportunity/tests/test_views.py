@@ -735,6 +735,31 @@ def test_opportunity_list_excludes_archived(organization):
 
 
 @pytest.mark.django_db
+def test_get_opportunity_list_data_counts_duplicate_approved_deliveries(organization):
+    today = now().date()
+    opportunity = OpportunityFactory(
+        organization=organization, end_date=today + timedelta(days=1), active=True, archived=False
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1)
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1)
+    # A CompletedWork with 2 approved (duplicate) visits should count as 2 deliveries, not 1.
+    CompletedWorkFactory(
+        opportunity_access=access,
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
+    )
+
+    queryset = OpportunityData(organization, True, {}).get_data()
+    opp = next(item for item in queryset if item.id == opportunity.id)
+
+    assert opp.total_deliveries == 4
+    assert opp.verified_deliveries == 2
+
+
+@pytest.mark.django_db
 def test_tiered_queryset_basic():
     users = [User.objects.create(username=f"user{i}") for i in range(5)]
     user_ids = [u.id for u in users]
@@ -1395,6 +1420,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         form = response.context["form"]
         assert form.line_items_table is None
+        assert response.context["line_item_count"] is None
 
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
@@ -1689,6 +1715,7 @@ class TestInvoiceUpdateStatus:
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.PENDING_PM_REVIEW,
                 "description": "Ready for PM review",
+                "attestation": "true",
             },
         )
 
@@ -1696,6 +1723,34 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
         assert invoice.description == "Ready for PM review"
+
+        status_event = invoice.status_events.last()
+        assert status_event.pgh_context.metadata["attestation_certified"] is True
+        assert status_event.pgh_context.metadata["username"] == nm_user_admin.username
+
+    @pytest.mark.parametrize("attestation", [None, "false", "0", ""])
+    def test_nm_submit_to_pm_without_attestation_fails(
+        self, client, nm_organization, nm_user_admin, pm_organization, attestation
+    ):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-005"
+        )
+
+        data = {
+            "invoice_id": invoice.payment_invoice_id,
+            "new_status": InvoiceStatus.PENDING_PM_REVIEW,
+            "description": "Ready for PM review",
+        }
+        if attestation is not None:
+            data["attestation"] = attestation
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(url, data=data)
+
+        assert response.status_code == 400
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
 
     def test_nm_cancel_invoice_success(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(
@@ -1892,7 +1947,7 @@ class TestVerificationFlagsConfig:
         )
         assert response.status_code == HTTPStatus.OK
         messages = [m.message for m in get_messages(response.wsgi_request)]
-        assert "Verification flags saved successfully." in messages
+        assert "Verification rules saved successfully." in messages
 
     def test_post_creates_form_json_rule_for_managed_opp(
         self, client, program_manager_org, program_manager_org_user_admin

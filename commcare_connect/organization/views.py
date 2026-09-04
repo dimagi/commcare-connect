@@ -17,7 +17,7 @@ from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationInviteForm,
-    OrganizationSelectOrCreateForm,
+    OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
@@ -28,12 +28,11 @@ from commcare_connect.utils.tables import get_validated_page_size
 
 @login_required
 def organization_create(request):
-    form = OrganizationSelectOrCreateForm(data=request.POST or None, user=request.user)
+    form = OrganizationProfileForm(data=request.POST or None)
 
     if form.is_valid():
-        org, is_new_org = form.save()
-        if is_new_org:
-            org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        org = form.save()
+        org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})

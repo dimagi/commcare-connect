@@ -65,6 +65,34 @@
   border-right-color: var(--color-tooltip-bg);
 }
 
+/* Dark, richer tooltip variant (opt in via x-tooltip.theme.dark).*/
+.tippy-box[data-theme~='dark'] {
+  background-color: var(--color-tooltip);
+  color: var(--color-tooltip-bg);
+  @apply rounded-lg shadow-lg;
+}
+
+.tippy-box[data-theme~='dark'] .tippy-content {
+  @apply p-4;
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='top'] > .tippy-arrow::before {
+  border-top-color: var(--color-tooltip);
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='bottom']
+  > .tippy-arrow::before {
+  border-bottom-color: var(--color-tooltip);
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='left'] > .tippy-arrow::before {
+  border-left-color: var(--color-tooltip);
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='right'] > .tippy-arrow::before {
+  border-right-color: var(--color-tooltip);
+}
+
 /* ----- background -------*/
 .card_bg {
   @apply rounded-lg bg-white p-6 shadow-sm;
@@ -823,7 +851,7 @@ select:disabled,
 /* Metric cards (indigo header with stat tiles) */
 @layer components {
   .metric-container {
-    @apply w-full rounded-lg bg-brand-indigo p-6;
+    @apply bg-brand-indigo w-full rounded-lg p-6;
   }
 
   .metric-card {
@@ -849,10 +877,10 @@ select:disabled,
 
 .dropdown-content {
   @layer components {
-    @apply absolute mt-2 z-10 w-max max-w-sm bg-white rounded-lg shadow-lg overflow-hidden text-sm text-brand-deep-purple font-medium;
+    @apply text-brand-deep-purple absolute z-10 mt-2 w-max max-w-sm overflow-hidden rounded-lg bg-white text-sm font-medium shadow-lg;
 
     .dropdown-item {
-      @apply w-full p-4 text-left cursor-pointer hover:bg-gray-100;
+      @apply w-full cursor-pointer p-4 text-left hover:bg-gray-100;
     }
 
     .dropdown-item:disabled {
