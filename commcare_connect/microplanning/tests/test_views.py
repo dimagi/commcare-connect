@@ -1512,7 +1512,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
-class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
+class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
     def get_url(self, org_slug, opp_id, work_area_id):
         return reverse(
             "microplanning:review_inaccessibility_request",
@@ -1542,13 +1542,13 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         )
         return work_area, inacc_request
 
-    def test_get_modal_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
+    def test_get_panel_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
         work_area, _ = pending_wa
         client.force_login(org_user_admin)
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
 
     @pytest.mark.parametrize(
         "status",
@@ -1559,7 +1559,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         ],
         ids=["not_visited", "visited", "inaccessible"],
     )
-    def test_get_modal_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
+    def test_get_panel_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
@@ -1580,7 +1580,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
         photo = response.context["photo"]
         assert photo is not None
         assert photo.name == "photo.jpg"
@@ -1749,6 +1749,56 @@ class TestAssignmentModeContext:
 
         assert form.is_valid()
         assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
+
+
+@pytest.mark.django_db
+class TestInaccessibleModeContext:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity, opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity, opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    def test_program_manager_can_enter_the_mode(
+        self,
+        client,
+        settings,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        work_area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area)
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, str(managed_opportunity.opportunity_id)),
+            {"inaccessible_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        assert response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 1
+        assert response.context["inaccessibility_requests"][0]["work_area_id"] == work_area.id
+
+    def test_mode_is_closed_to_non_program_managers(self, client, settings, organization, org_user_admin, opportunity):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area)
+        client.force_login(org_user_admin)
+
+        response = client.get(
+            self.url(organization.slug, str(opportunity.opportunity_id)),
+            {"inaccessible_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        assert not response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 0
 
 
 class TestGetWorkAreasForAssignment:

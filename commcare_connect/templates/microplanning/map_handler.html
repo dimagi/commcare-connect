@@ -9,7 +9,7 @@
             hintTimeout: null,
             toastTimeout: null,
             showWorkAreaEditModal: false,
-            showReviewInaccessibilityModal: false,
+            showInaccessibilityReview: false,
             showVisits: false,
             showImplementationAreas: false,
             filterQuery: '',
@@ -18,6 +18,16 @@
             boundsRequestId: 0,
             statusMeta: {},
             hoveredWorkArea: null,
+
+            // Inaccessible mode state
+            inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
+            inaccessibilityRequests: [],
+            deniedInaccessibilityWorkAreaIds: [],
+            inaccessibilityColors: {},
+            selectedInaccessibilityRequestId: null,
+            selectedInaccessibilityRequestSlug: '',
+            reviewedRequestCount: 0,
+            totalRequestCount: 0,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
@@ -184,12 +194,12 @@
                 }
             },
 
-            openReviewInaccessibilityModal(workAreaId) {
+            openInaccessibilityReview(workAreaId) {
                 const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
                 const url = reviewUrl + workAreaId + '/';
                 const fragment = document.getElementById('review-inaccessibility-fragment');
                 // Clear any previously loaded content so an errored fetch (htmx does not swap
-                // non-2xx responses) can't leave a stale or blank modal behind.
+                // non-2xx responses) can't leave a stale or blank panel behind.
                 fragment.innerHTML = '';
                 htmx.ajax('GET', url, { target: '#review-inaccessibility-fragment', swap: 'innerHTML' })
                     .then(() => {
@@ -200,9 +210,69 @@
                             );
                             return;
                         }
-                        this.showReviewInaccessibilityModal = true;
-                        setTimeout(() => window.reviewInaccessibilityMap?.resize(), 0);
+                        this.selectInaccessibilityRequestOnMap(workAreaId);
+                        this.showInaccessibilityReview = true;
                     });
+            },
+
+            // Inaccessibility Review colours every area by its review outcome instead of by group,
+            // so the map reads the same way as the key beside it.
+            buildInaccessibleFillPaint() {
+                const status = ['coalesce', ['feature-state', 'status'], ['get', 'status']];
+                return {
+                    'fill-color': [
+                        'case',
+                        ['boolean', ['feature-state', 'hovered'], false],
+                        '#ffffff',
+                        ['==', status, 'REQUEST_FOR_INACCESSIBLE'],
+                        this.inaccessibilityColors.requested,
+                        ['==', status, 'INACCESSIBLE'],
+                        this.inaccessibilityColors.approved,
+                        ['boolean', ['feature-state', 'inaccessibility_denied'], false],
+                        this.inaccessibilityColors.denied,
+                        this.inaccessibilityColors.other
+                    ],
+                    'fill-opacity': 0.85
+                };
+            },
+
+            applyDeniedInaccessibilityState() {
+                for (const id of this.deniedInaccessibilityWorkAreaIds) {
+                    this.setWorkAreaState(id, { inaccessibility_denied: true });
+                }
+            },
+
+            // The request under review is the only area outlined in the selected colour, which is
+            // how the reviewer tells it apart from the other pending requests on the map.
+            selectInaccessibilityRequestOnMap(workAreaId) {
+                if (this.selectedInaccessibilityRequestId !== null) {
+                    this.setWorkAreaState(this.selectedInaccessibilityRequestId, { selected: false });
+                }
+                this.selectedInaccessibilityRequestId = workAreaId;
+                this.selectedInaccessibilityRequestSlug = this.inaccessibilityRequests.find(
+                    (pendingRequest) => pendingRequest.work_area_id === workAreaId
+                )?.slug ?? '';
+                this.setWorkAreaState(workAreaId, { selected: true });
+            },
+
+            // "3 of 12 reviewed" — the total is what the queue held when the page loaded, so the
+            // count keeps making sense as reviewed rows leave the list.
+            reviewedRequestsLabel() {
+                return '{% translate "{reviewed} of {total} reviewed" %}'
+                    .replace('{reviewed}', this.reviewedRequestCount)
+                    .replace('{total}', this.totalRequestCount);
+            },
+
+            requestRowDetails(pendingRequest) {
+                return [
+                    pendingRequest.date_of_visit,
+                    pendingRequest.implementation_area_name,
+                    pendingRequest.group_name,
+                ].filter(Boolean).join(' · ');
+            },
+
+            attachmentUrl(blobId) {
+                return '{{ attachment_url_base|escapejs }}' + blobId;
             },
 
             getDownloadUrl() {
@@ -239,6 +309,9 @@
                     if (option) params.set(option.filter_name, option.object_id);
                     return params.toString();
                 }
+                // Inaccessibility review renders no filter sidebar either, and never narrows the
+                // tiles: every work area shows, with the pending requests picked out by colour.
+                if (this.inaccessibleMode) return '';
                 return new URLSearchParams(new FormData(this.$refs.filterForm)).toString();
             },
 
@@ -957,6 +1030,22 @@
                 this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
                 this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
 
+                if (this.inaccessibleMode) {
+                    const requestsEl = document.getElementById('inaccessibility-requests-data');
+                    if (requestsEl) this.inaccessibilityRequests = JSON.parse(requestsEl.textContent);
+                    this.totalRequestCount = this.inaccessibilityRequests.length;
+
+                    const deniedEl = document.getElementById('denied-inaccessibility-data');
+                    if (deniedEl) this.deniedInaccessibilityWorkAreaIds = JSON.parse(deniedEl.textContent);
+
+                    const legendEl = document.getElementById('inaccessibility-legend-data');
+                    if (legendEl) {
+                        for (const entry of JSON.parse(legendEl.textContent)) {
+                            this.inaccessibilityColors[entry.key] = entry.color;
+                        }
+                    }
+                }
+
                 if (this.assignmentMode) {
                     const assigneesEl = document.getElementById('assignees-data');
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
@@ -996,8 +1085,20 @@
                     if (this.selectedFeature && this.selectedFeature._id === data.id) {
                         this.selectedFeature = { ...this.selectedFeature, status: data.status };
                     }
-                    this.setWorkAreaState(data.id, { status: data.status });
-                    this.showReviewInaccessibilityModal = false;
+                    this.setWorkAreaState(data.id, {
+                        status: data.status,
+                        selected: false,
+                        inaccessibility_denied: data.status === 'NOT_VISITED',
+                    });
+                    this.inaccessibilityRequests = this.inaccessibilityRequests.filter(
+                        (pendingRequest) => pendingRequest.work_area_id !== data.id
+                    );
+                    if (this.selectedInaccessibilityRequestId === data.id) {
+                        this.selectedInaccessibilityRequestId = null;
+                        this.selectedInaccessibilityRequestSlug = '';
+                    }
+                    this.reviewedRequestCount += 1;
+                    this.showInaccessibilityReview = false;
                     this.showToast("{% translate 'Work area review saved.' %}");
                 });
 
@@ -1075,7 +1176,7 @@
                     type: 'fill',
                     source: 'workareas',
                     'source-layer': 'workareas',
-                    paint: {
+                    paint: this.inaccessibleMode ? this.buildInaccessibleFillPaint() : {
                         'fill-color': [
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
@@ -1172,6 +1273,49 @@
                         ]
                     }
                 });
+
+                // Highlights the areas awaiting review. Opacity keys off feature-state so a
+                // reviewed area drops out at once; a layer filter cannot read feature-state.
+                if (this.inaccessibleMode) {
+                    this.applyDeniedInaccessibilityState();
+                    // Tile reloads on pan/zoom drop feature state, so it goes back on.
+                    this.map.on('sourcedata', (e) => {
+                        if (e.sourceId === 'workareas' && e.isSourceLoaded) {
+                            this.applyDeniedInaccessibilityState();
+                        }
+                    });
+
+                    this.map.addLayer({
+                        id: 'workareas-inaccessible-requested',
+                        type: 'line',
+                        source: 'workareas',
+                        'source-layer': 'workareas',
+                        paint: {
+                            'line-color': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false],
+                                '#7c3aed',
+                                '#f97316'
+                            ],
+                            'line-width': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false],
+                                5,
+                                3
+                            ],
+                            'line-opacity': [
+                                'case',
+                                [
+                                    '==',
+                                    ['coalesce', ['feature-state', 'status'], ['get', 'status']],
+                                    'REQUEST_FOR_INACCESSIBLE'
+                                ],
+                                1,
+                                0
+                            ]
+                        }
+                    });
+                }
 
                 // Black highlight for assignment mode multi-select
                 if (this.assignmentMode) {
@@ -1319,6 +1463,13 @@
                     // In assignment mode: plain click selects/deselects the whole Work Area
                     // Group by default; shift+click (or a work area with no group) targets
                     // just this one work area.
+                    if (this.inaccessibleMode) {
+                        if (feature.properties.status === 'REQUEST_FOR_INACCESSIBLE') {
+                            this.openInaccessibilityReview(id);
+                        }
+                        return;
+                    }
+
                     if (this.assignmentMode) {
                         if (e.originalEvent.shiftKey || feature.properties.group_id == null) {
                             this.toggleWorkAreaSelection(id, feature.properties);
