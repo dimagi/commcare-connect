@@ -5,7 +5,6 @@ from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
-    CatchmentArea,
     CommCareApp,
     CompletedModule,
     CompletedWork,
@@ -91,12 +90,6 @@ class OpportunityClaimSerializer(serializers.ModelSerializer):
         return OpportunityClaimLimitSerializer(
             obj.opportunityclaimlimit_set.order_by("payment_unit_id"), many=True
         ).data
-
-
-class CatchmentAreaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CatchmentArea
-        fields = ["id", "name", "latitude", "longitude", "radius", "active"]
 
 
 class OpportunityVerificationFlagsSerializer(serializers.ModelSerializer):
@@ -192,9 +185,10 @@ class OpportunitySerializer(serializers.ModelSerializer):
         return opp_access.suspended
 
     def get_catchment_areas(self, obj):
-        opp_access = _get_opp_access(self.context.get("request").user, obj)
-        catchments = CatchmentArea.objects.filter(opportunity_access=opp_access)
-        return CatchmentAreaSerializer(catchments, many=True).data
+        # TODO: The catchment areas feature was removed (backend + UI); this field is kept
+        # only for backward compatibility with the mobile Connect app's API contract.
+        # Drop it once the mobile app no longer reads catchment_areas from this response.
+        return []
 
 
 @quickcache(vary_on=["user.pk", "opportunity.pk"], timeout=60 * 60)
