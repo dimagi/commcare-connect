@@ -16,7 +16,7 @@
                   {% for column in table.columns %}
                     <th {{ column.attrs.th.as_html }}>
                       {% if column.orderable %}
-                        {% sortable_header column.name column.header table.use_view_url %}
+                        {% sortable_header column.name column.header table.use_view_url table.prefixed_order_by_field %}
                       {% else %}
                         <span>{{ column.header }}</span>
                       {% endif %}

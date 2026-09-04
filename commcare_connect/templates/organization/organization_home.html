@@ -73,7 +73,7 @@
       <div x-show="selectedTab === 'members'"
            id="pending_invites_container"
            class="w-full"
-           hx-get="{% url 'organization:pending_invites_table' request.org.slug %}"
+           hx-get="{% url 'organization:pending_invites_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
            hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
     </div>

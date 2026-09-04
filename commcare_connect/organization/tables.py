@@ -25,6 +25,9 @@ class OrgMemberTable(tables.Table):
 
 
 class PendingInviteTable(tables.Table):
+    # This table is rendered as an htmx fragment, so sort links must be built from the
+    # hosting page's URL (the referer) rather than from the fragment endpoint's own path.
+    use_view_url = True
     index = IndexColumn()
     email = tables.Column(verbose_name=_("Email"))
     role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
@@ -42,3 +45,7 @@ class PendingInviteTable(tables.Table):
         fields = ("email", "role", "date_modified")
         sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
         empty_text = _("No pending invites.")
+        # The workspace page hosts this table alongside OrgMemberTable and feeds both
+        # from one query string, so prefix these params to keep sorting and paging
+        # on the two tables independent.
+        prefix = "invites-"
