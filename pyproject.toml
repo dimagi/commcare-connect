@@ -67,6 +67,11 @@ extend-exclude = ["**/migrations/*.py"]
 # E/W: pycodestyle, F: pyflakes (flake8 defaults), I: isort
 select = ["E", "F", "W", "I"]
 
+[tool.ruff.lint.per-file-ignores]
+# Marketing page titles and meta descriptions: prose that has to stay on one
+# line to be readable and greppable against the rendered <head>.
+"commcare_connect/prelogin/route_meta.py" = ["E501"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["commcare_connect", "config"]
 
