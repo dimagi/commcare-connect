@@ -135,6 +135,7 @@ def _reject_invalid_merge(source: Organization, target: Organization) -> None:
     if source.pk == target.pk:
         raise MergeNotAllowed("An organization cannot be merged into itself.")
     _reject_shared_commcare_apps(source, target)
+    _reject_funded_programs_a_non_funder_would_inherit(source, target)
 
 
 def _reject_shared_commcare_apps(source: Organization, target: Organization) -> None:
@@ -147,6 +148,24 @@ def _reject_shared_commcare_apps(source: Organization, target: Organization) -> 
             f"Both workspaces are connected to the same CommCare app(s): {', '.join(conflicts)}. "
             "Merging would leave the surviving workspace with duplicates that break "
             "opportunity creation. Remove the redundant app from one workspace first."
+        )
+
+
+def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would make a workspace fund programs without being designated a funder.
+
+    ``Program.funder`` is repointed like any other relation, but ``Organization.funder`` is a profile field the
+    target keeps as its own. Ticking "Funder" on the survivor first is a deliberate decision, not something the
+    merge should make on the operator's behalf.
+    """
+    if target.funder:
+        return
+    funded_programs = sorted(source.funded_programs.values_list("name", flat=True))
+    if funded_programs:
+        raise MergeNotAllowed(
+            f"{source.slug} funds the program(s): {', '.join(funded_programs)}, but {target.slug} is not marked "
+            "as a funder. A merge does not carry funder status over. Mark the surviving workspace as a funder "
+            "first if it should take these programs on."
         )
 
 

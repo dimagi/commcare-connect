@@ -51,6 +51,12 @@ def target():
 
 
 @pytest.fixture
+def funder_target():
+    """A target allowed to inherit the source's ``Program.funder`` rows."""
+    return OrganizationFactory(name="Target Workspace", funder=True)
+
+
+@pytest.fixture
 def failing_merge():
     """Break the merge at its last step, once every earlier step has already run."""
     with mock.patch(
@@ -86,6 +92,31 @@ class TestMergeGuards:
             merge_organizations(source, target)
 
         assert Organization.objects.filter(pk=source.pk).exists()
+
+    def test_a_source_funding_a_program_is_refused_when_the_target_is_not_a_funder(self, source, target):
+        """Funder status is not carried over, so the operator has to grant it deliberately."""
+        ProgramFactory(funder=source, name="Zinc Supplementation")
+
+        with pytest.raises(MergeNotAllowed, match="Zinc Supplementation"):
+            merge_organizations(source, target)
+
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+    def test_a_funder_target_inherits_the_funded_programs(self, source, funder_target):
+        program = ProgramFactory(funder=source, name="Zinc Supplementation")
+
+        merge_organizations(source, funder_target)
+
+        program.refresh_from_db()
+        assert program.funder == funder_target
+
+    def test_a_source_marked_as_a_funder_but_funding_nothing_is_allowed(self, target):
+        source = OrganizationFactory(name="Source Workspace", funder=True)
+
+        merge_organizations(source, target)
+
+        target.refresh_from_db()
+        assert target.funder is False
 
     @pytest.mark.parametrize("differing_field", ["cc_app_id", "cc_domain", "hq_server"])
     def test_apps_differing_in_any_key_field_are_allowed(self, source, target, differing_field):
@@ -168,7 +199,7 @@ class TestProgramsHiddenByMerge:
 
 
 class TestSimpleReassignments:
-    def test_every_plain_foreign_key_is_repointed(self, source, target):
+    def test_every_plain_foreign_key_is_repointed(self, source, funder_target):
         commcare_app = CommCareAppFactory(organization=source)
         opportunity = OpportunityFactory(organization=source)
         supervised = OpportunityFactory(supervising_organization=source)
@@ -177,7 +208,7 @@ class TestSimpleReassignments:
         owned_program = ProgramFactory(organization=source)
         funded_program = ProgramFactory(funder=source)
 
-        merge_organizations(source, target)
+        merge_organizations(source, funder_target)
 
         for obj, field_name in [
             (commcare_app, "organization"),
@@ -189,7 +220,7 @@ class TestSimpleReassignments:
             (funded_program, "funder"),
         ]:
             obj.refresh_from_db()
-            assert getattr(obj, field_name) == target, f"{type(obj).__name__}.{field_name} was not reassigned"
+            assert getattr(obj, field_name) == funder_target, f"{type(obj).__name__}.{field_name} was not reassigned"
 
     def test_summary_reports_a_count_for_every_listed_relation(self, source, target):
         ProgramFactory(organization=source)
@@ -437,15 +468,15 @@ class TestManagedOpportunityCache:
         ],
     )
     def test_every_organization_the_cached_row_references_is_refreshed(
-        self, source, target, make_opportunity, organization_id
+        self, source, funder_target, make_opportunity, organization_id
     ):
         """One case per clause in _opportunities_linked_to_source."""
         opp_id = str(make_opportunity(source).pk)
         assert organization_id(get_managed_opp(opp_id)) == source.pk
 
-        _merge_and_run_commit_hooks(source, target)
+        _merge_and_run_commit_hooks(source, funder_target)
 
-        assert organization_id(get_managed_opp(opp_id)) == target.pk
+        assert organization_id(get_managed_opp(opp_id)) == funder_target.pk
 
     def test_every_form_of_the_identifier_is_cleared(self, source, target, delivered_opportunity):
         opp_ids = [
@@ -517,7 +548,7 @@ class TestRelationCoverage:
             "merge_organizations, then add it to HANDLED_RELATIONS — or drop the stale entry."
         )
 
-    def test_nothing_still_references_the_source_afterwards(self, source, target):
+    def test_nothing_still_references_the_source_afterwards(self, source, funder_target):
         source_pk = source.pk
         OpportunityFactory(organization=source)
         OpportunityFactory(supervising_organization=source)
@@ -530,7 +561,7 @@ class TestRelationCoverage:
         OrganizationInviteFactory(organization=source, email="pending@example.com")
         LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
 
-        merge_organizations(source, target)
+        merge_organizations(source, funder_target)
 
         dangling = []
         for relation in Organization._meta.get_fields(include_hidden=True):
