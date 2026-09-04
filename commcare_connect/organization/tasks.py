@@ -10,7 +10,7 @@ def send_org_invite(invite_id):
     invite = OrganizationInvite.objects.select_related("organization", "invited_by").get(pk=invite_id)
 
     if invite.invited_by:
-        inviter = invite.invited_by.name or invite.invited_by.username
+        inviter = invite.invited_by.name or invite.invited_by.email
     else:
         inviter = invite.organization.name
 
