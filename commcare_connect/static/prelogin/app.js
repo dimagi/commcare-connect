@@ -103,7 +103,7 @@ const ROUTE_META = (function () {
   if (!node) return {};
   try {
     return JSON.parse(node.textContent);
-  } catch (e) {
+  } catch (_) {
     return {};
   }
 })();
