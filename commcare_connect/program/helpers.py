@@ -17,7 +17,8 @@ from django.db.models import (
 from django.db.models.functions import Cast, Coalesce, Round
 
 from commcare_connect.opportunity.models import Opportunity, UserVisit, VisitValidationStatus
-from commcare_connect.program.models import Program
+from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import Program, ProgramApplicationStatus
 
 EXCLUDED_STATUS = [
     VisitValidationStatus.over_limit,
@@ -25,6 +26,43 @@ EXCLUDED_STATUS = [
 ]
 
 FILTER_FOR_VALID_VISIT_DATE = ~Q(opportunityaccess__uservisit__status__in=EXCLUDED_STATUS)
+
+
+def eligible_funders(program_organization):
+    """Organizations that may be chosen as a program's funder.
+
+    Funder organizations other than the program's own.
+    """
+    return Organization.objects.filter(funder=True).exclude(pk=program_organization.pk).order_by("name")
+
+
+def eligible_watchers(program_organization, funder):
+    """Organizations that may be chosen as a program's watchers.
+
+    The program's own organization and its funder are excluded: both already hold a higher
+    access level than a watcher, so selecting them would have no effect.
+    """
+    excluded_ids = {program_organization.pk}
+    if funder:
+        excluded_ids.add(funder.pk)
+    return Organization.objects.exclude(pk__in=excluded_ids).order_by("name")
+
+
+def eligible_supervising_organizations(program):
+    """Organizations that may be chosen to supervise an opportunity in `program`.
+
+    The program's own organization, its funder, and every organization with an accepted
+    ProgramApplication for the program. Eligibility is evaluated on each render, so an
+    organization that loses its accepted application stops being offered.
+    """
+    eligible = Q(pk=program.organization_id)
+    if program.funder_id:
+        eligible |= Q(pk=program.funder_id)
+    eligible |= Q(
+        programapplication__program=program,
+        programapplication__status=ProgramApplicationStatus.ACCEPTED,
+    )
+    return Organization.objects.filter(eligible).distinct().order_by("name")
 
 
 def calculate_safe_percentage(numerator, denominator):

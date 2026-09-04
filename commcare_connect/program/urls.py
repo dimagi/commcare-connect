@@ -4,7 +4,8 @@ from commcare_connect.program.views import (
     ManagedOpportunityInit,
     ManagedOpportunityInitUpdate,
     ManagedOpportunityList,
-    ProgramCreateOrUpdate,
+    ProgramCreate,
+    ProgramUpdate,
     apply_or_decline_application,
     invite_organization,
     manage_application,
@@ -14,8 +15,8 @@ from commcare_connect.program.views import (
 app_name = "program"
 urlpatterns = [
     path("", view=program_home, name="home"),
-    path("init/", view=ProgramCreateOrUpdate.as_view(), name="init"),
-    path("<slug:pk>/edit", view=ProgramCreateOrUpdate.as_view(), name="edit"),
+    path("init/", view=ProgramCreate.as_view(), name="init"),
+    path("<slug:pk>/edit", view=ProgramUpdate.as_view(), name="edit"),
     path("<slug:pk>/view", view=ManagedOpportunityList.as_view(), name="opportunity_list"),
     path("<slug:pk>/opportunity-init", view=ManagedOpportunityInit.as_view(), name="opportunity_init"),
     path(
