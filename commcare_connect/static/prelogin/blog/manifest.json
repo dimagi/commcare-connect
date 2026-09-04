@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-08-28",
+  "count": 5,
+  "posts": [
+    {
+      "slug": "closing-the-post-discharge-gap-kmc",
+      "url": "https://connect.dimagi.com/blog/closing-the-post-discharge-gap-kmc",
+      "title": "Closing the post-discharge gap with Connect Kangaroo Mother Care",
+      "description": "Trained Frontline Workers carry Kangaroo Mother Care into the home, closing the dangerous gap that opens when families of small and vulnerable newborns leave the hospital.",
+      "coverImage": "https://connect.dimagi.com/static/prelogin/images/blog/kmc-post-discharge.jpg",
+      "tag": "Kangaroo Mother Care",
+      "program": "kmc",
+      "date": "2025-11-01",
+      "dateLabel": "NOV 2025",
+      "originalUrl": "https://dimagi.com/blog/closing-post-discharge-gap-kangaroo-mother-care/"
+    },
+    {
+      "slug": "usaid-div-child-health-nigeria",
+      "url": "https://connect.dimagi.com/blog/usaid-div-child-health-nigeria",
+      "title": "USAID Development Innovation Ventures and Dimagi partner on child health in northern Nigeria",
+      "description": "A new grant will scale and rigorously evaluate Connect, delivering Vitamin A and oral rehydration solution to children where coverage is lowest.",
+      "coverImage": "https://connect.dimagi.com/static/prelogin/images/blog/usaid-div-child-health.jpg",
+      "tag": "Child Health Campaign",
+      "program": "chc",
+      "date": "2024-11-01",
+      "dateLabel": "NOV 2024",
+      "originalUrl": "https://dimagi.com/blog/usaid-div-and-dimagi-partner-to-enhance-child-health/"
+    },
+    {
+      "slug": "givewell-child-health-nigeria",
+      "url": "https://connect.dimagi.com/blog/givewell-child-health-nigeria",
+      "title": "GiveWell awards Dimagi funding to scale child health delivery in Nigeria",
+      "description": "GiveWell has awarded Dimagi more than $1 million to scale verified child health delivery across northern Nigeria, funding over 300,000 visits in 18 months.",
+      "coverImage": "https://connect.dimagi.com/static/prelogin/images/blog/givewell-child-health.jpg",
+      "tag": "Child Health Campaign",
+      "program": "chc",
+      "date": "2024-11-01",
+      "dateLabel": "NOV 2024",
+      "originalUrl": "https://dimagi.com/blog/givewell-awards-dimagi-funding-to-enhance-child-health-service-delivery-in-nigeria/"
+    },
+    {
+      "slug": "connect-100000-service-deliveries",
+      "url": "https://connect.dimagi.com/blog/connect-100000-service-deliveries",
+      "title": "Connect reaches 100,000 service deliveries",
+      "description": "Across seven countries, Frontline Workers delivered more than 100,000 verified services, a foundation for scaling to millions of visits a year.",
+      "coverImage": "https://connect.dimagi.com/static/prelogin/images/blog/connect-100000-deliveries.jpg",
+      "tag": "Company",
+      "program": "",
+      "date": "2024-05-01",
+      "dateLabel": "MAY 2024",
+      "originalUrl": "https://dimagi.com/blog/commcare-connect-reaches-100000-deliveries/"
+    },
+    {
+      "slug": "connect-2023-year-in-review",
+      "url": "https://connect.dimagi.com/blog/connect-2023-year-in-review",
+      "title": "Connect: a year in review",
+      "description": "The first year of designing and testing Connect: 77,000 clients reached, $161,000 paid to Frontline Workers, and the learn, deliver, verify, pay model proven in the field.",
+      "coverImage": "https://connect.dimagi.com/static/prelogin/images/blog/connect-2023-year-in-review.jpg",
+      "tag": "Company",
+      "program": "",
+      "date": "2024-01-01",
+      "dateLabel": "JAN 2024",
+      "originalUrl": "https://dimagi.com/blog/commcare-connect-2023/"
+    }
+  ]
+}

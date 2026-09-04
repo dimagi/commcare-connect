@@ -3410,7 +3410,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "icon": "fa-clipboard-list",
             "name": _("Services Delivered"),
             "status": _("Total"),
-            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far excluding duplicates")),
+            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far")),
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
