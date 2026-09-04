@@ -23,7 +23,6 @@ PROFILE_FIELDS = [
     ("Slug", "slug"),
     ("Program manager", "program_manager"),
     ("Funder", "funder"),
-    ("LLO entity", "llo_entity"),
     ("Created", "date_created"),
     ("Created by", "created_by"),
 ]
