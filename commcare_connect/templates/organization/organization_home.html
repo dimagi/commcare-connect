@@ -107,18 +107,32 @@
       },
 
       init() {
-        this.updateUrl(this.selectedTab);
+        // Normalise the URL for the initial tab without adding a history entry, so the
+        // first "back" leaves the page rather than stepping through a duplicate of it.
+        this.updateUrl(this.selectedTab, { replace: true });
 
         this.$watch('selectedTab', (value) => {
           this.updateUrl(value);
           this.loadTabContent(value);
         });
+
+        window.addEventListener('popstate', () => this.selectTabFromUrl());
       },
 
-      updateUrl(tab) {
+      selectTabFromUrl() {
         const url = new URL(window.location);
+        this.selectedTab = url.searchParams.get('active_tab') || 'details';
+      },
+
+      updateUrl(tab, { replace = false } = {}) {
+        const url = new URL(window.location);
+        if (url.searchParams.get('active_tab') === tab) return;
         url.searchParams.set('active_tab', tab);
-        window.history.pushState({}, '', url);
+        if (replace) {
+          window.history.replaceState({}, '', url);
+        } else {
+          window.history.pushState({}, '', url);
+        }
       },
 
       loadTabContent(tab) {
