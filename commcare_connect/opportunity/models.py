@@ -795,7 +795,7 @@ class PaymentInvoice(models.Model):
             .order_by("-pgh_created_at", "-pgh_id")
             .first()
         )
-        if not event:
+        if not event or not event.pgh_context:
             return None
         return {"name": self._certifier_name(event), "certified_at": event.pgh_created_at}
 

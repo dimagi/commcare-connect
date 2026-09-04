@@ -152,6 +152,22 @@ class TestPaymentInvoice:
         assert certification["name"] == "second"
         assert certification["certified_at"] == latest_event.pgh_created_at
 
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_is_none_when_the_transition_has_no_audit_context(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        invoice.status = status
+        invoice.save(update_fields=["status"])
+
+        assert invoice.status_events.get(status=status).pgh_context is None
+        assert getattr(invoice, prop) is None
+
     def test_nm_and_pm_certifications_are_recorded_independently(self):
         nm = UserFactory(name="Nadia NM", email="nadia@example.com")
         pm = UserFactory(name="Priya PM", email="priya@example.com")
