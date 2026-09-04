@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django import forms
@@ -61,16 +62,42 @@ class TestAddMembersView:
         assert not OrganizationInvite.objects.filter(organization=organization, email=member.email).exists()
 
     @pytest.mark.django_db
-    def test_invite_rejected_when_pending_invite_already_exists(self, organization):
-        existing_invite = OrganizationInviteFactory(organization=organization, email="pending@example.com")
+    def test_reinvite_refreshes_existing_pending_invite(self, organization):
+        existing_invite = OrganizationInviteFactory(
+            organization=organization, email="pending@example.com", role="member"
+        )
+        old_token = existing_invite.token
+        stale_modified = timezone.now() - timedelta(days=3)
+        OrganizationInvite.objects.filter(pk=existing_invite.pk).update(date_modified=stale_modified)
 
         response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
 
         messages = list(response.context["messages"])
         assert len(messages) == 1
-        assert messages[0].level_tag == "error"
-        assert "already been sent" in str(messages[0])
+        assert messages[0].level_tag == "success"
+        existing_invite.refresh_from_db()
+        assert existing_invite.token != old_token
+        assert existing_invite.role == "admin"
+        assert existing_invite.date_modified > stale_modified
         assert OrganizationInvite.objects.filter(organization=organization, email=existing_invite.email).count() == 1
+
+    @pytest.mark.django_db
+    def test_reinvite_rejected_while_the_invite_is_in_cooldown(self, organization):
+        existing_invite = OrganizationInviteFactory(
+            organization=organization, email="pending@example.com", role="member"
+        )
+        old_token = existing_invite.token
+
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "error"
+        assert "was just sent" in str(messages[0])
+        existing_invite.refresh_from_db()
+        assert existing_invite.token == old_token
+        assert existing_invite.role == "member"
 
     @pytest.mark.django_db
     def test_reinvite_after_expiry_resets_existing_invite(self, organization):
