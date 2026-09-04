@@ -797,6 +797,36 @@ class PaymentInvoice(models.Model):
     def get_status_display(self):
         return InvoiceStatus.get_label(self.status)
 
+    @cached_property
+    def nm_certification(self):
+        """The Network Manager's certification: who submitted the invoice for PM review, and when."""
+        return self._certification_for(InvoiceStatus.PENDING_PM_REVIEW)
+
+    @cached_property
+    def pm_certification(self):
+        """The Program Manager's certification: who approved the invoice for payment, and when."""
+        return self._certification_for(InvoiceStatus.READY_TO_PAY)
+
+    def _certification_for(self, status):
+        event = (
+            self.status_events.filter(status=status)
+            .select_related("pgh_context")
+            .order_by("-pgh_created_at", "-pgh_id")
+            .first()
+        )
+        if not event or not event.pgh_context:
+            return None
+        return {"name": self._certifier_name(event), "certified_at": event.pgh_created_at}
+
+    @staticmethod
+    def _certifier_name(event):
+        email = event.pgh_context.metadata.get("user_email")
+        if not email:
+            return event.pgh_context.metadata.get("username", "")
+
+        user = User.objects.filter(email=email).first()
+        return f"{user.name} ({email})" if user and user.name else email
+
 
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)

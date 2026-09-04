@@ -2,6 +2,7 @@ import datetime
 from datetime import date, timedelta
 from unittest import mock
 
+import pghistory
 import pytest
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
@@ -38,7 +39,7 @@ from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -112,6 +113,101 @@ class TestPaymentInvoice:
         # assert expected status value for the recent event for each record
         for invoice in created_invoices:
             assert invoice.status_events.last().status == InvoiceStatus.PENDING_PM_REVIEW
+
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_is_none_before_the_transition_happens(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        assert getattr(invoice, prop) is None
+
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_uses_the_latest_transition_to_that_status(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username="first"):
+            invoice.status = status
+            invoice.save(update_fields=["status"])
+
+        invoice.status = InvoiceStatus.REJECTED_BY_PM
+        invoice.save(update_fields=["status"])
+
+        with pghistory.context(username="second"):
+            invoice.status = status
+            invoice.save(update_fields=["status"])
+
+        certification = getattr(invoice, prop)
+        latest_event = invoice.status_events.filter(status=status).latest("pgh_created_at")
+        assert certification["name"] == "second"
+        assert certification["certified_at"] == latest_event.pgh_created_at
+
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_is_none_when_the_transition_has_no_audit_context(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        invoice.status = status
+        invoice.save(update_fields=["status"])
+
+        assert invoice.status_events.get(status=status).pgh_context is None
+        assert getattr(invoice, prop) is None
+
+    def test_nm_and_pm_certifications_are_recorded_independently(self):
+        nm = UserFactory(name="Nadia NM", email="nadia@example.com")
+        pm = UserFactory(name="Priya PM", email="priya@example.com")
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username=nm.username, user_email=nm.email):
+            invoice.status = InvoiceStatus.PENDING_PM_REVIEW
+            invoice.save(update_fields=["status"])
+        with pghistory.context(username=pm.username, user_email=pm.email):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.nm_certification["name"] == "Nadia NM (nadia@example.com)"
+        assert invoice.pm_certification["name"] == "Priya PM (priya@example.com)"
+
+    @pytest.mark.parametrize(
+        "context, expected_name",
+        [
+            pytest.param(
+                {"username": "jane", "user_email": "jane@example.com"},
+                "Jane PM (jane@example.com)",
+                id="resolves-user-name",
+            ),
+            pytest.param(
+                {"username": "pm_deleted", "user_email": "deleted@example.com"},
+                "deleted@example.com",
+                id="falls-back-to-email",
+            ),
+            pytest.param({"username": "pm_no_email"}, "pm_no_email", id="falls-back-to-username"),
+        ],
+    )
+    def test_certifier_name_resolution(self, context, expected_name):
+        UserFactory(name="Jane PM", email="jane@example.com")
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(**context):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.pm_certification["name"] == expected_name
 
 
 @pytest.mark.django_db

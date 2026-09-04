@@ -193,6 +193,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
+    get_invoice_service_summary,
     rollback_invoice_line_items,
     total_late_delta_units,
 )
@@ -1989,11 +1990,19 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @opp_standard_access_required
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+    invoice = get_object_or_404(
+        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        opportunity=request.opportunity,
+        payment_invoice_id=invoice_id,
+    )
+    context = {
+        "invoice": invoice,
+        "service_summary_lines": get_invoice_service_summary(invoice),
+    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context={"invoice": invoice},
+        context=context,
         content_type="application/pdf",
         filename=f"invoice_{invoice_id}.pdf",
     )
