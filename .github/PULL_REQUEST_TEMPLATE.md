@@ -31,6 +31,17 @@ In particular consider how existing data may be impacted by this change.
 - Link to QA Ticket
 -->
 
+### Deployment
+
+<!--
+    Think about whether merging this to main is enough to ship it safely.
+    Does it need a config value set, a management command run, a feature flag
+    created, a migration applied out of band, or a coordinated release with
+    another service?
+-->
+
+- [ ] This PR can be deployed: any required configuration, commands, or other manual steps required before this PR can be deployed are done.
+
 ### Labels & Review
 
 - [ ] The set of people pinged as reviewers is appropriate for the level of risk of the change
