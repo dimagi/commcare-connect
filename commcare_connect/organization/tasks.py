@@ -8,7 +8,12 @@ from commcare_connect.utils.tasks import send_mail_async
 
 def send_org_invite(invite_id):
     invite = OrganizationInvite.objects.select_related("organization", "invited_by").get(pk=invite_id)
-    inviter = invite.invited_by.name if invite.invited_by else invite.organization.name
+
+    if invite.invited_by:
+        inviter = invite.invited_by.name or invite.invited_by.username
+    else:
+        inviter = invite.organization.name
+
     location = reverse("organization:accept_invite", args=(invite.organization.slug, invite.token))
     context = {
         "invite": invite,
