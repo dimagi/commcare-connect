@@ -70,6 +70,8 @@ def organization_home(request, org_slug):
             "organization": org,
             "form": form,
             "invite_form": invite_form,
+            "member_count": org.memberships.count(),
+            "members_tab_active": request.GET.get("active_tab") == "members",
         },
     )
 

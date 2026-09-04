@@ -52,7 +52,7 @@ def update_query_params(context, **kwargs):
 
 
 @register.simple_tag(takes_context=True)
-def sortable_header(context, field, label, use_view_url=True):
+def sortable_header(context, field, label, use_view_url=True, order_by_field="sort"):
     request = context["request"]
     current_sort = next_sort = None
     icon_element = '<i class="fa-solid ml-1 {}"></i>'
@@ -62,12 +62,12 @@ def sortable_header(context, field, label, use_view_url=True):
         parsed_url = urlparse(referer)
         query_params = parse_qs(parsed_url.query)
         path = parsed_url.path
-        current_sort = query_params.get("sort", [""])[0]
+        current_sort = query_params.get(order_by_field, [""])[0]
 
     else:
         path = request.path
         query_params = request.GET.copy()
-        current_sort = query_params.get("sort", "")
+        current_sort = query_params.get(order_by_field, "")
 
     if current_sort == field:
         next_sort = f"-{field}"
@@ -80,9 +80,9 @@ def sortable_header(context, field, label, use_view_url=True):
         icon_element = icon_element.format("fa-sort text-gray-400")
 
     if next_sort:
-        query_params["sort"] = next_sort
+        query_params[order_by_field] = next_sort
     else:
-        query_params.pop("sort", None)
+        query_params.pop(order_by_field, None)
 
     query_string = urlencode(query_params, doseq=True)
     url = f"{path}?{query_string}" if query_string else path
