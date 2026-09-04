@@ -3,10 +3,22 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block content %}
-  <p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">{{ request.org.name }}</p>
-  <div class="flex flex-col max-w-screen-lg mx-auto gap-2"
+  <div class="flex items-center gap-3 my-5">
+    <h1 class="text-2xl font-medium text-brand-deep-purple">{{ request.org.name }}</h1>
+    <span class="badge badge-md primary-light">
+      {% blocktrans count counter=member_count %}
+        {{ counter }} Member
+      {% plural %}
+        {{ counter }} Members
+      {% endblocktrans %}
+    </span>
+  </div>
+  <!-- htmx binds its triggers on DOMContentLoaded, after Alpine has already started, so the
+       initial members fetch waits on htmx's own ready event rather than orgTabs.init(). -->
+  <div class="w-full flex flex-col gap-4"
        x-cloak
-       x-data="orgTabs()">
+       x-data="orgTabs()"
+       @htmx:load.window.once="loadTabContent(selectedTab)">
     <!-- Tabs -->
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <ul class="tabs">
@@ -24,22 +36,28 @@
       </ul>
       <!-- Options -->
       <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
-        <button class="button button-md bg-red-600 hover:bg-red-700 text-white"
+        <span x-show="selected.length > 0" class="hint">
+          <span x-text="selected.length"></span> {% trans 'selected' %}
+        </span>
+        <button class="button button-md negative-outline"
                 :disabled="selected.length === 0"
                 @click="showConfirmRemoveMembershipModal = true">
           <i class="fa-solid fa-trash"></i>
           {% trans 'Remove Member(s)' %}
         </button>
-        <button class="button button-md outline-style"
-                @click="showAddMemberModal = true">{% trans 'Add Members' %}</button>
+        <button class="button button-md primary-dark"
+                @click="showAddMemberModal = true">
+          <i class="fa-solid fa-plus"></i>
+          {% trans 'Add Members' %}
+        </button>
       </div>
     </div>
     <!-- Tab Content Containers -->
     <div class="w-full">
       <!-- Details Content (Already rendered) -->
       <div x-show="selectedTab === 'details'" class="w-full mt-6">
-        <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">{% trans 'Workspace' %}</h2>
-        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-10">
+        <h2 class="card_title mb-4">{% trans 'Workspace' %}</h2>
+        <div class="card_bg mb-10">
           <form method="post" class="bg-white">
             {% csrf_token %}
             {% crispy form %}
@@ -51,13 +69,13 @@
            class="w-full"
            hx-get="{% url 'organization:org_member_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
-           hx-trigger="loadMembers from:body"></div>
+           hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
       <div x-show="selectedTab === 'members'"
            id="pending_invites_container"
            class="w-full"
-           hx-get="{% url 'organization:pending_invites_table' request.org.slug %}"
+           hx-get="{% url 'organization:pending_invites_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
-           hx-trigger="loadMembers from:body"></div>
+           hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
     </div>
     {% include "components/organization_home_page/add_org_member_modal.html" %}
     {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
@@ -70,6 +88,7 @@
     Alpine.data('orgTabs', () => ({
       selectedTab: '{{ request.GET.active_tab|default:"details" }}',
       showAddMemberModal: false,
+      isNewEntity: false,
       isHistoryAvailable: false,
       selected: [],
       selectAll: false,
@@ -88,19 +107,32 @@
       },
 
       init() {
-        this.updateUrl(this.selectedTab);
-        this.loadTabContent(this.selectedTab);
+        // Normalise the URL for the initial tab without adding a history entry, so the
+        // first "back" leaves the page rather than stepping through a duplicate of it.
+        this.updateUrl(this.selectedTab, { replace: true });
 
         this.$watch('selectedTab', (value) => {
           this.updateUrl(value);
           this.loadTabContent(value);
         });
+
+        window.addEventListener('popstate', () => this.selectTabFromUrl());
       },
 
-      updateUrl(tab) {
+      selectTabFromUrl() {
         const url = new URL(window.location);
+        this.selectedTab = url.searchParams.get('active_tab') || 'details';
+      },
+
+      updateUrl(tab, { replace = false } = {}) {
+        const url = new URL(window.location);
+        if (url.searchParams.get('active_tab') === tab) return;
         url.searchParams.set('active_tab', tab);
-        window.history.pushState({}, '', url);
+        if (replace) {
+          window.history.replaceState({}, '', url);
+        } else {
+          window.history.pushState({}, '', url);
+        }
       },
 
       loadTabContent(tab) {
