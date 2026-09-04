@@ -28,6 +28,7 @@ from commcare_connect.microplanning.const import (
     SEARCH_KIND_FILTERS,
     SERVICE_DELIVERY_UNIT_SLUG,
 )
+from commcare_connect.microplanning.exceptions import BuildingDataUnavailable
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm
 from commcare_connect.microplanning.models import (
@@ -235,6 +236,112 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.implementation_area_id is None
         assert work_area.implementation_area_name == "Ward North"
+
+
+@pytest.mark.django_db
+class TestBuildingsGeojson(BaseMicroplanningFlagTest):
+    @pytest.fixture(autouse=True)
+    def isolated_cache(self, local_cache):
+        """Grid tile lookups must not carry over between tests, or a fetch under test never happens."""
+
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:buildings_geojson",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_feature_collection(self, client, org_user_admin, organization, opportunity):
+        feature = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [[[8.65, 9.05], [8.66, 9.05], [8.66, 9.06], [8.65, 9.05]]]},
+            "properties": {"id": "building-1"},
+        }
+        client.force_login(org_user_admin)
+        with patch(
+            "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
+            side_effect=lambda grid_tiles: {
+                grid_tiles[0]: [feature],
+                **{grid_tile: [] for grid_tile in grid_tiles[1:]},
+            },
+        ):
+            response = client.get(
+                self.url(organization.slug, opportunity.opportunity_id), {"bbox": "8.65,9.05,8.70,9.09"}
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["type"] == "FeatureCollection"
+        assert body["features"] == [feature]
+        # The bbox reported back is the snapped area, so it always contains what was asked for.
+        west, south, east, north = body["bbox"]
+        assert west <= 8.65 and south <= 9.05 and east >= 8.70 and north >= 9.09
+
+    @pytest.mark.parametrize(
+        "bbox",
+        [None, "", "8.65,9.05,8.70", "8.65,9.05,8.70,north", "8.70,9.05,8.65,9.09"],
+    )
+    def test_bad_bbox_is_rejected(self, client, org_user_admin, organization, opportunity, bbox):
+        client.force_login(org_user_admin)
+        params = {} if bbox is None else {"bbox": bbox}
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id), params)
+        assert response.status_code == 400
+        assert response.json()["error"]
+
+    def test_too_large_an_area_is_reported_apart_from_a_malformed_one(
+        self, client, org_user_admin, organization, opportunity
+    ):
+        """422, not the 400 a bad bbox gets: the map asks the user to zoom in only for this one."""
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id), {"bbox": "3.0,4.0,14.0,14.0"})
+        assert response.status_code == 422
+        assert "too large" in response.json()["error"]
+
+    def test_unavailable_upstream_is_reported_as_503(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        with patch(
+            "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
+            side_effect=BuildingDataUnavailable("overture is down"),
+        ):
+            response = client.get(
+                self.url(organization.slug, opportunity.opportunity_id), {"bbox": "8.65,9.05,8.70,9.09"}
+            )
+
+        assert response.status_code == 503
+        assert response.json()["error"]
+
+    def test_overture_failing_to_open_is_reported_as_503(self, client, org_user_admin, organization, opportunity):
+        """The package raises rather than returning None when it cannot resolve the release."""
+        client.force_login(org_user_admin)
+        with patch(
+            "overturemaps.record_batch_reader",
+            side_effect=Exception("Could not fetch STAC catalog: <urlopen error>"),
+        ):
+            response = client.get(
+                self.url(organization.slug, opportunity.opportunity_id), {"bbox": "8.65,9.05,8.70,9.09"}
+            )
+
+        assert response.status_code == 503
+
+    def test_a_bbox_too_narrow_to_cover_a_grid_tile_is_not_a_server_error(
+        self, client, org_user_admin, organization, opportunity
+    ):
+        """parse_bbox admits this, so it must reach the fetch rather than blowing up on empty grid tiles."""
+        client.force_login(org_user_admin)
+        with patch(
+            "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
+            side_effect=lambda grid_tiles: {grid_tile: [] for grid_tile in grid_tiles},
+        ):
+            response = client.get(
+                self.url(organization.slug, opportunity.opportunity_id),
+                {"bbox": "0.0,0.0,0.0000000000001,0.0000000000001"},
+            )
+
+        assert response.status_code == 200
+
+    def test_requires_org_admin(self, client, org_user_member, organization, opportunity):
+        client.force_login(org_user_member)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id), {"bbox": "8.65,9.05,8.70,9.09"})
+        assert response.status_code == 404
 
 
 @pytest.mark.django_db

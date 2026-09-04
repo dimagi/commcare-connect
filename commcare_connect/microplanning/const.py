@@ -39,3 +39,22 @@ SEARCH_KIND_FILTERS = {
     "wag": "work_area_group",
     "ia": "implementation_area",
 }
+
+BUILDING_MIN_ZOOM = 15
+
+# Each zoom level divides the map into fixed grid tiles. We can use these grid tiles to cache
+# results on so GRID_ZOOM defines the zoom level for which we cache the grid tiles. One grid tile is
+# 1024px on screen at BUILDING_MIN_ZOOM, which is what makes MAX_BUILDING_GRID_TILES work out.
+GRID_ZOOM = 14
+
+# The most (GRID_ZOOM-size) grid tiles one request's boundary box may cover, so that a single view
+# cannot fan out into an unbounded number of upstream fetches.
+MAX_BUILDING_GRID_TILES = 16
+
+# The release is part of the key, so a cached grid tile never goes stale under the release it was read
+# from and bumping buildings.OVERTURE_RELEASE invalidates every one of them at once.
+BUILDINGS_CACHE_KEY = "buildings:{release}:{z}:{x}:{y}"
+BUILDINGS_CACHE_TIMEOUT = 60 * 60 * 24 * 7
+OVERTURE_BUILDING_TYPE = "building"
+OVERTURE_CONNECT_TIMEOUT = 5
+OVERTURE_REQUEST_TIMEOUT = 30
