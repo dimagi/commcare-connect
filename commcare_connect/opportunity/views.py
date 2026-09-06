@@ -261,7 +261,7 @@ def get_opportunity_or_404(opp_id):
     opportunity = opportunity_by_id(opp_id)
 
     if not opportunity:
-        raise Http404("Opportunity not found.")
+        raise Http404(_("Opportunity not found."))
     return opportunity
 
 

@@ -205,7 +205,7 @@ def test_add_budget_existing_users_for_managed_opportunity(
     ],
 )
 def test_add_budget_new_users_by_org_role(client, program_manager_org, organization, org_role, expected):
-    """Only orgs managing the opportunity from the program side (program owner, supervising, funder)
+    """Only orgs managing the opportunity (program owner, supervising, funder)
     may add budget for new users; the delivery org cannot."""
     program = ProgramFactory(organization=program_manager_org, budget=1000)
     opportunity = OpportunityFactory(program=program, organization=organization, total_budget=100)
@@ -1633,7 +1633,7 @@ def test_update_invoice_invoice_ticket_link_restricted_access(
 @pytest.mark.django_db
 @pytest.mark.parametrize("party", ["program_org", "funder", "supervisor"])
 def test_update_invoice_invoice_ticket_link_access(party, client, program_manager_org):
-    """Every relationship that reaches the opportunity from the program side may set the link."""
+    """Every relationship that reaches the opportunity may set the link."""
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     assert invoice.invoice_ticket_link is None
 
@@ -1667,7 +1667,7 @@ def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org)
 
 
 def _setup_data_for_invoice_ticket_link_update(pm_org):
-    """Delivered by a separate org, so pm_org is the program side(owner org, funder, supervisor)
+    """Delivered by a separate org, so pm_org is the owner org, funder, or supervisor
     here and not also the NM."""
     program = ProgramFactory(organization=pm_org, budget=10000)
     opportunity = OpportunityFactory(program=program, organization=OrganizationFactory())

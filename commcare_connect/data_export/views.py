@@ -75,7 +75,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program
-from commcare_connect.program.utils import opportunity_managing_org_ids
+from commcare_connect.program.utils import orgs_ids_with_manage_access_to_opportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
@@ -98,23 +98,23 @@ class BaseDataWriteView(APIView):
 
 
 def user_is_opportunity_admin(user, opportunity):
-    """Admin of any org that can manage this opportunity, from either the delivery or program side."""
+    """Admin of any org that can manage this opportunity."""
     if user.has_perm(ALL_ORG_ACCESS):
         return True
     return UserOrganizationMembership.objects.filter(
         user=user,
-        organization_id__in=opportunity_managing_org_ids(opportunity),
+        organization_id__in=orgs_ids_with_manage_access_to_opportunity(opportunity),
         role=UserOrganizationMembership.Role.ADMIN,
     ).exists()
 
 
 def user_is_opportunity_pm(user, opportunity):
-    """Admin of an org that manages this opportunity from the program side, i.e. not the delivery org."""
+    """Admin of an org that manages this opportunity."""
     if user.has_perm(ALL_ORG_ACCESS):
         return True
     return UserOrganizationMembership.objects.filter(
         user=user,
-        organization_id__in=opportunity_managing_org_ids(opportunity) - {opportunity.organization_id},
+        organization_id__in=orgs_ids_with_manage_access_to_opportunity(opportunity) - {opportunity.organization_id},
         role=UserOrganizationMembership.Role.ADMIN,
     ).exists()
 

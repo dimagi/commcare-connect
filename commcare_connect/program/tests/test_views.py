@@ -379,8 +379,6 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
 
 @pytest.mark.django_db
 class TestManageApplicationView(BaseProgramTest):
-    """The program side accepting or rejecting an application to its program."""
-
     @pytest.fixture(autouse=True)
     def test_setup(self):
         self.program = ProgramFactory.create(organization=self.organization)

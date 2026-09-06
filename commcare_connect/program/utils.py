@@ -82,7 +82,7 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
     return org_access_for_program(org, opportunity.program)
 
 
-def opportunity_managing_org_ids(opportunity) -> set:
+def orgs_ids_with_manage_access_to_opportunity(opportunity) -> set:
     """Every org with MANAGE access to this opportunity, independent of any request."""
     org_ids = {
         opportunity.organization_id,
@@ -132,7 +132,6 @@ def is_opportunity_nm(request, opportunity) -> bool:
 
 
 def is_opportunity_pm(request, opportunity) -> bool:
-    """Anyone else who can manage the opportunity reaches it from the program side."""
     return _can_manage_opportunity(request, opportunity) and request.org.id != opportunity.organization_id
 
 
