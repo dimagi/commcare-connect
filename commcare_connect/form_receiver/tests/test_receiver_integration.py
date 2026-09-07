@@ -304,6 +304,48 @@ def test_receiver_deliver_form_max_visits_reached(
 
 
 @pytest.mark.django_db
+def test_receiver_deliver_form_daily_limit_across_deliver_units(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # A payment unit's max_daily/max_total limits must be enforced across ALL of its
+    # deliver units combined, not counted independently per deliver unit.
+    oauth_application = opportunity.hq_server.oauth_application
+    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_daily=2, max_total=100)
+    access = OpportunityAccessFactory(user=user_with_connectid_link, opportunity=opportunity, accepted=True)
+    claim = OpportunityClaimFactory(end_date=opportunity.end_date, opportunity_access=access)
+    OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+
+    deliver_unit_a = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
+    deliver_unit_b = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
+
+    def form_json_for(deliver_unit):
+        stub = DeliverUnitStubFactory(id=deliver_unit.slug)
+        return get_form_json(
+            form_block=stub.json,
+            domain=deliver_unit.app.cc_domain,
+            app_id=deliver_unit.app.cc_app_id,
+        )
+
+    # One visit via A, one via B: combined daily count is now 2, at the payment unit's max_daily.
+    make_request(
+        api_client, form_json_for(deliver_unit_a), user_with_connectid_link, oauth_application=oauth_application
+    )
+    make_request(
+        api_client, form_json_for(deliver_unit_b), user_with_connectid_link, oauth_application=oauth_application
+    )
+    # A third visit, via either deliver unit, should trip over_limit even though neither
+    # deliver unit individually has more than 2 visits.
+    make_request(
+        api_client, form_json_for(deliver_unit_a), user_with_connectid_link, oauth_application=oauth_application
+    )
+
+    user_visits = UserVisit.objects.filter(user=user_with_connectid_link).order_by("id")
+    assert user_visits.count() == 3
+    assert all(v.status != VisitValidationStatus.over_limit for v in user_visits[:2])
+    assert user_visits[2].status == VisitValidationStatus.over_limit
+
+
+@pytest.mark.django_db
 def test_receiver_deliver_form_end_date_reached(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
