@@ -88,6 +88,16 @@ config/
 - **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
 - **Use predefined style classes** (defined in `tailwind/tailwind.css`) for elements instead of raw Tailwind utility classes
 
+## Robustness
+
+- **Guard against missing environmental dependencies**: Code must not hard-fail because the environment isn't fully set up. This covers settings/env values (`settings.MAPBOX_TOKEN`, Twilio creds, API keys), DB records that act as configuration (`SocialApp`, `Site`, `Currency`/`Country`, waffle `Flag`s), and unreachable external services (HQ, ConnectID, OCS)
+- **Required vs optional**: if only one feature needs it, degrade that feature alone — hide or disable the UI and say why (see `configured_provider` in `commcare_connect/users/templatetags/socialaccount_extras.py` and `commcare_connect/templates/ocs/_connect_prompt.html`). If the app genuinely can't work without it, fail loudly and early in the code path that needs it rather than half-working.
+- **Never render broken UI**: don't emit a button, link or map that 500s or dead-ends when the config is absent
+- **Set an explicit timeout on outbound calls**: all HTTP goes through **httpx**, which defaults to 5s — fine for quick calls, too short for bulk work, so pass a timeout sized to the operation (see `_make_request` in `commcare_connect/connect_id_client/main.py`: `timeout=10` default, 15–30s for bulk sends; `commcare_connect/ocs_provider/views.py`)
+- **Celery tasks: skip vs retry**: missing configuration won't fix itself — log and return (`commcare_connect/audit/tasks.py`). A transient failure (unreachable service, lock contention) should retry with `autoretry_for` + `retry_backoff` (`commcare_connect/opportunity/tasks.py`)
+- **Log, don't spam**: use the module `logger` (`logger.exception` / `logger.error`). Log at error level only when the config is _expected_ in that environment; things that are legitimately absent in dev belong at `info` (e.g. `audit/tasks.py`)
+- **Test the unconfigured path**: add a test that runs with the setting unset or the record missing — an optional feature still renders/runs, a required one fails early with a clear error
+
 ## Testing
 
 - **Framework**: pytest + pytest-django + factory-boy
