@@ -41,7 +41,7 @@ class TestSendOrgInvite:
 
         _, kwargs = send_mock.delay.call_args
         assert invite.get_role_display() in kwargs["message"]
-        assert date_filter(invite.expiry_date, "F j, Y") in kwargs["message"]
+        assert date_filter(invite.expiry_date, "F j, Y H:i T") in kwargs["message"]
 
     def test_sends_html_alternative(self, send_mock, user, organization):
         invite = OrganizationInviteFactory(organization=organization, invited_by=user, email="invitee@example.com")

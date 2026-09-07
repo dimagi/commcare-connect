@@ -3,6 +3,6 @@
 
 {{ inviter }} has invited you to join {{ invite.organization.name }} on Connect as {{ invite.get_role_display }}.
 
-Accept the invitation by visiting the link below. This invite expires on {{ invite.expiry_date|date:"F j, Y" }}.
+Accept the invitation by visiting the link below. This invite expires on {{ invite.expiry_date|date:"F j, Y H:i T" }}.
 
 {{ invite_url }}{% endblock %}

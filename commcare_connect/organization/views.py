@@ -70,6 +70,7 @@ def organization_home(request, org_slug):
             "organization": org,
             "form": form,
             "invite_form": invite_form,
+            "member_count": org.memberships.count(),
         },
     )
 

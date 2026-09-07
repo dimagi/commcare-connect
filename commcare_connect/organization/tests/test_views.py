@@ -6,9 +6,9 @@ from urllib.parse import unquote
 import pytest
 from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
-from django.template.defaultfilters import date as date_filter
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.timezone import localtime
 
 from commcare_connect.organization.models import (
     Organization,
@@ -17,6 +17,7 @@ from commcare_connect.organization.models import (
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
+from commcare_connect.utils.tables import DATE_TIME_FORMAT
 
 
 @pytest.mark.django_db
@@ -455,7 +456,7 @@ class TestPendingInvitesTableView:
         content = client.get(self._url(organization.slug)).content.decode()
 
         assert "Expires on" in content
-        assert date_filter(invite.expiry_date, "SHORT_DATE_FORMAT") in content
+        assert localtime(invite.expiry_date).strftime(DATE_TIME_FORMAT) in content
 
     @pytest.mark.parametrize("minutes_ago,disabled", [(1, True), (10, False)])
     def test_reinvite_button_is_disabled_during_the_cooldown(
@@ -479,3 +480,68 @@ class TestPendingInvitesTableView:
         client.force_login(org_user_member)
         response = client.get(self._url(organization.slug))
         assert response.status_code == 404
+
+    def test_sort_links_point_at_the_workspace_page_not_the_partial(self, client, org_user_admin, organization):
+        """Headers must link to the page that hosts the table, not to the fragment endpoint.
+
+        The workspace page pulls this table in over htmx, so a header linking to
+        ``request.path`` navigates the browser to the bare fragment: the pending invites
+        render on their own and the members list disappears.
+        """
+        OrganizationInviteFactory(organization=organization)
+        home_url = reverse("organization:home", args=(organization.slug,))
+        client.force_login(org_user_admin)
+
+        content = client.get(
+            self._url(organization.slug), HTTP_REFERER=f"{home_url}?active_tab=members"
+        ).content.decode()
+
+        sort_links = re.findall(r'<a href="([^"]*sort=[^"]*)"', content)
+        assert sort_links, "no sortable column headers were rendered"
+        for link in sort_links:
+            assert not link.startswith(self._url(organization.slug)), f"header links to the fragment: {link}"
+            assert link.startswith(home_url), f"header does not link back to the workspace page: {link}"
+
+    @pytest.mark.parametrize(
+        "sort,expected_order",
+        [
+            ("email", ["amy@example.com", "ben@example.com", "cat@example.com"]),
+            ("-email", ["cat@example.com", "ben@example.com", "amy@example.com"]),
+        ],
+    )
+    def test_sorting_reorders_the_rows(self, client, org_user_admin, organization, sort, expected_order):
+        # Ages are chosen so the default "-date_modified" order (ben, amy, cat) matches
+        # neither expected order, so a sort param that gets dropped can't pass by accident.
+        for email, hours_old in [("ben@example.com", 1), ("amy@example.com", 2), ("cat@example.com", 3)]:
+            invite = OrganizationInviteFactory(organization=organization, email=email)
+            OrganizationInvite.objects.filter(pk=invite.pk).update(
+                date_modified=timezone.now() - timedelta(hours=hours_old)
+            )
+        client.force_login(org_user_admin)
+
+        content = client.get(self._url(organization.slug), {"invites-sort": sort}).content.decode()
+
+        assert sorted(expected_order, key=content.index) == expected_order
+
+    def test_members_table_sort_does_not_reorder_pending_invites(self, client, org_user_admin, organization):
+        """Both tables are loaded from the workspace page's single query string.
+
+        The members table sorts on the unprefixed ``sort`` param and ``role`` is a column on
+        both tables, so without a prefix here sorting one table would reorder the other.
+        """
+        # Roles are picked so that ordering by role ("admin" before "viewer") would put the
+        # oldest invite first, the opposite of this table's default "-date_modified" order.
+        newest = OrganizationInviteFactory(
+            organization=organization, email="newest@example.com", role=UserOrganizationMembership.Role.VIEWER
+        )
+        oldest = OrganizationInviteFactory(
+            organization=organization, email="oldest@example.com", role=UserOrganizationMembership.Role.ADMIN
+        )
+        OrganizationInvite.objects.filter(pk=oldest.pk).update(date_modified=timezone.now() - timedelta(days=1))
+        client.force_login(org_user_admin)
+
+        content = client.get(self._url(organization.slug), {"sort": "role"}).content.decode()
+
+        assert content.index(newest.email) < content.index(oldest.email), (
+            "the members table's sort param leaked into the pending invites table"
+        )

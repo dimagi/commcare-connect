@@ -13,7 +13,7 @@
     {% endif %}
   </button>
   <button type="button"
-          class="button button-sm outline-style text-red-600"
+          class="button button-sm negative-outline"
           hx-post="{% url 'organization:revoke_invite' record.organization.slug record.pk %}"
           hx-target="#pending_invites_container"
           hx-swap="innerHTML">{% translate "Revoke" %}</button>

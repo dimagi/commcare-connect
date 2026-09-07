@@ -6,6 +6,6 @@
     {{ invite.get_role_display }}.
   </p>
   <p>
-    <a href="{{ invite_url }}">Accept the invitation</a>. This invite expires on {{ invite.expiry_date|date:"F j, Y" }}.
+    <a href="{{ invite_url }}">Accept the invitation</a>. This invite expires on {{ invite.expiry_date|date:"F j, Y H:i T" }}.
   </p>
 {% endblock %}
