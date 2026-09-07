@@ -45,7 +45,7 @@ inv translations
 - **URL pattern**: Most views scoped under `/a/<org_slug>/` via `OrganizationMiddleware`
 - **API versioning**: `AcceptHeaderVersioning` with versions `1.0` and `2.0`
 - **Background tasks**: Celery with Redis broker; beat scheduler uses DB
-- **Feature flags**: django-waffle with custom `Flag` model; constants in `commcare_connect/flags/switch_names.py`
+- **Feature flags**: django-waffle with a custom `Flag` model. Flag names in `flags/flag_names.py`, switch names in `flags/switch_names.py` — see Terminology below
 - **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion)
 - **Database**: PostgreSQL + PostGIS. `ATOMIC_REQUESTS = True` (all requests are transactions)
 - **Deployment**: Kamal (Docker-based) + Ansible on EC2. See `deploy/README.md`
@@ -72,6 +72,19 @@ config/
   celery_app.py    # Celery config
   urls.py          # Root URL config
 ```
+
+## Terminology
+
+Some words mean several unrelated things here. Work out which one you are in before searching.
+
+**"flag"** — four separate concepts:
+
+- **Waffle flags**: per-request/per-user feature toggles. Names in `flags/flag_names.py`, checked with `flag_is_active(request, NAME)`, backed by the custom `Flag` model in `flags/models.py`.
+- **Waffle switches**: global on/off toggles. Names in `flags/switch_names.py`, checked with `switch_is_active(NAME)`.
+- **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, `catchment`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
+- **Verification flag config**: which validation flags an opportunity applies — `OpportunityVerificationFlags` and `DeliverUnitFlagRules` in `opportunity/models.py`.
+
+**"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView`, the `Worker*Table` classes and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
 
 ## Code Style
 
