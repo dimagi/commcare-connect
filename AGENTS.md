@@ -19,6 +19,7 @@ npm ci                              # install deps
 inv build-js                        # dev build
 inv build-js -w                     # dev build with watch
 inv build-js --prod                 # production build
+npm run build                       # production build (what CI runs)
 
 # Celery (local dev)
 celery -A config.celery_app worker -B -l info
@@ -27,7 +28,7 @@ celery -A config.celery_app worker -B -l info
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
-# Linting (runs ruff, ruff-format, pyupgrade, django-upgrade, prettier)
+# Linting (ruff, ruff-format, pyupgrade, django-upgrade, prettier, djlint, eslint)
 prek run -a
 
 # Requirements (uv)
@@ -75,18 +76,19 @@ config/
 ## Code Style
 
 - **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
-- **JS/CSS**: prettier (tab-width 2, single-quote). Templates excluded from prettier
-- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
+- **JS/CSS**: prettier (tab-width 2, single-quote)
+- **Templates**: djlint owns them, not prettier — `djlint-reformat-django` will rewrite your formatting on commit. `templates/prelogin/home.html` is excluded from both djlint hooks
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus), django-upgrade (--target-version 4.1), djlint (templates) and eslint (`commcare_connect/static/**/*.js`)
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
 - **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
-- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases
+- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views.py` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
 - **Use Django Forms** over raw HTML forms for validation and rendering
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
 - **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
 - **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
-- **Use predefined style classes** (defined in `tailwind/tailwind.css`) for elements instead of raw Tailwind utility classes
+- **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists all 76 of them. Plenty of templates still use raw utilities; that's legacy
 
 ## Robustness
 
@@ -115,7 +117,7 @@ config/
 - **PostGIS required everywhere** (including tests). Local dev needs `gdal`, `geos`, `proj` system libs. On macOS, set `GDAL_LIBRARY_PATH` and `GEOS_LIBRARY_PATH` in `.env`
 - **`.env` leaks into test settings**: `base.py` calls `env.read_env(BASE_DIR / ".env")`, so local `.env` values also apply under `config.settings.test`. An _empty_ value overrides a code default with `""` rather than falling back — `CONNECTID_URL=` breaks the suite. CI has no `.env`, so these failures are local-only
 - **`--reuse-db` + Currency/Country data**: These models get flushed between tests. The `ensure_currency_country_data` autouse fixture handles this — don't remove it
-- **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups
+- **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups. The migration is unfinished — `program/api/views.py`, `opportunity/api/views/automation.py` and `.../task_completion.py` still look up by `pk` directly, so don't take a neighbouring view as the pattern
 - **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
