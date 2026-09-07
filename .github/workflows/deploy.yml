@@ -1,4 +1,5 @@
 name: Deploy
+run-name: Deploy to ${{ inputs.environment }} (${{ inputs.deploy_type }})
 
 env:
   SENTRY_ORG: 'dimagi'
@@ -22,6 +23,14 @@ on:
         options:
           - staging
           - production
+      deploy_type:
+        description: 'Whether this deploy is part of the regular schedule or an unplanned/hotfix deploy'
+        required: true
+        default: 'scheduled'
+        type: choice
+        options:
+          - scheduled
+          - unplanned
 
 jobs:
   deploy:
