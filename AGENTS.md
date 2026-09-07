@@ -1,1 +1,120 @@
-@CLAUDE.md
+# CommCare Connect
+
+Django 5.2 + PostGIS monolith for managing community health worker opportunities, payments, and workflows. Integrates with CommCare HQ and ConnectID services.
+
+## Commands
+
+```bash
+# Local services (PostgreSQL/PostGIS + Redis)
+inv up                              # docker compose up
+inv down                            # docker compose down
+
+# Django
+./manage.py migrate                 # run migrations (dev)
+./manage.py migrate_multi           # run migrations on both primary + secondary DB (prod)
+./manage.py runserver               # dev server
+
+# JavaScript/CSS
+npm ci                              # install deps
+inv build-js                        # dev build
+inv build-js -w                     # dev build with watch
+inv build-js --prod                 # production build
+
+# Celery (local dev)
+celery -A config.celery_app worker -B -l info
+
+# Tests
+pytest                              # run all tests
+pytest path/to/test_file.py::test_name  # run single test
+
+# Linting (runs ruff, ruff-format, pyupgrade, django-upgrade, prettier)
+prek run -a
+
+# Requirements (uv)
+uv sync
+uv add <pkg>
+
+# Translations
+inv translations
+```
+
+## Architecture
+
+- **Monolith**: Django serves both HTML templates (Tailwind + Alpine.js + htmx) and a DRF REST API
+- **URL pattern**: Most views scoped under `/a/<org_slug>/` via `OrganizationMiddleware`
+- **API versioning**: `AcceptHeaderVersioning` with versions `1.0` and `2.0`
+- **Background tasks**: Celery with Redis broker; beat scheduler uses DB
+- **Feature flags**: django-waffle with custom `Flag` model; constants in `commcare_connect/flags/switch_names.py`
+- **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion)
+- **Database**: PostgreSQL + PostGIS. `ATOMIC_REQUESTS = True` (all requests are transactions)
+- **Deployment**: Kamal (Docker-based) + Ansible on EC2. See `deploy/README.md`
+
+### Key directories
+
+```
+commcare_connect/
+  opportunity/     # Core domain: opportunities, visits, payments (largest app)
+  organization/    # Org management, membership roles
+  program/         # Program management, linking orgs/opportunities
+  users/           # Custom User model, ConnectID links
+  commcarehq/      # CommCare HQ server integration
+  connect_id_client/  # HTTP client for ConnectID service
+  form_receiver/   # Receives xforms from CommCare HQ
+  microplanning/   # Maps, catchment areas (Mapbox)
+  reports/         # KPI and admin reports
+  flags/           # Waffle feature flag/switch name constants
+  multidb/         # Secondary DB support + logical replication
+  utils/           # BaseModel, middleware, caching, permissions
+config/
+  settings/        # base.py, local.py, test.py, staging.py, production.py
+  api_router.py    # DRF API URL routing
+  celery_app.py    # Celery config
+  urls.py          # Root URL config
+```
+
+## Code Style
+
+- **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
+- **JS/CSS**: prettier (tab-width 2, single-quote). Templates excluded from prettier
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
+- Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
+- Custom `User` model uses single `name` field instead of `first_name`/`last_name`
+- **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
+- **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
+- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases
+- **Use Django Forms** over raw HTML forms for validation and rendering
+- **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
+- **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
+- **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
+- **Use predefined style classes** (defined in `tailwind/tailwind.css`) for elements instead of raw Tailwind utility classes
+
+## Robustness
+
+- **Guard against missing environmental dependencies**: Code must not hard-fail because the environment isn't fully set up. This covers settings/env values (`settings.MAPBOX_TOKEN`, Twilio creds, API keys), DB records that act as configuration (`SocialApp`, `Site`, `Currency`/`Country`, waffle `Flag`s), and unreachable external services (HQ, ConnectID, OCS)
+- **Required vs optional**: if only one feature needs it, degrade that feature alone — hide or disable the UI and say why (see `configured_provider` in `commcare_connect/users/templatetags/socialaccount_extras.py` and `commcare_connect/templates/ocs/_connect_prompt.html`). If the app genuinely can't work without it, fail loudly and early in the code path that needs it rather than half-working.
+- **Never render broken UI**: don't emit a button, link or map that 500s or dead-ends when the config is absent
+- **Set an explicit timeout on outbound calls**: all HTTP goes through **httpx**, which defaults to 5s — fine for quick calls, too short for bulk work, so pass a timeout sized to the operation (see `_make_request` in `commcare_connect/connect_id_client/main.py`: `timeout=10` default, 15–30s for bulk sends; `commcare_connect/ocs_provider/views.py`)
+- **Celery tasks: skip vs retry**: missing configuration won't fix itself — log and return (`commcare_connect/audit/tasks.py`). A transient failure (unreachable service, lock contention) should retry with `autoretry_for` + `retry_backoff` (`commcare_connect/opportunity/tasks.py`)
+- **Log, don't spam**: use the module `logger` (`logger.exception` / `logger.error`). Log at error level only when the config is _expected_ in that environment; things that are legitimately absent in dev belong at `info` (e.g. `audit/tasks.py`)
+- **Test the unconfigured path**: add a test that runs with the setting unset or the record missing — an optional feature still renders/runs, a required one fails early with a clear error
+
+## Testing
+
+- **Framework**: pytest + pytest-django + factory-boy
+- **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `mobile_user_with_connect_link`, `org_user_member`, `org_user_admin`, `api_rf`, `api_client`
+- **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
+- HTTP mocking: `pytest-httpx` for httpx calls
+- **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
+- **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
+- **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
+
+## Gotchas
+
+- **PostGIS required everywhere** (including tests). Local dev needs `gdal`, `geos`, `proj` system libs. On macOS, set `GDAL_LIBRARY_PATH` and `GEOS_LIBRARY_PATH` in `.env`
+- **`.env` leaks into test settings**: `base.py` calls `env.read_env(BASE_DIR / ".env")`, so local `.env` values also apply under `config.settings.test`. An _empty_ value overrides a code default with `""` rather than falling back — `CONNECTID_URL=` breaks the suite. CI has no `.env`, so these failures are local-only
+- **`--reuse-db` + Currency/Country data**: These models get flushed between tests. The `ensure_currency_country_data` autouse fixture handles this — don't remove it
+- **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups
+- **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
+- **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
+- **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
