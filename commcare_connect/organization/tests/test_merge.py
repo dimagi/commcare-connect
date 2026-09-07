@@ -20,11 +20,7 @@ from commcare_connect.organization.merge import (
     relation_counts,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.program.models import (
-    APPLICATION_STATUS_PRECEDENCE,
-    ProgramApplication,
-    ProgramApplicationStatus,
-)
+from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import get_managed_opp
 from commcare_connect.users.tests.factories import (
@@ -267,20 +263,11 @@ class TestProgramApplications:
         assert summary.program_applications_moved == 1
         assert summary.program_applications_deduped == 0
 
-    @pytest.mark.parametrize(
-        ("source_status", "target_status", "expected"),
-        [
-            (Status.ACCEPTED, Status.REJECTED, Status.ACCEPTED),
-            (Status.INVITED, Status.ACCEPTED, Status.ACCEPTED),
-            (Status.INVITED, Status.APPLIED, Status.APPLIED),
-            (Status.DECLINED, Status.REJECTED, Status.DECLINED),
-            (Status.APPLIED, Status.APPLIED, Status.APPLIED),
-        ],
-    )
-    def test_conflict_keeps_the_most_advanced_status(self, source, target, source_status, target_status, expected):
+    @pytest.mark.parametrize("status", [Status.INVITED, Status.APPLIED, Status.ACCEPTED])
+    def test_matching_application_to_the_same_program_is_deduped(self, source, target, status):
         program = ProgramFactory()
-        ProgramApplicationFactory(program=program, organization=source, status=source_status)
-        ProgramApplicationFactory(program=program, organization=target, status=target_status)
+        source_application = ProgramApplicationFactory(program=program, organization=source, status=status)
+        ProgramApplicationFactory(program=program, organization=target, status=status)
 
         summary = merge_organizations(source, target)
 
@@ -288,8 +275,41 @@ class TestProgramApplications:
         assert applications.count() == 1, "moving both would violate unique_program_application_per_organization"
         surviving = applications.get()
         assert surviving.organization == target
-        assert surviving.status == expected
+        assert surviving.status == status
+        assert not ProgramApplication.objects.filter(pk=source_application.pk).exists()
         assert summary.program_applications_deduped == 1
+
+    @pytest.mark.parametrize(
+        ("source_status", "target_status"),
+        [
+            (Status.ACCEPTED, Status.REJECTED),
+            (Status.INVITED, Status.ACCEPTED),
+            (Status.INVITED, Status.APPLIED),
+            (Status.DECLINED, Status.REJECTED),
+        ],
+    )
+    def test_conflicting_status_for_the_same_program_is_rejected(self, source, target, source_status, target_status):
+        program = ProgramFactory(name="Nutrition Pilot")
+        ProgramApplicationFactory(program=program, organization=source, status=source_status)
+        ProgramApplicationFactory(program=program, organization=target, status=target_status)
+
+        with pytest.raises(MergeNotAllowed, match="Nutrition Pilot"):
+            merge_organizations(source, target)
+
+        assert ProgramApplication.objects.filter(program=program).count() == 2
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+    def test_a_conflict_is_reported_with_both_statuses(self, source, target):
+        program = ProgramFactory(name="Nutrition Pilot")
+        ProgramApplicationFactory(program=program, organization=source, status=Status.ACCEPTED)
+        ProgramApplicationFactory(program=program, organization=target, status=Status.REJECTED)
+
+        with pytest.raises(MergeNotAllowed) as error:
+            merge_organizations(source, target)
+
+        message = str(error.value)
+        assert f"{source.slug}: accepted" in message
+        assert f"{target.slug}: rejected" in message
 
     def test_application_to_a_program_the_target_now_owns_is_removed(self, source, target):
         program = ProgramFactory(organization=source)
@@ -536,11 +556,6 @@ def _incoming_relation_labels():
             continue
         labels.add(f"{related_field.model._meta.label}.{related_field.name}")
     return labels
-
-
-def test_every_application_status_has_a_precedence():
-    """A new ProgramApplicationStatus member must be ranked, or merges raise ValueError."""
-    assert set(APPLICATION_STATUS_PRECEDENCE) == set(ProgramApplicationStatus.values)
 
 
 class TestRelationCoverage:

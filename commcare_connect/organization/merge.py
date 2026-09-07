@@ -9,7 +9,7 @@ from django.db.models import Q
 
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
-from commcare_connect.program.models import APPLICATION_STATUS_PRECEDENCE, ProgramApplication
+from commcare_connect.program.models import ProgramApplication
 from commcare_connect.program.utils import clear_managed_opp_cache
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,7 @@ def _reject_invalid_merge(source: Organization, target: Organization) -> None:
     _reject_shared_commcare_apps(source, target)
     _reject_unmatched_program_manager_status(source, target)
     _reject_funded_programs_a_non_funder_would_inherit(source, target)
+    _reject_conflicting_program_applications(source, target)
 
 
 def _reject_shared_commcare_apps(source: Organization, target: Organization) -> None:
@@ -182,6 +183,27 @@ def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, tar
         )
 
 
+def _reject_conflicting_program_applications(source: Organization, target: Organization) -> None:
+    """
+    Refuse a merge where both workspaces applied to one program and the applications disagree.
+    """
+    target_statuses = dict(target.programapplication_set.values_list("program_id", "status"))
+    conflicts = []
+    for program_id, program_name, source_status in source.programapplication_set.values_list(
+        "program_id", "program__name", "status"
+    ):
+        target_status = target_statuses.get(program_id)
+        if target_status is not None and target_status != source_status:
+            conflicts.append(f"{program_name} ({source.slug}: {source_status}, {target.slug}: {target_status})")
+
+    if conflicts:
+        raise MergeNotAllowed(
+            f"Both workspaces have applied to the same program(s) with differing statuses: "
+            f"{', '.join(sorted(conflicts))}. Only one application per program can survive a merge, and the "
+            "statuses do not mean the same thing. Resolve the application that should not survive first."
+        )
+
+
 def _opportunities_linked_to_source(source: Organization) -> list[Opportunity]:
     """Opportunities whose ``get_managed_opp`` entry holds a reference to the source.
 
@@ -219,36 +241,19 @@ def _move_program_watchers(source: Organization, target: Organization) -> int:
 
 
 def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
-    """Move program applications, keeping one row per program at the most advanced status."""
-    target_program_applications = {
-        program_application.program_id: program_application
-        for program_application in target.programapplication_set.all()
-    }
+    """Move the source's program applications, dropping the ones the target already holds.
 
-    moved = 0
-    deduped = 0
-    for program_application in source.programapplication_set.all():
-        existing = target_program_applications.get(program_application.program_id)
-        if existing is None:
-            program_application.organization = target
-            program_application.save(update_fields=["organization"])
-            target_program_applications[program_application.program_id] = program_application
-            moved += 1
-            continue
+    A program both workspaces applied to is only reached here when the two statuses match — a disagreement is
+    refused by ``_reject_conflicting_program_applications`` before the merge starts — so the source's row is
+    redundant and the target's is kept as-is.
+    """
+    target_program_ids = set(target.programapplication_set.values_list("program_id", flat=True))
+    source_program_applications = source.programapplication_set.all()
 
-        # Keep the program application that's the most 'advanced'
-        surviving_status = _most_advanced_status(existing.status, program_application.status)
-        if surviving_status != existing.status:
-            existing.status = surviving_status
-            existing.save(update_fields=["status"])
-        program_application.delete()
-        deduped += 1
-
+    deduped, _ = source_program_applications.filter(program_id__in=target_program_ids).delete()
+    # Whatever survived the delete above is target-safe: (program, organization) is unique.
+    moved = source_program_applications.update(organization=target)
     return moved, deduped
-
-
-def _most_advanced_status(*statuses: str) -> str:
-    return max(statuses, key=APPLICATION_STATUS_PRECEDENCE.index)
 
 
 def _remove_self_program_applications(target: Organization) -> int:
