@@ -42,6 +42,7 @@ class Organization(BaseModel):
     eoi_links = models.TextField(blank=True, help_text=_("One EOI link per line."))
     notes = models.TextField(blank=True)
     verified = models.BooleanField(default=False)
+    is_test = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.id:
