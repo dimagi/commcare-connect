@@ -77,7 +77,7 @@ class UserOrganizationMembershipInline(admin.TabularInline):
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     form = OrganizationCreationForm
-    list_display = ["name", "created_by", "program_manager", "funder"]
+    list_display = ["name", "short_name", "slug", "created_by", "program_manager", "funder", "verified"]
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [UserOrganizationMembershipInline]
