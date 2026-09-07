@@ -58,13 +58,20 @@ commcare_connect/
   organization/    # Org management, membership roles
   program/         # Program management, linking orgs/opportunities
   users/           # Custom User model, ConnectID links
+  audit/           # Audit reports: CHC indicators, sampling, review workflow
   commcarehq/      # CommCare HQ server integration
   connect_id_client/  # HTTP client for ConnectID service
   form_receiver/   # Receives xforms from CommCare HQ
+  commcarehq_provider/ # OAuth provider: HQ as an identity provider
+  ocs_provider/    # Open Chat Studio integration
+  data_export/     # CSV/streaming exports over OAuth token scopes
   microplanning/   # Maps, catchment areas (Mapbox)
   reports/         # KPI and admin reports
   flags/           # Waffle feature flag/switch name constants
   multidb/         # Secondary DB support + logical replication
+  deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
+  web/             # Context processors, shared template tags
+  prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
 config/
   settings/        # base.py, local.py, test.py, staging.py, production.py
@@ -118,7 +125,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 
 - **Framework**: pytest + pytest-django + factory-boy
 - **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
-- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `mobile_user_with_connect_link`, `org_user_member`, `org_user_admin`, `api_rf`, `api_client`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `managed_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
 - HTTP mocking: `pytest-httpx` for httpx calls
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
@@ -130,7 +137,14 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **PostGIS required everywhere** (including tests). Local dev needs `gdal`, `geos`, `proj` system libs. On macOS, set `GDAL_LIBRARY_PATH` and `GEOS_LIBRARY_PATH` in `.env`
 - **`.env` leaks into test settings**: `base.py` calls `env.read_env(BASE_DIR / ".env")`, so local `.env` values also apply under `config.settings.test`. An _empty_ value overrides a code default with `""` rather than falling back — `CONNECTID_URL=` breaks the suite. CI has no `.env`, so these failures are local-only
 - **`--reuse-db` + Currency/Country data**: These models get flushed between tests. The `ensure_currency_country_data` autouse fixture handles this — don't remove it
+- **Secondary DB is opt-in**: `DATABASE_ROUTERS` is only installed when `SECONDARY_DATABASE_URL` is set (`config/settings/base.py:52-56`). Without it `SECONDARY_DB_ALIAS` is `None`, routing is off and `migrate_multi` just migrates `default` — so multidb routing behaviour can't be reproduced locally by default
 - **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups. The migration is unfinished — `program/api/views.py`, `opportunity/api/views/automation.py` and `.../task_completion.py` still look up by `pk` directly, so don't take a neighbouring view as the pattern
 - **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
+
+## Further reading
+
+- `pr_guidelines.md` — PR size, description and review conventions
+- `docs/dependency-management.md` — adding/upgrading dependencies
+- `deploy/README.md` — Kamal + Ansible deployment
