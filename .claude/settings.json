@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest *)",
+      "Bash(pytest *)",
+      "Bash(prek run *)",
+      "Bash(docker compose ps*)"
+    ]
+  }
+}
