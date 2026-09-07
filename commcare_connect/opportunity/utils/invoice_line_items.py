@@ -287,7 +287,7 @@ def _invoice_period_label(invoice):
         return f"{invoice.start_date:%B %Y} - {invoice.end_date:%B %Y}"
     if invoice.start_date:
         return f"{invoice.start_date:%B %Y}"
-    return f"{invoice.date:%B %Y}" if invoice.date else ""
+    return f"{invoice.date:%B %Y}" if invoice.date else gettext("Unknown")
 
 
 def get_invoice_delivery_rows_for_export(invoice):

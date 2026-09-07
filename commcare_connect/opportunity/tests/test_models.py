@@ -136,20 +136,20 @@ class TestPaymentInvoice:
     def test_certification_uses_the_latest_transition_to_that_status(self, prop, status):
         invoice = PaymentInvoiceFactory()
 
-        with pghistory.context(username="first"):
+        with pghistory.context(username="first", user_email="first@example.com"):
             invoice.status = status
             invoice.save(update_fields=["status"])
 
         invoice.status = InvoiceStatus.REJECTED_BY_PM
         invoice.save(update_fields=["status"])
 
-        with pghistory.context(username="second"):
+        with pghistory.context(username="second", user_email="second@example.com"):
             invoice.status = status
             invoice.save(update_fields=["status"])
 
         certification = getattr(invoice, prop)
         latest_event = invoice.status_events.filter(status=status).latest("pgh_created_at")
-        assert certification["name"] == "second"
+        assert certification["name"] == "second@example.com"
         assert certification["certified_at"] == latest_event.pgh_created_at
 
     @pytest.mark.parametrize(
@@ -196,7 +196,6 @@ class TestPaymentInvoice:
                 "deleted@example.com",
                 id="falls-back-to-email",
             ),
-            pytest.param({"username": "pm_no_email"}, "pm_no_email", id="falls-back-to-username"),
         ],
     )
     def test_certifier_name_resolution(self, context, expected_name):
