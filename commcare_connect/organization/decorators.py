@@ -225,3 +225,9 @@ class OppPMRequiredMixin:
     @method_decorator(opportunity_pm_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
+
+
+class OppNMRequiredMixin:
+    @method_decorator(opportunity_nm_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
