@@ -29,6 +29,11 @@ services:
       test: bash -c 'exec 6<>/dev/tcp/redis/6379'
       interval: 2s
       retries: 10
+  maildev:
+    image: maildev/maildev
+    ports:
+      - '1080:1080'
+      - '1025:1025'
 
 volumes:
   postgres_data:
