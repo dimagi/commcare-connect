@@ -648,6 +648,15 @@ class TestSupervisingOrganizationDefault:
 
 
 @pytest.mark.django_db
+def test_flags_property_resolves_legacy_catchment_flag_reason():
+    # Simulates a UserVisit flagged before the Catchment Areas feature was removed.
+    visit = UserVisitFactory.create(
+        flagged=True, flag_reason={"flags": [["catchment", "Visit outside worker catchment areas"]]}
+    )
+    assert visit.flags == ["Catchment"]
+
+
+@pytest.mark.django_db
 def test_audio_attachment_unique_per_visit_and_name():
     visit = UserVisitFactory.create()
     AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
