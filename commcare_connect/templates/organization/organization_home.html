@@ -13,12 +13,7 @@
       {% endblocktrans %}
     </span>
   </div>
-  <!-- htmx binds its triggers on DOMContentLoaded, after Alpine has already started, so the
-       initial members fetch waits on htmx's own ready event rather than orgTabs.init(). -->
-  <div class="w-full flex flex-col gap-4"
-       x-cloak
-       x-data="orgTabs()"
-       @htmx:load.window.once="loadTabContent(selectedTab)">
+  <div class="w-full flex flex-col gap-4" x-cloak x-data="orgTabs()">
     <!-- Tabs -->
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <ul class="tabs">
@@ -69,13 +64,13 @@
            class="w-full"
            hx-get="{% url 'organization:org_member_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
-           hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
+           hx-trigger="intersect once"></div>
       <div x-show="selectedTab === 'members'"
            id="pending_invites_container"
            class="w-full"
            hx-get="{% url 'organization:pending_invites_table' request.org.slug %}{% querystring_replace %}"
            hx-swap="innerHTML"
-           hx-trigger="{% if members_tab_active %}load, {% endif %}loadMembers from:body"></div>
+           hx-trigger="intersect once"></div>
     </div>
     {% include "components/organization_home_page/add_org_member_modal.html" %}
     {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
@@ -88,7 +83,6 @@
     Alpine.data('orgTabs', () => ({
       selectedTab: '{{ request.GET.active_tab|default:"details" }}',
       showAddMemberModal: false,
-      isHistoryAvailable: false,
       selected: [],
       selectAll: false,
       showConfirmRemoveMembershipModal: false,
@@ -110,10 +104,7 @@
         // first "back" leaves the page rather than stepping through a duplicate of it.
         this.updateUrl(this.selectedTab, { replace: true });
 
-        this.$watch('selectedTab', (value) => {
-          this.updateUrl(value);
-          this.loadTabContent(value);
-        });
+        this.$watch('selectedTab', (value) => this.updateUrl(value));
 
         window.addEventListener('popstate', () => this.selectTabFromUrl());
       },
@@ -131,13 +122,6 @@
           window.history.replaceState({}, '', url);
         } else {
           window.history.pushState({}, '', url);
-        }
-      },
-
-      loadTabContent(tab) {
-        if (tab === 'members' && !this.isHistoryAvailable) {
-          htmx.trigger('#invoice_members_container', 'loadMembers');
-          this.isHistoryAvailable = true;
         }
       },
     }));
