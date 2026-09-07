@@ -5,12 +5,7 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from django.db.models import Sum
 
-from commcare_connect.opportunity.models import (
-    CompletedWorkInvoice,
-    CompletedWorkStatus,
-    Currency,
-    PaymentInvoice,
-)
+from commcare_connect.opportunity.models import CompletedWorkInvoice, CompletedWorkStatus, Currency, PaymentInvoice
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     CompletedWorkInvoiceFactory,
@@ -23,6 +18,7 @@ from commcare_connect.opportunity.utils.invoice import get_start_date_for_invoic
 from commcare_connect.opportunity.utils.invoice_line_items import (
     CENTS,
     Money,
+    ServiceSummaryLine,
     _build_billable_rows,
     bill_invoice,
     get_billable_completed_works_qs,
@@ -30,6 +26,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
+    get_invoice_service_summary,
     group_line_items,
     rollback_invoice_line_items,
     total_late_delta_units,
@@ -754,3 +751,64 @@ def test_invoicing_never_writes_the_legacy_invoice_fk(billing_setup):
     rollback_invoice_line_items(invoice)
     work.refresh_from_db()
     assert work.invoice_id is None
+
+
+@pytest.mark.django_db
+class TestInvoiceServiceSummary:
+    def test_flw_and_org_pay_lines(self, billing_setup):
+        access, payment_unit = billing_setup
+        completed_work(access, payment_unit, approved=2)
+        invoice = billed_invoice(access.opportunity)
+
+        summary = get_invoice_service_summary(invoice)
+
+        assert len(summary) == 2
+        assert summary[0].amount_local == Decimal("200")
+        assert "2 verified visits x USD 100.00" in summary[0].label
+        assert summary[1].amount_local == Decimal("40")
+        assert "20% of delivered service value" in summary[1].label
+
+    def test_one_row_per_payment_unit_plus_one_aggregated_org_fee_row(self, billing_setup):
+        access, payment_unit = billing_setup
+        other_unit = PaymentUnitFactory(opportunity=access.opportunity, amount=50, org_amount=10)
+        completed_work(access, payment_unit, approved=2)
+        completed_work(access, other_unit, approved=3)
+        invoice = billed_invoice(access.opportunity)
+
+        summary = get_invoice_service_summary(invoice)
+
+        assert len(summary) == 3
+        by_amount = {line.amount_local: line for line in summary}
+        assert payment_unit.name in by_amount[Decimal("200")].label
+        assert "2 verified visits x USD 100.00" in by_amount[Decimal("200")].label
+        assert other_unit.name in by_amount[Decimal("150")].label
+        assert "3 verified visits x USD 50.00" in by_amount[Decimal("150")].label
+        # org pay is aggregated into a single row: 2*20 + 3*10 = 70
+        assert "of delivered service value" in by_amount[Decimal("70")].label
+
+    def test_omits_org_line_when_org_pay_is_zero(self, billing_setup):
+        access, payment_unit = billing_setup
+        payment_unit.org_amount = 0
+        payment_unit.save(update_fields=["org_amount"])
+        completed_work(access, payment_unit, approved=1)
+        invoice = billed_invoice(access.opportunity)
+
+        summary = get_invoice_service_summary(invoice)
+
+        assert len(summary) == 1
+        assert summary[0].amount_local == Decimal("100")
+
+    def test_custom_invoice_uses_its_own_description_and_amount(self):
+        invoice = PaymentInvoiceFactory(service_delivery=False, amount=Decimal("200.00"), description="Consulting")
+
+        summary = get_invoice_service_summary(invoice)
+
+        assert summary == [ServiceSummaryLine(label="Consulting", amount_local=Decimal("200.00"))]
+
+    def test_service_delivery_invoice_without_billed_line_items_falls_back_to_its_amount(self):
+        invoice = PaymentInvoiceFactory(service_delivery=True, amount=Decimal("150.50"))
+
+        summary = get_invoice_service_summary(invoice)
+
+        assert len(summary) == 1
+        assert summary[0].amount_local == Decimal("150.50")

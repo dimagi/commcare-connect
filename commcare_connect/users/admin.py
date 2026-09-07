@@ -80,11 +80,12 @@ class OrganizationAdmin(admin.ModelAdmin):
         "funder",
         "verified",
         "has_used_connect",
+        "is_test",
     ]
     search_fields = ["name", "short_name"]
     ordering = ["name"]
     inlines = [UserOrganizationMembershipInline]
-    list_filter = ["program_manager", "funder", "verified", "has_used_connect"]
+    list_filter = ["program_manager", "funder", "verified", "has_used_connect", "is_test"]
     filter_horizontal = ["countries"]
 
 

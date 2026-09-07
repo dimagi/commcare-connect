@@ -1,4 +1,6 @@
+import re
 from datetime import timedelta
+from unittest.mock import patch
 from urllib.parse import unquote
 
 import pytest
@@ -6,6 +8,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.timezone import localtime
 
 from commcare_connect.organization.models import (
     Organization,
@@ -14,6 +17,7 @@ from commcare_connect.organization.models import (
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
+from commcare_connect.utils.tables import DATE_TIME_FORMAT
 
 
 @pytest.mark.django_db
@@ -319,6 +323,90 @@ class TestRevokeInviteView:
 
 
 @pytest.mark.django_db
+class TestReinviteView:
+    @staticmethod
+    def _url(org_slug, invite_id):
+        return reverse("organization:reinvite", args=(org_slug, invite_id))
+
+    @staticmethod
+    def _cooldown_of(minutes):
+        """Pinned so these tests cover the throttle logic, not whatever REINVITE_COOLDOWN is tuned to."""
+        return patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=minutes))
+
+    @staticmethod
+    def _past_cooldown(invite):
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - OrganizationInvite.REINVITE_COOLDOWN - timedelta(minutes=1)
+        )
+        invite.refresh_from_db()
+
+    def test_admin_reinvite_issues_a_new_token_and_expiry(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization, role="member")
+        self._past_cooldown(invite)
+        old_token, old_modified = invite.token, invite.date_modified
+        client.force_login(org_user_admin)
+
+        with patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 200
+        send_mock.assert_called_once_with(invite_id=invite.pk)
+        invite.refresh_from_db()
+        assert invite.token != old_token
+        assert invite.date_modified > old_modified
+        assert invite.role == "member"
+
+    def test_reinvite_is_refused_during_the_cooldown(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        old_token = invite.token
+        client.force_login(org_user_admin)
+
+        with self._cooldown_of(minutes=5), patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 200
+        send_mock.assert_not_called()
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+    @pytest.mark.parametrize("status", [OrganizationInvite.Status.ACCEPTED, OrganizationInvite.Status.REVOKED])
+    def test_only_pending_invites_can_be_reinvited(self, client, org_user_admin, organization, status):
+        invite = OrganizationInviteFactory(organization=organization, status=status)
+        self._past_cooldown(invite)
+        client.force_login(org_user_admin)
+
+        with patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 404
+        send_mock.assert_not_called()
+
+    def test_refused_reinvite_reports_the_cooldown_in_a_message(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="jo@example.com")
+        client.force_login(org_user_admin)
+
+        with self._cooldown_of(minutes=5), patch("commcare_connect.organization.views.send_org_invite"):
+            content = client.post(self._url(organization.slug, invite.pk)).content.decode()
+
+        assert 'hx-swap-oob="beforeend:#messages"' in content
+        assert "An invite was just sent to jo@example.com." in content
+
+    def test_member_cannot_reinvite(self, client, org_user_member, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        self._past_cooldown(invite)
+        old_token = invite.token
+        client.force_login(org_user_member)
+
+        with patch("commcare_connect.organization.views.send_org_invite") as send_mock:
+            response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 404
+        send_mock.assert_not_called()
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+
+@pytest.mark.django_db
 class TestOrgMemberTableView:
     @staticmethod
     def _url(org_slug):
@@ -361,7 +449,99 @@ class TestPendingInvitesTableView:
         assert pending.email.encode() in response.content
         assert expired.email.encode() not in response.content
 
+    def test_table_shows_the_expiry_date(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        client.force_login(org_user_admin)
+
+        content = client.get(self._url(organization.slug)).content.decode()
+
+        assert "Expires on" in content
+        assert localtime(invite.expiry_date).strftime(DATE_TIME_FORMAT) in content
+
+    @pytest.mark.parametrize("minutes_ago,disabled", [(1, True), (10, False)])
+    def test_reinvite_button_is_disabled_during_the_cooldown(
+        self, client, org_user_admin, organization, minutes_ago, disabled
+    ):
+        invite = OrganizationInviteFactory(organization=organization)
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - timedelta(minutes=minutes_ago)
+        )
+        client.force_login(org_user_admin)
+
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            content = client.get(self._url(organization.slug)).content.decode()
+
+        reinvite_url = reverse("organization:reinvite", args=(organization.slug, invite.pk))
+        button = re.search(r"<button[^>]*" + re.escape(reinvite_url) + r"[^>]*>", content)
+        assert button, "reinvite button was not rendered"
+        assert ("disabled" in button.group(0)) is disabled
+
     def test_member_cannot_access(self, client, org_user_member, organization):
         client.force_login(org_user_member)
         response = client.get(self._url(organization.slug))
         assert response.status_code == 404
+
+    def test_sort_links_point_at_the_workspace_page_not_the_partial(self, client, org_user_admin, organization):
+        """Headers must link to the page that hosts the table, not to the fragment endpoint.
+
+        The workspace page pulls this table in over htmx, so a header linking to
+        ``request.path`` navigates the browser to the bare fragment: the pending invites
+        render on their own and the members list disappears.
+        """
+        OrganizationInviteFactory(organization=organization)
+        home_url = reverse("organization:home", args=(organization.slug,))
+        client.force_login(org_user_admin)
+
+        content = client.get(
+            self._url(organization.slug), HTTP_REFERER=f"{home_url}?active_tab=members"
+        ).content.decode()
+
+        sort_links = re.findall(r'<a href="([^"]*sort=[^"]*)"', content)
+        assert sort_links, "no sortable column headers were rendered"
+        for link in sort_links:
+            assert not link.startswith(self._url(organization.slug)), f"header links to the fragment: {link}"
+            assert link.startswith(home_url), f"header does not link back to the workspace page: {link}"
+
+    @pytest.mark.parametrize(
+        "sort,expected_order",
+        [
+            ("email", ["amy@example.com", "ben@example.com", "cat@example.com"]),
+            ("-email", ["cat@example.com", "ben@example.com", "amy@example.com"]),
+        ],
+    )
+    def test_sorting_reorders_the_rows(self, client, org_user_admin, organization, sort, expected_order):
+        # Ages are chosen so the default "-date_modified" order (ben, amy, cat) matches
+        # neither expected order, so a sort param that gets dropped can't pass by accident.
+        for email, hours_old in [("ben@example.com", 1), ("amy@example.com", 2), ("cat@example.com", 3)]:
+            invite = OrganizationInviteFactory(organization=organization, email=email)
+            OrganizationInvite.objects.filter(pk=invite.pk).update(
+                date_modified=timezone.now() - timedelta(hours=hours_old)
+            )
+        client.force_login(org_user_admin)
+
+        content = client.get(self._url(organization.slug), {"invites-sort": sort}).content.decode()
+
+        assert sorted(expected_order, key=content.index) == expected_order
+
+    def test_members_table_sort_does_not_reorder_pending_invites(self, client, org_user_admin, organization):
+        """Both tables are loaded from the workspace page's single query string.
+
+        The members table sorts on the unprefixed ``sort`` param and ``role`` is a column on
+        both tables, so without a prefix here sorting one table would reorder the other.
+        """
+        # Roles are picked so that ordering by role ("admin" before "viewer") would put the
+        # oldest invite first, the opposite of this table's default "-date_modified" order.
+        newest = OrganizationInviteFactory(
+            organization=organization, email="newest@example.com", role=UserOrganizationMembership.Role.VIEWER
+        )
+        oldest = OrganizationInviteFactory(
+            organization=organization, email="oldest@example.com", role=UserOrganizationMembership.Role.ADMIN
+        )
+        OrganizationInvite.objects.filter(pk=oldest.pk).update(date_modified=timezone.now() - timedelta(days=1))
+        client.force_login(org_user_admin)
+
+        content = client.get(self._url(organization.slug), {"sort": "role"}).content.decode()
+
+        assert content.index(newest.email) < content.index(oldest.email), (
+            "the members table's sort param leaked into the pending invites table"
+        )
