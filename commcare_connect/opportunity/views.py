@@ -252,6 +252,8 @@ PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
 
+DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
+
 
 def get_opportunity_or_404(pk, org_slug):
     opp = get_object_by_uuid_or_int(Opportunity.objects.all(), str(pk), uuid_field="opportunity_id")
@@ -1979,6 +1981,7 @@ def download_invoice(request, org_slug, opp_id, invoice_id):
     context = {
         "invoice": invoice,
         "service_summary_lines": get_invoice_service_summary(invoice),
+        "dimagi_address": DIMAGI_ADDRESS,
     }
     return WeasyTemplateResponse(
         request=request,

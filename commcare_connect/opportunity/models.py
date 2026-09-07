@@ -802,9 +802,6 @@ class PaymentInvoice(models.Model):
     @staticmethod
     def _certifier_name(event):
         email = event.pgh_context.metadata.get("user_email")
-        if not email:
-            return event.pgh_context.metadata.get("username", "")
-
         user = User.objects.filter(email=email).first()
         return f"{user.name} ({email})" if user and user.name else email
 

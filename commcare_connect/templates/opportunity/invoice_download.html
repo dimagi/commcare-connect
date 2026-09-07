@@ -112,10 +112,7 @@
       </div>
       <div class="section">
         <p class="section-heading">{% trans "Bill to" %}</p>
-        <p>{% trans "Dimagi, Inc." %}</p>
-        <p>{% trans "245 Main Street, 2nd Floor" %}</p>
-        <p>{% trans "Cambridge, MA 02142, USA" %}</p>
-        <p>+1 617.649.2214</p>
+        <p>{{ dimagi_address|linebreaksbr }}</p>
       </div>
       <div class="section">
         <p>{% trans "Opportunity" %}: {{ request.opportunity.name }}</p>

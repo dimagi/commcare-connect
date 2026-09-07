@@ -249,14 +249,14 @@ def get_invoice_service_summary(invoice):
         ServiceSummaryLine(
             label=gettext(
                 "Service delivery payments for %(payment_unit)s, %(period)s "
-                "(%(units)s verified visits x %(currency)s %(rate)s)"
+                "(%(units)s verified visits x %(currency)s %(per_visit_rate)s)"
             )
             % {
                 "payment_unit": item.payment_unit_name,
                 "period": f"{item.month:%B %Y}",
                 "units": item.number_approved,
                 "currency": currency,
-                "rate": (
+                "per_visit_rate": (
                     (item.flw_pay.local / item.number_approved).quantize(CENTS, rounding=ROUND_HALF_EVEN)
                     if item.number_approved
                     else Decimal("0.00")
