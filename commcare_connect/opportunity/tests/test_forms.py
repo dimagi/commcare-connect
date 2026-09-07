@@ -750,6 +750,30 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.amount == 100.0
         assert invoice.date == datetime.date(2025, 11, 6)
 
+    def test_custom_invoice_uses_exchange_rate_of_date_of_expense(self, valid_opportunity):
+        ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=Decimal("100"), rate_date="2025-08-01")
+        ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=Decimal("200"), rate_date="2025-09-01")
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-09-04",
+                "usd_currency": False,
+                "amount": 100.0,
+                "start_date": None,
+                "end_date": None,
+                "description": "A mandatory description",
+                "title": "",
+                "date_of_expense": "2025-08-17",
+            },
+            is_opportunity_pm=False,
+        )
+        assert form.is_valid(), form.errors
+        invoice = form.save()
+        assert invoice.exchange_rate.rate_date == datetime.date(2025, 8, 1)
+        assert invoice.amount_usd == Decimal("1.00")
+
     @patch("commcare_connect.opportunity.forms.bill_invoice")
     def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
