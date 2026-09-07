@@ -17,7 +17,6 @@ from commcare_connect.organization.merge import (
     MergeNotAllowed,
     _move_program_watchers,
     merge_organizations,
-    programs_hidden_by_merge,
     relation_counts,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
@@ -102,13 +101,14 @@ class TestMergeGuards:
 
         assert Organization.objects.filter(pk=source.pk).exists()
 
-    def test_a_funder_target_inherits_the_funded_programs(self, source, funder_target):
+    def test_a_funder_target_inherits_the_funded_programs(self, source):
+        target = OrganizationFactory(name="Target Workspace", funder=True)
         program = ProgramFactory(funder=source, name="Zinc Supplementation")
 
-        merge_organizations(source, funder_target)
+        merge_organizations(source, target)
 
         program.refresh_from_db()
-        assert program.funder == funder_target
+        assert program.funder == target
 
     def test_a_source_marked_as_a_funder_but_funding_nothing_is_allowed(self, target):
         source = OrganizationFactory(name="Source Workspace", funder=True)
@@ -117,6 +117,25 @@ class TestMergeGuards:
 
         target.refresh_from_db()
         assert target.funder is False
+
+    def test_a_program_manager_target_inherits_the_owned_programs(self):
+        source = OrganizationFactory(name="Source Workspace", program_manager=True)
+        target = OrganizationFactory(name="Target Workspace", program_manager=True)
+        program = ProgramFactory(organization=source, name="Zinc Supplementation")
+
+        merge_organizations(source, target)
+
+        program.refresh_from_db()
+        assert program.organization == target
+
+    def test_a_program_manager_source_is_refused_when_the_target_is_not_one(self, target):
+        """The operator has to decide whether the role is carried over or retired with the source."""
+        source = OrganizationFactory(name="Source Workspace", program_manager=True)
+
+        with pytest.raises(MergeNotAllowed, match="marked as a program manager"):
+            merge_organizations(source, target)
+
+        assert Organization.objects.filter(pk=source.pk).exists()
 
     @pytest.mark.parametrize("differing_field", ["cc_app_id", "cc_domain", "hq_server"])
     def test_apps_differing_in_any_key_field_are_allowed(self, source, target, differing_field):
@@ -143,9 +162,19 @@ class TestSourceRemoval:
 class TestProfileFields:
     """The target keeps its own profile; the source's is discarded."""
 
-    @pytest.mark.parametrize("source_value", [True, False])
-    @pytest.mark.parametrize("target_value", [True, False])
-    @pytest.mark.parametrize("capability", ["program_manager", "funder"])
+    @pytest.mark.parametrize(
+        ("capability", "source_value", "target_value"),
+        [
+            ("program_manager", False, False),
+            ("program_manager", False, True),
+            # ("program_manager", True, False) is refused outright; see TestMergeGuards.
+            ("program_manager", True, True),
+            ("funder", False, False),
+            ("funder", False, True),
+            ("funder", True, False),
+            ("funder", True, True),
+        ],
+    )
     def test_capability_flag_keeps_the_target_value(self, capability, source_value, target_value):
         source = OrganizationFactory(**{capability: source_value})
         target = OrganizationFactory(**{capability: target_value})
@@ -155,10 +184,10 @@ class TestProfileFields:
         target.refresh_from_db()
         assert getattr(target, capability) is target_value
 
-    def test_no_profile_field_is_taken_from_the_source(self, target):
+    def test_no_profile_field_is_taken_from_the_source(self):
         """A sweep, so a profile field added to Organization later is covered without touching this test."""
         source = OrganizationFactory(name="Source Workspace", program_manager=True, funder=True)
-        target.refresh_from_db()
+        target = OrganizationFactory(name="Target Workspace", program_manager=True, funder=True)
         before = _profile_snapshot(target)
 
         merge_organizations(source, target)
@@ -169,33 +198,6 @@ class TestProfileFields:
 
 def _profile_snapshot(organization: Organization) -> dict:
     return {field.attname: getattr(organization, field.attname) for field in organization._meta.concrete_fields}
-
-
-class TestProgramsHiddenByMerge:
-    """A non-program-manager target inherits the source's programs, but the UI hides them."""
-
-    def test_programs_the_target_cannot_show_are_reported(self, source, target):
-        ProgramFactory(organization=source, name="Zinc Supplementation")
-        ProgramFactory(organization=source, name="Antenatal Care")
-
-        assert programs_hidden_by_merge(source, target) == ["Antenatal Care", "Zinc Supplementation"]
-
-    def test_a_program_manager_target_hides_nothing(self, source):
-        target = OrganizationFactory(name="Target Workspace", program_manager=True)
-        ProgramFactory(organization=source, name="Zinc Supplementation")
-
-        assert programs_hidden_by_merge(source, target) == []
-
-    def test_a_source_without_programs_hides_nothing(self, source, target):
-        assert programs_hidden_by_merge(source, target) == []
-
-    def test_the_programs_survive_the_merge_on_the_target(self, source, target):
-        program = ProgramFactory(organization=source, name="Zinc Supplementation")
-
-        merge_organizations(source, target)
-
-        program.refresh_from_db()
-        assert program.organization == target
 
 
 class TestSimpleReassignments:
@@ -579,7 +581,7 @@ class TestRelationCoverage:
 
 class TestRollback:
     def test_any_error_rolls_the_whole_merge_back(self, target, failing_merge):
-        source = OrganizationFactory(name="Rollback Source", program_manager=True)
+        source = OrganizationFactory(name="Rollback Source", funder=True)
         opportunity = OpportunityFactory(organization=source)
         membership = MembershipFactory(organization=source, role="member")
 
@@ -592,7 +594,7 @@ class TestRollback:
         membership.refresh_from_db()
         assert membership.organization == source
         target.refresh_from_db()
-        assert target.program_manager is False
+        assert target.funder is False
 
 
 class TestRelationCounts:

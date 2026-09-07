@@ -135,6 +135,7 @@ def _reject_invalid_merge(source: Organization, target: Organization) -> None:
     if source.pk == target.pk:
         raise MergeNotAllowed("An organization cannot be merged into itself.")
     _reject_shared_commcare_apps(source, target)
+    _reject_unmatched_program_manager_status(source, target)
     _reject_funded_programs_a_non_funder_would_inherit(source, target)
 
 
@@ -148,6 +149,18 @@ def _reject_shared_commcare_apps(source: Organization, target: Organization) -> 
             f"Both workspaces are connected to the same CommCare app(s): {', '.join(conflicts)}. "
             "Merging would leave the surviving workspace with duplicates that break "
             "opportunity creation. Remove the redundant app from one workspace first."
+        )
+
+
+def _reject_unmatched_program_manager_status(source: Organization, target: Organization) -> None:
+    """
+    Refuse a merge that drops the source's program manager role.
+    """
+    if source.program_manager and not target.program_manager:
+        raise MergeNotAllowed(
+            f"{source.slug} is marked as a program manager but {target.slug} is not, and a merge does not carry "
+            f"the status over. Mark the surviving workspace as a program manager first, or unmark {source.slug} "
+            "to confirm the role is being retired with it."
         )
 
 
@@ -302,15 +315,3 @@ def relation_counts(organization: Organization) -> dict[str, int]:
         model = apps.get_model(app_label, model_name)
         counts[label] = model._default_manager.filter(**{field_name: organization}).count()
     return counts
-
-
-def programs_hidden_by_merge(source: Organization, target: Organization) -> list[str]:
-    """Names of the source's programs the target would own but not be able to show.
-
-    ``Program.organization`` is repointed like any other relation, but the program views sit behind
-    ``org_pm_required``, so a target that is not a program manager inherits the rows and hides them. Nothing is
-    lost: ticking "Program manager" on the survivor brings them all back.
-    """
-    if target.program_manager:
-        return []
-    return sorted(source.program_set.values_list("name", flat=True))

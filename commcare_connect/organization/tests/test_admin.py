@@ -17,7 +17,6 @@ from commcare_connect.organization.admin import (
     merge_preview,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -74,21 +73,6 @@ class TestMergePreview:
         preview = merge_preview(source, target)
 
         assert preview["flag_names"] == [["a-source-only-flag"], []]
-
-    def test_hidden_programs_are_listed_against_the_workspace_that_would_survive(self, source, target):
-        ProgramFactory(organization=source, name="Zinc Supplementation")
-
-        preview = merge_preview(source, target)
-
-        assert preview["hidden_programs"] == [[], ["Zinc Supplementation"]]
-
-    def test_a_program_manager_survivor_hides_nothing(self, source):
-        target = OrganizationFactory(name="Target Workspace", program_manager=True)
-        ProgramFactory(organization=source, name="Zinc Supplementation")
-
-        preview = merge_preview(source, target)
-
-        assert preview["hidden_programs"] == [[], []]
 
 
 def _run_action(client, organizations, **extra):

@@ -10,7 +10,6 @@ from commcare_connect.organization.merge import (
     HANDLED_RELATIONS,
     MergeNotAllowed,
     merge_organizations,
-    programs_hidden_by_merge,
     relation_counts,
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -44,19 +43,7 @@ def merge_preview(source: Organization, target: Organization) -> dict:
         ],
         "count_rows": [(label, [count[label] for count in counts]) for label in sorted(HANDLED_RELATIONS)],
         "flag_names": [sorted(organization.flag_set.values_list("name", flat=True)) for organization in organizations],
-        "hidden_programs": _hidden_programs_per_candidate(source, target),
     }
-
-
-def _hidden_programs_per_candidate(source: Organization, target: Organization) -> list[list[str]]:
-    """Programs each workspace would hide, in column order, if it were the one kept.
-
-    The arguments are swapped in the first call: keeping ``source`` means merging ``target`` into it.
-    """
-    return [
-        programs_hidden_by_merge(target, source),
-        programs_hidden_by_merge(source, target),
-    ]
 
 
 class OrganizationMergeForm(forms.Form):

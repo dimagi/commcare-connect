@@ -89,18 +89,6 @@
               </td>
             {% endfor %}
           </tr>
-          <tr>
-            <th scope="row">Programs hidden if kept</th>
-            {% for names in hidden_programs %}
-              <td>
-                {% if names %}
-                  {{ names|join:", " }}
-                {% else %}
-                  &mdash;
-                {% endif %}
-              </td>
-            {% endfor %}
-          </tr>
         </tbody>
       </table>
       <ul class="help">
@@ -111,9 +99,9 @@
           Where a user belongs to both workspaces, the surviving workspace's role wins, otherwise the workspace which the user has membership on.
         </li>
         <li>
-          A survivor that is not a <strong>Program manager</strong> inherits the other workspace's programs but hides
-          them: they vanish from the UI and their visit review stops. Nothing is deleted &mdash; enabling
-          <strong>Program manager</strong> on the survivor brings them back.
+          The merge is refused if the deleted workspace is marked <strong>Program manager</strong>, or funds
+          programs, and the survivor is not marked the same. Set the flag on the survivor first if it should take
+          that work on, or clear it on the workspace being deleted to retire the role with it.
         </li>
         <li>Pending invites are carried over, but their emailed links die with the deleted workspace's slug.</li>
         <li>The deleted workspace's slug is freed with no redirect, so its URLs stop working.</li>
