@@ -88,7 +88,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-django>=4.5.2",
     "pytest-httpx>=0.24.0",
-    "ruff>=0.15.17",
+    "ruff>=0.16.6",
     "xml2json",
 ]
 production = [
