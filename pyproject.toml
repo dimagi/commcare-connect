@@ -64,7 +64,7 @@ extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
 # E/W: pycodestyle, F: pyflakes (flake8 defaults), I: isort
-select = ["E", "F", "W", "I", "RUF100"]
+select = ["E", "F", "W", "I", "UP", "RUF100"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["commcare_connect", "config"]

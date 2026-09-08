@@ -1,4 +1,4 @@
-from datetime import date, timedelta, timezone
+from datetime import UTC, date, timedelta
 
 from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
@@ -138,8 +138,8 @@ class UserVisitFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
     deliver_unit = SubFactory(DeliverUnitFactory)
     status = Faker("enum", enum_cls=VisitValidationStatus)
-    visit_date = Faker("date_time", tzinfo=timezone.utc)
-    date_created = Faker("date_time", tzinfo=timezone.utc)
+    visit_date = Faker("date_time", tzinfo=UTC)
+    date_created = Faker("date_time", tzinfo=UTC)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
     completed_work = SubFactory(CompletedWorkFactory)
@@ -180,7 +180,7 @@ class CompletedModuleFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
     opportunity_access = SubFactory(OpportunityAccessFactory)
-    date = Faker("date_time", tzinfo=timezone.utc)
+    date = Faker("date_time", tzinfo=UTC)
     module = SubFactory(LearnModuleFactory, app=SelfAttribute("..opportunity.learn_app"))
     duration = Faker("time_delta")
 
@@ -196,7 +196,7 @@ class AssessmentFactory(DjangoModelFactory):
     passed = True
     score = Faker("pyint", min_value=75, max_value=100)
     passing_score = Faker("pyint", min_value=1, max_value=50)
-    date = Faker("date_time", tzinfo=timezone.utc)
+    date = Faker("date_time", tzinfo=UTC)
 
     class Meta:
         model = "opportunity.Assessment"
@@ -253,7 +253,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 class PaymentFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
     amount = Faker("pydecimal", min_value=1, max_value=10000)
-    date_paid = Faker("date_time", tzinfo=timezone.utc)
+    date_paid = Faker("date_time", tzinfo=UTC)
 
     class Meta:
         model = "opportunity.Payment"
@@ -262,7 +262,7 @@ class PaymentFactory(DjangoModelFactory):
 class PaymentInvoiceFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     amount = Faker("pydecimal", min_value=0, max_value=1000)
-    date = Faker("date_time", tzinfo=timezone.utc)
+    date = Faker("date_time", tzinfo=UTC)
     invoice_number = Faker("pystr")
 
     class Meta:
@@ -282,7 +282,7 @@ class TaskTypeFactory(DjangoModelFactory):
 class AssignedTaskFactory(DjangoModelFactory):
     task_type = SubFactory(TaskTypeFactory)
     opportunity_access = SubFactory(OpportunityAccessFactory)
-    completed_at = Faker("date_time", tzinfo=timezone.utc)
+    completed_at = Faker("date_time", tzinfo=UTC)
     duration = LazyFunction(lambda: timedelta(hours=1))
     status = AssignedTaskStatus.ASSIGNED
     due_date = LazyFunction(lambda: date.today() + timedelta(days=7))
@@ -295,7 +295,7 @@ class AssignedTaskFactory(DjangoModelFactory):
 class ExchangeRateFactory(DjangoModelFactory):
     currency_code = "USD"
     rate = 1.0
-    rate_date = Faker("date_time", tzinfo=timezone.utc)
+    rate_date = Faker("date_time", tzinfo=UTC)
 
     class Meta:
         model = "opportunity.ExchangeRate"
