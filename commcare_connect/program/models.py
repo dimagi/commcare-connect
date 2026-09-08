@@ -59,7 +59,7 @@ class ProgramApplication(BaseModel):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     status = models.CharField(
         max_length=20,
-        choices=ProgramApplicationStatus.choices,
+        choices=ProgramApplicationStatus,
         default=ProgramApplicationStatus.INVITED,
     )
 

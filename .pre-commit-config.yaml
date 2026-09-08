@@ -35,10 +35,10 @@ repos:
         exclude: commcare_connect/templates/prelogin/home.html
 
   - repo: https://github.com/adamchainz/django-upgrade
-    rev: '1.13.0'
+    rev: '1.32.0'
     hooks:
       - id: django-upgrade
-        args: ['--target-version', '4.1']
+        args: ['--target-version', '5.2']
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.4.0
