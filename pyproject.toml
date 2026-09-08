@@ -54,7 +54,6 @@ python_files = [
 [tool.coverage.run]
 include = ["commcare_connect/**"]
 omit = ["*/migrations/*", "*/tests/*"]
-plugins = ["django_coverage_plugin"]
 
 
 # ==== ruff ====
