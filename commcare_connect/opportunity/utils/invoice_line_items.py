@@ -99,7 +99,9 @@ class WorkPayRow:
 
     @property
     def total_pay(self) -> Money:
-        return self.flw_pay + self.org_pay
+        # Re-derived from the exact local total, not flw_pay.usd + org_pay.usd -- summing two
+        # independently-rounded USD amounts can drift a cent from a single division of the total.
+        return Money.from_local_amount(self.flw_pay.local + self.org_pay.local, self.exchange_rate.rate)
 
 
 def _build_billable_rows(works, currency_code, end_date):
@@ -146,7 +148,8 @@ class LineItem:
 
     @property
     def total_pay(self) -> Money:
-        return self.flw_pay + self.org_pay
+        # Re-derived from the exact local total, not flw_pay.usd + org_pay.usd -- see WorkPayRow.total_pay.
+        return Money.from_local_amount(self.flw_pay.local + self.org_pay.local, self.exchange_rate)
 
 
 def group_line_items(rows):
@@ -171,6 +174,13 @@ def group_line_items(rows):
             group["late_delta_units"] += row.billed_count
         group["flw_pay"] += row.flw_pay
         group["org_pay"] += row.org_pay
+
+    for group in groups.values():
+        # Re-derive USD from the exact local total at this group's single rate, rather than
+        # summing each row's already-rounded USD -- summed roundings drift from the true total.
+        rate = group["exchange_rate"]
+        group["flw_pay"] = Money.from_local_amount(group["flw_pay"].local, rate)
+        group["org_pay"] = Money.from_local_amount(group["org_pay"].local, rate)
 
     def display_order(entry):
         (month, _), group = entry
@@ -198,8 +208,6 @@ def get_invoice_line_items(invoice):
             late_delta_units=Coalesce(Sum("billed_count", filter=Q(is_delta=True)), 0),
             flw_local=Sum("flw_amount_local"),
             org_local=Sum("org_amount_local"),
-            flw_usd=Sum("flw_amount_usd"),
-            org_usd=Sum("org_amount_usd"),
             # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
             rate=Max("exchange_rate__rate"),
             rate_date=Max("exchange_rate__rate_date"),
@@ -214,8 +222,9 @@ def get_invoice_line_items(invoice):
             payment_unit_name=record["payment_unit_name"],
             number_approved=record["number_approved"],
             late_delta_units=record["late_delta_units"],
-            flw_pay=Money(record["flw_local"], record["flw_usd"]),
-            org_pay=Money(record["org_local"], record["org_usd"]),
+            # Re-derived from the exact local total at this group's single rate -- see group_line_items.
+            flw_pay=Money.from_local_amount(record["flw_local"], record["rate"]),
+            org_pay=Money.from_local_amount(record["org_local"], record["rate"]),
             exchange_rate=record["rate"],
             exchange_rate_date=record["rate_date"],
             exchange_rate_fetched_at=record["rate_fetched_at"],
@@ -370,7 +379,10 @@ def _freeze_line_items(invoice, rows):
     invoice.exchange_rate = ExchangeRate.latest_exchange_rate(
         invoice.opportunity.currency_code, max(row.month for row in rows)
     )
-    total = sum(row.total_pay for row in rows)
+    # Sum each (month, payment unit) group's own precisely-derived total (local total divided once
+    # by that group's rate), not each individual delivery's already-rounded USD -- summing those
+    # directly drifts further from the true total the more deliveries the invoice bills.
+    total = sum((item.total_pay for item in group_line_items(rows)), Money.zero())
     invoice.amount = total.local
     invoice.amount_usd = total.usd
     invoice.save()
