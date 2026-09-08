@@ -310,11 +310,11 @@ class TestBuildingsGeojson(BaseMicroplanningFlagTest):
         assert response.json()["error"]
 
     def test_overture_failing_to_open_is_reported_as_503(self, client, org_user_admin, organization, opportunity):
-        """The package raises rather than returning None when it cannot resolve the release."""
+        """Whatever goes wrong reading Overture, the map is owed an answer rather than a traceback."""
         client.force_login(org_user_admin)
         with patch(
-            "overturemaps.record_batch_reader",
-            side_effect=Exception("Could not fetch STAC catalog: <urlopen error>"),
+            "commcare_connect.microplanning.overture.read_buildings",
+            side_effect=Exception("Could not read the Overture index: <urlopen error>"),
         ):
             response = client.get(
                 self.url(organization.slug, opportunity.opportunity_id), {"bbox": "8.65,9.05,8.70,9.09"}

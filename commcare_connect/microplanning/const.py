@@ -55,6 +55,5 @@ MAX_BUILDING_GRID_TILES = 16
 # from and bumping buildings.OVERTURE_RELEASE invalidates every one of them at once.
 BUILDINGS_CACHE_KEY = "buildings:{release}:{z}:{x}:{y}"
 BUILDINGS_CACHE_TIMEOUT = 60 * 60 * 24 * 7
-OVERTURE_BUILDING_TYPE = "building"
 OVERTURE_CONNECT_TIMEOUT = 5
 OVERTURE_REQUEST_TIMEOUT = 30

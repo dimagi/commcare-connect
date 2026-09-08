@@ -16,7 +16,6 @@ from commcare_connect.microplanning.const import (
     BUILDINGS_CACHE_TIMEOUT,
     GRID_ZOOM,
     MAX_BUILDING_GRID_TILES,
-    OVERTURE_BUILDING_TYPE,
     OVERTURE_CONNECT_TIMEOUT,
     OVERTURE_REQUEST_TIMEOUT,
 )
@@ -114,36 +113,23 @@ def fetch_buildings_for_grid_tiles(grid_tiles):
     than one query per grid tile: each Overture read pays seconds of fixed overhead opening the remote
     dataset, and neighbouring grid tiles largely share the parquet row groups that then get scanned.
     """
+    # Imported lazily: reading Overture means pyarrow, which costs a process 60MB of resident
+    # memory, and most requests this process serves never ask for buildings.
+    from commcare_connect.microplanning.overture import read_buildings
+
     try:
-        reader = _overture_building_reader(bounds_for_grid_tiles(grid_tiles))
-        table = reader.read_all()
+        table = read_buildings(
+            bounds_for_grid_tiles(grid_tiles),
+            OVERTURE_RELEASE,
+            OVERTURE_CONNECT_TIMEOUT,
+            OVERTURE_REQUEST_TIMEOUT,
+        )
     except BuildingDataUnavailable:
         raise
     except Exception as e:
         raise BuildingDataUnavailable("Could not read building data from Overture") from e
 
     return _features_by_grid_tile(table, grid_tiles)
-
-
-def _overture_building_reader(bounds):
-    # Imported lazily: overturemaps pulls in pyarrow, which is slow and memory-hungry to import,
-    # and most requests to this process never ask for buildings.
-    from overturemaps import record_batch_reader
-
-    reader = record_batch_reader(
-        OVERTURE_BUILDING_TYPE,
-        bbox=bounds,
-        release=OVERTURE_RELEASE,
-        connect_timeout=OVERTURE_CONNECT_TIMEOUT,
-        request_timeout=OVERTURE_REQUEST_TIMEOUT,
-        stac=True,
-    )
-    if reader is None:
-        # None means STAC found no parquet files intersecting the bbox; Treat it as an
-        # error rather than as "no buildings here", or we would cache an empty result for an area
-        # we never managed to read.
-        raise BuildingDataUnavailable(f"Overture returned no reader for {bounds}")
-    return reader
 
 
 def _features_by_grid_tile(table, grid_tiles):

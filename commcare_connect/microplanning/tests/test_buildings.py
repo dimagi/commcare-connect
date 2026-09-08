@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import mercantile
 import pyarrow as pa
@@ -21,6 +21,7 @@ from commcare_connect.microplanning.const import (
     MAX_BUILDING_GRID_TILES,
 )
 from commcare_connect.microplanning.exceptions import AreaTooLarge, BuildingDataUnavailable
+from commcare_connect.microplanning.overture import BUILDING_SCHEMA
 
 # The largest map we draw, in css pixels, and where those numbers come from. They live here rather
 # than in const.py because they describe the browser, not the endpoint: the cap is a limit on what
@@ -273,29 +274,31 @@ def test_buildings_for_bbox_only_fetches_the_grid_tiles_it_is_missing(local_cach
     assert fetch.call_args.args[0] == [grid_tile for grid_tile in grid_tiles if grid_tile != cached_grid_tile]
 
 
-def _unreadable_reader():
-    reader = Mock()
-    reader.read_all.side_effect = OSError("connection reset")
-    return reader
-
-
 @pytest.mark.parametrize(
-    "patch_kwargs",
+    "side_effect",
     [
-        # STAC found no parquet files for the bbox, which the package signals by returning None.
-        {"return_value": None},
-        # The dataset opened, but reading its rows failed.
-        {"return_value": _unreadable_reader()},
-        # It never opened: looking up the parquet files and reading their footers happens before
-        # any row does, and raises rather than returning None.
-        {"side_effect": Exception("Could not open dataset: <S3 error>")},
+        # The read failed somewhere overture.py knows about: the index, or the parquet files.
+        BuildingDataUnavailable("Could not read the Overture index"),
+        # And anything it does not: whatever goes wrong, this endpoint owes the map an answer.
+        OSError("connection reset"),
     ],
-    ids=["no reader", "unreadable data", "dataset would not open"],
+    ids=["overture reported it", "anything else"],
 )
-def test_fetch_raises_when_overture_cannot_be_read(patch_kwargs):
-    with patch("overturemaps.record_batch_reader", **patch_kwargs):
+def test_fetch_raises_when_overture_cannot_be_read(side_effect):
+    with patch("commcare_connect.microplanning.overture.read_buildings", side_effect=side_effect):
         with pytest.raises(BuildingDataUnavailable):
             fetch_buildings_for_grid_tiles([(8192, 8191)])
+
+
+def test_an_area_overture_has_no_buildings_for_is_not_an_error(local_cache):
+    """Overture answered, and the answer was that there is nothing there. That is cacheable."""
+    bbox = (-0.01, -0.01, 0.01, 0.01)
+
+    with patch("commcare_connect.microplanning.overture.read_buildings", return_value=BUILDING_SCHEMA.empty_table()):
+        collection = buildings_for_bbox(*bbox)
+
+    assert collection["features"] == []
+    assert all(local_cache.get(cache_key_for_grid_tile(grid_tile)) == [] for grid_tile in covering_grid_tiles(*bbox))
 
 
 def test_features_by_grid_tile_buckets_each_building_into_every_grid_tile_it_touches():
