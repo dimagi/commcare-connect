@@ -1,5 +1,42 @@
 {% load i18n %}
 <script>
+    // Caps the map's footprint data: enough to pan and zoom around a work area, few enough that a
+    // long roaming session cannot grow it without bound.
+    const MAX_BUILDING_AREAS = 10;
+
+    // Loaded areas, oldest first: { bbox: [west, south, east, north] | null, features: [...] },
+    // where bbox is the grid area the response covers. Outside the Alpine component on purpose: a
+    // dense viewport is tens of thousands of features to proxy, and no template reads them.
+    let buildingsAreas = [];
+
+    const BUILDING_LAYERS = ['buildings-fill', 'buildings-outline'];
+
+    // A marker rather than a fixed overlay, so a slow load's spinner stays over the area it is
+    // fetching instead of following the screen.
+    let buildingsLoadingMarker = null;
+
+    function buildingsLoadingMarkerElement() {
+        const element = document.createElement('div');
+        // pointer-events-none: the spinner must not swallow clicks meant for the Work Areas below.
+        element.className = 'map-loading-marker pointer-events-none';
+        element.setAttribute('role', 'status');
+        element.setAttribute('aria-label', "{% translate 'Loading building data for this area.' %}");
+        element.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        return element;
+    }
+
+    // Every loaded area merged into one FeatureCollection, each footprint drawn once.
+    function loadedBuildings() {
+        const byId = new Map();
+        for (const area of buildingsAreas) {
+            for (const feature of area.features) {
+                // Overlapping areas repeat footprints; one without an id can only dedupe by identity.
+                byId.set(feature.properties?.id ?? feature, feature);
+            }
+        }
+        return { type: 'FeatureCollection', features: [...byId.values()] };
+    }
+
     document.addEventListener("alpine:init", () => {
         Alpine.data("mapController", () => ({
             map: null,
@@ -12,6 +49,13 @@
             showReviewInaccessibilityModal: false,
             showVisits: false,
             showImplementationAreas: false,
+            showBuildings: false,
+            buildingsLoading: false,
+            buildingsReloadQueued: false,
+            // Zoomed in far enough to load and draw footprints. A boolean rather than the zoom
+            // itself, so a gesture's per-frame `zoom` only notifies Alpine when the answer changes.
+            buildingsAvailable: false,
+            buildingMinZoom: parseInt("{{ building_min_zoom|escapejs }}"),
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
@@ -1304,6 +1348,9 @@
                 // Work Areas. Their setup lives in its own method to keep initializeMap focused.
                 this.initImplementationAreas();
 
+                // Added after the Work Area layers so the footprints draw on top of them.
+                this.initBuildings();
+
 
                 // When the user clicks on the map, Mapbox returns the geographic object
                 // under the cursor as a "feature". A feature represents a single polygon
@@ -1389,6 +1436,172 @@
                     }
                     this.hoveredWorkArea = null;
                 });
+            },
+
+            // Sets up the Building Data overlay. Footprints are fetched when the toggle goes on
+            // and whenever a move leaves the loaded areas; each response adds to what is drawn
+            // rather than replacing it. Below the minimum zoom they are kept but not drawn, so
+            // zooming back in needs no refetch.
+            initBuildings() {
+                this.buildingsAvailable = this.map.getZoom() >= this.buildingMinZoom;
+
+                this.map.addSource('buildings', {
+                    type: 'geojson',
+                    data: { type: 'FeatureCollection', features: [] }
+                });
+
+                // Faint fill so Work Area status colours read through it; the outline is what
+                // makes small rural footprints visible at all.
+                this.map.addLayer({
+                    id: 'buildings-fill',
+                    type: 'fill',
+                    source: 'buildings',
+                    minzoom: this.buildingMinZoom,
+                    layout: { 'visibility': 'none' },
+                    paint: {
+                        'fill-color': '#8b5cf6',
+                        'fill-opacity': 0.15
+                    }
+                });
+
+                this.map.addLayer({
+                    id: 'buildings-outline',
+                    type: 'line',
+                    source: 'buildings',
+                    minzoom: this.buildingMinZoom,
+                    layout: { 'visibility': 'none' },
+                    paint: {
+                        'line-color': '#4c1d95',
+                        'line-width': 1
+                    }
+                });
+
+                // On `zoom` rather than `moveend`, so the control appears the moment the user
+                // crosses the minimum zoom rather than when the gesture ends.
+                this.map.on('zoom', () => {
+                    this.buildingsAvailable = this.map.getZoom() >= this.buildingMinZoom;
+                    this.syncBuildingsLoadingMarker();
+                });
+
+                this.map.on('moveend', () => {
+                    if (this.showBuildings) this.loadBuildingsForNewArea();
+                });
+
+                this.$watch('showBuildings', (visible) => {
+                    if (visible) {
+                        this.loadBuildings();
+                    } else {
+                        this.clearBuildings();
+                    }
+                });
+            },
+
+            // Loads only once the viewport reaches past the loaded areas, so panning within one
+            // costs nothing.
+            loadBuildingsForNewArea() {
+                // Zoomed out this far, the viewport spans more grid tiles than one request may cover.
+                if (!this.buildingsAvailable) return;
+                if (this.viewportCoveredByBuildings()) return;
+                this.loadBuildings();
+            },
+
+            // Per area rather than against their union: a viewport straddling two reloads, which
+            // the server answers from cache and which adds no duplicate footprints.
+            viewportCoveredByBuildings() {
+                const bounds = this.map.getBounds();
+                return buildingsAreas.some(({ bbox }) => {
+                    if (!bbox) return false;
+                    const [west, south, east, north] = bbox;
+                    return bounds.getWest() >= west
+                        && bounds.getSouth() >= south
+                        && bounds.getEast() <= east
+                        && bounds.getNorth() <= north;
+                });
+            },
+
+            async loadBuildings() {
+                // Overture reads are slow enough for pans to overlap. One request in flight, then
+                // re-check the viewport, so the map matches where the user stopped.
+                if (this.buildingsLoading) {
+                    this.buildingsReloadQueued = true;
+                    return;
+                }
+
+                const buildingsUrl = '{{ buildings_url|escapejs }}';
+                const bounds = this.map.getBounds();
+                const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+                this.buildingsLoading = true;
+                this.showBuildingsLoadingMarker(bbox);
+                try {
+                    const res = await fetch(`${buildingsUrl}?bbox=${bbox.join(',')}`);
+                    // Guidance, not a failure: the toggle stays on, so zooming in loads the
+                    // footprints without the user asking again.
+                    if (res.status === 422) {
+                        this.showToast("{% translate 'Zoom in to load building data.' %}", true);
+                        return;
+                    }
+                    if (!res.ok) throw new Error('Failed to fetch building data');
+                    const data = await res.json();
+                    this.addBuildingsArea(data.bbox, data.features ?? []);
+                    this.syncBuildingsVisibility();
+                } catch (err) {
+                    console.error(err);
+                    this.showToast("{% translate 'Failed to load building data.' %}", true);
+                    // A failure while extending the view keeps what already loaded; only a failed
+                    // first load switches the toggle off.
+                    if (!buildingsAreas.length) this.showBuildings = false;
+                } finally {
+                    this.buildingsLoading = false;
+                    this.hideBuildingsLoadingMarker();
+                    if (this.buildingsReloadQueued) {
+                        this.buildingsReloadQueued = false;
+                        if (this.showBuildings) this.loadBuildingsForNewArea();
+                    }
+                }
+            },
+
+            // A response with no bbox is still drawn, but never counts as covering a viewport, so
+            // the next move reloads it.
+            addBuildingsArea(bbox, features) {
+                buildingsAreas.push({ bbox: bbox ?? null, features });
+                // Drops the areas moved away from longest ago.
+                buildingsAreas.splice(0, buildingsAreas.length - MAX_BUILDING_AREAS);
+                this.map.getSource('buildings').setData(loadedBuildings());
+            },
+
+            clearBuildings() {
+                buildingsAreas = [];
+                this.buildingsReloadQueued = false;
+                this.hideBuildingsLoadingMarker();
+                this.map.getSource('buildings').setData({ type: 'FeatureCollection', features: [] });
+                this.syncBuildingsVisibility();
+            },
+
+            showBuildingsLoadingMarker([west, south, east, north]) {
+                buildingsLoadingMarker?.remove();
+                buildingsLoadingMarker = new mapboxgl.Marker({ element: buildingsLoadingMarkerElement() })
+                    .setLngLat([(west + east) / 2, (south + north) / 2])
+                    .addTo(this.map);
+                this.syncBuildingsLoadingMarker();
+            },
+
+            hideBuildingsLoadingMarker() {
+                buildingsLoadingMarker?.remove();
+                buildingsLoadingMarker = null;
+            },
+
+            syncBuildingsVisibility() {
+                const value = this.showBuildings && buildingsAreas.length > 0 ? 'visible' : 'none';
+                for (const layerId of BUILDING_LAYERS) {
+                    this.map.setLayoutProperty(layerId, 'visibility', value);
+                }
+                this.syncBuildingsLoadingMarker();
+            },
+
+            // A DOM element, not a layer, so its zoom range is kept by hand.
+            syncBuildingsLoadingMarker() {
+                const element = buildingsLoadingMarker?.getElement();
+                if (element) element.hidden = !this.buildingsAvailable;
             },
 
             // Sets up the Implementation Area overlay: a GeoJSON source, a black outline layer,

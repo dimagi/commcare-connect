@@ -186,7 +186,7 @@
            x-ref="mapContainer"
            class="relative min-w-0 xl:flex-1 shadow-md h-[max(calc(100vh-300px),200px)] xl:h-full">
         <div id="toast-container"
-             class="absolute top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm text-white opacity-0 transition-opacity duration-300">
+             class="pointer-events-none absolute top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm text-white opacity-0 transition-opacity duration-300">
           <i id="toast-icon" class="text-lg"></i>
           <span id="toast-message"></span>
         </div>
@@ -194,10 +194,11 @@
           <div x-show="isHoveringWorkArea"
                x-effect="if (isHoveringWorkArea) { clearTimeout(hintTimeout); hintTimeout = setTimeout(() => isHoveringWorkArea = false, 3000) }"
                x-cloak
-               class="absolute top-4 right-2 z-40 pointer-events-none px-2 py-2 rounded-md shadow-lg border border-white/10 text-sm text-white bg-black/50">
+               class="absolute top-20 right-2 z-40 pointer-events-none px-2 py-2 rounded-md shadow-lg border border-white/10 text-sm text-white bg-black/50">
             {% translate "Click to select group · Shift+click to select single area" %}
           </div>
         {% endif %}
+        {% include "microplanning/map_layer_toggles.html" %}
         <dl x-show="hoveredWorkArea"
             x-cloak
             class="absolute bottom-4 right-2 z-40 pointer-events-none grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white shadow-lg max-w-xs">
