@@ -75,5 +75,5 @@ class Command(BaseCommand):
 
     def _log_change(self, invoice, old_usd, correct_usd):
         self.stdout.write(
-            f"  invoice {invoice.invoice_number} ({invoice.payment_invoice_id}): {old_usd} -> {correct_usd}"
+            f"  invoice pk={invoice.pk} {invoice.invoice_number} status={invoice.status}: {old_usd} -> {correct_usd}"
         )
