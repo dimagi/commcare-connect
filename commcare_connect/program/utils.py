@@ -10,6 +10,12 @@ def get_managed_opp(opp_id) -> Opportunity | None:
     return queryset.filter(opportunity_id=opp_id).first()
 
 
+def clear_managed_opp_cache(opportunity) -> None:
+    ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
+    for opp_id in ids:
+        get_managed_opp.clear(opp_id)
+
+
 def is_org_pm(request):
     return request.org.program_manager and (
         (request.org_membership != None and request.org_membership.is_admin) or request.user.is_superuser  # noqa: E711
