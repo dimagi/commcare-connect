@@ -97,15 +97,6 @@
         <p>{% trans "Invoice number" %}: {{ invoice.invoice_number }}</p>
         <p>{% trans "Invoice date" %}: {{ invoice.date|default:"" }}</p>
         <p>{% trans "Payment terms" %}: {% trans "Net 30" %}</p>
-        <p>{% trans "Invoice status" %}: {{ invoice.get_status_display }}</p>
-        <p>
-          {% trans "Paid" %}:
-          {% if invoice.is_paid %}
-            {% trans "Paid" %}
-          {% else %}
-            {% trans "Pending" %}
-          {% endif %}
-        </p>
         {% if invoice.is_paid %}
           <p>{% trans "Payment date" %}: {{ invoice.payment.date_paid }}</p>
         {% endif %}
