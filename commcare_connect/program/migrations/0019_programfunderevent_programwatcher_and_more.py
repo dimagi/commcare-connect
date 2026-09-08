@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('pghistory', '0007_auto_20250421_0444'),
         ('organization', '0011_organization_funder'),
-        ('program', '0017_delete_managedopportunity'),
+        ('program', '0018_programapplication_unique_program_application_per_organization'),
     ]
 
     operations = [
