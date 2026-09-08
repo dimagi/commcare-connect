@@ -2,6 +2,7 @@ from enum import IntEnum
 
 from django.http import Http404
 
+from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
@@ -102,6 +103,19 @@ def opportunity_by_id(opp_id) -> Opportunity | None:
         return None
 
 
+@quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
+def get_managed_opp(opp_id) -> Opportunity | None:
+    """Cached, read-only view of an opportunity and the org running its program.
+
+    Only for answering "who oversees this opportunity". Never save the row it returns: it can be up to a
+    day stale. Use ``opportunity_by_id`` for anything the request goes on to edit.
+    """
+    queryset = Opportunity.objects.select_related("program__organization")
+    if str(opp_id).isdigit():
+        return queryset.filter(pk=int(opp_id)).first()
+    return queryset.filter(opportunity_id=opp_id).first()
+
+
 def org_access_level_from_request(request) -> AccessLevel:
     """Access level for org-related operations depends on the user's role.
     Only the organization's users can access these operations.
@@ -118,6 +132,12 @@ def _base_access_level(request) -> AccessLevel | None:
     if request.user.has_perm(ALL_ORG_ACCESS):
         return AccessLevel.MANAGE
     return None
+
+
+def clear_managed_opp_cache(opportunity) -> None:
+    ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
+    for opp_id in ids:
+        get_managed_opp.clear(opp_id)
 
 
 def is_org_pm(request):
