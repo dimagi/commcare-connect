@@ -20,7 +20,7 @@ MONDAY_2AM_UTC = datetime.datetime(2026, 4, 20, 2, 0, tzinfo=datetime.UTC)
 @mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
 def test_task_generates_reports_only_for_flagged_opportunities(mock_now):
     flagged_opp = OpportunityFactory()
-    unflagged_opp = OpportunityFactory()  # noqa: F841
+    unflagged_opp = OpportunityFactory()
 
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(flagged_opp)

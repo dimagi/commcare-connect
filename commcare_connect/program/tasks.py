@@ -115,7 +115,7 @@ def send_monthly_delivery_reminder_email():
     organizations_with_pending_deliveries = Organization.objects.filter(
         Q(opportunity__opportunityaccess__completedwork__status=CompletedWorkStatus.pending)
         | Q(
-            program__opportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending  # noqa:E501
+            program__opportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending
         ),
     ).distinct()
 

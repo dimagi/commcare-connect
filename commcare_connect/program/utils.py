@@ -48,7 +48,7 @@ def populate_currency_and_country_fk_for_model(apps, model_name, app_label, tota
     print(f"Populating {total_label} currency_fk & country for {total} records...")
 
     for start in range(0, total, BATCH_SIZE):
-        batch = list(qs[start : start + BATCH_SIZE])  # noqa: E203
+        batch = list(qs[start : start + BATCH_SIZE])
         for record in batch:
             raw_code = (record.currency or "").strip().upper()
             if not raw_code:

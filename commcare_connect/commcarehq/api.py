@@ -143,10 +143,7 @@ def bulk_create_or_update_cases(
     cases = []
     with httpx.Client(headers=headers) as client:
         for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
-            chunk = [
-                {**case_data, "create": create}
-                for case_data in cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]  # noqa: E203
-            ]
+            chunk = [{**case_data, "create": create} for case_data in cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]]
             try:
                 response = client.post(url, json=chunk)
                 response.raise_for_status()
