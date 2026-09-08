@@ -1466,7 +1466,7 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
                 Row(
                     Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
                     Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
-                    css_class="grid grid-cols-3 gap-2",
+                    css_class="grid grid-cols-2 gap-2",
                 ),
                 Row(Field("location")),
                 form_submission_hour_fields,
