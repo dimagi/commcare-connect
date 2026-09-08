@@ -1,5 +1,6 @@
 from enum import IntEnum
 
+import quickcache
 from django.http import Http404
 
 from commcare_connect.opportunity.models import Opportunity
@@ -118,6 +119,20 @@ def _base_access_level(request) -> AccessLevel | None:
     if request.user.has_perm(ALL_ORG_ACCESS):
         return AccessLevel.MANAGE
     return None
+
+
+@quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
+def get_managed_opp(opp_id) -> Opportunity | None:
+    queryset = Opportunity.objects.select_related("program__organization")
+    if str(opp_id).isdigit():
+        return queryset.filter(pk=int(opp_id)).first()
+    return queryset.filter(opportunity_id=opp_id).first()
+
+
+def clear_managed_opp_cache(opportunity) -> None:
+    ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
+    for opp_id in ids:
+        get_managed_opp.clear(opp_id)
 
 
 def is_org_pm(request):
