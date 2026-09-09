@@ -17,6 +17,8 @@
       showRejectModal: false,
       showSubmitModal: false,
       certifyChecked: false,
+      lineItemsError: false,
+      lineItemsLoading: false,
 
       init() {
         if (this.isServiceDelivery) {
@@ -54,6 +56,9 @@
       fetchInvoiceLineItems() {
         if (!this.startDate || !this.endDate) return;
 
+        this.lineItemsError = false;
+        this.lineItemsLoading = true;
+
         fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           method: 'POST',
           headers: {
@@ -76,7 +81,14 @@
           console.error('Error fetching invoice items:', error);
           // Nothing known about the window, so drop the count rather than leave a stale one showing.
           this.lateDeltaUnits = null;
+          // Clear totals and table on failure to avoid showing stale data from another window.
+          document.getElementById('invoice-line-items-wrapper').innerHTML = '';
+          this.amount = null;
+          this.usdAmount = null;
           this.showDownloadButton = false;
+          this.lineItemsError = true;
+        }).finally(() => {
+          this.lineItemsLoading = false;
         });
       },
 
