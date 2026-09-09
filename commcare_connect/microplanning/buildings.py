@@ -5,6 +5,9 @@ Footprints come from Overture Maps, which is not in our database, so requests ar
 from the source and cached. To keep that cache useful the requested viewport bbox is snapped
 outward to a fixed XYZ grid (``GRID_ZOOM``): raw viewport bboxes are arbitrary floats that never
 repeat, while grid tiles are shared between pans and between users looking at the same place.
+
+Which Overture release they are read from is not decided here: it is whatever ``OvertureRelease``
+currently holds, kept up to date by a daily task.
 """
 
 import mercantile
@@ -20,10 +23,7 @@ from commcare_connect.microplanning.const import (
     OVERTURE_REQUEST_TIMEOUT,
 )
 from commcare_connect.microplanning.exceptions import AreaTooLarge, BuildingDataUnavailable
-
-# The Overture release footprints are read from. We could probably store this in the DB and read
-# it on a weekly basis.
-OVERTURE_RELEASE = "2026-08-19.0"
+from commcare_connect.microplanning.models import OvertureRelease
 
 # Web Mercator cannot represent the poles; this is the latitude the projection is cut off at.
 MAX_MERCATOR_LATITUDE = 85.0511
@@ -68,15 +68,17 @@ def buildings_for_bbox(west, south, east, north):
     if count_covering_grid_tiles(west, south, east, north) > MAX_BUILDING_GRID_TILES:
         raise AreaTooLarge(f"{west},{south},{east},{north} covers more than {MAX_BUILDING_GRID_TILES} grid_tiles")
 
+    release = current_release()
+
     grid_tiles = covering_grid_tiles(west, south, east, north)
-    cache_tile_keys = {grid_tile: cache_key_for_grid_tile(grid_tile) for grid_tile in grid_tiles}
+    cache_tile_keys = {grid_tile: cache_key_for_grid_tile(grid_tile, release) for grid_tile in grid_tiles}
     # Read once and pass it on: a second read could miss a grid tile this one hit, and that grid
     # tile is not in `fetched_buildings` precisely because the first read found it.
     cached_buildings = cache.get_many(list(cache_tile_keys.values()))
 
     missing_grid_tiles = [grid_tile for grid_tile in grid_tiles if cache_tile_keys[grid_tile] not in cached_buildings]
     # `bounds_for_grid_tiles` has no answer for an empty set, and there is nothing to fetch anyway.
-    fetched_buildings = fetch_buildings_for_grid_tiles(missing_grid_tiles) if missing_grid_tiles else {}
+    fetched_buildings = fetch_buildings_for_grid_tiles(missing_grid_tiles, release) if missing_grid_tiles else {}
     cache.set_many(
         {cache_tile_keys[grid_tile]: features for grid_tile, features in fetched_buildings.items()},
         BUILDINGS_CACHE_TIMEOUT,
@@ -104,7 +106,14 @@ def _dedupe_features_across_grid_tiles(grid_tiles, cache_tile_keys, cached_build
     return features
 
 
-def fetch_buildings_for_grid_tiles(grid_tiles):
+def current_release():
+    release = OvertureRelease.current()
+    if not release:
+        raise BuildingDataUnavailable("No Overture release has been recorded")
+    return release
+
+
+def fetch_buildings_for_grid_tiles(grid_tiles, release):
     """
     Fetch the given grid tiles from Overture, returning ``{(x, y): [feature, ...]}``.
 
@@ -120,7 +129,7 @@ def fetch_buildings_for_grid_tiles(grid_tiles):
     try:
         table = read_buildings(
             bounds_for_grid_tiles(grid_tiles),
-            OVERTURE_RELEASE,
+            release,
             OVERTURE_CONNECT_TIMEOUT,
             OVERTURE_REQUEST_TIMEOUT,
         )
@@ -209,6 +218,6 @@ def bounds_for_grid_tiles(grid_tiles, zoom=GRID_ZOOM):
     )
 
 
-def cache_key_for_grid_tile(grid_tile, zoom=GRID_ZOOM):
+def cache_key_for_grid_tile(grid_tile, release, zoom=GRID_ZOOM):
     x, y = grid_tile
-    return BUILDINGS_CACHE_KEY.format(release=OVERTURE_RELEASE, z=zoom, x=x, y=y)
+    return BUILDINGS_CACHE_KEY.format(release=release, z=zoom, x=x, y=y)

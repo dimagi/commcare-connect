@@ -241,8 +241,10 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
 @pytest.mark.django_db
 class TestBuildingsGeojson(BaseMicroplanningFlagTest):
     @pytest.fixture(autouse=True)
-    def isolated_cache(self, local_cache):
-        """Grid tile lookups must not carry over between tests, or a fetch under test never happens."""
+    def isolated_cache(self, local_cache, overture_release):
+        """
+        Grid tile lookups must not carry over between tests, or a fetch under test never happens.
+        """
 
     def url(self, org_slug, opp_id):
         return reverse(
@@ -259,7 +261,7 @@ class TestBuildingsGeojson(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         with patch(
             "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
-            side_effect=lambda grid_tiles: {
+            side_effect=lambda grid_tiles, release: {
                 grid_tiles[0]: [feature],
                 **{grid_tile: [] for grid_tile in grid_tiles[1:]},
             },
@@ -329,7 +331,7 @@ class TestBuildingsGeojson(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         with patch(
             "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
-            side_effect=lambda grid_tiles: {grid_tile: [] for grid_tile in grid_tiles},
+            side_effect=lambda grid_tiles, release: {grid_tile: [] for grid_tile in grid_tiles},
         ):
             response = client.get(
                 self.url(organization.slug, opportunity.opportunity_id),

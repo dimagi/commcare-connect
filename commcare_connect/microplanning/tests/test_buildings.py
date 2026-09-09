@@ -12,6 +12,7 @@ from commcare_connect.microplanning.buildings import (
     cache_key_for_grid_tile,
     count_covering_grid_tiles,
     covering_grid_tiles,
+    current_release,
     fetch_buildings_for_grid_tiles,
     parse_bbox,
 )
@@ -21,6 +22,7 @@ from commcare_connect.microplanning.const import (
     MAX_BUILDING_GRID_TILES,
 )
 from commcare_connect.microplanning.exceptions import AreaTooLarge, BuildingDataUnavailable
+from commcare_connect.microplanning.models import OvertureRelease
 from commcare_connect.microplanning.overture import BUILDING_SCHEMA
 
 # The largest map we draw, in css pixels, and where those numbers come from. They live here rather
@@ -194,11 +196,11 @@ def _viewport_bbox(screen_width_px, screen_height_px, zoom, west=8.65, south=9.0
     return (west, south, west + width_px * degrees_per_px, south + height_px * degrees_per_px)
 
 
-def test_buildings_for_bbox_returns_a_feature_collection_covering_the_request(local_cache):
+def test_buildings_for_bbox_returns_a_feature_collection_covering_the_request(local_cache, overture_release):
     bbox = (8.65, 9.05, 8.70, 9.09)
     with patch(
         "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
-        side_effect=lambda grid_tiles: {
+        side_effect=lambda grid_tiles, release: {
             grid_tile: [building(f"{grid_tile[0]}-{grid_tile[1]}")] for grid_tile in grid_tiles
         },
     ):
@@ -211,11 +213,11 @@ def test_buildings_for_bbox_returns_a_feature_collection_covering_the_request(lo
     assert covered_east >= bbox[2] and covered_north >= bbox[3]
 
 
-def test_buildings_for_bbox_dedupes_a_building_returned_by_several_grid_tiles(local_cache):
+def test_buildings_for_bbox_dedupes_a_building_returned_by_several_grid_tiles(local_cache, overture_release):
     # A building straddling a grid tile boundary comes back from every grid tile it touches.
     with patch(
         "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
-        side_effect=lambda grid_tiles: {
+        side_effect=lambda grid_tiles, release: {
             grid_tile: [building("straddler"), building(f"{grid_tile[0]}-{grid_tile[1]}")] for grid_tile in grid_tiles
         },
     ):
@@ -226,9 +228,9 @@ def test_buildings_for_bbox_dedupes_a_building_returned_by_several_grid_tiles(lo
     assert len(ids) == len(set(ids)) == 5  # one straddler plus one per grid tile
 
 
-def test_buildings_for_bbox_serves_cached_grid_tiles_without_calling_the_service(local_cache):
+def test_buildings_for_bbox_serves_cached_grid_tiles_without_calling_the_service(local_cache, overture_release):
     bbox = (0.001, 0.001, 0.002, 0.002)
-    local_cache.set(cache_key_for_grid_tile(covering_grid_tiles(*bbox)[0]), [building("cached")])
+    local_cache.set(cache_key_for_grid_tile(covering_grid_tiles(*bbox)[0], overture_release), [building("cached")])
 
     with patch("commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles") as fetch:
         collection = buildings_for_bbox(*bbox)
@@ -245,29 +247,29 @@ def test_buildings_for_bbox_serves_cached_grid_tiles_without_calling_the_service
         [],
     ],
 )
-def test_buildings_for_bbox_caches_what_it_fetched(local_cache, fetched_ids):
+def test_buildings_for_bbox_caches_what_it_fetched(local_cache, overture_release, fetched_ids):
     bbox = (0.001, 0.001, 0.002, 0.002)
     grid_tile = covering_grid_tiles(*bbox)[0]
 
     with patch(
         "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
-        side_effect=lambda grid_tiles: {c: [building(i) for i in fetched_ids] for c in grid_tiles},
+        side_effect=lambda grid_tiles, release: {c: [building(i) for i in fetched_ids] for c in grid_tiles},
     ):
         buildings_for_bbox(*bbox)
 
-    cached = local_cache.get(cache_key_for_grid_tile(grid_tile))
+    cached = local_cache.get(cache_key_for_grid_tile(grid_tile, overture_release))
     assert [feature["properties"]["id"] for feature in cached] == fetched_ids
 
 
-def test_buildings_for_bbox_only_fetches_the_grid_tiles_it_is_missing(local_cache):
+def test_buildings_for_bbox_only_fetches_the_grid_tiles_it_is_missing(local_cache, overture_release):
     bbox = (-0.01, -0.01, 0.01, 0.01)
     grid_tiles = covering_grid_tiles(*bbox)
     cached_grid_tile = grid_tiles[0]
-    local_cache.set(cache_key_for_grid_tile(cached_grid_tile), [building("cached")])
+    local_cache.set(cache_key_for_grid_tile(cached_grid_tile, overture_release), [building("cached")])
 
     with patch(
         "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
-        side_effect=lambda grid_tiles: {c: [] for c in grid_tiles},
+        side_effect=lambda grid_tiles, release: {c: [] for c in grid_tiles},
     ) as fetch:
         buildings_for_bbox(*bbox)
 
@@ -287,10 +289,10 @@ def test_buildings_for_bbox_only_fetches_the_grid_tiles_it_is_missing(local_cach
 def test_fetch_raises_when_overture_cannot_be_read(side_effect):
     with patch("commcare_connect.microplanning.overture.read_buildings", side_effect=side_effect):
         with pytest.raises(BuildingDataUnavailable):
-            fetch_buildings_for_grid_tiles([(8192, 8191)])
+            fetch_buildings_for_grid_tiles([(8192, 8191)], "2026-08-19.0")
 
 
-def test_an_area_overture_has_no_buildings_for_is_not_an_error(local_cache):
+def test_an_area_overture_has_no_buildings_for_is_not_an_error(local_cache, overture_release):
     """Overture answered, and the answer was that there is nothing there. That is cacheable."""
     bbox = (-0.01, -0.01, 0.01, 0.01)
 
@@ -298,7 +300,10 @@ def test_an_area_overture_has_no_buildings_for_is_not_an_error(local_cache):
         collection = buildings_for_bbox(*bbox)
 
     assert collection["features"] == []
-    assert all(local_cache.get(cache_key_for_grid_tile(grid_tile)) == [] for grid_tile in covering_grid_tiles(*bbox))
+    assert all(
+        local_cache.get(cache_key_for_grid_tile(grid_tile, overture_release)) == []
+        for grid_tile in covering_grid_tiles(*bbox)
+    )
 
 
 def test_features_by_grid_tile_buckets_each_building_into_every_grid_tile_it_touches():
@@ -317,3 +322,51 @@ def test_features_by_grid_tile_buckets_each_building_into_every_grid_tile_it_tou
 
 def test_features_by_grid_tile_returns_an_entry_for_every_requested_grid_tile():
     assert _features_by_grid_tile(_arrow_table([]), [(1, 2), (3, 4)]) == {(1, 2): [], (3, 4): []}
+
+
+def test_current_release_is_the_one_recorded(overture_release):
+    assert current_release() == overture_release
+
+
+def test_no_recorded_release_is_reported_as_unavailable(db):
+    OvertureRelease.objects.all().delete()
+
+    with pytest.raises(BuildingDataUnavailable):
+        current_release()
+
+
+def test_grid_tiles_cached_under_one_release_are_not_served_under_the_next(local_cache, overture_release):
+    """
+    The day the daily task records a new release, yesterday's footprints stop being served.
+
+    They are not deleted; keying them by release is what stops them being reused, and they age out
+    on their own.
+    """
+    bbox = (0.001, 0.001, 0.002, 0.002)
+    local_cache.set(cache_key_for_grid_tile(covering_grid_tiles(*bbox)[0], overture_release), [building("old")])
+    OvertureRelease.set_current("2026-09-17.0")
+
+    with patch(
+        "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
+        side_effect=lambda grid_tiles, release: {grid_tile: [building("new")] for grid_tile in grid_tiles},
+    ) as fetch:
+        collection = buildings_for_bbox(*bbox)
+
+    assert fetch.call_args.args[1] == "2026-09-17.0"
+    assert [feature["properties"]["id"] for feature in collection["features"]] == ["new"]
+
+
+def test_the_release_is_read_once_however_many_grid_tiles_are_asked_for(local_cache, overture_release):
+    bbox = (-0.01, -0.01, 0.01, 0.01)
+    assert len(covering_grid_tiles(*bbox)) > 1
+
+    with patch(
+        "commcare_connect.microplanning.buildings.current_release", return_value=overture_release
+    ) as read_release:
+        with patch(
+            "commcare_connect.microplanning.buildings.fetch_buildings_for_grid_tiles",
+            side_effect=lambda grid_tiles, release: {grid_tile: [] for grid_tile in grid_tiles},
+        ):
+            buildings_for_bbox(*bbox)
+
+    assert read_release.call_count == 1

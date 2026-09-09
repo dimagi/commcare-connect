@@ -51,8 +51,9 @@ GRID_ZOOM = 14
 # cannot fan out into an unbounded number of upstream fetches.
 MAX_BUILDING_GRID_TILES = 16
 
-# The release is part of the key, so a cached grid tile never goes stale under the release it was read
-# from and bumping buildings.OVERTURE_RELEASE invalidates every one of them at once.
+# The release is part of the key, so a cached grid tile never goes stale under the release it was
+# read from, and the day a new release is recorded every one of them is orphaned at once. The
+# orphans are not deleted; they simply age out under BUILDINGS_CACHE_TIMEOUT.
 BUILDINGS_CACHE_KEY = "buildings:{release}:{z}:{x}:{y}"
 BUILDINGS_CACHE_TIMEOUT = 60 * 60 * 24 * 7
 OVERTURE_CONNECT_TIMEOUT = 5
