@@ -83,6 +83,7 @@ from commcare_connect.microplanning.helpers import (
 from commcare_connect.microplanning.models import (
     ImplementationArea,
     InaccessibilityRequestStatus,
+    OvertureRelease,
     WorkArea,
     WorkAreaGroup,
     WorkAreaInaccessibilityRequest,
@@ -270,6 +271,7 @@ def microplanning_home(request, *args, **kwargs):
         "groups_url": groups_url,
         "implementation_areas_url": implementation_areas_url,
         "buildings_url": buildings_url,
+        "overture_release": OvertureRelease.current(),
         "status_meta": status_meta,
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "building_min_zoom": BUILDING_MIN_ZOOM,

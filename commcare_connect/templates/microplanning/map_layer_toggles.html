@@ -1,5 +1,9 @@
 {% load i18n %}
-{% translate "Show building footprints for the current view. Data from Overture Maps." as buildings_hint %}
+{% if overture_release %}
+  {% blocktranslate asvar buildings_hint with release=overture_release %}Show building footprints for the current view. Data from Overture Maps, release {{ release }}.{% endblocktranslate %}
+{% else %}
+  {% translate "Show building footprints for the current view. Data from Overture Maps." as buildings_hint %}
+{% endif %}
 <div x-show="buildingsAvailable"
      x-transition.opacity
      x-cloak
