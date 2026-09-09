@@ -16,7 +16,6 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.db.utils import OperationalError
-from django.template.defaultfilters import escapejs_filter
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -556,9 +555,9 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
 
-        # The tooltip goes through escapejs, which writes the hyphens of a release as \u002D.
-        expected = escapejs_filter(f"Data from Overture Maps, release {overture_release}.")
-        assert expected in response.content.decode()
+        # Read literally by x-tooltip.raw, so the release has to appear as itself, not as
+        # escape sequences a reader would see verbatim.
+        assert f"Data from Overture Maps, release {overture_release}." in response.content.decode()
 
     def test_the_buildings_tooltip_reads_without_a_release(
         self, client: Client, settings, organization, org_user_admin, opportunity

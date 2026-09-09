@@ -14,7 +14,8 @@
        x-show="buildingsLoading"
        x-cloak></i>
   </label>
-  <span x-tooltip.raw="{{ buildings_hint|escapejs }}">
+  {# x-tooltip.raw takes the attribute literally, so escapejs would show its \u002D escapes verbatim. #}
+  <span x-tooltip.raw="{{ buildings_hint }}">
     <input id="show-buildings-toggle"
            type="checkbox"
            class="simple-toggle"
