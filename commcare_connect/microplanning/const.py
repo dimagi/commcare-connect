@@ -57,3 +57,8 @@ BUILDINGS_CACHE_KEY = "buildings:{release}:{z}:{x}:{y}"
 BUILDINGS_CACHE_TIMEOUT = 60 * 60 * 24 * 7
 OVERTURE_CONNECT_TIMEOUT = 5
 OVERTURE_REQUEST_TIMEOUT = 30
+
+# Overture's catalog, whose "latest" member names the newest release. Read daily by
+# microplanning.tasks.update_overture_release, which is the only thing that reads it.
+OVERTURE_CATALOG_URL = "https://stac.overturemaps.org/catalog.json"
+OVERTURE_CATALOG_TIMEOUT = 10

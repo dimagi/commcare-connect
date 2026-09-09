@@ -1,8 +1,10 @@
 import csv
 import io
 import logging
+import re
 from collections import defaultdict
 
+import httpx
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.core.files.storage import default_storage
@@ -16,10 +18,13 @@ from commcare_connect.opportunity.models import OpportunityAccess
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
-from .const import DEFAULT_BUILDING_COUNT
-from .models import SRID, ImplementationArea, WorkArea, WorkAreaGroup
+from .const import DEFAULT_BUILDING_COUNT, OVERTURE_CATALOG_TIMEOUT, OVERTURE_CATALOG_URL
+from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 
 logger = logging.getLogger(__name__)
+
+# An Overture release is a date and a revision, e.g. "2026-08-19.0".
+OVERTURE_RELEASE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\.\d+")
 
 
 def get_import_area_cache_key(opp_id: int):
@@ -523,3 +528,39 @@ def cluster_work_areas_task(opp_id, max_buildings=DEFAULT_BUILDING_COUNT):
     lock_key = get_cluster_area_cache_lock_key(opp_id)
     with cache.lock(lock_key, timeout=1200):
         WorkAreaGrouper(opp_id, max_buildings=max_buildings).cluster_work_areas()
+
+
+@celery_app.task(
+    autoretry_for=(httpx.HTTPError,),
+    retry_kwargs={"max_retries": 3},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def update_overture_release():
+    """
+    Point OvertureRelease at Overture's newest release. Runs daily.
+    """
+    release = fetch_latest_overture_release()
+    if release is None:
+        return
+
+    if release != OvertureRelease.current():
+        OvertureRelease.set_current(release)
+
+
+def fetch_latest_overture_release():
+    response = httpx.get(OVERTURE_CATALOG_URL, timeout=OVERTURE_CATALOG_TIMEOUT)
+    response.raise_for_status()
+
+    try:
+        release = response.json().get("latest")
+    except ValueError:
+        logger.error("Overture's catalog at %s did not return JSON", OVERTURE_CATALOG_URL)
+        return None
+
+    if not isinstance(release, str) or not OVERTURE_RELEASE_RE.fullmatch(release):
+        logger.error("Overture's catalog named %r as its latest release, which is not one", release)
+        return None
+
+    return release

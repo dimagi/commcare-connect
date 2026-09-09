@@ -2,18 +2,20 @@ import csv
 import io
 from unittest import mock
 
+import httpx
 import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
-from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT, OVERTURE_CATALOG_URL
+from commcare_connect.microplanning.models import ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import (
     ImplementationAreaCSVImporter,
     WorkAreaCSVImporter,
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
+    update_overture_release,
 )
 from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
@@ -448,3 +450,70 @@ def test_cluster_work_areas_task_defaults_max_buildings(mock_grouper, mock_cache
     cluster_work_areas_task(opp_id=1)
 
     mock_grouper.assert_called_once_with(1, max_buildings=DEFAULT_BUILDING_COUNT)
+
+
+@pytest.mark.django_db
+def test_update_overture_release_records_the_latest_release(httpx_mock):
+    httpx_mock.add_response(url=OVERTURE_CATALOG_URL, json={"latest": "2026-09-17.0"})
+
+    update_overture_release()
+
+    assert OvertureRelease.current() == "2026-09-17.0"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"latest": None},
+        {"latest": ""},
+        {"latest": "latest"},
+        {"latest": "2026-09-17"},  # a date, but no revision
+        {"latest": "../../etc/passwd"},
+        {"latest": ["2026-09-17.0"]},
+    ],
+)
+def test_a_release_we_cannot_use_is_not_recorded(httpx_mock, payload):
+    OvertureRelease.set_current("2026-08-19.0")
+    httpx_mock.add_response(url=OVERTURE_CATALOG_URL, json=payload)
+
+    update_overture_release()
+
+    assert OvertureRelease.current() == "2026-08-19.0"
+
+
+@pytest.mark.django_db
+def test_a_catalog_that_does_not_answer_with_json_is_not_recorded(httpx_mock):
+    OvertureRelease.set_current("2026-08-19.0")
+    httpx_mock.add_response(url=OVERTURE_CATALOG_URL, text="<html>502 Bad Gateway</html>")
+
+    update_overture_release()
+
+    assert OvertureRelease.current() == "2026-08-19.0"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "response",
+    [{"status_code": 503}, {"status_code": 500}],
+    ids=["service unavailable", "server error"],
+)
+def test_a_catalog_we_cannot_reach_leaves_the_previous_release_standing(httpx_mock, response):
+    OvertureRelease.set_current("2026-08-19.0")
+    httpx_mock.add_response(url=OVERTURE_CATALOG_URL, **response)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        update_overture_release()
+
+    assert OvertureRelease.current() == "2026-08-19.0"
+
+
+@pytest.mark.django_db
+def test_the_release_is_rewritten_in_place_rather_than_accumulating_rows(httpx_mock):
+    for release in ("2026-09-17.0", "2026-10-22.0"):
+        httpx_mock.add_response(url=OVERTURE_CATALOG_URL, json={"latest": release})
+        update_overture_release()
+
+    assert OvertureRelease.objects.count() == 1
+    assert OvertureRelease.current() == "2026-10-22.0"
