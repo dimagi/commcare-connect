@@ -33,7 +33,7 @@ def user_is_org_admin(user, organization):
     ).exists()
 
 
-def user_is_org_pm(user, organization):
+def is_user_pm_org_admin(user, organization):
     if user.has_perm(ALL_ORG_ACCESS):
         return True
     return org_is_program_manager(organization) and user_is_org_admin(user, organization)
@@ -50,7 +50,7 @@ class IsProgramManagerOrgAdmin(BasePermission):
         org_slug = request.data.get("organization") or view.kwargs.get("org_slug")
         if not org_slug:
             return False
-        return user_is_org_pm(request.user, Organization.objects.filter(slug=org_slug).first())
+        return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
 def opp_view_access_required(view_func):
@@ -67,7 +67,7 @@ def opp_manage_access_required(view_func):
 
 def org_pm_required(view_func, *args, **kwargs):
     return _get_decorated_function(
-        view_func, lambda request, *args, **kwargs: user_is_org_pm(request.user, request.org)
+        view_func, lambda request, *args, **kwargs: is_user_pm_org_admin(request.user, request.org)
     )
 
 
@@ -126,7 +126,6 @@ org_view_access_required = _org_access_level_gate(AccessLevel.VIEW)
 org_standard_access_required = _org_access_level_gate(AccessLevel.STANDARD)
 org_manage_access_required = _org_access_level_gate(AccessLevel.MANAGE)
 
-# The party gates ask which side of the opportunity the org sits on, not how much access it has.
 opportunity_pm_required = _opportunity_gate(is_opportunity_pm)
 opportunity_nm_required = _opportunity_gate(is_opportunity_nm)
 

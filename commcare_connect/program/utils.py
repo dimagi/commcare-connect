@@ -75,7 +75,6 @@ def opportunity_access_level_from_request(request, opportunity) -> AccessLevel:
 
 
 def org_opportunity_access(org, opportunity) -> AccessLevel:
-    """The one delivering it, supervising it and the one running its program. Watcher has view access."""
     if not org or not opportunity:
         return AccessLevel.NONE
     if org.id in (opportunity.organization_id, opportunity.supervising_organization_id):

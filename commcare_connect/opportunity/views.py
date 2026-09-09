@@ -331,7 +331,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(OpportunityObjectMixin, ProgramManageAccessMixin, CreateView):
+class OpportunityInit(ProgramManageAccessMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
