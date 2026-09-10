@@ -181,6 +181,7 @@
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]"
          x-data="mapController()">
       {{ status_meta|json_script:"status-meta-data" }}
+      {% if buildings_config %}{{ buildings_config|json_script:"buildings-config" }}{% endif %}
       <!-- Map section -->
       <div id="map-wrapper"
            x-ref="mapContainer"
@@ -214,6 +215,9 @@
           <dd x-text="hoveredWorkArea?.statusLabel ?? '—'">
           </dd>
         </dl>
+        {% if buildings_config %}
+          {% include "microplanning/map_layer_toggles.html" %}
+        {% endif %}
         <div id="map" class="w-full h-full"></div>
       </div>
       <!-- Sidebars (stacked) -->

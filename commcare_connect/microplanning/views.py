@@ -47,6 +47,7 @@ from waffle.decorators import waffle_flag
 
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.microplanning.buildings import buildings_overlay_config
 from commcare_connect.microplanning.const import (
     MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
@@ -246,6 +247,7 @@ def microplanning_home(request, *args, **kwargs):
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
+        "buildings_config": buildings_overlay_config(),
         "task_id": request.GET.get("task_id"),
         "import_status_url": import_status_url,
         "opportunity": opportunity,

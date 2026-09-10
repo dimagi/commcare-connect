@@ -896,3 +896,12 @@ select:disabled,
     }
   }
 }
+
+/*--- floating map control panel ------------------- */
+@layer components {
+  /* Shares the map's top-right corner with the toast and the assignment hint, and is the only one
+     of the three the user can click, so it stacks above both rather than under them. */
+  .map-control-panel {
+    @apply absolute right-4 top-4 z-[60] flex flex-col gap-2 rounded-lg bg-white px-3 py-2 shadow-md;
+  }
+}
