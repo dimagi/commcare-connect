@@ -1493,14 +1493,23 @@ class TestSupervisingOrganizations:
         assert program.organization in eligible_supervising_organizations(program)
 
     def test_results_are_distinct(self, opportunity):
-        applicant = OrganizationFactory()
+        """An eligible organization is listed once even if it applied to other programs.
+
+        The accepted-application join is not scoped to this program, so every application row
+        the organization has satisfies the program-organization branch of the query and would
+        return it once per row.
+        """
+        program_organization = opportunity.program.organization
         for _unused in range(2):
             ProgramApplicationFactory(
-                organization=applicant, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
+                organization=program_organization,
+                program=ProgramFactory(organization=program_organization),
+                status=ProgramApplicationStatus.ACCEPTED,
             )
 
         ids = [org.id for org in eligible_supervising_organizations(opportunity.program)]
 
+        assert ids.count(program_organization.id) == 1
         assert len(ids) == len(set(ids))
 
 

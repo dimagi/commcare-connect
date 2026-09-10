@@ -62,6 +62,9 @@ def eligible_supervising_organizations(program):
         programapplication__program=program,
         programapplication__status=ProgramApplicationStatus.ACCEPTED,
     )
+    # distinct() is required despite ProgramApplication being unique per (program, organization):
+    # the join is not scoped to this program, so an organization matched on identity above is
+    # returned once per application row it holds, for any program.
     return Organization.objects.filter(eligible).distinct().order_by("name")
 
 
