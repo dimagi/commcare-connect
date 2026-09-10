@@ -190,19 +190,17 @@
           {% if buildings_config %}
             {% include "microplanning/map_layer_toggles.html" %}
           {% endif %}
+          {% if assignment_mode %}
+            <div x-show="isHoveringWorkArea"
+                 x-effect="if (isHoveringWorkArea) { clearTimeout(hintTimeout); hintTimeout = setTimeout(() => isHoveringWorkArea = false, 3000) }"
+                 x-cloak
+                 class="map-hint">{% translate "Click to select group · Shift+click to select single area" %}</div>
+          {% endif %}
           <div id="toast-container" class="map-toast opacity-0">
             <i id="toast-icon" class="text-lg"></i>
             <span id="toast-message"></span>
           </div>
         </div>
-        {% if assignment_mode %}
-          <div x-show="isHoveringWorkArea"
-               x-effect="if (isHoveringWorkArea) { clearTimeout(hintTimeout); hintTimeout = setTimeout(() => isHoveringWorkArea = false, 3000) }"
-               x-cloak
-               class="absolute top-4 right-2 z-40 pointer-events-none px-2 py-2 rounded-md shadow-lg border border-white/10 text-sm text-white bg-black/50">
-            {% translate "Click to select group · Shift+click to select single area" %}
-          </div>
-        {% endif %}
         <dl x-show="hoveredWorkArea"
             x-cloak
             class="absolute bottom-4 right-2 z-40 pointer-events-none grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white shadow-lg max-w-xs">
