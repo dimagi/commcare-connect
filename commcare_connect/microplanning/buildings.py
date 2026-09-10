@@ -3,18 +3,15 @@ Building footprints for the microplanning map.
 
 Overture publishes its buildings as a PMTiles archive and Mapbox GL reads PMTiles natively, so the
 browser fetches footprints straight from Overture. This module only works out what to point it at:
-there is no proxy view, no cache and no table behind the overlay, and no building data passes
-through this process.
+there is no proxy view and no cache, and no building data passes through this process. The only
+thing held on our side is which release to read.
 
-The one thing needing care is the release. Overture's buckets drop everything older than 60 days,
-so a release that is fine today is a dead URL in two months -- see ``OVERTURE_RELEASE``.
+That release is the part needing care: Overture's buckets drop everything older than 60 days, so
+one that is fine today is a dead URL in two months. Which release to point at is not decided here
+either -- it is whatever ``OvertureRelease`` holds, kept current by a daily task.
 """
 
-# The Overture release footprints are read from. Overture keeps only the two most recent releases
-# -- its buckets carry a 60 day retention rule -- so this has to move forward every month or so,
-# which currently means a deploy. Pinned here rather than in settings because it is not per
-# environment: every environment wants the same, current release.
-OVERTURE_RELEASE = "2026-08-19.0"
+from commcare_connect.microplanning.models import OvertureRelease
 
 # https://docs.overturemaps.org/examples/overture-tiles/
 OVERTURE_TILES_URL = (
@@ -51,16 +48,14 @@ OVERTURE_ATTRIBUTION = (
 def buildings_overlay_config():
     """
     Return the config the map needs to draw building footprints, or ``None`` if it cannot.
-
-    ``None`` means the overlay is unavailable and its control should not be rendered: with no
-    release configured there is no archive to point the browser at, and a toggle that switches on
-    an empty layer is worse than no toggle.
     """
-    release = (OVERTURE_RELEASE or "").strip()
+    release = (OvertureRelease.current() or "").strip()
     if not release:
         return None
 
     return {
+        # Named in the overlay's tooltip, so a reader can tell which release is on screen.
+        "release": release,
         "tilesUrl": OVERTURE_TILES_URL.format(release=release),
         "sourceLayer": OVERTURE_BUILDINGS_LAYER,
         "archiveMaxZoom": OVERTURE_ARCHIVE_MAX_ZOOM,
