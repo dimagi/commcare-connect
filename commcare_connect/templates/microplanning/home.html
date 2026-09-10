@@ -186,10 +186,14 @@
       <div id="map-wrapper"
            x-ref="mapContainer"
            class="relative min-w-0 xl:flex-1 shadow-md h-[max(calc(100vh-300px),200px)] xl:h-full">
-        <div id="toast-container"
-             class="absolute top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm text-white opacity-0 transition-opacity duration-300">
-          <i id="toast-icon" class="text-lg"></i>
-          <span id="toast-message"></span>
+        <div class="map-control-stack">
+          {% if buildings_config %}
+            {% include "microplanning/map_layer_toggles.html" %}
+          {% endif %}
+          <div id="toast-container" class="map-toast opacity-0">
+            <i id="toast-icon" class="text-lg"></i>
+            <span id="toast-message"></span>
+          </div>
         </div>
         {% if assignment_mode %}
           <div x-show="isHoveringWorkArea"
@@ -215,9 +219,6 @@
           <dd x-text="hoveredWorkArea?.statusLabel ?? '—'">
           </dd>
         </dl>
-        {% if buildings_config %}
-          {% include "microplanning/map_layer_toggles.html" %}
-        {% endif %}
         <div id="map" class="w-full h-full"></div>
       </div>
       <!-- Sidebars (stacked) -->

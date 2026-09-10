@@ -899,9 +899,21 @@ select:disabled,
 
 /*--- floating map control panel ------------------- */
 @layer components {
-  /* Shares the map's top-right corner with the toast and the assignment hint, and is the only one
-     of the three the user can click, so it stacks above both rather than under them. */
+  /* The map's top-right corner. Everything in here is laid out in one column so a message can
+     never land on top of the controls */
+  .map-control-stack {
+    @apply pointer-events-none absolute right-4 top-4 z-50 flex flex-col items-end gap-2;
+  }
+
   .map-control-panel {
-    @apply absolute right-4 top-4 z-[60] flex flex-col gap-2 rounded-lg bg-white px-3 py-2 shadow-md;
+    @apply pointer-events-auto flex flex-col gap-2 rounded-lg bg-white px-3 py-2 shadow-md;
+  }
+
+  /* Positioned by `.map-control-stack`, and in the DOM even when hidden, so it must never take the
+     pointer -- an invisible toast would otherwise eat clicks on the map beneath it. Callers toggle
+     `opacity-0`/`opacity-100` and the background colour on the element itself, so those stay out
+     of here. */
+  .map-toast {
+    @apply pointer-events-none flex items-center gap-3 rounded-lg px-4 py-3 text-sm text-white shadow-lg transition-opacity duration-300;
   }
 }
