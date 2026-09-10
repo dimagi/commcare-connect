@@ -329,6 +329,10 @@
   @apply text-brand-deep-purple rounded-lg border border-gray-400 bg-gray-50;
 }
 
+.negative-outline {
+  @apply rounded-lg border border-red-600 bg-white text-red-600;
+}
+
 /*-- chips ---------------------------------------*/
 .chip {
   @apply inline-block cursor-pointer text-nowrap rounded-full border border-gray-200 text-sm font-medium transition-all duration-300;

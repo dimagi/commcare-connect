@@ -193,6 +193,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
+    get_invoice_service_summary,
     rollback_invoice_line_items,
     total_late_delta_units,
 )
@@ -205,6 +206,7 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
+    OppNMRequiredMixin,
     OppPMRequiredMixin,
     OppStandardAccessMixin,
     OppViewAccessMixin,
@@ -256,12 +258,14 @@ PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
 
+DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
+
 
 def get_opportunity_or_404(opp_id):
     opportunity = opportunity_by_id(opp_id)
 
     if not opportunity:
-        raise Http404("Opportunity not found.")
+        raise Http404(_("Opportunity not found."))
     return opportunity
 
 
@@ -327,7 +331,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(OpportunityObjectMixin, ProgramManageAccessMixin, CreateView):
+class OpportunityInit(ProgramManageAccessMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -478,6 +482,10 @@ class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView
         return response
 
 
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
+
+
 class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailView):
     model = Opportunity
     template_name = "opportunity/dashboard.html"
@@ -554,7 +562,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
             {
                 "name": "Max Budget",
                 "count": header_with_tooltip(
-                    f"{object.currency_code} {intcomma(object.total_budget)}",
+                    amount_with_currency(object.total_budget, object.currency_code),
                     "Maximum payments that can be made for workers and organization",
                 ),
                 "icon": "fa-money-bill",
@@ -1821,7 +1829,7 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-class InvoiceCreateView(OppViewAccessMixin, OpportunityObjectMixin, CreateView):
+class InvoiceCreateView(OppNMRequiredMixin, OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
     form_class = AutomatedPaymentInvoiceForm
@@ -1863,9 +1871,6 @@ class InvoiceCreateView(OppViewAccessMixin, OpportunityObjectMixin, CreateView):
         return "New Custom Invoice"
 
     def post(self, request, org_slug, opp_id, **kwargs):
-        if request.is_opportunity_pm:
-            return redirect("opportunity:detail", org_slug, opp_id)
-
         form = self.get_form()
         if not form.is_valid():
             return self.get(request, org_slug, opp_id, **kwargs)
@@ -1989,11 +1994,20 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @opp_standard_access_required
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+    invoice = get_object_or_404(
+        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        opportunity=request.opportunity,
+        payment_invoice_id=invoice_id,
+    )
+    context = {
+        "invoice": invoice,
+        "service_summary_lines": get_invoice_service_summary(invoice),
+        "dimagi_address": DIMAGI_ADDRESS,
+    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context={"invoice": invoice},
+        context=context,
         content_type="application/pdf",
         filename=f"invoice_{invoice_id}.pdf",
     )
@@ -3339,9 +3353,6 @@ def opportunity_worker_progress(request, org_slug, opp_id):
     earned_percentage = safe_percent(result.total_accrued or 0, result.total_budget or 0)
     paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
 
-    def amount_with_currency(amount):
-        return f"{result.currency_code + ' ' if result.currency_code else ''}{intcomma(amount or 0)}"
-
     worker_progress = [
         {
             "title": "Verification",
@@ -3374,7 +3385,9 @@ def opportunity_worker_progress(request, org_slug, opp_id):
             "progress": [
                 {
                     "title": "Earned",
-                    "total": header_with_tooltip(amount_with_currency(result.total_accrued), "Earned Amount"),
+                    "total": header_with_tooltip(
+                        amount_with_currency(result.total_accrued, result.currency_code), "Earned Amount"
+                    ),
                     "value": header_with_tooltip(
                         f"{earned_percentage:.0f}%",
                         "Percentage Earned by all workers out of Max Budget in the Opportunity",
@@ -3385,7 +3398,8 @@ def opportunity_worker_progress(request, org_slug, opp_id):
                 {
                     "title": "Paid",
                     "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid), "Paid Amount to All Connect Workers"
+                        amount_with_currency(result.total_paid, result.currency_code),
+                        "Paid Amount to All Connect Workers",
                     ),
                     "value": header_with_tooltip(
                         f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
@@ -3504,7 +3518,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "panels": deliveries_panels,
         },
         {
-            "title": f"{_('Worker Payments')} ({request.opportunity.currency_code})",
+            "title": _("Worker Payments"),
             "sub_heading": _("Last Payment"),
             "value": stats.recent_payment or "--",
             "panels": [
@@ -3513,7 +3527,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": _("Payments"),
                     "status": _("Earned"),
                     "value": header_with_tooltip(
-                        intcomma(stats.total_accrued), _("Worker payment accrued based on approved service deliveries")
+                        amount_with_currency(stats.total_accrued, request.opportunity.currency_code),
+                        _("Worker payment accrued based on approved service deliveries"),
                     ),
                     "url": payment_url,
                     "incr": stats.accrued_since_yesterday,
@@ -3523,7 +3538,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": _("Payments"),
                     "status": _("Due"),
                     "value": header_with_tooltip(
-                        intcomma(stats.payments_due), _("Worker payments earned but yet unpaid")
+                        amount_with_currency(stats.payments_due, request.opportunity.currency_code),
+                        _("Worker payments earned but yet unpaid"),
                     ),
                 },
             ],

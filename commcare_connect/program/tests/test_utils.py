@@ -26,7 +26,7 @@ class TestAccessLevel:
         assert AccessLevel.NONE < AccessLevel.VIEW < AccessLevel.STANDARD < AccessLevel.MANAGE
 
     @pytest.mark.parametrize(
-        "org_level,user_level,expected",
+        "level_a,level_b,expected",
         [
             (AccessLevel.MANAGE, AccessLevel.MANAGE, AccessLevel.MANAGE),
             (AccessLevel.MANAGE, AccessLevel.STANDARD, AccessLevel.STANDARD),
@@ -39,8 +39,8 @@ class TestAccessLevel:
             (AccessLevel.NONE, AccessLevel.MANAGE, AccessLevel.NONE),
         ],
     )
-    def test_effective_takes_the_weaker_level(self, org_level, user_level, expected):
-        assert AccessLevel.effective(org_level, user_level) is expected
+    def test_effective_takes_the_weaker_level(self, level_a, level_b, expected):
+        assert AccessLevel.effective(level_a, level_b) is expected
 
 
 class TestUserOrgAccess:

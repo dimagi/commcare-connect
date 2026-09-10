@@ -2,6 +2,7 @@ from enum import IntEnum
 
 from django.http import Http404
 
+from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
@@ -74,7 +75,6 @@ def opportunity_access_level_from_request(request, opportunity) -> AccessLevel:
 
 
 def org_opportunity_access(org, opportunity) -> AccessLevel:
-    """The one delivering it, supervising it and the one running its program. Watcher has view access."""
     if not org or not opportunity:
         return AccessLevel.NONE
     if org.id in (opportunity.organization_id, opportunity.supervising_organization_id):
@@ -82,7 +82,7 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
     return org_access_for_program(org, opportunity.program)
 
 
-def opportunity_managing_org_ids(opportunity) -> set:
+def orgs_ids_with_manage_access_to_opportunity(opportunity) -> set:
     """Every org with MANAGE access to this opportunity, independent of any request."""
     org_ids = {
         opportunity.organization_id,
@@ -120,6 +120,20 @@ def _base_access_level(request) -> AccessLevel | None:
     return None
 
 
+@quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
+def get_managed_opp(opp_id) -> Opportunity | None:
+    queryset = Opportunity.objects.select_related("program__organization")
+    if str(opp_id).isdigit():
+        return queryset.filter(pk=int(opp_id)).first()
+    return queryset.filter(opportunity_id=opp_id).first()
+
+
+def clear_managed_opp_cache(opportunity) -> None:
+    ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
+    for opp_id in ids:
+        get_managed_opp.clear(opp_id)
+
+
 def is_org_pm(request):
     return request.org.program_manager and (
         (request.org_membership != None and request.org_membership.is_admin) or request.user.is_superuser  # noqa: E711
@@ -132,7 +146,6 @@ def is_opportunity_nm(request, opportunity) -> bool:
 
 
 def is_opportunity_pm(request, opportunity) -> bool:
-    """Anyone else who can manage the opportunity reaches it from the program side."""
     return _can_manage_opportunity(request, opportunity) and request.org.id != opportunity.organization_id
 
 

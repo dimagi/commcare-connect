@@ -33,8 +33,7 @@ def user_is_org_admin(user, organization):
     ).exists()
 
 
-def user_is_org_pm(user, organization):
-    """Creating programs takes two things: an org that is a program manager, and a caller who is its admin."""
+def is_user_pm_org_admin(user, organization):
     if user.has_perm(ALL_ORG_ACCESS):
         return True
     return org_is_program_manager(organization) and user_is_org_admin(user, organization)
@@ -51,7 +50,7 @@ class IsProgramManagerOrgAdmin(BasePermission):
         org_slug = request.data.get("organization") or view.kwargs.get("org_slug")
         if not org_slug:
             return False
-        return user_is_org_pm(request.user, Organization.objects.filter(slug=org_slug).first())
+        return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
 def opp_view_access_required(view_func):
@@ -68,7 +67,7 @@ def opp_manage_access_required(view_func):
 
 def org_pm_required(view_func, *args, **kwargs):
     return _get_decorated_function(
-        view_func, lambda request, *args, **kwargs: user_is_org_pm(request.user, request.org)
+        view_func, lambda request, *args, **kwargs: is_user_pm_org_admin(request.user, request.org)
     )
 
 
@@ -88,7 +87,7 @@ def _program_access_level_gate(minimum, program_id_kwarg="pk"):
 
 def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
     def decorator(view_func):
-        def permission_test(request, *args, **kwargs):
+        def permission_check(request, *args, **kwargs):
             opportunity = getattr(request, "opportunity", None)
             if opportunity is None:
                 opp_id = kwargs.get(opp_id_kwarg)
@@ -97,7 +96,7 @@ def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
                     request.opportunity = opportunity
             return has_required_access(request, opportunity)
 
-        return _get_decorated_function(view_func, permission_test)
+        return _get_decorated_function(view_func, permission_check)
 
     return decorator
 
@@ -127,19 +126,18 @@ org_view_access_required = _org_access_level_gate(AccessLevel.VIEW)
 org_standard_access_required = _org_access_level_gate(AccessLevel.STANDARD)
 org_manage_access_required = _org_access_level_gate(AccessLevel.MANAGE)
 
-# The party gates ask which side of the opportunity the org sits on, not how much access it has.
 opportunity_pm_required = _opportunity_gate(is_opportunity_pm)
 opportunity_nm_required = _opportunity_gate(is_opportunity_nm)
 
 
-def _get_decorated_function(view_func, permission_test_function):
+def _get_decorated_function(view_func, permission_check_function):
     @wraps(view_func)
     def _inner(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
             return HttpResponseRedirect("{}?next={}".format(reverse("account_login"), request.path))
 
-        if not permission_test_function(request, *args, **kwargs):
+        if not permission_check_function(request, *args, **kwargs):
             raise Http404()
 
         return view_func(request, *args, **kwargs)
@@ -224,5 +222,11 @@ class OrgManageAccessMixin:
 
 class OppPMRequiredMixin:
     @method_decorator(opportunity_pm_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class OppNMRequiredMixin:
+    @method_decorator(opportunity_nm_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)

@@ -35,6 +35,9 @@ def generate_audit_reports() -> None:
         Opportunity.objects.filter(
             Q(pk__in=flag.opportunities.values_list("pk", flat=True)) | Q(program__in=flag.programs.all()),
             active=True,
+            archived=False,
+            is_test=False,
+            end_date__gte=period_start,
         )
         .select_related("program__organization")
         .distinct()
@@ -51,7 +54,8 @@ def generate_audit_reports() -> None:
         except Exception:
             logger.exception("Failed to generate weekly report for opportunity %s", opportunity.pk)
             continue
-        generated_reports.append(report)
+        if report is not None:
+            generated_reports.append(report)
 
     try:
         send_new_audit_report_notifications(generated_reports)

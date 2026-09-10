@@ -61,6 +61,7 @@ class AdminOrganizationForm(forms.ModelForm):
             "funder",
             "verified",
             "has_used_connect",
+            "is_test",
             "year_of_establishment",
             "team_size",
             "flws_managed",
