@@ -124,6 +124,10 @@ function addCatchmentAreas(map, catchments) {
 
 window.addCatchmentAreas = addCatchmentAreas;
 
+const BUILDINGS_SOURCE = 'overture-buildings';
+const BUILDINGS_FILL_LAYER = 'overture-buildings-fill';
+const BUILDINGS_OUTLINE_LAYER = 'overture-buildings-outline';
+
 const MapboxUtils = {
   setAccessToken(token) {
     if (!token) {
@@ -164,6 +168,109 @@ const MapboxUtils = {
     );
     map.addControl(draw, 'top-left');
     return draw;
+  },
+
+  /**
+   * Draw Overture building footprints, read by the browser straight from Overture's PMTiles archive.
+   *
+   * `archiveMaxZoom` is where Overture's tiles stop; `displayMinZoom` is where we choose to start
+   * drawing. Declaring the former is what makes Mapbox overzoom the deepest tiles for closer views
+   * rather than request tiles that do not exist.
+   *
+   * The source and layers are created on the first `setVisible(true)` rather than up front: adding
+   * a PMTiles source is not lazy in Mapbox, so doing it eagerly costs the provider plugin and an
+   * S3 range read of the archive header on every map load, even for the users who never switch
+   * footprints on.
+   *
+   * @param {mapboxgl.Map} map - Mapbox Map
+   * @param {{tilesUrl: string, sourceLayer: string, archiveMaxZoom: number, displayMinZoom: number, attribution: string}} config
+   * @param {object} [options]
+   * @param {string} [options.beforeId] - existing layer to insert the footprints beneath, so they
+   *   sit under the map's own layers rather than over them.
+   * @param {function(boolean): void} [options.onAvailabilityChange] - called with whether the map
+   *   is zoomed in far enough for footprints to draw at all.
+   * @returns {{setVisible: function(boolean): void}} handle for toggling the footprints on and off
+   */
+  addBuildingsOverlay(map, config, options = {}) {
+    const { beforeId, onAvailabilityChange } = options;
+    const FILL_COLOR = '#1d4ed8';
+    const FILL_OPACITY = 0.25;
+    const OUTLINE_COLOR = '#1e3a8a';
+    const OUTLINE_WIDTH = 0.8;
+
+    let added = false;
+    const addSourceAndLayers = () => {
+      if (added) return;
+      added = true;
+
+      map.addSource(BUILDINGS_SOURCE, {
+        type: 'vector',
+        url: config.tilesUrl,
+        maxzoom: config.archiveMaxZoom,
+        attribution: config.attribution,
+      });
+
+      // Below displayMinZoom footprints are too small to tell apart, so Mapbox is told not to draw
+      // them rather than the overlay policing zoom itself.
+      const shared = {
+        source: BUILDINGS_SOURCE,
+        'source-layer': config.sourceLayer,
+        minzoom: config.displayMinZoom,
+      };
+
+      map.addLayer(
+        {
+          ...shared,
+          id: BUILDINGS_FILL_LAYER,
+          type: 'fill',
+          paint: { 'fill-color': FILL_COLOR, 'fill-opacity': FILL_OPACITY },
+        },
+        beforeId,
+      );
+
+      map.addLayer(
+        {
+          ...shared,
+          id: BUILDINGS_OUTLINE_LAYER,
+          type: 'line',
+          paint: { 'line-color': OUTLINE_COLOR, 'line-width': OUTLINE_WIDTH },
+        },
+        beforeId,
+      );
+    };
+
+    // The release this points at is retired by Overture after 60 days, at which point the archive
+    // 404s and the overlay silently draws nothing. Surface that rather than failing quietly.
+    map.on('error', (e) => {
+      if (e.sourceId !== BUILDINGS_SOURCE) return;
+      // eslint-disable-next-line no-console -- the retired-release case has no other signal
+      console.error('Overture buildings source failed to load', e.error);
+    });
+
+    // One threshold, applied twice from here: as the layers' Mapbox `minzoom`, and as the
+    // availability reported to the caller. Callers never re-derive it, so the control cannot end up
+    // offering a toggle for a zoom at which Mapbox draws nothing.
+    let available = null;
+    const syncAvailability = () => {
+      const next = map.getZoom() >= config.displayMinZoom;
+      if (next === available) return;
+      available = next;
+      if (onAvailabilityChange) onAvailabilityChange(available);
+    };
+    syncAvailability();
+    map.on('zoomend', syncAvailability);
+
+    return {
+      setVisible(visible) {
+        if (visible) addSourceAndLayers();
+        if (!added) return;
+
+        const visibility = visible ? 'visible' : 'none';
+        [BUILDINGS_FILL_LAYER, BUILDINGS_OUTLINE_LAYER].forEach((layer) => {
+          map.setLayoutProperty(layer, 'visibility', visibility);
+        });
+      },
+    };
   },
 
   createMarker(map, opts) {

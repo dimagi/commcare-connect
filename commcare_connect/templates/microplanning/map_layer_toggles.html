@@ -1,0 +1,14 @@
+{% load i18n %}
+{% translate "Show building footprints from Overture Maps. Data from OpenStreetMap and the Overture Maps Foundation." as buildings_hint %}
+<div x-show="buildingsAvailable"
+     x-transition.opacity
+     x-cloak
+     class="map-control-panel">
+  <label for="show-buildings-toggle" class="title-sm">{% translate "Show Building Data" %}</label>
+  <span x-tooltip.raw="{{ buildings_hint|escapejs }}">
+    <input id="show-buildings-toggle"
+           type="checkbox"
+           class="simple-toggle"
+           x-model="showBuildings">
+  </span>
+</div>
