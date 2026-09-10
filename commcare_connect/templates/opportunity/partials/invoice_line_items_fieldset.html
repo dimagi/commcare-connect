@@ -3,6 +3,18 @@
 {% if form.line_items_table %}
   {% if form.line_items_table.rows %}
     <div class="overflow-x-auto mb-4">{% render_table form.line_items_table %}</div>
+    <div id="download-line-items-wrapper"
+         x-cloak
+         x-show="showDownloadButton"
+         class="my-4">
+      <a type="button"
+         class="button button-md outline-style"
+         :href="downloadLineItemsUrl()"
+         target="_blank">
+        <i class="fa-solid fa-download mr-2"></i>
+        {% translate "Download All Items" %}
+      </a>
+    </div>
   {% else %}
     {# An empty table alone reads as a missing page. Say which of the two reasons it is. #}
     <div role="status"
@@ -33,15 +45,3 @@
   <div id="invoice-line-items-wrapper"
        class="space-y-1 text-sm text-gray-500 mb-4"></div>
 {% endif %}
-<div id="download-line-items-wrapper"
-     x-cloak
-     x-show="showDownloadButton"
-     class="my-4">
-  <a type="button"
-     class="button button-md outline-style"
-     :href="downloadLineItemsUrl()"
-     target="_blank">
-    <i class="fa-solid fa-download mr-2"></i>
-    {% translate "Download All Items" %}
-  </a>
-</div>
