@@ -46,7 +46,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tables import TaskTable
+from commcare_connect.opportunity.tables import (
+    OpportunityTable,
+    ProgramManagerOpportunityTable,
+    TaskTable,
+)
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -69,7 +73,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView
+from commcare_connect.opportunity.views import OpportunityList, WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
@@ -777,6 +781,38 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+RELATIONSHIPS_ON_THE_LIST = [
+    ("delivery", True),
+    ("supervisor", True),
+    ("program_org", True),
+    ("funder", True),
+    ("watcher", True),
+    ("unrelated", False),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("relationship,listed", RELATIONSHIPS_ON_THE_LIST)
+def test_opportunity_list_data_covers_every_accessible_relationship(relationship, listed, opp_orgs, managed_opp):
+    queryset = OpportunityData(opp_orgs[relationship], False, {}).get_data()
+
+    assert [opp.id for opp in queryset] == ([managed_opp.id] if listed else [])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,manages",
+    [("delivery", False), ("supervisor", True), ("program_org", True), ("funder", True), ("watcher", True)],
+)
+def test_opportunity_list_table_follows_the_relationship(relationship, manages, opp_orgs, managed_opp, rf):
+    view = OpportunityList()
+    view.request = rf.get("/")
+    view.request.org = opp_orgs[relationship]
+
+    expected = ProgramManagerOpportunityTable if manages else OpportunityTable
+    assert view.get_table_class() is expected
 
 
 @pytest.mark.django_db

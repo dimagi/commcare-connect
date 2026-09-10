@@ -3,9 +3,14 @@ from datetime import date, timedelta
 import pytest
 from django.utils import timezone
 
-from commcare_connect.opportunity.filters import AssignedTaskFilterSet, TasksFilterSet, UserTasksFilterSet
+from commcare_connect.opportunity.filters import (
+    AssignedTaskFilterSet,
+    OpportunityListFilterSet,
+    TasksFilterSet,
+    UserTasksFilterSet,
+)
 from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
-from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus
+from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, Opportunity
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
@@ -235,3 +240,15 @@ class TestAssignedTaskFilterSet:
             }
         )
         assert list(result) == [self.at_assigned]
+
+
+@pytest.mark.django_db
+def test_opportunity_list_filter_offers_every_accessible_program(program, funder_org, rf):
+    program.funder = funder_org
+    program.save()
+    request = rf.get("/")
+    request.org = funder_org
+
+    filterset = OpportunityListFilterSet(queryset=Opportunity.objects.none(), request=request)
+
+    assert filterset.filters["program"].extra["choices"] == [(program.slug, program.name)]

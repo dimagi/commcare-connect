@@ -17,6 +17,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     InvoiceDeliveriesTable,
     InvoiceLineItemsTable,
+    OpportunityTable,
+    ProgramManagerOpportunityTable,
     WorkerTasksTable,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -26,7 +28,11 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
 )
 from commcare_connect.opportunity.utils.invoice_line_items import LineItem, Money, WorkPayRow
+from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.users.models import User
+from commcare_connect.utils.test_utils import make_membership, make_request
+
+Role = UserOrganizationMembership.Role
 
 
 @pytest.mark.parametrize("show_org", [False, True])
@@ -136,3 +142,29 @@ def test_worker_tasks_table_empty(opportunity):
     table = _make_table(opportunity)
     rows = list(table.rows)
     assert len(rows) == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("table_class", [OpportunityTable, ProgramManagerOpportunityTable])
+@pytest.mark.parametrize(
+    "relationship,role,offered",
+    [
+        ("delivery", Role.ADMIN, True),
+        ("delivery", Role.MEMBER, True),
+        ("watcher", Role.ADMIN, False),
+        ("delivery", Role.VIEWER, False),
+    ],
+    ids=["manager", "member", "watching_org", "viewer_role"],
+)
+def test_invoice_action_needs_more_than_view_access(
+    table_class, relationship, role, offered, opp_orgs, managed_opp, user
+):
+    """The invoice list itself requires standard access, so a viewer must not be sent there."""
+    org = opp_orgs[relationship]
+    request = make_request(user, org=org, membership=make_membership(org, user, role))
+    table = table_class([managed_opp], org_slug=org.slug, request=request)
+
+    actions = table.render_actions(managed_opp)
+
+    assert "View Opportunity" in actions
+    assert ("View Invoices" in actions) is offered

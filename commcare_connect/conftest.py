@@ -177,6 +177,30 @@ def supervisor_org(db) -> Organization:
     return OrganizationFactory()
 
 
+@pytest.fixture
+def managed_opp(program, organization, supervisor_org):
+    """A delivery org doing the work, a third-party supervisor, and the program's own owner."""
+    return OpportunityFactory(
+        program=program, organization=organization, supervising_organization=supervisor_org, managed=True
+    )
+
+
+@pytest.fixture
+def opp_orgs(program, organization, supervisor_org, funder_org, watcher_org):
+    """Every org with a distinct relationship to `managed_opp`."""
+    program.funder = funder_org
+    program.save()
+    program.watchers.add(watcher_org)
+    return {
+        "delivery": organization,
+        "supervisor": supervisor_org,
+        "program_org": program.organization,
+        "funder": funder_org,
+        "watcher": watcher_org,
+        "unrelated": OrganizationFactory(),
+    }
+
+
 @pytest.fixture(autouse=True)
 def ensure_currency_country_data(db):
     # These models get flushed in between tests; so make sure they exist

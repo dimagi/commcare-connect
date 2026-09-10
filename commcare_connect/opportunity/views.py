@@ -223,6 +223,7 @@ from commcare_connect.program.utils import (
     is_opportunity_pm,
     opportunity_access_level_from_request,
     opportunity_by_id,
+    org_acts_as_manager,
 )
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
@@ -307,13 +308,18 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     paginate_by = 15
     filter_class = OpportunityListFilterSet
 
+    @cached_property
+    def acts_as_manager(self):
+        """An org overseeing others' work reads a different set of figures than one delivering its own."""
+        return org_acts_as_manager(self.request.org)
+
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
         return context
 
     def get_table_class(self):
-        if self.request.org.program_manager:
+        if self.acts_as_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
 
@@ -323,12 +329,11 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["org_slug"] = self.request.org.slug
+        kwargs["request"] = self.request
         return kwargs
 
     def get_table_data(self):
-        org = self.request.org
-        is_program_manager = org.program_manager
-        return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
+        return OpportunityData(self.request.org, self.acts_as_manager, self.get_filter_values()).get_data()
 
 
 class OpportunityInit(ProgramManageAccessMixin, CreateView):

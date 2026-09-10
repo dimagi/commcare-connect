@@ -95,6 +95,33 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
     return org_access_for_program(org, opportunity.program)
 
 
+def opportunities_accessible_to_org(org):
+    """The opportunities an org may reach.
+
+    An org reaches an opportunity by delivering it, by supervising it, or through its
+    relationship to the opportunity's program.
+    """
+    if not org:
+        return Opportunity.objects.none()
+
+    return Opportunity.objects.filter(
+        Q(organization=org)
+        | Q(supervising_organization=org)
+        | Q(program__organization=org)
+        | Q(program__funder=org)
+        | Q(program__in=org.watched_programs.values("id"))
+    )
+
+
+def org_acts_as_manager(org) -> bool:
+    """Whether the org oversees any resource rather than only delivering its own work."""
+    if not org:
+        return False
+    return (
+        programs_accessible_to_org(org).exists() or Opportunity.objects.filter(supervising_organization=org).exists()
+    )
+
+
 def orgs_ids_with_manage_access_to_opportunity(opportunity) -> set:
     """Every org with MANAGE access to this opportunity, independent of any request."""
     org_ids = {

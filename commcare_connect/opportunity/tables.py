@@ -35,6 +35,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.program.utils import AccessLevel, opportunity_access_level_from_request
 from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
@@ -537,6 +538,7 @@ class BaseOpportunityList(OrgContextTable):
     stats_style = "underline underline-offset-2 justify-center"
 
     def __init__(self, *args, **kwargs):
+        self.request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
         self.use_view_url = False
 
@@ -632,6 +634,39 @@ class BaseOpportunityList(OrgContextTable):
     def render_program(self, value):
         return self._render_div(value if value else "--", extra_classes="justify-start")
 
+    def render_actions(self, record):
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
+            },
+            {
+                "title": "View Connect Workers",
+                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
+            },
+        ]
+        if self._access_to(record) >= AccessLevel.STANDARD:
+            actions.append(
+                {
+                    "title": "View Invoices",
+                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
+                }
+            )
+
+        html = render_to_string(
+            "components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            },
+        )
+        return mark_safe(html)
+
+    def _access_to(self, record) -> AccessLevel:
+        """What the acting user may do to this row."""
+        return opportunity_access_level_from_request(self.request, record)
+
     def render_worker_list_url_column(self, value, opp_id, url_slug="worker_list", sort=None):
         url = reverse(f"opportunity:{url_slug}", args=(self.org_slug, opp_id))
 
@@ -700,32 +735,6 @@ class OpportunityTable(BaseOpportunityList):
         return self.render_worker_list_url_column(
             value=value, opp_id=record.opportunity_id, url_slug="worker_payments", sort="sort=-total_paid"
         )
-
-    def render_actions(self, record):
-        actions = [
-            {
-                "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
-            },
-            {
-                "title": "View Connect Workers",
-                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
-            },
-            {
-                "title": "View Invoices",
-                "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
-            },
-        ]
-
-        html = render_to_string(
-            "components/dropdowns/text_button_dropdown.html",
-            context={
-                "text": "...",
-                "list": actions,
-                "styles": "text-sm",
-            },
-        )
-        return mark_safe(html)
 
 
 class ProgramManagerOpportunityTable(BaseOpportunityList):
@@ -797,34 +806,6 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             record.organization.name,
         )
         return html
-
-    def render_actions(self, record):
-        actions = [
-            {
-                "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
-            },
-            {
-                "title": "View Connect Workers",
-                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
-            },
-        ]
-        actions.append(
-            {
-                "title": "View Invoices",
-                "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
-            }
-        )
-
-        html = render_to_string(
-            "components/dropdowns/text_button_dropdown.html",
-            context={
-                "text": "...",
-                "list": actions,
-                "styles": "text-sm",
-            },
-        )
-        return mark_safe(html)
 
 
 class WorkerVisitTable(tables.Table):

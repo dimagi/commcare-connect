@@ -1,5 +1,4 @@
 import pytest
-from django.test.client import RequestFactory
 
 from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.models import UserOrganizationMembership
@@ -7,17 +6,19 @@ from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_nm,
     is_opportunity_pm,
+    opportunities_accessible_to_org,
     opportunity_access_level_from_request,
     opportunity_by_id,
     org_access_for_program,
     org_access_level_from_request,
+    org_acts_as_manager,
     org_opportunity_access,
     program_access_level_from_request,
     programs_accessible_to_org,
     user_access_for_org,
 )
 from commcare_connect.users.tests.factories import OrganizationFactory
-from commcare_connect.utils.test_utils import grant_all_org_access, make_membership
+from commcare_connect.utils.test_utils import grant_all_org_access, make_membership, make_request
 
 Role = UserOrganizationMembership.Role
 
@@ -76,15 +77,6 @@ class TestOrgProgramAccess:
     @pytest.mark.parametrize("org,program_", [(None, True), (True, None)], ids=["no_org", "no_program"])
     def test_missing_side_has_nothing(self, org, program_, program, organization):
         assert org_access_for_program(organization if org else None, program if program_ else None) is AccessLevel.NONE
-
-
-def make_request(user, org=None, membership=None):
-    """A request carrying only what the access functions read: the user, the org, the role in it."""
-    request = RequestFactory().get("/")
-    request.user = user
-    request.org = org
-    request.org_membership = membership
-    return request
 
 
 @pytest.fixture
@@ -200,30 +192,6 @@ class TestOrgAccessLevelFromRequest:
         assert org_access_level_from_request(pm_request) is org_access_level_from_request(plain_request)
 
 
-@pytest.fixture
-def managed_opp(program, organization, supervisor_org):
-    """A delivery org doing the work, a third-party supervisor, and the program's own owner."""
-    return OpportunityFactory(
-        program=program, organization=organization, supervising_organization=supervisor_org, managed=True
-    )
-
-
-@pytest.fixture
-def opp_orgs(program, organization, supervisor_org, funder_org, watcher_org):
-    """Every org with a distinct relationship to `managed_opp`."""
-    program.funder = funder_org
-    program.save()
-    program.watchers.add(watcher_org)
-    return {
-        "delivery": organization,
-        "supervisor": supervisor_org,
-        "program_org": program.organization,
-        "funder": funder_org,
-        "watcher": watcher_org,
-        "unrelated": OrganizationFactory(),
-    }
-
-
 class TestOrgOpportunityAccess:
     """The ceiling: what an org's relationship allows, before its users' roles cap it."""
 
@@ -251,6 +219,50 @@ class TestOrgOpportunityAccess:
             program=program, organization=organization, supervising_organization=organization, managed=False
         )
         assert org_opportunity_access(program.organization, opp) is AccessLevel.MANAGE
+
+
+class TestOpportunitiesAccessibleToOrg:
+    """What the opportunity list page may show."""
+
+    @pytest.mark.parametrize("relationship", ["delivery", "supervisor", "program_org", "funder", "watcher"])
+    def test_every_relationship_reaches_the_opportunity(self, relationship, opp_orgs, managed_opp):
+        accessible = opportunities_accessible_to_org(opp_orgs[relationship])
+
+        assert [opp.id for opp in accessible] == [managed_opp.id]
+
+    def test_unrelated_org_reaches_nothing(self, opp_orgs, managed_opp):
+        assert not opportunities_accessible_to_org(opp_orgs["unrelated"]).exists()
+
+    def test_no_org_reaches_nothing(self, managed_opp):
+        assert not opportunities_accessible_to_org(None).exists()
+
+    def test_two_relationships_to_one_opportunity_list_it_once(self, program, organization):
+        """A delivery org that also watches the program keeps one row."""
+        program.watchers.add(organization)
+        opportunity = OpportunityFactory(program=program, organization=organization)
+
+        assert [opp.id for opp in opportunities_accessible_to_org(organization)] == [opportunity.id]
+
+
+class TestOrgActsAsManager:
+    """Which orgs see the opportunity list through a manager's eyes rather than a deliverer's."""
+
+    @pytest.mark.parametrize(
+        "relationship,expected",
+        [
+            ("program_org", True),
+            ("funder", True),
+            ("watcher", True),
+            ("supervisor", True),
+            ("delivery", False),
+            ("unrelated", False),
+        ],
+    )
+    def test_only_a_non_delivery_relationship_manages(self, relationship, expected, opp_orgs, managed_opp):
+        assert org_acts_as_manager(opp_orgs[relationship]) is expected
+
+    def test_no_org_does_not_manage(self, db):
+        assert org_acts_as_manager(None) is False
 
 
 class TestOpportunityAccessLevelFromRequest:

@@ -44,6 +44,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.program.utils import opportunities_accessible_to_org
 
 
 def inactive_workers_subquery(days_ago):
@@ -430,34 +431,35 @@ class OpportunityData:
         self.filters = filters
 
     def get_data(self):
-        base_qs = self.get_base_qs(self.org, self.filters, self.is_program_manager)
+        base_qs = self.get_base_qs(self.org, self.filters)
 
         def data_qs(ids):
-            return self.get_data_qs(ids, self.is_program_manager)
+            return self.get_data_qs(self.org, ids, self.is_program_manager)
 
         return TieredQueryset(base_qs, data_qs)
 
     @staticmethod
-    def get_base_qs(organization, filters, program_manager=False):
+    def get_base_qs(organization, filters):
         today = now().date()
-        base_filter = Q(organization=organization)
-        if program_manager:
-            base_filter |= Q(program__organization=organization)
-        base_filter &= Q(archived=False)
+        base_filter = Q(archived=False)
         is_test = filters.get("is_test", None)
         if is_test not in ["", None]:
             base_filter &= Q(is_test=is_test)
         programs = filters.get("program", [])
         if programs:
             base_filter &= Q(program__slug__in=programs)
-        queryset = Opportunity.objects.filter(base_filter).annotate(
-            program_name=F("program__name"),
-            status=Case(
-                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                default=Value(2),  # Inactive
-                output_field=IntegerField(),
-            ),
+        queryset = (
+            opportunities_accessible_to_org(organization)
+            .filter(base_filter)
+            .annotate(
+                program_name=F("program__name"),
+                status=Case(
+                    When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+                    When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+                    default=Value(2),  # Inactive
+                    output_field=IntegerField(),
+                ),
+            )
         )
         status = filters.get("status", [])
         if status:
@@ -465,7 +467,7 @@ class OpportunityData:
         return queryset
 
     @staticmethod
-    def get_data_qs(opp_ids, program_manager=False):
+    def get_data_qs(organization, opp_ids, program_manager=False):
         # Meant to be used with a small page of opp_ids (10/20)
         today = now().date()
         three_days_ago = now() - timedelta(days=3)
@@ -486,23 +488,28 @@ class OpportunityData:
             output_field=IntegerField(),
         )
 
-        queryset = Opportunity.objects.filter(id__in=opp_ids).annotate(
-            program_name=F("program__name"),
-            pending_invites=pending_invites_subquery(),
-            pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
-            total_accrued=total_accrued_sq(),
-            total_paid=total_paid_sq(),
-            payments_due=ExpressionWrapper(
-                F("total_accrued") - F("total_paid"),
-                output_field=DecimalField(),
-            ),
-            inactive_workers=inactive_workers_subquery(three_days_ago),
-            status=Case(
-                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                default=Value(2),  # Inactive
-                output_field=IntegerField(),
-            ),
+        queryset = (
+            opportunities_accessible_to_org(organization)
+            .filter(id__in=opp_ids)
+            .select_related("program")  # the table resolves each row's access level through its program
+            .annotate(
+                program_name=F("program__name"),
+                pending_invites=pending_invites_subquery(),
+                pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
+                total_accrued=total_accrued_sq(),
+                total_paid=total_paid_sq(),
+                payments_due=ExpressionWrapper(
+                    F("total_accrued") - F("total_paid"),
+                    output_field=DecimalField(),
+                ),
+                inactive_workers=inactive_workers_subquery(three_days_ago),
+                status=Case(
+                    When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+                    When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+                    default=Value(2),  # Inactive
+                    output_field=IntegerField(),
+                ),
+            )
         )
 
         if program_manager:
