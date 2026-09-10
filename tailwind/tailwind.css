@@ -909,6 +909,15 @@ select:disabled,
     @apply pointer-events-auto flex flex-col gap-2 rounded-lg bg-white px-3 py-2 shadow-md;
   }
 
+  .map-control-row {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  /* Progress note under a control, e.g. footprint tiles still loading. */
+  .map-control-status {
+    @apply flex items-center gap-2 text-xs text-gray-500;
+  }
+
   /* Positioned by `.map-control-stack`, and in the DOM even when hidden, so it must never take the
      pointer -- an invisible toast would otherwise eat clicks on the map beneath it. Callers toggle
      `opacity-0`/`opacity-100` and the background colour on the element itself, so those stay out

@@ -187,12 +187,14 @@ const MapboxUtils = {
    * @param {object} [options]
    * @param {string} [options.beforeId] - existing layer to insert the footprints beneath, so they
    *   sit under the map's own layers rather than over them.
+   * @param {function(boolean): void} [options.onLoadingChange] - called when footprint tiles start
+   *   and finish loading. Only ever true while footprints are shown.
    * @param {function(boolean): void} [options.onAvailabilityChange] - called with whether the map
    *   is zoomed in far enough for footprints to draw at all.
    * @returns {{setVisible: function(boolean): void}} handle for toggling the footprints on and off
    */
   addBuildingsOverlay(map, config, options = {}) {
-    const { beforeId, onAvailabilityChange } = options;
+    const { beforeId, onLoadingChange, onAvailabilityChange } = options;
     const FILL_COLOR = '#1d4ed8';
     const FILL_OPACITY = 0.25;
     const OUTLINE_COLOR = '#1e3a8a';
@@ -239,10 +241,35 @@ const MapboxUtils = {
       );
     };
 
+    // Mapbox does the fetching, so progress has to be read back off its source events rather than
+    // tracked around a request of our own. Hidden layers load no tiles, so `shown` gates this: an
+    // idle map with the overlay off is not "loading", it has nothing to load.
+    let shown = false;
+    let loading = false;
+    const setLoading = (next) => {
+      if (next === loading) return;
+      loading = next;
+      if (onLoadingChange) onLoadingChange(loading);
+    };
+    const syncLoading = () =>
+      setLoading(shown && added && !map.isSourceLoaded(BUILDINGS_SOURCE));
+
+    // sourcedataloading covers the archive header and directory reads as well as the tiles, so the
+    // first toggle reports progress while Mapbox is still working out where the tiles are.
+    ['sourcedataloading', 'sourcedata'].forEach((event) => {
+      map.on(event, (e) => {
+        if (e.sourceId === BUILDINGS_SOURCE) syncLoading();
+      });
+    });
+    // An idle map has nothing in flight, so this clears the indicator outright instead of asking
+    // the source again: a tile that failed leaves the source looking unloaded forever, and reading
+    // it here would leave the indicator spinning on a load that has already given up.
+    map.on('idle', () => setLoading(false));
     // The release this points at is retired by Overture after 60 days, at which point the archive
-    // 404s and the overlay silently draws nothing. Surface that rather than failing quietly.
+    // 404s and the overlay silently draws nothing. Surface that rather than spinning forever.
     map.on('error', (e) => {
       if (e.sourceId !== BUILDINGS_SOURCE) return;
+      setLoading(false);
       // eslint-disable-next-line no-console -- the retired-release case has no other signal
       console.error('Overture buildings source failed to load', e.error);
     });
@@ -269,6 +296,8 @@ const MapboxUtils = {
         [BUILDINGS_FILL_LAYER, BUILDINGS_OUTLINE_LAYER].forEach((layer) => {
           map.setLayoutProperty(layer, 'visibility', visibility);
         });
+        shown = visible;
+        syncLoading();
       },
     };
   },

@@ -14,9 +14,10 @@
             showImplementationAreas: false,
 
             // Building footprint overlay. `buildingsAvailable` tracks whether the map is zoomed in
-            // far enough for footprints to be drawn at all; it is driven by the overlay.
+            // far enough for footprints to be drawn at all; both flags are driven by the overlay.
             showBuildings: false,
             buildingsAvailable: false,
+            buildingsLoading: false,
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
@@ -1409,6 +1410,7 @@
 
                 const buildings = MapboxUtils.addBuildingsOverlay(this.map, JSON.parse(configElement.textContent), {
                     beforeId: 'workareas-fill',
+                    onLoadingChange: (loading) => { this.buildingsLoading = loading; },
                     onAvailabilityChange: (available) => { this.buildingsAvailable = available; },
                 });
 
