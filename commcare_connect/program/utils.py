@@ -14,13 +14,13 @@ class AccessLevel(IntEnum):
     NONE: no access.
     VIEW: read-only (e.g. a program watcher).
     STANDARD: normal member access (e.g. a delivery org's day-to-day work on its own opportunity).
-    MANAGE: full control, including changing the resource itself.
+    ADMIN: full control, including changing the resource itself.
     """
 
     NONE = 0
     VIEW = 1
     STANDARD = 2
-    MANAGE = 3
+    ADMIN = 3
 
     @staticmethod
     def effective(level_a: "AccessLevel", level_b: "AccessLevel") -> "AccessLevel":
@@ -29,11 +29,11 @@ class AccessLevel(IntEnum):
 
 
 def user_access_for_org(membership) -> AccessLevel:
-    """What the user's role within the org allows: admin -> MANAGE, member -> STANDARD, viewer -> VIEW."""
+    """What the user's role within the org allows: admin -> ADMIN, member -> STANDARD, viewer -> VIEW."""
     if not membership:
         return AccessLevel.NONE
     if membership.is_admin:
-        return AccessLevel.MANAGE
+        return AccessLevel.ADMIN
     if membership.is_member:
         return AccessLevel.STANDARD
     if membership.is_viewer:
@@ -42,11 +42,11 @@ def user_access_for_org(membership) -> AccessLevel:
 
 
 def org_access_for_program(org, program) -> AccessLevel:
-    """What the org's relationship to the program allows: owner/funder -> MANAGE, watcher -> VIEW."""
+    """What the org's relationship to the program allows: owner/funder -> ADMIN, watcher -> VIEW."""
     if not org or not program:
         return AccessLevel.NONE
     if org.id in (program.organization_id, program.funder_id):
-        return AccessLevel.MANAGE
+        return AccessLevel.ADMIN
     if program.watchers.filter(id=org.id).exists():
         return AccessLevel.VIEW
     return AccessLevel.NONE
@@ -78,12 +78,12 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
     if not org or not opportunity:
         return AccessLevel.NONE
     if org.id in (opportunity.organization_id, opportunity.supervising_organization_id):
-        return AccessLevel.MANAGE
+        return AccessLevel.ADMIN
     return org_access_for_program(org, opportunity.program)
 
 
-def orgs_ids_with_manage_access_to_opportunity(opportunity) -> set:
-    """Every org with MANAGE access to this opportunity, independent of any request."""
+def orgs_ids_with_admin_access_to_opportunity(opportunity) -> set:
+    """Every org with ADMIN access to this opportunity, independent of any request."""
     org_ids = {
         opportunity.organization_id,
         opportunity.supervising_organization_id,
@@ -116,7 +116,7 @@ def _base_access_level(request) -> AccessLevel | None:
     if not request.org:
         return AccessLevel.NONE
     if request.user.has_perm(ALL_ORG_ACCESS):
-        return AccessLevel.MANAGE
+        return AccessLevel.ADMIN
     return None
 
 
@@ -150,7 +150,7 @@ def is_opportunity_pm(request, opportunity) -> bool:
 
 
 def _can_manage_opportunity(request, opportunity) -> bool:
-    return opportunity_access_level_from_request(request, opportunity) is AccessLevel.MANAGE
+    return opportunity_access_level_from_request(request, opportunity) is AccessLevel.ADMIN
 
 
 def populate_currency_and_country_fk_for_model(apps, model_name, app_label, total_label):

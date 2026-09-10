@@ -4,9 +4,9 @@ from django.urls import clear_url_caches, path, reverse
 from django.views import View
 
 from commcare_connect.organization.decorators import (
-    OrgManageAccessMixin,
+    OrgAdminAccessMixin,
     OrgViewAccessMixin,
-    org_manage_access_required,
+    org_admin_access_required,
     org_standard_access_required,
     org_view_access_required,
 )
@@ -25,7 +25,7 @@ class TestAllOrgAccessPermission:
         def dummy_member_view(request, org_slug):
             return HttpResponse("OK")
 
-        @org_manage_access_required
+        @org_admin_access_required
         def dummy_admin_view(request, org_slug):
             return HttpResponse("OK")
 
@@ -33,7 +33,7 @@ class TestAllOrgAccessPermission:
         def dummy_viewer_view(request, org_slug):
             return HttpResponse("OK")
 
-        class DummyAdminMixinView(OrgManageAccessMixin, View):
+        class DummyAdminMixinView(OrgAdminAccessMixin, View):
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 

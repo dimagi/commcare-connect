@@ -61,8 +61,8 @@ def opp_standard_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.STANDARD)(view_func)
 
 
-def opp_manage_access_required(view_func):
-    return _opportunity_access_level_gate(AccessLevel.MANAGE)(view_func)
+def opp_admin_access_required(view_func):
+    return _opportunity_access_level_gate(AccessLevel.ADMIN)(view_func)
 
 
 def org_pm_required(view_func, *args, **kwargs):
@@ -120,11 +120,11 @@ def _org_access_level_gate(minimum):
 
 program_view_access_required = _program_access_level_gate(AccessLevel.VIEW)
 program_standard_access_required = _program_access_level_gate(AccessLevel.STANDARD)
-program_manage_access_required = _program_access_level_gate(AccessLevel.MANAGE)
+program_admin_access_required = _program_access_level_gate(AccessLevel.ADMIN)
 
 org_view_access_required = _org_access_level_gate(AccessLevel.VIEW)
 org_standard_access_required = _org_access_level_gate(AccessLevel.STANDARD)
-org_manage_access_required = _org_access_level_gate(AccessLevel.MANAGE)
+org_admin_access_required = _org_access_level_gate(AccessLevel.ADMIN)
 
 opportunity_pm_required = _opportunity_gate(is_opportunity_pm)
 opportunity_nm_required = _opportunity_gate(is_opportunity_nm)
@@ -202,8 +202,8 @@ class OppStandardAccessMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-class ProgramManageAccessMixin:
-    @method_decorator(program_manage_access_required)
+class ProgramAdminAccessMixin:
+    @method_decorator(program_admin_access_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 
@@ -214,8 +214,8 @@ class ProgramViewAccessMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-class OrgManageAccessMixin:
-    @method_decorator(org_manage_access_required)
+class OrgAdminAccessMixin:
+    @method_decorator(org_admin_access_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 

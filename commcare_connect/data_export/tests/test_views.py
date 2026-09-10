@@ -686,7 +686,7 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
     def test_assign_access_by_org_role(
         self, api_client, managed_opportunity, program_manager_org_user_admin, org_role, expected
     ):
-        """Every org relationship that grants MANAGE access to the opportunity from the program
+        """Every org relationship that grants ADMIN access to the opportunity from the program
         side (program owner, supervising, funder) can assign work areas; the delivery org and an
         unrelated org cannot."""
         if org_role == "program_owner":

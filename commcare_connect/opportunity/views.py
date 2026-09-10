@@ -211,8 +211,8 @@ from commcare_connect.organization.decorators import (
     OppStandardAccessMixin,
     OppViewAccessMixin,
     OrgViewAccessMixin,
-    ProgramManageAccessMixin,
-    opp_manage_access_required,
+    ProgramAdminAccessMixin,
+    opp_admin_access_required,
     opp_standard_access_required,
     opp_view_access_required,
     opportunity_pm_required,
@@ -331,7 +331,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(ProgramManageAccessMixin, CreateView):
+class OpportunityInit(ProgramAdminAccessMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -356,7 +356,7 @@ class OpportunityInit(ProgramManageAccessMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, ProgramManageAccessMixin, UpdateView):
+class OpportunityInitUpdate(OpportunityObjectMixin, ProgramAdminAccessMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -1118,7 +1118,7 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
-@opp_manage_access_required
+@opp_admin_access_required
 @opportunity_required
 def send_message_mobile_users(request, org_slug=None, opp_id=None):
     user_ids = OpportunityAccess.objects.filter(opportunity=request.opportunity, accepted=True).values_list(
