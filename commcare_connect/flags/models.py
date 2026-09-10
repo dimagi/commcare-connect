@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Exists, OuterRef
 from django.db.models.signals import m2m_changed
 from django.utils.translation import gettext_lazy
 from waffle.models import CACHE_EMPTY, AbstractUserFlag
@@ -45,13 +46,25 @@ class Flag(AbstractUserFlag):
 
     @classmethod
     def active_flags_for_user(cls, user, include_role_flags=False):
-        filters = (
-            models.Q(users=user)
-            | models.Q(organizations__members=user)
-            | models.Q(opportunities__organization__members=user)
-            | models.Q(opportunities__opportunityaccess__user=user)
-            | models.Q(programs__organization__members=user)
+        # Each relation path is checked via a correlated EXISTS subquery rather than
+        # joining all of them into the same query — joining organizations, opportunities
+        # (via opportunityaccess) and programs together in one query multiplies their
+        # join cardinalities against each other, causing an expensive row fan-out that
+        # .distinct() then has to collapse. EXISTS keeps each check independent and
+        # index-driven, with no fan-out and no need for distinct().
+        organization_membership = Exists(
+            cls.organizations.through.objects.filter(flag_id=OuterRef("pk"), organization__members=user)
         )
+        opportunity_access = Exists(
+            cls.opportunities.through.objects.filter(flag_id=OuterRef("pk")).filter(
+                models.Q(opportunity__organization__members=user) | models.Q(opportunity__opportunityaccess__user=user)
+            )
+        )
+        program_membership = Exists(
+            cls.programs.through.objects.filter(flag_id=OuterRef("pk"), program__organization__members=user)
+        )
+
+        filters = models.Q(users=user) | organization_membership | opportunity_access | program_membership
 
         if include_role_flags:
             filters |= models.Q(everyone=True)
@@ -60,7 +73,7 @@ class Flag(AbstractUserFlag):
             if user.is_superuser:
                 filters |= models.Q(superusers=True)
 
-        return cls.objects.filter(filters).distinct()
+        return cls.objects.filter(filters)
 
     def is_active_for(self, obj: Organization | Opportunity | Program):
         # A transient/unsaved Flag (e.g. waffle's default for a missing flag) has no
