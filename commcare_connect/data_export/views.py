@@ -39,6 +39,7 @@ from commcare_connect.data_export.serializer import (
     AuditReportEntryDataSerializer,
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
+    ImplementationAreaDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
     LLOEntityDataSerializer,
@@ -57,7 +58,7 @@ from commcare_connect.data_export.serializer import (
     WorkAreaGroupWriteSerializer,
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -692,6 +693,13 @@ class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
 
     def get_queryset(self, *args, **kwargs):
         return WorkArea.objects.filter(opportunity=self.opportunity).select_related("work_area_group")
+
+
+class ImplementationAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = ImplementationAreaDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return ImplementationArea.objects.filter(opportunity=self.opportunity)
 
 
 class LLOEntityDataView(BaseDataExportListViewV2):
