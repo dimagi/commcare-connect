@@ -13,6 +13,7 @@ from commcare_connect.program.utils import (
     org_access_level_from_request,
     org_opportunity_access,
     program_access_level_from_request,
+    programs_accessible_to_org,
     user_access_for_org,
 )
 from commcare_connect.users.tests.factories import OrganizationFactory
@@ -86,20 +87,44 @@ def make_request(user, org=None, membership=None):
     return request
 
 
-class TestProgramAccessLevelFromRequest:
-    """relationship x internal role -> effective level."""
+@pytest.fixture
+def orgs(program, funder_org, watcher_org, organization):
+    """Every org with a distinct relationship to `program`."""
+    program.funder = funder_org
+    program.save()
+    program.watchers.add(watcher_org)
+    return {
+        "program_org": program.organization,
+        "funder": funder_org,
+        "watcher": watcher_org,
+        "unrelated": organization,
+    }
 
-    @pytest.fixture
-    def orgs(self, program, funder_org, watcher_org, organization):
+
+class TestProgramsAccessibleToOrg:
+    """What the program list page may show."""
+
+    @pytest.mark.parametrize("relationship", ["program_org", "funder", "watcher"])
+    def test_every_relationship_reaches_the_program(self, relationship, orgs, program):
+        assert [p.id for p in programs_accessible_to_org(orgs[relationship])] == [program.id]
+
+    def test_unrelated_org_reaches_nothing(self, orgs, program):
+        assert not programs_accessible_to_org(orgs["unrelated"]).exists()
+
+    def test_no_org_reaches_nothing(self, program):
+        assert not programs_accessible_to_org(None).exists()
+
+    def test_two_relationships_to_one_program_list_it_once(self, program, funder_org):
+        """A funder that also watches must not double the row."""
         program.funder = funder_org
         program.save()
-        program.watchers.add(watcher_org)
-        return {
-            "program_org": program.organization,
-            "funder": funder_org,
-            "watcher": watcher_org,
-            "unrelated": organization,
-        }
+        program.watchers.add(funder_org)
+
+        assert [p.id for p in programs_accessible_to_org(funder_org)] == [program.id]
+
+
+class TestProgramAccessLevelFromRequest:
+    """relationship x internal role -> effective level."""
 
     @pytest.mark.parametrize(
         "relationship,org_access",

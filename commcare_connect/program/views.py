@@ -38,7 +38,7 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import AccessLevel, is_org_pm, program_access_level_from_request
+from .utils import AccessLevel, is_org_pm, program_access_level_from_request, programs_accessible_to_org
 
 ALLOWED_ORDERINGS = {
     "name": "name",
@@ -269,8 +269,9 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
 
 @org_view_access_required
 def program_home(request, org_slug):
+    """Orgs that own, fund or watch a program manage from one home; the orgs they invite have their own."""
     org = Organization.objects.get(slug=org_slug)
-    if is_org_pm(request):
+    if is_org_pm(request) or programs_accessible_to_org(org).exists():
         return program_manager_home(request, org)
     return network_manager_home(request, org)
 
@@ -291,7 +292,7 @@ def program_manager_home(request, org):
     )
 
     programs_qs = (
-        Program.objects.filter(organization=org)
+        programs_accessible_to_org(org)
         .order_by("-start_date")
         .annotate(
             invited=Count("programapplication"),
@@ -316,6 +317,7 @@ def program_manager_home(request, org):
     for program in programs:
         applications = getattr(program, "applications_with_budget", [])
         program.allocated_budget = sum(application.current_budget for application in applications)
+        program.can_manage = program_access_level_from_request(request, program) is AccessLevel.MANAGE
 
     pending_review_data = (
         UserVisit.objects.filter(
@@ -364,7 +366,7 @@ def program_manager_home(request, org):
         "programs": programs,
         "organizations": organizations,
         "recent_activities": recent_activities,
-        "is_program_manager": True,
+        "is_program_manager": is_org_pm(request),
     }
     return render(request, "program/pm_home.html", context)
 

@@ -1,9 +1,11 @@
 from enum import IntEnum
 
+from django.db.models import Q
 from django.http import Http404
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.program.models import Program
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
@@ -50,6 +52,17 @@ def org_access_for_program(org, program) -> AccessLevel:
     if program.watchers.filter(id=org.id).exists():
         return AccessLevel.VIEW
     return AccessLevel.NONE
+
+
+def programs_accessible_to_org(org):
+    """The programs an org owns, funds or watches.
+
+    Watchers are matched by id rather than joined, so the caller's aggregates stay un-multiplied.
+    """
+    if not org:
+        return Program.objects.none()
+
+    return Program.objects.filter(Q(organization=org) | Q(funder=org) | Q(id__in=org.watched_programs.values("id")))
 
 
 def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:

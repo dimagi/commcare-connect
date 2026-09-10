@@ -257,6 +257,79 @@ class TestProgramHomeBudgetData(BaseProgramTest):
 
 
 @pytest.mark.django_db
+class TestProgramHomeListsAccessiblePrograms:
+    """The program list is reached through the org's relationship to a program, not the PM flag."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, program: Program, funder_org: Organization, watcher_org: Organization, client: Client):
+        program.funder = funder_org
+        program.save()
+        program.watchers.add(watcher_org)
+        self.program = program
+        self.client = client
+        self.actors = {"owner": program.organization, "funder": funder_org, "watcher": watcher_org}
+
+    def home_for(self, org, role=Role.ADMIN):
+        user = UserFactory()
+        make_membership(org, user, role)
+        self.client.force_login(user)
+        return self.client.get(reverse("program:home", kwargs={"org_slug": org.slug}))
+
+    @staticmethod
+    def template_names(response):
+        return [template.name for template in response.templates]
+
+    @pytest.mark.parametrize("actor,can_manage", [("owner", True), ("funder", True), ("watcher", False)])
+    def test_relationship_lists_the_program_and_decides_its_operations(self, actor, can_manage):
+        response = self.home_for(self.actors[actor])
+
+        assert response.status_code == HTTPStatus.OK
+        assert "program/pm_home.html" in self.template_names(response)
+        programs = response.context["programs"]
+        assert [program.id for program in programs] == [self.program.id]
+        assert programs[0].can_manage is can_manage
+
+    @pytest.mark.parametrize("actor,offered", [("owner", True), ("watcher", False)])
+    def test_manage_controls_are_rendered_only_for_managers(self, actor, offered):
+        org = self.actors[actor]
+        response = self.home_for(org)
+        content = response.content.decode()
+
+        edit_url = reverse("program:edit", kwargs={"org_slug": org.slug, "pk": self.program.program_id})
+        invite_url = reverse(
+            "program:invite_organization", kwargs={"org_slug": org.slug, "pk": self.program.program_id}
+        )
+        assert (edit_url in content) is offered
+        assert (invite_url in content) is offered
+
+    def test_a_viewer_role_cannot_manage_even_its_own_org_program(self):
+        response = self.home_for(self.actors["owner"], role=Role.VIEWER)
+
+        assert response.context["programs"][0].can_manage is False
+
+    def test_a_program_manager_org_without_programs_keeps_its_home(self):
+        """Nothing to have a relationship with yet, but the org must still reach the create form."""
+        response = self.home_for(ProgramManagerOrganisationFactory())
+
+        assert "program/pm_home.html" in self.template_names(response)
+        assert response.context["is_program_manager"] is True
+
+    def test_a_funder_is_not_offered_program_creation(self):
+        """Creating a program stays gated on the org's own flag, not on a program relationship."""
+        response = self.home_for(self.actors["funder"])
+
+        assert "program/pm_home.html" in self.template_names(response)
+        assert response.context["is_program_manager"] is False
+
+    def test_an_org_with_only_an_application_stays_on_the_network_manager_home(self, organization: Organization):
+        ProgramApplicationFactory.create(program=self.program, organization=organization)
+
+        response = self.home_for(organization)
+
+        assert "program/nm_home.html" in self.template_names(response)
+
+
+@pytest.mark.django_db
 class TestNetworkManagerPendingPayments:
     """The network manager home (`network_manager_home`) is served to non-program-manager
     org admins. It surfaces a "Pending Payments" figure per managed opportunity, computed as

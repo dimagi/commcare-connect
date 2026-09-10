@@ -23,50 +23,52 @@
               <p class="card_description w-full max-w-1/2">{{ program.description }}</p>
             </div>
             <div class="flex items-start justify-end gap-6">
-              <button class="button-icon"
-                      hx-get="{% url "program:edit" request.org.slug program.program_id %}"
-                      hx-target="#program-edit-form"
-                      @htmx:after-request="showProgramEditModal = true">
-                <i class="fa-solid fa-pen"></i>
-              </button>
-              <button class="button button-sm outline-style"
-                      @click="showInviteModal = true">{% translate "Invite" %}</button>
-              <div x-cloak
-                   x-show="showInviteModal"
-                   x-transition.opacity
-                   class="modal-backdrop">
-                <div @click.away="showInviteModal = false" x-transition class="modal">
-                  <div class="header">
-                    <h2 class="title">{% translate "Invite Workspace" %}</h2>
-                    <button @click="showInviteModal = false"
-                            class="button-icon"
-                            aria-label="Close">
-                      <i class="fa-solid fa-xmark text-xl"></i>
-                    </button>
+              {% if program.can_manage %}
+                <button class="button-icon"
+                        hx-get="{% url "program:edit" request.org.slug program.program_id %}"
+                        hx-target="#program-edit-form"
+                        @htmx:after-request="showProgramEditModal = true">
+                  <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="button button-sm outline-style"
+                        @click="showInviteModal = true">{% translate "Invite" %}</button>
+                <div x-cloak
+                     x-show="showInviteModal"
+                     x-transition.opacity
+                     class="modal-backdrop">
+                  <div @click.away="showInviteModal = false" x-transition class="modal">
+                    <div class="header">
+                      <h2 class="title">{% translate "Invite Workspace" %}</h2>
+                      <button @click="showInviteModal = false"
+                              class="button-icon"
+                              aria-label="Close">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                      </button>
+                    </div>
+                    <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.program_id %}"
+                          method="post">
+                      {% csrf_token %}
+                      <div class="flex flex-col gap-2 py-4">
+                        <label for="organization" class="title-sm">{% translate "Workspace" %}</label>
+                        <select id="organization"
+                                name="organization"
+                                required
+                                data-tomselect
+                                data-tomselect:no-remove-button>
+                          {% for org in organizations %}<option value="{{ org.slug }}">{{ org.name }}</option>{% endfor %}
+                        </select>
+                        <span class="hint">{% blocktrans %}Select the workspace you want to invite.{% endblocktrans %}</span>
+                      </div>
+                      <div class="footer">
+                        <button type="button"
+                                @click="showInviteModal = false"
+                                class="button button-md outline-style">{% translate "Close" %}</button>
+                        <button type="submit" class="button button-md primary-dark">{% translate "Invite" %}</button>
+                      </div>
+                    </form>
                   </div>
-                  <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.program_id %}"
-                        method="post">
-                    {% csrf_token %}
-                    <div class="flex flex-col gap-2 py-4">
-                      <label for="organization" class="title-sm">{% translate "Workspace" %}</label>
-                      <select id="organization"
-                              name="organization"
-                              required
-                              data-tomselect
-                              data-tomselect:no-remove-button>
-                        {% for org in organizations %}<option value="{{ org.slug }}">{{ org.name }}</option>{% endfor %}
-                      </select>
-                      <span class="hint">{% blocktrans %}Select the workspace you want to invite.{% endblocktrans %}</span>
-                    </div>
-                    <div class="footer">
-                      <button type="button"
-                              @click="showInviteModal = false"
-                              class="button button-md outline-style">{% translate "Close" %}</button>
-                      <button type="submit" class="button button-md primary-dark">{% translate "Invite" %}</button>
-                    </div>
-                  </form>
                 </div>
-              </div>
+              {% endif %}
             </div>
           </div>
           {% with applications=program.applications_with_budget|default:program.programapplication_set.all %}
@@ -177,7 +179,7 @@
                     </div>
                   </div>
                   <div class="flex items-center justify-end">
-                    {% if application.status == 'applied' %}
+                    {% if application.status == 'applied' and program.can_manage %}
                       <div class="flex gap-2">
                         <button class="button button-md outline-style"
                                 value="reject"
@@ -191,13 +193,15 @@
                                 hx-target="body">{% translate "Accept" %}</button>
                       </div>
                     {% elif application.status == 'accepted' %}
-                      <a class="button button-md button-outline-rounded me-1"
-                         href="{% url "program:opportunity_init" request.org.slug program.program_id %}">
-                        <div class="flex items-center justify-between gap-4">
-                          <p class="text-sm">{% translate "Create Opportunity" %}</p>
-                          <i class="fa-solid fa-arrow-right"></i>
-                        </div>
-                      </a>
+                      {% if program.can_manage %}
+                        <a class="button button-md button-outline-rounded me-1"
+                           href="{% url "program:opportunity_init" request.org.slug program.program_id %}">
+                          <div class="flex items-center justify-between gap-4">
+                            <p class="text-sm">{% translate "Create Opportunity" %}</p>
+                            <i class="fa-solid fa-arrow-right"></i>
+                          </div>
+                        </a>
+                      {% endif %}
                       <a class="button button-md button-outline-rounded"
                          href="{% url "opportunity:list" request.org.slug %}?program={{ program.slug }}">
                         <div class="flex items-center justify-between gap-4">
