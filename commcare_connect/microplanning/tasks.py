@@ -1,8 +1,10 @@
 import csv
 import io
 import logging
+import re
 from collections import defaultdict
 
+import httpx
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.core.files.storage import default_storage
@@ -17,9 +19,17 @@ from config import celery_app
 
 from .clustering import WorkAreaGrouper
 from .const import DEFAULT_BUILDING_COUNT
-from .models import SRID, ImplementationArea, WorkArea, WorkAreaGroup
+from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 
 logger = logging.getLogger(__name__)
+
+# Overture's catalog, whose "latest" member names the newest release. Kept here beside its only
+# reader rather than in const.py, which is for constants more than one module shares.
+OVERTURE_CATALOG_URL = "https://stac.overturemaps.org/catalog.json"
+OVERTURE_CATALOG_TIMEOUT = 10
+
+# An Overture release is a date and a revision, e.g. "2026-08-19.0".
+OVERTURE_RELEASE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\.\d+")
 
 
 def get_import_area_cache_key(opp_id: int):
@@ -523,3 +533,48 @@ def cluster_work_areas_task(opp_id, max_buildings=DEFAULT_BUILDING_COUNT):
     lock_key = get_cluster_area_cache_lock_key(opp_id)
     with cache.lock(lock_key, timeout=1200):
         WorkAreaGrouper(opp_id, max_buildings=max_buildings).cluster_work_areas()
+
+
+@celery_app.task(
+    autoretry_for=(httpx.HTTPError,),
+    retry_kwargs={"max_retries": 3},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def update_overture_release():
+    """
+    Point OvertureRelease at Overture's newest release. Runs daily.
+
+    A catalog that cannot be reached is transient, so it is retried; once the retries are spent the
+    recorded release is left alone for the next run, which costs slightly older footprints rather
+    than a map that can draw none.
+    """
+    release = fetch_latest_overture_release()
+    if release is None:
+        return
+
+    if release != OvertureRelease.current():
+        OvertureRelease.set_current(release)
+
+
+def fetch_latest_overture_release():
+    response = httpx.get(OVERTURE_CATALOG_URL, timeout=OVERTURE_CATALOG_TIMEOUT)
+    response.raise_for_status()
+
+    try:
+        catalog = response.json()
+    except ValueError:
+        catalog = None
+
+    if not isinstance(catalog, dict):
+        logger.error("Overture's catalog at %s did not answer with a JSON object", OVERTURE_CATALOG_URL)
+        return None
+
+    release = catalog.get("latest")
+
+    if not isinstance(release, str) or not OVERTURE_RELEASE_RE.fullmatch(release):
+        logger.error("Overture's catalog named %r as its latest release, which is not one", release)
+        return None
+
+    return release
