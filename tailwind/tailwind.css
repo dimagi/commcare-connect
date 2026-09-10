@@ -918,6 +918,12 @@ select:disabled,
     @apply flex items-center gap-2 text-xs text-gray-500;
   }
 
+  /* Positioned by `.map-control-stack`. Hover-driven and passive: x-show drops it out of the
+     column entirely when hidden, so the toast below it does not move on its account. */
+  .map-hint {
+    @apply pointer-events-none rounded-md border border-white/10 bg-black/50 px-2 py-2 text-sm text-white shadow-lg;
+  }
+
   /* Positioned by `.map-control-stack`, and in the DOM even when hidden, so it must never take the
      pointer -- an invisible toast would otherwise eat clicks on the map beneath it. Callers toggle
      `opacity-0`/`opacity-100` and the background colour on the element itself, so those stay out
