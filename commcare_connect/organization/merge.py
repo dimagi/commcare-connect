@@ -49,8 +49,9 @@ SIMPLE_REASSIGNMENTS: Sequence[OrganizationReassignment] = (
     OrganizationReassignment("program", "Program", "funder"),
 )
 
-# Every relation pointing at Organization. test_merge.py asserts this matches the models, so adding a new foreign
-# key to Organization without handling it here fails CI.
+# The relations the merge acts on. test_merge.py asserts these plus SKIPPED_RELATIONS cover every
+# relation to Organization, so adding a new foreign key to Organization without handling it here
+# fails CI.
 HANDLED_RELATIONS = frozenset(
     {
         "flags.Flag.organizations",
@@ -65,6 +66,19 @@ HANDLED_RELATIONS = frozenset(
         "program.Program.organization",
         "program.Program.watchers",
         "program.ProgramApplication.organization",
+        "program.ProgramWatcher.organization",
+    }
+)
+
+# Audit rows record what was true when they were written, so a merge must not rewrite them: "this
+# organization became the funder" stays a fact about the merged-away organization. The pghistory
+# foreign keys are declared db_constraint=False for exactly this reason, and the audit admin renders
+# a dash once the organization is gone, so these keep pointing at the source after it is deleted.
+SKIPPED_RELATIONS = frozenset(
+    {
+        "opportunity.OpportunitySupervisingOrganizationEvent.supervising_organization",
+        "program.ProgramFunderEvent.funder",
+        "program.ProgramWatcherEvent.organization",
     }
 )
 
