@@ -481,6 +481,10 @@ class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView
         return response
 
 
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
+
+
 class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailView):
     model = Opportunity
     template_name = "opportunity/dashboard.html"
@@ -557,7 +561,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
             {
                 "name": "Max Budget",
                 "count": header_with_tooltip(
-                    f"{object.currency_code} {intcomma(object.total_budget)}",
+                    amount_with_currency(object.total_budget, object.currency_code),
                     "Maximum payments that can be made for workers and organization",
                 ),
                 "icon": "fa-money-bill",
@@ -3348,9 +3352,6 @@ def opportunity_worker_progress(request, org_slug, opp_id):
     earned_percentage = safe_percent(result.total_accrued or 0, result.total_budget or 0)
     paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
 
-    def amount_with_currency(amount):
-        return f"{result.currency_code + ' ' if result.currency_code else ''}{intcomma(amount or 0)}"
-
     worker_progress = [
         {
             "title": "Verification",
@@ -3383,7 +3384,9 @@ def opportunity_worker_progress(request, org_slug, opp_id):
             "progress": [
                 {
                     "title": "Earned",
-                    "total": header_with_tooltip(amount_with_currency(result.total_accrued), "Earned Amount"),
+                    "total": header_with_tooltip(
+                        amount_with_currency(result.total_accrued, result.currency_code), "Earned Amount"
+                    ),
                     "value": header_with_tooltip(
                         f"{earned_percentage:.0f}%",
                         "Percentage Earned by all workers out of Max Budget in the Opportunity",
@@ -3394,7 +3397,8 @@ def opportunity_worker_progress(request, org_slug, opp_id):
                 {
                     "title": "Paid",
                     "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid), "Paid Amount to All Connect Workers"
+                        amount_with_currency(result.total_paid, result.currency_code),
+                        "Paid Amount to All Connect Workers",
                     ),
                     "value": header_with_tooltip(
                         f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
@@ -3513,7 +3517,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "panels": deliveries_panels,
         },
         {
-            "title": f"{_('Worker Payments')} ({request.opportunity.currency_code})",
+            "title": _("Worker Payments"),
             "sub_heading": _("Last Payment"),
             "value": stats.recent_payment or "--",
             "panels": [
@@ -3522,7 +3526,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": _("Payments"),
                     "status": _("Earned"),
                     "value": header_with_tooltip(
-                        intcomma(stats.total_accrued), _("Worker payment accrued based on approved service deliveries")
+                        amount_with_currency(stats.total_accrued, request.opportunity.currency_code),
+                        _("Worker payment accrued based on approved service deliveries"),
                     ),
                     "url": payment_url,
                     "incr": stats.accrued_since_yesterday,
@@ -3532,7 +3537,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": _("Payments"),
                     "status": _("Due"),
                     "value": header_with_tooltip(
-                        intcomma(stats.payments_due), _("Worker payments earned but yet unpaid")
+                        amount_with_currency(stats.payments_due, request.opportunity.currency_code),
+                        _("Worker payments earned but yet unpaid"),
                     ),
                 },
             ],
