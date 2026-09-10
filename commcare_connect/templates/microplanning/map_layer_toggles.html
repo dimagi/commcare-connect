@@ -3,7 +3,7 @@
      x-transition.opacity
      x-cloak
      class="map-control-panel">
-  <div class="map-control-row">
+  <div x-show="!buildingsFailed" class="map-control-row">
     <label for="show-buildings-toggle" class="title-sm">{% translate "Show Building Data" %}</label>
     <span x-tooltip.raw="{% translate 'Show building footprints from Overture Maps. Data from OpenStreetMap and the Overture Maps Foundation.' %}">
       <input id="show-buildings-toggle"
@@ -12,7 +12,15 @@
              x-model="showBuildings">
     </span>
   </div>
-  <p x-show="buildingsLoading"
+  <p x-show="buildingsFailed"
+     x-cloak
+     class="map-control-status"
+     role="status"
+     aria-live="polite">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+    {% translate "Building data unavailable" %}
+  </p>
+  <p x-show="buildingsLoading && !buildingsFailed"
      x-cloak
      class="map-control-status"
      role="status"

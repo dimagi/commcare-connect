@@ -18,6 +18,7 @@
             showBuildings: false,
             buildingsAvailable: false,
             buildingsLoading: false,
+            buildingsFailed: false,
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
@@ -1412,6 +1413,10 @@
                     beforeId: 'workareas-fill',
                     onLoadingChange: (loading) => { this.buildingsLoading = loading; },
                     onAvailabilityChange: (available) => { this.buildingsAvailable = available; },
+                    onFailed: () => {
+                        this.buildingsFailed = true;
+                        this.showBuildings = false;
+                    },
                 });
 
                 this.$watch('showBuildings', (visible) => buildings.setVisible(visible));

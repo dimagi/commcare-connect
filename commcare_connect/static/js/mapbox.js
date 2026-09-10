@@ -191,10 +191,14 @@ const MapboxUtils = {
    *   and finish loading. Only ever true while footprints are shown.
    * @param {function(boolean): void} [options.onAvailabilityChange] - called with whether the map
    *   is zoomed in far enough for footprints to draw at all.
+   * @param {function(): void} [options.onFailed] - called once if the archive turns out to be
+   *   unreadable, so the caller can withdraw the toggle and say so. Never called for a failure
+   *   the overlay can recover from.
    * @returns {{setVisible: function(boolean): void}} handle for toggling the footprints on and off
    */
   addBuildingsOverlay(map, config, options = {}) {
-    const { beforeId, onLoadingChange, onAvailabilityChange } = options;
+    const { beforeId, onLoadingChange, onAvailabilityChange, onFailed } =
+      options;
     const FILL_COLOR = '#1d4ed8';
     const FILL_OPACITY = 0.25;
     const OUTLINE_COLOR = '#1e3a8a';
@@ -256,9 +260,14 @@ const MapboxUtils = {
 
     // sourcedataloading covers the archive header and directory reads as well as the tiles, so the
     // first toggle reports progress while Mapbox is still working out where the tiles are.
+    let everLoaded = false;
     ['sourcedataloading', 'sourcedata'].forEach((event) => {
       map.on(event, (e) => {
-        if (e.sourceId === BUILDINGS_SOURCE) syncLoading();
+        if (e.sourceId !== BUILDINGS_SOURCE) return;
+        // Remembered so the error handler can tell a dead archive from a tile that dropped out of
+        // one that works: reaching loaded even once proves the archive itself is readable.
+        if (map.isSourceLoaded(BUILDINGS_SOURCE)) everLoaded = true;
+        syncLoading();
       });
     });
     // An idle map has nothing in flight, so this clears the indicator outright instead of asking
@@ -267,11 +276,16 @@ const MapboxUtils = {
     map.on('idle', () => setLoading(false));
     // The release this points at is retired by Overture after 60 days, at which point the archive
     // 404s and the overlay silently draws nothing. Surface that rather than spinning forever.
+
+    let failed = false;
     map.on('error', (e) => {
       if (e.sourceId !== BUILDINGS_SOURCE) return;
       setLoading(false);
       // eslint-disable-next-line no-console -- the retired-release case has no other signal
       console.error('Overture buildings source failed to load', e.error);
+      if (everLoaded || failed) return;
+      failed = true;
+      if (onFailed) onFailed();
     });
 
     // One threshold, applied twice from here: as the layers' Mapbox `minzoom`, and as the
