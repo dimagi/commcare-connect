@@ -25,6 +25,8 @@ from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitU
 from commcare_connect.organization.decorators import (
     OrgPMRequiredMixin,
     ProgramAdminAccessMixin,
+    can_act_as_program_manager_admin,
+    is_user_pm_org_admin,
     org_admin_access_required,
     org_view_access_required,
     program_admin_access_required,
@@ -38,7 +40,7 @@ from commcare_connect.program.tasks import (
     send_program_invite_email,
 )
 
-from .utils import AccessLevel, is_org_pm, program_access_level_from_request
+from .utils import AccessLevel, program_access_level_from_request, programs_accessible_to_org
 
 ALLOWED_ORDERINGS = {
     "name": "name",
@@ -270,7 +272,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
 @org_view_access_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
-    if is_org_pm(request):
+    if can_act_as_program_manager_admin(request.user, org):
         return program_manager_home(request, org)
     return network_manager_home(request, org)
 
@@ -291,7 +293,7 @@ def program_manager_home(request, org):
     )
 
     programs_qs = (
-        Program.objects.filter(organization=org)
+        programs_accessible_to_org(org)
         .order_by("-start_date")
         .annotate(
             invited=Count("programapplication"),
@@ -309,13 +311,14 @@ def program_manager_home(request, org):
                 filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
             ),
         )
-        .prefetch_related(program_applications_prefetch)
+        .prefetch_related(program_applications_prefetch, "watchers")
     )
 
     programs = list(programs_qs)
     for program in programs:
         applications = getattr(program, "applications_with_budget", [])
         program.allocated_budget = sum(application.current_budget for application in applications)
+        program.user_has_admin_access = program_access_level_from_request(request, program) >= AccessLevel.ADMIN
 
     pending_review_data = (
         UserVisit.objects.filter(
@@ -364,7 +367,7 @@ def program_manager_home(request, org):
         "programs": programs,
         "organizations": organizations,
         "recent_activities": recent_activities,
-        "is_program_manager": True,
+        "is_program_manager": is_user_pm_org_admin(request.user, org),
     }
     return render(request, "program/pm_home.html", context)
 

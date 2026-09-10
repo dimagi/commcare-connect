@@ -1,9 +1,11 @@
 from enum import IntEnum
 
+from django.db.models import Q
 from django.http import Http404
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.program.models import Program
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
@@ -50,6 +52,13 @@ def org_access_for_program(org, program) -> AccessLevel:
     if program.watchers.filter(id=org.id).exists():
         return AccessLevel.VIEW
     return AccessLevel.NONE
+
+
+def programs_accessible_to_org(org):
+    if not org:
+        return Program.objects.none()
+
+    return Program.objects.filter(Q(organization=org) | Q(funder=org) | Q(id__in=org.watched_programs.values("id")))
 
 
 def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:
@@ -132,12 +141,6 @@ def clear_managed_opp_cache(opportunity) -> None:
     ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
     for opp_id in ids:
         get_managed_opp.clear(opp_id)
-
-
-def is_org_pm(request):
-    return request.org.program_manager and (
-        (request.org_membership != None and request.org_membership.is_admin) or request.user.is_superuser  # noqa: E711
-    )
 
 
 def is_opportunity_pm(request, opportunity) -> bool:
