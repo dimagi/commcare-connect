@@ -108,6 +108,7 @@ config/
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
 - **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
 - **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
+- **Imports**: Keep imports at the top of the file. Only place imports inside a function or method when necessary to avoid a circular import.
 
 ## Gotchas
 
@@ -118,3 +119,13 @@ config/
 - **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
+
+## Commits
+
+- Keep commit descriptions short and concise unless explicitly stated otherwise.
+
+## PR
+
+- Always follow the PR template in the repo.
+- Create Draft PRs unless explicitly stated otherwise.
+- Keep the Product Summary and Technical Summary short and concise unless explicitly stated otherwise.
