@@ -325,3 +325,7 @@ webpack-stats.json
 !.elasticbeanstalk/*.global.yml
 
 .worktrees/
+
+# Claude Code: share settings.json, keep local state out
+.claude/worktrees/
+.claude/settings.local.json

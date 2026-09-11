@@ -49,6 +49,14 @@ python_files = [
     "tests.py",
     "test_*.py",
 ]
+# Only unactionable noise belongs here. Naive-datetime RuntimeWarnings and
+# RemovedInDjango60Warnings are left visible on purpose - they are real work.
+filterwarnings = [
+    # WhiteNoise, once per request, because collectstatic has not run locally.
+    "ignore:No directory at:UserWarning",
+    # allauth importing its own deprecated module.
+    "ignore:allauth.exceptions is deprecated:UserWarning",
+]
 
 # ==== Coverage ====
 [tool.coverage.run]
