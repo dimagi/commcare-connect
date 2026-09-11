@@ -31,7 +31,6 @@ from commcare_connect.opportunity.tasks import (
     download_inaccessibility_request_attachments,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
-    generate_catchment_area_export,
     generate_deliver_status_export,
     generate_payment_export,
     generate_review_visit_export,
@@ -674,16 +673,6 @@ class TestExportTasksCreateExportFile:
         mock_save.assert_called_once()
         args = mock_save.call_args[0]
         assert args[1].endswith("_work_status.csv")
-        assert args[2] == "csv"
-
-    @mock.patch("commcare_connect.opportunity.tasks.save_export")
-    @mock.patch("commcare_connect.opportunity.tasks.export_catchment_area_table")
-    def test_generate_catchment_area_export(self, mock_export_fn, mock_save, opportunity):
-        mock_export_fn.return_value = Dataset()
-        generate_catchment_area_export(opportunity.id, "csv")
-        mock_save.assert_called_once()
-        args = mock_save.call_args[0]
-        assert args[1].endswith("_catchment_area.csv")
         assert args[2] == "csv"
 
 
