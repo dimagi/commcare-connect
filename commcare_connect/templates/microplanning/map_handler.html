@@ -1093,11 +1093,17 @@
                     if (this.selectedFeature && this.selectedFeature._id === data.id) {
                         this.selectedFeature = { ...this.selectedFeature, status: data.status };
                     }
+                    const denied = data.status === 'NOT_VISITED';
                     this.setWorkAreaState(data.id, {
                         status: data.status,
                         selected: false,
-                        inaccessibility_denied: data.status === 'NOT_VISITED',
+                        inaccessibility_denied: denied,
                     });
+                    // Tile reloads drop feature state, and these ids are what puts it back, so a
+                    // review has to move the area in or out of them as well.
+                    this.deniedInaccessibilityWorkAreaIds = denied
+                        ? [...this.deniedInaccessibilityWorkAreaIds, data.id]
+                        : this.deniedInaccessibilityWorkAreaIds.filter((id) => id !== data.id);
                     this.inaccessibilityRequests = this.inaccessibilityRequests.filter(
                         (pendingRequest) => pendingRequest.work_area_id !== data.id
                     );
