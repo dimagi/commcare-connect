@@ -48,6 +48,7 @@ from waffle.decorators import waffle_flag
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
+    INACCESSIBILITY_LEGEND,
     MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
@@ -70,9 +71,11 @@ from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWork
 from commcare_connect.microplanning.helpers import (
     MAP_WORK_AREA_FIELDS,
     assign_work_areas_and_sync_to_hq,
+    denied_inaccessibility_work_area_ids,
     exclude_work_areas_for_opportunity,
     map_work_areas,
     pct,
+    pending_inaccessibility_requests,
     unassign_work_areas_for_opportunity,
     work_area_detail,
     work_area_search_options,
@@ -207,6 +210,12 @@ def microplanning_home(request, *args, **kwargs):
         args=[request.org.slug, opportunity.opportunity_id, 0],
     ).replace("/0/", "/")
 
+    # The review sidebar builds photo thumbnail URLs by appending a blob id to this.
+    attachment_url_base = reverse(
+        "opportunity:fetch_attachment",
+        args=[request.org.slug, opportunity.opportunity_id, "BLOB_ID"],
+    ).replace("BLOB_ID", "")
+
     status_meta = {
         status.value: {
             "label": status.label,
@@ -230,6 +239,10 @@ def microplanning_home(request, *args, **kwargs):
 
     is_program_manager = is_org_pm_or_all_access(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
+    inaccessible_mode = is_program_manager and bool(request.GET.get("inaccessible_mode"))
+    # Drives both the entry button's count and the list Inaccessible Mode renders, so the two
+    # can never disagree.
+    inaccessibility_requests = pending_inaccessibility_requests(opportunity) if is_program_manager else []
 
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
@@ -277,6 +290,14 @@ def microplanning_home(request, *args, **kwargs):
         "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
+        "inaccessible_mode": inaccessible_mode,
+        "inaccessibility_requests": inaccessibility_requests,
+        "inaccessible_request_count": len(inaccessibility_requests),
+        "attachment_url_base": attachment_url_base,
+        "inaccessibility_legend": INACCESSIBILITY_LEGEND,
+        "denied_inaccessibility_work_area_ids": (
+            denied_inaccessibility_work_area_ids(opportunity) if inaccessible_mode else []
+        ),
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "bounds_url": bounds_url,
         "search_options_url": search_options_url,
@@ -1288,7 +1309,9 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
     inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest, work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
+        work_area=work_area,
+        status=InaccessibilityRequestStatus.PENDING,
     )
     try:
         photo = BlobMeta.objects.get(parent_id=inacc_request.xform_id)
@@ -1296,16 +1319,11 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         photo = None
     return render(
         request,
-        "microplanning/review_inaccessibility_modal.html",
+        "microplanning/review_inaccessibility_panel.html",
         context={
             "work_area": work_area,
             "inaccessibility_request": inacc_request,
             "photo": photo,
-            "boundary_geojson": json.loads(work_area.boundary.geojson),
-            "request_location_geojson": (
-                json.loads(inacc_request.location.geojson) if inacc_request.location else None
-            ),
-            "mapbox_api_key": settings.MAPBOX_TOKEN,
         },
     )
 
