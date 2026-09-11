@@ -8,6 +8,7 @@ from functools import cached_property, partial
 from http import HTTPStatus
 from urllib.parse import urlencode, urlparse, urlunsplit
 
+import httpx
 import pghistory
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
@@ -2236,7 +2237,11 @@ def sync_deliver_units(request, org_slug, opp_id):
         create_learn_modules_and_deliver_units(request.opportunity.pk)
     except AppNoBuildException:
         status = HTTPStatus.BAD_REQUEST
-        message = "Failed to retrieve updates. No available build at the moment."
+        message = _("Failed to retrieve updates. No available build at the moment.")
+    except (CommCareHQAPIException, httpx.RequestError, httpx.TimeoutException, httpx.ConnectError):
+        logger.exception("Failed to sync delivery units for opportunity %s", opp_id)
+        status = HTTPStatus.BAD_GATEWAY
+        message = _("Failed to retrieve updates from CommCare HQ. Please try again.")
 
     return HttpResponse(content=message, status=status)
 
