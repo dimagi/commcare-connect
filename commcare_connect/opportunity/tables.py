@@ -1839,10 +1839,14 @@ class InvoiceDeliveriesTable(tables.Table):
     username = tables.Column(
         accessor="completed_work__opportunity_access__user__name", verbose_name=gettext_lazy("Worker")
     )
-    date_created = DMYTColumn(accessor="completed_work__date_created", verbose_name=gettext_lazy("Date of Delivery"))
-    date_approved = DMYTColumn(
-        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("Date Approved")
+    first_visit_date = DMYTColumn(
+        accessor="completed_work__date_created", verbose_name=gettext_lazy("First Visit Date")
     )
+    first_approved_date = DMYTColumn(
+        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("First Approved Date")
+    )
+    billing_month = tables.Column(accessor="month", verbose_name=gettext_lazy("Billing Month"))
+    billing_type = tables.Column(accessor="is_delta", verbose_name=gettext_lazy("Billing Type"))
     approved_count = tables.Column(accessor="billed_count", verbose_name=gettext_lazy("Approved Deliveries"))
     flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay"))
     org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay"))
@@ -1868,14 +1872,22 @@ class InvoiceDeliveriesTable(tables.Table):
             "opportunity",
             "entity_name",
             "username",
-            "date_created",
-            "date_approved",
+            "first_visit_date",
+            "first_approved_date",
+            "billing_month",
+            "billing_type",
             "approved_count",
             "flw_amount_local",
             "org_amount_local",
             "total_amount_local",
             "total_amount_usd",
         )
+
+    def render_billing_month(self, value):
+        return value.strftime("%B %Y")
+
+    def render_billing_type(self, value):
+        return _("Additional Delivery") if value else _("First Billing")
 
 
 _task_select_td_extra = {
