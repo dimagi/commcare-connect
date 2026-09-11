@@ -872,7 +872,6 @@ class CompletedWork(models.Model):
         default=0,
         help_text=gettext_lazy("Approved units already billed on a live invoice."),
     )
-    invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity_access", "entity_id", "payment_unit")
