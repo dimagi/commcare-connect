@@ -676,14 +676,20 @@ def generate_automated_service_delivery_invoice():
     for opportunity in Opportunity.objects.filter(
         active=True, is_test=False, start_date__gte=OPPORTUNITY_AUTO_INVOICE_START_DATE
     ).iterator(chunk_size=CHUNK_SIZE):
-        window_start = get_start_date_for_invoice(opportunity)
-        # Below indicates there are no unbilled completed works to invoice in previous month or earlier
-        if window_start > end_date_prev_month:
-            continue
+        try:
+            window_start = get_start_date_for_invoice(opportunity)
+            # Below indicates there are no unbilled completed works to invoice in previous month or earlier
+            if window_start > end_date_prev_month:
+                continue
 
-        invoice_id = _bill_opportunity(opportunity, window_start, end_date_prev_month)
-        if invoice_id:
-            created_invoices_ids.append(invoice_id)
+            invoice_id = _bill_opportunity(opportunity, window_start, end_date_prev_month)
+            if invoice_id:
+                created_invoices_ids.append(invoice_id)
+        except Exception:
+            logger.exception(
+                "Automated invoicing failed for Opportunity %s (%s)", opportunity.name, opportunity.opportunity_id
+            )
+            continue
 
     _send_auto_invoice_created_notification(created_invoices_ids)
 

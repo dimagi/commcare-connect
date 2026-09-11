@@ -13,8 +13,9 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
@@ -54,7 +55,10 @@ from commcare_connect.opportunity.utils.invoice import (
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
-from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    bill_invoice,
+    get_billable_line_items,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.users.models import User, UserCredential
@@ -1642,7 +1646,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widgets = {
             "date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "end_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "end_date": forms.DateInput(
+                attrs={"type": "date", "max": timezone.localdate() - datetime.timedelta(days=1)}, format="%Y-%m-%d"
+            ),
             "title": forms.TextInput(attrs={"placeholder": _("e.g. October Services")}),
         }
         labels = {
@@ -1753,7 +1759,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", gettext("Submit"), css_class="button button-md primary-dark"),
+                    Submit(
+                        "submit",
+                        gettext("Submit"),
+                        css_class="button button-md primary-dark",
+                        # Disable when there is an error while fetching the line items
+                        **{":disabled": "isServiceDelivery && lineItemsError"},
+                    ),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -1926,7 +1938,31 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+            if end_date >= localdate():
+                raise ValidationError({"end_date": _("End date must be before today.")})
+
+            self._reject_stale_total(amount, start_date, end_date)
+
         return cleaned_data
+
+    def _reject_stale_total(self, amount, start_date, end_date):
+        """Reject a submit if the posted total no longer matches the current billable total.
+
+        This provides a user-facing error when the preview has gone stale. `save()` still
+        recomputes the total under a lock and never trusts the posted amount.
+        """
+
+        # Use the same calculation as the preview, so a mismatch reflects a real state change.
+        billable_total = sum(
+            item.total_pay.local for item in get_billable_line_items(self.opportunity, start_date, end_date)
+        )
+        if amount != billable_total:
+            raise ValidationError(
+                _(
+                    "The billable total for this period has changed since this page was loaded. "
+                    "Please refresh the page to see the latest line items and total, then submit again."
+                )
+            )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -1962,39 +1998,17 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
     @property
     def line_items(self):
-        if self.line_items_table:
-            table = HTML(
-                """
-                {% load django_tables2 %}
-                <div class="overflow-x-auto mb-4">
-                    {% render_table form.line_items_table %}
-                </div>
-                """
-            )
-        else:
-            table = HTML(
-                """
-                <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
-            """
-            )
-
         return Fieldset(
             "Line Items",
-            table,
-            HTML(
-                """
-                <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
-                    <a type="button"
-                    class="button button-md outline-style"
-                    :href="downloadLineItemsUrl()"
-                    target="_blank"
-                    >
-                        <i class="fa-solid fa-download mr-2"></i>
-                        {% load i18n %}{% translate "Download All Items" %}
-                    </a>
-                </div>
-                """
-            ),
+            HTML('{% include "opportunity/partials/invoice_line_items_fieldset.html" %}'),
+        )
+
+    @property
+    def line_items_released(self):
+        """True when line items were released due to cancellation or rejection."""
+        return self.instance.pk is not None and self.instance.status in (
+            InvoiceStatus.CANCELLED_BY_NM,
+            InvoiceStatus.REJECTED_BY_PM,
         )
 
 
