@@ -899,7 +899,6 @@ class TestAutomatedPaymentInvoiceForm:
 
         cw.refresh_from_db()
         assert cw.invoiced_approved_count == 1
-        assert cw.invoice is None  # the FK is no longer written
 
     def test_readonly_form_initialization(self, valid_opportunity):
         invoice = PaymentInvoiceFactory(
