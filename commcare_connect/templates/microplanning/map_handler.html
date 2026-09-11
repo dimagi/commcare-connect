@@ -69,6 +69,14 @@
                 this.map.setFeatureState({ source: 'workareas', sourceLayer: 'workareas', id }, state);
             },
 
+            // Tile properties are a snapshot from when the tile loaded; feature-state carries
+            // every change made since — a review, an exclusion, an edit. State wins, so nothing
+            // reading a work area shows a value the map itself has already moved past.
+            workAreaWithLiveState(id, properties) {
+                const state = this.map.getFeatureState({ source: 'workareas', sourceLayer: 'workareas', id });
+                return { ...properties, ...state };
+            },
+
             clearSelectedFeature() {
                 if (this.selectedFeature) {
                     this.setWorkAreaState(this.selectedFeature._id, { selected: false });
@@ -1464,7 +1472,7 @@
                     // Group by default; shift+click (or a work area with no group) targets
                     // just this one work area.
                     if (this.inaccessibleMode) {
-                        if (feature.properties.status === 'REQUEST_FOR_INACCESSIBLE') {
+                        if (this.workAreaWithLiveState(id, feature.properties).status === 'REQUEST_FOR_INACCESSIBLE') {
                             this.openInaccessibilityReview(id);
                         }
                         return;
@@ -1489,17 +1497,8 @@
                         return;
                     }
 
-                    // Merge tile properties with feature-state so sidebar reflects
-                    // any local edits applied via setFeatureState.
-                    const state = this.map.getFeatureState({
-                        source: 'workareas',
-                        sourceLayer: 'workareas',
-                        id
-                    });
-
                     this.selectedFeature = {
-                        ...e.features[0].properties,
-                        ...state,
+                        ...this.workAreaWithLiveState(id, e.features[0].properties),
                         _id: id
                     };
 
@@ -1522,7 +1521,7 @@
                     hoveredId = newId;
                     this.setWorkAreaState(hoveredId, { hovered: true });
 
-                    const props = feature.properties;
+                    const props = this.workAreaWithLiveState(newId, feature.properties);
                     this.hoveredWorkArea = {
                         slug: props.slug,
                         group_name: props.group_name,
