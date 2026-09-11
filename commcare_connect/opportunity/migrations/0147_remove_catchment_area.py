@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0144_completedworkinvoice_is_delta'),
+        ('opportunity', '0146_merge_20260910_1148'),
     ]
 
     operations = [
