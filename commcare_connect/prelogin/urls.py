@@ -46,7 +46,7 @@ urlpatterns += [
 
 # Blog post detail pages: /blog/<slug>. Same SPA template; the client router
 # resolves the slug to the right post section. Keep each post's data-page and
-# ROUTE_META in app.js in sync, and add the URL to sitemap.xml.
+# its route_meta.ROUTES entry in sync, and add the URL to sitemap.xml.
 urlpatterns += [
     re_path(r"^blog/[\w-]+$", views.home, name="blog-detail"),
 ]

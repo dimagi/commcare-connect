@@ -7,20 +7,25 @@
 {% include "prelogin/includes/hubspot_embed.html" %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connect by Dimagi</title>
-<meta name="description" content="Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.">
-<link rel="canonical" href="https://connect.dimagi.com/">
-<meta property="og:type" content="website">
+{# Per-route, from prelogin/route_meta.py. Every URL renders this one template #}
+{# and unfurlers never run app.js, so hardcoding these makes every shared page #}
+{# preview as the home page. #}
+<title>{{ page_meta.title }}</title>
+<meta name="description" content="{{ page_meta.description }}">
+<link rel="canonical" href="{{ page_meta.canonical }}">
+<meta property="og:type" content="{{ page_meta.og_type }}">
 <meta property="og:site_name" content="Connect by Dimagi">
-<meta property="og:url" content="https://connect.dimagi.com/">
-<meta property="og:title" content="Connect by Dimagi">
-<meta property="og:description" content="Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.">
-<meta property="og:image" content="https://connect.dimagi.com/images/field-photos/join-hero.jpg">
-<meta property="og:image:alt" content="A Connect Frontline Worker delivering community health services">
+<meta property="og:url" content="{{ page_meta.canonical }}">
+<meta property="og:title" content="{{ page_meta.title }}">
+<meta property="og:description" content="{{ page_meta.description }}">
+<meta property="og:image" content="{{ page_meta.image }}">
+<meta property="og:image:alt" content="{{ page_meta.image_alt }}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Connect by Dimagi">
-<meta name="twitter:description" content="Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.">
-<meta name="twitter:image" content="https://connect.dimagi.com/images/field-photos/join-hero.jpg">
+<meta name="twitter:title" content="{{ page_meta.title }}">
+<meta name="twitter:description" content="{{ page_meta.description }}">
+<meta name="twitter:image" content="{{ page_meta.image }}">
+{# The same table for app.js, so client and server cannot drift. #}
+{{ route_meta|json_script:"route-meta" }}
 
 <script type="application/ld+json">
 {
@@ -62,7 +67,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=7">
+<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=8">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
@@ -4137,8 +4142,6 @@
 
         <h2>Building the evidence</h2>
         <p>Innovations for Poverty Action will run a randomized controlled trial to test whether Connect increases coverage of Vitamin A and oral rehydration solution, especially among the most vulnerable children, compared with existing approaches.</p>
-
-        <p>Read the original announcement on the <a href="https://dimagi.com/blog/usaid-div-and-dimagi-partner-to-enhance-child-health/" target="_blank" rel="noopener">Dimagi blog ↗</a>.</p>
       </div>
     </div>
   </article>
@@ -4193,8 +4196,6 @@
 
         <h2>Scaling the Child Health Campaign</h2>
         <p>In 2024, Dimagi is focused on pathways to scale, working with more locally led organizations in Nigeria and potentially targeting a million verified service deliveries this year, on the way to a planned 10 million verified visits per year. For years, service delivery campaigns have struggled to estimate and verify coverage in hard-to-reach areas. Connect aims to solve that while strengthening local ecosystems and creating opportunities for trained Frontline Workers.</p>
-
-        <p>Read the original post on the <a href="https://dimagi.com/blog/commcare-connect-reaches-100000-deliveries/" target="_blank" rel="noopener">Dimagi blog ↗</a>.</p>
       </div>
     </div>
   </article>
@@ -4263,8 +4264,6 @@
 
         <h2>Looking ahead to 2024</h2>
         <p>There is still much to explore: more pilots across essential services such as Kangaroo Mother Care and vaccine promotion, and new group therapy pilots reaching 2,500 people in Tigray, Ethiopia, with World Vision. We are also prioritizing the scale-up of the Child Health Campaign, and we are seeking partners to support the next million verified child visits, on the way to more than 10 million per year.</p>
-
-        <p>Read the original post on the <a href="https://dimagi.com/blog/commcare-connect-2023/" target="_blank" rel="noopener">Dimagi blog ↗</a>.</p>
       </div>
     </div>
   </article>
@@ -4334,7 +4333,7 @@
   </div>
 </footer>
 
-<script src="{% static 'prelogin/app.js' %}?v=7"></script>
+<script src="{% static 'prelogin/app.js' %}?v=8"></script>
 
 </body>
 </html>
