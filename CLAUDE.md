@@ -60,7 +60,7 @@ commcare_connect/
   commcarehq/      # CommCare HQ server integration
   connect_id_client/  # HTTP client for ConnectID service
   form_receiver/   # Receives xforms from CommCare HQ
-  microplanning/   # Maps, catchment areas (Mapbox)
+  microplanning/   # Work areas, coverage tracking, maps (Mapbox)
   reports/         # KPI and admin reports
   flags/           # Waffle feature flag/switch name constants
   multidb/         # Secondary DB support + logical replication
