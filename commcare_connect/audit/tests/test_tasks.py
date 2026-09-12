@@ -9,7 +9,7 @@ from commcare_connect.audit.tasks import generate_audit_reports, send_new_audit_
 from commcare_connect.audit.tests.factories import AuditReportFactory
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.tests.factories import OpportunityFactory
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import MembershipFactory, ProgramManagerOrganisationFactory
 
@@ -19,8 +19,9 @@ MONDAY_2AM_UTC = datetime.datetime(2026, 4, 20, 2, 0, tzinfo=datetime.UTC)
 @pytest.mark.django_db
 @mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
 def test_task_generates_reports_only_for_flagged_opportunities(mock_now):
-    flagged_opp = OpportunityFactory()
-    unflagged_opp = OpportunityFactory()
+    flagged_opp = OpportunityFactory(is_test=False)
+    OpportunityAccessFactory(opportunity=flagged_opp, accepted=True)
+    unflagged_opp = OpportunityFactory(is_test=False)
 
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(flagged_opp)
@@ -33,9 +34,48 @@ def test_task_generates_reports_only_for_flagged_opportunities(mock_now):
 
 @pytest.mark.django_db
 @mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
+@pytest.mark.parametrize(
+    "opportunity_kwargs, create_access",
+    [
+        pytest.param({"is_test": False, "end_date": datetime.date(2026, 4, 1)}, True, id="ended_before_period"),
+        pytest.param({"is_test": False, "archived": True}, True, id="archived"),
+        pytest.param({"is_test": True}, True, id="test_opportunity"),
+        pytest.param({"is_test": False}, False, id="no_deliveries"),
+    ],
+)
+def test_task_excludes_ineligible_opportunities(mock_now, opportunity_kwargs, create_access):
+    opportunity = OpportunityFactory(**opportunity_kwargs)
+    if create_access:
+        OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.opportunities.add(opportunity)
+
+    generate_audit_reports()
+
+    assert AuditReport.objects.filter(opportunity=opportunity).count() == 0
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
+def test_task_still_reports_opportunity_that_ended_mid_period(mock_now):
+    """An opportunity ending partway through the just-completed week still gets a final report."""
+    opportunity = OpportunityFactory(is_test=False, end_date=datetime.date(2026, 4, 16))  # Thursday of that week
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.opportunities.add(opportunity)
+
+    generate_audit_reports()
+
+    assert AuditReport.objects.filter(opportunity=opportunity).count() == 1
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
 def test_task_continues_after_single_opportunity_failure(mock_now, caplog):
-    opp_ok = OpportunityFactory()
-    opp_fail = OpportunityFactory()
+    opp_ok = OpportunityFactory(is_test=False)
+    OpportunityAccessFactory(opportunity=opp_ok, accepted=True)
+    opp_fail = OpportunityFactory(is_test=False)
+    OpportunityAccessFactory(opportunity=opp_fail, accepted=True)
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(opp_ok, opp_fail)
 
@@ -163,7 +203,8 @@ def test_one_org_failure_does_not_block_others(mock_send, caplog):
 @mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
 @mock.patch("commcare_connect.audit.tasks.send_new_audit_report_notifications")
 def test_task_sends_notifications_for_generated_reports(mock_notify, mock_now):
-    opp = OpportunityFactory()
+    opp = OpportunityFactory(is_test=False)
+    OpportunityAccessFactory(opportunity=opp, accepted=True)
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(opp)
 
@@ -181,7 +222,8 @@ def test_task_sends_notifications_for_generated_reports(mock_notify, mock_now):
     side_effect=RuntimeError("boom"),
 )
 def test_task_survives_notification_failure(mock_notify, mock_now):
-    opp = OpportunityFactory()
+    opp = OpportunityFactory(is_test=False)
+    OpportunityAccessFactory(opportunity=opp, accepted=True)
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(opp)
 

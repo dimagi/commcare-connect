@@ -179,6 +179,31 @@ class TestWorkAreaDataView:
 
 
 @pytest.mark.django_db
+class TestImplementationAreaDataView:
+    def test_returns_implementation_area_list(self, v2_export_client, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["results"]) == 1
+        result = data["results"][0]
+        assert result["id"] == area.id
+        assert result["name"] == area.name
+        assert result["centroid"]["type"] == "Point"
+        assert result["centroid"]["coordinates"] == [area.centroid.x, area.centroid.y]
+        assert result["boundary"]["type"] == "Polygon"
+        assert result["boundary"]["coordinates"] == [[list(coord) for coord in ring] for ring in area.boundary.coords]
+
+    def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
+        _add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
 class TestLLOEntityDataView:
     def test_returns_organization_profiles(self, api_client, user):
         org = OrgWithUsersFactory(

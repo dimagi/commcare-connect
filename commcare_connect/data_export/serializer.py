@@ -1,3 +1,4 @@
+import json
 from collections import OrderedDict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
@@ -12,7 +13,7 @@ from commcare_connect.microplanning.helpers import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tasks import parse_lon_lat_centroid, send_work_area_assignment_notification
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
@@ -400,10 +401,19 @@ class WorkAreaGroupDataSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "ward", "opportunity"]
 
 
-class WorkAreaDataSerializer(serializers.ModelSerializer):
-    work_area_group_name = serializers.SerializerMethodField()
+class GeoCentroidBoundarySerializer(serializers.ModelSerializer):
     centroid = serializers.SerializerMethodField()
     boundary = serializers.SerializerMethodField()
+
+    def get_centroid(self, obj) -> dict:
+        return json.loads(obj.centroid.geojson)
+
+    def get_boundary(self, obj) -> dict:
+        return json.loads(obj.boundary.geojson)
+
+
+class WorkAreaDataSerializer(GeoCentroidBoundarySerializer):
+    work_area_group_name = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkArea
@@ -427,11 +437,11 @@ class WorkAreaDataSerializer(serializers.ModelSerializer):
             return None
         return obj.work_area_group.name
 
-    def get_centroid(self, obj) -> dict:
-        return {"type": "Point", "coordinates": [obj.centroid.x, obj.centroid.y]}
 
-    def get_boundary(self, obj) -> dict:
-        return {"type": "Polygon", "coordinates": obj.boundary.coords}
+class ImplementationAreaDataSerializer(GeoCentroidBoundarySerializer):
+    class Meta:
+        model = ImplementationArea
+        fields = ["id", "name", "centroid", "boundary"]
 
 
 class LLOEntityDataSerializer(serializers.ModelSerializer):
