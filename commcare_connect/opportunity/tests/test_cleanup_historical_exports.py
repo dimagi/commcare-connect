@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from unittest import mock
 
@@ -57,7 +57,7 @@ class TestCleanupHistoricalExportsCommand:
     @mock.patch("commcare_connect.opportunity.management.commands.cleanup_historical_exports.boto3")
     def test_dry_run_does_not_delete(self, mock_boto3, settings):
         settings.AWS_STORAGE_BUCKET_NAME = "test-bucket"
-        old_date = datetime.now(timezone.utc) - timedelta(days=60)
+        old_date = datetime.now(UTC) - timedelta(days=60)
         mock_bucket = mock.MagicMock()
         mock_boto3.resource.return_value.Bucket.return_value = mock_bucket
         mock_bucket.objects.filter.return_value = [
@@ -73,8 +73,8 @@ class TestCleanupHistoricalExportsCommand:
     @mock.patch("commcare_connect.opportunity.management.commands.cleanup_historical_exports.boto3")
     def test_deletes_matching_old_files(self, mock_boto3, settings):
         settings.AWS_STORAGE_BUCKET_NAME = "test-bucket"
-        old_date = datetime.now(timezone.utc) - timedelta(days=60)
-        recent_date = datetime.now(timezone.utc) - timedelta(days=5)
+        old_date = datetime.now(UTC) - timedelta(days=60)
+        recent_date = datetime.now(UTC) - timedelta(days=5)
         mock_bucket = mock.MagicMock()
         mock_boto3.resource.return_value.Bucket.return_value = mock_bucket
         mock_bucket.objects.filter.return_value = [

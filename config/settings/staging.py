@@ -59,7 +59,7 @@ STORAGES["default"]["BACKEND"] = "commcare_connect.utils.storages.MediaRootS3Bot
 # Anymail
 # ------------------------------------------------------------------------------
 # https://anymail.readthedocs.io/en/stable/installation/#installing-anymail
-INSTALLED_APPS += ["anymail"]  # noqa: F405
+INSTALLED_APPS += ["anymail"]
 # https://anymail.readthedocs.io/en/stable/esps/amazon_ses/
 ANYMAIL = {}
 

@@ -509,7 +509,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                         {disabled}>
                         {_("Pay")}
                     </button>
-                """  # noqa: E501
+                """
         return mark_safe(f'<div class="flex gap-2">{review_button}{pay_button}</div>')
 
 
@@ -1405,7 +1405,7 @@ class WorkerLearnTable(OrgContextTable):
         accessor="modules_completed_percentage",
         template_code="""
             {% include "components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
-        """,  # noqa: E501
+        """,
     )
     completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="assessment_status_rank")

@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
@@ -167,7 +167,7 @@ class Command(BaseCommand):
             if opp.deliver_app and opp.deliver_app.id not in deliver_units_cache:
                 deliver_units_cache[opp.deliver_app.id] = DeliverUnitFactory(app=opp.deliver_app)
 
-        start_date = datetime(2024, 7, 1, tzinfo=timezone.utc)
+        start_date = datetime(2024, 7, 1, tzinfo=UTC)
         end_date = djtimezone.now()
         works_to_create = []
 
@@ -225,7 +225,7 @@ class Command(BaseCommand):
             for _ in range(num_invoices):
                 invoice = PaymentInvoiceFactory(
                     opportunity=opp,
-                    date=fake.date_time_between(start_date="-30d", end_date="now", tzinfo=timezone.utc),
+                    date=fake.date_time_between(start_date="-30d", end_date="now", tzinfo=UTC),
                     invoice_number=fake.pystr(),
                 )
                 if random.choice([True, False]):
