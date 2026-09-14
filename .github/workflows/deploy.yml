@@ -176,3 +176,27 @@ jobs:
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
+  running-qa-test:
+    name: Trigger QA Playwright suite
+    needs: deploy
+    if: ${{ success() && inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the deploy to be serving
+        run: |
+          url=${{ github.ref_name == 'main' && 'https://connect.dimagi.com' }}
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "$url" && exit 0
+            sleep 10
+          done
+          echo "site not responding after 5m" >&2; exit 1
+
+      - name: Dispatch playwright_web.yaml
+        env:
+          GH_TOKEN: ${{ secrets.QA_SUITE_DISPATCH_TOKEN }}
+        run: |
+          gh workflow run playwright_web.yaml \
+            --repo dimagi/dimagi-qa-ccc \
+            --ref main \
+            -f environment=${{ github.ref_name == 'main' && 'prod' }}
