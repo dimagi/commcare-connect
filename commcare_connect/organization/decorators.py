@@ -9,7 +9,6 @@ from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.program.models import Program
 from commcare_connect.program.utils import (
     AccessLevel,
-    is_opportunity_nm,
     is_opportunity_pm,
     opportunity_access_level_from_request,
     opportunity_by_id,
@@ -127,7 +126,6 @@ org_standard_access_required = _org_access_level_gate(AccessLevel.STANDARD)
 org_admin_access_required = _org_access_level_gate(AccessLevel.ADMIN)
 
 opportunity_pm_required = _opportunity_gate(is_opportunity_pm)
-opportunity_nm_required = _opportunity_gate(is_opportunity_nm)
 
 
 def _get_decorated_function(view_func, permission_check_function):
@@ -222,11 +220,5 @@ class OrgAdminAccessMixin:
 
 class OppPMRequiredMixin:
     @method_decorator(opportunity_pm_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class OppNMRequiredMixin:
-    @method_decorator(opportunity_nm_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)

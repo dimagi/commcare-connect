@@ -206,7 +206,6 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
-    OppNMRequiredMixin,
     OppPMRequiredMixin,
     OppStandardAccessMixin,
     OppViewAccessMixin,
@@ -1828,7 +1827,7 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-class InvoiceCreateView(OppNMRequiredMixin, OpportunityObjectMixin, CreateView):
+class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
     form_class = AutomatedPaymentInvoiceForm
@@ -1869,7 +1868,18 @@ class InvoiceCreateView(OppNMRequiredMixin, OpportunityObjectMixin, CreateView):
             return "New Service Delivery Invoice"
         return "New Custom Invoice"
 
+    def get(self, request, org_slug, opp_id, **kwargs):
+        self._check_opportunity_org(request)
+        return super().get(request, org_slug, opp_id, **kwargs)
+
+    def _check_opportunity_org(self, request):
+        # Only NM org user is allowed to create invoice
+        if request.org != request.opportunity.organization:
+            raise Http404()
+
     def post(self, request, org_slug, opp_id, **kwargs):
+        self._check_opportunity_org(request)
+
         form = self.get_form()
         if not form.is_valid():
             return self.get(request, org_slug, opp_id, **kwargs)

@@ -5,7 +5,6 @@ from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.utils import (
     AccessLevel,
-    is_opportunity_nm,
     is_opportunity_pm,
     opportunity_access_level_from_request,
     opportunity_by_id,
@@ -260,33 +259,30 @@ class TestOpportunityParties:
     """
 
     @pytest.mark.parametrize(
-        "relationship,is_nm,is_pm",
+        "relationship,is_pm",
         [
-            ("delivery", True, False),
-            ("supervisor", False, True),
-            ("program_org", False, True),
-            ("funder", False, True),
-            ("watcher", False, False),
-            ("unrelated", False, False),
+            ("delivery", False),
+            ("supervisor", True),
+            ("program_org", True),
+            ("funder", True),
+            ("watcher", False),
+            ("unrelated", False),
         ],
     )
-    def test_manage_access_splits_on_which_org_delivers(self, relationship, is_nm, is_pm, opp_orgs, managed_opp, user):
+    def test_manage_access_splits_on_which_org_delivers(self, relationship, is_pm, opp_orgs, managed_opp, user):
         org = opp_orgs[relationship]
         request = make_request(user, org=org, membership=make_membership(org, user, Role.ADMIN))
-        assert is_opportunity_nm(request, managed_opp) is is_nm
         assert is_opportunity_pm(request, managed_opp) is is_pm
 
     @pytest.mark.parametrize("role", [Role.MEMBER, Role.VIEWER], ids=["member", "viewer"])
-    def test_neither_party_without_manage_access(self, role, managed_opp, organization, user):
+    def test_not_pm_without_manage_access(self, role, managed_opp, organization, user):
         """Being in the delivery org is not enough — the NM has to be able to have admin access to it."""
         request = make_request(user, org=organization, membership=make_membership(organization, user, role))
-        assert not is_opportunity_nm(request, managed_opp)
         assert not is_opportunity_pm(request, managed_opp)
 
     def test_all_org_access_takes_the_side_of_the_org_it_acts_as(self, managed_opp, organization, user):
         """The parties are read off the acting org, so the same user is either side depending on the slug."""
         user = grant_all_org_access(user)
-        assert is_opportunity_nm(make_request(user, org=organization), managed_opp)
         assert is_opportunity_pm(make_request(user, org=OrganizationFactory()), managed_opp)
 
 

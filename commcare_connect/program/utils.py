@@ -140,11 +140,6 @@ def is_org_pm(request):
     )
 
 
-def is_opportunity_nm(request, opportunity) -> bool:
-    """The network manager is the org delivering the opportunity."""
-    return _can_manage_opportunity(request, opportunity) and request.org.id == opportunity.organization_id
-
-
 def is_opportunity_pm(request, opportunity) -> bool:
     return _can_manage_opportunity(request, opportunity) and request.org.id != opportunity.organization_id
 

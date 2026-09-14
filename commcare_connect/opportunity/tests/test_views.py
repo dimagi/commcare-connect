@@ -1769,6 +1769,67 @@ def _invoice_review_url(org, opportunity, invoice):
 
 
 @pytest.mark.django_db
+class TestInvoiceCreateView:
+    @pytest.fixture
+    def nm_organization(self):
+        return OrgWithUsersFactory()
+
+    @pytest.fixture
+    def pm_organization(self):
+        return ProgramManagerOrgWithUsersFactory()
+
+    @pytest.fixture
+    def nm_user_admin(self, nm_organization):
+        return nm_organization.memberships.filter(role="admin").first().user
+
+    @pytest.fixture
+    def nm_user_member(self, nm_organization):
+        return nm_organization.memberships.filter(role="member").first().user
+
+    @pytest.fixture
+    def nm_user_viewer(self, nm_organization):
+        return MembershipFactory(organization=nm_organization, role=UserOrganizationMembership.Role.VIEWER).user
+
+    @pytest.fixture
+    def pm_user_admin(self, pm_organization):
+        return pm_organization.memberships.filter(role="admin").first().user
+
+    @pytest.fixture
+    def pm_user_member(self, pm_organization):
+        return pm_organization.memberships.filter(role="member").first().user
+
+    @pytest.fixture
+    def opportunity(self, nm_organization, pm_organization):
+        program = ProgramFactory(organization=pm_organization, budget=10000)
+        return OpportunityFactory(program=program, organization=nm_organization)
+
+    def _url(self, org, opportunity):
+        return reverse("opportunity:invoice_create", args=(org.slug, opportunity.opportunity_id))
+
+    @pytest.mark.parametrize(
+        "actor,org_fixture,expected",
+        [
+            ("nm_user_admin", "nm_organization", HTTPStatus.OK),
+            ("nm_user_member", "nm_organization", HTTPStatus.OK),
+            ("nm_user_viewer", "nm_organization", HTTPStatus.NOT_FOUND),
+            ("pm_user_admin", "pm_organization", HTTPStatus.NOT_FOUND),
+            ("pm_user_member", "pm_organization", HTTPStatus.NOT_FOUND),
+        ],
+    )
+    def test_create_invoice_page_access(self, request, client, actor, org_fixture, expected, opportunity):
+        client.force_login(request.getfixturevalue(actor))
+        org = request.getfixturevalue(org_fixture)
+        response = client.get(self._url(org, opportunity))
+        assert response.status_code == expected
+
+    def test_pm_org_cannot_submit_create_invoice(self, client, pm_user_admin, pm_organization, opportunity):
+        client.force_login(pm_user_admin)
+        response = client.post(self._url(pm_organization, opportunity), data={})
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert not opportunity.paymentinvoice_set.exists()
+
+
+@pytest.mark.django_db
 class TestInvoiceUpdateStatus:
     def _billed_works(self, opportunity, invoice, count=2):
         """`count` works whose only billing is this invoice, as invoicing would leave them."""
