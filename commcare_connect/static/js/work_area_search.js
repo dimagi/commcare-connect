@@ -10,7 +10,8 @@
  */
 
 // There is exactly one of these on the page, so it is found by id rather than by a marker
-// attribute. It is absent in assignment mode, which renders no filter sidebar.
+// attribute. It is rendered in both progress and assignment mode — assignment mode has no filter
+// sidebar, but it still drives the search box through applyAssignmentModeFilters().
 const SEARCH_SELECT_ID = 'work-area-search';
 
 // Keyed on the option's `kind`, not its `type` — `type` is translated, `kind` is not.

@@ -30,7 +30,6 @@ from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_acces
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.views import InvoiceReportFilter, InvoiceReportView
 from commcare_connect.users.tests.factories import (
-    LLOEntityFactory,
     MembershipFactory,
     OrganizationFactory,
     UserFactory,
@@ -305,12 +304,11 @@ def test_get_table_data_for_year_month_by_country(opp_country, filter_country, h
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("filter_same_llo", [True, False])
-def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
+@pytest.mark.parametrize("filter_same_organization", [True, False])
+def test_get_table_data_for_year_month_by_organization(filter_same_organization, httpx_mock):
     now = datetime.now(UTC)
-    llo_entity = LLOEntityFactory()
-    other_llo_entity = LLOEntityFactory()
-    org = OrganizationFactory(llo_entity=llo_entity)
+    org = OrganizationFactory()
+    other_org = OrganizationFactory()
 
     users = MobileUserFactory.create_batch(10)
     _create_kpi_test_data(users, now, opportunity__organization=org)
@@ -320,12 +318,12 @@ def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
         json={},
     )
 
-    filter_llo = llo_entity if filter_same_llo else other_llo_entity
-    data = get_table_data_for_year_month(llo=filter_llo)
+    filter_organization = org if filter_same_organization else other_org
+    data = get_table_data_for_year_month(organization=filter_organization)
     assert len(data)
 
     for row in data:
-        if filter_same_llo:
+        if filter_same_organization:
             assert row["users"] == 10
             assert row["services"] == 10
             assert row["flw_amount_earned"] == 4500

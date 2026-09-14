@@ -6,6 +6,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from django.db import transaction
 from django.db.models import Exists, F, Max, OuterRef, Q, Sum
 from django.db.models.functions import Coalesce
+from django.utils.translation import gettext
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -140,6 +141,8 @@ class LineItem:
     flw_pay: Money
     org_pay: Money
     exchange_rate: Decimal
+    exchange_rate_date: datetime.date | None = None
+    exchange_rate_fetched_at: datetime.datetime | None = None
 
     @property
     def total_pay(self) -> Money:
@@ -159,6 +162,8 @@ def group_line_items(rows):
                 "flw_pay": Money.zero(),
                 "org_pay": Money.zero(),
                 "exchange_rate": row.exchange_rate.rate,
+                "exchange_rate_date": row.exchange_rate.rate_date,
+                "exchange_rate_fetched_at": row.exchange_rate.fetched_at,
             },
         )
         group["number_approved"] += row.billed_count
@@ -197,6 +202,8 @@ def get_invoice_line_items(invoice):
             org_usd=Sum("org_amount_usd"),
             # Every row in a (month, currency) group was priced at the same rate; Max collapses them.
             rate=Max("exchange_rate__rate"),
+            rate_date=Max("exchange_rate__rate_date"),
+            rate_fetched_at=Max("exchange_rate__fetched_at"),
         )
         .order_by("month", "payment_unit_name")
     )
@@ -210,9 +217,85 @@ def get_invoice_line_items(invoice):
             flw_pay=Money(record["flw_local"], record["flw_usd"]),
             org_pay=Money(record["org_local"], record["org_usd"]),
             exchange_rate=record["rate"],
+            exchange_rate_date=record["rate_date"],
+            exchange_rate_fetched_at=record["rate_fetched_at"],
         )
         for record in records
     ]
+
+
+@dataclass(frozen=True)
+class ServiceSummaryLine:
+    """One row of the invoice PDF's 'Description of Services' summary."""
+
+    label: str
+    amount_local: Decimal
+
+
+def get_invoice_service_summary(invoice):
+    """The 'Description of Services' summary lines shown on the invoice PDF.
+
+    For a service delivery invoice, this is one row per billed (month, payment unit) combination
+    covering frontline-worker pay, plus one row for the network-management fee aggregated across
+    every month and payment unit, when nonzero. For a custom invoice, it is a single line for the
+    invoice's own amount and description.
+    """
+    if not invoice.service_delivery:
+        label = invoice.description or gettext("Custom invoice charge")
+        return [ServiceSummaryLine(label=label, amount_local=invoice.amount)]
+
+    line_items = get_invoice_line_items(invoice)
+    if not line_items:
+        label = invoice.description or gettext("Service delivery payments")
+        return [ServiceSummaryLine(label=label, amount_local=invoice.amount)]
+
+    currency = invoice.opportunity.currency_code
+    flw_total = sum(item.flw_pay.local for item in line_items)
+    org_total = sum(item.org_pay.local for item in line_items)
+
+    lines = [
+        ServiceSummaryLine(
+            label=gettext(
+                "Service delivery payments for %(payment_unit)s, %(period)s "
+                "(%(units)s verified visits x %(currency)s %(per_visit_rate)s)"
+            )
+            % {
+                "payment_unit": item.payment_unit_name,
+                "period": f"{item.month:%B %Y}",
+                "units": item.number_approved,
+                "currency": currency,
+                "per_visit_rate": (
+                    (item.flw_pay.local / item.number_approved).quantize(CENTS, rounding=ROUND_HALF_EVEN)
+                    if item.number_approved
+                    else Decimal("0.00")
+                ),
+            },
+            amount_local=item.flw_pay.local,
+        )
+        for item in line_items
+    ]
+    if org_total:
+        percent = (org_total / flw_total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_EVEN) if flw_total else 0
+        lines.append(
+            ServiceSummaryLine(
+                label=gettext("Network management fee, %(period)s (%(percent)s%% of delivered service value)")
+                % {"period": _invoice_period_label(invoice), "percent": percent},
+                amount_local=org_total,
+            )
+        )
+    return lines
+
+
+def _invoice_period_label(invoice):
+    if (
+        invoice.start_date
+        and invoice.end_date
+        and invoice.start_date.strftime("%Y-%m") != invoice.end_date.strftime("%Y-%m")
+    ):
+        return f"{invoice.start_date:%B %Y} - {invoice.end_date:%B %Y}"
+    if invoice.start_date:
+        return f"{invoice.start_date:%B %Y}"
+    return f"{invoice.date:%B %Y}" if invoice.date else gettext("Unknown")
 
 
 def get_invoice_delivery_rows_for_export(invoice):

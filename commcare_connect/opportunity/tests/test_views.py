@@ -6,6 +6,7 @@ from unittest import mock
 from urllib.parse import urlencode
 from uuid import uuid4
 
+import pghistory
 import pytest
 from django.contrib.messages import get_messages
 from django.core.files.base import ContentFile
@@ -735,6 +736,31 @@ def test_opportunity_list_excludes_archived(organization):
 
 
 @pytest.mark.django_db
+def test_get_opportunity_list_data_counts_duplicate_approved_deliveries(organization):
+    today = now().date()
+    opportunity = OpportunityFactory(
+        organization=organization, end_date=today + timedelta(days=1), active=True, archived=False
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1)
+    CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1)
+    # A CompletedWork with 2 approved (duplicate) visits should count as 2 deliveries, not 1.
+    CompletedWorkFactory(
+        opportunity_access=access,
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
+    )
+
+    queryset = OpportunityData(organization, True, {}).get_data()
+    opp = next(item for item in queryset if item.id == opportunity.id)
+
+    assert opp.total_deliveries == 4
+    assert opp.verified_deliveries == 2
+
+
+@pytest.mark.django_db
 def test_tiered_queryset_basic():
     users = [User.objects.create(username=f"user{i}") for i in range(5)]
     user_ids = [u.id for u in users]
@@ -1395,6 +1421,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         form = response.context["form"]
         assert form.line_items_table is None
+        assert response.context["line_item_count"] is None
 
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
@@ -1461,6 +1488,67 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
         assert response.status_code == 404
         assert "No PaymentInvoice matches the given query." in str(response.content)
+
+    def test_context_includes_service_summary_lines(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        summary_lines = response.context["service_summary_lines"]
+        assert len(summary_lines) == 1
+        assert summary_lines[0].amount_local == invoice.amount
+
+    def test_context_includes_service_summary_lines_for_custom_invoice(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+        custom_invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            service_delivery=False,
+            amount=200.00,
+            invoice_number="CUSTOM-001",
+            date=date(2025, 11, 1),
+        )
+
+        response = self._send_request(client, user, opportunity, custom_invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        summary_lines = response.context["service_summary_lines"]
+        assert len(summary_lines) == 1
+        assert summary_lines[0].amount_local == custom_invoice.amount
+
+    def test_context_invoice_exposes_both_certifications_once_approved(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        with pghistory.context(username="nm_user", user_email="nm@example.com"):
+            invoice.status = InvoiceStatus.PENDING_PM_REVIEW
+            invoice.save(update_fields=["status"])
+        with pghistory.context(username=user.username, user_email=user.email):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        context_invoice = response.context["invoice"]
+        assert context_invoice.nm_certification["name"] == "nm@example.com"
+        assert context_invoice.pm_certification["name"] == f"{user.name} ({user.email})"
+
+    def test_context_invoice_has_no_certifications_when_not_yet_reviewed(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        context_invoice = response.context["invoice"]
+        assert context_invoice.nm_certification is None
+        assert context_invoice.pm_certification is None
 
 
 class TestAddPaymentUnitView:
@@ -1689,6 +1777,7 @@ class TestInvoiceUpdateStatus:
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.PENDING_PM_REVIEW,
                 "description": "Ready for PM review",
+                "attestation": "true",
             },
         )
 
@@ -1696,6 +1785,34 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
         assert invoice.description == "Ready for PM review"
+
+        status_event = invoice.status_events.last()
+        assert status_event.pgh_context.metadata["attestation_certified"] is True
+        assert status_event.pgh_context.metadata["username"] == nm_user_admin.username
+
+    @pytest.mark.parametrize("attestation", [None, "false", "0", ""])
+    def test_nm_submit_to_pm_without_attestation_fails(
+        self, client, nm_organization, nm_user_admin, pm_organization, attestation
+    ):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-005"
+        )
+
+        data = {
+            "invoice_id": invoice.payment_invoice_id,
+            "new_status": InvoiceStatus.PENDING_PM_REVIEW,
+            "description": "Ready for PM review",
+        }
+        if attestation is not None:
+            data["attestation"] = attestation
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(url, data=data)
+
+        assert response.status_code == 400
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
 
     def test_nm_cancel_invoice_success(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(

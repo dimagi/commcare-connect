@@ -62,7 +62,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}">
+<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=7">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
@@ -97,7 +97,7 @@
       <a href="/the-opportunity" data-route="/the-opportunity">The Opportunity</a>
       <a href="/platform" data-route="/platform">Platform</a>
       <a href="/portfolio" data-route="/portfolio">Portfolio</a>
-      <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
+      <a href="/insights" data-route="/insights">Insights</a>
       <div class="nav-cta">
         <a href="{% url 'account_login' %}" class="btn btn-ghost">Sign In</a>
         <a href="/contact/" class="btn btn-primary">Request a conversation</a>
@@ -113,7 +113,7 @@
     <a href="/the-opportunity" data-route="/the-opportunity">The Opportunity</a>
     <a href="/platform" data-route="/platform">Platform</a>
     <a href="/portfolio" data-route="/portfolio">Portfolio</a>
-    <a href="/frontline-network" data-route="/frontline-network">Frontline Network</a>
+    <a href="/insights" data-route="/insights">Insights</a>
     <a href="{% url 'account_login' %}" class="mobile-nav-cta-secondary">Sign In</a>
     <a href="/contact/" class="mobile-nav-cta">Request a conversation</a>
   </nav>
@@ -234,6 +234,139 @@
     </div>
   </div>
 
+
+  <!-- ── Frontline voices: testimonial marquee (own dark band, above Explore) ── -->
+  <div class="section dark testimonial-band">
+    <div class="testimonial-band-head">
+      <span class="eyebrow">Frontline Programs love Connect</span>
+    </div>
+  <div class="testimonial-carousel" data-testimonial-marquee>
+      <div class="testimonial-cards">
+
+          <article class="tcard">
+            <p class="tcard-quote"><strong>No intervention pays as much</strong> as the Connect Child Health Campaign. I could locate my beneficiaries and deliver services effortlessly.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/zarah-abubakar.jpg' %}" width="360" height="338" alt="Zarah Abubakar" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Zarah Abubakar</span>
+                <span class="tcard-role"><a href="https://ruwoyd.org/" target="_blank" rel="noopener">RUWOYD</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Payments through Connect have <strong>enhanced productivity</strong>. Frontline Workers feel valued, supported, and motivated.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/lawan-kabu.jpg' %}" width="244" height="360" alt="Lawan Alhaji Kabu" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Lawan Alhaji Kabu</span>
+                <span class="tcard-role"><a href="https://zegcawis.org/" target="_blank" rel="noopener">ZEGCAWIS</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">It <strong>saves a lot of time</strong> and the child is helped at the right time. We are very grateful.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/bonface-musyoka.jpg' %}" width="360" height="360" alt="Bonface Musyoka" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Bonface Musyoka</span>
+                <span class="tcard-role"><a href="https://www.youtube.com/watch?v=VRbvUj9LTUg" target="_blank" rel="noopener">Watch the story</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">One of the <strong>most innovative tools</strong> we've used. The built-in verification means we can finally trust the data.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/oluwabori-samuel.jpg' %}" width="600" height="600" alt="Oluwabori Samuel" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Oluwabori Samuel</span>
+                <span class="tcard-role"><a href="https://solinahealth.com/" target="_blank" rel="noopener">Solina</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Putting it all into one package is unique, from start to finish. <strong>This has everything</strong>.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/ibraheem-otieno.jpg' %}" width="360" height="360" alt="Ibraheem Otieno" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Ibraheem Otieno</span>
+                <span class="tcard-role"><a href="https://theglobcom.org/" target="_blank" rel="noopener">GlobCom</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Knowing payments are linked to verified services delivered <strong>encourages our team to give their best</strong> and reach more people in need.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/stephen-john.jpg' %}" width="92" height="92" alt="Dr. Stephen John" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Dr. Stephen John</span>
+                <span class="tcard-role"><a href="https://jannafoundation.org.ng/" target="_blank" rel="noopener">Janna Health Foundation</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Every verified result translates into <strong>timely payments</strong> and measurable impact for malnourished children.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/aminu-ayuba.jpg' %}" width="360" height="360" alt="Aminu Ayuba" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Aminu Ayuba</span>
+                <span class="tcard-role"><a href="https://www.eha.ng/" target="_blank" rel="noopener">EHA Clinics</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Working with Connect has been a <strong>rewarding and exciting experience</strong>. The teams are resourceful and relentless until solutions are found.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/ibrahim-mustapha.jpg' %}" width="311" height="360" alt="Ibrahim Mustapha" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Ibrahim Mustapha</span>
+                <span class="tcard-role"><a href="https://ahti-ng.org/" target="_blank" rel="noopener">AHTI</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Working with Connect has made our <strong>field work easier</strong>. Everything is organized and transparent.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/usman-musa.jpg' %}" width="270" height="360" alt="Usman Musa" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Usman Musa</span>
+                <span class="tcard-role"><a href="https://rawyod.org" target="_blank" rel="noopener">RAWYOD</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">Connect has redefined how community interventions are delivered. It is <strong>dynamic and unique</strong>.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/mathew-oladele.jpg' %}" width="360" height="360" alt="Mathew Oladele" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Mathew Oladele</span>
+                <span class="tcard-role"><a href="https://isodaf.org/" target="_blank" rel="noopener">ISODAF4Africa</a></span>
+              </span>
+            </div>
+          </article>
+
+          <article class="tcard">
+            <p class="tcard-quote">The in-app chatbot is <strong>unlike anything I've seen</strong>, and because every result is verified, we can finally trust the work was done.</p>
+            <div class="tcard-attr">
+              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/jaafar-lawal.jpg' %}" width="600" height="600" alt="Jaafar Lawal" loading="lazy"></span>
+              <span class="tcard-info">
+                <span class="tcard-name">Jaafar Lawal</span>
+                <span class="tcard-role"><a href="https://www.c-wins.org/" target="_blank" rel="noopener">C-WINS</a></span>
+              </span>
+            </div>
+          </article>
+
+      </div><!-- /.testimonial-cards -->
+    </div><!-- /.testimonial-carousel -->
+  </div><!-- /.testimonial-band -->
 
   <!-- ── Explore: Portfolio, Insights & Frontline Network ── -->
   <div class="section warm">
@@ -631,41 +764,167 @@
 <!-- ================================ INSIGHTS ================================ -->
 <section class="page" data-page="/insights">
 
-  <div class="wrap">
-
-    <div class="hero insights-hero">
-      <div class="insights-hero-text">
-        <h1>Learnings from <em>the frontlines.</em></h1>
-        <p class="lede">Connect is as much a <strong>learning system</strong> as a delivery one. Here we share <strong>what’s working, what isn’t</strong>, and how the model keeps shifting in response.</p>
+  <header class="blog-hero">
+    <div class="blog-hero-bg">
+      <div class="blog-hero-montage" aria-hidden="true">
+        <img src="{% static 'prelogin/images/field-photos/kmc/kmc-1.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/chc/chc-1.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/join-hero.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/readers/readers-1.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/kmc/kmc-3.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/mental/ipt-g-nama.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/kmc/kmc-4.jpg' %}" alt="" loading="lazy">
+        <img src="{% static 'prelogin/images/field-photos/readers/readers-2.jpg' %}" alt="" loading="lazy">
       </div>
-      <img class="insights-hero-mark" src="{% static 'prelogin/favicon.svg' %}" alt="" aria-hidden="true" width="140" height="147" loading="lazy">
+      <div class="wrap">
+        <h1 class="blog-hero-title">Connect <em>Insights</em></h1>
+        <p class="blog-hero-sub">Stories, evidence, and learnings from the organizations and Frontline Workers delivering verified services through Connect.</p>
+      </div>
+    </div>
+
+    <div class="blog-filter-band">
+      <div class="wrap">
+        <div class="blog-filters" role="group" aria-label="Filter insights">
+          <div class="blog-search">
+            <svg class="blog-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.65" y2="16.65"></line></svg>
+            <input type="search" id="insightsSearch" class="blog-search-input" placeholder="Search insights" aria-label="Search insights" autocomplete="off">
+          </div>
+          <div class="blog-dd" data-dim="type">
+            <button type="button" class="blog-dd-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="blog-dd-label">Type</span><span class="blog-dd-value">All</span><span class="blog-dd-chevron" aria-hidden="true"></span></button>
+            <div class="blog-dd-menu" role="listbox" aria-label="Type" hidden>
+              <button type="button" class="blog-dd-option is-active" role="option" data-value="all" aria-selected="true">All types</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="blog">Blog</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="podcast">Podcast</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="evidence">Evidence</button>
+            </div>
+          </div>
+          <div class="blog-dd" data-dim="program">
+            <button type="button" class="blog-dd-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="blog-dd-label">Program</span><span class="blog-dd-value">All</span><span class="blog-dd-chevron" aria-hidden="true"></span></button>
+            <div class="blog-dd-menu" role="listbox" aria-label="Program" hidden>
+              <button type="button" class="blog-dd-option is-active" role="option" data-value="all" aria-selected="true">All programs</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="chc">Child Health Campaign</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="kmc">Kangaroo Mother Care</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="ecd">Early Childhood Development</button>
+            </div>
+          </div>
+          <div class="blog-dd" data-dim="activity">
+            <button type="button" class="blog-dd-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="blog-dd-label">Activity</span><span class="blog-dd-value">All</span><span class="blog-dd-chevron" aria-hidden="true"></span></button>
+            <div class="blog-dd-menu" role="listbox" aria-label="Activity" hidden>
+              <button type="button" class="blog-dd-option is-active" role="option" data-value="all" aria-selected="true">All activities</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="learn">Learn</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="deliver">Deliver</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="verify">Verify</button>
+              <button type="button" class="blog-dd-option" role="option" data-value="pay">Pay</button>
+            </div>
+          </div>
+          <span class="blog-result-count"><span id="insightsResultN">20</span> <span class="blog-result-count-label">results</span></span>
+          <button type="button" class="blog-clear" hidden>Clear all</button>
+        </div>
+        <div class="active-chips" hidden></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="section blog-grid-section no-border">
+    <div class="wrap">
+      <h2 class="insights-section-title">Stories &amp; updates</h2>
+      <div class="blog-grid">
+
+        <a class="blog-card" href="/blog/closing-the-post-discharge-gap-kmc" data-type="blog" data-program="kmc" data-origin="https://dimagi.com/blog/closing-post-discharge-gap-kangaroo-mother-care/">
+          <div class="blog-card-media">
+            <img src="{% static 'prelogin/images/blog/kmc-post-discharge.jpg' %}" alt="A Frontline Worker supporting a mother and her newborn during a Kangaroo Mother Care home visit" loading="lazy">
+          </div>
+          <div class="blog-card-body">
+            <div class="blog-card-meta">
+              <span class="blog-tag">Kangaroo Mother Care</span>
+              <time datetime="2025-11">NOV 2025</time>
+            </div>
+            <h3>Closing the post-discharge gap with Connect Kangaroo Mother Care</h3>
+            <p class="blog-card-excerpt">Trained Frontline Workers carry Kangaroo Mother Care into the home, closing the dangerous gap that opens when families of small and vulnerable newborns leave the hospital.</p>
+            <span class="blog-card-more">Read more →</span>
+          </div>
+        </a>
+
+        <a class="blog-card" href="/blog/usaid-div-child-health-nigeria" data-type="blog" data-program="chc" data-origin="https://dimagi.com/blog/usaid-div-and-dimagi-partner-to-enhance-child-health/">
+          <div class="blog-card-media">
+            <img src="{% static 'prelogin/images/blog/usaid-div-child-health.jpg' %}" alt="A Frontline Worker delivering child health services during a household visit in Nigeria" loading="lazy">
+          </div>
+          <div class="blog-card-body">
+            <div class="blog-card-meta">
+              <span class="blog-tag">Child Health Campaign</span>
+              <time datetime="2024-11">NOV 2024</time>
+            </div>
+            <h3>USAID Development Innovation Ventures and Dimagi partner on child health in northern Nigeria</h3>
+            <p class="blog-card-excerpt">A new grant will scale and rigorously evaluate Connect, delivering Vitamin A and oral rehydration solution to children where coverage is lowest.</p>
+            <span class="blog-card-more">Read more →</span>
+          </div>
+        </a>
+
+        <a class="blog-card" href="/blog/givewell-child-health-nigeria" data-type="blog" data-program="chc" data-origin="https://dimagi.com/blog/givewell-awards-dimagi-funding-to-enhance-child-health-service-delivery-in-nigeria/">
+          <div class="blog-card-media">
+            <img src="{% static 'prelogin/images/blog/givewell-child-health.jpg' %}" alt="A Frontline Worker delivering child health services to a young child" loading="lazy">
+          </div>
+          <div class="blog-card-body">
+            <div class="blog-card-meta">
+              <span class="blog-tag">Child Health Campaign</span>
+              <time datetime="2024-11">NOV 2024</time>
+            </div>
+            <h3>GiveWell awards Dimagi funding to scale child health delivery in Nigeria</h3>
+            <p class="blog-card-excerpt">GiveWell has awarded Dimagi more than $1 million to scale verified child health delivery across northern Nigeria, funding over 300,000 visits in 18 months.</p>
+            <span class="blog-card-more">Read more →</span>
+          </div>
+        </a>
+
+        <!-- Connect-tagged podcasts are pulled live from dimagi.com/podcast/connect-manifest.json
+             by loadConnectPodcasts() in app.js and injected here on page load (newest-first among the cards). -->
+
+        <a class="blog-card" href="/blog/connect-100000-service-deliveries" data-type="blog" data-program="" data-origin="https://dimagi.com/blog/commcare-connect-reaches-100000-deliveries/">
+          <div class="blog-card-media">
+            <img src="{% static 'prelogin/images/blog/connect-100000-deliveries.jpg' %}" alt="Frontline Workers delivering Child Health Campaign services across multiple countries" loading="lazy">
+          </div>
+          <div class="blog-card-body">
+            <div class="blog-card-meta">
+              <span class="blog-tag">Company</span>
+              <time datetime="2024-05">MAY 2024</time>
+            </div>
+            <h3>Connect reaches 100,000 service deliveries</h3>
+            <p class="blog-card-excerpt">Across seven countries, Frontline Workers delivered more than 100,000 verified services, a foundation for scaling to millions of visits a year.</p>
+            <span class="blog-card-more">Read more →</span>
+          </div>
+        </a>
+
+        <a class="blog-card" href="/blog/connect-2023-year-in-review" data-type="blog" data-program="" data-origin="https://dimagi.com/blog/commcare-connect-2023/">
+          <div class="blog-card-media">
+            <img src="{% static 'prelogin/images/blog/connect-2023-year-in-review.jpg' %}" alt="A child health training session with the LiveWell team in Zambia using Connect" loading="lazy">
+          </div>
+          <div class="blog-card-body">
+            <div class="blog-card-meta">
+              <span class="blog-tag">Company</span>
+              <time datetime="2024-01">JAN 2024</time>
+            </div>
+            <h3>Connect: a year in review</h3>
+            <p class="blog-card-excerpt">The first year of designing and testing Connect: 77,000 clients reached, $161,000 paid to Frontline Workers, and the learn, deliver, verify, pay model proven in the field.</p>
+            <span class="blog-card-more">Read more →</span>
+          </div>
+        </a>
+
+      </div>
     </div>
   </div>
 
-  <div class="section warm">
+  <div class="insights-evidence">
+    <div class="section warm">
     <div class="wrap">
 
-    <div class="filter-block">
-      <span class="filter-label">Filter by Program</span>
-      <div class="filter-pills" data-filter-group="program">
-        <button class="pill active" data-filter-type="program" data-filter-value="all">All</button>
-        <button class="pill" data-filter-type="program" data-filter-value="chc">Child Health Campaign</button>
-        <button class="pill" data-filter-type="program" data-filter-value="kmc">Kangaroo Mother Care</button>
-        <button class="pill" data-filter-type="program" data-filter-value="ecd">Early Childhood Development</button>
-      </div>
-    </div>
-    <div class="filter-block">
-      <span class="filter-label">Filter by Activity</span>
-      <div class="filter-pills" data-filter-group="ldvp">
-        <button class="pill active" data-filter-type="ldvp" data-filter-value="all">All</button>
-        <button class="pill" data-filter-type="ldvp" data-filter-value="learn">Learn</button>
-        <button class="pill" data-filter-type="ldvp" data-filter-value="deliver">Deliver</button>
-        <button class="pill" data-filter-type="ldvp" data-filter-value="verify">Verify</button>
-        <button class="pill" data-filter-type="ldvp" data-filter-value="pay">Pay</button>
+    <h2 class="insights-section-title">Evidence from the field</h2>
+
+    <div class="methodology">
+      <div class="methodology-inner">
+        <h3>A note on methodology</h3>
+        <p>Every entry here is published in a funder report, an independent evaluation, or a public partner document, and has been judged honest, scoped, and worth putting on the public record. Underlying reports are available to funders and researchers on request.</p>
       </div>
     </div>
 
-    <h2 class="sr-only">Insights from the field</h2>
     <div class="insight-list">
 
       <article class="insight-row" data-programs="chc" data-ldvp="verify">
@@ -837,22 +1096,20 @@
 
     </div>
   </div>
+  </div>
 
-  <div class="methodology">
-    <div class="methodology-inner">
-      <h3>A note on methodology</h3>
-      <p>Every Insight on this page is published in a funder report, an independent evaluation, or a public partner document.</p>
-      <p>Every entry above is a claim we have decided is honest, scoped, and worth putting on the public record. The cut is editorial. We keep what carries a number with a benchmark, what was published in a funder report or independent evaluation, and what comes with an open question we will name. We exclude headline scale numbers without context, marketing-friendly framings without source, and anything that hasn’t survived a depth page yet.</p>
-      <p>This is the complete published set. New entries are added as programs produce results that clear the editorial bar. Underlying reports are available to funders and researchers on request.</p>
+  <div class="section no-border insights-empty-wrap">
+    <div class="wrap">
+      <p class="blog-empty" hidden>Nothing matches those filters. <button type="button" class="blog-empty-reset">Clear filters</button></p>
     </div>
   </div>
 
   <div class="closing-cta">
     <div class="closing-inner">
-      <span class="eyebrow on-dark">FOR FUNDERS &amp; RESEARCHERS</span>
-      <h2>Interested in seeing <em>the numbers</em>?</h2>
-      <p class="lead">We’d be happy to share the underlying data with you. Just reach out.</p>
-      <a href="/contact/" class="btn btn-primary">Request the Reports →</a>
+      <span class="eyebrow on-dark">Want to know more?</span>
+      <h2>Curious about the <em>stories or the numbers</em>?</h2>
+      <p class="lead">Whether you want to hear more about a program or dig into the evidence behind it, we are glad to talk. Reach out and we will share more.</p>
+      <a href="/contact/" class="btn btn-primary">Get in touch →</a>
     </div>
   </div>
 
@@ -1555,7 +1812,7 @@
       <p class="lead">$60 covers the full Connect KMC cycle for one small and vulnerable newborn: Kangaroo wraps, scales, thermometers, pulse oximeters, Frontline Worker training, payment for visits, and supervision. Every dollar is tied to a verified outcome. Individual donors, foundations, and program funders all welcome.</p>
       <div class="cta-actions">
         <a href="/support-kmc" class="btn btn-primary">Donate $60 · Fund a Baby</a>
-        <a href="mailto:connect-kmc@dimagi.com" class="btn btn-ghost-on-dark">Design a Program</a>
+        <a href="/contact/" class="btn btn-ghost-on-dark">Design a Program</a>
       </div>
     </div>
   </div>
@@ -3378,134 +3635,6 @@
     </div>
   </div>
 
-  <!-- ── Frontline voices: testimonial marquee under the hero ── -->
-  <div class="testimonial-carousel" data-testimonial-marquee>
-      <div class="testimonial-cards">
-
-          <article class="tcard">
-            <p class="tcard-quote"><strong>No intervention pays as much</strong> as the Connect Child Health Campaign. I could locate my beneficiaries and deliver services effortlessly.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/zarah-abubakar.jpg' %}" width="360" height="338" alt="Zarah Abubakar" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Zarah Abubakar</span>
-                <span class="tcard-role"><a href="https://ruwoyd.org/" target="_blank" rel="noopener">RUWOYD</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Payments through Connect have <strong>enhanced productivity</strong>. Frontline Workers feel valued, supported, and motivated.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/lawan-kabu.jpg' %}" width="244" height="360" alt="Lawan Alhaji Kabu" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Lawan Alhaji Kabu</span>
-                <span class="tcard-role"><a href="https://zegcawis.org/" target="_blank" rel="noopener">ZEGCAWIS</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">It <strong>saves a lot of time</strong> and the child is helped at the right time. We are very grateful.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/bonface-musyoka.jpg' %}" width="360" height="360" alt="Bonface Musyoka" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Bonface Musyoka</span>
-                <span class="tcard-role"><a href="https://www.youtube.com/watch?v=VRbvUj9LTUg" target="_blank" rel="noopener">Watch the story</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">One of the <strong>most innovative tools</strong> we've used. The built-in verification means we can finally trust the data.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/oluwabori-samuel.jpg' %}" width="600" height="600" alt="Oluwabori Samuel" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Oluwabori Samuel</span>
-                <span class="tcard-role"><a href="https://solinahealth.com/" target="_blank" rel="noopener">Solina</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Putting it all into one package is unique, from start to finish. <strong>This has everything</strong>.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/ibraheem-otieno.jpg' %}" width="360" height="360" alt="Ibraheem Otieno" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Ibraheem Otieno</span>
-                <span class="tcard-role"><a href="https://theglobcom.org/" target="_blank" rel="noopener">GlobCom</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Knowing payments are linked to verified services delivered <strong>encourages our team to give their best</strong> and reach more people in need.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/stephen-john.jpg' %}" width="92" height="92" alt="Dr. Stephen John" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Dr. Stephen John</span>
-                <span class="tcard-role"><a href="https://jannafoundation.org.ng/" target="_blank" rel="noopener">Janna Health Foundation</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Every verified result translates into <strong>timely payments</strong> and measurable impact for malnourished children.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/aminu-ayuba.jpg' %}" width="360" height="360" alt="Aminu Ayuba" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Aminu Ayuba</span>
-                <span class="tcard-role"><a href="https://www.eha.ng/" target="_blank" rel="noopener">EHA Clinics</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Working with Connect has been a <strong>rewarding and exciting experience</strong>. The teams are resourceful and relentless until solutions are found.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/ibrahim-mustapha.jpg' %}" width="311" height="360" alt="Ibrahim Mustapha" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Ibrahim Mustapha</span>
-                <span class="tcard-role"><a href="https://ahti-ng.org/" target="_blank" rel="noopener">AHTI</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Working with Connect has made our <strong>field work easier</strong>. Everything is organized and transparent.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/usman-musa.jpg' %}" width="270" height="360" alt="Usman Musa" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Usman Musa</span>
-                <span class="tcard-role"><a href="https://rawyod.org" target="_blank" rel="noopener">RAWYOD</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">Connect has redefined how community interventions are delivered. It is <strong>dynamic and unique</strong>.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/mathew-oladele.jpg' %}" width="360" height="360" alt="Mathew Oladele" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Mathew Oladele</span>
-                <span class="tcard-role"><a href="https://isodaf.org/" target="_blank" rel="noopener">ISODAF4Africa</a></span>
-              </span>
-            </div>
-          </article>
-
-          <article class="tcard">
-            <p class="tcard-quote">The in-app chatbot is <strong>unlike anything I've seen</strong>, and because every result is verified, we can finally trust the work was done.</p>
-            <div class="tcard-attr">
-              <span class="tcard-avatar"><img src="{% static 'prelogin/images/testimonials/jaafar-lawal.jpg' %}" width="600" height="600" alt="Jaafar Lawal" loading="lazy"></span>
-              <span class="tcard-info">
-                <span class="tcard-name">Jaafar Lawal</span>
-                <span class="tcard-role"><a href="https://www.c-wins.org/" target="_blank" rel="noopener">C-WINS</a></span>
-              </span>
-            </div>
-          </article>
-
-      </div><!-- /.testimonial-cards -->
-    </div><!-- /.testimonial-carousel -->
-
   <!-- Two ways to join (Frontline Organizations, Workers) -->
   <div class="section dark" id="two-ways">
     <div class="wrap">
@@ -3841,6 +3970,314 @@
   </div>
   </div>
 </section>
+
+<!-- Blog post: GiveWell child health Nigeria -->
+<section class="page" data-page="/blog/givewell-child-health-nigeria">
+  <article class="blog-article">
+    <div class="wrap-narrow">
+      <div class="blog-article-head">
+        <a class="blog-back" href="/insights">← All insights</a>
+        <span class="eyebrow">Child Health Campaign</span>
+        <h1>GiveWell awards Dimagi funding to scale child health delivery in Nigeria</h1>
+        <div class="blog-byline">
+          <time datetime="2024-11">November 2024</time>
+          <span class="blog-byline-sep">·</span>
+          <span>Dimagi</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="blog-hero-media">
+        <img src="{% static 'prelogin/images/blog/givewell-child-health.jpg' %}" alt="A Frontline Worker delivering child health services to a young child" loading="lazy">
+      </div>
+    </div>
+
+    <div class="wrap-narrow">
+      <div class="blog-prose">
+        <p class="blog-lede">GiveWell has awarded Dimagi a grant of more than $1 million to scale service delivery through Connect and cost-effectively improve essential child health coverage in Nigeria.</p>
+
+        <p>Connect builds on Dimagi&rsquo;s flagship CommCare platform to let Frontline Workers opt into additional paid, purposeful work through scalable learn, deliver, verify, and pay cycles. It strengthens the frontline workforces that already exist, rather than standing up new ones, to improve health outcomes.</p>
+
+        <p>The funding enables Dimagi to engage several locally led organizations to deliver the <a href="/portfolio/child-health-campaign">Connect Child Health Campaign</a> in targeted, underserved regions of northern Nigeria. The model scales through high-fidelity replication across partners rather than centralized expansion. Together, Dimagi and its partners will provide more than 300,000 child health visits over 18 months.</p>
+
+        <blockquote class="blog-pullquote">300,000+ verified child health visits over 18 months, across underserved regions of northern Nigeria.</blockquote>
+
+        <p>Every visit delivers Vitamin A supplementation, oral rehydration solution and zinc, malnutrition screening, and vaccination promotion for children under five. Each one is verified before payment, so funders can see exactly what their money delivered.</p>
+
+        <p>The award follows a successful initial planning grant, underscoring GiveWell&rsquo;s view that Connect has potential as a cost-effective way to increase coverage. The partnership aims to improve the effectiveness of Frontline Workers through digital technology and verified, results-based delivery.</p>
+
+        <h2>Inside the Child Health Campaign</h2>
+        <p>The Child Health Campaign targets high under-five mortality driven by preventable disease. Frontline Workers conduct door-to-door visits to register every child under five and deliver a package of health services:</p>
+        <ul>
+          <li><strong>Vitamin A supplementation</strong>, essential for reducing child mortality.</li>
+          <li><strong>Vaccine promotion</strong>, encouraging complete immunization schedules.</li>
+          <li><strong>Oral rehydration solution and zinc</strong>, to treat diarrhea.</li>
+          <li><strong>Malnutrition screening and referral</strong>, to identify and address cases early.</li>
+        </ul>
+        <p>Dimagi has seen early success with locally led partners running the campaign in five countries, reaching more than 100,000 children. This grant lets the model reach further, one verified visit at a time.</p>
+      </div>
+    </div>
+  </article>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">For funders &amp; partners</span>
+      <h2>Interested in a program <em>like this</em>?</h2>
+      <p class="lead">Tell us the outcome you want to fund, and we will show you how Connect delivers and verifies it.</p>
+      <a href="/contact/" class="btn btn-primary">Request a conversation →</a>
+    </div>
+  </div>
+</section>
+
+<!-- Blog post: Connect KMC post-discharge -->
+<section class="page" data-page="/blog/closing-the-post-discharge-gap-kmc">
+  <article class="blog-article">
+    <div class="wrap-narrow">
+      <div class="blog-article-head">
+        <a class="blog-back" href="/insights">← All insights</a>
+        <span class="eyebrow">Kangaroo Mother Care</span>
+        <h1>Closing the post-discharge gap with Connect Kangaroo Mother Care</h1>
+        <div class="blog-byline">
+          <time datetime="2025-11">November 2025</time>
+          <span class="blog-byline-sep">·</span>
+          <span>Lilianna Bagnoli</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="blog-hero-media">
+        <img src="{% static 'prelogin/images/blog/kmc-post-discharge.jpg' %}" alt="A Frontline Worker supporting a mother and her newborn during a Kangaroo Mother Care home visit" loading="lazy">
+      </div>
+    </div>
+
+    <div class="wrap-narrow">
+      <div class="blog-prose">
+        <p class="blog-lede">Every year, millions of newborns die within the first weeks of life, many from preventable causes after they leave the hospital. Connect Kangaroo Mother Care closes that post-discharge gap, sending trained Frontline Workers into homes to support families of small and vulnerable newborns.</p>
+
+        <h2>Strengthening care for newborns beyond the facility</h2>
+        <p>An estimated 2.3 million newborns die during the first 28 days of life each year, nearly half of all deaths in children under five. Most are babies born too small or too early: 80% have a low birth weight and two-thirds are born preterm.</p>
+        <p>Hospitals provide essential care in the first days after birth, but many families are discharged within a few days and return home with little structured follow-up. For parents of small and vulnerable newborns, that transition can be overwhelming. Without postnatal visits or ongoing guidance, caregivers are left to manage feeding, temperature regulation, and infection prevention on their own.</p>
+        <p>This post-discharge gap is one of the hardest problems in newborn health, and one that community-based programs are well placed to close. Evidence shows that stronger follow-up care at home can prevent many of the deaths that happen after discharge.</p>
+
+        <h2>Why Kangaroo Mother Care matters</h2>
+        <p>One of the most proven ways to protect small and vulnerable newborns is Kangaroo Mother Care: continuous skin-to-skin contact, exclusive breastfeeding, and early discharge paired with close follow-up for both mother and baby.</p>
+        <blockquote class="blog-pullquote">Kangaroo Mother Care can reduce neonatal mortality by up to 40%.</blockquote>
+        <p>Compared with conventional care, it also lowers infection rates and increases exclusive breastfeeding. The World Health Organization recommends it for every newborn weighing 2,000 grams or less at birth. Yet coverage remains below 5% of eligible infants, a wide gap where scaling up could save lives.</p>
+
+        <h2>Introducing the Connect Kangaroo Mother Care program</h2>
+        <p>Connect Kangaroo Mother Care strengthens post-discharge care through structured home visits delivered by trained Frontline Workers, so families receive consistent, high-quality support during the critical early weeks.</p>
+        <p>The program runs on Connect, a platform that delivers high-impact services through pay-per-service contracts with local organizations. Frontline Workers are guided through standardized counseling, screening, and referral activities, and are paid on verified completion of each visit. Before delivering the intervention, every worker completes mandatory digital training and must pass an in-app assessment. From there the app guides them step by step, acting as both a job aid and a data-entry tool, capturing GPS and time stamps so each service is verified at the right place and time.</p>
+
+        <h2>How the program works</h2>
+        <p>Locally led organizations partner with health facilities to identify preterm or low-birth-weight newborns. Before discharge, Frontline Workers meet caregivers, explain Kangaroo Mother Care, and invite them to enroll. After discharge, the visits move to the family&rsquo;s home:</p>
+        <ul>
+          <li><strong>Counseling on skin-to-skin care and breastfeeding</strong>, using a Kangaroo Mother Care wrap the program provides.</li>
+          <li><strong>Screening for danger signs</strong> with a weighing scale, measuring tape, pulse oximeter, and thermometer. Warning signs such as poor weight gain, low body temperature, or infection are flagged in the app.</li>
+          <li><strong>Referral to a health facility</strong> when an issue cannot be resolved during the visit. The app automatically prompts a follow-up at the next visit, closing the loop.</li>
+          <li><strong>Emotional and social support</strong> for mothers, many of whom face stigma and isolation.</li>
+        </ul>
+
+        <h2>Strengthening the continuum of newborn care</h2>
+        <p>Connect Kangaroo Mother Care aligns with global priorities in the World Health Organization&rsquo;s position paper on Kangaroo Mother Care and the Every Newborn Action Plan, and it supports Sustainable Development Goal 3.2, which calls for fewer than 12 neonatal deaths per 1,000 live births by 2030.</p>
+        <p>With support, we can give a Frontline Worker the training, tools, and fair pay needed to deliver this care to more vulnerable newborns and their mothers. You can help <a href="/support-kmc">fund a Frontline Worker</a> today.</p>
+      </div>
+    </div>
+  </article>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Support the program</span>
+      <h2>Help bring Kangaroo Mother Care <em>to more families</em>.</h2>
+      <p class="lead">$60 funds a trained Frontline Worker to deliver a complete, verified Kangaroo Mother Care intervention.</p>
+      <a href="/support-kmc" class="btn btn-primary">Fund a Frontline Worker →</a>
+    </div>
+  </div>
+</section>
+
+<!-- Blog post: USAID DIV child health Nigeria -->
+<section class="page" data-page="/blog/usaid-div-child-health-nigeria">
+  <article class="blog-article">
+    <div class="wrap-narrow">
+      <div class="blog-article-head">
+        <a class="blog-back" href="/insights">← All insights</a>
+        <span class="eyebrow">Child Health Campaign</span>
+        <h1>USAID Development Innovation Ventures and Dimagi partner on child health in northern Nigeria</h1>
+        <div class="blog-byline">
+          <time datetime="2024-11">November 2024</time>
+          <span class="blog-byline-sep">·</span>
+          <span>Beth Geoffroy</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="blog-hero-media">
+        <img src="{% static 'prelogin/images/blog/usaid-div-child-health.jpg' %}" alt="A Frontline Worker delivering child health services during a household visit in Nigeria" loading="lazy">
+      </div>
+    </div>
+
+    <div class="wrap-narrow">
+      <div class="blog-prose">
+        <p class="blog-lede">USAID&rsquo;s Development Innovation Ventures has awarded Dimagi a grant to scale and evaluate Connect, tackling the declining and uneven coverage of child health interventions that reduce child mortality in underserved communities.</p>
+
+        <p>Across several high-need regions of northern Nigeria, where child health coverage is critically low, the project lets locally led organizations and Frontline Workers opt into additional paid, purposeful delivery of door-to-door Child Health Campaign activities for children under five. The interventions include Vitamin A supplementation and oral rehydration solution with zinc.</p>
+
+        <h2>The challenge</h2>
+        <p>Vitamin A deficiency is a leading cause of child blindness and mortality, and diarrhea remains a major cause of death among children under five. These interventions are inexpensive and easy to administer, yet they still fail to reach many children in the poorest, hardest-to-reach communities.</p>
+
+        <h2>How Connect helps</h2>
+        <p>Built on the CommCare platform, Connect adds decision support, data capture, and GPS verification for accountability, along with a pay-for-performance model in which Dimagi contracts with locally led organizations to deliver the Child Health Campaign cost-effectively.</p>
+
+        <blockquote class="blog-quote">
+          <p>We are excited to partner with USAID Development Innovation Ventures to scale Connect. This funding will let us deliver life-saving health interventions to millions of children, making sure even the most marginalized communities have access to essential health services, while improving frontline worker jobs for long-term progress in community-based care.</p>
+          <cite>Jonathan Jackson, Chief Executive Officer, Dimagi</cite>
+        </blockquote>
+
+        <h2>Building the evidence</h2>
+        <p>Innovations for Poverty Action will run a randomized controlled trial to test whether Connect increases coverage of Vitamin A and oral rehydration solution, especially among the most vulnerable children, compared with existing approaches.</p>
+
+        <p>Read the original announcement on the <a href="https://dimagi.com/blog/usaid-div-and-dimagi-partner-to-enhance-child-health/" target="_blank" rel="noopener">Dimagi blog ↗</a>.</p>
+      </div>
+    </div>
+  </article>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">For funders &amp; partners</span>
+      <h2>Interested in a program <em>like this</em>?</h2>
+      <p class="lead">Tell us the outcome you want to fund, and we will show you how Connect delivers and verifies it.</p>
+      <a href="/contact/" class="btn btn-primary">Request a conversation →</a>
+    </div>
+  </div>
+</section>
+
+<!-- Blog post: Connect reaches 100,000 deliveries -->
+<section class="page" data-page="/blog/connect-100000-service-deliveries">
+  <article class="blog-article">
+    <div class="wrap-narrow">
+      <div class="blog-article-head">
+        <a class="blog-back" href="/insights">← All insights</a>
+        <span class="eyebrow">Child Health Campaign</span>
+        <h1>Connect reaches 100,000 service deliveries</h1>
+        <div class="blog-byline">
+          <time datetime="2024-05">May 2024</time>
+          <span class="blog-byline-sep">·</span>
+          <span>Dhivya Sivaramakrishnan</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="blog-hero-media">
+        <img src="{% static 'prelogin/images/blog/connect-100000-deliveries.jpg' %}" alt="Frontline Workers delivering Child Health Campaign services across multiple countries" loading="lazy">
+      </div>
+    </div>
+
+    <div class="wrap-narrow">
+      <div class="blog-prose">
+        <p class="blog-lede">For 20 years, Dimagi has digitally enabled Frontline Workers in low- and middle-income countries, mostly through the open-source CommCare platform. In 2022 we launched Connect, supported by a $25 million investment from the Steele Foundation for Hope. Connect is built on four pillars: learn, deliver, verify, and pay.</p>
+
+        <h2>Working directly with local organizations</h2>
+        <p>A key pathway for Connect is the Direct-to-Frontline-Organization model, working with locally led organizations to deliver essential services to vulnerable populations. The most widespread program so far is the Connect Child Health Campaign, which provides Vitamin A and deworming, mid-upper arm circumference screening and referrals, and basic infant vaccine checks. Recent pilots in Nigeria have also delivered oral rehydration solution and zinc to children under five.</p>
+        <p>After an initial pilot in Rajasthan, India, Dimagi ran three pilots of 5,000 children each in Kenya, Tanzania, and Zambia, with partners Cohesu, Sujukwa, and LiveWell. A Request for Proposals then selected two partners, the Center for Wellbeing and Integrated Nutrition Solutions in Nigeria and Sanmat in Jharkhand, India, each running a major campaign for 40,000 children in Katsina and Dumka. Vitamin Angels India supplied doses of Vitamin A and deworming for the campaigns in India and Zambia.</p>
+
+        <h2>Key achievements</h2>
+        <p>Cohesu in Kenya and LiveWell in Zambia presented their findings to their national governments. LiveWell will use the Child Health Campaign app to deliver Vitamin A and deworming during Zambia&rsquo;s child health weeks in May and November 2024. In March 2024, Dimagi added oral rehydration solution and zinc treatment to a program for 5,000 children in Nigeria.</p>
+        <blockquote class="blog-pullquote">More than 100,000 children reached across seven countries.</blockquote>
+        <p>Dimagi reached over 100,000 children across Kenya, Tanzania, Zambia, Nigeria, and India for the Child Health Campaign, and Uganda and Ethiopia for mental health and Kangaroo Mother Care pilots. Local officials in several countries said the campaigns helped supplement their own efforts to provide Vitamin A and deworming.</p>
+
+        <h2>What we learned</h2>
+        <p>County and local governments often welcomed support to saturate their areas, given supply shortages, overburdened staff, and a lack of verification mechanisms. In the larger pilots in Nigeria and India, Dimagi worked to improve verification and check whether service deliveries were real and high quality. Most Frontline Workers delivered quality services, and the pilots showed where verification standards still need to improve. This foundation is shaping Connect&rsquo;s technology, its verification mechanisms, and its approach to digital learning.</p>
+
+        <h2>Scaling the Child Health Campaign</h2>
+        <p>In 2024, Dimagi is focused on pathways to scale, working with more locally led organizations in Nigeria and potentially targeting a million verified service deliveries this year, on the way to a planned 10 million verified visits per year. For years, service delivery campaigns have struggled to estimate and verify coverage in hard-to-reach areas. Connect aims to solve that while strengthening local ecosystems and creating opportunities for trained Frontline Workers.</p>
+
+        <p>Read the original post on the <a href="https://dimagi.com/blog/commcare-connect-reaches-100000-deliveries/" target="_blank" rel="noopener">Dimagi blog ↗</a>.</p>
+      </div>
+    </div>
+  </article>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Explore the portfolio</span>
+      <h2>See the programs <em>Connect delivers</em>.</h2>
+      <p class="lead">A growing portfolio of verified, high-impact health programs, with new programs and countries added all the time.</p>
+      <a href="/portfolio" class="btn btn-primary">Explore the portfolio →</a>
+    </div>
+  </div>
+</section>
+
+<!-- Blog post: Connect 2023 year in review -->
+<section class="page" data-page="/blog/connect-2023-year-in-review">
+  <article class="blog-article">
+    <div class="wrap-narrow">
+      <div class="blog-article-head">
+        <a class="blog-back" href="/insights">← All insights</a>
+        <span class="eyebrow">Company</span>
+        <h1>Connect: a year in review</h1>
+        <div class="blog-byline">
+          <time datetime="2024-01">January 2024</time>
+          <span class="blog-byline-sep">·</span>
+          <span>Beth Geoffroy</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="blog-hero-media">
+        <img src="{% static 'prelogin/images/blog/connect-2023-year-in-review.jpg' %}" alt="A child health training session with the LiveWell team in Zambia using Connect" loading="lazy">
+      </div>
+    </div>
+
+    <div class="wrap-narrow">
+      <div class="blog-prose">
+        <p class="blog-lede">After a busy 2023, our team is glad to share an update on one of our biggest initiatives, Connect. Built on top of CommCare, Connect lets Frontline Workers and organizations opt into paid, purposeful work. Here are some reflections and early learnings from designing and testing the platform in 2023.</p>
+
+        <h2>What is Connect?</h2>
+        <p>Connect is the first digital tool that lets Frontline Workers autonomously learn, deliver, and be paid for verified services. It runs on four pillars:</p>
+        <ul>
+          <li><strong>Learn:</strong> workers select and complete training through a digital platform.</li>
+          <li><strong>Deliver:</strong> workers deliver additional services through their active jobs, using CommCare.</li>
+          <li><strong>Verify:</strong> service delivery is verified with biometrics, GPS, and data algorithms.</li>
+          <li><strong>Pay:</strong> workers see what they are owed and are paid digitally or manually.</li>
+        </ul>
+        <p>The platform creates growth opportunities for Frontline Workers and a more efficient way to expand frontline services. CommCare is the vehicle to reach them, with a user base of more than 150,000 and growing.</p>
+
+        <h2>Results across a range of interventions</h2>
+        <p>Connect launched in late 2022, when Dimagi established a dedicated team backed by a $25 million investment from the Steele Foundation for Hope. Since then, Dimagi and its partners have used Connect to deliver Child Health Campaigns, household safety checks, early childhood development programs, group therapy for depression, and vaccine promotion.</p>
+        <blockquote class="blog-pullquote">77,000+ clients reached, and $161,000 paid directly to Frontline Workers and organizations.</blockquote>
+        <p>Through partnerships with 12 organizations, Connect reached more than 77,000 clients across seven countries: Kenya, India, Nigeria, Tanzania, Zambia, Uganda, and Malawi.</p>
+        <blockquote class="blog-quote">
+          <p>I must say the Community Health Workers are extremely excited about the app. We are getting more positive responses from the team in general.</p>
+          <cite>Nama Wellness Centre, Uganda</cite>
+        </blockquote>
+
+        <h2>Frontline Worker autonomy</h2>
+        <p>One of the most exciting findings is that Frontline Workers independently completed the entire learn, deliver, verify, pay cycle. In Malawi, Dimagi rolled out the platform so workers could sign themselves up for Connect projects from their existing CommCare accounts. From there they learned new skills, delivered verified services, and were paid fairly, all through the platform. That level of autonomy is proving our hypothesis that Connect can unlock an ecosystem of greater impact for Frontline Workers and locally led organizations.</p>
+        <blockquote class="blog-quote">
+          <p>We are seeing high demand from community members who were not targeted, requesting the volunteer to visit their households.</p>
+          <cite>Everlisto Phiri, monitoring and evaluation lead, Pachi, Malawi</cite>
+        </blockquote>
+
+        <h2>Looking ahead to 2024</h2>
+        <p>There is still much to explore: more pilots across essential services such as Kangaroo Mother Care and vaccine promotion, and new group therapy pilots reaching 2,500 people in Tigray, Ethiopia, with World Vision. We are also prioritizing the scale-up of the Child Health Campaign, and we are seeking partners to support the next million verified child visits, on the way to more than 10 million per year.</p>
+
+        <p>Read the original post on the <a href="https://dimagi.com/blog/commcare-connect-2023/" target="_blank" rel="noopener">Dimagi blog ↗</a>.</p>
+      </div>
+    </div>
+  </article>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Work with us</span>
+      <h2>Help deliver the next <em>million visits</em>.</h2>
+      <p class="lead">We are always glad to talk with funders, partners, and Frontline Workers building on Connect.</p>
+      <a href="/contact/" class="btn btn-primary">Request a conversation →</a>
+    </div>
+  </div>
+</section>
 </main>
 
 <footer class="site-footer">
@@ -3857,16 +4294,20 @@
         <li><a href="/platform">Platform</a></li>
         <li><a href="/portfolio">Portfolio</a></li>
         <li><a href="/insights">Insights</a></li>
-        <li><a href="/frontline-network">Frontline Network</a></li>
       </ul>
     </div>
     <div class="foot-col">
       <span class="foot-col-label eyebrow">For Organizations</span>
       <ul>
+        <li><a href="/frontline-network">Join the Network</a></li>
+        <li><a href="{% url 'account_login' %}">Sign In</a></li>
+      </ul>
+    </div>
+    <div class="foot-col">
+      <span class="foot-col-label eyebrow">Support</span>
+      <ul>
         <li><a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509" target="_blank" rel="noopener">Help Site ↗</a></li>
         <li><a href="/release-notes">Release Notes</a></li>
-        <li><a href="/contact/">Request a conversation</a></li>
-        <li><a href="{% url 'account_login' %}">Sign In</a></li>
       </ul>
     </div>
     <div class="foot-col">
@@ -3879,8 +4320,6 @@
       <span class="foot-col-label eyebrow">Company</span>
       <ul>
         <li><a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi ↗</a></li>
-        <li><a href="https://dimagi.com/blog/" target="_blank" rel="noopener">Blog</a></li>
-        <li><a href="https://www.dimagi.com/podcast/" target="_blank" rel="noopener">Podcast</a></li>
       </ul>
     </div>
   </div>
@@ -3895,7 +4334,7 @@
   </div>
 </footer>
 
-<script src="{% static 'prelogin/app.js' %}"></script>
+<script src="{% static 'prelogin/app.js' %}?v=7"></script>
 
 </body>
 </html>

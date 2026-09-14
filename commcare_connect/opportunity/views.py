@@ -8,6 +8,7 @@ from functools import cached_property, partial
 from http import HTTPStatus
 from urllib.parse import urlencode, urlparse, urlunsplit
 
+import httpx
 import pghistory
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
@@ -192,6 +193,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
+    get_invoice_service_summary,
     rollback_invoice_line_items,
     total_late_delta_units,
 )
@@ -248,6 +250,8 @@ _NEXT_WORKER_TASKS = "worker_tasks"
 PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
+
+DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
 
 
 def get_opportunity_or_404(pk, org_slug):
@@ -462,6 +466,10 @@ class OpportunityFinalize(OpportunityObjectMixin, OrgPMRequiredMixin, UpdateView
         return response
 
 
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
+
+
 class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, DetailView):
     model = Opportunity
     template_name = "opportunity/dashboard.html"
@@ -538,7 +546,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
             {
                 "name": "Max Budget",
                 "count": header_with_tooltip(
-                    f"{object.currency_code} {intcomma(object.total_budget)}",
+                    amount_with_currency(object.total_budget, object.currency_code),
                     "Maximum payments that can be made for workers and organization",
                 ),
                 "icon": "fa-money-bill",
@@ -1853,12 +1861,14 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         invoice = self.object
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
+        form = self.get_form()
         context.update(
             {
                 "opportunity": opportunity,
-                "form": self.get_form(),
+                "form": form,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -1938,11 +1948,20 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @org_member_required
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+    invoice = get_object_or_404(
+        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        opportunity=request.opportunity,
+        payment_invoice_id=invoice_id,
+    )
+    context = {
+        "invoice": invoice,
+        "service_summary_lines": get_invoice_service_summary(invoice),
+        "dimagi_address": DIMAGI_ADDRESS,
+    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context={"invoice": invoice},
+        context=context,
         content_type="application/pdf",
         filename=f"invoice_{invoice_id}.pdf",
     )
@@ -1977,14 +1996,26 @@ def invoice_update_status(request, org_slug, opp_id):
     if error:
         return HttpResponseBadRequest(error)
 
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW and request.POST.get("attestation") != "true":
+        return HttpResponseBadRequest(_("You must certify the invoice before submitting."))
+
     invoice.status = new_status
+    update_fields = ["status", "description"] if invoice.service_delivery else ["status"]
     if invoice.service_delivery:
         invoice.description = description
-        invoice.save(update_fields=["status", "description"])
-        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            rollback_invoice_line_items(invoice)
+
+    if new_status == InvoiceStatus.PENDING_PM_REVIEW:
+        with pghistory.context(
+            username=request.user.username,
+            user_email=request.user.email,
+            attestation_certified=True,
+        ):
+            invoice.save(update_fields=update_fields)
     else:
-        invoice.save(update_fields=["status"])
+        invoice.save(update_fields=update_fields)
+
+    if invoice.service_delivery and new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+        rollback_invoice_line_items(invoice)
 
     messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
@@ -2174,7 +2205,11 @@ def sync_deliver_units(request, org_slug, opp_id):
         create_learn_modules_and_deliver_units(request.opportunity.pk)
     except AppNoBuildException:
         status = HTTPStatus.BAD_REQUEST
-        message = "Failed to retrieve updates. No available build at the moment."
+        message = _("Failed to retrieve updates. No available build at the moment.")
+    except (CommCareHQAPIException, httpx.RequestError, httpx.TimeoutException, httpx.ConnectError):
+        logger.exception("Failed to sync delivery units for opportunity %s", opp_id)
+        status = HTTPStatus.BAD_GATEWAY
+        message = _("Failed to retrieve updates from CommCare HQ. Please try again.")
 
     return HttpResponse(content=message, status=status)
 
@@ -3276,9 +3311,6 @@ def opportunity_worker_progress(request, org_slug, opp_id):
     earned_percentage = safe_percent(result.total_accrued or 0, result.total_budget or 0)
     paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
 
-    def amount_with_currency(amount):
-        return f"{result.currency_code + ' ' if result.currency_code else ''}{intcomma(amount or 0)}"
-
     worker_progress = [
         {
             "title": "Verification",
@@ -3311,7 +3343,9 @@ def opportunity_worker_progress(request, org_slug, opp_id):
             "progress": [
                 {
                     "title": "Earned",
-                    "total": header_with_tooltip(amount_with_currency(result.total_accrued), "Earned Amount"),
+                    "total": header_with_tooltip(
+                        amount_with_currency(result.total_accrued, result.currency_code), "Earned Amount"
+                    ),
                     "value": header_with_tooltip(
                         f"{earned_percentage:.0f}%",
                         "Percentage Earned by all workers out of Max Budget in the Opportunity",
@@ -3322,7 +3356,8 @@ def opportunity_worker_progress(request, org_slug, opp_id):
                 {
                     "title": "Paid",
                     "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid), "Paid Amount to All Connect Workers"
+                        amount_with_currency(result.total_paid, result.currency_code),
+                        "Paid Amount to All Connect Workers",
                     ),
                     "value": header_with_tooltip(
                         f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
@@ -3364,7 +3399,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "icon": "fa-clipboard-list",
             "name": _("Services Delivered"),
             "status": _("Total"),
-            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far excluding duplicates")),
+            "value": header_with_tooltip(stats.total_deliveries, _("Total delivered so far")),
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
@@ -3441,7 +3476,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "panels": deliveries_panels,
         },
         {
-            "title": f"{_('Worker Payments')} ({request.opportunity.currency_code})",
+            "title": _("Worker Payments"),
             "sub_heading": _("Last Payment"),
             "value": stats.recent_payment or "--",
             "panels": [
@@ -3450,7 +3485,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": _("Payments"),
                     "status": _("Earned"),
                     "value": header_with_tooltip(
-                        intcomma(stats.total_accrued), _("Worker payment accrued based on approved service deliveries")
+                        amount_with_currency(stats.total_accrued, request.opportunity.currency_code),
+                        _("Worker payment accrued based on approved service deliveries"),
                     ),
                     "url": payment_url,
                     "incr": stats.accrued_since_yesterday,
@@ -3460,7 +3496,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": _("Payments"),
                     "status": _("Due"),
                     "value": header_with_tooltip(
-                        intcomma(stats.payments_due), _("Worker payments earned but yet unpaid")
+                        amount_with_currency(stats.payments_due, request.opportunity.currency_code),
+                        _("Worker payments earned but yet unpaid"),
                     ),
                 },
             ],

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -6,7 +7,6 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from commcare_connect.organization.models import (
-    LLOEntity,
     Organization,
     OrganizationInvite,
     UserOrganizationMembership,
@@ -28,22 +28,6 @@ def _user_with_privilege(privilege: str | None, own_org: Organization) -> User:
         user.user_permissions.add(Permission.objects.get(codename="workspace_entity_management_access"))
         user = User.objects.get(pk=user.pk)  # drop the cached permissions
     return user
-
-
-class TestLLOEntity:
-    def test_str_without_short_name(self):
-        entity = LLOEntity(name="World Health Organization")
-        assert str(entity) == "World Health Organization"
-
-    def test_str_with_short_name(self):
-        entity = LLOEntity(name="World Health Organization", short_name="WHO")
-        assert str(entity) == "World Health Organization (WHO)"
-
-    @pytest.mark.django_db
-    def test_name_must_be_unique(self):
-        LLOEntity.objects.create(name="Unique LLO")
-        with pytest.raises(IntegrityError):
-            LLOEntity.objects.create(name="Unique LLO")
 
 
 @pytest.mark.django_db
@@ -113,6 +97,30 @@ class TestUserOrganizationMembership:
 
 @pytest.mark.django_db
 class TestOrganizationInvite:
+    def test_expiry_date_is_expiry_days_after_last_update(self, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        assert invite.expiry_date == invite.date_modified + timedelta(days=OrganizationInvite.EXPIRY_DAYS)
+
+    @pytest.mark.parametrize(
+        "status,minutes_ago,in_cooldown",
+        [
+            (OrganizationInvite.Status.INVITED, 1, True),
+            (OrganizationInvite.Status.INVITED, 10, False),
+            # Only a pending invite can be reinvited, so nothing else is ever throttled.
+            (OrganizationInvite.Status.REVOKED, 1, False),
+            (OrganizationInvite.Status.ACCEPTED, 1, False),
+        ],
+    )
+    def test_only_pending_invites_are_in_reinvite_cooldown(self, organization, status, minutes_ago, in_cooldown):
+        invite = OrganizationInviteFactory(organization=organization, status=status)
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - timedelta(minutes=minutes_ago)
+        )
+        invite.refresh_from_db()
+        # Pinned so the test covers the window logic, not whatever REINVITE_COOLDOWN is tuned to.
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            assert invite.is_in_reinvite_cooldown is in_cooldown
+
     def test_not_expired_when_freshly_created(self, organization):
         invite = OrganizationInviteFactory(organization=organization)
         assert not invite.is_expired
@@ -158,9 +166,45 @@ class TestOrganizationInvite:
         assert reinvited.token != old_token
         assert not reinvited.is_expired
 
+    def test_send_invite_refuses_inside_the_reinvite_cooldown(self, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="fresh@example.com")
+        old_token = invite.token
+
+        refused = OrganizationInvite.send_invite(
+            organization=organization,
+            email="fresh@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=UserFactory(email="admin@example.com"),
+        )
+
+        assert refused is None
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+    def test_send_invite_reinstates_a_revoked_invite_inside_the_cooldown(self, organization):
+        """Reinviting a revoked address is a fresh decision, not a retry, so the cooldown does not apply."""
+        invite = OrganizationInviteFactory(
+            organization=organization, email="revoked@example.com", status=OrganizationInvite.Status.REVOKED
+        )
+        old_token = invite.token
+
+        reinvited = OrganizationInvite.send_invite(
+            organization=organization,
+            email="revoked@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=UserFactory(email="admin@example.com"),
+        )
+
+        assert reinvited.pk == invite.pk
+        assert reinvited.status == OrganizationInvite.Status.INVITED
+        assert reinvited.token != old_token
+
     def test_send_invite_preserves_original_created_by_on_reinvite(self, organization):
         invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
         original_created_by = invite.created_by
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - OrganizationInvite.REINVITE_COOLDOWN - timedelta(minutes=1)
+        )
         admin = UserFactory(email="admin@example.com")
 
         reinvited = OrganizationInvite.send_invite(

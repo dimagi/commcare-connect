@@ -17,7 +17,7 @@ from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationInviteForm,
-    OrganizationSelectOrCreateForm,
+    OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
@@ -28,12 +28,11 @@ from commcare_connect.utils.tables import get_validated_page_size
 
 @login_required
 def organization_create(request):
-    form = OrganizationSelectOrCreateForm(data=request.POST or None, user=request.user)
+    form = OrganizationProfileForm(data=request.POST or None)
 
     if form.is_valid():
-        org, is_new_org = form.save()
-        if is_new_org:
-            org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        org = form.save()
+        org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})
@@ -71,6 +70,7 @@ def organization_home(request, org_slug):
             "organization": org,
             "form": form,
             "invite_form": invite_form,
+            "member_count": org.memberships.count(),
         },
     )
 
@@ -88,8 +88,16 @@ def add_members_form(request, org_slug):
             role=form.cleaned_data["role"],
             invited_by=request.user,
         )
-        send_org_invite(invite_id=invite.pk)
-        messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
+        if invite is None:
+            messages.warning(
+                request,
+                gettext("An invite was just sent to {email}. Try again in a few minutes.").format(
+                    email=form.cleaned_data["email"]
+                ),
+            )
+        else:
+            send_org_invite(invite_id=invite.pk)
+            messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
     else:
         error = next(iter(form.errors.values()))[0] if form.errors else gettext("Unable to send invite.")
         messages.error(request, error)
@@ -189,6 +197,29 @@ def _accept_invite_for_new_user(request, invite, org_slug):
 
 @api_view(["POST"])
 @org_admin_required
+def reinvite(request, org_slug, invite_id):
+    invite = get_object_or_404(
+        OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
+    )
+    new_invite = OrganizationInvite.send_invite(
+        organization=invite.organization,
+        email=invite.email,
+        role=invite.role,
+        invited_by=request.user,
+    )
+    if new_invite is None:
+        messages.warning(
+            request,
+            gettext("An invite was just sent to {email}. Try again in a few minutes.").format(email=invite.email),
+        )
+    else:
+        send_org_invite(invite_id=new_invite.pk)
+        messages.success(request, gettext("New invite sent to {email}.").format(email=new_invite.email))
+    return _render_pending_invites(request)
+
+
+@api_view(["POST"])
+@org_admin_required
 def revoke_invite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
@@ -196,6 +227,7 @@ def revoke_invite(request, org_slug, invite_id):
     invite.status = OrganizationInvite.Status.REVOKED
     invite.modified_by = request.user.email
     invite.save(update_fields=["status", "modified_by", "date_modified"])
+    messages.success(request, gettext("Invite to {email} revoked.").format(email=invite.email))
     return _render_pending_invites(request)
 
 

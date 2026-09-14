@@ -30,7 +30,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
-from commcare_connect.users.tests.factories import LLOEntityFactory, OrgWithUsersFactory
+from commcare_connect.users.tests.factories import OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -179,10 +179,40 @@ class TestWorkAreaDataView:
 
 
 @pytest.mark.django_db
+class TestImplementationAreaDataView:
+    def test_returns_implementation_area_list(self, v2_export_client, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["results"]) == 1
+        result = data["results"][0]
+        assert result["id"] == area.id
+        assert result["name"] == area.name
+        assert result["centroid"]["type"] == "Point"
+        assert result["centroid"]["coordinates"] == [area.centroid.x, area.centroid.y]
+        assert result["boundary"]["type"] == "Polygon"
+        assert result["boundary"]["coordinates"] == [[list(coord) for coord in ring] for ring in area.boundary.coords]
+
+    def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
+        _add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
 class TestLLOEntityDataView:
-    def test_returns_llo_entity_list(self, api_client, user):
-        entity = LLOEntityFactory(short_name="TST")
-        permission = Permission.objects.get(codename="workspace_entity_management_access")
+    def test_returns_organization_profiles(self, api_client, user):
+        org = OrgWithUsersFactory(
+            short_name="TST",
+            verified=True,
+            year_of_establishment=2005,
+            contact_emails="one@example.com",
+        )
+        permission = Permission.objects.get(codename="llo_entity_internal_access")
         user.user_permissions.add(permission)
         _add_export_credentials(api_client, user)
         _add_v2_header(api_client)
@@ -190,11 +220,13 @@ class TestLLOEntityDataView:
         response = api_client.get(url)
         assert response.status_code == 200
         data = response.json()
-        assert len(data["results"]) == 1
-        result = data["results"][0]
-        assert result["id"] == entity.id
-        assert result["name"] == entity.name
+        result = next(row for row in data["results"] if row["id"] == org.id)
+        assert result["name"] == org.name
         assert result["short_name"] == "TST"
+        assert result["verified"] is True
+        assert result["year_of_establishment"] == 2005
+        assert result["contact_emails"] == "one@example.com"
+        assert sorted(result["members"]) == sorted(org.get_member_emails())
 
     def test_requires_export_scope(self, api_client, user):
         _add_v2_header(api_client)
@@ -202,7 +234,7 @@ class TestLLOEntityDataView:
         response = api_client.get(url)
         assert response.status_code == 401
 
-    def test_requires_entity_management_permission(self, api_client, user):
+    def test_requires_internal_access_permission(self, api_client, user):
         _add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:llo_entity_data")

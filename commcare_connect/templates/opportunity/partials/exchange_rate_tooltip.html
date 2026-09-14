@@ -1,0 +1,46 @@
+{% load i18n %}
+{# H008: this is rendered as the value of a double-quoted x-tooltip attribute (see #}
+{# value_with_icon_tooltip in commcare_connect/opportunity/tables.py), so every #}
+{# attribute below must use single quotes instead. #}
+{# djlint:off H008 #}
+<div class='text-left text-sm leading-snug'>
+  <p class='font-semibold'>{% translate "How the exchange rate is set" %}</p>
+  <p class='mt-1 text-white/70'>
+    {% blocktranslate trimmed %}
+      Each calendar month uses one fixed rate, effective from the 1st, applied to
+      every line item billed in that month.
+    {% endblocktranslate %}
+  </p>
+  {% if rate_date %}
+    <div class='mt-2 border-t border-white/15 pt-2'>
+      <div class='flex items-baseline justify-between gap-6 py-0.5'>
+        <span class='text-white/70'>{% blocktranslate with month=rate_date|date:"F Y" %}Rate for {{ month }}{% endblocktranslate %}</span>
+        <span class='font-semibold whitespace-nowrap'>{% blocktranslate %}1 USD = {{ rate }}{% endblocktranslate %}
+          {% if currency %}{{ currency }}{% endif %}
+        </span>
+      </div>
+      {% if next_update_date %}
+        <div class='flex items-baseline justify-between gap-6 py-0.5'>
+          <span class='text-white/70'>{% translate "Next update" %}</span>
+          <span class='font-semibold whitespace-nowrap'>{{ next_update_date|date:"d M Y" }}</span>
+        </div>
+      {% endif %}
+      {% if fetched_at %}
+        <div class='flex items-baseline justify-between gap-6 py-0.5'>
+          <span class='text-white/70'>{% translate "Rate fetched" %}</span>
+          <span class='font-semibold whitespace-nowrap'>{{ fetched_at|date:"d M Y, H:i" }}</span>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+  <p class='mt-2 border-t border-white/15 pt-2 text-xs text-white/70'>
+    {% blocktranslate trimmed %}
+      Source: monthly mid-market rate.
+      <a href='{{ learn_more_url }}'
+         target='_blank'
+         rel='noopener'
+         class='underline text-white'>Learn more</a>
+    {% endblocktranslate %}
+  </p>
+</div>
+{# djlint:on #}

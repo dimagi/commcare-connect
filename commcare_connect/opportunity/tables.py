@@ -2,11 +2,13 @@ import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
+from dateutil.relativedelta import relativedelta
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import CharField, Value
 from django.db.models.functions import Coalesce, NullIf
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
@@ -32,6 +34,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
     TEXT_CENTER_ATTR,
@@ -50,6 +53,22 @@ def header_with_tooltip(label, tooltip_text):
         '<span x-data x-tooltip.raw="{}">{}</span>',
         tooltip_text,
         label,
+    )
+
+
+def value_with_icon_tooltip(display_value, tooltip_html, theme=None):
+    """Render `display_value` followed by an info icon carrying a rich HTML tooltip.
+
+    `tooltip_html` should come from a rendered template (see e.g. `exchange_rate_tooltip.html`),
+    not be built up as a string in Python.
+    """
+    theme_modifier = f".theme.{theme}" if theme else ""
+    return format_html(
+        '{} <i class="fa-solid fa-circle-info text-gray-400 ml-1" '
+        'x-data x-tooltip.raw.html.interactive{theme_modifier}="{tooltip}"></i>',
+        display_value,
+        theme_modifier=mark_safe(theme_modifier),
+        tooltip=mark_safe(tooltip_html),
     )
 
 
@@ -1713,6 +1732,7 @@ class InvoiceLineItemsTable(tables.Table):
 
     def __init__(self, currency, *args, show_org=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.currency = currency
         if currency:
             self.columns["flw_amount_local"].column.verbose_name = _("FLW Pay (%(currency)s)") % {"currency": currency}
             self.columns["org_amount_local"].column.verbose_name = _("Org Pay (%(currency)s)") % {"currency": currency}
@@ -1742,6 +1762,29 @@ class InvoiceLineItemsTable(tables.Table):
     def render_month(self, value):
         return value.strftime("%B %Y")
 
+    def render_exchange_rate(self, value, record):
+        EXCHANGE_RATE_LEARN_MORE_URL = (
+            "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3214934056/Managing+Currencies+in+Connect"
+        )
+        rate_date = record.exchange_rate_date
+        next_update_date = get_month_start_date(rate_date) + relativedelta(months=1) if rate_date else None
+        if next_update_date and next_update_date <= timezone.localdate():
+            # A stale fallback rate (looked up from a much older month) shouldn't claim an
+            # update date that's already passed -- we don't know when it'll actually refresh.
+            next_update_date = None
+        tooltip_html = render_to_string(
+            "opportunity/partials/exchange_rate_tooltip.html",
+            {
+                "rate": value,
+                "currency": self.currency,
+                "rate_date": rate_date,
+                "next_update_date": next_update_date,
+                "fetched_at": record.exchange_rate_fetched_at,
+                "learn_more_url": EXCHANGE_RATE_LEARN_MORE_URL,
+            },
+        )
+        return value_with_icon_tooltip(str(value), tooltip_html, theme="dark")
+
 
 class InvoiceDeliveriesTable(tables.Table):
     payment_unit = tables.Column(
@@ -1754,10 +1797,14 @@ class InvoiceDeliveriesTable(tables.Table):
     username = tables.Column(
         accessor="completed_work__opportunity_access__user__name", verbose_name=gettext_lazy("Worker")
     )
-    date_created = DMYTColumn(accessor="completed_work__date_created", verbose_name=gettext_lazy("Date of Delivery"))
-    date_approved = DMYTColumn(
-        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("Date Approved")
+    first_visit_date = DMYTColumn(
+        accessor="completed_work__date_created", verbose_name=gettext_lazy("First Visit Date")
     )
+    first_approved_date = DMYTColumn(
+        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("First Approved Date")
+    )
+    billing_month = tables.Column(accessor="month", verbose_name=gettext_lazy("Billing Month"))
+    billing_type = tables.Column(accessor="is_delta", verbose_name=gettext_lazy("Billing Type"))
     approved_count = tables.Column(accessor="billed_count", verbose_name=gettext_lazy("Approved Deliveries"))
     flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay"))
     org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay"))
@@ -1783,14 +1830,22 @@ class InvoiceDeliveriesTable(tables.Table):
             "opportunity",
             "entity_name",
             "username",
-            "date_created",
-            "date_approved",
+            "first_visit_date",
+            "first_approved_date",
+            "billing_month",
+            "billing_type",
             "approved_count",
             "flw_amount_local",
             "org_amount_local",
             "total_amount_local",
             "total_amount_usd",
         )
+
+    def render_billing_month(self, value):
+        return value.strftime("%B %Y")
+
+    def render_billing_type(self, value):
+        return _("Additional Delivery") if value else _("First Billing")
 
 
 _task_select_td_extra = {

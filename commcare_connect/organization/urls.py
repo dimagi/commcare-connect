@@ -7,6 +7,7 @@ app_name = "organization"
 urlpatterns = [
     path("organization/", views.organization_home, name="home"),
     path("organization/invite/<str:token>/", views.accept_invite, name="accept_invite"),
+    path("organization/invite/<int:invite_id>/reinvite", views.reinvite, name="reinvite"),
     path("organization/invite/<int:invite_id>/revoke", views.revoke_invite, name="revoke_invite"),
     path("organization/member", views.add_members_form, name="add_members"),
     path("organization/member/remove", views.remove_members, name="remove_members"),

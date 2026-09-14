@@ -9,85 +9,57 @@
 {% block javascript %}
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-  <script>
-    document.addEventListener('alpine:init', () => {
-      Alpine.data('createOrgHandler', (entityWiseOrgs) => ({
-        entityWiseOrgs: entityWiseOrgs,
-        orgSelect: null,
-        selectedEntity: '',
-        selectedWorkspaceSlug: '',
-        isNewEntity: false,
-
-
-        init() {
-          document.addEventListener('tomselect-elements:initialized', () => {
-            this.orgSelect = this.$refs.org.tomselect;
-            this.selectedEntity = this.$refs.llo_entity.tomselect.getValue();
-            if (this.selectedEntity) {
-              this.updateWorkspaceOptions(this.selectedEntity);
-            }
-
-            this.$refs.llo_entity.tomselect.on('change', (value) => {
-              this.selectedEntity = value;
-              this.isNewEntity = value ? value.startsWith('new:') : false;
-              this.selectedWorkspaceSlug = '';
-              this.updateWorkspaceOptions(value);
-            });
-
-            this.orgSelect.on('change', (value) => {
-              this.selectedWorkspaceSlug = this.getExistingWorkspaceSlug(value);
-            });
-
-          });
-        },
-
-        updateWorkspaceOptions(entityValue) {
-          this.orgSelect.clear();
-          this.orgSelect.clearOptions();
-
-          if (!entityValue || !this.entityWiseOrgs[entityValue])
-            return;
-
-          this.entityWiseOrgs[entityValue].organizations.forEach(org => {
-            this.orgSelect.addOption({
-              value: org.id,
-              text: org.name
-            });
-          });
-        },
-
-        getExistingWorkspaceSlug(org_id) {
-          if (!this.selectedEntity || !org_id)
-            return null;
-          const orgs = this.entityWiseOrgs[this.selectedEntity]?.organizations || [];
-          const org =  orgs.find(o => o.id == org_id);
-          return org ? org.slug : null;
-        }
-
-      }))
-    });
-  </script>
+  <script src="{% static 'bundles/js/org_creation_wizard-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block title %}
   {% trans "Connect - New Workspace" %}
 {% endblock title %}
 {% block content %}
-  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-4">
-    <div class="title text-brand-deep-purple">{% trans "Create a New Workspace" %}</div>
-    <form action="{% url 'organization_create' %}" method="post">
+  <div class="container md:max-w-screen-lg mx-auto">
+    <form action="{% url 'organization_create' %}"
+          method="post"
+          novalidate
+          x-data="organizationWizard()"
+          @submit="onSubmit">
       {% csrf_token %}
-      {{ form.get_entity_wise_orgs|json_script:"entity-wise-orgs" }}
-      <div x-data="createOrgHandler(JSON.parse(document.getElementById('entity-wise-orgs').textContent))">
-        <div class="mb-4">{{ form.llo_entity|as_crispy_field }}</div>
-        <div class="mb-4" x-show="isNewEntity" x-cloak x-transition>{{ form.llo_entity_short_name|as_crispy_field }}</div>
-        <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>{{ form.org|as_crispy_field }}</div>
-        <button class="button button-md primary-dark float-end"
-                x-show="!selectedWorkspaceSlug"
-                type="submit">{% trans "Create Workspace" %}</button>
-        <a :href="`{% url 'opportunity:list' 'SLUG_PLACEHOLDER' %}`.replace('SLUG_PLACEHOLDER', selectedWorkspaceSlug)"
-           class="button button-md primary-dark float-end"
-           x-show="selectedWorkspaceSlug"
-           x-cloak>{% trans "Switch to Selected Workspace" %}</a>
+      <div class="card_bg flex flex-col gap-6">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <h1 class="title text-brand-deep-purple text-xl">{% trans "Create a New Workspace" %}</h1>
+          <ol class="flex items-center gap-2" aria-label="{% trans 'Progress' %}">
+            <template x-for="(title, index) in titles" :key="index">
+              <li class="flex items-center gap-2">
+                <span class="inline-flex size-8 items-center justify-center rounded-full text-sm font-medium"
+                      :class="index + 1 <= step ? 'primary-dark' : 'neutral'"
+                      :aria-current="index + 1 === step ? 'step' : false"
+                      x-text="index + 1"></span>
+                <span class="hidden text-sm font-medium sm:inline"
+                      :class="index + 1 <= step ? 'text-brand-deep-purple' : 'text-gray-400'"
+                      x-text="title"></span>
+                <span class="h-px w-6 bg-gray-200"
+                      x-show="index + 1 < titles.length"
+                      aria-hidden="true"></span>
+              </li>
+            </template>
+          </ol>
+        </div>
+        {% crispy form %}
+        <div class="flex items-center justify-between">
+          <button class="button button-md outline-style"
+                  type="button"
+                  x-show="step > 1"
+                  x-cloak
+                  @click="back">{% trans "Back" %}</button>
+          <div class="ms-auto">
+            <button class="button button-md primary-dark"
+                    type="button"
+                    x-show="step < totalSteps"
+                    @click="next">{% trans "Next" %}</button>
+            <button class="button button-md primary-dark"
+                    type="submit"
+                    x-show="step === totalSteps"
+                    x-cloak>{% trans "Create Workspace" %}</button>
+          </div>
+        </div>
       </div>
     </form>
   </div>

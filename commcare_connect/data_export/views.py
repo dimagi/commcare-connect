@@ -39,6 +39,7 @@ from commcare_connect.data_export.serializer import (
     AuditReportEntryDataSerializer,
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
+    ImplementationAreaDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
     LLOEntityDataSerializer,
@@ -57,7 +58,7 @@ from commcare_connect.data_export.serializer import (
     WorkAreaGroupWriteSerializer,
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -74,12 +75,12 @@ from commcare_connect.opportunity.models import (
     UserVisit,
 )
 from commcare_connect.organization.decorators import user_is_opportunity_admin, user_is_opportunity_pm
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.permission_const import LLO_ENTITY_INTERNAL_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
 BULK_MAX_ITEMS = 100  # JSON bulk-update: per-item FK validation + possible HQ sync/notification
@@ -694,16 +695,25 @@ class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
         return WorkArea.objects.filter(opportunity=self.opportunity).select_related("work_area_group")
 
 
+class ImplementationAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = ImplementationAreaDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return ImplementationArea.objects.filter(opportunity=self.opportunity)
+
+
 class LLOEntityDataView(BaseDataExportListViewV2):
+    """Exports organization profiles. Kept under the `llo_entity` name for existing consumers."""
+
     serializer_class = LLOEntityDataSerializer
 
     def check_permissions(self, request):
         super().check_permissions(request)
-        if not request.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+        if not request.user.has_perm(LLO_ENTITY_INTERNAL_ACCESS):
             raise NotFound
 
     def get_queryset(self, *args, **kwargs):
-        return LLOEntity.objects.all()
+        return Organization.objects.prefetch_related("countries", "primary_sectors", "members")
 
 
 class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):
