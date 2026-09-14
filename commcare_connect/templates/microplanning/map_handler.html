@@ -12,6 +12,13 @@
             showReviewInaccessibilityModal: false,
             showVisits: false,
             showImplementationAreas: false,
+
+            // Building footprint overlay. `buildingsAvailable` tracks whether the map is zoomed in
+            // far enough for footprints to be drawn at all; both flags are driven by the overlay.
+            showBuildings: false,
+            buildingsAvailable: false,
+            buildingsLoading: false,
+            buildingsFailed: false,
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
@@ -1050,6 +1057,10 @@
 
                 await new Promise(resolve => this.map.once('load', resolve));
 
+                // Footprints are inserted beneath the Work Area layers (see `beforeId`): they are
+                // context for the areas, and the areas are what the user is here to read.
+                this.initBuildings();
+
                 // Workareas are served using django-vectortiles,
                 // promoteId maps the feature's 'id' property as the feature ID,
                 // which is required for setFeatureState (hover/select) to work correctly.
@@ -1389,6 +1400,26 @@
                     }
                     this.hoveredWorkArea = null;
                 });
+            },
+
+            // Sets up the Building Data overlay, if it is configured. The overlay owns the source,
+            // the layers and the zoom threshold; this only wires its state to the control, which is
+            // hidden below that threshold rather than offering a toggle that appears to do nothing.
+            initBuildings() {
+                const configElement = document.getElementById('buildings-config');
+                if (!configElement) return;
+
+                const buildings = MapboxUtils.addBuildingsOverlay(this.map, JSON.parse(configElement.textContent), {
+                    beforeId: 'workareas-fill',
+                    onLoadingChange: (loading) => { this.buildingsLoading = loading; },
+                    onAvailabilityChange: (available) => { this.buildingsAvailable = available; },
+                    onFailed: () => {
+                        this.buildingsFailed = true;
+                        this.showBuildings = false;
+                    },
+                });
+
+                this.$watch('showBuildings', (visible) => buildings.setVisible(visible));
             },
 
             // Sets up the Implementation Area overlay: a GeoJSON source, a black outline layer,
