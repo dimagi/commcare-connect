@@ -76,7 +76,7 @@ def v2_export_client(api_client, org_user_member):
 
 @pytest.fixture
 def v2_write_client(api_client, org_user_admin):
-    """Write endpoints additionally require org-admin (mirroring org_admin_required on the
+    """Write endpoints additionally require org-admin (mirroring opp_manage_access_required on the
     equivalent htmx views), so member-level v2_export_client isn't enough for them."""
     _add_export_credentials(api_client, org_user_admin)
     _add_v2_header(api_client)
@@ -174,6 +174,31 @@ class TestWorkAreaDataView:
         _add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:work_area_data", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestImplementationAreaDataView:
+    def test_returns_implementation_area_list(self, v2_export_client, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["results"]) == 1
+        result = data["results"][0]
+        assert result["id"] == area.id
+        assert result["name"] == area.name
+        assert result["centroid"]["type"] == "Point"
+        assert result["centroid"]["coordinates"] == [area.centroid.x, area.centroid.y]
+        assert result["boundary"]["type"] == "Polygon"
+        assert result["boundary"]["coordinates"] == [[list(coord) for coord in ring] for ring in area.boundary.coords]
+
+    def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
+        _add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
         assert response.status_code == 404
 
@@ -539,7 +564,7 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
         assert response.status_code == 404
 
     def test_member_role_returns_404(self, v2_export_client, opportunity):
-        """Mirrors org_admin_required on the equivalent htmx flows: plain membership isn't enough."""
+        """Mirrors opp_manage_access_required on the equivalent htmx flows: plain membership isn't enough."""
         response = v2_export_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
         assert response.status_code == 404
 
@@ -672,6 +697,56 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         assert area.status == WorkAreaStatus.NOT_VISITED
         mock_hq_sync.assert_called_once()
         mock_notify.assert_called_once_with(access.id)
+
+    @pytest.mark.parametrize(
+        "org_role,expected",
+        [
+            ("program_owner", True),
+            ("supervising", True),
+            ("funder", True),
+            ("delivery", False),
+            ("unrelated", False),
+        ],
+    )
+    def test_assign_access_by_org_role(
+        self, api_client, managed_opportunity, program_manager_org_user_admin, org_role, expected
+    ):
+        """Every org relationship that grants ADMIN access to the opportunity from the program
+        side (program owner, supervising, funder) can assign work areas; the delivery org and an
+        unrelated org cannot."""
+        if org_role == "program_owner":
+            admin = program_manager_org_user_admin
+        elif org_role == "delivery":
+            admin = managed_opportunity.organization.memberships.filter(role="admin").first().user
+        else:
+            org = OrgWithUsersFactory()
+            if org_role == "supervising":
+                managed_opportunity.supervising_organization = org
+                managed_opportunity.save()
+            elif org_role == "funder":
+                managed_opportunity.program.funder = org
+                managed_opportunity.program.save()
+            admin = org.memberships.filter(role="admin").first().user
+
+        _add_export_credentials(api_client, admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        with (
+            mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas"),
+            mock.patch("commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"),
+        ):
+            response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+
+        area.refresh_from_db()
+        if expected:
+            assert response.status_code == 200
+            assert area.opportunity_access_id == access.id
+        else:
+            assert response.status_code == 404
+            assert area.opportunity_access_id is None
 
     @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_during_assignment_rolls_back(
