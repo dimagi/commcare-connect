@@ -43,13 +43,35 @@ def get_exportable_invoices(opportunity, month_start=None):
 def build_invoice_pdf_zip(invoices, on_progress: Callable[[int, int], None] | None = None) -> bytes:
     """A zip with one PDF per invoice, named by invoice number. `on_progress(done, total)` is called after each."""
     invoices = list(invoices)
+    taken = set()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for index, invoice in enumerate(invoices, start=1):
-            archive.writestr(invoice_pdf_filename(invoice), render_invoice_pdf(invoice))
+            archive.writestr(_unique_pdf_filename(invoice, taken), render_invoice_pdf(invoice))
             if on_progress:
                 on_progress(index, len(invoices))
     return buffer.getvalue()
+
+
+def _unique_pdf_filename(invoice, taken: set) -> str:
+    """The invoice's filename, suffixed if an earlier invoice already claimed it.
+
+    Invoice numbers are unique per opportunity, but sanitising them is lossy, so two numbers that
+    differ only in stripped characters land on the same name. Without this the second PDF would
+    replace the first on extraction, and the export would quietly be short an invoice.
+    """
+    name = invoice_pdf_filename(invoice)
+    if name not in taken:
+        taken.add(name)
+        return name
+    stem = name.removesuffix(".pdf")
+    candidate = f"{stem}_{invoice.pk}.pdf"
+    suffix = 2
+    while candidate in taken:
+        candidate = f"{stem}_{invoice.pk}_{suffix}.pdf"
+        suffix += 1
+    taken.add(candidate)
+    return candidate
 
 
 def render_invoice_pdf(invoice) -> bytes:

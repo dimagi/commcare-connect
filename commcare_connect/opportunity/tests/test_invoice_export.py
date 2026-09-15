@@ -94,6 +94,17 @@ class TestPdfExport:
             assert all(archive.read(name).startswith(b"%PDF") for name in archive.namelist())
         assert progress.call_args_list == [mock.call(1, 2), mock.call(2, 2)]
 
+    def test_numbers_that_sanitize_alike_keep_separate_entries(self, opportunity):
+        """Sanitizing is lossy, so two distinct numbers can collide on one filename."""
+        first = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, invoice_number="INV/001")
+        second = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, invoice_number="INV#001")
+
+        content = build_invoice_pdf_zip([first, second])
+
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            assert archive.namelist() == ["invoice_INV001.pdf", f"invoice_INV001_{second.pk}.pdf"]
+            assert all(archive.read(name).startswith(b"%PDF") for name in archive.namelist())
+
     def test_empty_zip(self):
         with zipfile.ZipFile(io.BytesIO(build_invoice_pdf_zip([]))) as archive:
             assert archive.namelist() == []
