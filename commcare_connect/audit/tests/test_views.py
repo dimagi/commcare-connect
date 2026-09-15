@@ -48,7 +48,7 @@ def nm_audit_opp(managed_opportunity):
 )
 def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_opp):
     """Audit access for the network manager (the opportunity's delivery org) follows
-    @org_member_required: members and admins are allowed, viewers are denied. The same
+    @opp_standard_access_required: members and admins are allowed, viewers are denied. The same
     decorator gates all audit views, so the role behaviour is asserted once here."""
     user = UserFactory()
     UserOrganizationMembership.objects.create(user=user, organization=nm_audit_opp.organization, role=role)
@@ -66,7 +66,7 @@ def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_op
 def test_unrelated_org_admin_cannot_access_audit(client, nm_audit_opp):
     """An admin of an org unrelated to the opportunity is denied both ways: via the
     opportunity's slug (not a member of that org) and via their own org's slug (the
-    opportunity doesn't belong to it, so opportunity_required rejects it)."""
+    opportunity does not belong to it)."""
     other_org = OrgWithUsersFactory()
     other_admin = other_org.memberships.filter(role="admin").first().user
     client.force_login(other_admin)
