@@ -59,6 +59,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
+from commcare_connect.opportunity.utils.invoice_export import build_invoice_pdf_zip, build_invoice_summary_dataset
 from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
@@ -243,12 +244,43 @@ def generate_deliver_status_export(opportunity_id: int, export_format: str):
     return save_export(dataset, export_tmp_name, export_format)
 
 
-def save_export(dataset: Dataset, file_name: str, export_format: str):
-    from commcare_connect.utils.storages import ExportS3Boto3Storage
+@celery_app.task(bind=True)
+def generate_invoice_pdf_zip_export(self, opportunity_id: int, invoice_ids: list[int]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    invoices = _invoices_for_export(opportunity, invoice_ids)
 
+    def report_progress(done, total):
+        set_task_progress(self, gettext("Rendered %(done)s of %(total)s invoices.") % {"done": done, "total": total})
+
+    content = build_invoice_pdf_zip(invoices, on_progress=report_progress)
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_invoice_pdfs.zip"
+    return save_export_file(export_tmp_name, content)
+
+
+@celery_app.task()
+def generate_invoice_summary_export(opportunity_id: int, invoice_ids: list[int]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    dataset = build_invoice_summary_dataset(_invoices_for_export(opportunity, invoice_ids))
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_invoice_summary.csv"
+    return save_export(dataset, export_tmp_name, "csv")
+
+
+def _invoices_for_export(opportunity, invoice_ids):
+    return PaymentInvoice.objects.filter(opportunity=opportunity, id__in=invoice_ids).order_by(
+        "date", "invoice_number"
+    )
+
+
+def save_export(dataset: Dataset, file_name: str, export_format: str):
     content = dataset.export(export_format)
     if isinstance(content, str):
         content = content.encode()
+    return save_export_file(file_name, content)
+
+
+def save_export_file(file_name: str, content: bytes):
+    from commcare_connect.utils.storages import ExportS3Boto3Storage
+
     return ExportS3Boto3Storage().save(file_name, ContentFile(content))
 
 
