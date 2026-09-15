@@ -1,3 +1,5 @@
+import mimetypes
+
 from celery.result import AsyncResult
 from django.http import FileResponse, Http404
 from django.shortcuts import render
@@ -100,5 +102,10 @@ def download_export_file(
         export_file,
         as_attachment=True,
         filename=f"{filename_without_ext}.{export_format}",
-        content_type=TableExport.FORMATS.get(export_format),
+        content_type=export_content_type(saved_filename),
     )
+
+
+def export_content_type(filename):
+    export_format = filename.rsplit(".", 1)[-1]
+    return TableExport.FORMATS.get(export_format) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
