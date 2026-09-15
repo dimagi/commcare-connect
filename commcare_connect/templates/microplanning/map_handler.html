@@ -1,6 +1,8 @@
 {% load i18n %}
 <script>
     document.addEventListener("alpine:init", () => {
+        const WORKAREAS_FILL_LAYER = 'workareas-fill';
+
         Alpine.data("mapController", () => ({
             map: null,
             selectedFeature: null,
@@ -1082,7 +1084,7 @@
                 // so adjacent groups get visually distinct colors without a lookup table.
                 // Opacity varies by status to give a quick visual overview of progress.
                 this.map.addLayer({
-                    id: 'workareas-fill',
+                    id: WORKAREAS_FILL_LAYER,
                     type: 'fill',
                     source: 'workareas',
                     'source-layer': 'workareas',
@@ -1322,7 +1324,7 @@
                 // `feature` → the raw Mapbox object returned from the click event.
                 // `selectedFeature` → our Alpine state that stores the currently selected workarea.
                 // We store its properties and ID so we can toggle the highlight and access its data.
-                this.map.on('click', 'workareas-fill', (e) => {
+                this.map.on('click', WORKAREAS_FILL_LAYER, (e) => {
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
@@ -1369,7 +1371,7 @@
                 // Tracks the currently hovered feature to apply white fill highlight
                 // and show a details overlay (`hoveredWorkArea`) with the work area's key details.
                 let hoveredId = null;
-                this.map.on('mousemove', 'workareas-fill', (e) => {
+                this.map.on('mousemove', WORKAREAS_FILL_LAYER, (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
                     this.isHoveringWorkArea = true;
                     const feature = e.features?.[0];
@@ -1391,7 +1393,7 @@
                     };
                 });
 
-                this.map.on('mouseleave', 'workareas-fill', () => {
+                this.map.on('mouseleave', WORKAREAS_FILL_LAYER, () => {
                     this.map.getCanvasContainer().style.cursor = '';
                     this.isHoveringWorkArea = false;
                     if (hoveredId !== null) {
@@ -1410,7 +1412,7 @@
                 if (!configElement) return;
 
                 const buildings = MapboxUtils.addBuildingsOverlay(this.map, JSON.parse(configElement.textContent), {
-                    beforeId: 'workareas-fill',
+                    beforeId: WORKAREAS_FILL_LAYER,
                     onLoadingChange: (loading) => { this.buildingsLoading = loading; },
                     onAvailabilityChange: (available) => { this.buildingsAvailable = available; },
                     onFailed: () => {
