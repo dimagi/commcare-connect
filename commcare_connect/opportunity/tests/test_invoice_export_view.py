@@ -201,3 +201,24 @@ def test_export_status_reports_the_finished_task(client, opportunity, org_user_m
     body = status.content.decode()
     assert "Download Export" in body
     assert reverse("opportunity:download_export", args=(org_slug, task_id)) in body
+
+
+@pytest.mark.django_db
+def test_selection_bar_bindings_are_invoked_as_functions(client, opportunity, org_user_member):
+    """The selection bar's helpers must be called, not read.
+
+    They live on an object the template spreads into `x-data`, and spreading evaluates getters
+    immediately against an object that has no selection yet. That throws, and Alpine then fails to
+    start the component, so the bar never appears at all.
+    """
+    june_invoice(opportunity)
+    client.force_login(org_user_member)
+
+    body = client.get(
+        reverse("opportunity:invoice_list", args=(opportunity.organization.slug, opportunity.opportunity_id))
+    ).content.decode()
+
+    assert "window.selectableTable" in body, "the shared select-all mixin is not on the page"
+    for helper in ("selectedTotalUsd", "selectedUnpricedCount", "selectableRowCount"):
+        assert f"{helper}()" in body
+        assert f'"{helper}"' not in body

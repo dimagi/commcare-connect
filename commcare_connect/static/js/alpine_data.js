@@ -23,6 +23,10 @@ window.resetFilterModalState = resetFilterModalState;
 
 // Pricing extras for the invoice list selection bar. Composed with the shared `selectableTable`
 // mixin, which owns the select-all behaviour: `{ ...selectableTable(), ...invoiceExportPricing() }`.
+//
+// These are methods, not getters, and the template calls them with `()`. Spreading an object
+// evaluates its getters there and then, against an object that has no `selected` yet, which throws
+// and leaves Alpine unable to start the component at all.
 function invoiceExportPricing() {
   return {
     clearSelection() {
@@ -33,7 +37,7 @@ function invoiceExportPricing() {
     // Invoices carry no USD amount until an exchange rate has been applied, so the total covers
     // only the priced ones and the bar reports the rest separately. One pass over the rendered
     // checkboxes, rather than a DOM query per selected id.
-    get selectionTotals() {
+    selectionTotals() {
       const selected = new Set(this.selected.map(String));
       return Array.from(
         document.querySelectorAll('input[name="row_select"]'),
@@ -53,19 +57,19 @@ function invoiceExportPricing() {
       );
     },
 
-    get selectedTotalUsd() {
-      return this.selectionTotals.usd.toLocaleString(undefined, {
+    selectedTotalUsd() {
+      return this.selectionTotals().usd.toLocaleString(undefined, {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
     },
 
-    get selectedUnpricedCount() {
-      return this.selectionTotals.unpriced;
+    selectedUnpricedCount() {
+      return this.selectionTotals().unpriced;
     },
 
     // How many rows the user can actually select here, which is one page of the table.
-    get selectableRowCount() {
+    selectableRowCount() {
       return document.querySelectorAll('input[name="row_select"]').length;
     },
   };

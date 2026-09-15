@@ -153,15 +153,15 @@
       <div class="flex items-center gap-3 text-sm">
         <span class="font-medium text-brand-deep-purple">
           <span x-text="selected.length"></span>
-          {% translate "of" %} <span x-text="selectableRowCount"></span> {% translate "selected" %}
-          <template x-if="selectedUnpricedCount < selected.length">
-            <span>· <span x-text="selectedTotalUsd"></span> {% translate "USD due" %}</span>
+          {% translate "of" %} <span x-text="selectableRowCount()"></span> {% translate "selected" %}
+          <template x-if="selectedUnpricedCount() < selected.length">
+            <span>· <span x-text="selectedTotalUsd()"></span> {% translate "USD due" %}</span>
           </template>
         </span>
-        <span x-show="selectedUnpricedCount"
+        <span x-show="selectedUnpricedCount()"
               x-cloak
               class="text-gray-500"
-              x-text="selectedUnpricedCount === 1 ? '{% translate "1 invoice has no USD amount" %}' : selectedUnpricedCount + ' {% translate "invoices have no USD amount" %}'"></span>
+              x-text="selectedUnpricedCount() === 1 ? '{% translate "1 invoice has no USD amount" %}' : selectedUnpricedCount() + ' {% translate "invoices have no USD amount" %}'"></span>
         <button type="button"
                 @click="clearSelection()"
                 class="text-gray-500 underline">{% translate "Clear" %}</button>
