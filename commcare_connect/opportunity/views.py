@@ -613,7 +613,7 @@ def review_visit_export(request, org_slug, opp_id):
     form = VisitExportForm(data=request.POST, opportunity=request.opportunity, org_slug=org_slug, review_export=True)
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     if not form.is_valid():
-        messages.error(request, _("That export request was not valid. Please try again."))
+        messages.error(request, form.errors)
         return redirect(redirect_url)
 
     export_format = form.cleaned_data["format"]
@@ -2077,7 +2077,7 @@ def export_invoices(request, org_slug, opp_id):
     return redirect(f"{redirect_url}?{urlencode(query)}")
 
 
-@org_member_required
+@opp_standard_access_required
 @opportunity_required
 @require_POST
 def invoice_update_status(request, org_slug, opp_id):
