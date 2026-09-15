@@ -39,10 +39,11 @@
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm text-gray-500">{% translate "Month" %}</span>
         <div class="chip-group">
-          <a href="{{ list_url }}?month=all"
+          {# The chip you are already on is a state, not a link: no href keeps it off the tab order too. #}
+          <a {% if selected_month %}href="{{ list_url }}?month=all"{% else %}aria-current="true"{% endif %}
              class="chip chip-md {% if not selected_month %}chip-active{% endif %}">{% translate "All" %}</a>
           {% for month in month_options %}
-            <a href="{{ list_url }}?month={{ month|date:'Y-m' }}"
+            <a {% if month != selected_month %}href="{{ list_url }}?month={{ month|date:'Y-m' }}"{% else %}aria-current="true"{% endif %}
                class="chip chip-md {% if month == selected_month %}chip-active{% endif %}">{{ month|date:"F Y" }}</a>
           {% endfor %}
         </div>

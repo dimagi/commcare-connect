@@ -29,12 +29,13 @@
   {{ block.super }}
   {% url report_view_name org_slug=request.org.slug opp_id=opportunity.opportunity_id as report_url %}
   <div class="chip-group">
-    <a href="{{ report_url }}"
+    {# The chip you are already on is a state, not a link: no href keeps it off the tab order too. #}
+    <a {% if request.GET.usd %}href="{{ report_url }}"{% else %}aria-current="true"{% endif %}
        class="chip chip-md {% if not request.GET.usd %}chip-active{% endif %}">
       <i class="fas fa-coins"></i>
       {{ opportunity.currency_code }}
     </a>
-    <a href="{{ report_url }}?usd=True"
+    <a {% if not request.GET.usd %}href="{{ report_url }}?usd=True"{% else %}aria-current="true"{% endif %}
        class="chip chip-md {% if request.GET.usd %}chip-active{% endif %}">
       <i class="fas fa-dollar-sign"></i>
       USD

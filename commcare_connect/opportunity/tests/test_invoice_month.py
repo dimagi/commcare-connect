@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from django.urls import reverse
 
 from commcare_connect.opportunity.models import PaymentInvoice
 from commcare_connect.opportunity.tests.factories import OpportunityFactory, PaymentInvoiceFactory
@@ -10,6 +11,7 @@ from commcare_connect.opportunity.utils.invoice import (
     parse_invoice_month,
     resolve_invoice_month,
 )
+from commcare_connect.program.tests.factories import ProgramFactory
 
 MAY = date(2026, 5, 1)
 JUNE = date(2026, 6, 1)
@@ -134,3 +136,20 @@ def test_resolve_invoice_month(month_param, highlight, expected):
 
 def test_resolve_invoice_month_without_options():
     assert resolve_invoice_month(None, []) is None
+
+
+@pytest.mark.django_db
+def test_the_chip_you_are_on_is_not_a_link(client, organization, org_user_member):
+    """An active chip is current state, so it must not be focusable or activatable by keyboard."""
+    opportunity = OpportunityFactory(program=ProgramFactory(organization=organization), organization=organization)
+    PaymentInvoiceFactory(opportunity=opportunity, service_delivery=True, start_date=JUNE, end_date=date(2026, 6, 30))
+    client.force_login(org_user_member)
+
+    body = client.get(
+        reverse("opportunity:invoice_list", args=(organization.slug, opportunity.opportunity_id))
+    ).content.decode()
+
+    active = [chip for chip in body.split("<a ")[1:] if "chip-active" in chip.split(">")[0]]
+    assert len(active) == 1
+    assert "href" not in active[0].split(">")[0]
+    assert 'aria-current="true"' in active[0].split(">")[0]
