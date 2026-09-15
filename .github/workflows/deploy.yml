@@ -35,6 +35,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    outputs:
+      slack_ts: ${{ steps.slack.outputs.ts }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -182,6 +184,7 @@ jobs:
     needs: deploy
     if: ${{ success() && inputs.environment == 'production' }}
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Wait for the deploy to be serving
         run: |
@@ -200,3 +203,16 @@ jobs:
             --repo dimagi/dimagi-qa-ccc \
             --ref main \
             -f environment=prod
+
+      - name: Notify QA trigger failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
+              "text": ":warning: Deploy succeeded, but triggering the QA Playwright suite failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
