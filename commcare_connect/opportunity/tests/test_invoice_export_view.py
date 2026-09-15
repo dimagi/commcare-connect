@@ -1,0 +1,137 @@
+from datetime import date
+from unittest import mock
+
+import pytest
+from django.urls import reverse
+
+from commcare_connect.opportunity.forms import InvoiceExportForm
+from commcare_connect.opportunity.models import InvoiceStatus
+from commcare_connect.opportunity.tasks import generate_invoice_pdf_zip_export, generate_invoice_summary_export
+from commcare_connect.opportunity.tests.factories import OpportunityFactory, PaymentInvoiceFactory
+from commcare_connect.program.tests.factories import ProgramFactory
+
+JUNE = date(2026, 6, 1)
+
+
+@pytest.fixture
+def opportunity(organization):
+    return OpportunityFactory(program=ProgramFactory(organization=organization), organization=organization)
+
+
+def june_invoice(opportunity, **kwargs):
+    kwargs.setdefault("service_delivery", True)
+    kwargs.setdefault("start_date", JUNE)
+    kwargs.setdefault("end_date", date(2026, 6, 30))
+    kwargs.setdefault("date", date(2026, 7, 1))
+    return PaymentInvoiceFactory(opportunity=opportunity, **kwargs)
+
+
+@pytest.mark.django_db
+class TestInvoiceExportForm:
+    def _form(self, opportunity, **data):
+        data.setdefault("export_type", InvoiceExportForm.PDF_ZIP)
+        form = InvoiceExportForm(data=data, opportunity=opportunity)
+        assert form.is_valid(), form.errors
+        return form
+
+    def test_selection_wins_over_the_month(self, opportunity):
+        chosen = june_invoice(opportunity, invoice_number="A")
+        june_invoice(opportunity, invoice_number="B")
+        form = self._form(opportunity, invoice_ids=[chosen.pk], month="2026-06")
+        assert list(form.get_invoices()) == [chosen]
+
+    def test_month_scope_excludes_other_months_and_dead_statuses(self, opportunity):
+        wanted = june_invoice(opportunity, invoice_number="A")
+        june_invoice(opportunity, invoice_number="B", status=InvoiceStatus.CANCELLED_BY_NM)
+        june_invoice(opportunity, invoice_number="C", start_date=date(2026, 7, 1), end_date=date(2026, 7, 31))
+        form = self._form(opportunity, month="2026-06")
+        assert list(form.get_invoices()) == [wanted]
+
+    def test_all_months_scope(self, opportunity):
+        june = june_invoice(opportunity, invoice_number="A")
+        july = june_invoice(opportunity, invoice_number="C", start_date=date(2026, 7, 1), end_date=date(2026, 7, 31))
+        form = self._form(opportunity, month="all")
+        assert set(form.get_invoices()) == {june, july}
+
+    def test_another_opportunitys_invoice_is_rejected(self, opportunity):
+        other = PaymentInvoiceFactory()
+        form = InvoiceExportForm(
+            data={"export_type": InvoiceExportForm.PDF_ZIP, "invoice_ids": [other.pk]}, opportunity=opportunity
+        )
+        assert not form.is_valid()
+        assert "invoice_ids" in form.errors
+
+    def test_unknown_export_type_is_rejected(self, opportunity):
+        form = InvoiceExportForm(data={"export_type": "exe"}, opportunity=opportunity)
+        assert not form.is_valid()
+
+
+@pytest.mark.django_db
+class TestExportInvoicesView:
+    def _url(self, opportunity, org_slug=None):
+        return reverse(
+            "opportunity:export_invoices",
+            args=(org_slug or opportunity.organization.slug, opportunity.opportunity_id),
+        )
+
+    def _post(self, client, user, opportunity, **data):
+        client.force_login(user)
+        return client.post(self._url(opportunity), data)
+
+    @pytest.mark.parametrize(
+        "export_type, task",
+        [
+            (InvoiceExportForm.PDF_ZIP, generate_invoice_pdf_zip_export),
+            (InvoiceExportForm.CSV_SUMMARY, generate_invoice_summary_export),
+        ],
+    )
+    def test_dispatches_the_matching_task(self, client, opportunity, org_user_member, export_type, task):
+        invoice = june_invoice(opportunity)
+        with mock.patch.object(task, "delay") as delay:
+            delay.return_value.id = "task-1"
+            response = self._post(client, org_user_member, opportunity, export_type=export_type, month="2026-06")
+        delay.assert_called_once_with(opportunity.pk, [invoice.pk])
+        assert response.status_code == 302
+        assert "export_task_id=task-1" in response.url
+        assert "month=2026-06" in response.url
+
+    def test_selected_invoices_are_passed_through(self, client, opportunity, org_user_member):
+        chosen = june_invoice(opportunity, invoice_number="A")
+        june_invoice(opportunity, invoice_number="B")
+        with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+            self._post(
+                client,
+                org_user_member,
+                opportunity,
+                export_type=InvoiceExportForm.PDF_ZIP,
+                invoice_ids=[chosen.pk],
+            )
+        delay.assert_called_once_with(opportunity.pk, [chosen.pk])
+
+    def test_program_manager_can_export(
+        self, client, managed_opportunity, program_manager_org, program_manager_org_user_admin
+    ):
+        """A program manager reaches the opportunity through their own org slug."""
+        invoice = june_invoice(managed_opportunity)
+        with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+            delay.return_value.id = "task-1"
+            client.force_login(program_manager_org_user_admin)
+            response = client.post(
+                self._url(managed_opportunity, org_slug=program_manager_org.slug),
+                {"export_type": InvoiceExportForm.PDF_ZIP, "month": "2026-06"},
+            )
+        delay.assert_called_once_with(managed_opportunity.pk, [invoice.pk])
+        assert response.status_code == 302
+
+    def test_nothing_to_export_reports_an_error(self, client, opportunity, org_user_member):
+        with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+            response = self._post(
+                client, org_user_member, opportunity, export_type=InvoiceExportForm.PDF_ZIP, month="2026-06"
+            )
+        delay.assert_not_called()
+        assert response.status_code == 302
+        assert "export_task_id" not in response.url
+
+    def test_get_is_not_allowed(self, client, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        assert client.get(self._url(opportunity)).status_code == 405
