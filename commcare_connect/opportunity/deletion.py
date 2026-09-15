@@ -7,7 +7,7 @@ import sentry_sdk
 from django.apps import apps
 from django.db import transaction
 
-from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.models import DeliverUnit, Opportunity
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,19 @@ def delete_opportunity(opportunity_or_id):
     try:
         with transaction.atomic():
             for deletion in OPPORTUNITY_DELETIONS:
+                if deletion.app_label == "opportunity" and deletion.model_name == "DeliverUnit":
+                    # A DeliverUnit can be reassigned to a different opportunity's PaymentUnit while
+                    # its deliver_app is reused (see add_payment_unit/edit_payment_unit), so by now
+                    # (this opportunity's own UserVisits were already cascade-deleted via its
+                    # OpportunityAccess above) any DeliverUnit still referenced by a UserVisit
+                    # belongs to another, still-active opportunity. Deleting it would violate that
+                    # other opportunity's data, so detach it from this opportunity instead.
+                    detached = DeliverUnit.objects.filter(
+                        payment_unit__opportunity_id=opportunity_id, uservisit__isnull=False
+                    ).update(payment_unit=None)
+                    if detached:
+                        logger.info("Detached %s DeliverUnit(s) still referenced by another opportunity", detached)
+
                 deleted = deletion.delete(opportunity_id)
                 total_deleted += deleted
                 logger.info(

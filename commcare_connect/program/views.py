@@ -24,10 +24,10 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
     OrgPMRequiredMixin,
-    ProgramManageAccessMixin,
-    org_manage_access_required,
+    ProgramAdminAccessMixin,
+    org_admin_access_required,
     org_view_access_required,
-    program_manage_access_required,
+    program_admin_access_required,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ProgramForm
@@ -109,11 +109,11 @@ class ProgramCreate(OrgPMRequiredMixin, ProgramCreateOrUpdate):
     """There is no program yet to have a relationship with, so it is the org that decides."""
 
 
-class ProgramUpdate(ProgramManageAccessMixin, ProgramCreateOrUpdate):
-    """Editing an existing program requires manage access on that program."""
+class ProgramUpdate(ProgramAdminAccessMixin, ProgramCreateOrUpdate):
+    """Editing an existing program requires admin access on that program."""
 
 
-class ManagedOpportunityList(ProgramManageAccessMixin, ListView):
+class ManagedOpportunityList(ProgramAdminAccessMixin, ListView):
     model = Opportunity
     paginate_by = 10
     default_ordering = "name"
@@ -175,7 +175,7 @@ class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, OpportunityInitU
         return Opportunity.objects.filter(program=self.program)
 
 
-@program_manage_access_required
+@program_admin_access_required
 @require_POST
 def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
@@ -209,7 +209,7 @@ def invite_organization(request, org_slug, pk):
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
-    if program_access_level_from_request(request, application.program) < AccessLevel.MANAGE:
+    if program_access_level_from_request(request, application.program) < AccessLevel.ADMIN:
         raise Http404()
 
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
@@ -231,13 +231,13 @@ def manage_application(request, org_slug, application_id, action):
 
 
 @require_POST
-@org_manage_access_required
+@org_admin_access_required
 def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
     application = get_object_or_404(
         ProgramApplication, program_application_id=application_id, status=ProgramApplicationStatus.INVITED
     )
     # The invitee answers its own invitation, so the org in scope must be the invited one --
-    # the program's own orgs hold manage access over it and must not answer on its behalf.
+    # the program's own orgs hold admin access over it and must not answer on its behalf.
     if application.organization_id != request.org.id:
         raise Http404()
 

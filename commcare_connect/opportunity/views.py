@@ -8,6 +8,7 @@ from functools import cached_property, partial
 from http import HTTPStatus
 from urllib.parse import urlencode, urlparse, urlunsplit
 
+import httpx
 import pghistory
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
@@ -206,13 +207,12 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
-    OppNMRequiredMixin,
     OppPMRequiredMixin,
     OppStandardAccessMixin,
     OppViewAccessMixin,
     OrgViewAccessMixin,
-    ProgramManageAccessMixin,
-    opp_manage_access_required,
+    ProgramAdminAccessMixin,
+    opp_admin_access_required,
     opp_standard_access_required,
     opp_view_access_required,
     opportunity_pm_required,
@@ -331,7 +331,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(ProgramManageAccessMixin, CreateView):
+class OpportunityInit(ProgramAdminAccessMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -356,7 +356,7 @@ class OpportunityInit(ProgramManageAccessMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, ProgramManageAccessMixin, UpdateView):
+class OpportunityInitUpdate(OpportunityObjectMixin, ProgramAdminAccessMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -1119,7 +1119,7 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
-@opp_manage_access_required
+@opp_admin_access_required
 @opportunity_required
 def send_message_mobile_users(request, org_slug=None, opp_id=None):
     user_ids = OpportunityAccess.objects.filter(opportunity=request.opportunity, accepted=True).values_list(
@@ -1829,7 +1829,7 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-class InvoiceCreateView(OppNMRequiredMixin, OpportunityObjectMixin, CreateView):
+class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
     form_class = AutomatedPaymentInvoiceForm
@@ -1870,7 +1870,18 @@ class InvoiceCreateView(OppNMRequiredMixin, OpportunityObjectMixin, CreateView):
             return "New Service Delivery Invoice"
         return "New Custom Invoice"
 
+    def get(self, request, org_slug, opp_id, **kwargs):
+        self._check_opportunity_org(request)
+        return super().get(request, org_slug, opp_id, **kwargs)
+
+    def _check_opportunity_org(self, request):
+        # Only NM org user is allowed to create invoice
+        if request.org != request.opportunity.organization:
+            raise Http404()
+
     def post(self, request, org_slug, opp_id, **kwargs):
+        self._check_opportunity_org(request)
+
         form = self.get_form()
         if not form.is_valid():
             return self.get(request, org_slug, opp_id, **kwargs)
@@ -2251,7 +2262,11 @@ def sync_deliver_units(request, org_slug, opp_id):
         create_learn_modules_and_deliver_units(request.opportunity.pk)
     except AppNoBuildException:
         status = HTTPStatus.BAD_REQUEST
-        message = "Failed to retrieve updates. No available build at the moment."
+        message = _("Failed to retrieve updates. No available build at the moment.")
+    except (CommCareHQAPIException, httpx.RequestError, httpx.TimeoutException, httpx.ConnectError):
+        logger.exception("Failed to sync delivery units for opportunity %s", opp_id)
+        status = HTTPStatus.BAD_GATEWAY
+        message = _("Failed to retrieve updates from CommCare HQ. Please try again.")
 
     return HttpResponse(content=message, status=status)
 

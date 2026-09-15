@@ -39,6 +39,7 @@ from commcare_connect.data_export.serializer import (
     AuditReportEntryDataSerializer,
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
+    ImplementationAreaDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
     LLOEntityDataSerializer,
@@ -57,7 +58,7 @@ from commcare_connect.data_export.serializer import (
     WorkAreaGroupWriteSerializer,
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -75,7 +76,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program
-from commcare_connect.program.utils import orgs_ids_with_manage_access_to_opportunity
+from commcare_connect.program.utils import orgs_ids_with_admin_access_to_opportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
@@ -98,12 +99,12 @@ class BaseDataWriteView(APIView):
 
 
 def user_is_opportunity_admin(user, opportunity):
-    """Admin of any org that can manage this opportunity."""
+    """Admin of any org that has admin access to this opportunity."""
     if user.has_perm(ALL_ORG_ACCESS):
         return True
     return UserOrganizationMembership.objects.filter(
         user=user,
-        organization_id__in=orgs_ids_with_manage_access_to_opportunity(opportunity),
+        organization_id__in=orgs_ids_with_admin_access_to_opportunity(opportunity),
         role=UserOrganizationMembership.Role.ADMIN,
     ).exists()
 
@@ -114,7 +115,7 @@ def user_is_opportunity_pm(user, opportunity):
         return True
     return UserOrganizationMembership.objects.filter(
         user=user,
-        organization_id__in=orgs_ids_with_manage_access_to_opportunity(opportunity) - {opportunity.organization_id},
+        organization_id__in=orgs_ids_with_admin_access_to_opportunity(opportunity) - {opportunity.organization_id},
         role=UserOrganizationMembership.Role.ADMIN,
     ).exists()
 
@@ -717,6 +718,13 @@ class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
 
     def get_queryset(self, *args, **kwargs):
         return WorkArea.objects.filter(opportunity=self.opportunity).select_related("work_area_group")
+
+
+class ImplementationAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = ImplementationAreaDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return ImplementationArea.objects.filter(opportunity=self.opportunity)
 
 
 class LLOEntityDataView(BaseDataExportListViewV2):

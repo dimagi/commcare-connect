@@ -5,7 +5,6 @@ from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.utils import (
     AccessLevel,
-    is_opportunity_nm,
     is_opportunity_pm,
     opportunity_access_level_from_request,
     opportunity_by_id,
@@ -23,20 +22,20 @@ Role = UserOrganizationMembership.Role
 
 class TestAccessLevel:
     def test_levels_are_ordered(self):
-        assert AccessLevel.NONE < AccessLevel.VIEW < AccessLevel.STANDARD < AccessLevel.MANAGE
+        assert AccessLevel.NONE < AccessLevel.VIEW < AccessLevel.STANDARD < AccessLevel.ADMIN
 
     @pytest.mark.parametrize(
         "level_a,level_b,expected",
         [
-            (AccessLevel.MANAGE, AccessLevel.MANAGE, AccessLevel.MANAGE),
-            (AccessLevel.MANAGE, AccessLevel.STANDARD, AccessLevel.STANDARD),
-            (AccessLevel.MANAGE, AccessLevel.VIEW, AccessLevel.VIEW),
-            (AccessLevel.MANAGE, AccessLevel.NONE, AccessLevel.NONE),
-            (AccessLevel.STANDARD, AccessLevel.MANAGE, AccessLevel.STANDARD),
-            (AccessLevel.VIEW, AccessLevel.MANAGE, AccessLevel.VIEW),
+            (AccessLevel.ADMIN, AccessLevel.ADMIN, AccessLevel.ADMIN),
+            (AccessLevel.ADMIN, AccessLevel.STANDARD, AccessLevel.STANDARD),
+            (AccessLevel.ADMIN, AccessLevel.VIEW, AccessLevel.VIEW),
+            (AccessLevel.ADMIN, AccessLevel.NONE, AccessLevel.NONE),
+            (AccessLevel.STANDARD, AccessLevel.ADMIN, AccessLevel.STANDARD),
+            (AccessLevel.VIEW, AccessLevel.ADMIN, AccessLevel.VIEW),
             (AccessLevel.VIEW, AccessLevel.STANDARD, AccessLevel.VIEW),
             (AccessLevel.VIEW, AccessLevel.VIEW, AccessLevel.VIEW),
-            (AccessLevel.NONE, AccessLevel.MANAGE, AccessLevel.NONE),
+            (AccessLevel.NONE, AccessLevel.ADMIN, AccessLevel.NONE),
         ],
     )
     def test_effective_takes_the_weaker_level(self, level_a, level_b, expected):
@@ -46,7 +45,7 @@ class TestAccessLevel:
 class TestUserOrgAccess:
     @pytest.mark.parametrize(
         "role,expected",
-        [(Role.ADMIN, AccessLevel.MANAGE), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
+        [(Role.ADMIN, AccessLevel.ADMIN), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
         ids=["admin", "member", "viewer"],
     )
     def test_role_maps_to_level(self, role, expected, organization, user):
@@ -58,12 +57,12 @@ class TestUserOrgAccess:
 
 class TestOrgProgramAccess:
     def test_program_org_manages(self, program):
-        assert org_access_for_program(program.organization, program) is AccessLevel.MANAGE
+        assert org_access_for_program(program.organization, program) is AccessLevel.ADMIN
 
     def test_funder_manages(self, program, funder_org):
         program.funder = funder_org
         program.save()
-        assert org_access_for_program(funder_org, program) is AccessLevel.MANAGE
+        assert org_access_for_program(funder_org, program) is AccessLevel.ADMIN
 
     def test_watcher_only_views(self, program, watcher_org):
         program.watchers.add(watcher_org)
@@ -104,15 +103,15 @@ class TestProgramAccessLevelFromRequest:
     @pytest.mark.parametrize(
         "relationship,org_access",
         [
-            ("program_org", AccessLevel.MANAGE),
-            ("funder", AccessLevel.MANAGE),
+            ("program_org", AccessLevel.ADMIN),
+            ("funder", AccessLevel.ADMIN),
             ("watcher", AccessLevel.VIEW),
             ("unrelated", AccessLevel.NONE),
         ],
     )
     @pytest.mark.parametrize(
         "role,role_level",
-        [(Role.ADMIN, AccessLevel.MANAGE), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
+        [(Role.ADMIN, AccessLevel.ADMIN), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
         ids=["admin", "member", "viewer"],
     )
     def test_matrix(self, relationship, org_access, role, role_level, orgs, program, user):
@@ -131,7 +130,7 @@ class TestProgramAccessLevelFromRequest:
 
     def test_all_org_access_overrides_an_unrelated_org(self, program, organization, user):
         request = make_request(grant_all_org_access(user), org=organization)
-        assert program_access_level_from_request(request, program) is AccessLevel.MANAGE
+        assert program_access_level_from_request(request, program) is AccessLevel.ADMIN
 
     def test_no_program_has_no_access(self, program_manager_org, user):
         """Nothing to have a relationship with, so not even a PM org's admin gets in."""
@@ -148,7 +147,7 @@ class TestProgramAccessLevelFromRequest:
 class TestOrgAccessLevelFromRequest:
     @pytest.mark.parametrize(
         "role,expected",
-        [(Role.ADMIN, AccessLevel.MANAGE), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
+        [(Role.ADMIN, AccessLevel.ADMIN), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
         ids=["admin", "member", "viewer"],
     )
     def test_role_is_the_level(self, role, expected, organization, user):
@@ -160,7 +159,7 @@ class TestOrgAccessLevelFromRequest:
 
     def test_all_org_access_manages(self, organization, user):
         request = make_request(grant_all_org_access(user), org=organization)
-        assert org_access_level_from_request(request) is AccessLevel.MANAGE
+        assert org_access_level_from_request(request) is AccessLevel.ADMIN
 
     def test_no_org_has_no_access_even_with_all_org_access(self, user):
         """A slug that matches no org leaves nothing to act as, which ALL_ORG_ACCESS cannot supply."""
@@ -205,10 +204,10 @@ class TestOrgOpportunityAccess:
     @pytest.mark.parametrize(
         "relationship,expected",
         [
-            ("delivery", AccessLevel.MANAGE),
-            ("supervisor", AccessLevel.MANAGE),
-            ("program_org", AccessLevel.MANAGE),
-            ("funder", AccessLevel.MANAGE),
+            ("delivery", AccessLevel.ADMIN),
+            ("supervisor", AccessLevel.ADMIN),
+            ("program_org", AccessLevel.ADMIN),
+            ("funder", AccessLevel.ADMIN),
             ("watcher", AccessLevel.VIEW),
             ("unrelated", AccessLevel.NONE),
         ],
@@ -225,13 +224,13 @@ class TestOrgOpportunityAccess:
         opp = OpportunityFactory(
             program=program, organization=organization, supervising_organization=organization, managed=False
         )
-        assert org_opportunity_access(program.organization, opp) is AccessLevel.MANAGE
+        assert org_opportunity_access(program.organization, opp) is AccessLevel.ADMIN
 
 
 class TestOpportunityAccessLevelFromRequest:
     @pytest.mark.parametrize(
         "role,role_level",
-        [(Role.ADMIN, AccessLevel.MANAGE), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
+        [(Role.ADMIN, AccessLevel.ADMIN), (Role.MEMBER, AccessLevel.STANDARD), (Role.VIEWER, AccessLevel.VIEW)],
         ids=["admin", "member", "viewer"],
     )
     @pytest.mark.parametrize("relationship", ["delivery", "supervisor"])
@@ -250,7 +249,7 @@ class TestOpportunityAccessLevelFromRequest:
 
     def test_all_org_access_overrides_an_unrelated_org(self, managed_opp, user):
         request = make_request(grant_all_org_access(user), org=OrganizationFactory())
-        assert opportunity_access_level_from_request(request, managed_opp) is AccessLevel.MANAGE
+        assert opportunity_access_level_from_request(request, managed_opp) is AccessLevel.ADMIN
 
 
 class TestOpportunityParties:
@@ -260,33 +259,30 @@ class TestOpportunityParties:
     """
 
     @pytest.mark.parametrize(
-        "relationship,is_nm,is_pm",
+        "relationship,is_pm",
         [
-            ("delivery", True, False),
-            ("supervisor", False, True),
-            ("program_org", False, True),
-            ("funder", False, True),
-            ("watcher", False, False),
-            ("unrelated", False, False),
+            ("delivery", False),
+            ("supervisor", True),
+            ("program_org", True),
+            ("funder", True),
+            ("watcher", False),
+            ("unrelated", False),
         ],
     )
-    def test_manage_access_splits_on_which_org_delivers(self, relationship, is_nm, is_pm, opp_orgs, managed_opp, user):
+    def test_manage_access_splits_on_which_org_delivers(self, relationship, is_pm, opp_orgs, managed_opp, user):
         org = opp_orgs[relationship]
         request = make_request(user, org=org, membership=make_membership(org, user, Role.ADMIN))
-        assert is_opportunity_nm(request, managed_opp) is is_nm
         assert is_opportunity_pm(request, managed_opp) is is_pm
 
     @pytest.mark.parametrize("role", [Role.MEMBER, Role.VIEWER], ids=["member", "viewer"])
-    def test_neither_party_without_manage_access(self, role, managed_opp, organization, user):
-        """Being in the delivery org is not enough — the NM has to be able to manage it."""
+    def test_not_pm_without_manage_access(self, role, managed_opp, organization, user):
+        """Being in the delivery org is not enough — the NM has to be able to have admin access to it."""
         request = make_request(user, org=organization, membership=make_membership(organization, user, role))
-        assert not is_opportunity_nm(request, managed_opp)
         assert not is_opportunity_pm(request, managed_opp)
 
     def test_all_org_access_takes_the_side_of_the_org_it_acts_as(self, managed_opp, organization, user):
         """The parties are read off the acting org, so the same user is either side depending on the slug."""
         user = grant_all_org_access(user)
-        assert is_opportunity_nm(make_request(user, org=organization), managed_opp)
         assert is_opportunity_pm(make_request(user, org=OrganizationFactory()), managed_opp)
 
 
