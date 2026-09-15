@@ -19,6 +19,7 @@ from commcare_connect.opportunity.utils.invoice_export import (
     build_invoice_pdf_zip,
     build_invoice_summary_dataset,
     get_exportable_invoices,
+    invoice_pdf_filename,
     render_invoice_pdf,
 )
 from commcare_connect.utils.celery import export_content_type, get_export_storage
@@ -52,6 +53,32 @@ class TestPdfExport:
     def test_render_invoice_pdf(self, opportunity):
         invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, description="Fuel")
         assert render_invoice_pdf(invoice).startswith(b"%PDF")
+
+    @pytest.mark.parametrize(
+        "invoice_number, expected",
+        [
+            ("A1", "invoice_A1.pdf"),
+            # The number is user-supplied, so it must not be able to steer the archive entry.
+            ("../../etc/passwd", "invoice_....etcpasswd.pdf"),
+            ('a"b', "invoice_ab.pdf"),
+            ("INV-2026.01", "invoice_INV-2026.01.pdf"),
+            ("INV 42", "invoice_INV_42.pdf"),
+        ],
+    )
+    def test_filenames_cannot_escape_the_archive(self, opportunity, invoice_number, expected):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, invoice_number=invoice_number)
+        assert invoice_pdf_filename(invoice) == expected
+        with zipfile.ZipFile(io.BytesIO(build_invoice_pdf_zip([invoice]))) as archive:
+            assert archive.namelist() == [expected]
+
+    def test_number_with_nothing_left_after_sanitizing_falls_back_to_the_pk(self, opportunity):
+        """Django refuses to derive a name from an all-punctuation number, and one such invoice
+        must not take down the whole export."""
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, invoice_number="###")
+
+        assert invoice_pdf_filename(invoice) == f"invoice_{invoice.pk}.pdf"
+        with zipfile.ZipFile(io.BytesIO(build_invoice_pdf_zip([invoice]))) as archive:
+            assert archive.namelist() == [f"invoice_{invoice.pk}.pdf"]
 
     def test_zip_has_one_pdf_per_invoice_named_by_number(self, opportunity):
         invoices = [
@@ -136,13 +163,18 @@ def test_export_content_type(filename, expected):
 
 @pytest.mark.django_db
 def test_export_round_trips_through_storage(opportunity):
-    """Without django-storages installed the export must still save and read back."""
+    """Without django-storages installed the export must still save and read back.
+
+    The storages module is hidden so this exercises the fallback wherever it runs, rather than
+    reaching for S3 in an environment that has the production dependencies installed.
+    """
     invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, invoice_number="INV-1")
 
-    saved_name = generate_invoice_summary_export(opportunity.id, [invoice.id])
+    with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+        saved_name = generate_invoice_summary_export(opportunity.id, [invoice.id])
 
-    with get_export_storage().open(saved_name) as saved:
-        assert b"INV-1" in saved.read()
+        with get_export_storage().open(saved_name) as saved:
+            assert b"INV-1" in saved.read()
 
 
 class TestGetExportStorage:

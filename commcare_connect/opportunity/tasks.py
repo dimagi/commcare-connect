@@ -266,8 +266,11 @@ def generate_invoice_summary_export(opportunity_id: int, invoice_ids: list[int])
 
 
 def _invoices_for_export(opportunity, invoice_ids):
-    return PaymentInvoice.objects.filter(opportunity=opportunity, id__in=invoice_ids).order_by(
-        "date", "invoice_number"
+    # Rendering a PDF reads the opportunity, its rate and any payment, so pull them in one query.
+    return (
+        PaymentInvoice.objects.filter(opportunity=opportunity, id__in=invoice_ids)
+        .select_related("opportunity", "exchange_rate", "payment")
+        .order_by("date", "invoice_number")
     )
 
 

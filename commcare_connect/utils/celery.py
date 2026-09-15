@@ -117,7 +117,10 @@ def get_export_storage():
     """
     try:
         from commcare_connect.utils.storages import ExportS3Boto3Storage
-    except ImportError:
+    except ModuleNotFoundError:
+        # Only a missing package falls back. An ImportError from inside the module is a real
+        # breakage, and silently writing exports elsewhere would defeat the S3 lifecycle rule
+        # that cleans this prefix up.
         return default_storage
     return ExportS3Boto3Storage()
 

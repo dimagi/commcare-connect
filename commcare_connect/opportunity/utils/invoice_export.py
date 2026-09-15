@@ -3,7 +3,9 @@ import zipfile
 from collections.abc import Callable
 
 import weasyprint
+from django.core.exceptions import SuspiciousFileOperation
 from django.template.loader import render_to_string
+from django.utils.text import get_valid_filename
 from django.utils.translation import gettext_lazy
 from django_weasyprint.utils import DjangoURLFetcher
 from tablib import Dataset
@@ -28,7 +30,11 @@ PDF_BASE_URL = "file://"
 
 def get_exportable_invoices(opportunity, month_start=None):
     """Invoices Finance can be handed for an opportunity, optionally scoped to one month."""
-    queryset = PaymentInvoice.objects.filter(opportunity=opportunity).exclude(status__in=EXPORT_EXCLUDED_STATUSES)
+    queryset = (
+        PaymentInvoice.objects.filter(opportunity=opportunity)
+        .exclude(status__in=EXPORT_EXCLUDED_STATUSES)
+        .select_related("opportunity", "exchange_rate", "payment")
+    )
     if month_start:
         queryset = filter_invoices_by_month(queryset, month_start)
     return queryset.order_by("date", "invoice_number")
@@ -61,11 +67,27 @@ def get_invoice_pdf_context(invoice):
 
 
 def invoice_pdf_filename(invoice):
-    return f"invoice_{invoice.invoice_number}.pdf"
+    """A safe filename for one invoice's PDF.
+
+    The invoice number is user-supplied and only checked for reuse, so it can carry path
+    separators or quotes. Both uses of this name are places that would hurt: a zip entry, where
+    `../` escapes the extraction directory, and a Content-Disposition header, which a quote or a
+    newline would break.
+    """
+    try:
+        safe_number = get_valid_filename(invoice.invoice_number)
+    except SuspiciousFileOperation:
+        # Nothing survived sanitising (an all-punctuation number like "###"). Django raises rather
+        # than return an empty name, and one such invoice must not take down a whole-month export.
+        safe_number = str(invoice.pk)
+    return f"invoice_{safe_number}.pdf"
 
 
 def build_invoice_summary_dataset(invoices) -> Dataset:
-    """One row per invoice with the amounts Finance reconciles against."""
+    """One row per invoice with the amounts Finance reconciles against.
+
+    Callers pass invoices that already have `opportunity`, `exchange_rate` and `payment` selected.
+    """
     dataset = Dataset(
         headers=[
             "Invoice Number",
@@ -82,7 +104,7 @@ def build_invoice_summary_dataset(invoices) -> Dataset:
             "Payment Date",
         ]
     )
-    for invoice in invoices.select_related("opportunity", "exchange_rate", "payment"):
+    for invoice in invoices:
         dataset.append(_summary_row(invoice))
     return dataset
 
