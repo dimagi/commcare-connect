@@ -21,12 +21,14 @@ function resetFilterModalState(formId) {
 }
 window.resetFilterModalState = resetFilterModalState;
 
-// Pricing extras for the invoice list selection bar. Composed with the shared `selectableTable`
-// mixin, which owns the select-all behaviour: `{ ...selectableTable(), ...invoiceExportPricing() }`.
+// Totals for the invoice list selection bar.
 //
-// These are methods, not getters, and the template calls them with `()`. Spreading an object
-// evaluates its getters there and then, against an object that has no `selected` yet, which throws
-// and leaves Alpine unable to start the component at all.
+// The template combines this with the shared `selectableTable` mixin, which handles select-all:
+//   x-data="{ ...selectableTable(), ...invoiceExportPricing() }"
+//
+// Define methods here, never getters. Spreading an object runs its getters immediately, before
+// `selected` exists, which throws and stops Alpine from starting the component. The template
+// calls these with `()`.
 function invoiceExportPricing() {
   return {
     clearSelection() {
@@ -34,9 +36,8 @@ function invoiceExportPricing() {
       this.selectAll = false;
     },
 
-    // Invoices carry no USD amount until an exchange rate has been applied, so the total covers
-    // only the priced ones and the bar reports the rest separately. One pass over the rendered
-    // checkboxes, rather than a DOM query per selected id.
+    // Adds up the selected rows. An invoice has no USD amount until an exchange rate has been
+    // applied to it, so those are counted separately rather than added in as zero.
     selectionTotals() {
       const selected = new Set(this.selected.map(String));
       return Array.from(
@@ -50,10 +51,9 @@ function invoiceExportPricing() {
           } else {
             totals.unpriced += 1;
           }
-          totals.rows += 1;
           return totals;
         },
-        { usd: 0, unpriced: 0, rows: 0 },
+        { usd: 0, unpriced: 0 },
       );
     },
 
@@ -68,7 +68,7 @@ function invoiceExportPricing() {
       return this.selectionTotals().unpriced;
     },
 
-    // How many rows the user can actually select here, which is one page of the table.
+    // Rows the user can select, which is however many this page of the table shows.
     selectableRowCount() {
       return document.querySelectorAll('input[name="row_select"]').length;
     },
