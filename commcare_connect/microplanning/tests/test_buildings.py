@@ -30,17 +30,12 @@ def test_config_points_at_the_configured_release(release, pinned):
     assert config["displayMinZoom"] >= config["archiveMaxZoom"]
 
 
-def test_config_credits_openstreetmap_and_overture():
-    """Overture's buildings are largely OSM derived, so both are required in the attribution."""
-    attribution = buildings_overlay_config()["attribution"]
+def test_the_pinned_release_is_usable_and_credited():
+    config = buildings_overlay_config()
 
-    assert "OpenStreetMap" in attribution
-    assert "Overture Maps Foundation" in attribution
-
-
-def test_the_pinned_release_is_usable():
-    """The pin ships in code, so a blank one would silently disable the overlay for everyone."""
-    assert buildings_overlay_config() is not None
+    assert config is not None
+    assert "OpenStreetMap" in config["attribution"]
+    assert "Overture Maps Foundation" in config["attribution"]
 
 
 @pytest.mark.parametrize("pinned", [None, "", "   "])
