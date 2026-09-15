@@ -1981,22 +1981,30 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
     invoice = get_object_or_404(
-        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        PaymentInvoice.objects.select_related("opportunity", "exchange_rate", "payment"),
         opportunity=request.opportunity,
         payment_invoice_id=invoice_id,
     )
-    context = {
-        "invoice": invoice,
-        "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
-    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context=context,
+        context=get_invoice_pdf_context(invoice),
         content_type="application/pdf",
-        filename=f"invoice_{invoice_id}.pdf",
+        filename=invoice_pdf_filename(invoice),
     )
+
+
+def get_invoice_pdf_context(invoice):
+    return {
+        "invoice": invoice,
+        "opportunity": invoice.opportunity,
+        "service_summary_lines": get_invoice_service_summary(invoice),
+        "dimagi_address": DIMAGI_ADDRESS,
+    }
+
+
+def invoice_pdf_filename(invoice):
+    return f"invoice_{invoice.invoice_number}.pdf"
 
 
 @org_member_required
