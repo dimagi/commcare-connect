@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -2040,7 +2041,9 @@ def get_invoice_pdf_context(invoice):
 
 
 def invoice_pdf_filename(invoice):
-    return f"invoice_{invoice.invoice_number}.pdf"
+    # invoice_number is free text on the form, and it is quoted into the Content-Disposition header.
+    safe_number = re.sub(r"[^A-Za-z0-9._-]", "_", invoice.invoice_number)
+    return f"invoice_{safe_number}.pdf"
 
 
 @opp_standard_access_required
