@@ -9,6 +9,7 @@ from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_pdf_zip_export, generate_invoice_summary_export
 from commcare_connect.opportunity.tests.factories import OpportunityFactory, PaymentInvoiceFactory
 from commcare_connect.program.tests.factories import ProgramFactory
+from config.celery_app import app as celery_app
 
 JUNE = date(2026, 6, 1)
 
@@ -135,3 +136,35 @@ class TestExportInvoicesView:
     def test_get_is_not_allowed(self, client, opportunity, org_user_member):
         client.force_login(org_user_member)
         assert client.get(self._url(opportunity)).status_code == 405
+
+
+@pytest.fixture
+def eager_celery():
+    """Run tasks in-process and keep their results where a poll by task id can find them."""
+    previous = (celery_app.conf.task_always_eager, celery_app.conf.result_backend)
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.result_backend = "cache+memory://"
+    generate_invoice_summary_export.store_eager_result = True
+    yield
+    celery_app.conf.task_always_eager, celery_app.conf.result_backend = previous
+    generate_invoice_summary_export.store_eager_result = False
+
+
+@pytest.mark.django_db
+def test_export_status_reports_the_finished_task(client, opportunity, org_user_member, eager_celery):
+    """The toast polls by task id, so a finished export has to report complete and offer a file."""
+    june_invoice(opportunity)
+    client.force_login(org_user_member)
+    org_slug = opportunity.organization.slug
+
+    started = client.post(
+        reverse("opportunity:export_invoices", args=(org_slug, opportunity.opportunity_id)),
+        {"export_type": InvoiceExportForm.CSV_SUMMARY, "month": "2026-06"},
+    )
+    task_id = started.url.split("export_task_id=")[1].split("&")[0]
+
+    status = client.get(reverse("opportunity:export_status", args=(org_slug, task_id)))
+
+    body = status.content.decode()
+    assert "Download Export" in body
+    assert reverse("opportunity:download_export", args=(org_slug, task_id)) in body
