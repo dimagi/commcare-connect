@@ -21,63 +21,53 @@ function resetFilterModalState(formId) {
 }
 window.resetFilterModalState = resetFilterModalState;
 
-// Selection state for the invoice list: which invoices a bulk export covers and what they add
-// up to. The USD amount of each row is carried on its checkbox as a data attribute.
-function invoiceExportSelection() {
-  const checkboxes = () =>
-    Array.from(document.querySelectorAll('input[name="row_select"]'));
-
+// Pricing extras for the invoice list selection bar. Composed with the shared `selectableTable`
+// mixin, which owns the select-all behaviour: `{ ...selectableTable(), ...invoiceExportPricing() }`.
+function invoiceExportPricing() {
   return {
-    selected: [],
-    selectAll: false,
-
-    toggleSelectAll() {
-      this.selectAll = !this.selectAll;
-      this.selected = this.selectAll
-        ? checkboxes().map((box) => box.value)
-        : [];
-    },
-
-    updateSelectAll() {
-      const total = checkboxes().length;
-      this.selectAll = total > 0 && this.selected.length === total;
-    },
-
     clearSelection() {
       this.selected = [];
       this.selectAll = false;
     },
 
-    // Invoices carry no USD amount until an exchange rate has been applied to them, so the
-    // total covers only the priced ones and the bar reports the rest separately.
-    get pricedSelection() {
-      return this.selected.reduce(
-        (totals, id) => {
-          const box = document.querySelector(
-            `input[name="row_select"][value="${id}"]`,
-          );
-          const amount = box?.dataset.amountUsd;
+    // Invoices carry no USD amount until an exchange rate has been applied, so the total covers
+    // only the priced ones and the bar reports the rest separately. One pass over the rendered
+    // checkboxes, rather than a DOM query per selected id.
+    get selectionTotals() {
+      const selected = new Set(this.selected.map(String));
+      return Array.from(
+        document.querySelectorAll('input[name="row_select"]'),
+      ).reduce(
+        (totals, box) => {
+          if (!selected.has(String(box.value))) return totals;
+          const amount = box.dataset.amountUsd;
           if (amount) {
             totals.usd += parseFloat(amount);
           } else {
             totals.unpriced += 1;
           }
+          totals.rows += 1;
           return totals;
         },
-        { usd: 0, unpriced: 0 },
+        { usd: 0, unpriced: 0, rows: 0 },
       );
     },
 
     get selectedTotalUsd() {
-      return this.pricedSelection.usd.toLocaleString(undefined, {
+      return this.selectionTotals.usd.toLocaleString(undefined, {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
     },
 
     get selectedUnpricedCount() {
-      return this.pricedSelection.unpriced;
+      return this.selectionTotals.unpriced;
+    },
+
+    // How many rows the user can actually select here, which is one page of the table.
+    get selectableRowCount() {
+      return document.querySelectorAll('input[name="row_select"]').length;
     },
   };
 }
-window.invoiceExportSelection = invoiceExportSelection;
+window.invoiceExportPricing = invoiceExportPricing;

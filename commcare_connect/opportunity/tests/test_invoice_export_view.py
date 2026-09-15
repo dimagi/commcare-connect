@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from unittest import mock
 
@@ -96,6 +97,27 @@ class TestExportInvoicesView:
         assert "export_task_id=task-1" in response.url
         assert "month=2026-06" in response.url
 
+    def test_default_page_load_exports_only_the_month_on_screen(self, client, opportunity, org_user_member):
+        """The list defaults to the newest month, so the export started from it must match."""
+        june_invoice(opportunity, invoice_number="MAY", start_date=date(2026, 5, 1), end_date=date(2026, 5, 31))
+        july = june_invoice(
+            opportunity,
+            invoice_number="JULY",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+            date=date(2026, 8, 1),
+        )
+        client.force_login(org_user_member)
+        listing = client.get(
+            reverse("opportunity:invoice_list", args=(opportunity.organization.slug, opportunity.opportunity_id))
+        )
+        posted_month = re.search(r'name="month" value="([^"]*)"', listing.content.decode()).group(1)
+
+        with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+            self._post(client, org_user_member, opportunity, export_type=InvoiceExportForm.PDF_ZIP, month=posted_month)
+
+        delay.assert_called_once_with(opportunity.pk, [july.pk])
+
     def test_selected_invoices_are_passed_through(self, client, opportunity, org_user_member):
         chosen = june_invoice(opportunity, invoice_number="A")
         june_invoice(opportunity, invoice_number="B")
@@ -138,16 +160,27 @@ class TestExportInvoicesView:
         assert client.get(self._url(opportunity)).status_code == 405
 
 
+def _drop_cached_backend():
+    """Celery caches the instantiated backend, so a conf change alone would not switch it."""
+    try:
+        del celery_app._local.backend
+    except AttributeError:
+        pass
+
+
 @pytest.fixture
 def eager_celery():
     """Run tasks in-process and keep their results where a poll by task id can find them."""
-    previous = (celery_app.conf.task_always_eager, celery_app.conf.result_backend)
+    previous_conf = (celery_app.conf.task_always_eager, celery_app.conf.result_backend)
+    previous_store = generate_invoice_summary_export.store_eager_result
     celery_app.conf.task_always_eager = True
     celery_app.conf.result_backend = "cache+memory://"
     generate_invoice_summary_export.store_eager_result = True
+    _drop_cached_backend()
     yield
-    celery_app.conf.task_always_eager, celery_app.conf.result_backend = previous
-    generate_invoice_summary_export.store_eager_result = False
+    celery_app.conf.task_always_eager, celery_app.conf.result_backend = previous_conf
+    generate_invoice_summary_export.store_eager_result = previous_store
+    _drop_cached_backend()
 
 
 @pytest.mark.django_db

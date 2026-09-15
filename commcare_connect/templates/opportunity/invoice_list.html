@@ -24,15 +24,15 @@
           <p class="px-2 py-1 text-xs font-medium tracking-wide text-gray-400 uppercase">
             {% if selected_month %}
               {% blocktranslate count count=exportable_count with month=selected_month|date:"F Y" %}
-                All {{ count }} invoice · {{ month }}
+                All {{ count }} exportable invoice · {{ month }}
               {% plural %}
-                All {{ count }} invoices · {{ month }}
+                All {{ count }} exportable invoices · {{ month }}
               {% endblocktranslate %}
             {% else %}
               {% blocktranslate count count=exportable_count %}
-                All {{ count }} invoice
+                All {{ count }} exportable invoice
               {% plural %}
-                All {{ count }} invoices
+                All {{ count }} exportable invoices
               {% endblocktranslate %}
             {% endif %}
           </p>
@@ -146,14 +146,14 @@
   {% endif %}
 {% endblock report_cards %}
 {% block table_content %}
-  <div x-data="invoiceExportSelection()">
+  <div x-data="{ ...selectableTable(), ...invoiceExportPricing() }">
     <div x-show="selected.length"
          x-cloak
          class="flex flex-wrap items-center justify-between gap-4 px-4 py-3 mb-2 rounded-lg bg-indigo-50">
       <div class="flex items-center gap-3 text-sm">
         <span class="font-medium text-brand-deep-purple">
           <span x-text="selected.length"></span>
-          {% blocktranslate with total=invoice_count %}of {{ total }} selected{% endblocktranslate %}
+          {% translate "of" %} <span x-text="selectableRowCount"></span> {% translate "selected" %}
           <template x-if="selectedUnpricedCount < selected.length">
             <span>· <span x-text="selectedTotalUsd"></span> {% translate "USD due" %}</span>
           </template>
@@ -168,6 +168,7 @@
       </div>
       <form method="post" action="{{ export_url }}" class="flex flex-wrap gap-2">
         {% csrf_token %}
+        <input type="hidden" name="month" value="{{ month_param }}">
         <template x-for="id in selected" :key="id">
           <input type="hidden" name="invoice_ids" :value="id">
         </template>
@@ -191,6 +192,7 @@
       {% translate "Exports cover the selected invoices, or the whole month when nothing is selected. Filenames use the invoice number so they stay identifiable once attached to a ticket." %}
     </p>
   </div>
+  {% include "components/tables/selectable_table.html" %}
   {% if export_task_id %}
     <div x-data="{ show: true }"
          x-show="show"

@@ -613,7 +613,7 @@ def review_visit_export(request, org_slug, opp_id):
     form = VisitExportForm(data=request.POST, opportunity=request.opportunity, org_slug=org_slug, review_export=True)
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     if not form.is_valid():
-        messages.error(request, form.errors)
+        messages.error(request, _("That export request was not valid. Please try again."))
         return redirect(redirect_url)
 
     export_format = form.cleaned_data["format"]
@@ -1835,7 +1835,9 @@ def invoice_list(request, org_slug, opp_id):
             "selected_month": selected_month,
             "invoice_count": queryset.count(),
             "export_task_id": request.GET.get("export_task_id"),
-            "month_param": request.GET.get("month", ""),
+            # The month the page is actually showing, not the raw query value: an export
+            # started from here must cover exactly what the user is looking at.
+            "month_param": selected_month.strftime("%Y-%m") if selected_month else "all",
             "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
             "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
             "new_invoice_url": reverse(
@@ -2056,7 +2058,7 @@ def export_invoices(request, org_slug, opp_id):
     redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
 
     if not form.is_valid():
-        messages.error(request, form.errors)
+        messages.error(request, _("That export request was not valid. Please try again."))
         return redirect(redirect_url)
 
     invoices = form.get_invoices()
