@@ -187,7 +187,12 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice import (
+    InvoiceWorkflow,
+    filter_invoices_by_month,
+    get_invoice_month_options,
+    resolve_invoice_month,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
@@ -1775,12 +1780,16 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = (
-        PaymentInvoice.objects.filter(**filter_kwargs)
-        .select_related("exchange_rate")
-        .annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
-        .order_by("date")
+    all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
+    month_options = get_invoice_month_options(all_invoices)
+    selected_month = resolve_invoice_month(request.GET.get("month"), month_options, highlight_invoice_number)
+
+    queryset = all_invoices.select_related("exchange_rate").annotate(
+        last_status_modified_at=Max("status_events__pgh_created_at")
     )
+    if selected_month:
+        queryset = filter_invoices_by_month(queryset, selected_month)
+    queryset = queryset.order_by("date")
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1809,6 +1818,9 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
+            "month_options": month_options,
+            "selected_month": selected_month,
+            "invoice_count": queryset.count(),
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),

@@ -32,3 +32,36 @@
     </div>
   {% endif %}
 {% endblock top_buttons %}
+{% block report_cards %}
+  {% if month_options %}
+    {% url 'opportunity:invoice_list' org_slug=request.org.slug opp_id=opportunity.opportunity_id as list_url %}
+    <div class="flex flex-wrap items-center justify-between gap-4 w-full px-4 py-3 rounded-lg shadow-sm bg-slate-50">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm text-gray-500">{% translate "Month" %}</span>
+        <div class="chip-group">
+          <a href="{{ list_url }}?month=all"
+             class="chip chip-md {% if not selected_month %}chip-active{% endif %}">{% translate "All" %}</a>
+          {% for month in month_options %}
+            <a href="{{ list_url }}?month={{ month|date:'Y-m' }}"
+               class="chip chip-md {% if month == selected_month %}chip-active{% endif %}">{{ month|date:"F Y" }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <span class="text-sm text-gray-500">
+        {% if selected_month %}
+          {% blocktranslate count count=invoice_count with month=selected_month|date:"F Y" %}
+            {{ count }} invoice in {{ month }}
+          {% plural %}
+            {{ count }} invoices in {{ month }}
+          {% endblocktranslate %}
+        {% else %}
+          {% blocktranslate count count=invoice_count %}
+            {{ count }} invoice
+          {% plural %}
+            {{ count }} invoices
+          {% endblocktranslate %}
+        {% endif %}
+      </span>
+    </div>
+  {% endif %}
+{% endblock report_cards %}
