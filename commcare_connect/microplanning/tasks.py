@@ -574,7 +574,10 @@ def fetch_latest_overture_release():
     release = catalog.get("latest")
 
     if not isinstance(release, str) or not OVERTURE_RELEASE_RE.fullmatch(release):
-        logger.error("Overture's catalog named %r as its latest release, which is not one", release)
+        logger.error(
+            "Overture's catalog reported %r as its latest release, but it does not match the expected release format",
+            release,
+        )
         return None
 
     return release

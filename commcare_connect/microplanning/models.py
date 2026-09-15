@@ -197,7 +197,7 @@ class WorkAreaInaccessibilityRequest(geo_models.Model):
 
 class OvertureRelease(BaseModel):
     """
-    The Overture Maps release building footprints are drawn from.
+    The Overture Maps release that building footprints are drawn from.
 
     Overture publishes a new release roughly monthly and drops everything older than 60 days, so
     this is kept current by ``microplanning.tasks.update_overture_release``, which runs daily.
