@@ -1635,7 +1635,7 @@ class TestSupervisingOrganizationOnEdit(SupervisingOrganizationFormTestBase):
         """Both organizations are accepted applicants and nothing else.
 
         The delivering organization, the program's own organization and the funder all hold
-        MANAGE regardless of who supervises, so only an applicant's access isolates the
+        ADMIN regardless of who supervises, so only an applicant's access isolates the
         effect of the supervisor role itself.
         """
         previous, incoming = OrganizationFactory(), OrganizationFactory()
@@ -1653,7 +1653,7 @@ class TestSupervisingOrganizationOnEdit(SupervisingOrganizationFormTestBase):
         updated.refresh_from_db()
 
         assert updated.supervising_organization == incoming
-        assert org_opportunity_access(incoming, updated) is AccessLevel.MANAGE
+        assert org_opportunity_access(incoming, updated) is AccessLevel.ADMIN
         assert org_opportunity_access(previous, updated) is AccessLevel.NONE
 
     def test_remains_editable_after_workers_have_joined(self, opportunity):

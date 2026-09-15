@@ -28,7 +28,7 @@ adds create audit tables rather than columns on existing ones.
 `Program.funder` and `Program.watchers` exist on the model (migration
 `0016_program_funder_program_watchers`). In `commcare_connect/program/utils.py`:
 
-- the funder gets `AccessLevel.MANAGE` on the program, the same level as the owning
+- the funder gets `AccessLevel.ADMIN` on the program, the same level as the owning
   organization;
 - watchers get `AccessLevel.VIEW`.
 
@@ -38,7 +38,7 @@ picked as one, could not be set there at all: `OrganizationAdmin` listed and fil
 but its form omitted the field. That form is widened here as well, so marking an
 organization as a funder no longer needs a shell.
 
-Because the funder is granted MANAGE, and because it is selectable only at creation,
+Because the funder is granted ADMIN, and because it is selectable only at creation,
 setting it is effectively a permanent grant of full management rights over the program.
 That is the intended behaviour, but it is the reason the field stays visible after
 creation rather than disappearing.
@@ -178,7 +178,7 @@ def eligible_watchers(program_organization, funder):
   organization.
 - **Watcher options**: all organizations, excluding the program's own organization and
   the program's funder. Both already outrank watcher status — `org_program_access` returns
-  MANAGE for them before the watcher check runs — so offering them would allow a
+  ADMIN for them before the watcher check runs — so offering them would allow a
   selection that has no effect.
 
 ### Form fields
@@ -277,14 +277,14 @@ through the "Network Manager Workspace" field on the same form — and
 
 | Field                      | Role              | Access path                                          |
 | -------------------------- | ----------------- | ---------------------------------------------------- |
-| `organization`             | delivers the work | `org_opportunity_access`, MANAGE on its own opportunity |
-| `supervising_organization` | oversees the work | `org_opportunity_access`, MANAGE on that opportunity |
+| `organization`             | delivers the work | `org_opportunity_access`, ADMIN on its own opportunity |
+| `supervising_organization` | oversees the work | `org_opportunity_access`, ADMIN on that opportunity |
 
-`org_opportunity_access` grants MANAGE to either organization independently:
+`org_opportunity_access` grants ADMIN to either organization independently:
 
 ```python
 if org.id in (opportunity.organization_id, opportunity.supervising_organization_id):
-    return AccessLevel.MANAGE
+    return AccessLevel.ADMIN
 ```
 
 So assigning a supervisor grants oversight to a second organization and takes nothing away
@@ -551,9 +551,9 @@ Cases with the switch **on**:
 15. On edit, the field's `initial` is the opportunity's current supervising
     organization, and it is not disabled even when `OpportunityAccess` rows exist.
 16. On edit, changing the supervisor persists the new organization, and
-    `org_opportunity_access` then returns MANAGE for it and NONE for the previous one. Both
+    `org_opportunity_access` then returns ADMIN for it and NONE for the previous one. Both
     are accepted applicants and nothing else: the delivering organization, the program's own
-    organization and the funder hold MANAGE regardless of who supervises, so only an
+    organization and the funder hold ADMIN regardless of who supervises, so only an
     applicant isolates the effect of the supervisor role.
 17. On edit, when the stored supervisor has lost its accepted application, submitting
     that same value fails validation on `supervising_organization`; submitting an
