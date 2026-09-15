@@ -64,7 +64,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
-from commcare_connect.utils.celery import set_task_progress
+from commcare_connect.utils.celery import get_export_storage, set_task_progress
 from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
@@ -279,9 +279,7 @@ def save_export(dataset: Dataset, file_name: str, export_format: str):
 
 
 def save_export_file(file_name: str, content: bytes):
-    from commcare_connect.utils.storages import ExportS3Boto3Storage
-
-    return ExportS3Boto3Storage().save(file_name, ContentFile(content))
+    return get_export_storage().save(file_name, ContentFile(content))
 
 
 @celery_app.task()

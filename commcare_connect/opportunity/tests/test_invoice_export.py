@@ -5,8 +5,10 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
+from django.core.files.storage import default_storage
 
 from commcare_connect.opportunity.models import InvoiceStatus
+from commcare_connect.opportunity.tasks import generate_invoice_summary_export
 from commcare_connect.opportunity.tests.factories import (
     ExchangeRateFactory,
     PaymentFactory,
@@ -19,7 +21,7 @@ from commcare_connect.opportunity.utils.invoice_export import (
     get_exportable_invoices,
     render_invoice_pdf,
 )
-from commcare_connect.utils.celery import export_content_type
+from commcare_connect.utils.celery import export_content_type, get_export_storage
 
 
 @pytest.mark.django_db
@@ -130,3 +132,28 @@ class TestSummaryDataset:
 )
 def test_export_content_type(filename, expected):
     assert export_content_type(filename) == expected
+
+
+@pytest.mark.django_db
+def test_export_round_trips_through_storage(opportunity):
+    """Without django-storages installed the export must still save and read back."""
+    invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, invoice_number="INV-1")
+
+    saved_name = generate_invoice_summary_export(opportunity.id, [invoice.id])
+
+    with get_export_storage().open(saved_name) as saved:
+        assert b"INV-1" in saved.read()
+
+
+class TestGetExportStorage:
+    def test_uses_the_s3_backend_when_available(self):
+        storage = mock.MagicMock()
+        with mock.patch.dict(
+            "sys.modules", {"commcare_connect.utils.storages": mock.MagicMock(ExportS3Boto3Storage=storage)}
+        ):
+            assert get_export_storage() is storage.return_value
+
+    def test_falls_back_to_default_storage_without_django_storages(self):
+        """django-storages is a production-only dependency, so exports still work locally."""
+        with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+            assert get_export_storage() is default_storage
