@@ -178,20 +178,16 @@ def supervisor_org(db) -> Organization:
 
 
 @pytest.fixture
-def managed_opp(program, organization, supervisor_org):
-    return OpportunityFactory(
-        program=program, organization=organization, supervising_organization=supervisor_org, managed=True
-    )
-
-
-@pytest.fixture
-def opp_orgs(program, organization, supervisor_org, funder_org, watcher_org):
-    """Every org with a distinct relationship to `managed_opp`."""
+def opp_orgs(managed_opportunity, supervisor_org, funder_org, watcher_org):
+    """Every org with a distinct relationship to `managed_opportunity`."""
+    program = managed_opportunity.program
     program.funder = funder_org
     program.save()
     program.watchers.add(watcher_org)
+    managed_opportunity.supervising_organization = supervisor_org
+    managed_opportunity.save()
     return {
-        "delivery": organization,
+        "delivery": managed_opportunity.organization,
         "supervisor": supervisor_org,
         "program_org": program.organization,
         "funder": funder_org,

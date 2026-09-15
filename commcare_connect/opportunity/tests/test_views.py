@@ -795,10 +795,12 @@ RELATIONSHIPS_ON_THE_LIST = [
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("relationship,listed", RELATIONSHIPS_ON_THE_LIST)
-def test_opportunity_list_data_covers_every_accessible_relationship(relationship, listed, opp_orgs, managed_opp):
+def test_opportunity_list_data_covers_every_accessible_relationship(
+    relationship, listed, opp_orgs, managed_opportunity
+):
     queryset = OpportunityData(opp_orgs[relationship], False, {}).get_data()
 
-    assert [opp.id for opp in queryset] == ([managed_opp.id] if listed else [])
+    assert [opp.id for opp in queryset] == ([managed_opportunity.id] if listed else [])
 
 
 @pytest.mark.django_db
@@ -806,7 +808,7 @@ def test_opportunity_list_data_covers_every_accessible_relationship(relationship
     "relationship,manages",
     [("delivery", False), ("supervisor", False), ("program_org", True), ("funder", True), ("watcher", True)],
 )
-def test_opportunity_list_table_follows_the_relationship(relationship, manages, opp_orgs, managed_opp, rf):
+def test_opportunity_list_table_follows_the_relationship(relationship, manages, opp_orgs, rf):
     view = OpportunityList()
     view.request = rf.get("/")
     view.request.org = opp_orgs[relationship]
