@@ -2,10 +2,13 @@ import io
 import zipfile
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from unittest import mock
+from urllib.parse import urlparse
 
 import pytest
 from django.core.files.storage import default_storage
+from django_weasyprint.utils import DjangoURLFetcher
 
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_summary_export
@@ -53,6 +56,32 @@ class TestPdfExport:
     def test_render_invoice_pdf(self, opportunity):
         invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, description="Fuel")
         assert render_invoice_pdf(invoice).startswith(b"%PDF")
+
+    def test_render_loads_static_assets_from_disk(self, opportunity):
+        """Rendering runs outside a request, so the `file://` base URL is what lets the URL fetcher
+        resolve `{% static %}` assets. A base URL the fetcher does not recognise would either drop
+        the assets or send WeasyPrint back over HTTP to fetch them."""
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False)
+        resolved = {}
+        failed = []
+        original_fetch = DjangoURLFetcher.fetch
+
+        def spy(fetcher, url, headers=None):
+            try:
+                response = original_fetch(fetcher, url, headers)
+            except Exception:  # WeasyPrint logs and carries on, so record it before it disappears.
+                failed.append(url)
+                raise
+            resolved[url] = response.url
+            return response
+
+        with mock.patch.object(DjangoURLFetcher, "fetch", spy):
+            render_invoice_pdf(invoice)
+
+        assert not failed
+        assert resolved, "the template no longer references any assets, so this guards nothing"
+        for url, path in resolved.items():
+            assert Path(urlparse(path).path).is_file(), f"{url} resolved to {path}, which is not on disk"
 
     @pytest.mark.parametrize(
         "invoice_number, expected",
