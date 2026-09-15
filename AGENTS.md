@@ -28,7 +28,7 @@ celery -A config.celery_app worker -B -l info
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
-# Linting (ruff, ruff-format, pyupgrade, django-upgrade, prettier, djlint, eslint)
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
 
 # Requirements (uv)
@@ -98,7 +98,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
 - **JS/CSS**: prettier (tab-width 2, single-quote)
 - **Templates**: djlint owns them, not prettier — `djlint-reformat-django` will rewrite your formatting on commit. `templates/prelogin/home.html` is excluded from both djlint hooks
-- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus), django-upgrade (--target-version 4.1), djlint (templates) and eslint (`commcare_connect/static/**/*.js`)
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus django-upgrade (--target-version 5.2), djlint (templates) and eslint (`commcare_connect/static/**/*.js`); ruff's UP rules cover what pyupgrade used to
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
