@@ -48,17 +48,35 @@ function invoiceExportSelection() {
       this.selectAll = false;
     },
 
+    // Invoices carry no USD amount until an exchange rate has been applied to them, so the
+    // total covers only the priced ones and the bar reports the rest separately.
+    get pricedSelection() {
+      return this.selected.reduce(
+        (totals, id) => {
+          const box = document.querySelector(
+            `input[name="row_select"][value="${id}"]`,
+          );
+          const amount = box?.dataset.amountUsd;
+          if (amount) {
+            totals.usd += parseFloat(amount);
+          } else {
+            totals.unpriced += 1;
+          }
+          return totals;
+        },
+        { usd: 0, unpriced: 0 },
+      );
+    },
+
     get selectedTotalUsd() {
-      const total = this.selected.reduce((sum, id) => {
-        const box = document.querySelector(
-          `input[name="row_select"][value="${id}"]`,
-        );
-        return sum + parseFloat(box?.dataset.amountUsd || 0);
-      }, 0);
-      return total.toLocaleString(undefined, {
+      return this.pricedSelection.usd.toLocaleString(undefined, {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
+    },
+
+    get selectedUnpricedCount() {
+      return this.pricedSelection.unpriced;
     },
   };
 }

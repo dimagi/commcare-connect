@@ -154,8 +154,14 @@
         <span class="font-medium text-brand-deep-purple">
           <span x-text="selected.length"></span>
           {% blocktranslate with total=invoice_count %}of {{ total }} selected{% endblocktranslate %}
-          · <span x-text="selectedTotalUsd"></span> {% translate "USD due" %}
+          <template x-if="selectedUnpricedCount < selected.length">
+            <span>· <span x-text="selectedTotalUsd"></span> {% translate "USD due" %}</span>
+          </template>
         </span>
+        <span x-show="selectedUnpricedCount"
+              x-cloak
+              class="text-gray-500"
+              x-text="selectedUnpricedCount === 1 ? '{% translate "1 invoice has no USD amount" %}' : selectedUnpricedCount + ' {% translate "invoices have no USD amount" %}'"></span>
         <button type="button"
                 @click="clearSelection()"
                 class="text-gray-500 underline">{% translate "Clear" %}</button>

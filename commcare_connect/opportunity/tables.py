@@ -435,8 +435,10 @@ class PaymentInvoiceTable(OpportunityContextTable):
                 "type": "checkbox",
                 "class": "checkbox",
                 "value": lambda record: record.pk,
-                # Read by the selection bar to total up what the export will cover.
-                "data-amount-usd": lambda record: record.amount_usd or 0,
+                # Read by the selection bar to total up what the export will cover. Empty rather
+                # than zero when an invoice has no USD amount, so the bar can say so instead of
+                # quietly understating the total.
+                "data-amount-usd": lambda record: "" if record.amount_usd is None else record.amount_usd,
             },
         },
     )
