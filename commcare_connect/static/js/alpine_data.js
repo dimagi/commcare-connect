@@ -20,3 +20,46 @@ function resetFilterModalState(formId) {
   };
 }
 window.resetFilterModalState = resetFilterModalState;
+
+// Selection state for the invoice list: which invoices a bulk export covers and what they add
+// up to. The USD amount of each row is carried on its checkbox as a data attribute.
+function invoiceExportSelection() {
+  const checkboxes = () =>
+    Array.from(document.querySelectorAll('input[name="row_select"]'));
+
+  return {
+    selected: [],
+    selectAll: false,
+
+    toggleSelectAll() {
+      this.selectAll = !this.selectAll;
+      this.selected = this.selectAll
+        ? checkboxes().map((box) => box.value)
+        : [];
+    },
+
+    updateSelectAll() {
+      const total = checkboxes().length;
+      this.selectAll = total > 0 && this.selected.length === total;
+    },
+
+    clearSelection() {
+      this.selected = [];
+      this.selectAll = false;
+    },
+
+    get selectedTotalUsd() {
+      const total = this.selected.reduce((sum, id) => {
+        const box = document.querySelector(
+          `input[name="row_select"][value="${id}"]`,
+        );
+        return sum + parseFloat(box?.dataset.amountUsd || 0);
+      }, 0);
+      return total.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    },
+  };
+}
+window.invoiceExportSelection = invoiceExportSelection;

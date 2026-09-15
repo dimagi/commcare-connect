@@ -417,6 +417,29 @@ class PaymentReportTable(tables.Table):
 
 
 class PaymentInvoiceTable(OpportunityContextTable):
+    select = tables.CheckBoxColumn(
+        accessor="pk",
+        orderable=False,
+        attrs={
+            "th__input": {
+                "@click": "toggleSelectAll()",
+                "x-model": "selectAll",
+                "name": "select_all",
+                "type": "checkbox",
+                "class": "checkbox",
+            },
+            "td__input": {
+                "x-model": "selected",
+                "@change": "updateSelectAll()",
+                "name": "row_select",
+                "type": "checkbox",
+                "class": "checkbox",
+                "value": lambda record: record.pk,
+                # Read by the selection bar to total up what the export will cover.
+                "data-amount-usd": lambda record: record.amount_usd or 0,
+            },
+        },
+    )
     amount = tables.Column(verbose_name="Amount")
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
@@ -441,6 +464,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         orderable = False
         fields = ("amount", "date", "invoice_number")
         sequence = (
+            "select",
             "amount",
             "amount_usd",
             "exchange_rate",
