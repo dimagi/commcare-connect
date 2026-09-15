@@ -24,13 +24,13 @@ on:
           - staging
           - production
       deploy_type:
-        description: 'Whether this deploy is part of the regular schedule or an unplanned/hotfix deploy'
+        description: 'Whether this deploy is part of the regular schedule or an adhoc/hotfix deploy'
         required: true
         default: 'scheduled'
         type: choice
         options:
           - scheduled
-          - unplanned
+          - adhoc
 
 jobs:
   deploy:
