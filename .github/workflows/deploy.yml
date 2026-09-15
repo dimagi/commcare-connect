@@ -182,13 +182,13 @@ jobs:
   running-qa-test:
     name: Trigger QA Playwright suite
     needs: deploy
-    if: ${{ success() && inputs.environment == 'production' }}
+    if: ${{ success() && inputs.environment == 'staging' }}
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - name: Wait for the deploy to be serving
         run: |
-          url=https://connect.dimagi.com
+          url=https://staging-connect.dimagi.com
           for i in $(seq 1 30); do
             curl -fsS -o /dev/null "$url" && exit 0
             sleep 10
@@ -202,13 +202,13 @@ jobs:
           gh workflow run playwright_web.yaml \
             --repo dimagi/dimagi-qa-ccc \
             --ref main \
-            -f environment=prod
+            -f environment=staging
 
       - name: Notify QA trigger failure
         if: ${{ failure() }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: 'C09HWCJSVJ6'
+          channel-id: 'C09TVKX4N2C'
           payload: |
             {
               "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
