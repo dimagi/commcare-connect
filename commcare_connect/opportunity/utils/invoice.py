@@ -81,11 +81,15 @@ def filter_invoices_by_month(queryset, month_start):
 
 
 def get_invoice_month_options(queryset):
-    """The months that list at least one invoice in `queryset`, newest first."""
+    """The months that list at least one invoice in `queryset`, newest first.
+
+    A billing period may run into the future; those months are not offered.
+    """
+    current_month = get_month_start_date(datetime.date.today())
     months = set()
     rows = queryset.values("service_delivery", "start_date", "end_date", "date_of_expense", "date")
     for row in rows:
-        months.update(_invoice_months(row))
+        months.update(month for month in _invoice_months(row) if month <= current_month)
     return sorted(months, reverse=True)
 
 
@@ -104,7 +108,7 @@ def resolve_invoice_month(month_param, month_options, highlight=None):
     if month_param == "all" or highlight:
         return None
     requested = parse_invoice_month(month_param)
-    if requested:
+    if requested and requested <= get_month_start_date(datetime.date.today()):
         return requested
     return month_options[0] if month_options else None
 

@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from dateutil.relativedelta import relativedelta
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import PaymentInvoice
@@ -119,6 +120,23 @@ class TestGetInvoiceMonthOptions:
         assert sorted(options) == listed
 
 
+@pytest.mark.django_db
+def test_month_options_stop_at_the_current_month():
+    """A billing period running into the future must not offer months that have not happened yet."""
+    this_month = date.today().replace(day=1)
+    last_month = this_month - relativedelta(months=1)
+    invoice = PaymentInvoiceFactory(
+        service_delivery=True,
+        start_date=last_month,
+        end_date=this_month + relativedelta(months=2),
+        date=this_month,
+    )
+
+    options = get_invoice_month_options(PaymentInvoice.objects.filter(pk=invoice.pk))
+
+    assert options == [this_month, last_month]
+
+
 @pytest.mark.parametrize(
     "month_param, highlight, expected",
     [
@@ -128,6 +146,8 @@ class TestGetInvoiceMonthOptions:
         (None, "INV-1", None),
         ("2026-05", "INV-1", None),
         ("bogus", None, JULY),
+        # A month in the future is not a valid filter; fall back to the default.
+        ((date.today() + relativedelta(months=1)).strftime("%Y-%m"), None, JULY),
     ],
 )
 def test_resolve_invoice_month(month_param, highlight, expected):
