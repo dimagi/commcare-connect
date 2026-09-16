@@ -5,6 +5,7 @@ from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
+    opportunities_accessible_to_org,
     opportunity_access_level_from_request,
     opportunity_by_id,
     org_access_for_program,
@@ -214,6 +215,29 @@ class TestOrgOpportunityAccess:
             program=program, organization=organization, supervising_organization=organization, managed=False
         )
         assert org_opportunity_access(program.organization, opp) is AccessLevel.ADMIN
+
+
+class TestOpportunitiesAccessibleToOrg:
+    """What the opportunity list page may show."""
+
+    @pytest.mark.parametrize("relationship", ["delivery", "supervisor", "program_org", "funder", "watcher"])
+    def test_every_relationship_reaches_the_opportunity(self, relationship, opp_orgs, managed_opp):
+        accessible = opportunities_accessible_to_org(opp_orgs[relationship])
+
+        assert [opp.id for opp in accessible] == [managed_opp.id]
+
+    def test_unrelated_org_reaches_nothing(self, opp_orgs, managed_opp):
+        assert not opportunities_accessible_to_org(opp_orgs["unrelated"]).exists()
+
+    def test_no_org_reaches_nothing(self, managed_opp):
+        assert not opportunities_accessible_to_org(None).exists()
+
+    def test_two_relationships_to_one_opportunity_list_it_once(self, program, organization):
+        """A delivery org that also watches the program keeps one row."""
+        program.watchers.add(organization)
+        opportunity = OpportunityFactory(program=program, organization=organization)
+
+        assert [opp.id for opp in opportunities_accessible_to_org(organization)] == [opportunity.id]
 
 
 class TestOpportunityAccessLevelFromRequest:

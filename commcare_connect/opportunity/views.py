@@ -307,13 +307,18 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     paginate_by = 15
     filter_class = OpportunityListFilterSet
 
+    @cached_property
+    def can_act_as_program_manager(self):
+        org = self.request.org
+        return org.program_manager or org.funder or org.watched_programs.exists()
+
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
         return context
 
     def get_table_class(self):
-        if self.request.org.program_manager:
+        if self.can_act_as_program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
 
@@ -323,12 +328,12 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["org_slug"] = self.request.org.slug
+        kwargs["request"] = self.request
         return kwargs
 
     def get_table_data(self):
-        org = self.request.org
-        is_program_manager = org.program_manager
-        return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
+        data = OpportunityData(self.request.org, self.can_act_as_program_manager, self.get_filter_values())
+        return data.get_data()
 
 
 class OpportunityInit(ProgramAdminAccessMixin, CreateView):
