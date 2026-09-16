@@ -317,7 +317,7 @@ class TaskType(models.Model):
     is_active = models.BooleanField(default=True)
     duration = models.IntegerField(null=True, blank=True)
     mode = models.CharField(
-        choices=TaskTypeModeChoices.choices,
+        choices=TaskTypeModeChoices,
         default=TaskTypeModeChoices.RELEARN,
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
@@ -475,7 +475,7 @@ class AssignedTask(XFormBaseModel):
     duration = models.DurationField(null=True)
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
-        choices=AssignedTaskStatus.choices,
+        choices=AssignedTaskStatus,
         default=AssignedTaskStatus.ASSIGNED,
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
@@ -756,7 +756,7 @@ class PaymentInvoice(models.Model):
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
     status = models.CharField(
-        choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
+        choices=InvoiceStatus, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
     )
     archived_date = models.DateTimeField(null=True, blank=True)
     invoice_ticket_link = models.URLField(null=True, blank=True)
@@ -841,7 +841,7 @@ class CompletedWork(models.Model):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
     status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus, default=CompletedWorkStatus.incomplete
     )
     last_modified = models.DateTimeField(auto_now=True)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
@@ -1034,7 +1034,7 @@ class UserVisit(XFormBaseModel):
     visit_date = models.DateTimeField()
     status = models.CharField(
         max_length=CHOICE_FIELD_MAX_LENGTH,
-        choices=VisitValidationStatus.choices,
+        choices=VisitValidationStatus,
         default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
@@ -1051,7 +1051,7 @@ class UserVisit(XFormBaseModel):
     )
     status_modified_date = models.DateTimeField(null=True, default=now)
     review_status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus, default=VisitReviewStatus.pending
     )
     review_status_modified_date = models.DateTimeField(blank=True, null=True, default=now)
     review_created_on = models.DateTimeField(blank=True, null=True)
@@ -1219,7 +1219,7 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus.choices, default=UserInviteStatus.invited
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus, default=UserInviteStatus.invited
     )
     notification_date = models.DateTimeField(null=True)
 

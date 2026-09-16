@@ -152,7 +152,7 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
     pghistory_ctx = dict(reason=exclusion_reason, username=user.username, user_email=user.email)
 
     for i in range(0, len(needs_hq), HQ_BULK_CHUNK_SIZE):
-        chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]  # noqa: E203
+        chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
         updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:

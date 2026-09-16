@@ -91,109 +91,22 @@ function routeFromPath(pathname) {
   return ROUTES.indexOf(p) !== -1 ? p : null;
 }
 
-// Per-route <title> + meta description. Each clean URL is served standalone by
-// the Django catch-all / 404 fallback, so every route must carry its own title
-// and description for search indexing and social sharing. Without this, all
-// routes would inherit the home document's single <title>/<meta>. Unknown
-// routes fall back to the home entry.
+// Per-route <title> + meta description. The table itself is rendered by Django
+// into <script type="application/json" id="route-meta"> from
+// prelogin/route_meta.py, which is also what builds the server-side <head>.
+// Reading it from there rather than keeping a second copy here is what stops
+// the two from drifting: a page added on the server is immediately known to the
+// client router. Unknown routes fall back to the home entry.
 const SITE_ORIGIN = 'https://connect.dimagi.com';
-const ROUTE_META = {
-  '/': {
-    title: 'Connect by Dimagi | Pay for verified service delivery',
-    desc: 'Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.',
-  },
-  '/the-opportunity': {
-    title: 'The opportunity | Connect by Dimagi',
-    desc: 'Funders can’t verify what reaches communities, and Frontline Workers deliver results no one tracks. Connect is the missing link between them.',
-  },
-  '/platform': {
-    title: 'Platform | Connect by Dimagi',
-    desc: 'Pick the program, geography, and amount. Connect activates local organizations, verifies every service, and pays only for what’s confirmed.',
-  },
-  '/portfolio': {
-    title: 'Portfolio | Connect by Dimagi',
-    desc: 'Explore the growing portfolio of high-impact health and development programs delivered and verified through Connect, with new programs and countries added all the time.',
-  },
-  '/frontline-network': {
-    title: 'Frontline Network | Connect by Dimagi',
-    desc: 'Hundreds of frontline organizations already deliver services and get paid for verified work through Connect. See why they join and run programs on the network.',
-  },
-  '/insights': {
-    title: 'Connect Insights | Connect by Dimagi',
-    desc: 'Stories, results, conversations, and evidence from the organizations and Frontline Workers delivering verified services through Connect.',
-  },
-  '/release-notes': {
-    title: 'Release notes | Connect by Dimagi',
-    desc: 'Release notes for the Connect platform, published with each major update to the mobile app and web tools.',
-  },
-  '/blog/closing-the-post-discharge-gap-kmc': {
-    title:
-      'Closing the post-discharge gap with Connect Kangaroo Mother Care | Connect by Dimagi',
-    desc: 'Trained Frontline Workers carry Kangaroo Mother Care into the home, closing the dangerous gap that opens when families of small and vulnerable newborns leave the hospital.',
-  },
-  '/blog/usaid-div-child-health-nigeria': {
-    title:
-      'USAID Development Innovation Ventures and Dimagi partner on child health in northern Nigeria | Connect by Dimagi',
-    desc: 'A new grant will scale and rigorously evaluate Connect, delivering Vitamin A and oral rehydration solution to children where coverage is lowest.',
-  },
-  '/blog/givewell-child-health-nigeria': {
-    title:
-      'GiveWell awards Dimagi funding to scale child health delivery in Nigeria | Connect by Dimagi',
-    desc: 'GiveWell has awarded Dimagi more than $1 million to scale verified child health delivery across northern Nigeria, funding over 300,000 visits in 18 months.',
-  },
-  '/blog/connect-100000-service-deliveries': {
-    title: 'Connect reaches 100,000 service deliveries | Connect by Dimagi',
-    desc: 'Across seven countries, Frontline Workers delivered more than 100,000 verified services, a foundation for scaling to millions of visits a year.',
-  },
-  '/blog/connect-2023-year-in-review': {
-    title: 'Connect: a year in review | Connect by Dimagi',
-    desc: 'The first year of designing and testing Connect: 77,000 clients reached, $161,000 paid to Frontline Workers, and the learn, deliver, verify, pay model proven in the field.',
-  },
-  '/portfolio/child-health-campaign': {
-    title: 'Child Health Campaigns | Connect by Dimagi',
-    desc: 'Door-to-door delivery of high-impact health services to every child under five, verified visit by visit and paid only for what’s confirmed.',
-  },
-  '/portfolio/kangaroo-mother-care': {
-    title: 'Kangaroo Mother Care | Connect by Dimagi',
-    desc: 'Structured home visits for small and vulnerable newborns in their first 60 days, verified and paid only when confirmed, closing the post-discharge gap.',
-  },
-  '/portfolio/early-childhood-development': {
-    title: 'Early Childhood Development | Connect by Dimagi',
-    desc: 'Home visits supporting responsive caregiving and early child development, building caregiver knowledge, observable teaching behavior, and child autonomy.',
-  },
-  '/portfolio/reading-glasses': {
-    title: 'Reading Glasses | Connect by Dimagi',
-    desc: 'Door-to-door near-vision screening and presbyopia correction across northeast Nigeria.',
-  },
-  '/portfolio/mother-baby-wellness': {
-    title: 'Mother Baby Wellness | Connect by Dimagi',
-    desc: 'Frontline coaches support families with breastfeeding support and maternal mental health care. Six structured home visits per family, paid on verified outcomes.',
-  },
-  '/portfolio/chlorine-dispenser': {
-    title: 'Chlorine Dispenser | Connect by Dimagi',
-    desc: 'Chlorine dispensers at communal water points, paired with door-to-door household education on safe water treatment, one of the highest-evidence, lowest-cost ways to prevent diarrhea.',
-  },
-  '/portfolio/mental-health': {
-    title: 'Group Therapy for Depression | Connect by Dimagi',
-    desc: 'Connect trains local facilitators to run structured weekly group therapy for depression, with every session app-guided, verified, and paid only when confirmed.',
-  },
-  '/portfolio/survey-data-collection': {
-    title: 'Connect Interview | Connect by Dimagi',
-    desc: 'Connect Interview turns Frontline Workers into a rapid research network. Stakeholders submit questions, an AI chatbot interviews workers in-app, and Dimagi delivers transcripts within two weeks.',
-  },
-  '/portfolio/therapeutic-food': {
-    title: 'Therapeutic Food | Connect by Dimagi',
-    desc: 'Frontline Workers deliver home-based malnutrition treatment with Ready-to-Use Therapeutic Food (RUTF). Every visit is verified with GPS, timestamps, and photos.',
-  },
-  '/portfolio/rooftop-sampling': {
-    title: 'Rooftop Sampling | Connect by Dimagi',
-    desc: 'A GPS-navigated household survey method that uses satellite building footprints as the sampling frame, no household list required. Developed by IDinsight.',
-  },
-  '/support-kmc': {
-    title: 'Fund a Frontline Worker | Connect by Dimagi',
-    desc: 'Your gift funds a trained Frontline Worker to deliver verified Kangaroo Mother Care home visits to small and vulnerable newborns. $60 covers one complete, verified intervention.',
-  },
-};
+const ROUTE_META = (function () {
+  const node = document.getElementById('route-meta');
+  if (!node) return {};
+  try {
+    return JSON.parse(node.textContent);
+  } catch (_) {
+    return {};
+  }
+})();
 
 // Only the SPA document (index.html) carries the home route; the standalone
 // contact/404 pages also load this script but must keep their own <title>.
@@ -207,12 +120,27 @@ function setMetaAttr(selector, attr, value) {
 function applyRouteMeta(route) {
   if (!IS_SPA_DOC) return;
   const m = ROUTE_META[route] || ROUTE_META['/'];
+  // The server already rendered the correct head for the landing URL; if the
+  // table is missing for any reason, leave it alone rather than blanking it.
+  if (!m) return;
   document.title = m.title;
   setMetaAttr('meta[name="description"]', 'content', m.desc);
   setMetaAttr('meta[property="og:title"]', 'content', m.title);
   setMetaAttr('meta[property="og:description"]', 'content', m.desc);
   setMetaAttr('meta[name="twitter:title"]', 'content', m.title);
   setMetaAttr('meta[name="twitter:description"]', 'content', m.desc);
+  // og:image was the one tag this never touched, so a post shared after an
+  // in-page navigation still carried the home page's picture.
+  if (m.image) {
+    setMetaAttr('meta[property="og:image"]', 'content', m.image);
+    setMetaAttr('meta[name="twitter:image"]', 'content', m.image);
+    setMetaAttr('meta[property="og:image:alt"]', 'content', m.imageAlt || '');
+  }
+  setMetaAttr(
+    'meta[property="og:type"]',
+    'content',
+    route.indexOf('/blog/') === 0 ? 'article' : 'website',
+  );
   const url = SITE_ORIGIN + (route === '/' ? '/' : route);
   setMetaAttr('meta[property="og:url"]', 'content', url);
   setMetaAttr('link[rel="canonical"]', 'href', url);
