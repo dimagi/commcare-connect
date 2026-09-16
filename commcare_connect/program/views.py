@@ -316,10 +316,14 @@ def program_manager_home(request, org):
     )
 
     programs = list(programs_qs)
+    program_ids_with_standard_access = []
     for program in programs:
         applications = getattr(program, "applications_with_budget", [])
         program.allocated_budget = sum(application.current_budget for application in applications)
-        program.user_has_admin_access = program_access_level_from_request(request, program) >= AccessLevel.ADMIN
+        access = program_access_level_from_request(request, program)
+        program.user_has_admin_access = access >= AccessLevel.ADMIN
+        if access >= AccessLevel.STANDARD:
+            program_ids_with_standard_access.append(program.id)
 
     pending_review_data = (
         UserVisit.objects.filter(
@@ -338,7 +342,8 @@ def program_manager_home(request, org):
 
     pending_payments_data = (
         PaymentInvoice.objects.filter(
-            opportunity__program__in=programs_qs,
+            # the invoice list needs standard access, so a watcher must not be sent there
+            opportunity__program_id__in=program_ids_with_standard_access,
             payment__isnull=True,
         )
         .values(

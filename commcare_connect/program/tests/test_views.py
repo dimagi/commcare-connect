@@ -301,6 +301,21 @@ class TestProgramHomeListsAccessiblePrograms:
         assert (edit_url in content) is offered
         assert (invite_url in content) is offered
 
+    @pytest.mark.parametrize(
+        "actor,role,offered",
+        [("owner", Role.ADMIN, True), ("watcher", Role.ADMIN, False), ("owner", Role.VIEWER, False)],
+        ids=["owner_admin", "watching_org", "viewer_role"],
+    )
+    def test_pending_invoices_need_standard_access(self, actor, role, offered):
+        """The invoice list needs standard access."""
+        opportunity = OpportunityFactory(program=self.program, organization=OrganizationFactory())
+        PaymentInvoiceFactory(opportunity=opportunity)
+        org = self.actors[actor]
+
+        response = self.home_for(org, role=role)
+
+        invoice_url = reverse("opportunity:invoice_list", args=(org.slug, opportunity.opportunity_id))
+        assert (invoice_url in response.content.decode()) is offered
 
     @pytest.mark.parametrize(
         "flag,is_program_manager",
