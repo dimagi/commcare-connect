@@ -1,5 +1,4 @@
 import pytest
-from django.test.client import RequestFactory
 
 from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.models import UserOrganizationMembership
@@ -16,7 +15,7 @@ from commcare_connect.program.utils import (
     user_access_for_org,
 )
 from commcare_connect.users.tests.factories import OrganizationFactory
-from commcare_connect.utils.test_utils import grant_all_org_access, make_membership
+from commcare_connect.utils.test_utils import grant_all_org_access, make_membership, make_request
 
 Role = UserOrganizationMembership.Role
 
@@ -77,15 +76,6 @@ class TestOrgProgramAccess:
         assert org_access_for_program(organization if org else None, program if program_ else None) is AccessLevel.NONE
 
 
-def make_request(user, org=None, membership=None):
-    """A request carrying only what the access functions read: the user, the org, the role in it."""
-    request = RequestFactory().get("/")
-    request.user = user
-    request.org = org
-    request.org_membership = membership
-    return request
-
-
 @pytest.fixture
 def orgs(program, funder_org, watcher_org, organization):
     """Every org with a distinct relationship to `program`."""
@@ -101,7 +91,6 @@ def orgs(program, funder_org, watcher_org, organization):
 
 
 class TestProgramsAccessibleToOrg:
-
     @pytest.mark.parametrize("relationship", ["program_org", "funder", "watcher"])
     def test_every_relationship_reaches_the_program(self, relationship, orgs, program):
         assert [p.id for p in programs_accessible_to_org(orgs[relationship])] == [program.id]
@@ -196,30 +185,6 @@ class TestOrgAccessLevelFromRequest:
         pm_request = make_request(user, org=program_manager_org, membership=pm_membership)
         plain_request = make_request(user, org=organization, membership=plain_membership)
         assert org_access_level_from_request(pm_request) is org_access_level_from_request(plain_request)
-
-
-@pytest.fixture
-def managed_opp(program, organization, supervisor_org):
-    """A delivery org doing the work, a third-party supervisor, and the program's own owner."""
-    return OpportunityFactory(
-        program=program, organization=organization, supervising_organization=supervisor_org, managed=True
-    )
-
-
-@pytest.fixture
-def opp_orgs(program, organization, supervisor_org, funder_org, watcher_org):
-    """Every org with a distinct relationship to `managed_opp`."""
-    program.funder = funder_org
-    program.save()
-    program.watchers.add(watcher_org)
-    return {
-        "delivery": organization,
-        "supervisor": supervisor_org,
-        "program_org": program.organization,
-        "funder": funder_org,
-        "watcher": watcher_org,
-        "unrelated": OrganizationFactory(),
-    }
 
 
 class TestOrgOpportunityAccess:
