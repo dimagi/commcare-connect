@@ -57,12 +57,12 @@
               <div x-show="open"
                    x-transition.opacity
                    x-cloak
-                   class="absolute top-10 right-0 min-w-44 bg-white shadow rounded-lg z-50">
+                   class="absolute top-10 right-0 w-max min-w-44 bg-white shadow rounded-lg z-50">
                 <ul class="p-2 w-full max-h-80 overflow-y-auto">
                   {% for month in older_months %}
                     <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
                       <a href="{{ list_url }}?month={{ month|date:'Y-m' }}"
-                         class="text-brand-deep-purple text-sm font-medium">{{ month|date:"F Y" }}</a>
+                         class="text-brand-deep-purple text-sm font-medium text-nowrap">{{ month|date:"F Y" }}</a>
                     </li>
                   {% endfor %}
                 </ul>
