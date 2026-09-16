@@ -1,12 +1,12 @@
 import csv
 import io
 import logging
-import re
 from collections import defaultdict
 
 import httpx
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils.html import strip_tags
@@ -27,9 +27,6 @@ logger = logging.getLogger(__name__)
 # reader rather than in const.py, which is for constants more than one module shares.
 OVERTURE_CATALOG_URL = "https://stac.overturemaps.org/catalog.json"
 OVERTURE_CATALOG_TIMEOUT = 10
-
-# An Overture release is a date and a revision, e.g. "2026-08-19.0".
-OVERTURE_RELEASE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\.\d+")
 
 
 def get_import_area_cache_key(opp_id: int):
@@ -550,15 +547,24 @@ def update_overture_release():
     recorded release is left alone for the next run, which costs slightly older footprints rather
     than a map that can draw none.
     """
-    release = fetch_latest_overture_release()
-    if release is None:
+    catalog = fetch_overture_catalog()
+    if catalog is None:
         return
 
-    if release != OvertureRelease.current():
+    release = catalog.get("latest")
+    if release is not None and release == OvertureRelease.current():
+        return
+
+    try:
         OvertureRelease.set_current(release)
+    except ValidationError:
+        logger.error(
+            "Overture's catalog reported %r as its latest release, but it does not match the expected release format",
+            release,
+        )
 
 
-def fetch_latest_overture_release():
+def fetch_overture_catalog():
     response = httpx.get(OVERTURE_CATALOG_URL, timeout=OVERTURE_CATALOG_TIMEOUT)
     response.raise_for_status()
 
@@ -571,13 +577,4 @@ def fetch_latest_overture_release():
         logger.error("Overture's catalog at %s did not answer with a JSON object", OVERTURE_CATALOG_URL)
         return None
 
-    release = catalog.get("latest")
-
-    if not isinstance(release, str) or not OVERTURE_RELEASE_RE.fullmatch(release):
-        logger.error(
-            "Overture's catalog reported %r as its latest release, but it does not match the expected release format",
-            release,
-        )
-        return None
-
-    return release
+    return catalog

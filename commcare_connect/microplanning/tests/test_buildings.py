@@ -1,17 +1,13 @@
 import importlib
 from datetime import date, timedelta
 
-import pytest
-
 from commcare_connect.microplanning.buildings import buildings_overlay_config
 
 seed_migration = importlib.import_module("commcare_connect.microplanning.migrations.0018_overturerelease")
 
 
-@pytest.mark.parametrize("recorded", ["2026-08-19.0", " 2026-08-19.0\n"])
-def test_config_points_at_the_recorded_release(release, recorded):
-    """The release is stripped before use: a stray newline must not reach the tile URL."""
-    release(recorded)
+def test_config_points_at_the_recorded_release(release):
+    release("2026-08-19.0")
 
     config = buildings_overlay_config()
 
@@ -61,8 +57,7 @@ def test_config_credits_openstreetmap_and_overture(release):
     assert "Overture Maps Foundation" in attribution
 
 
-@pytest.mark.parametrize("recorded", [None, "", "   "])
-def test_no_config_without_a_release(release, recorded):
+def test_no_config_without_a_release(release):
     """
     A missing release makes the overlay unavailable rather than pointing the browser at a bad URL.
 
@@ -70,6 +65,6 @@ def test_no_config_without_a_release(release, recorded):
     after the seeded release aged out has none until the daily task first runs, and a URL built
     from no release would 404 on every tile -- worse than showing no overlay at all.
     """
-    release(recorded)
+    release(None)
 
     assert buildings_overlay_config() is None

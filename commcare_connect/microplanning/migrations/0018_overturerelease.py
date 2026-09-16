@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 
+import django.core.validators
 from django.db import migrations, models
 
 # The release the constant in buildings.py held before update_overture_release took over. Seeding
@@ -60,6 +61,7 @@ class Migration(migrations.Migration):
                     models.CharField(
                         help_text="An Overture release, e.g. '2026-08-19.0'.",
                         max_length=32,
+                        validators=[django.core.validators.RegexValidator("^\\d{4}-\\d{2}-\\d{2}\\.\\d+\\Z")],
                     ),
                 ),
             ],

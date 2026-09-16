@@ -4,6 +4,7 @@ import pghistory
 import shapely
 from django.conf import settings
 from django.contrib.gis.db import models as geo_models
+from django.core.validators import RegexValidator
 from django.db.models import Count, Index, Q, Sum
 from django.utils.translation import gettext_lazy as _
 
@@ -207,7 +208,11 @@ class OvertureRelease(BaseModel):
 
     SINGLETON_PK = 1
 
-    release = geo_models.CharField(max_length=32, help_text="An Overture release, e.g. '2026-08-19.0'.")
+    release = geo_models.CharField(
+        max_length=32,
+        validators=[RegexValidator(r"^\d{4}-\d{2}-\d{2}\.\d+\Z")],
+        help_text="An Overture release, e.g. '2026-08-19.0'.",
+    )
 
     def __str__(self):
         return self.release
@@ -220,4 +225,8 @@ class OvertureRelease(BaseModel):
 
     @classmethod
     def set_current(cls, release):
-        cls.objects.update_or_create(pk=cls.SINGLETON_PK, defaults={"release": release})
+        """Record ``release`` as the current one. Raises ValidationError if it is not a release."""
+        row = cls.objects.filter(pk=cls.SINGLETON_PK).first() or cls(pk=cls.SINGLETON_PK)
+        row.release = release
+        row.full_clean(exclude=["created_by", "modified_by"])
+        row.save()

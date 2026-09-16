@@ -49,7 +49,7 @@ def buildings_overlay_config():
     """
     Return the config the map needs to draw building footprints, or ``None`` if it cannot.
     """
-    release = (OvertureRelease.current() or "").strip()
+    release = OvertureRelease.current()
     if not release:
         return None
 
