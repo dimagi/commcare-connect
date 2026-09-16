@@ -818,6 +818,26 @@ def test_opportunity_list_table_follows_the_relationship(relationship, manages, 
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Inviting, exporting and importing all need standard access, so a watcher must not be offered them."""
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    # the tab partials, where the actions live, are what an htmx request renders
+    workers = client.get(reverse("opportunity:worker_list", args=args), headers={"hx-request": "true"})
+    payments = client.get(reverse("opportunity:worker_payments", args=args), headers={"hx-request": "true"})
+
+    assert workers.context["has_standard_access"] is offered
+    assert payments.context["has_standard_access"] is offered
+    assert (reverse("opportunity:user_invite", args=args) in workers.content.decode()) is offered
+
+
+@pytest.mark.django_db
 def test_get_opportunity_list_data_counts_duplicate_approved_deliveries(organization):
     today = now().date()
     opportunity = OpportunityFactory(
