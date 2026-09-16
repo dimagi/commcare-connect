@@ -193,6 +193,7 @@ from commcare_connect.opportunity.utils.invoice import (
     filter_invoices_by_month,
     get_invoice_month_options,
     resolve_invoice_month,
+    split_month_options,
 )
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
@@ -1784,6 +1785,7 @@ def invoice_list(request, org_slug, opp_id):
     all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
     month_options = get_invoice_month_options(all_invoices)
     selected_month = resolve_invoice_month(request.GET.get("month"), month_options, highlight_invoice_number)
+    month_chips, older_months = split_month_options(month_options, selected_month)
 
     queryset = all_invoices.select_related("exchange_rate").annotate(
         last_status_modified_at=Max("status_events__pgh_created_at")
@@ -1819,7 +1821,8 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
-            "month_options": month_options,
+            "month_chips": month_chips,
+            "older_months": older_months,
             "selected_month": selected_month,
             "invoice_count": queryset.count(),
             "new_invoice_url": reverse(

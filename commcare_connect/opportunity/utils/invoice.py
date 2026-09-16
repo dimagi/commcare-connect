@@ -10,6 +10,9 @@ from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.utils.invoice_line_items import billable_works_qs
 from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_series, get_month_start_date
 
+# Months shown as chips on the invoice list; older ones go into the dropdown.
+RECENT_MONTH_COUNT = 6
+
 
 def get_start_date_for_invoice(opportunity):
     """Return the invoice window start.
@@ -100,6 +103,18 @@ def _invoice_months(row):
     if not row["service_delivery"] and row["date_of_expense"]:
         return [get_month_start_date(row["date_of_expense"])]
     return [get_month_start_date(row["date"])]
+
+
+def split_month_options(month_options, selected_month=None, recent_count=RECENT_MONTH_COUNT):
+    """Split the months into the chips shown inline and the ones behind the dropdown.
+
+    The selected month is always a chip, however old it is, so the current filter stays visible.
+    """
+    chips = month_options[:recent_count]
+    if selected_month and selected_month in month_options and selected_month not in chips:
+        chips = chips + [selected_month]
+    older = [month for month in month_options if month not in chips]
+    return chips, older
 
 
 def resolve_invoice_month(month_param, month_options, highlight=None):

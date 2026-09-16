@@ -11,6 +11,7 @@ from commcare_connect.opportunity.utils.invoice import (
     get_invoice_month_options,
     parse_invoice_month,
     resolve_invoice_month,
+    split_month_options,
 )
 from commcare_connect.program.tests.factories import ProgramFactory
 
@@ -135,6 +136,21 @@ def test_month_options_stop_at_the_current_month():
     options = get_invoice_month_options(PaymentInvoice.objects.filter(pk=invoice.pk))
 
     assert options == [this_month, last_month]
+
+
+@pytest.mark.parametrize(
+    "selected_month, expected_chips, expected_older",
+    [
+        (None, [JULY, JUNE], [MAY]),
+        (JUNE, [JULY, JUNE], [MAY]),
+        # An older selection joins the chips so the current filter stays visible.
+        (MAY, [JULY, JUNE, MAY], []),
+    ],
+)
+def test_split_month_options(selected_month, expected_chips, expected_older):
+    chips, older = split_month_options([JULY, JUNE, MAY], selected_month, recent_count=2)
+    assert chips == expected_chips
+    assert older == expected_older
 
 
 @pytest.mark.parametrize(
