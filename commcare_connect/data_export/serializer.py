@@ -414,6 +414,7 @@ class GeoCentroidBoundarySerializer(serializers.ModelSerializer):
 
 class WorkAreaDataSerializer(GeoCentroidBoundarySerializer):
     work_area_group_name = serializers.SerializerMethodField()
+    username = serializers.CharField(source="opportunity_access.user.username", read_only=True, default=None)
 
     class Meta:
         model = WorkArea
@@ -428,6 +429,7 @@ class WorkAreaDataSerializer(GeoCentroidBoundarySerializer):
             "case_properties",
             "work_area_group",
             "work_area_group_name",
+            "username",
             "centroid",
             "boundary",
         ]

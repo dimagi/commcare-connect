@@ -1,5 +1,4 @@
 import datetime
-from datetime import timezone
 
 from django.core.management import call_command
 
@@ -27,33 +26,33 @@ class TestBackfillUserAnalyticsData:
             access = OpportunityAccessFactory(
                 user=user,
                 opportunity=opportunity,
-                date_learn_started=datetime.datetime(2023 + idx, 1, 2, tzinfo=timezone.utc),
-                completed_learn_date=datetime.datetime(2023 + idx, 1, 3, tzinfo=timezone.utc),
+                date_learn_started=datetime.datetime(2023 + idx, 1, 2, tzinfo=datetime.UTC),
+                completed_learn_date=datetime.datetime(2023 + idx, 1, 3, tzinfo=datetime.UTC),
                 accepted=True,
             )
 
             AssessmentFactory(
                 opportunity_access=access,
                 passed=True,
-                date=datetime.datetime(2023 + idx, 1, 4, tzinfo=timezone.utc),
+                date=datetime.datetime(2023 + idx, 1, 4, tzinfo=datetime.UTC),
             )
 
             claim = OpportunityClaimFactory(opportunity_access=access)
-            claim.date_claimed = datetime.datetime(2023 + idx, 1, 5, tzinfo=timezone.utc)
+            claim.date_claimed = datetime.datetime(2023 + idx, 1, 5, tzinfo=datetime.UTC)
             claim.save()
 
             completed_work = CompletedWorkFactory(
                 opportunity_access=access,
                 payment_unit=payment_unit,
                 status=CompletedWorkStatus.approved,
-                status_modified_date=datetime.datetime(2023 + idx, 1, 9, tzinfo=timezone.utc),
+                status_modified_date=datetime.datetime(2023 + idx, 1, 9, tzinfo=datetime.UTC),
             )
-            completed_work.date_created = datetime.datetime(2023 + idx, 1, 6, tzinfo=timezone.utc)
+            completed_work.date_created = datetime.datetime(2023 + idx, 1, 6, tzinfo=datetime.UTC)
             completed_work.save()
 
             PaymentFactory(
                 opportunity_access=access,
-                date_paid=datetime.datetime(2023 + idx, 1, 7, tzinfo=timezone.utc),
+                date_paid=datetime.datetime(2023 + idx, 1, 7, tzinfo=datetime.UTC),
             )
 
         assert not UserAnalyticsData.objects.filter(user=user).exists()

@@ -1536,9 +1536,8 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
         assert response.status_code == 200
         assert response.headers["Content-Type"] == "application/pdf"
-        assert response.headers["Content-Disposition"] == 'attachment;filename="invoice_{}.pdf"'.format(
-            invoice.invoice_number
-        )
+        expected_disposition = f'attachment;filename="invoice_{invoice.invoice_number}.pdf"'
+        assert response.headers["Content-Disposition"] == expected_disposition
 
     def test_missing_invoice(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
