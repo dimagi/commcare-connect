@@ -438,6 +438,30 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert response.status_code == 200
         assert any(t.name == "microplanning/home.html" for t in response.templates)
 
+    def test_the_buildings_tooltip_names_the_release_on_screen(
+        self, client: Client, settings, organization, org_user_admin, opportunity, overture_release
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+
+        # Read literally by x-tooltip.raw, so the release has to appear as itself rather than as
+        # escape sequences a reader would see verbatim.
+        assert f"Overture Maps Foundation, release {overture_release}." in response.content.decode()
+
+    def test_no_buildings_control_without_a_release(
+        self, client: Client, settings, organization, org_user_admin, opportunity, release
+    ):
+        """With no release there is no archive to point the browser at, so the toggle goes away."""
+        release(None)
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+
+        body = response.content.decode()
+        assert response.status_code == 200
+        assert "show-buildings-toggle" not in body
+
     @pytest.mark.parametrize(
         "create_deliver_units, expected_quoted",
         [
