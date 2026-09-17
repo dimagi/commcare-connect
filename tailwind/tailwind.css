@@ -902,7 +902,7 @@ select:disabled,
   /* The map's top-right corner. Everything in here is laid out in one column so a message can
      never land on top of the controls */
   .map-control-stack {
-    @apply pointer-events-none absolute right-4 top-4 z-50 flex flex-col items-end gap-2;
+    @apply pointer-events-none absolute right-4 top-4 z-30 flex flex-col items-end gap-2;
   }
 
   .map-control-panel {
