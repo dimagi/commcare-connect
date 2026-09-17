@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_EVEN, Decimal
 
 import pytest
@@ -39,9 +39,9 @@ FEB = date(2026, 2, 1)
 FEB_END = date(2026, 2, 28)
 MAR = date(2026, 3, 1)
 MAR_END = date(2026, 3, 31)
-JAN_APPROVAL = datetime(2026, 1, 15, tzinfo=timezone.utc)
-FEB_APPROVAL = datetime(2026, 2, 20, tzinfo=timezone.utc)
-APR_APPROVAL = datetime(2026, 4, 2, tzinfo=timezone.utc)
+JAN_APPROVAL = datetime(2026, 1, 15, tzinfo=UTC)
+FEB_APPROVAL = datetime(2026, 2, 20, tzinfo=UTC)
+APR_APPROVAL = datetime(2026, 4, 2, tzinfo=UTC)
 APR_END = date(2026, 4, 30)
 
 
@@ -687,7 +687,7 @@ class TestBillableLineItemsAcrossMonths:
 
     def test_total_includes_org_pay(self, access):
         payment_unit = PaymentUnitFactory(opportunity=access.opportunity, amount=10, org_amount=4)
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         self._pin_monthly_rates(access.opportunity, [(now, "2")])
         self._create_approved_completed_work(access, now, payment_unit, approved=2)
 
@@ -703,8 +703,8 @@ class TestBillableLineItemsAcrossMonths:
 
     def _billable_items(self, opportunity):
         """These tests span three months back, so bill from before the earliest through today."""
-        start_date = (datetime.now(tz=timezone.utc) - relativedelta(months=4)).date()
-        return get_billable_line_items(opportunity, start_date, datetime.now(tz=timezone.utc).date())
+        start_date = (datetime.now(tz=UTC) - relativedelta(months=4)).date()
+        return get_billable_line_items(opportunity, start_date, datetime.now(tz=UTC).date())
 
     def _create_approved_completed_work(self, opp_access, status_modified_date, payment_unit, approved=1):
         return CompletedWorkFactory(
@@ -717,7 +717,7 @@ class TestBillableLineItemsAcrossMonths:
         )
 
     def _recent_months(self):
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         return now - relativedelta(months=2), now - relativedelta(months=1), now
 
     def _pin_monthly_rates(self, opportunity, rates):

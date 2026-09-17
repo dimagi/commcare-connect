@@ -1,5 +1,6 @@
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
@@ -11,6 +12,7 @@ from commcare_connect.opportunity.models import (
     Assessment,
     CompletedModule,
     CompletedWork,
+    ExchangeRate,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -44,6 +46,11 @@ from commcare_connect.users.tests.factories import MobileUserFactory
 User = get_user_model()
 fake = Faker()
 
+# Sample data never reaches the real exchange rate service, so invoices are priced off these.
+SAMPLE_EXCHANGE_RATE_DATE = date(2020, 1, 1)
+SAMPLE_EXCHANGE_RATES = {"USD": Decimal("1")}
+DEFAULT_SAMPLE_EXCHANGE_RATE = Decimal("100")
+
 
 class Command(BaseCommand):
     help = "Generates fake data for testing purposes"
@@ -63,6 +70,18 @@ class Command(BaseCommand):
             default=3,
             help="Number of managed opportunities to create",
         )
+
+    def _sample_exchange_rate(self, currency_code):
+        """A stand-in rate, so sample invoices carry a USD amount like real ones do.
+
+        Real rates are fetched from an external service that local environments have no key for.
+        """
+        rate, _ = ExchangeRate.objects.get_or_create(
+            currency_code=currency_code,
+            rate_date=SAMPLE_EXCHANGE_RATE_DATE,
+            defaults={"rate": SAMPLE_EXCHANGE_RATES.get(currency_code, DEFAULT_SAMPLE_EXCHANGE_RATE)},
+        )
+        return rate
 
     def clean_sample_data(self, org_ids):
         self.stdout.write("Cleaning up previous sample data...")
@@ -167,7 +186,7 @@ class Command(BaseCommand):
             if opp.deliver_app and opp.deliver_app.id not in deliver_units_cache:
                 deliver_units_cache[opp.deliver_app.id] = DeliverUnitFactory(app=opp.deliver_app)
 
-        start_date = datetime(2024, 7, 1, tzinfo=timezone.utc)
+        start_date = datetime(2024, 7, 1, tzinfo=UTC)
         end_date = djtimezone.now()
         works_to_create = []
 
@@ -221,12 +240,17 @@ class Command(BaseCommand):
 
         self.stdout.write("Generating invoices and payments...")
         for opp in all_opportunities:
+            exchange_rate = self._sample_exchange_rate(opp.currency_code)
             num_invoices = random.randint(1, 6)
             for _ in range(num_invoices):
+                amount = Decimal(random.randrange(10_000, 1_000_000)) / 100
                 invoice = PaymentInvoiceFactory(
                     opportunity=opp,
-                    date=fake.date_time_between(start_date="-30d", end_date="now", tzinfo=timezone.utc),
+                    date=fake.date_time_between(start_date="-30d", end_date="now", tzinfo=UTC),
                     invoice_number=fake.pystr(),
+                    amount=amount,
+                    amount_usd=round(amount / exchange_rate.rate, 2),
+                    exchange_rate=exchange_rate,
                 )
                 if random.choice([True, False]):
                     accesses = opp.opportunityaccess_set.all()

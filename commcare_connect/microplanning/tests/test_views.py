@@ -4,7 +4,7 @@ import csv as csv_mod
 import io
 import json
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, Mock, patch
@@ -379,13 +379,13 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
                 opportunity=opportunity,
                 user=access.user,
                 work_area=in_range,
-                visit_date=datetime(2025, 6, 1, tzinfo=timezone.utc),
+                visit_date=datetime(2025, 6, 1, tzinfo=UTC),
             )
         UserVisitFactory(
             opportunity=opportunity,
             user=access.user,
             work_area=out_of_range,
-            visit_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 1, 1, tzinfo=UTC),
         )
 
         bounds = self.get_bounds(
@@ -1401,12 +1401,12 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         UserVisitFactory(
             opportunity=opportunity,
             work_area=wa_with_visit,
-            visit_date=datetime(2025, 6, 15, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 6, 15, tzinfo=UTC),
         )
         UserVisitFactory(
             opportunity=opportunity,
             work_area=wa_without_visit,
-            visit_date=datetime(2025, 3, 1, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 3, 1, tzinfo=UTC),
         )
         client.force_login(org_user_admin)
 

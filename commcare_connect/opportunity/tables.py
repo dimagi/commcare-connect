@@ -418,6 +418,15 @@ class PaymentReportTable(tables.Table):
 
 
 class PaymentInvoiceTable(OpportunityContextTable):
+    select = select_column(
+        td_extra={
+            "@change": "updateSelectAll()",
+            # Read by the selection bar to total up what the export will cover. Empty rather than
+            # zero when an invoice has no USD amount, so the bar can say so instead of quietly
+            # understating the total.
+            "data-amount-usd": lambda record: "" if record.amount_usd is None else record.amount_usd,
+        }
+    )
     amount = tables.Column(verbose_name="Amount")
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
@@ -442,6 +451,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         orderable = False
         fields = ("amount", "date", "invoice_number")
         sequence = (
+            "select",
             "amount",
             "amount_usd",
             "exchange_rate",
@@ -510,7 +520,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                         {disabled}>
                         {_("Pay")}
                     </button>
-                """  # noqa: E501
+                """
         return mark_safe(f'<div class="flex gap-2">{review_button}{pay_button}</div>')
 
 
@@ -1385,7 +1395,7 @@ class WorkerLearnTable(OrgContextTable):
         accessor="modules_completed_percentage",
         template_code="""
             {% include "components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
-        """,  # noqa: E501
+        """,
     )
     completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="assessment_status_rank")

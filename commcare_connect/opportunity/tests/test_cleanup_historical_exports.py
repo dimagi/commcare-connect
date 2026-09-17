@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from unittest import mock
 
@@ -30,6 +30,8 @@ class TestExportFilenamePatterns:
             "2026-03-09T10:00:00.000000_My_Opp_payment_verification.csv",
             "2026-03-09T10:00:00.000000_My_Opp_catchment_area.csv",
             "invoice-report-550e8400-e29b-41d4-a716-446655440000.csv",
+            "2026-03-09T10:00:00_test_invoice_pdfs.zip",
+            "exports/2026-03-09T10:00:00_test_invoice_summary.csv",
             # New (exports/ prefix)
             "exports/2026-03-09T10:00:00.000000_My_Opp_visit_export.csv",
             "exports/2026-03-09T10:00:00.000000_My_Opp_work_status.csv",
@@ -57,7 +59,7 @@ class TestCleanupHistoricalExportsCommand:
     @mock.patch("commcare_connect.opportunity.management.commands.cleanup_historical_exports.boto3")
     def test_dry_run_does_not_delete(self, mock_boto3, settings):
         settings.AWS_STORAGE_BUCKET_NAME = "test-bucket"
-        old_date = datetime.now(timezone.utc) - timedelta(days=60)
+        old_date = datetime.now(UTC) - timedelta(days=60)
         mock_bucket = mock.MagicMock()
         mock_boto3.resource.return_value.Bucket.return_value = mock_bucket
         mock_bucket.objects.filter.return_value = [
@@ -73,8 +75,8 @@ class TestCleanupHistoricalExportsCommand:
     @mock.patch("commcare_connect.opportunity.management.commands.cleanup_historical_exports.boto3")
     def test_deletes_matching_old_files(self, mock_boto3, settings):
         settings.AWS_STORAGE_BUCKET_NAME = "test-bucket"
-        old_date = datetime.now(timezone.utc) - timedelta(days=60)
-        recent_date = datetime.now(timezone.utc) - timedelta(days=5)
+        old_date = datetime.now(UTC) - timedelta(days=60)
+        recent_date = datetime.now(UTC) - timedelta(days=5)
         mock_bucket = mock.MagicMock()
         mock_boto3.resource.return_value.Bucket.return_value = mock_bucket
         mock_bucket.objects.filter.return_value = [
