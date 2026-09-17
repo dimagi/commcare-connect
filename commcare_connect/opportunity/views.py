@@ -575,6 +575,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
         ]
         context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
+        context["has_standard_access"] = opportunity_access_level_from_request(request, object) >= AccessLevel.STANDARD
         return context
 
 
