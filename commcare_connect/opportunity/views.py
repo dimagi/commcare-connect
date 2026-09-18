@@ -1883,7 +1883,9 @@ class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateVi
 
         form = self.get_form()
         if not form.is_valid():
-            return self.get(request, org_slug, opp_id, **kwargs)
+            # Re-render the bound form to preserve validation errors.
+            self.object = None
+            return self.form_invalid(form)
 
         form.save()
         return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
