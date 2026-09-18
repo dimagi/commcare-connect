@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -187,7 +188,13 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice import (
+    InvoiceWorkflow,
+    filter_invoices_by_month,
+    get_invoice_month_options,
+    resolve_invoice_month,
+    split_month_options,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
@@ -1775,12 +1782,17 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = (
-        PaymentInvoice.objects.filter(**filter_kwargs)
-        .select_related("exchange_rate")
-        .annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
-        .order_by("date")
+    all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
+    month_options = get_invoice_month_options(all_invoices)
+    selected_month = resolve_invoice_month(request.GET.get("month"), month_options, highlight_invoice_number)
+    month_chips, older_months = split_month_options(month_options, selected_month)
+
+    queryset = all_invoices.select_related("exchange_rate").annotate(
+        last_status_modified_at=Max("status_events__pgh_created_at")
     )
+    if selected_month:
+        queryset = filter_invoices_by_month(queryset, selected_month)
+    queryset = queryset.order_by("date")
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1809,6 +1821,10 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
+            "month_chips": month_chips,
+            "older_months": older_months,
+            "selected_month": selected_month,
+            "invoice_count": queryset.count(),
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
@@ -2005,22 +2021,32 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
     invoice = get_object_or_404(
-        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        PaymentInvoice.objects.select_related("opportunity", "exchange_rate", "payment"),
         opportunity=request.opportunity,
         payment_invoice_id=invoice_id,
     )
-    context = {
-        "invoice": invoice,
-        "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
-    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context=context,
+        context=get_invoice_pdf_context(invoice),
         content_type="application/pdf",
-        filename=f"invoice_{invoice_id}.pdf",
+        filename=invoice_pdf_filename(invoice),
     )
+
+
+def get_invoice_pdf_context(invoice):
+    return {
+        "invoice": invoice,
+        "opportunity": invoice.opportunity,
+        "service_summary_lines": get_invoice_service_summary(invoice),
+        "dimagi_address": DIMAGI_ADDRESS,
+    }
+
+
+def invoice_pdf_filename(invoice):
+    # invoice_number is free text on the form, and it is quoted into the Content-Disposition header.
+    safe_number = re.sub(r"[^A-Za-z0-9._-]", "_", invoice.invoice_number)
+    return f"invoice_{safe_number}.pdf"
 
 
 @opp_standard_access_required
