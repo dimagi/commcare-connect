@@ -21,12 +21,15 @@ from commcare_connect.microplanning.tests.factories import (
     WorkAreaGroupFactory,
 )
 from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
-from commcare_connect.opportunity.models import LabsRecord
+from commcare_connect.opportunity.models import LabsRecord, Opportunity
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     BlobMetaFactory,
     OpportunityAccessFactory,
+    OpportunityClaimFactory,
+    OpportunityClaimLimitFactory,
     OpportunityFactory,
+    PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -1046,12 +1049,76 @@ class TestOpportunityBudgetIsExported:
         assert row["end_date"] == str(program.end_date)
         assert row["currency"] == program.currency_id
 
+    def test_claimed_and_remaining_budget_are_exported(self, v2_export_client, opportunity):
+        """The fields this whole change exists for: how much of the funded work
+        is already spoken for, and how much is still going begging."""
+        opportunity.total_budget = 1_000_000
+        opportunity.save(update_fields=["total_budget"])
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=20)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        claim = OpportunityClaimFactory(opportunity_access=access)
+        OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit, max_visits=50)
+
+        row = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)
+        assert row["claimed_budget"] == 50 * (100 + 20)
+        assert row["remaining_budget"] == 1_000_000 - 6_000
+
+    def test_the_annotation_agrees_with_the_model_property(self, v2_export_client, opportunity, user):
+        """The property is the definition; the annotation exists only because
+        the property is too expensive to call per row. If they ever disagree,
+        the cheap one is wrong.
+
+        The visits matter: this queryset also aggregates over uservisit, so an
+        implementation that JOINED to the claims instead of sub-querying them
+        would multiply this total by the visit count. One visit would hide that.
+        """
+        for _ in range(3):
+            UserVisitFactory(opportunity=opportunity, user=user, opportunity_access=None)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=37, org_amount=11)
+        other_unit = PaymentUnitFactory(opportunity=opportunity, amount=5, org_amount=0)
+        for visits, unit in ((13, payment_unit), (4, other_unit)):
+            access = OpportunityAccessFactory(opportunity=opportunity)
+            claim = OpportunityClaimFactory(opportunity_access=access)
+            OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=unit, max_visits=visits)
+
+        row = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)
+        assert row["claimed_budget"] == Opportunity.objects.get(pk=opportunity.pk).claimed_budget
+
+    def test_an_unfunded_opportunity_has_no_remaining_budget_rather_than_zero(self, v2_export_client, opportunity):
+        """Subtracting from an unknown total gives an unknown remainder. Zero
+        would read as "fully committed", which is the opposite of true."""
+        opportunity.total_budget = None
+        opportunity.save(update_fields=["total_budget"])
+
+        row = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)
+        assert row["remaining_budget"] is None
+
+    def test_claims_do_not_inflate_the_visit_count(self, v2_export_client, opportunity, user):
+        """The reason this is a subquery. This queryset already aggregates over
+        uservisit; a second multi-valued JOIN would multiply the two together
+        and quietly overstate both."""
+        UserVisitFactory(opportunity=opportunity, user=user, opportunity_access=None)
+        before = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)[
+            "visit_count"
+        ]
+
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=10, org_amount=0)
+        for _ in range(3):
+            access = OpportunityAccessFactory(opportunity=opportunity)
+            claim = OpportunityClaimFactory(opportunity_access=access)
+            OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit, max_visits=2)
+
+        after = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)[
+            "visit_count"
+        ]
+        assert after == before, "three claims multiplied the visit count"
+
     def test_listing_opportunities_does_not_query_per_row(
         self, v2_export_client, opportunity, django_assert_max_num_queries
     ):
-        """The budget fields are plain columns on purpose. `claimed_budget` is a
-        property that walks three tables per opportunity, so adding it here
-        would turn one request into hundreds of queries."""
+        """Claimed budget arrives as ONE subquery, not as the model property,
+        which walks three tables per opportunity. Adding opportunities must not
+        add queries."""
         OpportunityFactory(organization=opportunity.organization, total_budget=1_000)
         OpportunityFactory(organization=opportunity.organization, total_budget=2_000)
         with django_assert_max_num_queries(15):

@@ -81,6 +81,13 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
     # Currency's primary key IS the code, so this reads the FK column without a
     # join -- the same trick ProgramDataExportSerializer already uses.
     currency = serializers.CharField(source="currency_id", read_only=True)
+    # Both come from the `claimed_budget_total` annotation the view adds, NOT
+    # from the model properties of the same name: those walk three tables per
+    # row. The annotation cannot be called `claimed_budget` either — that name
+    # is a property without a setter, so Django cannot attach the value and the
+    # query dies with "can't set attribute", loudly rather than silently.
+    claimed_budget = serializers.IntegerField(source="claimed_budget_total", read_only=True)
+    remaining_budget = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -96,8 +103,21 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "program",
             "visit_count",
             "total_budget",
+            "claimed_budget",
+            "remaining_budget",
             "currency",
         ]
+
+    def get_remaining_budget(self, obj) -> int | None:
+        """Funded and not yet claimed by anyone.
+
+        None when no budget is set, because subtracting from an unknown total
+        gives an unknown remainder — reporting 0 there would read as "fully
+        committed", the opposite of what is true.
+        """
+        if obj.total_budget is None:
+            return None
+        return obj.total_budget - (getattr(obj, "claimed_budget_total", None) or 0)
 
     def get_program(self, obj) -> int:
         return obj.program_id

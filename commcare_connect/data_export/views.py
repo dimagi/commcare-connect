@@ -8,7 +8,7 @@ from collections import defaultdict
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import storages
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.db.models import BigIntegerField, Count, F, OuterRef, Q, Subquery, Sum
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -69,6 +69,7 @@ from commcare_connect.opportunity.models import (
     LabsRecord,
     Opportunity,
     OpportunityAccess,
+    OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
     TaskType,
@@ -305,9 +306,29 @@ class ProgramOpportunityOrganizationDataView(BaseDataExportView):
     )
     def get(self, request):
         organizations = Organization.objects.filter(memberships__user=request.user)
+        # A SUBQUERY, not a second aggregate: this queryset already aggregates
+        # over uservisit, and a second multi-valued join would fan out and
+        # inflate both counts. A subquery is evaluated independently, so one
+        # extra scalar comes back per row with no effect on visit_count and no
+        # per-row query — the model's `claimed_budget` property walks
+        # OpportunityAccess -> OpportunityClaim -> OpportunityClaimLimit for
+        # every opportunity, which this endpoint cannot afford.
+        claimed_budget = Subquery(
+            OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=OuterRef("pk"))
+            .values("opportunity_claim__opportunity_access__opportunity")
+            .annotate(
+                total=Sum(
+                    F("max_visits") * (F("payment_unit__amount") + F("payment_unit__org_amount")),
+                    output_field=BigIntegerField(),
+                )
+            )
+            .values("total")[:1],
+            output_field=BigIntegerField(),
+        )
         opportunities = (
             Opportunity.objects.filter(Q(organization__in=organizations) | Q(program__organization__in=organizations))
             .annotate(visit_count=Count("uservisit", distinct=True))
+            .annotate(claimed_budget_total=claimed_budget)
             .distinct()
         )
         programs = Program.objects.filter(organization__in=organizations)
