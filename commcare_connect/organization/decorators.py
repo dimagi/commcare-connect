@@ -52,6 +52,11 @@ class IsProgramManagerOrgAdmin(BasePermission):
         return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
+def can_act_as_program_manager_admin(user, org) -> bool:
+    # Org that is program manager, funder or watcher can act as program manager 
+    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists())  and user_is_org_admin(user, org)
+
+
 def opp_view_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.VIEW)(view_func)
 
