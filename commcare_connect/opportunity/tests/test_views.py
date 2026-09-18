@@ -39,6 +39,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     OpportunityClaimLimit,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     TaskType,
     UserInvite,
@@ -69,6 +70,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.invoice_export import invoice_pdf_filename
 from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
@@ -1497,6 +1499,21 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert isinstance(form, AutomatedPaymentInvoiceForm)
 
 
+@pytest.mark.parametrize(
+    "invoice_number, expected",
+    [
+        ("ABC123", "invoice_ABC123.pdf"),
+        ("INV-2026.01", "invoice_INV-2026.01.pdf"),
+        # A hand-entered number would otherwise close the quoted Content-Disposition filename.
+        ('A"B', "invoice_AB.pdf"),
+        ("../../etc/passwd", "invoice_....etcpasswd.pdf"),
+        ("INV 42", "invoice_INV_42.pdf"),
+    ],
+)
+def test_invoice_pdf_filename(invoice_number, expected):
+    assert invoice_pdf_filename(PaymentInvoice(invoice_number=invoice_number)) == expected
+
+
 @pytest.mark.django_db
 class TestDownloadInvoiceView(BaseTestInvoiceView):
     @staticmethod
@@ -1520,7 +1537,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
         assert response.status_code == 200
         assert response.headers["Content-Type"] == "application/pdf"
-        expected_disposition = f'attachment;filename="invoice_{invoice.payment_invoice_id}.pdf"'
+        expected_disposition = f'attachment;filename="invoice_{invoice.invoice_number}.pdf"'
         assert response.headers["Content-Disposition"] == expected_disposition
 
     def test_missing_invoice(self, client, setup_invoice):

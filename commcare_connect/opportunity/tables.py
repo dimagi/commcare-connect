@@ -417,6 +417,15 @@ class PaymentReportTable(tables.Table):
 
 
 class PaymentInvoiceTable(OpportunityContextTable):
+    select = select_column(
+        td_extra={
+            "@change": "updateSelectAll()",
+            # Read by the selection bar to total up what the export will cover. Empty rather than
+            # zero when an invoice has no USD amount, so the bar can say so instead of quietly
+            # understating the total.
+            "data-amount-usd": lambda record: "" if record.amount_usd is None else record.amount_usd,
+        }
+    )
     amount = tables.Column(verbose_name="Amount")
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
@@ -441,6 +450,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         orderable = False
         fields = ("amount", "date", "invoice_number")
         sequence = (
+            "select",
             "amount",
             "amount_usd",
             "exchange_rate",

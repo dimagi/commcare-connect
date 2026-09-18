@@ -57,7 +57,9 @@ from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
+    parse_invoice_month,
 )
+from commcare_connect.opportunity.utils.invoice_export import get_exportable_invoices
 from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
@@ -1645,6 +1647,36 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
     invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
+
+
+class InvoiceExportForm(forms.Form):
+    """Which invoices a bulk export covers, and in what shape.
+
+    Selected invoices win; with nothing selected the export covers the whole month, or every
+    exportable invoice when the list is showing all months.
+    """
+
+    PDF_ZIP = "pdf_zip"
+    CSV_SUMMARY = "csv_summary"
+
+    export_type = forms.ChoiceField(
+        choices=[(PDF_ZIP, _("Invoice PDFs (.zip)")), (CSV_SUMMARY, _("Amounts due (.csv)"))]
+    )
+    month = forms.CharField(required=False)
+    invoice_ids = forms.ModelMultipleChoiceField(queryset=PaymentInvoice.objects.none(), required=False)
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+        # Scoping the queryset to the opportunity is what stops another workspace's invoice ids
+        # being exported through this form.
+        self.fields["invoice_ids"].queryset = PaymentInvoice.objects.filter(opportunity=self.opportunity)
+
+    def get_invoices(self):
+        selected = self.cleaned_data["invoice_ids"]
+        if selected:
+            return selected
+        return get_exportable_invoices(self.opportunity, parse_invoice_month(self.cleaned_data["month"]))
 
 
 class AutomatedPaymentInvoiceForm(forms.ModelForm):
