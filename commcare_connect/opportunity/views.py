@@ -175,7 +175,6 @@ from commcare_connect.opportunity.tasks import (
     bulk_update_payments_task,
     bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
-    generate_catchment_area_export,
     generate_deliver_status_export,
     generate_invoice_pdf_zip_export,
     generate_invoice_summary_export,
@@ -214,7 +213,6 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
     ImportException,
-    bulk_update_catchments,
     bulk_update_completed_work_status,
     bulk_update_visit_review_status,
     update_payment_accrued,
@@ -323,13 +321,18 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     paginate_by = 15
     filter_class = OpportunityListFilterSet
 
+    @cached_property
+    def can_act_as_program_manager(self):
+        org = self.request.org
+        return org.program_manager or org.funder or org.watched_programs.exists()
+
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
         return context
 
     def get_table_class(self):
-        if self.request.org.program_manager:
+        if self.can_act_as_program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
 
@@ -339,12 +342,12 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["org_slug"] = self.request.org.slug
+        kwargs["request"] = self.request
         return kwargs
 
     def get_table_data(self):
-        org = self.request.org
-        is_program_manager = org.program_manager
-        return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
+        data = OpportunityData(self.request.org, self.can_act_as_program_manager, self.get_filter_values())
+        return data.get_data()
 
 
 class OpportunityInit(ProgramAdminAccessMixin, CreateView):
@@ -584,8 +587,8 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
                 "icon": "fa-money-bill",
             },
         ]
-        context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
+        context["has_standard_access"] = opportunity_access_level_from_request(request, object) >= AccessLevel.STANDARD
         return context
 
 
@@ -1657,35 +1660,6 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
     return render(
         request, "opportunity/suspended_users.html", dict(table=table, opportunity=request.opportunity, path=path)
     )
-
-
-@opp_standard_access_required
-@opportunity_required
-def export_catchment_area(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
-    if not form.is_valid():
-        messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opp_id)
-
-    export_format = form.cleaned_data["format"]
-    result = generate_catchment_area_export.delay(request.opportunity.pk, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
-
-
-@opp_standard_access_required
-@opportunity_required
-@require_POST
-def import_catchment_area(request, org_slug=None, opp_id=None):
-    file = request.FILES.get("catchments")
-    try:
-        status = bulk_update_catchments(request.opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"{len(status)} catchment areas were updated successfully and {status.new_catchments} were created."
-        messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, opp_id)
 
 
 @opp_standard_access_required
@@ -2985,6 +2959,10 @@ class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
             "export_task_id": self.request.GET.get("export_task_id"),
+            # every action these tabs offer is gated on standard access to the opportunity
+            "has_standard_access": (
+                opportunity_access_level_from_request(self.request, opportunity) >= AccessLevel.STANDARD
+            ),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)
