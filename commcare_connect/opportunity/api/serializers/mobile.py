@@ -5,7 +5,6 @@ from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
-    CatchmentArea,
     CommCareApp,
     CompletedModule,
     CompletedWork,
@@ -93,12 +92,6 @@ class OpportunityClaimSerializer(serializers.ModelSerializer):
         ).data
 
 
-class CatchmentAreaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CatchmentArea
-        fields = ["id", "name", "latitude", "longitude", "radius", "active"]
-
-
 class OpportunityVerificationFlagsSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpportunityVerificationFlags
@@ -119,7 +112,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
     budget_per_user = serializers.SerializerMethodField()
     payment_units = serializers.SerializerMethodField()
     is_user_suspended = serializers.SerializerMethodField()
-    catchment_areas = serializers.SerializerMethodField()
     verification_flags = OpportunityVerificationFlagsSerializer(source="opportunityverificationflags", read_only=True)
 
     class Meta:
@@ -149,7 +141,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "budget_per_user",
             "payment_units",
             "is_user_suspended",
-            "catchment_areas",
             "verification_flags",
         ]
 
@@ -190,11 +181,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
     def get_is_user_suspended(self, obj):
         opp_access = _get_opp_access(self.context.get("request").user, obj)
         return opp_access.suspended
-
-    def get_catchment_areas(self, obj):
-        opp_access = _get_opp_access(self.context.get("request").user, obj)
-        catchments = CatchmentArea.objects.filter(opportunity_access=opp_access)
-        return CatchmentAreaSerializer(catchments, many=True).data
 
 
 @quickcache(vary_on=["user.pk", "opportunity.pk"], timeout=60 * 60)

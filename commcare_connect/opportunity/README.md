@@ -56,7 +56,6 @@ When a delivery form is received, it is checked against the opportunity's `Oppor
 | `duplicate`              | Entity already visited           | `OpportunityVerificationFlags` |
 | `gps`                    | GPS location missing             | `OpportunityVerificationFlags` |
 | `location`               | Visit too close to another visit | `OpportunityVerificationFlags` |
-| `catchment`              | Outside allowed geographic area  | `OpportunityVerificationFlags` |
 | `form_submission_period` | Outside allowed time window      | `OpportunityVerificationFlags` |
 | `duration`               | Form completed too quickly       | `DeliverUnitFlagRules`         |
 | `attachment_missing`     | Required attachments missing     | `DeliverUnitFlagRules`         |
@@ -86,7 +85,6 @@ Organization
         ├── OpportunityVerificationFlags (1:1)
         ├── DeliverUnitFlagRules (per DeliverUnit)
         ├── FormJsonValidationRules (per DeliverUnit, M2M)
-        ├── CatchmentArea (per user, optional)
         ├── PaymentInvoice
         │     └── Payment (1:1)
         └── OpportunityAccess (per user)
@@ -109,7 +107,7 @@ Organization
 | `views.py`                      | Web UI: create, edit, finalize, dashboard                             |
 | `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports          |
 | `forms.py`                      | Django forms for opportunity creation/editing                         |
-| `export.py`                     | Exports: visits, payments, user status, work status, catchment areas  |
+| `export.py`                     | Exports: visits, payments, user status, work status                   |
 | `visit_import.py`               | Bulk visit/payment import, exchange rates                             |
 | `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                  |
 | `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual        |
