@@ -1,8 +1,17 @@
 from django.contrib.auth.models import Permission
-from django.test import Client
+from django.test import Client, RequestFactory
 
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.users.models import User
+
+
+def make_request(user, org=None, membership=None):
+    """A request carrying only what the access functions read: the user, the org, the role in it."""
+    request = RequestFactory().get("/")
+    request.user = user
+    request.org = org
+    request.org_membership = membership
+    return request
 
 
 def make_membership(organization, user, role):

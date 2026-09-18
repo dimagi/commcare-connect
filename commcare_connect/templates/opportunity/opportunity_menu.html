@@ -20,10 +20,12 @@
            class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "Add Payment Unit" %}</a>
       </li>
     {% endif %}
-    <li>
-      <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.opportunity_id %}"
-         class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "View Invoices" %}</a>
-    </li>
+    {% if has_standard_access %}
+      <li>
+        <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.opportunity_id %}"
+           class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "View Invoices" %}</a>
+      </li>
+    {% endif %}
     <li x-data="{showMoreOptions: false}">
       <a class="block px-4 py-2.5 text-sm text-brand-deep-purple"
          @click="showMoreOptions = true">{% translate "Catchment Areas" %}</a>

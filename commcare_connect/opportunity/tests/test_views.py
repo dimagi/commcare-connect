@@ -46,7 +46,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tables import TaskTable
+from commcare_connect.opportunity.tables import (
+    OpportunityTable,
+    ProgramManagerOpportunityTable,
+    TaskTable,
+)
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -69,7 +73,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView
+from commcare_connect.opportunity.views import OpportunityList, WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
@@ -777,6 +781,80 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+RELATIONSHIPS_ON_THE_LIST = [
+    ("delivery", True),
+    ("program_org", True),
+    ("funder", True),
+    ("watcher", True),
+    ("supervisor", True),
+    ("unrelated", False),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("relationship,listed", RELATIONSHIPS_ON_THE_LIST)
+def test_opportunity_list_data_covers_every_accessible_relationship(
+    relationship, listed, opp_orgs, managed_opportunity
+):
+    queryset = OpportunityData(opp_orgs[relationship], False, {}).get_data()
+
+    assert [opp.id for opp in queryset] == ([managed_opportunity.id] if listed else [])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,manages",
+    [("delivery", False), ("supervisor", False), ("program_org", True), ("funder", True), ("watcher", True)],
+)
+def test_opportunity_list_table_follows_the_relationship(relationship, manages, opp_orgs, rf):
+    view = OpportunityList()
+    view.request = rf.get("/")
+    view.request.org = opp_orgs[relationship]
+
+    expected = ProgramManagerOpportunityTable if manages else OpportunityTable
+    assert view.get_table_class() is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Inviting, exporting and importing all need standard access, so a watcher must not be offered them."""
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    # the tab partials, where the actions live, are what an htmx request renders
+    workers = client.get(reverse("opportunity:worker_list", args=args), headers={"hx-request": "true"})
+    payments = client.get(reverse("opportunity:worker_payments", args=args), headers={"hx-request": "true"})
+
+    assert workers.context["has_standard_access"] is offered
+    assert payments.context["has_standard_access"] is offered
+    assert (reverse("opportunity:user_invite", args=args) in workers.content.decode()) is offered
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_opportunity_detail_invoice_menu_needs_standard_access(
+    relationship, offered, opp_orgs, managed_opportunity, client
+):
+    """The invoice list needs standard access, so a watcher must not be offered the menu entry."""
+    PaymentUnitFactory(opportunity=managed_opportunity, max_total=100, max_daily=5)
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    response = client.get(reverse("opportunity:detail", args=args))
+
+    assert response.context["has_standard_access"] is offered
+    assert (reverse("opportunity:invoice_list", args=args) in response.content.decode()) is offered
 
 
 @pytest.mark.django_db
