@@ -30,6 +30,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -1003,3 +1004,55 @@ class TestImplementationAreaBulkCreateView(BaseMicroplanningFlagTest):
         other.refresh_from_db()
         assert pending.implementation_area_id == area.id
         assert other.implementation_area_id is None
+
+
+@pytest.mark.django_db
+class TestOpportunityBudgetIsExported:
+    """`opp_org_program_list` carried an opportunity's visit count but not its
+    budget, so a consumer could see how much work had been done and never how
+    much had been funded. Everything needed to answer "funded but not yet
+    delivered" now travels with the row.
+    """
+
+    def _payload(self, client):
+        response = client.get(reverse("data_export:opp_org_program_list"))
+        assert response.status_code == 200
+        return response.json()
+
+    def test_an_opportunity_carries_its_budget_and_currency(self, v2_export_client, opportunity):
+        opportunity.total_budget = 4_000_000
+        opportunity.save(update_fields=["total_budget"])
+
+        row = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)
+        assert row["total_budget"] == 4_000_000
+        assert row["currency"] == opportunity.currency_id
+        assert row["start_date"] == str(opportunity.start_date)
+
+    def test_an_unfunded_opportunity_reports_null_rather_than_zero(self, v2_export_client, opportunity):
+        """Zero budget and no budget set are different facts, and a consumer
+        that cannot tell them apart will report the second as the first."""
+        opportunity.total_budget = None
+        opportunity.save(update_fields=["total_budget"])
+
+        row = next(o for o in self._payload(v2_export_client)["opportunities"] if o["id"] == opportunity.id)
+        assert row["total_budget"] is None
+
+    def test_the_programme_carries_its_budget_and_dates(self, v2_export_client, opportunity):
+        program = ProgramFactory(organization=opportunity.organization, budget=250_000)
+
+        row = next(p for p in self._payload(v2_export_client)["programs"] if p["id"] == program.id)
+        assert row["budget"] == 250_000
+        assert row["start_date"] == str(program.start_date)
+        assert row["end_date"] == str(program.end_date)
+        assert row["currency"] == program.currency_id
+
+    def test_listing_opportunities_does_not_query_per_row(
+        self, v2_export_client, opportunity, django_assert_max_num_queries
+    ):
+        """The budget fields are plain columns on purpose. `claimed_budget` is a
+        property that walks three tables per opportunity, so adding it here
+        would turn one request into hundreds of queries."""
+        OpportunityFactory(organization=opportunity.organization, total_budget=1_000)
+        OpportunityFactory(organization=opportunity.organization, total_budget=2_000)
+        with django_assert_max_num_queries(15):
+            self._payload(v2_export_client)

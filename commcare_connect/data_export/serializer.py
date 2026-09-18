@@ -78,6 +78,9 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
     supervising_organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     program = serializers.SerializerMethodField()
     visit_count = serializers.SerializerMethodField()
+    # Currency's primary key IS the code, so this reads the FK column without a
+    # join -- the same trick ProgramDataExportSerializer already uses.
+    currency = serializers.CharField(source="currency_id", read_only=True)
 
     class Meta:
         model = Opportunity
@@ -87,10 +90,13 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "date_created",
             "organization",
             "supervising_organization",
+            "start_date",
             "end_date",
             "is_active",
             "program",
             "visit_count",
+            "total_budget",
+            "currency",
         ]
 
     def get_program(self, obj) -> int:
@@ -115,7 +121,18 @@ class ProgramDataExportSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Program
-        fields = ["id", "name", "delivery_type", "currency", "organization", "funder", "watchers"]
+        fields = [
+            "id",
+            "name",
+            "delivery_type",
+            "currency",
+            "budget",
+            "start_date",
+            "end_date",
+            "organization",
+            "funder",
+            "watchers",
+        ]
 
 
 class OpportunityUserDataSerializer(serializers.Serializer):
