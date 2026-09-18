@@ -320,11 +320,7 @@ def _get_inactive_message(access: OpportunityAccess):
     if has_claimed_opportunity:
         message = _check_deliver_inactive(access)
     else:
-        # Send notification if user has completed learn modules and has not claimed the opportunity
-        if access.learn_progress == 100:
-            message = _get_deliver_message(access)
-        else:
-            message = _get_learn_message(access)
+        message = _get_learn_message(access)
     return message
 
 
