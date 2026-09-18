@@ -1352,7 +1352,7 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     try:
         action = InaccessibilityReviewAction(request.POST.get("action", ""))
     except ValueError:
-        return HttpResponseBadRequest("Invalid action")
+        return HttpResponseBadRequest("Invalid action", content_type="text/plain")
 
     new_status = _ACTION_TO_NEW_STATUS[action]
 
@@ -1360,13 +1360,21 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         WorkArea.objects.select_for_update(),
         id=work_area_id,
         opportunity=request.opportunity,
-        status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
-    inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
-        work_area=work_area,
-        status=InaccessibilityRequestStatus.PENDING,
+    inacc_request = (
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user")
+        .filter(work_area=work_area, status=InaccessibilityRequestStatus.PENDING)
+        .first()
     )
+    if inacc_request is None or work_area.status != WorkAreaStatus.REQUEST_FOR_INACCESSIBLE:
+        # The work area is not in a state this action can act on, for any number of reasons, so
+        # the panel is working from stale data either way. Its error box shows the body as text,
+        # so this has to be a message rather than an error page.
+        return HttpResponse(
+            status=409,
+            content=_("Invalid request. Please reload the page and try again."),
+            content_type="text/plain",
+        )
 
     work_area.status = new_status
     inacc_request.status = _ACTION_TO_REQUEST_STATUS[action]
@@ -1382,7 +1390,11 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
 
     except CommCareHQAPIException as e:
         logger.info(f"Failed to sync work area {work_area.id} to HQ after review action. Error: {e}")
-        return HttpResponse(status=500, content=_("Failed to sync work area status. Please try again."))
+        return HttpResponse(
+            status=500,
+            content=_("Failed to sync work area status. Please try again."),
+            content_type="text/plain",
+        )
 
     if action == InaccessibilityReviewAction.DENY:
         transaction.on_commit(

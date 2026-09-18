@@ -1670,13 +1670,31 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
         [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.INACCESSIBLE],
         ids=["not_visited", "already_inaccessible"],
     )
-    def test_action_404_when_wa_not_pending(self, status, client, org_user_admin, opportunity, organization):
+    def test_action_on_unreviewable_work_area_answers_in_plain_text(
+        self, status, client, org_user_admin, opportunity, organization
+    ):
+        """The review panel renders the body as its error text, so an error page would land in the
+        sidebar as raw markup."""
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
+
         response = client.post(url, {"action": "approve"})
+
+        assert response.status_code == 409
+        assert response["Content-Type"].startswith("text/plain")
+
+    def test_action_404_for_a_work_area_outside_the_opportunity(
+        self, client, org_user_admin, opportunity, organization
+    ):
+        other_work_area = WorkAreaFactory(status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, opportunity.opportunity_id, other_work_area.id)
+
+        response = client.post(url, {"action": "approve"})
+
         assert response.status_code == 404
 
     def test_review_modal_returns_pending_not_historical_request(

@@ -11,8 +11,14 @@ function reviewFormAfterRequest(form) {
 
 function reviewFormResponseError(event) {
   const el = document.getElementById('review-inaccessibility-error');
-  if (event.detail.xhr.responseText)
-    el.textContent = event.detail.xhr.responseText;
+  const xhr = event.detail.xhr;
+  // Only a plain-text body is written for this box. Anything else is an error page, whose
+  // markup would otherwise be dumped into the panel, so fall back to the generic message.
+  const isPlainText = (xhr.getResponseHeader('Content-Type') || '').startsWith(
+    'text/plain',
+  );
+  const message = isPlainText && xhr.responseText.trim();
+  if (message) el.textContent = message;
   el.classList.remove('hidden');
 }
 
