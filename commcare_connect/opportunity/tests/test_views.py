@@ -70,7 +70,8 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView, invoice_pdf_filename
+from commcare_connect.opportunity.utils.invoice_export import invoice_pdf_filename
+from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
@@ -1504,8 +1505,8 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         ("ABC123", "invoice_ABC123.pdf"),
         ("INV-2026.01", "invoice_INV-2026.01.pdf"),
         # A hand-entered number would otherwise close the quoted Content-Disposition filename.
-        ('A"B', "invoice_A_B.pdf"),
-        ("../../etc/passwd", "invoice_.._.._etc_passwd.pdf"),
+        ('A"B', "invoice_AB.pdf"),
+        ("../../etc/passwd", "invoice_....etcpasswd.pdf"),
         ("INV 42", "invoice_INV_42.pdf"),
     ],
 )

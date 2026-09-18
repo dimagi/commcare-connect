@@ -1,7 +1,6 @@
 import datetime
 import json
 import logging
-import re
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -195,13 +194,13 @@ from commcare_connect.opportunity.utils.invoice import (
     resolve_invoice_month,
     split_month_options,
 )
+from commcare_connect.opportunity.utils.invoice_export import get_invoice_pdf_context, invoice_pdf_filename
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
-    get_invoice_service_summary,
     rollback_invoice_line_items,
     total_late_delta_units,
 )
@@ -264,8 +263,6 @@ _NEXT_WORKER_TASKS = "worker_tasks"
 PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
-
-DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
 
 
 def get_opportunity_or_404(opp_id):
@@ -2032,21 +2029,6 @@ def download_invoice(request, org_slug, opp_id, invoice_id):
         content_type="application/pdf",
         filename=invoice_pdf_filename(invoice),
     )
-
-
-def get_invoice_pdf_context(invoice):
-    return {
-        "invoice": invoice,
-        "opportunity": invoice.opportunity,
-        "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
-    }
-
-
-def invoice_pdf_filename(invoice):
-    # invoice_number is free text on the form, and it is quoted into the Content-Disposition header.
-    safe_number = re.sub(r"[^A-Za-z0-9._-]", "_", invoice.invoice_number)
-    return f"invoice_{safe_number}.pdf"
 
 
 @opp_standard_access_required
