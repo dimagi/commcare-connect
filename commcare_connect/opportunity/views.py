@@ -89,6 +89,7 @@ from commcare_connect.opportunity.forms import (
     EditTaskTypeForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
+    InvoiceExportForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
@@ -175,6 +176,8 @@ from commcare_connect.opportunity.tasks import (
     bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
     generate_deliver_status_export,
+    generate_invoice_pdf_zip_export,
+    generate_invoice_summary_export,
     generate_payment_export,
     generate_review_visit_export,
     generate_user_status_export,
@@ -186,14 +189,24 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice import (
+    InvoiceWorkflow,
+    filter_invoices_by_month,
+    get_invoice_month_options,
+    resolve_invoice_month,
+    split_month_options,
+)
+from commcare_connect.opportunity.utils.invoice_export import (
+    get_exportable_invoices,
+    get_invoice_pdf_context,
+    invoice_pdf_filename,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
-    get_invoice_service_summary,
     rollback_invoice_line_items,
     total_late_delta_units,
 )
@@ -253,10 +266,13 @@ EXPORT_ROW_LIMIT = 10_000
 _NEXT_WORKER_TASKS = "worker_tasks"
 
 PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
+
+INVOICE_EXPORT_TASKS = {
+    InvoiceExportForm.PDF_ZIP: generate_invoice_pdf_zip_export,
+    InvoiceExportForm.CSV_SUMMARY: generate_invoice_summary_export,
+}
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
-
-DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
 
 
 def get_opportunity_or_404(opp_id):
@@ -1750,12 +1766,17 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = (
-        PaymentInvoice.objects.filter(**filter_kwargs)
-        .select_related("exchange_rate")
-        .annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
-        .order_by("date")
+    all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
+    month_options = get_invoice_month_options(all_invoices)
+    selected_month = resolve_invoice_month(request.GET.get("month"), month_options, highlight_invoice_number)
+    month_chips, older_months = split_month_options(month_options, selected_month)
+
+    queryset = all_invoices.select_related("exchange_rate").annotate(
+        last_status_modified_at=Max("status_events__pgh_created_at")
     )
+    if selected_month:
+        queryset = filter_invoices_by_month(queryset, selected_month)
+    queryset = queryset.order_by("date")
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1784,6 +1805,16 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
+            "month_chips": month_chips,
+            "older_months": older_months,
+            "selected_month": selected_month,
+            "invoice_count": queryset.count(),
+            "export_task_id": request.GET.get("export_task_id"),
+            # The month the page is actually showing, not the raw query value: an export
+            # started from here must cover exactly what the user is looking at.
+            "month_param": selected_month.strftime("%Y-%m") if selected_month else "all",
+            "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
+            "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
@@ -1980,22 +2011,45 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
     invoice = get_object_or_404(
-        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        PaymentInvoice.objects.select_related("opportunity", "exchange_rate", "payment"),
         opportunity=request.opportunity,
         payment_invoice_id=invoice_id,
     )
-    context = {
-        "invoice": invoice,
-        "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
-    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context=context,
+        context=get_invoice_pdf_context(invoice),
         content_type="application/pdf",
-        filename=f"invoice_{invoice_id}.pdf",
+        filename=invoice_pdf_filename(invoice),
     )
+
+
+@opp_standard_access_required
+@opportunity_required
+@require_POST
+def export_invoices(request, org_slug, opp_id):
+    """Start a bulk invoice export and send the user back to the list to watch it finish."""
+    form = InvoiceExportForm(data=request.POST, opportunity=request.opportunity)
+    redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
+
+    if not form.is_valid():
+        messages.error(request, _("That export request was not valid. Please try again."))
+        return redirect(redirect_url)
+
+    invoices = form.get_invoices()
+    if not invoices:
+        messages.error(request, _("There are no invoices to export."))
+        return redirect(redirect_url)
+
+    invoice_ids = [invoice.pk for invoice in invoices]
+    # A bare delay() is safe here: the export only reads rows that were committed long ago, so
+    # there is nothing for the worker to race with.
+    task = INVOICE_EXPORT_TASKS[form.cleaned_data["export_type"]].delay(request.opportunity.pk, invoice_ids)
+
+    query = {"export_task_id": task.id}
+    if form.cleaned_data["month"]:
+        query["month"] = form.cleaned_data["month"]
+    return redirect(f"{redirect_url}?{urlencode(query)}")
 
 
 @opp_standard_access_required
