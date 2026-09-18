@@ -89,6 +89,7 @@ from commcare_connect.opportunity.forms import (
     EditTaskTypeForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
+    InvoiceExportForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
@@ -176,6 +177,8 @@ from commcare_connect.opportunity.tasks import (
     create_learn_modules_and_deliver_units,
     generate_catchment_area_export,
     generate_deliver_status_export,
+    generate_invoice_pdf_zip_export,
+    generate_invoice_summary_export,
     generate_payment_export,
     generate_review_visit_export,
     generate_user_status_export,
@@ -194,7 +197,11 @@ from commcare_connect.opportunity.utils.invoice import (
     resolve_invoice_month,
     split_month_options,
 )
-from commcare_connect.opportunity.utils.invoice_export import get_invoice_pdf_context, invoice_pdf_filename
+from commcare_connect.opportunity.utils.invoice_export import (
+    get_exportable_invoices,
+    get_invoice_pdf_context,
+    invoice_pdf_filename,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
@@ -261,6 +268,11 @@ EXPORT_ROW_LIMIT = 10_000
 _NEXT_WORKER_TASKS = "worker_tasks"
 
 PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
+
+INVOICE_EXPORT_TASKS = {
+    InvoiceExportForm.PDF_ZIP: generate_invoice_pdf_zip_export,
+    InvoiceExportForm.CSV_SUMMARY: generate_invoice_summary_export,
+}
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
 
@@ -1822,6 +1834,12 @@ def invoice_list(request, org_slug, opp_id):
             "older_months": older_months,
             "selected_month": selected_month,
             "invoice_count": queryset.count(),
+            "export_task_id": request.GET.get("export_task_id"),
+            # The month the page is actually showing, not the raw query value: an export
+            # started from here must cover exactly what the user is looking at.
+            "month_param": selected_month.strftime("%Y-%m") if selected_month else "all",
+            "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
+            "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
@@ -2029,6 +2047,34 @@ def download_invoice(request, org_slug, opp_id, invoice_id):
         content_type="application/pdf",
         filename=invoice_pdf_filename(invoice),
     )
+
+
+@opp_standard_access_required
+@opportunity_required
+@require_POST
+def export_invoices(request, org_slug, opp_id):
+    """Start a bulk invoice export and send the user back to the list to watch it finish."""
+    form = InvoiceExportForm(data=request.POST, opportunity=request.opportunity)
+    redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
+
+    if not form.is_valid():
+        messages.error(request, _("That export request was not valid. Please try again."))
+        return redirect(redirect_url)
+
+    invoices = form.get_invoices()
+    if not invoices:
+        messages.error(request, _("There are no invoices to export."))
+        return redirect(redirect_url)
+
+    invoice_ids = [invoice.pk for invoice in invoices]
+    # A bare delay() is safe here: the export only reads rows that were committed long ago, so
+    # there is nothing for the worker to race with.
+    task = INVOICE_EXPORT_TASKS[form.cleaned_data["export_type"]].delay(request.opportunity.pk, invoice_ids)
+
+    query = {"export_task_id": task.id}
+    if form.cleaned_data["month"]:
+        query["month"] = form.cleaned_data["month"]
+    return redirect(f"{redirect_url}?{urlencode(query)}")
 
 
 @opp_standard_access_required
