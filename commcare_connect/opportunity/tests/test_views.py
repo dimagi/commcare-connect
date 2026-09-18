@@ -840,6 +840,26 @@ def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_opportunity_detail_invoice_menu_needs_standard_access(
+    relationship, offered, opp_orgs, managed_opportunity, client
+):
+    """The invoice list needs standard access, so a watcher must not be offered the menu entry."""
+    PaymentUnitFactory(opportunity=managed_opportunity, max_total=100, max_daily=5)
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    response = client.get(reverse("opportunity:detail", args=args))
+
+    assert response.context["has_standard_access"] is offered
+    assert (reverse("opportunity:invoice_list", args=args) in response.content.decode()) is offered
+
+
+@pytest.mark.django_db
 def test_get_opportunity_list_data_counts_duplicate_approved_deliveries(organization):
     today = now().date()
     opportunity = OpportunityFactory(
