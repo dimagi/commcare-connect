@@ -10335,6 +10335,37 @@ a.explore-card:hover {
   color: var(--indigo-deep);
 }
 
+/* Additive .os-press-card elements for the "In the news" grid (below): a
+   framing label, so a sponsored or opinion piece never reads as staff-written
+   coverage, and a short original summary. Both are optional -- the existing
+   press tiles above don't use them and are unaffected. */
+.os-press-label {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--indigo);
+}
+.os-press-summary {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* Repeatable "In the news" card grid on /insights and per-program portfolio
+   pages (see prelogin/includes/news_section.html + news_card.html and
+   commcare_connect/prelogin/external_coverage.py). Only the multi-card grid
+   wrapper is new -- each tile reuses .os-press-card above. minmax(min(...))
+   keeps a single narrow column from ever forcing horizontal scroll. */
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 32px;
+}
+
 /* Funders & investors row */
 .os-funders {
   margin-top: 48px;
@@ -11195,8 +11226,8 @@ a.explore-card:hover {
 .blog-grid-section[hidden] {
   display: none;
 }
-/* Section labels that separate the two content blocks on the single Insights
-   page: the "Stories & updates" cards and the "Evidence from the field" rows. */
+/* Section labels that separate the content blocks on the single Insights
+   page: "Stories & updates", "In the news", and "Evidence from the field". */
 .insights-section-title {
   font-size: clamp(22px, 2.4vw, 30px);
   font-weight: 300;

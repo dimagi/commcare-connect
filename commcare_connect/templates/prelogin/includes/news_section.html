@@ -1,0 +1,27 @@
+{% load prelogin_extras %}
+{% comment %}
+  Repeatable "In the news" card grid, fed by news_entries (see
+  commcare_connect/prelogin/external_coverage.py) via the `for_program` filter.
+
+  Usage on /insights (every entry, unfiltered) -- include with no extra vars.
+  Usage on a portfolio page (only entries tagged with that program's slug) --
+  include `with program_key="reading-glasses"` (swap in the target slug).
+
+  Renders nothing at all when there are no matching entries.
+{% endcomment %}
+{% with program_key=program_key|default:"" %}
+  {% with matches=news_entries|for_program:program_key %}
+    {% if matches %}
+      <div class="section news-section">
+        <div class="wrap">
+          <h2 class="insights-section-title">{{ heading|default:"In the news" }}</h2>
+          <div class="news-grid">
+            {% for entry in matches %}
+              {% include "prelogin/includes/news_card.html" with entry=entry %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endwith %}
+{% endwith %}
