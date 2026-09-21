@@ -57,3 +57,15 @@ urlpatterns += [
     path("contact/", views.contact, name="contact"),
     path("contact/index.html", views.contact, name="contact-legacy"),
 ]
+
+# "Connect in action" story pages — standalone templates (not the SPA), each
+# with its own stylesheet and scroll script. Kept under /in-action/<slug> so
+# further stories slot in beside this one, and /in-action can later become an
+# index without moving any published URL. Linked from the Platform page.
+urlpatterns += [
+    path(
+        "in-action/nigeria-cholera-response",
+        views.in_action_nigeria_cholera,
+        name="in-action-nigeria-cholera-response",
+    ),
+]
