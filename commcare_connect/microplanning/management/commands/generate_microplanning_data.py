@@ -30,7 +30,15 @@ from commcare_connect.microplanning.const import (
     NO_CHILDREN_WORK_AREA_UNIT_SLUG,
     SERVICE_DELIVERY_UNIT_SLUG,
 )
-from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.models import (
+    SRID,
+    ImplementationArea,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.opportunity.models import (
     CommCareApp,
     CompletedWork,
@@ -69,15 +77,32 @@ CELL_SIZE = 0.04  # degrees per work area side, ~4.4km — the scale of a real i
 # that cap: ~900m and ~170m on a side.
 SMALL_CELL_SIZES = (0.008, 0.0015)
 
-ASSIGNED_STATUSES = [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, WorkAreaStatus.EXPECTED_VISIT_REACHED]
+# An area only reaches INACCESSIBLE because the worker holding it raised a request that was then
+# approved, so it belongs with the assigned statuses. Unassigned areas are also out of scope for
+# every microplanning metric, which would leave a seeded inaccessible area uncounted.
+ASSIGNED_STATUSES = [
+    WorkAreaStatus.NOT_VISITED,
+    WorkAreaStatus.VISITED,
+    WorkAreaStatus.EXPECTED_VISIT_REACHED,
+    WorkAreaStatus.INACCESSIBLE,
+]
 UNASSIGNED_STATUSES = [
     WorkAreaStatus.UNASSIGNED,
     WorkAreaStatus.UNASSIGNED,
     WorkAreaStatus.UNASSIGNED,
     WorkAreaStatus.EXCLUDED,
-    WorkAreaStatus.INACCESSIBLE,
 ]
 VISITED_STATUSES = (WorkAreaStatus.VISITED, WorkAreaStatus.EXPECTED_VISIT_REACHED)
+INACCESSIBILITY_REASONS = [
+    "Flooded access road",
+    "Community leader refused entry",
+    "Security incident nearby",
+    "Bridge washed away",
+    "Area fenced off for construction",
+]
+# Days between one seeded request's date of visit and the next, so Inaccessible Mode's
+# "days outstanding" ordering is visible rather than every row reading the same.
+INACCESSIBILITY_REQUEST_DAY_STEP = 3
 # Every coverage metric counts approved visits by deliver unit slug, so the seeded deliver units
 # have to use the slugs from microplanning.const or the map reports zeros and warns that the
 # required deliver units are missing.
@@ -155,6 +180,16 @@ class Command(BaseCommand):
         )
         parser.add_argument("--workers", type=int, default=3, help="Mobile workers to create and assign areas to")
         parser.add_argument(
+            "--inaccessible-requests",
+            type=int,
+            default=10,
+            help=(
+                "Work areas to put into Requested Inaccessible, each with a pending "
+                "inaccessibility request for Inaccessible Mode to review (default 10). Capped by "
+                "the number of seeded areas eligible for one."
+            ),
+        )
+        parser.add_argument(
             "--no-admin",
             action="store_true",
             help=f"Skip creating the {DEMO_ADMIN_USERNAME} superuser",
@@ -211,9 +246,13 @@ class Command(BaseCommand):
             payment_units = self.ensure_payment_units(opportunity)
             accesses = self.ensure_workers(opportunity, options["workers"])
             work_areas = self.create_areas(opportunity, accesses, options)
+            # Before the visits, so an area awaiting review is one nobody has delivered in.
+            inaccessibility_requests = self.create_inaccessibility_requests(
+                accesses, work_areas, options["inaccessible_requests"]
+            )
             visit_count = self.create_visits(opportunity, work_areas, payment_units)
 
-        self.report(opportunity, work_areas, visit_count, assignment_mode)
+        self.report(opportunity, work_areas, visit_count, len(inaccessibility_requests), assignment_mode)
 
     def resolve_opportunity(self, options):
         """The caller's existing opportunity, or the demo one (created on first run).
@@ -623,6 +662,53 @@ class Command(BaseCommand):
             group.update_centroid()
         return created
 
+    def create_inaccessibility_requests(self, accesses, work_areas, count):
+        """Work areas awaiting an inaccessibility review, one pending request each.
+
+        Assigned areas nobody has visited yet come first — a worker who reached their own area and
+        could not get in — falling back to unassigned areas, which are assigned a worker on the way
+        through: the request is reported by whoever holds the area, and an unassigned area is out of
+        scope for every microplanning metric, so one left unassigned would go uncounted. Areas that
+        already hold visits are left alone so the coverage tiles keep something to show.
+        """
+        if count <= 0 or not accesses:
+            return []
+
+        assigned_unvisited = [
+            wa for wa in work_areas if wa.opportunity_access_id and wa.status == WorkAreaStatus.NOT_VISITED
+        ]
+        unassigned = [wa for wa in work_areas if wa.status == WorkAreaStatus.UNASSIGNED]
+        chosen = (assigned_unvisited + unassigned)[:count]
+        if not chosen:
+            return []
+
+        today = timezone.localdate()
+        requests = []
+        for index, work_area in enumerate(chosen):
+            work_area.status = WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+            if work_area.opportunity_access_id is None:
+                work_area.opportunity_access = accesses[index % len(accesses)]
+            requests.append(
+                WorkAreaInaccessibilityRequest(
+                    work_area=work_area,
+                    opportunity_access_id=work_area.opportunity_access_id,
+                    xform_id=str(uuid.uuid4()),
+                    date_of_visit=today - timedelta(days=(index + 1) * INACCESSIBILITY_REQUEST_DAY_STEP),
+                    location=Point(*jittered_point(work_area), srid=SRID),
+                    reason=INACCESSIBILITY_REASONS[index % len(INACCESSIBILITY_REASONS)],
+                    status=InaccessibilityRequestStatus.PENDING,
+                )
+            )
+
+        WorkArea.objects.bulk_update(chosen, ["status", "opportunity_access"])
+        WorkAreaInaccessibilityRequest.objects.bulk_create(requests)
+        if len(chosen) < count:
+            self.stdout.write(
+                f"Only {len(chosen)} of the {count} requested inaccessibility requests fit the seeded areas"
+            )
+        self.stdout.write(f"Inaccessibility requests: {len(requests)} pending review")
+        return requests
+
     def create_visits(self, opportunity, work_areas, payment_units):
         """Visits on the visited areas only, spread over 90 days.
 
@@ -684,12 +770,19 @@ class Command(BaseCommand):
         # Visited but short of the target.
         return (*service_delivery, max(1, work_area.expected_visit_count - 1))
 
-    def report(self, opportunity, work_areas, visit_count, assignment_mode):
+    def report(self, opportunity, work_areas, visit_count, inaccessibility_request_count, assignment_mode):
         base = f"/a/{opportunity.organization.slug}/microplanning/{opportunity.opportunity_id}/"
-        self.stdout.write(self.style.SUCCESS(f"\n{len(work_areas)} work areas, {visit_count} visits"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"\n{len(work_areas)} work areas, {visit_count} visits, "
+                f"{inaccessibility_request_count} pending inaccessibility requests"
+            )
+        )
         self.stdout.write(f"Progress Map:   {base}")
         if assignment_mode:
             self.stdout.write(f"Assignment Mode: {base}?assignment_mode=1")
+            if inaccessibility_request_count:
+                self.stdout.write(f"Inaccessible Mode: {base}?inaccessible_mode=1")
 
 
 def cluster_name(index):
