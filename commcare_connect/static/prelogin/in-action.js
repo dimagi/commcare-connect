@@ -434,8 +434,8 @@
       reduce || headY >= bodyH
         ? pathLen
         : headY <= 0
-        ? 0
-        : sampleAtY(headY).len;
+          ? 0
+          : sampleAtY(headY).len;
 
     path.style.strokeDashoffset = pathLen - drawn;
     halo.style.strokeDashoffset = pathLen - drawn;
