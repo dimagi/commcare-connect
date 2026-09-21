@@ -202,7 +202,9 @@
                 }
             },
 
-            openInaccessibilityReview(workAreaId) {
+            // `zoom` follows the rest of the map: picking a work area from a sidebar frames it,
+            // clicking one already on screen leaves the camera alone.
+            openInaccessibilityReview(workAreaId, { zoom = false } = {}) {
                 const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
                 const url = reviewUrl + workAreaId + '/';
                 const fragment = document.getElementById('review-inaccessibility-fragment');
@@ -218,7 +220,7 @@
                             );
                             return;
                         }
-                        this.selectInaccessibilityRequestOnMap(workAreaId);
+                        this.selectInaccessibilityRequestOnMap(workAreaId, { zoom });
                         this.showInaccessibilityReview = true;
                     });
             },
@@ -252,7 +254,7 @@
 
             // The request under review is the only area outlined in the selected colour, which is
             // how the reviewer tells it apart from the other pending requests on the map.
-            selectInaccessibilityRequestOnMap(workAreaId) {
+            selectInaccessibilityRequestOnMap(workAreaId, { zoom = false } = {}) {
                 if (this.selectedInaccessibilityRequestId !== null) {
                     this.setWorkAreaState(this.selectedInaccessibilityRequestId, { selected: false });
                 }
@@ -261,6 +263,7 @@
                     (pendingRequest) => pendingRequest.work_area_id === workAreaId
                 )?.slug ?? '';
                 this.setWorkAreaState(workAreaId, { selected: true });
+                if (zoom) this.zoomToQuery(`work_area=${workAreaId}`);
             },
 
             // "3 of 12 reviewed" — the total is what the queue held when the page loaded, so the
