@@ -180,7 +180,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
 
   running-qa-test:
-    name: Trigger QA Playwright suite
+    name: Trigger QA suites
     needs: deploy
     if: ${{ success() && inputs.environment == 'production' }}
     runs-on: ubuntu-latest
@@ -204,6 +204,16 @@ jobs:
             --ref main \
             -f environment=prod
 
+      - name: Dispatch maestro_mobile.yaml
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.QA_SUITE_DISPATCH_TOKEN }}
+        run: |
+          gh workflow run maestro_mobile.yaml \
+            --repo dimagi/dimagi-qa-ccc \
+            --ref main \
+            -f environment=prod
+
       - name: Notify QA trigger failure
         if: ${{ failure() }}
         uses: slackapi/slack-github-action@v1.24.0
@@ -212,7 +222,7 @@ jobs:
           payload: |
             {
               "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
-              "text": ":warning: Deploy succeeded, but triggering the QA Playwright suite failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+              "text": ":warning: Deploy succeeded, but triggering the QA suites failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
