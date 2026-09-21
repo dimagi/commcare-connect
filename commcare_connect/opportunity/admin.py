@@ -44,6 +44,7 @@ admin.site.register(PaymentInvoiceStatusEvent)
 
 @admin.register(Opportunity)
 class OpportunityAdmin(admin.ModelAdmin):
+    search_fields = ["name", "organization__name", "program__name"]
     actions = ["refresh_learn_and_deliver_modules"]
 
     @admin.action(description="Refresh Learn and Deliver Modules")
