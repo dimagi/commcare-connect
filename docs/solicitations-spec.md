@@ -104,18 +104,7 @@ carries a file field where a PM can manually upload a contract PDF signed elsewh
 
 ### System architecture
 
-The feature is a new Django app, `commcare_connect/solicitation/`, laid out like the existing
-`commcare_connect/program/` app. It adds no new services and no new infrastructure.
-
-| Module | Responsibility |
-|---|---|
-| `solicitation/models.py` | The eleven new models listed under *Data model changes*. All extend the project's `BaseModel`. |
-| `solicitation/views.py` | Four groups of views, one per URL surface (see *User Interface changes*): the anonymous marketplace, the authenticated apply flow, the organization-scoped PM workspace, and the organization-scoped review screens. New views are class-based, per the project's conventions. |
-| `solicitation/forms.py` | The solicitation create/edit form, including the question builder and the criteria editor; the application form, whose fields are generated at runtime from the solicitation's questions; and the reviewer scoring form. |
-| `solicitation/tables.py` | `django-tables2` tables for the marketplace list, the PM's solicitation dashboard, and the per-solicitation applications dashboard. |
-| `solicitation/urls.py` | The organization-scoped routes, mounted under `/a/<org_slug>/`. The public routes are registered separately at the URL root in `config/urls.py`, because they must resolve without an organization in the path. |
-| `solicitation/tasks.py` | Two Celery jobs (below), plus the outbound email sends. |
-| `solicitation/helpers.py` | The pure logic that the views call: rolling criterion scores up into an overall score, checking an award against the budget caps, and performing the `ProgramApplication` hand-off. Keeping this out of the views is what makes it directly testable, which is what the project's testing guidance asks for. |
+**New Django app** The feature is a new Django app, `commcare_connect/solicitation/`. It adds no new services and no new infrastructure.
 
 **Background jobs.** Two periodic Celery tasks, both on the existing beat schedule:
 
@@ -322,19 +311,6 @@ dashboard is the mean of the overall scores of the *submitted* reviews.
 | One score per criterion per review | `CriterionScore (review, criterion)` |
 | At most one *live* award per application | `Award (application)`, as a partial constraint limited to rows where `released_date` is null. Released awards are kept for audit and are excluded. |
 
-**Value and business rules:**
-
-| Rule | When it is checked | Behaviour if violated |
-|---|---|---|
-| Criterion weights on a solicitation must total exactly 100% | On publish (`draft → active`) | Publish is refused. This also means the PM reads relative importance straight off the form. |
-| A criterion score is an integer from 1 to 10 | On save, via field validators | Rejected. |
-| The sum of all *active* award amounts on a solicitation must not exceed its `budget_max` | At award time, against the real `Award.award_amount` totals | The award is refused outright. There is no soft warning. |
-| When a solicitation is linked to a Program, an award must *also* fit within that Program's remaining budget | At award time | The award is refused. The Program stays the financial source of truth; where both caps apply, whichever binds first wins. |
-| An award requires the applicant's organization to be verified | At award time | The award is blocked. An unverified organization may still apply and be reviewed in full — only the award is gated, because the award commits budget and flips `ProgramApplication` to *accepted*. |
-| A review or criterion score may only be created or edited while the application's status is `under_review` | On save | Blocked. Once an application is awarded, rejected or withdrawn, scoring is closed. |
-| Structural fields (questions and criteria) lock once a solicitation is `active` | On edit | Blocked. Descriptive copy and deadline extensions stay editable. |
-| A solicitation's currency is required, and awards inherit it | On save | An award cannot name its own currency. |
-
 **Why shortlisting is a boolean and not a status.** Keeping it separate is what makes the rule
 above ("scoring is open exactly while status is `under_review`") clean. A shortlisted application
 stays `under_review`, so shortlisting never silently opens or closes the review window. The
@@ -453,10 +429,6 @@ sees private solicitations their organizations were invited to.
   and tags, set a recommendation, and submit. Other reviewers' scores are hidden until this
   reviewer submits. Observers get the same screen read-only.
 
-New UI follows the project's existing conventions: Django forms rather than hand-written HTML
-forms, the predefined style classes in `tailwind/tailwind.css` rather than raw utility classes,
-Alpine.js for in-page interactivity and htmx for loading data from the server.
-
 **One open naming question.** The public navigation label for the marketplace is provisionally
 "Explore opportunities", which needs confirming with Product because it overlaps with Connect's
 existing and unrelated "Opportunities" concept. The URL stays `/solicitations/` and the internal
@@ -490,24 +462,6 @@ application is submitted, there is nothing to create lazily at award time. The d
 - `Currency`, `Country` and `DeliveryType` reference data is populated in every environment the
   feature runs in. A solicitation cannot be created without a currency.
 
-**Infrastructure and environment:**
-
-- **Celery with a Redis broker, and the database-backed beat scheduler**, both already in use.
-  The deadline-close job and the weekly digest both need beat to be running. Neither is
-  correctness-critical: if beat stops, solicitations stay open past their deadline until a PM
-  closes them by hand, and no digests go out.
-- **A working outbound email backend.** Applicants are emailed on every status change, so an
-  unconfigured or failing email backend degrades the experience meaningfully, though it does not
-  block the workflow itself.
-- **Media file storage** for three kinds of upload: solicitation attachments, file answers on
-  applications, and the manually uploaded contract PDF on an award. These use standard Django
-  `FileField` storage, as the rest of the project does.
-- **django-waffle**, already installed, for the `solicitations` switch. Following the project's
-  robustness guidance, the absence of the switch record must leave the feature cleanly off rather
-  than erroring — no public navigation entry, no reachable routes.
-- **No new third-party libraries.** The module uses what the project already has: Django forms,
-  django-tables2, Alpine.js, htmx and Tailwind.
-
 **Scope boundaries assumed for version 1:**
 
 - No REST API. Every surface is server-rendered HTML. Nothing is added to `config/api_router.py`.
@@ -515,5 +469,3 @@ application is submitted, there is nothing to create lazily at award time. The d
   status, the signed copy and e-signature provider fields, plus a program-level versioned
   `ContractTemplate`. The `Award.contract_file` placeholder is what version 1 offers instead, and
   it also covers solicitations run off-platform.
-- The module never creates an opportunity. That stays with the existing flow, downstream of the
-  `ProgramApplication` hand-off.
