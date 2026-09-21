@@ -14,6 +14,7 @@ from commcare_connect.opportunity.tests.factories import CommCareAppFactory, Opp
 from commcare_connect.organization.merge import (
     HANDLED_RELATIONS,
     SIMPLE_REASSIGNMENTS,
+    SKIPPED_RELATIONS,
     MergeNotAllowed,
     _move_program_watchers,
     merge_organizations,
@@ -560,9 +561,10 @@ def _incoming_relation_labels():
 
 class TestRelationCoverage:
     def test_every_relation_to_organization_is_accounted_for(self):
-        assert _incoming_relation_labels() == set(HANDLED_RELATIONS), (
+        assert _incoming_relation_labels() == HANDLED_RELATIONS | SKIPPED_RELATIONS, (
             "The set of relations to Organization has changed. Handle any new relation in "
-            "merge_organizations, then add it to HANDLED_RELATIONS — or drop the stale entry."
+            "merge_organizations and add it to HANDLED_RELATIONS, or add it to SKIPPED_RELATIONS "
+            "if the merge should deliberately leave it pointing at the source — or drop the stale entry."
         )
 
     def test_nothing_still_references_the_source_afterwards(self, source, funder_target):
@@ -587,9 +589,12 @@ class TestRelationCoverage:
             related_field = relation.field
             if related_field.model._meta.auto_created:
                 continue
+            label = f"{related_field.model._meta.label}.{related_field.name}"
+            if label in SKIPPED_RELATIONS:
+                continue
             remaining = related_field.model._default_manager.filter(**{related_field.name: source_pk}).count()
             if remaining:
-                dangling.append(f"{related_field.model._meta.label}.{related_field.name}={remaining}")
+                dangling.append(f"{label}={remaining}")
 
         assert dangling == []
 

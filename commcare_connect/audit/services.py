@@ -100,13 +100,7 @@ def generate_audit_report_for_opportunity(
     opportunity: Opportunity,
     period_start: datetime.date,
     period_end: datetime.date,
-) -> AuditReport:
-    report = AuditReport.objects.create(
-        opportunity=opportunity,
-        period_start=period_start,
-        period_end=period_end,
-    )
-
+) -> AuditReport | None:
     active_accesses = (
         OpportunityAccess.objects.filter(
             opportunity=opportunity,
@@ -115,6 +109,15 @@ def generate_audit_report_for_opportunity(
         )
         .select_related("user")
         .order_by("user__name")
+    )
+
+    if not active_accesses.exists():
+        return None
+
+    report = AuditReport.objects.create(
+        opportunity=opportunity,
+        period_start=period_start,
+        period_end=period_end,
     )
 
     calcs = calculations.get_registered_calculations()

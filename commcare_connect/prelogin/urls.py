@@ -46,7 +46,7 @@ urlpatterns += [
 
 # Blog post detail pages: /blog/<slug>. Same SPA template; the client router
 # resolves the slug to the right post section. Keep each post's data-page and
-# ROUTE_META in app.js in sync, and add the URL to sitemap.xml.
+# its route_meta.ROUTES entry in sync, and add the URL to sitemap.xml.
 urlpatterns += [
     re_path(r"^blog/[\w-]+$", views.home, name="blog-detail"),
 ]
@@ -56,4 +56,16 @@ urlpatterns += [
 urlpatterns += [
     path("contact/", views.contact, name="contact"),
     path("contact/index.html", views.contact, name="contact-legacy"),
+]
+
+# "Connect in action" story pages — standalone templates (not the SPA), each
+# with its own stylesheet and scroll script. Kept under /in-action/<slug> so
+# further stories slot in beside this one, and /in-action can later become an
+# index without moving any published URL. Linked from the Platform page.
+urlpatterns += [
+    path(
+        "in-action/nigeria-cholera-response",
+        views.in_action_nigeria_cholera,
+        name="in-action-nigeria-cholera-response",
+    ),
 ]

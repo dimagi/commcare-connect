@@ -84,6 +84,25 @@ class Country(models.Model):
         return self.name
 
 
+# Tracked separately from the fields=["active"] tracker below rather than by adding
+# supervising_organization to its field list: pghistory derives the event model name from
+# the fields, so extending it would rename OpportunityActiveEvent, which is referred to by
+# name in code.
+#
+# Both labels, "supervising_organization_insert" and "supervising_organization_update", are
+# given explicitly. A label must be unique among a model's trackers, and the
+# fields=["active"] tracker below already holds the default "update", so leaving this
+# tracker's UpdateEvent to default raises ValueError. Only that update label is strictly
+# required; "supervising_organization_insert" is named to match rather than left as the
+# default "insert", because the label is stored as pgh_label on every event row and a bare
+# "insert" beside "supervising_organization_update" would read inconsistently. It also
+# keeps the default "insert" free, which would otherwise collide if another field on this
+# model is tracked on insert later.
+@pghistory.track(
+    pghistory.InsertEvent("supervising_organization_insert"),
+    pghistory.UpdateEvent("supervising_organization_update"),
+    fields=["supervising_organization"],
+)
 @pghistory.track(pghistory.UpdateEvent(), fields=["active"])
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
@@ -130,8 +149,8 @@ class Opportunity(BaseModel):
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def save(self, *args, **kwargs):
-        # Until the UI allows setting a supervising organization, default it to the program's
-        # owning organization.
+        # Form-driven creation sets this explicitly; the fallback covers programmatic
+        # creation paths (API, factories, data migrations) for this non-null column.
         if not self.supervising_organization_id:
             self.supervising_organization_id = self.program.organization_id
         super().save(*args, **kwargs)
@@ -318,7 +337,7 @@ class TaskType(models.Model):
     is_active = models.BooleanField(default=True)
     duration = models.IntegerField(null=True, blank=True)
     mode = models.CharField(
-        choices=TaskTypeModeChoices.choices,
+        choices=TaskTypeModeChoices,
         default=TaskTypeModeChoices.RELEARN,
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
@@ -476,7 +495,7 @@ class AssignedTask(XFormBaseModel):
     duration = models.DurationField(null=True)
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
-        choices=AssignedTaskStatus.choices,
+        choices=AssignedTaskStatus,
         default=AssignedTaskStatus.ASSIGNED,
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
@@ -757,7 +776,7 @@ class PaymentInvoice(models.Model):
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
     status = models.CharField(
-        choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
+        choices=InvoiceStatus, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
     )
     archived_date = models.DateTimeField(null=True, blank=True)
     invoice_ticket_link = models.URLField(null=True, blank=True)
@@ -842,7 +861,7 @@ class CompletedWork(models.Model):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
     status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus, default=CompletedWorkStatus.incomplete
     )
     last_modified = models.DateTimeField(auto_now=True)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
@@ -1034,7 +1053,7 @@ class UserVisit(XFormBaseModel):
     visit_date = models.DateTimeField()
     status = models.CharField(
         max_length=CHOICE_FIELD_MAX_LENGTH,
-        choices=VisitValidationStatus.choices,
+        choices=VisitValidationStatus,
         default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
@@ -1051,7 +1070,7 @@ class UserVisit(XFormBaseModel):
     )
     status_modified_date = models.DateTimeField(null=True, default=now)
     review_status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus, default=VisitReviewStatus.pending
     )
     review_status_modified_date = models.DateTimeField(blank=True, null=True, default=now)
     review_created_on = models.DateTimeField(blank=True, null=True)
@@ -1219,7 +1238,7 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus.choices, default=UserInviteStatus.invited
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus, default=UserInviteStatus.invited
     )
     notification_date = models.DateTimeField(null=True)
 

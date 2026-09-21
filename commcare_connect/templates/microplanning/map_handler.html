@@ -1,6 +1,8 @@
 {% load i18n %}
 <script>
     document.addEventListener("alpine:init", () => {
+        const WORKAREAS_FILL_LAYER = 'workareas-fill';
+
         Alpine.data("mapController", () => ({
             map: null,
             selectedFeature: null,
@@ -12,6 +14,13 @@
             showReviewInaccessibilityModal: false,
             showVisits: false,
             showImplementationAreas: false,
+
+            // Building footprint overlay. `buildingsAvailable` tracks whether the map is zoomed in
+            // far enough for footprints to be drawn at all; both flags are driven by the overlay.
+            showBuildings: false,
+            buildingsAvailable: false,
+            buildingsLoading: false,
+            buildingsFailed: false,
             filterQuery: '',
             pendingTileQuery: null,
             workAreaDetailRequestId: 0,
@@ -1050,6 +1059,10 @@
 
                 await new Promise(resolve => this.map.once('load', resolve));
 
+                // Footprints are inserted beneath the Work Area layers (see `beforeId`): they are
+                // context for the areas, and the areas are what the user is here to read.
+                this.initBuildings();
+
                 // Workareas are served using django-vectortiles,
                 // promoteId maps the feature's 'id' property as the feature ID,
                 // which is required for setFeatureState (hover/select) to work correctly.
@@ -1071,7 +1084,7 @@
                 // so adjacent groups get visually distinct colors without a lookup table.
                 // Opacity varies by status to give a quick visual overview of progress.
                 this.map.addLayer({
-                    id: 'workareas-fill',
+                    id: WORKAREAS_FILL_LAYER,
                     type: 'fill',
                     source: 'workareas',
                     'source-layer': 'workareas',
@@ -1311,7 +1324,7 @@
                 // `feature` → the raw Mapbox object returned from the click event.
                 // `selectedFeature` → our Alpine state that stores the currently selected workarea.
                 // We store its properties and ID so we can toggle the highlight and access its data.
-                this.map.on('click', 'workareas-fill', (e) => {
+                this.map.on('click', WORKAREAS_FILL_LAYER, (e) => {
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
@@ -1358,7 +1371,7 @@
                 // Tracks the currently hovered feature to apply white fill highlight
                 // and show a details overlay (`hoveredWorkArea`) with the work area's key details.
                 let hoveredId = null;
-                this.map.on('mousemove', 'workareas-fill', (e) => {
+                this.map.on('mousemove', WORKAREAS_FILL_LAYER, (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
                     this.isHoveringWorkArea = true;
                     const feature = e.features?.[0];
@@ -1380,7 +1393,7 @@
                     };
                 });
 
-                this.map.on('mouseleave', 'workareas-fill', () => {
+                this.map.on('mouseleave', WORKAREAS_FILL_LAYER, () => {
                     this.map.getCanvasContainer().style.cursor = '';
                     this.isHoveringWorkArea = false;
                     if (hoveredId !== null) {
@@ -1389,6 +1402,26 @@
                     }
                     this.hoveredWorkArea = null;
                 });
+            },
+
+            // Sets up the Building Data overlay, if it is configured. The overlay owns the source,
+            // the layers and the zoom threshold; this only wires its state to the control, which is
+            // hidden below that threshold rather than offering a toggle that appears to do nothing.
+            initBuildings() {
+                const configElement = document.getElementById('buildings-config');
+                if (!configElement) return;
+
+                const buildings = MapboxUtils.addBuildingsOverlay(this.map, JSON.parse(configElement.textContent), {
+                    beforeId: WORKAREAS_FILL_LAYER,
+                    onLoadingChange: (loading) => { this.buildingsLoading = loading; },
+                    onAvailabilityChange: (available) => { this.buildingsAvailable = available; },
+                    onFailed: () => {
+                        this.buildingsFailed = true;
+                        this.showBuildings = false;
+                    },
+                });
+
+                this.$watch('showBuildings', (visible) => buildings.setVisible(visible));
             },
 
             // Sets up the Implementation Area overlay: a GeoJSON source, a black outline layer,

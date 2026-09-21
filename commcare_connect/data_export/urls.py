@@ -80,4 +80,9 @@ urlpatterns = [
         views.ImplementationAreaBulkCreateView.as_view(),
         name="implementation_area_bulk_create",
     ),
+    path(
+        "opportunity/<int:opp_id>/implementation_areas/",
+        views.ImplementationAreaDataView.as_view(),
+        name="implementation_area_data",
+    ),
 ]
