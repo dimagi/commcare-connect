@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 
 from django.db.models import Count, F, IntegerField, Max, Q, Sum, Value
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, NullIf
 
 from commcare_connect.audit.calculations import AuditCalculation, Measurement, register_calculation
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import UserVisit
 
@@ -120,6 +122,41 @@ def _find_last_closed_wag(opportunity_access, period_end) -> WorkAreaGroup | Non
         .order_by("-last_visit")
         .first()
     )
+
+
+class WeeklyVisitCount(AuditCalculation):
+    """A plain count, not an indicator: it declares no bounds, so it never flags an FLW.
+
+    ``min_sample_size = 0`` so an empty week shows as "0" rather than the "N/A" these
+    columns exist to explain.
+    """
+
+    deliver_unit_slug: ClassVar[str]
+    min_sample_size = 0
+
+    def compute(self, opportunity_access, period_start, period_end):
+        count = UserVisit.objects.filter(
+            opportunity_access=opportunity_access,
+            visit_date__date__range=(period_start, period_end),
+            deliver_unit__slug=self.deliver_unit_slug,
+        ).count()
+        return Measurement(count, count)
+
+
+@register_calculation
+class ServiceDeliveryVisitCount(WeeklyVisitCount):
+    name = "service_delivery_visit_count"
+    label = "Service Delivery Visits"
+    tooltip = "Visits recorded against the Service Delivery unit during the audited week."
+    deliver_unit_slug = SERVICE_DELIVERY_SLUG
+
+
+@register_calculation
+class NoChildrenWorkAreaVisitCount(WeeklyVisitCount):
+    name = "no_children_wa_visit_count"
+    label = "No Children in WA Visits"
+    tooltip = "Visits recorded against the No Children in Work Area unit during the audited week."
+    deliver_unit_slug = NO_CHILDREN_WORK_AREA_UNIT_SLUG
 
 
 @register_calculation
