@@ -29,7 +29,6 @@ from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get
 from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
-    export_catchment_area_table,
     export_deliver_status_table,
     export_empty_payment_table,
     export_user_status_table,
@@ -465,14 +464,6 @@ def bulk_approve_completed_work():
     for access in access_objects:
         completed_works = access.completedwork_set.exclude(status=CompletedWorkStatus.rejected)
         update_status(completed_works, access, compute_payment=True)
-
-
-@celery_app.task()
-def generate_catchment_area_export(opportunity_id: int, export_format: str):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
-    dataset = export_catchment_area_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_catchment_area.{export_format}"
-    return save_export(dataset, export_tmp_name, export_format)
 
 
 def get_payment_upload_key(opp_id):

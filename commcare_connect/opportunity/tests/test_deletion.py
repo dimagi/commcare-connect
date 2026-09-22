@@ -19,8 +19,6 @@ def test_delete_opportunity_clears_registered_models(opportunity_factory):
     factories.CompletedModuleFactory(opportunity=opportunity, opportunity_access=access)
     factories.AssessmentFactory(opportunity=opportunity, opportunity_access=access)
     factories.PaymentFactory(opportunity_access=access, payment_unit=payment_unit)
-    factories.CatchmentAreaFactory(opportunity=opportunity, opportunity_access=None)
-    factories.CatchmentAreaFactory(opportunity=opportunity, opportunity_access=access)
     factories.PaymentInvoiceFactory(opportunity=opportunity)
     factories.OpportunityVerificationFlagsFactory(opportunity=opportunity)
     factories.UserInviteFactory(opportunity=opportunity, opportunity_access=access)
