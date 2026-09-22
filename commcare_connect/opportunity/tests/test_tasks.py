@@ -33,6 +33,8 @@ from commcare_connect.opportunity.tasks import (
     generate_automated_service_delivery_invoice,
     generate_catchment_area_export,
     generate_deliver_status_export,
+    generate_invoice_pdf_zip_export,
+    generate_invoice_summary_export,
     generate_payment_export,
     generate_review_visit_export,
     generate_user_status_export,
@@ -53,6 +55,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
@@ -616,6 +619,29 @@ def test_save_export_uses_export_storage():
 
 @pytest.mark.django_db
 class TestExportTasksCreateExportFile:
+    @mock.patch("commcare_connect.opportunity.tasks.save_export_file")
+    @mock.patch("commcare_connect.opportunity.tasks.build_invoice_pdf_zip")
+    def test_generate_invoice_pdf_zip_export(self, mock_build, mock_save, opportunity):
+        mine = PaymentInvoiceFactory(opportunity=opportunity)
+        other = PaymentInvoiceFactory()
+        mock_build.return_value = b"zip"
+        generate_invoice_pdf_zip_export(opportunity.id, [mine.id, other.id])
+        assert list(mock_build.call_args[0][0]) == [mine]
+        args = mock_save.call_args[0]
+        assert args[0].endswith("_invoice_pdfs.zip")
+        assert args[1] == b"zip"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.build_invoice_summary_dataset")
+    def test_generate_invoice_summary_export(self, mock_build, mock_save, opportunity):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+        mock_build.return_value = Dataset()
+        generate_invoice_summary_export(opportunity.id, [invoice.id])
+        assert list(mock_build.call_args[0][0]) == [invoice]
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_invoice_summary.csv")
+        assert args[2] == "csv"
+
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
     @mock.patch("commcare_connect.opportunity.tasks.UserVisitExporter")
     def test_generate_visit_export(self, mock_exporter_cls, mock_save, opportunity):
