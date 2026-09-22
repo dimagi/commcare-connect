@@ -506,7 +506,7 @@ def _muac_no_skipped_bins(bin_counts, total_count) -> bool:
     sig = [i for i, c in enumerate(bin_counts) if c >= threshold]
     if len(sig) <= 1:
         return True
-    return all(c != 0 for c in bin_counts[sig[0] : sig[-1] + 1])  # noqa: E203
+    return all(c != 0 for c in bin_counts[sig[0] : sig[-1] + 1])
 
 
 def _muac_no_plateau(bin_counts, max_count) -> bool:
@@ -526,7 +526,7 @@ def _muac_no_plateau(bin_counts, max_count) -> bool:
     plateau_start = 0
     for i in range(1, len(high_bins)):
         if high_bins[i][0] == high_bins[i - 1][0] + 1:
-            segment = high_bins[plateau_start : i + 1]  # noqa: E203
+            segment = high_bins[plateau_start : i + 1]
             segment_counts = [x[1] for x in segment]
             if max(segment_counts) - min(segment_counts) <= tolerance:
                 longest_plateau = max(longest_plateau, len(segment))

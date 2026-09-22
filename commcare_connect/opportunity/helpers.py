@@ -26,6 +26,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce, Round
 from django.utils.timezone import now
 
+from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -646,9 +647,10 @@ def get_worker_tasks_base_queryset(opportunity):
 
 
 def get_worker_work_area_table_data(opportunity):
+    workarea_qs = WorkArea.objects.filter(opportunity_access=OuterRef("pk")).values("opportunity_access")
+
     visits_done_subquery = (
         UserVisit.objects.filter(
-            opportunity=opportunity,
             opportunity_access=OuterRef("pk"),
             work_area__isnull=False,
         )
@@ -661,10 +663,19 @@ def get_worker_work_area_table_data(opportunity):
         OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         .select_related("user")
         .annotate(
-            assigned_buildings=Coalesce(Sum("workarea__building_count"), Value(0)),
-            assigned_visits=Coalesce(Sum("workarea__expected_visit_count"), Value(0)),
-            assigned_work_areas=Count("workarea"),
-            assigned_work_area_groups=Count("workarea__work_area_group", distinct=True),
+            assigned_buildings=Coalesce(
+                Subquery(workarea_qs.annotate(total=Sum("building_count")).values("total")[:1]), Value(0)
+            ),
+            assigned_visits=Coalesce(
+                Subquery(workarea_qs.annotate(total=Sum("expected_visit_count")).values("total")[:1]), Value(0)
+            ),
+            assigned_work_areas=Coalesce(
+                Subquery(workarea_qs.annotate(total=Count("id")).values("total")[:1]), Value(0)
+            ),
+            assigned_work_area_groups=Coalesce(
+                Subquery(workarea_qs.annotate(total=Count("work_area_group", distinct=True)).values("total")[:1]),
+                Value(0),
+            ),
             visits_done=Coalesce(Subquery(visits_done_subquery), Value(0), output_field=IntegerField()),
         )
     )

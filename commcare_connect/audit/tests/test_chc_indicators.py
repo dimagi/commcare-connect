@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import random
-from datetime import timezone
 
 import pytest
 
@@ -27,9 +26,9 @@ from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, Opp
 
 PERIOD_START = datetime.date(2026, 4, 13)  # Monday
 PERIOD_END = datetime.date(2026, 4, 19)  # Sunday
-IN_PERIOD = datetime.datetime(2026, 4, 15, 12, 0, tzinfo=timezone.utc)
-OUT_OF_PERIOD = datetime.datetime(2026, 4, 5, 12, 0, tzinfo=timezone.utc)
-AFTER_PERIOD = datetime.datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)
+IN_PERIOD = datetime.datetime(2026, 4, 15, 12, 0, tzinfo=datetime.UTC)
+OUT_OF_PERIOD = datetime.datetime(2026, 4, 5, 12, 0, tzinfo=datetime.UTC)
+AFTER_PERIOD = datetime.datetime(2026, 4, 25, 12, 0, tzinfo=datetime.UTC)
 
 
 def make_visit(access, work_area=None, visit_date=IN_PERIOD, **kwargs):
