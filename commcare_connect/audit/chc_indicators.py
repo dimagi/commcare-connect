@@ -124,6 +124,25 @@ def _find_last_closed_wag(opportunity_access, period_end) -> WorkAreaGroup | Non
     )
 
 
+@register_calculation
+class WorkAreasRemaining(AuditCalculation):
+    """Whether the FLW still has Work Areas to complete.
+
+    False only once every assigned WA has reached a closed status. An FLW with no
+    WAs at all has nothing assigned rather than nothing left, so this returns True.
+    """
+
+    name = "work_areas_remaining"
+    label = "Work Areas Remaining"
+
+    def compute(self, opportunity_access, period_start, period_end):
+        counts = WorkArea.objects.filter(opportunity_access=opportunity_access).aggregate(
+            total=Count("id"),
+            open_count=Count("id", filter=~Q(status__in=CLOSED_STATUSES)),
+        )
+        return Measurement(counts["total"] == 0 or counts["open_count"] > 0, 1)
+
+
 class WeeklyVisitCount(AuditCalculation):
     """A plain count, not an indicator: it declares no bounds, so it never flags an FLW.
 

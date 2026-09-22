@@ -21,6 +21,7 @@ from commcare_connect.audit.chc_indicators import (
     VaccineCardPhotoCompliance,
     VaccineRate,
     WACoverageToVisitRatio,
+    WorkAreasRemaining,
 )
 from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
@@ -245,6 +246,30 @@ def test_weekly_visit_count_counts_its_own_unit_and_reports_zero(calc, slug):
     assert result.value == 0
     assert result.has_sufficient_data
     assert result.in_range
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "statuses, expected",
+    [
+        ([], True),
+        ([WorkAreaStatus.NOT_VISITED], True),
+        ([WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.VISITED], True),
+        ([WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.EXCLUDED], True),
+        ([WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.EXCLUDED], False),
+    ],
+    ids=["nothing-assigned", "not-visited-left", "visited-left", "review-pending", "all-closed"],
+)
+def test_work_areas_remaining(statuses, expected):
+    access = OpportunityAccessFactory()
+    # Another FLW's closed WAs must not count against this one.
+    WorkAreaFactory(opportunity=access.opportunity, status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
+    for status in statuses:
+        WorkAreaFactory(opportunity=access.opportunity, opportunity_access=access, status=status)
+
+    result = WorkAreasRemaining().run(access, PERIOD_START, PERIOD_END)
+
+    assert result.value is expected
 
 
 @pytest.mark.django_db

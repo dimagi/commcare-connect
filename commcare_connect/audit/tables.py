@@ -7,8 +7,12 @@ from django.utils.translation import gettext_lazy as _l
 from django_tables2 import columns
 
 from commcare_connect.audit.calculations import format_value
+from commcare_connect.audit.chc_indicators import WorkAreasRemaining
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, OrgContextTable
+
+# Metrics that exist in the registry but are not rendered as columns in the UI.
+NON_COLUMN_CALCULATIONS = frozenset({WorkAreasRemaining.name})
 
 
 class AuditReportTable(OrgContextTable):
@@ -176,6 +180,7 @@ class AuditReportEntryTable(OrgContextTable):
         extra = [
             (name, CalcColumn(calc_name=name, verbose_name=label, tooltip=tooltip))
             for name, label, tooltip in columns_spec
+            if name not in NON_COLUMN_CALCULATIONS
         ]
         extra.append(("action", ActionColumn()))
         super().__init__(data, extra_columns=extra, **kw)
@@ -184,10 +189,26 @@ class AuditReportEntryTable(OrgContextTable):
         return format_html(
             """
             <div class="flex flex-col items-start">
-                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-sm text-slate-900">{}{}</p>
                 <p class="text-xs text-slate-400">{}</p>
             </div>
             """,
             value,
+            self._no_work_areas_icon(record),
             record.opportunity_access.user.username or "",
+        )
+
+    @staticmethod
+    def _no_work_areas_icon(record):
+        """Marks an FLW who has finished every assigned Work Area, so the reviewer can
+        read their N/A results as "nothing left to do" rather than "did no work".
+        """
+        result = record.results.get(WorkAreasRemaining.name, {})
+        # Only mark explicitly calculated False values; older reports have no result.
+        if result.get("value") is not False:
+            return ""
+        return format_html(
+            '<span x-data x-tooltip.raw="{}" class="ml-1 cursor-help">'
+            '<i class="fa-solid fa-flag text-xs text-gray-400"></i></span>',
+            _("No Work Areas remaining"),
         )
