@@ -57,20 +57,18 @@ class TestOpportunityVerificationFlagsConfigForm:
     def test_hides_fields_when_automatic_verification_on(self):
         opp = OpportunityFactory(automatic_visit_verification=True)
         form = OpportunityVerificationFlagsConfigForm(opportunity=opp)
-        for field in ("duplicate", "gps", "catchment_areas", "location"):
+        for field in ("duplicate", "gps", "location"):
             assert field not in form.fields
 
     def test_keeps_fields_when_off(self):
         opp = OpportunityFactory(automatic_visit_verification=False)
         form = OpportunityVerificationFlagsConfigForm(opportunity=opp)
-        for field in ("duplicate", "gps", "catchment_areas", "location"):
+        for field in ("duplicate", "gps", "location"):
             assert field in form.fields
 
     def test_save_forces_falsy_when_flag_on(self):
         opp = OpportunityFactory(automatic_visit_verification=True)
-        instance = OpportunityVerificationFlags(
-            opportunity=opp, duplicate=True, gps=True, catchment_areas=True, location=42
-        )
+        instance = OpportunityVerificationFlags(opportunity=opp, duplicate=True, gps=True, location=42)
         form = OpportunityVerificationFlagsConfigForm(
             data={"form_submission_start": "", "form_submission_end": ""},
             instance=instance,
@@ -80,7 +78,6 @@ class TestOpportunityVerificationFlagsConfigForm:
         saved = form.save()
         assert saved.duplicate is False
         assert saved.gps is False
-        assert saved.catchment_areas is False
         assert saved.location == 0
 
 

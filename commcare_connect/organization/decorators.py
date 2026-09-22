@@ -53,8 +53,10 @@ class IsProgramManagerOrgAdmin(BasePermission):
 
 
 def can_act_as_program_manager_admin(user, org) -> bool:
-    # Org that is program manager, funder or watcher can act as program manager 
-    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists())  and user_is_org_admin(user, org)
+    # Org that is program manager, funder or watcher can act as program manager
+    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_admin(
+        user, org
+    )
 
 
 def opp_view_access_required(view_func):
