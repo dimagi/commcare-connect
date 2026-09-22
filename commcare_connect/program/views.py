@@ -42,7 +42,6 @@ from commcare_connect.program.tasks import (
 
 from .utils import AccessLevel, program_access_level_from_request, programs_accessible_to_org
 
-
 ALLOWED_ORDERINGS = {
     "name": "name",
     "-name": "-name",
