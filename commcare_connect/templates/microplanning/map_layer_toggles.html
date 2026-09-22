@@ -1,11 +1,12 @@
 {% load i18n %}
+{% blocktranslate asvar buildings_hint with release=buildings_config.release %}Show building footprints from Overture Maps. Data from OpenStreetMap and the Overture Maps Foundation, release {{ release }}.{% endblocktranslate %}
 <div x-show="buildingsAvailable"
      x-transition.opacity
      x-cloak
      class="map-control-panel">
   <div x-show="!buildingsFailed" class="map-control-row">
     <label for="show-buildings-toggle" class="title-sm">{% translate "Show Building Data" %}</label>
-    <span x-tooltip.raw="{% translate 'Show building footprints from Overture Maps. Data from OpenStreetMap and the Overture Maps Foundation.' %}">
+    <span x-tooltip.raw="{{ buildings_hint }}">
       <input id="show-buildings-toggle"
              type="checkbox"
              class="simple-toggle"

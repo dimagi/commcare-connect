@@ -154,7 +154,8 @@ class TestWorkAreaGroupDataView:
 class TestWorkAreaDataView:
     def test_returns_work_area_list(self, v2_export_client, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
-        area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
         url = reverse("data_export:work_area_data", kwargs={"opp_id": opportunity.id})
         response = v2_export_client.get(url)
         assert response.status_code == 200
@@ -165,10 +166,20 @@ class TestWorkAreaDataView:
         assert result["slug"] == area.slug
         assert result["work_area_group"] == group.id
         assert result["work_area_group_name"] == group.name
+        assert result["username"] == access.user.username
         assert result["centroid"]["type"] == "Point"
         assert result["centroid"]["coordinates"] == [area.centroid.x, area.centroid.y]
         assert result["boundary"]["type"] == "Polygon"
         assert result["boundary"]["coordinates"] == [[list(coord) for coord in ring] for ring in area.boundary.coords]
+
+    def test_returns_null_username_for_unassigned_work_area(self, v2_export_client, opportunity):
+        area = WorkAreaFactory(opportunity=opportunity, opportunity_access=None)
+        url = reverse("data_export:work_area_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert response.status_code == 200
+        result = response.json()["results"][0]
+        assert result["id"] == area.id
+        assert result["username"] is None
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
         _add_export_credentials(api_client, user)

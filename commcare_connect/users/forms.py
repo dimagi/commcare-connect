@@ -51,7 +51,7 @@ class UserSocialSignupForm(SocialSignupForm):
     """
 
 
-class OrganizationCreationForm(forms.ModelForm):
+class AdminOrganizationForm(forms.ModelForm):
     class Meta:
         model = Organization
         fields = [
