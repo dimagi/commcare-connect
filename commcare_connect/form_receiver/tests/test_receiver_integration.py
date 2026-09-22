@@ -37,6 +37,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    OverLimitReasonChoices,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -249,6 +250,7 @@ def test_receiver_deliver_form_daily_visits_reached(
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.over_limit_reason == OverLimitReasonChoices.max_daily
     assert visit.status_modified_date >= before_request
 
 
@@ -317,6 +319,7 @@ def test_receiver_deliver_form_end_date_reached(
     assert CompletedWork.objects.count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.over_limit_reason == OverLimitReasonChoices.claim_ended
     assert visit.status_modified_date >= before_request
 
 
@@ -911,6 +914,9 @@ def test_receiver_visit_payment_unit_dates(
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     assert visit.status == visit_status
     assert visit.status_modified_date >= before_request
+    # over_limit is only reachable here by the payment unit's claim window closing
+    is_over_limit = visit_status == VisitValidationStatus.over_limit
+    assert visit.over_limit_reason == (OverLimitReasonChoices.claim_limit_ended if is_over_limit else None)
 
 
 def get_form_json_for_payment_unit(payment_unit):
