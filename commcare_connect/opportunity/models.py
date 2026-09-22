@@ -254,14 +254,18 @@ class Opportunity(BaseModel):
             )
 
     @property
-    def number_of_users(self):
+    def worker_capacity(self):
+        """How many workers the budget can fund, if each delivers their full per-unit limit.
+
+        Derived from the budget, not a count of actual workers.
+        """
         if not self.total_budget:
             return 0
         return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
 
     @property
     def allotted_visits(self):
-        return self.max_visits_per_user * self.number_of_users
+        return self.max_visits_per_user * self.worker_capacity
 
     @property
     def max_visits_per_user(self):
@@ -1174,7 +1178,7 @@ class OpportunityClaimLimit(models.Model):
             for claim_limit in claim_limits:
                 total_claimed_visits += claim_limit.max_visits
 
-            remaining = (payment_unit.max_total) * opportunity.number_of_users - total_claimed_visits
+            remaining = (payment_unit.max_total) * opportunity.worker_capacity - total_claimed_visits
             if remaining < 1:
                 # claimed limit exceeded for this paymentunit
                 continue

@@ -1383,7 +1383,7 @@ class TestEditTaskTypeForm:
 class TestPaymentUnitFormBudgetValidation:
     """The per-user delivery limit is allocated from a shared budget pool per payment unit.
 
-    Adding or enlarging a payment unit lowers the derived ``number_of_users``; if it drops
+    Adding or enlarging a payment unit lowers the derived ``worker_capacity``; if it drops
     below the count of workers who have already claimed, some workers silently receive a
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
@@ -1415,7 +1415,7 @@ class TestPaymentUnitFormBudgetValidation:
             pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
             # Budget that would fail with claimants, proving the no-claimants early return fires.
             pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
-            # Doubling an existing unit's max_total pushes number_of_users below the 3 claimants.
+            # Doubling an existing unit's max_total pushes worker_capacity below the 3 claimants.
             pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
         ],
     )

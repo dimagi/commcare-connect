@@ -246,8 +246,8 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
 
     payment_units = [payment_unit1, payment_unit2, payment_unit_sub]
     assert opportunity.budget_per_user == sum([p.amount * p.max_total for p in payment_units])
-    assert opportunity.number_of_users == 3
-    assert opportunity.allotted_visits == sum([pu.max_total for pu in payment_units]) * opportunity.number_of_users
+    assert opportunity.worker_capacity == 3
+    assert opportunity.allotted_visits == sum([pu.max_total for pu in payment_units]) * opportunity.worker_capacity
     assert opportunity.max_visits_per_user == sum([pu.max_total for pu in payment_units])
     assert opportunity.daily_max_visits_per_user == sum([pu.max_daily for pu in payment_units])
     assert opportunity.budget_per_visit == sum([pu.amount for pu in payment_units])
