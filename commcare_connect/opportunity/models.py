@@ -1162,24 +1162,26 @@ class OpportunityClaimLimit(models.Model):
         are allocated, so the total committed across all claims can never exceed
         ``total_budget``.
         """
-        remaining_budget = opportunity.remaining_budget
-        # Units are funded in creation order, so when the budget runs out mid-claim it is
-        # always the most recently added units that go short.
-        for payment_unit in opportunity.paymentunit_set.order_by("pk"):
-            max_visits = cls._max_funded_visits_for_worker(payment_unit, remaining_budget)
-            if max_visits < 1:
-                # budget cannot pay for another visit of this payment unit
-                continue
-            _, created = OpportunityClaimLimit.objects.get_or_create(
-                opportunity_claim=claim,
-                payment_unit=payment_unit,
-                defaults={
-                    "max_visits": max_visits,
-                    "end_date": payment_unit.end_date,
-                },
-            )
-            if created:
-                remaining_budget -= max_visits * cls._budgeted_cost_per_visit(payment_unit)
+        with transaction.atomic():
+            opportunity = Opportunity.objects.select_for_update().get(pk=opportunity.pk)
+            remaining_budget = opportunity.remaining_budget
+            # Units are funded in creation order, so when the budget runs out mid-claim it is
+            # always the most recently added units that go short.
+            for payment_unit in opportunity.paymentunit_set.order_by("pk"):
+                max_visits = cls._max_funded_visits_for_worker(payment_unit, remaining_budget)
+                if max_visits < 1:
+                    # budget cannot pay for another visit of this payment unit
+                    continue
+                _, created = OpportunityClaimLimit.objects.get_or_create(
+                    opportunity_claim=claim,
+                    payment_unit=payment_unit,
+                    defaults={
+                        "max_visits": max_visits,
+                        "end_date": payment_unit.end_date,
+                    },
+                )
+                if created:
+                    remaining_budget -= max_visits * cls._budgeted_cost_per_visit(payment_unit)
 
     @classmethod
     def _max_funded_visits_for_worker(cls, payment_unit, remaining_budget):
