@@ -183,5 +183,5 @@ class OrganizationInvite(BaseModel):
         self.status = self.Status.ACCEPTED
         self.modified_by = user.email
         self.save(update_fields=["status", "modified_by", "date_modified"])
-        transaction.on_commit(partial(send_invite_accepted_notification, membership.pk))
+        transaction.on_commit(partial(send_invite_accepted_notification, membership.pk), robust=True)
         return membership

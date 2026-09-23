@@ -295,6 +295,7 @@ class TestAcceptInviteView:
             django_capture_on_commit_callbacks(execute=True),
         ):
             client.get(self._url(organization.slug, invite.token))
+            mock_notify.assert_not_called()
 
         membership = UserOrganizationMembership.objects.get(user=user, organization=organization)
         mock_notify.assert_called_once_with(membership.pk)
@@ -314,6 +315,7 @@ class TestAcceptInviteView:
                     "agree": "on",
                 },
             )
+            mock_notify.assert_not_called()
 
         new_user = User.objects.get(email="brand-new@example.com")
         membership = UserOrganizationMembership.objects.get(user=new_user, organization=organization)
