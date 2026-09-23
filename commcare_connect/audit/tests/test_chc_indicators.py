@@ -7,7 +7,6 @@ import pytest
 
 from commcare_connect.audit.chc_indicators import (
     FEMALE,
-    SERVICE_DELIVERY_SLUG,
     YES,
     AgeHeaping,
     CampingRatio,
@@ -23,7 +22,7 @@ from commcare_connect.audit.chc_indicators import (
     WACoverageToVisitRatio,
     WorkAreasRemaining,
 )
-from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, OpportunityAccessFactory, UserVisitFactory
@@ -36,7 +35,7 @@ AFTER_PERIOD = datetime.datetime(2026, 4, 25, 12, 0, tzinfo=datetime.UTC)
 
 
 def make_visit(access, work_area=None, visit_date=IN_PERIOD, **kwargs):
-    kwargs.setdefault("deliver_unit", DeliverUnitFactory(slug=SERVICE_DELIVERY_SLUG))
+    kwargs.setdefault("deliver_unit", DeliverUnitFactory(slug=SERVICE_DELIVERY_UNIT_SLUG))
     return UserVisitFactory(
         opportunity=access.opportunity,
         user=access.user,
@@ -222,7 +221,7 @@ def test_fresh_access_returns_insufficient_data(calc):
 @pytest.mark.parametrize(
     "calc, slug",
     [
-        (ServiceDeliveryVisitCount(), SERVICE_DELIVERY_SLUG),
+        (ServiceDeliveryVisitCount(), SERVICE_DELIVERY_UNIT_SLUG),
         (NoChildrenWorkAreaVisitCount(), NO_CHILDREN_WORK_AREA_UNIT_SLUG),
     ],
     ids=["service_delivery", "no_children_wa"],
