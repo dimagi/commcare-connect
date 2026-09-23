@@ -1,7 +1,6 @@
 from allauth.utils import build_absolute_uri
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.translation import gettext as _
 
 from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
 from commcare_connect.utils.tasks import send_mail_async
@@ -43,9 +42,9 @@ def send_invite_accepted_notification(membership_id):
         return
 
     member_name = membership.user.name or membership.user.email
-    context = {"membership": membership, "organization": organization, "member_name": member_name}
+    context = {"membership": membership, "member_name": member_name}
     send_mail_async.delay(
-        subject=_("%(member)s joined '%(org)s' on Connect") % {"member": member_name, "org": organization.name},
+        subject=f"{member_name} joined '{organization.name}' on Connect",
         message=render_to_string("organization/email/invite_accepted.txt", context),
         recipient_list=admin_emails,
         html_message=render_to_string("organization/email/invite_accepted.html", context),
