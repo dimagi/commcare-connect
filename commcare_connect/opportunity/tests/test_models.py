@@ -334,6 +334,27 @@ def test_claim_limits_allocates_partial_visits_from_remaining_budget(opportunity
 
 
 @pytest.mark.django_db
+def test_claim_limits_funds_cheaper_unit_after_unaffordable_one(opportunity: Opportunity):
+    _budget_unit(opportunity, amount=15)  # funded first, 150 for a claim
+    cheap_pu = _budget_unit(opportunity, amount=10)  # 100 for a claim
+    opportunity.total_budget = 262
+    opportunity.save(update_fields=["total_budget"])
+    _claim(opportunity)  # cost 250 for the full claim
+
+    claim = _claim(opportunity)  # 262 - 250 = 12 left over to claim
+
+    # 12 left cannot pay for a visit of the expensive unit, but still pays for one of the cheap_pu
+    claim_limits = claim.opportunityclaimlimit_set.all()
+    assert claim_limits.count() == 1
+    limit = claim_limits.first()
+
+    # can only afford 1 visit of the cheap_pu
+    assert limit.payment_unit == cheap_pu
+    assert limit.max_visits == 1
+    assert opportunity.remaining_budget == 2
+
+
+@pytest.mark.django_db
 def test_access_visit_count(opportunity: Opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity)
     assert access.visit_count == 0
