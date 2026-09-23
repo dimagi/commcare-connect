@@ -430,7 +430,10 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
-    claim = OpportunityClaim.objects.get(opportunity_access=access)
+    try:
+        claim = OpportunityClaim.objects.get(opportunity_access=access)
+    except OpportunityClaim.DoesNotExist:
+        raise ProcessingError(f"User has not claimed opportunity {opportunity.name}")
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
 
@@ -440,9 +443,14 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         # daily/total counts before either commits and both pass the limit check,
         # letting visits slip past the daily limit. The lock also serializes the
         # duplicate-entity check below.
-        claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
-            opportunity_claim=claim, payment_unit=payment_unit
-        )
+        try:
+            claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
+                opportunity_claim=claim, payment_unit=payment_unit
+            )
+        except OpportunityClaimLimit.DoesNotExist:
+            raise ProcessingError(
+                f"User has no claim limit for payment unit {payment_unit.name} in opportunity {opportunity.name}"
+            )
         counts = (
             UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
             .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
