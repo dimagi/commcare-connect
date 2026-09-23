@@ -1,0 +1,5 @@
+{% extends "email/base.txt" %}
+{% load i18n %}
+{% block content %}{% trans "Hi," %}
+
+{% blocktrans trimmed with member=member_name org_name=organization.name role=membership.get_role_display %}{{ member }} has accepted the invitation and joined {{ org_name }} on Connect as {{ role }}.{% endblocktrans %}{% endblock %}
