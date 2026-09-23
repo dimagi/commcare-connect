@@ -226,5 +226,6 @@ class TestOrganizationInvite:
         assert membership.organization == organization
         assert membership.user == user
         assert membership.role == UserOrganizationMembership.Role.ADMIN
+        assert membership.accepted_at is not None
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED

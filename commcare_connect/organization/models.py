@@ -84,6 +84,7 @@ class UserOrganizationMembership(models.Model):
         related_name="memberships",
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
+    accepted_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def is_admin(self):
@@ -171,7 +172,7 @@ class OrganizationInvite(BaseModel):
 
     def accept(self, user):
         membership, _created = UserOrganizationMembership.objects.update_or_create(
-            organization=self.organization, user=user, defaults={"role": self.role}
+            organization=self.organization, user=user, defaults={"role": self.role, "accepted_at": timezone.now()}
         )
         self.status = self.Status.ACCEPTED
         self.modified_by = user.email
