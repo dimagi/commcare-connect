@@ -58,8 +58,11 @@ class Organization(BaseModel):
             return cls.objects.all()
         return cls.objects.filter(memberships__user=user)
 
-    def get_member_emails(self, exclude_viewer=False):
+    def get_member_emails(self, exclude_viewer=False, role=None):
         member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")
+
+        if role:
+            member_query = member_query.filter(role=role)
 
         if exclude_viewer:
             member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
