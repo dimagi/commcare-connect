@@ -4,7 +4,7 @@ import TomSelect from 'tom-select';
 
 window.TomSelect = TomSelect;
 
-document.addEventListener('DOMContentLoaded', () => {
+function initTomSelectElements() {
   document.querySelectorAll('[data-tomselect]').forEach((el) => {
     if (el.tomselect) return;
     el.removeAttribute('class');
@@ -39,4 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.dispatchEvent(new CustomEvent('tomselect-elements:initialized'));
-});
+}
+
+document.addEventListener('DOMContentLoaded', initTomSelectElements);
+
+// Content swapped in by htmx arrives after DOMContentLoaded. Waiting for the settle step
+// matters: htmx copies the attributes of the same-id element it is replacing onto the incoming
+// one and restores the server-rendered values during settle, which would strip the classes
+// tom-select adds if it ran at insertion time.
+document.addEventListener('htmx:afterSettle', initTomSelectElements);
