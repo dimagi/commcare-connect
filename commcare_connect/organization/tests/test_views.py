@@ -283,6 +283,42 @@ class TestAcceptInviteView:
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
 
+    def test_authenticated_accept_notifies_admins_on_commit(
+        self, client, organization, django_capture_on_commit_callbacks
+    ):
+        user = UserFactory(email="invitee@example.com")
+        invite = OrganizationInviteFactory(organization=organization, email=user.email, role="member")
+        client.force_login(user)
+
+        with (
+            patch("commcare_connect.organization.tasks.send_invite_accepted_notification") as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            client.get(self._url(organization.slug, invite.token))
+
+        membership = UserOrganizationMembership.objects.get(user=user, organization=organization)
+        mock_notify.assert_called_once_with(membership.pk)
+
+    def test_new_user_accept_notifies_admins_on_commit(self, client, organization, django_capture_on_commit_callbacks):
+        invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com", role="member")
+
+        with (
+            patch("commcare_connect.organization.tasks.send_invite_accepted_notification") as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            client.post(
+                self._url(organization.slug, invite.token),
+                data={
+                    "password1": "a-very-strong-password-1",
+                    "password2": "a-very-strong-password-1",
+                    "agree": "on",
+                },
+            )
+
+        new_user = User.objects.get(email="brand-new@example.com")
+        membership = UserOrganizationMembership.objects.get(user=new_user, organization=organization)
+        mock_notify.assert_called_once_with(membership.pk)
+
     def test_unauthenticated_new_user_join_requires_matching_passwords(self, client, organization):
         invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com")
 
