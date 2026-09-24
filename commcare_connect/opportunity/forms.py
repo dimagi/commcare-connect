@@ -1226,7 +1226,7 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
-        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total", "org_amount"))
+        self.budget_per_user = self.opportunity.budget_per_user()
 
         super().__init__(*args, **kwargs)
 
@@ -1246,11 +1246,7 @@ class AddBudgetNewUsersForm(forms.Form):
                 "oninput": f"""
                 id_total_budget.value =
                 {self.opportunity.total_budget} +
-                {json.dumps(self.payments_units)}.reduce(
-                    (sum, u) => sum + (u.amount + u.org_amount)
-                    * u.max_total * parseInt(this.value || 0),
-                    0
-                );
+                {self.budget_per_user} * parseInt(this.value || 0);
             """
             }
         )
@@ -1281,7 +1277,7 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         if add_users:
-            increased_budget = self.opportunity.budget_per_user() * add_users
+            increased_budget = self.budget_per_user * add_users
 
             # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
             if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
