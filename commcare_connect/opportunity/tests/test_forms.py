@@ -633,6 +633,16 @@ class TestAddBudgetNewUsersForm:
             num_new_users * self.budget_per_user
         )
 
+    def test_valid_add_users_sums_all_payment_units(self, setup):
+        PaymentUnitFactory(opportunity=self.opportunity, max_total=4, amount=3, org_amount=2)
+        form = AddBudgetNewUsersForm(data={"add_users": 2}, opportunity=self.opportunity, program_manager=True)
+
+        assert form.is_valid()
+        form.save()
+        self.opportunity.refresh_from_db()
+        # Per user: (5 + 1) * 2 + (3 + 2) * 4 = 32
+        assert self.opportunity.total_budget == self.opp_total_budget_initially + 2 * 32
+
     @pytest.mark.parametrize("num_new_users", [200, 500])
     def test_exceeding_program_budget(self, setup, num_new_users):
         form_data = {"add_users": num_new_users}

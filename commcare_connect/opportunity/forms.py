@@ -855,16 +855,13 @@ class OpportunityFinalizeForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        self.budget_per_user = kwargs.pop("budget_per_user")
-        self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
-        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
-            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
+            f"id_total_budget.value = ({self.opportunity.budget_per_user()} * parseInt(this.value || 0))"
         )
 
         self.helper = FormHelper(self)
@@ -1274,7 +1271,6 @@ class AddBudgetNewUsersForm(forms.Form):
         return cleaned_data
 
     def _validate_budget(self, add_users, total_budget):
-        increased_budget = 0
         program = self.opportunity.program
         total_program_budget = program.budget
         claimed_program_budget = (
@@ -1285,10 +1281,7 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         if add_users:
-            for payment_unit in self.payments_units:
-                increased_budget += (
-                    (payment_unit["amount"] + payment_unit["org_amount"]) * payment_unit["max_total"] * add_users
-                )
+            increased_budget = self.opportunity.budget_per_user() * add_users
 
             # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
             if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
