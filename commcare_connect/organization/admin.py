@@ -76,6 +76,7 @@ class UserOrganizationMembershipInline(admin.TabularInline):
 
 @admin.register(OrganizationInvite)
 class OrganizationInviteAdmin(admin.ModelAdmin):
+    exclude = ["token"]
     list_display = ["email", "organization", "role", "status", "invited_by", "date_created", "date_modified"]
     list_filter = ["status", "role"]
     search_fields = ["email", "organization__name"]
