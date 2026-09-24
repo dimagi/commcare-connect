@@ -279,11 +279,10 @@ class Opportunity(BaseModel):
     def budget_per_visit(self):
         return self.paymentunit_set.aggregate(amount=Sum("amount")).get("amount", 0) or 0
 
-    @property
-    def budget_per_user(self):
+    def budget_per_user(self, include_org_pay=True):
         return self.budget_per_user_for_units(
             self.paymentunit_set.all(),
-            include_org_pay=False,
+            include_org_pay=include_org_pay,
         )
 
     @property
