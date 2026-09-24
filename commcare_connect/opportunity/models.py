@@ -175,10 +175,6 @@ class Opportunity(BaseModel):
         return True
 
     @property
-    def minimum_budget_per_visit(self):
-        return min(self.paymentunit_set.all().values_list("amount", flat=True))
-
-    @property
     def remaining_budget(self) -> int:
         if self.total_budget is None:
             return 0
