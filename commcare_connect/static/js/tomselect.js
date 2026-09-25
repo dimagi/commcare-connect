@@ -48,3 +48,7 @@ document.addEventListener('DOMContentLoaded', initTomSelectElements);
 // one and restores the server-rendered values during settle, which would strip the classes
 // tom-select adds if it ran at insertion time.
 document.addEventListener('htmx:afterSettle', initTomSelectElements);
+
+// Alpine's <template x-if>/<x-for> content is inert until Alpine mounts it, and mounting fires
+// no htmx event, so those subtrees have to call this themselves from x-init.
+window.initTomSelectElements = initTomSelectElements;
