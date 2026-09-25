@@ -1,8 +1,9 @@
 import secrets
 from datetime import timedelta
+from functools import partial
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -58,8 +59,11 @@ class Organization(BaseModel):
             return cls.objects.all()
         return cls.objects.filter(memberships__user=user)
 
-    def get_member_emails(self, exclude_viewer=False):
+    def get_member_emails(self, exclude_viewer=False, role=None):
         member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")
+
+        if role:
+            member_query = member_query.filter(role=role)
 
         if exclude_viewer:
             member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
@@ -84,6 +88,7 @@ class UserOrganizationMembership(models.Model):
         related_name="memberships",
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
+    accepted_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def is_admin(self):
@@ -170,10 +175,13 @@ class OrganizationInvite(BaseModel):
         return invite
 
     def accept(self, user):
+        from commcare_connect.organization.tasks import send_invite_accepted_notification
+
         membership, _created = UserOrganizationMembership.objects.update_or_create(
-            organization=self.organization, user=user, defaults={"role": self.role}
+            organization=self.organization, user=user, defaults={"role": self.role, "accepted_at": timezone.now()}
         )
         self.status = self.Status.ACCEPTED
         self.modified_by = user.email
         self.save(update_fields=["status", "modified_by", "date_modified"])
+        transaction.on_commit(partial(send_invite_accepted_notification, membership.pk), robust=True)
         return membership

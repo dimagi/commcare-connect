@@ -12,7 +12,7 @@ from commcare_connect.organization.merge import (
     merge_organizations,
     relation_counts,
 )
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.users.forms import AdminOrganizationForm
 
 MERGE_ACTION = "merge_workspaces"
@@ -72,6 +72,15 @@ class OrganizationMergeForm(forms.Form):
 class UserOrganizationMembershipInline(admin.TabularInline):
     list_display = ["organization", "user", "role"]
     model = UserOrganizationMembership
+
+
+@admin.register(OrganizationInvite)
+class OrganizationInviteAdmin(admin.ModelAdmin):
+    exclude = ["token"]
+    list_display = ["email", "organization", "role", "status", "invited_by", "date_created", "date_modified"]
+    list_filter = ["status", "role"]
+    search_fields = ["email", "organization__name"]
+    autocomplete_fields = ["organization", "invited_by"]
 
 
 @admin.register(Organization)

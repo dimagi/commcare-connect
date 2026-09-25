@@ -17,11 +17,12 @@ class OrgMemberTable(tables.Table):
     index = IndexColumn()
     user = columns.Column(verbose_name=_("Member"), accessor="user__email")
     role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
+    accepted_at = DMYTColumn(verbose_name=_("Accepted On"))
 
     class Meta:
         model = UserOrganizationMembership
-        fields = ("role", "user")
-        sequence = ("select", "index", "user", "role")
+        fields = ("role", "user", "accepted_at")
+        sequence = ("select", "index", "user", "role", "accepted_at")
 
 
 class PendingInviteTable(tables.Table):

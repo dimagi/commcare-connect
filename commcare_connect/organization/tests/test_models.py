@@ -64,6 +64,10 @@ class TestOrganization:
             expected.append(viewer.email)
         assert sorted(emails) == sorted(expected)
 
+    def test_get_member_emails_role_filter(self, organization, org_user_admin, org_user_member):
+        emails = organization.get_member_emails(role=UserOrganizationMembership.Role.ADMIN)
+        assert emails == [org_user_admin.email]
+
     @pytest.mark.parametrize(
         "privilege, visible",
         [
@@ -226,5 +230,6 @@ class TestOrganizationInvite:
         assert membership.organization == organization
         assert membership.user == user
         assert membership.role == UserOrganizationMembership.Role.ADMIN
+        assert membership.accepted_at is not None
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
