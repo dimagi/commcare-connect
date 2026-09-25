@@ -714,6 +714,15 @@ class VisitValidationStatus(models.TextChoices):
     trial = "trial", gettext("Trial")
 
 
+class OverLimitReasonChoices(models.TextChoices):
+    """Which limit barred a visit that was given VisitValidationStatus.over_limit."""
+
+    claim_ended = "claim_ended", gettext("Claim Period Ended")
+    claim_limit_ended = "claim_limit_ended", gettext("Payment Unit Claim Period Ended")
+    max_visits = "max_visits", gettext("Total Visit Limit Reached")
+    max_daily = "max_daily", gettext("Daily Visit Limit Reached")
+
+
 class ExchangeRate(models.Model):
     currency_code = models.CharField(max_length=3)
     rate = models.DecimalField(max_digits=10, decimal_places=6)
@@ -1056,7 +1065,15 @@ class UserVisit(XFormBaseModel):
         default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
+    # Free text written by org staff when they reject a visit
     reason = models.CharField(max_length=300, null=True, blank=True)
+    over_limit_reason = models.CharField(
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+        choices=OverLimitReasonChoices,
+        null=True,
+        blank=True,
+        help_text=gettext_lazy("Which limit barred this visit, set only when status is over_limit."),
+    )
     location = models.CharField(null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)

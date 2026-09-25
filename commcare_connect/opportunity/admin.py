@@ -112,7 +112,7 @@ class CompletedModuleAdmin(admin.ModelAdmin):
 
 @admin.register(UserVisit)
 class UserVisitAdmin(admin.ModelAdmin):
-    list_display = ["deliver_unit", "user", "opportunity", "status"]
+    list_display = ["deliver_unit", "user", "opportunity", "status", "over_limit_reason"]
     search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
 
 
