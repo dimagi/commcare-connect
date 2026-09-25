@@ -98,6 +98,12 @@
   @apply rounded-lg bg-white p-6 shadow-sm;
 }
 
+/* The card is the wrapper rather than the fieldset itself: a legend is laid out over
+   its fieldset's top border, which on a bordered card leaves the title hanging outside. */
+.form_section legend {
+  @apply text-brand-deep-purple mb-4 text-lg font-medium;
+}
+
 /* ------ Typography------ */
 
 .card_title {

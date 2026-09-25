@@ -14,7 +14,7 @@ from commcare_connect.organization.forms import (
     OrganizationChangeForm,
     OrganizationProfileForm,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite
+from commcare_connect.organization.models import Organization, OrganizationInvite, TeamSizeRange
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
@@ -295,6 +295,61 @@ class TestOrganizationProfileForm:
         form = OrganizationProfileForm(data=self._data(name=organization.name), instance=organization)
 
         assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+class TestOrganizationChangeFormProfileFields:
+    """The home-page edit form inherits the create wizard's fields, with its own layout."""
+
+    def test_profile_fields_are_editable(self, organization: Organization, user: User):
+        form = OrganizationChangeForm(
+            data={
+                "name": organization.name,
+                "short_name": "PO",
+                "team_size": TeamSizeRange.M,
+                "flws_managed": 120,
+                "regions": "North",
+                "website": "https://example.com",
+                "contact_emails": "one@example.com",
+                "eoi_links": "https://example.com/eoi",
+                "notes": "Met at the summit.",
+            },
+            user=user,
+            instance=organization,
+        )
+        assert form.is_valid(), form.errors
+        form.save()
+
+        organization.refresh_from_db()
+        assert organization.short_name == "PO"
+        assert organization.team_size == TeamSizeRange.M
+        assert organization.flws_managed == 120
+        assert organization.contact_emails == "one@example.com"
+
+    def test_team_size_is_a_range_dropdown(self, user: User):
+        field = OrganizationChangeForm(user=user).fields["team_size"]
+
+        assert isinstance(field.widget, forms.Select)
+        assert [value for value, _label in field.choices if value] == list(TeamSizeRange.values)
+
+    @pytest.mark.parametrize("team_size", ["42", "1-10 employees"])
+    def test_team_size_outside_the_ranges_is_rejected(self, organization: Organization, user: User, team_size):
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "team_size": team_size}, user=user, instance=organization
+        )
+
+        assert not form.is_valid()
+        assert "team_size" in form.errors
+
+    def test_line_validation_is_inherited(self, organization: Organization, user: User):
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "contact_emails": "not-an-email"},
+            user=user,
+            instance=organization,
+        )
+
+        assert not form.is_valid()
+        assert "not-an-email" in form.errors["contact_emails"][0]
 
 
 @pytest.mark.parametrize(

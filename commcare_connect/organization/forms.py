@@ -18,43 +18,6 @@ from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCE
 EARLIEST_ESTABLISHMENT_YEAR = 2000
 
 
-class OrganizationChangeForm(forms.ModelForm):
-    class Meta:
-        model = Organization
-        fields = ("name", "program_manager")
-        labels = {
-            "name": gettext_lazy("Workspace Name"),
-            "program_manager": gettext_lazy("Enable Program Manager"),
-        }
-
-    def __init__(self, *args, **kwargs):
-        self.user = kwargs.pop("user")
-        super().__init__(*args, **kwargs)
-
-        layout_fields = [layout.Field("name")]
-
-        if self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
-            layout_fields.append(
-                layout.Field(
-                    "program_manager",
-                    css_class=CHECKBOX_CLASS,
-                    wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
-                )
-            )
-        else:
-            del self.fields["program_manager"]
-
-        self.helper = helper.FormHelper(self)
-        self.helper.form_tag = False
-        self.helper.layout = layout.Layout(
-            *layout_fields,
-            layout.Div(
-                layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
-                css_class="flex justify-end",
-            ),
-        )
-
-
 class OrganizationProfileForm(forms.ModelForm):
     """Collects a workspace's organization profile as the create wizard's steps.
 
@@ -118,10 +81,14 @@ class OrganizationProfileForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["team_size"].choices = [("", gettext("Select team size")), *TeamSizeRange.choices]
         self.fields["year_of_establishment"].widget.choices = _year_choices()
+        self._drop_unpermitted_fields()
         self.helper = helper.FormHelper(self)
         self.helper.form_tag = False
         self.helper.disable_csrf = True
         self.helper.layout = self._layout()
+
+    def _drop_unpermitted_fields(self):
+        """Hook: remove fields the user may not edit, before the layout names them."""
 
     def _layout(self):
         return layout.Layout(
@@ -183,6 +150,64 @@ class OrganizationProfileForm(forms.ModelForm):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
 
 
+class OrganizationChangeForm(OrganizationProfileForm):
+    """Edits an existing workspace's profile from Organization Home."""
+
+    class Meta(OrganizationProfileForm.Meta):
+        fields = OrganizationProfileForm.Meta.fields + ("program_manager",)
+        labels = OrganizationProfileForm.Meta.labels | {
+            "program_manager": gettext_lazy("Enable Program Manager"),
+        }
+        help_texts = OrganizationProfileForm.Meta.help_texts | {
+            "name": gettext_lazy("Renaming the workspace does not change its URL."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+
+    def _drop_unpermitted_fields(self):
+        if not self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
+            del self.fields["program_manager"]
+
+    def _layout(self):
+        return layout.Layout(
+            _section(
+                gettext("Workspace"),
+                "name",
+                "short_name",
+                "year_of_establishment",
+                "website",
+                *self._toggles(),
+            ),
+            _section(
+                gettext("Operations"),
+                "team_size",
+                "flws_managed",
+                "countries",
+                "primary_sectors",
+                _full_width("regions"),
+            ),
+            _section(
+                gettext("Contact & documents"),
+                "office_address",
+                "contact_emails",
+                "eoi_links",
+                "notes",
+            ),
+            layout.Div(
+                layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
+                css_class="flex justify-end",
+            ),
+        )
+
+    def _toggles(self):
+        """Pairs the two switches in one row, or spans the lone one when the user can't set both."""
+        if "program_manager" in self.fields:
+            return [_toggle("has_used_connect"), _toggle("program_manager")]
+        return [_full_width(_toggle("has_used_connect"))]
+
+
 def _wizard_step(number, title, *fields):
     """Wraps a field group as one wizard step.
 
@@ -196,6 +221,30 @@ def _wizard_step(number, title, *fields):
         x_show=f"step === {number}",
         x_cloak=True,
     )
+
+
+def _section(title, *fields):
+    return layout.Div(
+        layout.Fieldset(
+            title,
+            layout.Div(*fields, css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1"),
+        ),
+        css_class="card_bg mb-6 form_section",
+    )
+
+
+def _toggle(field):
+    """Renders a boolean as a labelled row rather than a bare checkbox beside its label."""
+    return layout.Field(
+        field,
+        css_class=CHECKBOX_CLASS,
+        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg [&>label]:mb-0",
+    )
+
+
+def _full_width(field):
+    """Spans a field across both columns — for the ones a half-width control would cramp."""
+    return layout.Div(field, css_class="sm:col-span-2")
 
 
 def _year_choices():
