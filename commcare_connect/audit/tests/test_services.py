@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from commcare_connect.audit import calculations
+from commcare_connect.audit.chc_indicators import WorkAreasRemaining
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.services import (
     _format_reference_range,
@@ -13,6 +14,8 @@ from commcare_connect.audit.services import (
     stream_audit_report_csv,
 )
 from commcare_connect.audit.tests.factories import AuditReportFactory
+from commcare_connect.microplanning.models import WorkAreaStatus
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
 
@@ -75,6 +78,24 @@ def test_generate_report_creates_entries_for_active_accesses(opportunity, fixed_
 
 
 @pytest.mark.django_db
+def test_generate_report_records_whether_work_areas_remain(opportunity, fixed_calc):
+    calculations._REGISTRY.append(WorkAreasRemaining())
+    finished = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=finished, status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
+    working = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=working, status=WorkAreaStatus.NOT_VISITED)
+
+    report = generate_audit_report_for_opportunity(
+        opportunity,
+        period_start=datetime.date(2026, 4, 13),
+        period_end=datetime.date(2026, 4, 19),
+    )
+
+    remaining = {e.opportunity_access_id: e.results[WorkAreasRemaining.name]["value"] for e in report.entries.all()}
+    assert remaining == {finished.id: False, working.id: True}
+
+
+@pytest.mark.django_db
 def test_generate_report_with_no_active_accesses(opportunity, fixed_calc):
     report = generate_audit_report_for_opportunity(
         opportunity,
@@ -120,13 +141,14 @@ def test_stream_audit_report_csv_outputs_header_and_rows(make_audit_entry):
     report = AuditReportFactory()
     # Out-of-range still exports the raw value; a worker without a phone number gets an empty column.
     bob = make_audit_entry(report, "Bob", 0.5, in_range=False, phone_number="+2348031234567")
-    ann = make_audit_entry(report, "Ann", None, has_data=False)  # insufficient data -> "N/A"
+    # Insufficient data -> "N/A", disambiguated by the Work Areas Remaining column.
+    ann = make_audit_entry(report, "Ann", None, has_data=False, has_work_areas_remaining=False)
 
     lines = "".join(stream_audit_report_csv(report)).splitlines()
 
-    assert lines[0] == "Connect Worker,Username,Phone Number,Calc A"
-    assert f"Ann,{ann.opportunity_access.user.username},,N/A" in lines
-    assert f"Bob,{bob.opportunity_access.user.username},+2348031234567,0.5" in lines
+    assert lines[0] == "Connect Worker,Username,Phone Number,Work Areas Remaining,Calc A"
+    assert f"Ann,{ann.opportunity_access.user.username},,False,N/A" in lines
+    assert f"Bob,{bob.opportunity_access.user.username},+2348031234567,True,0.5" in lines
 
 
 @pytest.mark.django_db
@@ -167,7 +189,9 @@ def test_stream_audit_report_csv_appends_reference_range_to_header(isolated_regi
             return 0.5, 1
 
     report = AuditReportFactory()
-    make_audit_entry(report, "Bob", 0.5)
+    # None means the entry never recorded this metric, as on reports generated before the
+    # calculation existed, so it gets no column in the export at all.
+    make_audit_entry(report, "Bob", 0.5, has_work_areas_remaining=None)
 
     header = "".join(stream_audit_report_csv(report)).splitlines()[0]
 
