@@ -2,8 +2,64 @@
 {% load static %}
 {% load crispy_forms_tags %}
 {% load i18n %}
+{% load render_table from django_tables2 %}
 {% block top_buttons %}
   {{ block.super }}
+  {% if exportable_count %}
+    <div x-data="{ open: false }" @click.away="open = false" class="relative">
+      <button @click="open = !open"
+              class="button button-md outline-style flex flex-row items-center space-x-2">
+        <i class="fa-solid fa-download text-xs"></i>
+        <span>{% translate "Export" %}</span>
+        <i :class="open ? 'rotate-180' : ''"
+           class="fa-solid fa-chevron-down transition-all text-xs"></i>
+      </button>
+      <div x-show="open"
+           x-transition.opacity
+           x-cloak
+           class="absolute top-12 right-0 min-w-80 bg-white shadow rounded-lg z-50">
+        <form method="post" action="{{ export_url }}" class="p-2">
+          {% csrf_token %}
+          <input type="hidden" name="month" value="{{ month_param }}">
+          <p class="px-2 py-1 text-xs font-medium tracking-wide text-gray-400 uppercase">
+            {% if selected_month %}
+              {% blocktranslate count count=exportable_count with month=selected_month|date:"F Y" %}
+                All {{ count }} exportable invoice · {{ month }}
+              {% plural %}
+                All {{ count }} exportable invoices · {{ month }}
+              {% endblocktranslate %}
+            {% else %}
+              {% blocktranslate count count=exportable_count %}
+                All {{ count }} exportable invoice
+              {% plural %}
+                All {{ count }} exportable invoices
+              {% endblocktranslate %}
+            {% endif %}
+          </p>
+          <button type="submit"
+                  name="export_type"
+                  value="pdf_zip"
+                  class="flex w-full gap-3 p-2 text-left rounded hover:bg-gray-100">
+            <i class="mt-1 fa-regular fa-file-pdf text-brand-deep-purple"></i>
+            <span>
+              <span class="block text-sm font-medium text-brand-deep-purple">{% translate "Invoice PDFs (.zip)" %}</span>
+              <span class="block text-xs text-gray-500">{% translate "One PDF per invoice, zipped for attaching to a ticket." %}</span>
+            </span>
+          </button>
+          <button type="submit"
+                  name="export_type"
+                  value="csv_summary"
+                  class="flex w-full gap-3 p-2 text-left rounded hover:bg-gray-100">
+            <i class="mt-1 fa-solid fa-table text-brand-deep-purple"></i>
+            <span>
+              <span class="block text-sm font-medium text-brand-deep-purple">{% translate "Amounts due summary (.csv)" %}</span>
+              <span class="block text-xs text-gray-500">{% translate "One row per invoice: number, status, amount due (local & USD), rate." %}</span>
+            </span>
+          </button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
   {% if not request.is_opportunity_pm %}
     <div x-data="{ open: false }" @click.away="open = false" class="relative">
       <button @click="open = !open"
@@ -89,3 +145,76 @@
     </div>
   {% endif %}
 {% endblock report_cards %}
+{% block table_content %}
+  <div x-data="{ ...selectableTable(), ...invoiceExportPricing() }">
+    <div x-show="selected.length"
+         x-cloak
+         class="flex flex-wrap items-center justify-between gap-4 px-4 py-3 mb-2 rounded-lg bg-indigo-50">
+      <div class="flex items-center gap-3 text-sm">
+        <span class="font-medium text-brand-deep-purple">
+          <span x-text="selected.length"></span>
+          {% translate "of" %} <span x-text="selectableRowCount()"></span> {% translate "selected" %}
+          <template x-if="selectedUnpricedCount() < selected.length">
+            <span>· <span x-text="selectedTotalUsd()"></span> {% translate "USD due" %}</span>
+          </template>
+        </span>
+        <span x-show="selectedUnpricedCount()"
+              x-cloak
+              class="text-gray-500"
+              x-text="selectedUnpricedCount() === 1 ? '{% translate "1 invoice has no USD amount" %}' : selectedUnpricedCount() + ' {% translate "invoices have no USD amount" %}'"></span>
+        <button type="button"
+                @click="clearSelection()"
+                class="text-gray-500 underline">{% translate "Clear" %}</button>
+      </div>
+      <form method="post" action="{{ export_url }}" class="flex flex-wrap gap-2">
+        {% csrf_token %}
+        <input type="hidden" name="month" value="{{ month_param }}">
+        <template x-for="id in selected" :key="id">
+          <input type="hidden" name="invoice_ids" :value="id">
+        </template>
+        <button type="submit"
+                name="export_type"
+                value="pdf_zip"
+                class="button button-md primary-dark">
+          <i class="fa-regular fa-file-pdf"></i> {% translate "Download PDFs (.zip)" %}
+        </button>
+        <button type="submit"
+                name="export_type"
+                value="csv_summary"
+                class="button button-md outline-style">
+          <i class="fa-solid fa-table"></i> {% translate "Download CSV summary" %}
+        </button>
+      </form>
+    </div>
+    {% render_table table %}
+    <p class="px-4 py-3 text-xs text-gray-500">
+      <i class="fa-solid fa-circle-info"></i>
+      {% translate "Exports cover the selected invoices, or the whole month when nothing is selected. Filenames use the invoice number so they stay identifiable once attached to a ticket." %}
+    </p>
+  </div>
+  {% include "components/tables/selectable_table.html" %}
+  {% if export_task_id %}
+    <div x-data="{ show: true }"
+         x-show="show"
+         x-cloak
+         class="fixed z-50 p-4 bg-white border border-gray-200 rounded-lg shadow-lg bottom-6 right-6 w-80">
+      <div class="flex items-start justify-between mb-2">
+        <p class="text-sm font-medium text-brand-deep-purple">{% translate "Invoice export" %}</p>
+        <button type="button"
+                @click="show = false"
+                class="text-gray-400"
+                aria-label="{% translate 'Dismiss' %}">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
+           hx-target="this"
+           hx-trigger="load"
+           hx-swap="outerHTML"
+           class="flex items-center justify-center">
+        <div class="w-6 h-6 border-b-2 border-t-2 border-blue-500 rounded-full animate-spin"></div>
+        <span class="sr-only">{% translate "Loading..." %}</span>
+      </div>
+    </div>
+  {% endif %}
+{% endblock table_content %}
