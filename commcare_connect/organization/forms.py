@@ -56,7 +56,10 @@ class OrganizationChangeForm(forms.ModelForm):
 
 
 class OrganizationProfileForm(forms.ModelForm):
-    """Creates or edits a workspace and its organization profile."""
+    """Collects a workspace's organization profile as the create wizard's steps.
+
+    Subclasses reuse the fields and validation and supply their own layout via `_layout`.
+    """
 
     class Meta:
         model = Organization
@@ -118,7 +121,10 @@ class OrganizationProfileForm(forms.ModelForm):
         self.helper = helper.FormHelper(self)
         self.helper.form_tag = False
         self.helper.disable_csrf = True
-        self.helper.layout = layout.Layout(
+        self.helper.layout = self._layout()
+
+    def _layout(self):
+        return layout.Layout(
             _wizard_step(
                 1,
                 gettext("Workspace"),
