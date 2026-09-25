@@ -881,10 +881,13 @@ class CompletedWork(models.Model):
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
     saved_org_payment_accrued = models.IntegerField(
-        default=0, help_text=gettext_lazy("Payment accrued for the workspace")
+        default=0, help_text=gettext_lazy("Payment accrued for the organization")
     )
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text=gettext_lazy("Payment accrued for the organization in USD."),
     )
     invoiced_approved_count = models.IntegerField(
         default=0,
@@ -991,7 +994,7 @@ class CompletedWorkInvoice(BaseModel):
 
     One row per (invoice, completed_work). Snapshotted at invoice creation (and backfilled for legacy
     invoices) so invoice line items are read from frozen rows instead of recomputed from
-    CompletedWork.saved_* on every view. Stores both FLW pay and org (workspace) pay.
+    CompletedWork.saved_* on every view. Stores both FLW pay and org pay.
     """
 
     invoice = models.ForeignKey(

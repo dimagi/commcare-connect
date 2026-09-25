@@ -38,18 +38,18 @@ Status = ProgramApplicationStatus
 
 @pytest.fixture
 def source():
-    return OrganizationFactory(name="Source Workspace")
+    return OrganizationFactory(name="Source Organization")
 
 
 @pytest.fixture
 def target():
-    return OrganizationFactory(name="Target Workspace")
+    return OrganizationFactory(name="Target Organization")
 
 
 @pytest.fixture
 def funder_target():
     """A target allowed to inherit the source's ``Program.funder`` rows."""
-    return OrganizationFactory(name="Target Workspace", funder=True)
+    return OrganizationFactory(name="Target Organization", funder=True)
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ class TestMergeGuards:
             merge_organizations(Organization(name="Never Saved"), target)
 
     @pytest.mark.parametrize("with_hq_server", [True, False], ids=["hq_server", "no_hq_server"])
-    def test_a_commcare_app_both_workspaces_hold_is_refused(self, source, target, with_hq_server):
+    def test_a_commcare_app_both_organizations_hold_is_refused(self, source, target, with_hq_server):
         """Merging would break the survivor's next get_or_create on that app. ``hq_server`` is nullable."""
         shared = dict(
             cc_app_id="shared-app",
@@ -99,7 +99,7 @@ class TestMergeGuards:
         assert Organization.objects.filter(pk=source.pk).exists()
 
     def test_a_funder_target_inherits_the_funded_programs(self, source):
-        target = OrganizationFactory(name="Target Workspace", funder=True)
+        target = OrganizationFactory(name="Target Organization", funder=True)
         program = ProgramFactory(funder=source, name="Zinc Supplementation")
 
         merge_organizations(source, target)
@@ -108,7 +108,7 @@ class TestMergeGuards:
         assert program.funder == target
 
     def test_a_source_marked_as_a_funder_but_funding_nothing_is_allowed(self, target):
-        source = OrganizationFactory(name="Source Workspace", funder=True)
+        source = OrganizationFactory(name="Source Organization", funder=True)
 
         merge_organizations(source, target)
 
@@ -116,8 +116,8 @@ class TestMergeGuards:
         assert target.funder is False
 
     def test_a_program_manager_target_inherits_the_owned_programs(self):
-        source = OrganizationFactory(name="Source Workspace", program_manager=True)
-        target = OrganizationFactory(name="Target Workspace", program_manager=True)
+        source = OrganizationFactory(name="Source Organization", program_manager=True)
+        target = OrganizationFactory(name="Target Organization", program_manager=True)
         program = ProgramFactory(organization=source, name="Zinc Supplementation")
 
         merge_organizations(source, target)
@@ -127,7 +127,7 @@ class TestMergeGuards:
 
     def test_a_program_manager_source_is_refused_when_the_target_is_not_one(self, target):
         """The operator has to decide whether the role is carried over or retired with the source."""
-        source = OrganizationFactory(name="Source Workspace", program_manager=True)
+        source = OrganizationFactory(name="Source Organization", program_manager=True)
 
         with pytest.raises(MergeNotAllowed, match="marked as a program manager"):
             merge_organizations(source, target)
@@ -183,8 +183,8 @@ class TestProfileFields:
 
     def test_no_profile_field_is_taken_from_the_source(self):
         """A sweep, so a profile field added to Organization later is covered without touching this test."""
-        source = OrganizationFactory(name="Source Workspace", program_manager=True, funder=True)
-        target = OrganizationFactory(name="Target Workspace", program_manager=True, funder=True)
+        source = OrganizationFactory(name="Source Organization", program_manager=True, funder=True)
+        target = OrganizationFactory(name="Target Organization", program_manager=True, funder=True)
         before = _profile_snapshot(target)
 
         merge_organizations(source, target)
@@ -429,13 +429,13 @@ class TestFeatureFlags:
         ],
     )
     def test_a_flag_keeps_only_its_target_membership(self, source, target, held_by, survivors, flags_cleared):
-        workspaces = {"source": source, "target": target}
+        organizations = {"source": source, "target": target}
         flag = FlagFactory()
-        flag.organizations.add(*[workspaces[name] for name in held_by])
+        flag.organizations.add(*[organizations[name] for name in held_by])
 
         summary = merge_organizations(source, target)
 
-        assert list(flag.organizations.all()) == [workspaces[name] for name in survivors]
+        assert list(flag.organizations.all()) == [organizations[name] for name in survivors]
         assert summary.flags_cleared == flags_cleared
 
     def test_flag_organization_cache_is_flushed(self, source, target):
