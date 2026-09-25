@@ -175,10 +175,6 @@ class Opportunity(BaseModel):
         return True
 
     @property
-    def minimum_budget_per_visit(self):
-        return min(self.paymentunit_set.all().values_list("amount", flat=True))
-
-    @property
     def remaining_budget(self) -> int:
         if self.total_budget is None:
             return 0
@@ -221,9 +217,12 @@ class Opportunity(BaseModel):
         ).count()
 
     @staticmethod
-    def budget_per_user_for_units(payment_units):
-        """Total budget consumed per user (worker + org pay) across the given payment units."""
-        return sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
+    def budget_per_user_for_units(payment_units, include_org_pay=True):
+        """
+        Budget consumed per user across the given payment units; includes org pay unless
+        include_org_pay is False.
+        """
+        return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
 
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
@@ -257,7 +256,7 @@ class Opportunity(BaseModel):
     def number_of_users(self):
         if not self.total_budget:
             return 0
-        return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
+        return self.total_budget / self.budget_per_user()
 
     @property
     def allotted_visits(self):
@@ -276,13 +275,11 @@ class Opportunity(BaseModel):
     def budget_per_visit(self):
         return self.paymentunit_set.aggregate(amount=Sum("amount")).get("amount", 0) or 0
 
-    @property
-    def budget_per_user(self):
-        payment_units = self.paymentunit_set.all()
-        budget = 0
-        for pu in payment_units:
-            budget += pu.max_total * pu.amount
-        return budget
+    def budget_per_user(self, include_org_pay=True):
+        return self.budget_per_user_for_units(
+            self.paymentunit_set.all(),
+            include_org_pay=include_org_pay,
+        )
 
     @property
     def is_active(self):

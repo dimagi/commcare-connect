@@ -28,6 +28,8 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
+    OpportunityClaimFactory,
+    OpportunityClaimLimitFactory,
     OpportunityFactory,
     PaymentUnitFactory,
     UserVisitFactory,
@@ -38,12 +40,12 @@ from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, Mob
 from commcare_connect.utils.error_codes import ErrorCodes
 
 
-def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, budget_per_visit=10):
+def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, budget_per_visit=10, org_amount=0):
     opportunity = OpportunityFactory(
         total_budget=total_budget,
         end_date=end_date,
     )
-    PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100, org_amount=0)
+    PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100, org_amount=org_amount)
     opportunity_access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     ConnectIdUserLinkFactory(
         user=mobile_user,
@@ -140,7 +142,8 @@ def test_claim_endpoint_less_budget_than_visit(mobile_user: User, api_client: AP
     assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
 
 
-def test_claim_endpoint_uneven_visits(mobile_user: User, api_client: APIClient):
+def test_claim_endpoint_rejects_budget_for_partial_limit(mobile_user: User, api_client: APIClient):
+    # The budget covers one visit, but not the worker's full limit of 100 visits.
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user,
         total_budget=3,
@@ -149,9 +152,69 @@ def test_claim_endpoint_uneven_visits(mobile_user: User, api_client: APIClient):
     )
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 201
+    assert response.status_code == 400
+    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
+    assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
+
+
+@pytest.mark.parametrize(
+    "total_budget, org_amount, extra_payment_unit, existing_claim_visits, expected_status",
+    [
+        # One unit of 10 x 100 visits: the budget must cover all 1000.
+        (1000, 0, False, 0, 201),
+        (999, 0, False, 0, 400),
+        # Org pay counts towards the budget: 10 + 2 per visit x 100 visits.
+        (1000, 2, False, 0, 400),
+        (1200, 2, False, 0, 201),
+        # Every payment unit counts: an extra unit of (1 + 1) x 10 visits adds 20.
+        (1019, 0, True, 0, 400),
+        (1020, 0, True, 0, 201),
+        # Only the budget left after existing claims counts: another worker holds 10 x 100 visits.
+        (2000, 0, False, 100, 201),
+        (1999, 0, False, 100, 400),
+    ],
+)
+def test_claim_endpoint_requires_budget_for_full_limit(
+    mobile_user: User,
+    api_client: APIClient,
+    total_budget,
+    org_amount,
+    extra_payment_unit,
+    existing_claim_visits,
+    expected_status,
+):
+    opportunity, opportunity_access = _setup_opportunity_and_access(
+        mobile_user,
+        total_budget=total_budget,
+        end_date=datetime.date.today() + datetime.timedelta(days=100),
+        org_amount=org_amount,
+    )
+    if existing_claim_visits:
+        OpportunityClaimLimitFactory(
+            opportunity_claim=OpportunityClaimFactory(
+                opportunity_access=OpportunityAccessFactory(opportunity=opportunity)
+            ),
+            payment_unit=opportunity.paymentunit_set.get(),
+            max_visits=existing_claim_visits,
+        )
+    if extra_payment_unit:
+        PaymentUnitFactory(opportunity=opportunity, amount=1, org_amount=1, max_total=10)
+
+    api_client.force_authenticate(mobile_user)
+    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
+
+    assert response.status_code == expected_status
+    if expected_status == 400:
+        assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
+        assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
+    else:
+        _assert_full_claim_limits(opportunity, opportunity_access)
+
+
+def _assert_full_claim_limits(opportunity: Opportunity, opportunity_access: OpportunityAccess):
     claim = OpportunityClaim.objects.get(opportunity_access=opportunity_access)
-    assert claim.opportunityclaimlimit_set.first().max_visits == 1
+    limits = {limit.payment_unit_id: limit.max_visits for limit in claim.opportunityclaimlimit_set.all()}
+    assert limits == {pu.id: pu.max_total for pu in opportunity.paymentunit_set.all()}
 
 
 @pytest.mark.django_db

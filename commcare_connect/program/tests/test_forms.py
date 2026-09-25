@@ -2,6 +2,7 @@ import json
 import random
 
 import pytest
+from crispy_forms.utils import render_crispy_form
 from django.utils import timezone
 from factory.fuzzy import FuzzyText
 from waffle.testutils import override_switch
@@ -194,8 +195,6 @@ class TestOpportunityFinalizeForm:
     def get_form(self, **kwargs):
         return OpportunityFinalizeForm(
             data=kwargs,
-            budget_per_user=self.payment_unit.amount * self.payment_unit.max_total,
-            payment_units_max_total=self.payment_unit.max_total,
             opportunity=self.opportunity,
             current_start_date=self.opportunity.start_date,
         )
@@ -259,6 +258,14 @@ class TestOpportunityFinalizeForm:
             total_budget=5000,
         )
         assert "org_pay_per_visit" not in form.fields
+
+    def test_max_users_oninput_uses_budget_per_user(self):
+        PaymentUnitFactory.create(opportunity=self.opportunity, amount=3, org_amount=2, max_total=4)
+        form = self.get_form()
+
+        # (50 + org pay) * 20 for the setup unit, plus (3 + 2) * 4
+        expected = (50 + self.payment_unit.org_amount) * 20 + 20
+        assert f"id_total_budget.value = ({expected} * parseInt(this.value || 0))" in render_crispy_form(form)
 
 
 @pytest.mark.django_db
