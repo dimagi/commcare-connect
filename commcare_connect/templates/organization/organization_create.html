@@ -12,7 +12,7 @@
   <script src="{% static 'bundles/js/org_creation_wizard-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block title %}
-  {% trans "Connect - New Workspace" %}
+  {% trans "Connect - New Organization" %}
 {% endblock title %}
 {% block content %}
   <div class="container md:max-w-screen-lg mx-auto">
@@ -24,7 +24,7 @@
       {% csrf_token %}
       <div class="card_bg flex flex-col gap-6">
         <div class="flex flex-wrap items-center justify-between gap-4">
-          <h1 class="title text-brand-deep-purple text-xl">{% trans "Create a New Workspace" %}</h1>
+          <h1 class="title text-brand-deep-purple text-xl">{% trans "Create a New Organization" %}</h1>
           <ol class="flex items-center gap-2" aria-label="{% trans 'Progress' %}">
             <template x-for="(title, index) in titles" :key="index">
               <li class="flex items-center gap-2">
@@ -57,7 +57,7 @@
             <button class="button button-md primary-dark"
                     type="submit"
                     x-show="step === totalSteps"
-                    x-cloak>{% trans "Create Workspace" %}</button>
+                    x-cloak>{% trans "Create Organization" %}</button>
           </div>
         </div>
       </div>

@@ -24,12 +24,12 @@
               <div x-show="!hasSelectedOrg && membershipsCount > 0"
                    x-transition.opacity
                    x-cloak>
-                <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{% translate "Select Workspace" %}</p>
+                <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{% translate "Select Organization" %}</p>
               </div>
               <div x-show="!hasSelectedOrg && membershipsCount == 0 && canCreateOrg"
                    x-transition.opacity
                    x-cloak>
-                <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{% translate "Create Workspace" %}</p>
+                <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{% translate "Create Organization" %}</p>
               </div>
             </div>
             <!-- Dropdown Toggle Icon -->
@@ -59,7 +59,7 @@
             </ul>
             <div class="p-2" x-show="canCreateOrg" x-transition.opacity x-cloak>
               <a class="button button-md primary-dark w-full text-center"
-                 href="{% url 'organization_create' %}">{% translate "Create Workspace" %}</a>
+                 href="{% url 'organization_create' %}">{% translate "Create Organization" %}</a>
             </div>
           </div>
         </div>

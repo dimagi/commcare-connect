@@ -22,7 +22,7 @@ class FlagForm(forms.ModelForm):
         queryset=Organization.objects.order_by("name"),
         required=False,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
-        label="Workspaces",
+        label="Organizations",
     )
     programs = forms.ModelMultipleChoiceField(
         queryset=Program.objects.order_by("name"),

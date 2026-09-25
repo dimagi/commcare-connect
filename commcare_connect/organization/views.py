@@ -40,7 +40,7 @@ def organization_create(request):
 
 @login_required
 def no_organization(request):
-    """Landing page for users who don't belong to any workspace yet."""
+    """Landing page for users who don't belong to any organization yet."""
     if request.user.memberships.exists():
         return redirect("users:redirect")
 
@@ -56,7 +56,7 @@ def organization_home(request, org_slug):
     if request.method == "POST":
         form = OrganizationChangeForm(request.POST, instance=org, user=request.user)
         if form.is_valid():
-            messages.success(request, gettext("Workspace details saved!"))
+            messages.success(request, gettext("Organization details saved!"))
             form.save()
             return redirect("organization:home", org_slug)
 
@@ -114,12 +114,12 @@ def remove_members(request, org_slug):
     redirect_url = f"{base_url}?{query_params}"
 
     if str(request.org_membership.id) in membership_ids:
-        messages.error(request, message=gettext("You cannot remove yourself from the workspace."))
+        messages.error(request, message=gettext("You cannot remove yourself from the organization."))
         return redirect(redirect_url)
 
     if membership_ids:
         UserOrganizationMembership.objects.filter(pk__in=membership_ids, organization__slug=org_slug).delete()
-        messages.success(request, message=gettext("Selected members have been removed from the workspace."))
+        messages.success(request, message=gettext("Selected members have been removed from the organization."))
 
     return redirect(redirect_url)
 
@@ -145,7 +145,9 @@ def _reject_invalid_invite(request, invite):
             request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
         )
     elif invite.status == OrganizationInvite.Status.ACCEPTED:
-        messages.error(request, gettext("This invitation has already been accepted. Log in to access the workspace."))
+        messages.error(
+            request, gettext("This invitation has already been accepted. Log in to access the organization.")
+        )
     else:
         messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
     return redirect("account_login")
