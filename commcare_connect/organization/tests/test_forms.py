@@ -1,4 +1,5 @@
 from datetime import timedelta
+from importlib import import_module
 from unittest.mock import patch
 
 import pytest
@@ -283,3 +284,24 @@ class TestOrganizationProfileForm:
         form = OrganizationProfileForm(data=self._data(name=organization.name), instance=organization)
 
         assert form.is_valid(), form.errors
+
+
+@pytest.mark.parametrize(
+    ("headcount", "expected"),
+    [
+        (0, "1-10"),
+        (1, "1-10"),
+        (10, "1-10"),
+        (11, "11-50"),
+        (200, "51-200"),
+        (201, "201-500"),
+        (500, "201-500"),
+        (501, "500+"),
+        (10_000, "500+"),
+    ],
+)
+def test_headcounts_bucket_into_ranges(headcount, expected):
+    """Guards the boundaries the 0017 data migration used to convert the old integer column."""
+    migration = import_module("commcare_connect.organization.migrations.0017_organization_team_size_range")
+
+    assert migration.bucket(headcount) == expected

@@ -10,6 +10,7 @@ from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
+    TeamSizeRange,
 )
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
@@ -109,6 +110,7 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["team_size"].choices = [("", gettext("Select team size")), *TeamSizeRange.choices]
         self.helper = helper.FormHelper(self)
         self.helper.form_tag = False
         self.helper.disable_csrf = True
