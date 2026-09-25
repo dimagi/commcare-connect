@@ -68,6 +68,52 @@ class TestBlogManifest:
         assert data["posts"][0]["slug"]
 
 
+class TestExternalCoverageSection:
+    """ "In the news" cards (see external_coverage.py) render on /insights and
+    on the portfolio pages they're tagged for, and nowhere else.
+
+    home.html is a single SPA template: every response's body carries every
+    route's <section data-page="…">, and the client router just shows the
+    right one. So these tests scope their assertions to one page's own
+    section rather than the whole response body, which always contains
+    every other page's markup too (including /insights' own "In the news").
+    """
+
+    @staticmethod
+    def _section(content, data_page):
+        html = content.decode()
+        marker = re.search(re.escape(f'data-page="{data_page}"'), html)
+        assert marker, f"no section found for data-page={data_page!r}"
+        start = html.rfind("<section", 0, marker.start())
+        next_section = html.find('<section class="page"', marker.end())
+        end = next_section if next_section != -1 else len(html)
+        return html[start:end]
+
+    def test_insights_shows_the_news_section(self, client):
+        resp = client.get(reverse("prelogin:insights"))
+        section = self._section(resp.content, "/insights")
+        assert "In the news" in section
+        assert "Tech investment has a major blind spot" in section
+
+    def test_tagged_portfolio_page_shows_the_card(self, client):
+        resp = client.get("/portfolio/reading-glasses")
+        section = self._section(resp.content, "/portfolio/reading-glasses")
+        assert "Tech investment has a major blind spot" in section
+
+    def test_untagged_portfolio_page_has_no_news_section(self, client):
+        resp = client.get("/portfolio/kangaroo-mother-care")
+        section = self._section(resp.content, "/portfolio/kangaroo-mother-care")
+        assert "In the news" not in section
+
+    def test_news_card_is_never_counted_as_an_insight(self, client):
+        """The /insights result count and Type/Program/Activity filters only
+        look at .blog-card and .insight-row (see app.js); the news card must
+        carry neither class or it would get hidden/counted as one of those."""
+        resp = client.get(reverse("prelogin:insights"))
+        section = self._section(resp.content, "/insights")
+        assert 'class="os-press-card news-card"' in section
+
+
 class TestRouteMeta:
     """The head is rendered server-side, per route.
 
