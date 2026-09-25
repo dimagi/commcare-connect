@@ -29,6 +29,8 @@ class TestExportFilenamePatterns:
             "2026-03-09T10:00:00.000000_My_Opp_work_status.csv",
             "2026-03-09T10:00:00.000000_My_Opp_payment_verification.csv",
             "invoice-report-550e8400-e29b-41d4-a716-446655440000.csv",
+            "2026-03-09T10:00:00_test_invoice_pdfs.zip",
+            "exports/2026-03-09T10:00:00_test_invoice_summary.csv",
             # New (exports/ prefix)
             "exports/2026-03-09T10:00:00.000000_My_Opp_visit_export.csv",
             "exports/2026-03-09T10:00:00.000000_My_Opp_work_status.csv",
