@@ -1,7 +1,7 @@
 (() => {
   // === CONFIG ===
-  const ALLOWED_TAG_TYPES = ['google'];
-  const BLOCKED_TAG_TYPES = ['jsm', 'html', 'img', 'j', 'k'];
+  const ALLOWED_TAG_TYPES = ['google', 'html', 'j', 'jsm'];
+  const BLOCKED_TAG_TYPES = ['img', 'k'];
 
   // === INIT DATA LAYER ===
   window.dataLayer = window.dataLayer || [];
