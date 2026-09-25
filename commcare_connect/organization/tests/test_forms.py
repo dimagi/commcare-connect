@@ -1,4 +1,5 @@
 from datetime import timedelta
+from importlib import import_module
 from unittest.mock import patch
 
 import pytest
@@ -9,10 +10,11 @@ from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.organization.forms import (
+    EARLIEST_ESTABLISHMENT_YEAR,
     OrganizationChangeForm,
     OrganizationProfileForm,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite
+from commcare_connect.organization.models import Organization, OrganizationInvite, TeamSizeRange
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
@@ -246,6 +248,16 @@ class TestOrganizationProfileForm:
         widget = OrganizationProfileForm().fields["name"].widget
         assert isinstance(widget, forms.TextInput)
 
+    def test_year_of_establishment_is_a_year_picker(self):
+        """Years run newest first and stop at the same bounds clean_year_of_establishment enforces."""
+        widget = OrganizationProfileForm().fields["year_of_establishment"].widget
+        years = [value for value, _label in widget.choices if value != ""]
+
+        assert widget.attrs.get("data-tomselect") == "1"
+        assert years[0] == timezone.now().year
+        assert years[-1] == EARLIEST_ESTABLISHMENT_YEAR
+        assert years == sorted(years, reverse=True)
+
     @pytest.mark.parametrize("field_name", ["countries", "primary_sectors"])
     def test_multi_select_is_a_tomselect_widget(self, field_name):
         # tomselect.js binds on the [data-tomselect] attribute at DOMContentLoaded, and
@@ -283,3 +295,79 @@ class TestOrganizationProfileForm:
         form = OrganizationProfileForm(data=self._data(name=organization.name), instance=organization)
 
         assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+class TestOrganizationChangeFormProfileFields:
+    """The home-page edit form inherits the create wizard's fields, with its own layout."""
+
+    def test_profile_fields_are_editable(self, organization: Organization, user: User):
+        form = OrganizationChangeForm(
+            data={
+                "name": organization.name,
+                "short_name": "PO",
+                "team_size": TeamSizeRange.M,
+                "flws_managed": 120,
+                "regions": "North",
+                "website": "https://example.com",
+                "contact_emails": "one@example.com",
+                "eoi_links": "https://example.com/eoi",
+                "notes": "Met at the summit.",
+            },
+            user=user,
+            instance=organization,
+        )
+        assert form.is_valid(), form.errors
+        form.save()
+
+        organization.refresh_from_db()
+        assert organization.short_name == "PO"
+        assert organization.team_size == TeamSizeRange.M
+        assert organization.flws_managed == 120
+        assert organization.contact_emails == "one@example.com"
+
+    def test_team_size_is_a_range_dropdown(self, user: User):
+        field = OrganizationChangeForm(user=user).fields["team_size"]
+
+        assert isinstance(field.widget, forms.Select)
+        assert [value for value, _label in field.choices if value] == list(TeamSizeRange.values)
+
+    @pytest.mark.parametrize("team_size", ["42", "1-10 employees"])
+    def test_team_size_outside_the_ranges_is_rejected(self, organization: Organization, user: User, team_size):
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "team_size": team_size}, user=user, instance=organization
+        )
+
+        assert not form.is_valid()
+        assert "team_size" in form.errors
+
+    def test_line_validation_is_inherited(self, organization: Organization, user: User):
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "contact_emails": "not-an-email"},
+            user=user,
+            instance=organization,
+        )
+
+        assert not form.is_valid()
+        assert "not-an-email" in form.errors["contact_emails"][0]
+
+
+@pytest.mark.parametrize(
+    ("headcount", "expected"),
+    [
+        (0, "1-10"),
+        (1, "1-10"),
+        (10, "1-10"),
+        (11, "11-50"),
+        (200, "51-200"),
+        (201, "201-500"),
+        (500, "201-500"),
+        (501, "500+"),
+        (10_000, "500+"),
+    ],
+)
+def test_headcounts_bucket_into_ranges(headcount, expected):
+    """Guards the boundaries the 0017 data migration used to convert the old integer column."""
+    migration = import_module("commcare_connect.organization.migrations.0017_organization_team_size_range")
+
+    assert migration.bucket(headcount) == expected

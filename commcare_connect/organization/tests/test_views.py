@@ -13,6 +13,7 @@ from django.utils.timezone import localtime
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
+    TeamSizeRange,
     UserOrganizationMembership,
 )
 from commcare_connect.users.models import User
@@ -87,6 +88,28 @@ class TestRemoveMembersView:
 class TestOrganizationHomeView:
     def url(self, org_slug):
         return reverse("organization:home", args=(org_slug,))
+
+    def test_profile_fields_render_on_the_details_tab(self, client, org_user_admin, organization):
+        """The crispy layout names every field, so a rename breaks rendering rather than a save."""
+        client.force_login(org_user_admin)
+
+        content = client.get(self.url(org_slug=organization.slug)).content.decode()
+
+        for field in ["short_name", "team_size", "countries", "contact_emails", "eoi_links"]:
+            assert f'name="{field}"' in content
+
+    def test_profile_fields_are_saved(self, client, org_user_admin, organization):
+        client.force_login(org_user_admin)
+
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "short_name": "PO", "team_size": TeamSizeRange.S},
+        )
+
+        assert response.status_code == 302
+        organization.refresh_from_db()
+        assert organization.short_name == "PO"
+        assert organization.team_size == TeamSizeRange.S
 
     def test_program_manager_requires_permission(self, client, org_user_admin, organization):
         organization.program_manager = False

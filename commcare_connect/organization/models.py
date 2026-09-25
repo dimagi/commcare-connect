@@ -20,6 +20,16 @@ class PrimarySector(models.Model):
         return self.name
 
 
+class TeamSizeRange(models.TextChoices):
+    """Team size is collected as a bracket rather than a headcount — nobody reports an exact number."""
+
+    XS = "1-10", "1-10"
+    S = "11-50", "11-50"
+    M = "51-200", "51-200"
+    L = "201-500", "201-500"
+    XL = "500+", "500+"
+
+
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
@@ -31,7 +41,7 @@ class Organization(BaseModel):
     short_name = models.CharField(max_length=40, null=True, blank=True)
     has_used_connect = models.BooleanField(default=False)
     year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
-    team_size = models.PositiveIntegerField(null=True, blank=True)
+    team_size = models.CharField(max_length=20, choices=TeamSizeRange, blank=True)
     flws_managed = models.PositiveIntegerField(null=True, blank=True)
     countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")
     regions = models.TextField(blank=True)
