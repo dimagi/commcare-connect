@@ -8,6 +8,7 @@ from django.utils.timezone import now
 from commcare_connect.form_receiver.processor import (
     ASSESSMENT_JSONPATH,
     _get_matching_blocks,
+    check_visit_over_limit,
     process_assessments,
     process_deliver_form,
     process_learn_form,
@@ -20,7 +21,16 @@ from commcare_connect.form_receiver.tests.xforms import (
     TaskJsonFactory,
     get_form_model,
 )
-from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, OpportunityAccess, TaskType
+from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
+    OpportunityAccess,
+    OpportunityClaim,
+    OpportunityClaimLimit,
+    OverLimitReasonChoices,
+    PaymentUnit,
+    TaskType,
+)
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityAccessFactory
 
 LEARN_PROCESSOR_PATCHES = [
@@ -257,3 +267,37 @@ def patch_multiple(*args):
     with ExitStack() as stack:
         patches = [stack.enter_context(mock.patch(arg)) for arg in args]
         yield patches
+
+
+TODAY = datetime.date(2026, 6, 15)
+FUTURE = TODAY + datetime.timedelta(days=10)
+PAST = TODAY - datetime.timedelta(days=1)
+
+
+@pytest.mark.parametrize(
+    "claim_end_date, claim_limit_end_date, max_daily, max_visits, expected_reason",
+    [
+        (FUTURE, FUTURE, 5, 10, None),
+        (TODAY, TODAY, 5, 10, None),
+        (FUTURE, None, 5, 10, None),
+        (PAST, FUTURE, 5, 10, OverLimitReasonChoices.claim_ended),
+        (FUTURE, PAST, 5, 10, OverLimitReasonChoices.claim_limit_ended),
+        (FUTURE, FUTURE, 5, 2, OverLimitReasonChoices.max_visits),
+        (FUTURE, FUTURE, 1, 10, OverLimitReasonChoices.max_daily),
+        # The widest limit wins when several apply
+        (PAST, PAST, 1, 2, OverLimitReasonChoices.claim_ended),
+        (FUTURE, PAST, 1, 2, OverLimitReasonChoices.claim_limit_ended),
+        (FUTURE, FUTURE, 1, 2, OverLimitReasonChoices.max_visits),
+    ],
+)
+def test_check_visit_over_limit(claim_end_date, claim_limit_end_date, max_daily, max_visits, expected_reason):
+    counts = {"daily": 1, "total": 2}
+    is_over_limit, reason = check_visit_over_limit(
+        TODAY,
+        OpportunityClaim(end_date=claim_end_date),
+        OpportunityClaimLimit(end_date=claim_limit_end_date, max_visits=max_visits),
+        PaymentUnit(max_daily=max_daily),
+        counts,
+    )
+    assert is_over_limit == (expected_reason is not None)
+    assert reason == expected_reason
