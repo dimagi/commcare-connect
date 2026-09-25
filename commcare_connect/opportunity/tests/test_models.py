@@ -39,7 +39,7 @@ from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory, UserFactory
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -264,35 +264,94 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     assert opportunity.remaining_budget == opportunity.total_budget - opportunity.claimed_budget
 
 
+def _budget_unit(opportunity, **kwargs):
+    """A payment unit with fixed, round costs so budget assertions are exact."""
+    options = dict(amount=10, org_amount=0, max_total=10, max_daily=10, parent_payment_unit=None)
+    options.update(kwargs)
+    return PaymentUnitFactory(opportunity=opportunity, **options)
+
+
+def _claim(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    claim = OpportunityClaimFactory(opportunity_access=access)
+    OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+    return claim
+
+
 @pytest.mark.django_db
 def test_claim_limits(opportunity: Opportunity):
-    payment_unit_sub = PaymentUnitFactory(opportunity=opportunity, parent_payment_unit=None, org_amount=0)
-    payment_units = PaymentUnitFactory.create_batch(
-        2, opportunity=opportunity, parent_payment_unit=None, org_amount=0
-    ) + [payment_unit_sub]
-    payment_unit_sub.parent_payment_unit = payment_units[0]
-    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
-    # budget not enough for more than 2 users
-    opportunity.total_budget = budget_per_user * 1.5
-    mobile_users = MobileUserFactory.create_batch(3)
-    for mobile_user in mobile_users:
-        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True)
-        claim = OpportunityClaimFactory(opportunity_access=access)
-        OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+    for _ in range(3):
+        _budget_unit(opportunity)
+    opportunity.total_budget = 450  # 1.5 full claims of 300
+    opportunity.save(update_fields=["total_budget"])
 
-    assert opportunity.claimed_budget <= int(opportunity.total_budget)
-    assert opportunity.claimed_visits <= int(opportunity.allotted_visits)
-    assert opportunity.remaining_budget < payment_units[0].amount + payment_units[1].amount
+    claims = [_claim(opportunity) for _ in range(3)]
 
-    def limit_count(user):
-        return OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__user=user).count()
+    # The budget is spent to the last unit and never past it. claimed_visits is not compared
+    # against allotted_visits: that figure assumes every worker takes a full allocation of
+    # every unit, which is the even split the allocator deliberately no longer follows.
+    assert opportunity.claimed_budget == opportunity.total_budget
+    assert opportunity.remaining_budget == 0
 
     # enough for 1st user
-    assert limit_count(mobile_users[0]) == 3
-    # partially enough for 2nd user, depending on paymentunit.amount
-    assert limit_count(mobile_users[1]) in [2, 3]
+    assert claims[0].opportunityclaimlimit_set.count() == 3
+    # budget covers two of the three units for the 2nd user
+    assert claims[1].opportunityclaimlimit_set.count() == 2
     # Not enough for 3rd user at all
-    assert limit_count(mobile_users[2]) == 0
+    assert claims[2].opportunityclaimlimit_set.count() == 0
+
+
+@pytest.mark.django_db
+def test_claim_limits_never_exceed_total_budget(opportunity: Opportunity):
+    _budget_unit(opportunity)
+    opportunity.total_budget = 1000  # funds 10 workers on unit A alone
+    opportunity.save(update_fields=["total_budget"])
+    for _ in range(8):
+        _claim(opportunity)
+
+    # A second unit doubles the cost of a full claim to 200. The 200 left funds one more
+    # worker, not the 5 x unit B visits an even split per unit would hand out (1300 total).
+    _budget_unit(opportunity)
+    claims = [_claim(opportunity) for _ in range(5)]
+
+    assert opportunity.claimed_budget == opportunity.total_budget
+    assert claims[0].opportunityclaimlimit_set.count() == 2
+    assert not OpportunityClaimLimit.objects.filter(opportunity_claim__in=claims[1:]).exists()
+
+
+@pytest.mark.django_db
+def test_claim_limits_allocates_partial_visits_from_remaining_budget(opportunity: Opportunity):
+    unit = _budget_unit(opportunity, amount=10, org_amount=5)  # 15 per visit, 150 for a full claim
+    opportunity.total_budget = 200
+    opportunity.save(update_fields=["total_budget"])
+    _claim(opportunity)
+
+    claim = _claim(opportunity)
+
+    # 50 left funds 3 of the 10 visits
+    assert OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=unit).max_visits == 3
+    assert opportunity.remaining_budget == 5
+
+
+@pytest.mark.django_db
+def test_claim_limits_funds_cheaper_unit_after_unaffordable_one(opportunity: Opportunity):
+    _budget_unit(opportunity, amount=15)  # funded first, 150 for a claim
+    cheap_pu = _budget_unit(opportunity, amount=10)  # 100 for a claim
+    opportunity.total_budget = 262
+    opportunity.save(update_fields=["total_budget"])
+    _claim(opportunity)  # cost 250 for the full claim
+
+    claim = _claim(opportunity)  # 262 - 250 = 12 left over to claim
+
+    # 12 left cannot pay for a visit of the expensive unit, but still pays for one of the cheap_pu
+    claim_limits = claim.opportunityclaimlimit_set.all()
+    assert claim_limits.count() == 1
+    limit = claim_limits.first()
+
+    # can only afford 1 visit of the cheap_pu
+    assert limit.payment_unit == cheap_pu
+    assert limit.max_visits == 1
+    assert opportunity.remaining_budget == 2
 
 
 @pytest.mark.django_db

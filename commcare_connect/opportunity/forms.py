@@ -1193,7 +1193,10 @@ class AddBudgetExistingUsersForm(forms.Form):
         return end_date
 
     def _validate_budget_increase(self):
-        if self.budget_change > self.opportunity.remaining_budget:
+        # Lock the opportunity for the rest of the request so a concurrent claim or increase
+        # cannot spend the same budget between this check and save().
+        opportunity = Opportunity.objects.select_for_update().get(pk=self.opportunity.pk)
+        if self.budget_change > opportunity.remaining_budget:
             raise forms.ValidationError(
                 {"number_of_visits": gettext("The number of visits being increased exceeds the opportunity budget.")}
             )
