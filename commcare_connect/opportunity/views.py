@@ -275,6 +275,8 @@ INVOICE_EXPORT_TASKS = {
 }
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
+# Task id of the invoice export whose notification has already been shown to the user.
+INVOICE_EXPORT_CLAIMED_SESSION_KEY = "shown_invoice_export"
 
 
 def get_opportunity_or_404(opp_id):
@@ -890,7 +892,7 @@ def render_payment_import_progress(request, org_slug, task_id):
         response["HX-Refresh"] = "true"
         return response
     if finished:
-        claim_payment_import_outcome(request, task_id)
+        claim_task_outcome(request, PAYMENT_IMPORT_CLAIMED_SESSION_KEY, task_id)
 
     context = {
         "finished": finished,
@@ -901,16 +903,16 @@ def render_payment_import_progress(request, org_slug, task_id):
     return render(request, "opportunity/payment_import_modal.html", context)
 
 
-def claim_payment_import_outcome(request, task_id):
-    """Whether this request should show the import's outcome, claiming it if so.
+def claim_task_outcome(request, session_key, task_id):
+    """Whether this request should show the task's outcome, claiming it if so.
 
-    A finished import reports itself from the task id left in the URL, so a refresh or a back
-    navigation would otherwise show the same banner or error modal again. The first request to
-    ask for an outcome claims it; later ones are told there is nothing left to show.
+    A task reports itself from the task id left in the URL, so a refresh or a back navigation
+    would otherwise show the same banner, modal or notification again. The first request to ask
+    for an outcome claims it; later ones are told there is nothing left to show.
     """
-    if request.session.get(PAYMENT_IMPORT_CLAIMED_SESSION_KEY) == task_id:
+    if request.session.get(session_key) == task_id:
         return False
-    request.session[PAYMENT_IMPORT_CLAIMED_SESSION_KEY] = task_id
+    request.session[session_key] = task_id
     return True
 
 
@@ -1790,6 +1792,9 @@ def invoice_list(request, org_slug, opp_id):
     filter_kwargs = dict(opportunity=request.opportunity)
 
     highlight_invoice_number = request.GET.get("highlight")
+    export_task_id = request.GET.get("export_task_id")
+    if export_task_id and not claim_task_outcome(request, INVOICE_EXPORT_CLAIMED_SESSION_KEY, export_task_id):
+        export_task_id = None
 
     all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
     month_options = get_invoice_month_options(all_invoices)
@@ -1834,7 +1839,7 @@ def invoice_list(request, org_slug, opp_id):
             "older_months": older_months,
             "selected_month": selected_month,
             "invoice_count": queryset.count(),
-            "export_task_id": request.GET.get("export_task_id"),
+            "export_task_id": export_task_id,
             # The month the page is actually showing, not the raw query value: an export
             # started from here must cover exactly what the user is looking at.
             "month_param": selected_month.strftime("%Y-%m") if selected_month else "all",
@@ -3096,7 +3101,9 @@ class WorkerPaymentsView(BaseWorkerListView):
         # A finished import surfaces its result as a banner, or as the error modal opened by
         # get_extra_context; a running one keeps the polling progress spinner.
         if not request.htmx and self._payment_import_complete():
-            self.show_import_outcome = claim_payment_import_outcome(request, self._payment_import_task_id)
+            self.show_import_outcome = claim_task_outcome(
+                request, PAYMENT_IMPORT_CLAIMED_SESSION_KEY, self._payment_import_task_id
+            )
             if self.show_import_outcome:
                 self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
