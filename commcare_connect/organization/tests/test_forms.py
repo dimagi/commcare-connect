@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.organization.forms import (
+    EARLIEST_ESTABLISHMENT_YEAR,
     OrganizationChangeForm,
     OrganizationProfileForm,
 )
@@ -246,6 +247,16 @@ class TestOrganizationProfileForm:
         # Workspaces are typed in, not picked from a list of existing ones.
         widget = OrganizationProfileForm().fields["name"].widget
         assert isinstance(widget, forms.TextInput)
+
+    def test_year_of_establishment_is_a_year_picker(self):
+        """Years run newest first and stop at the same bounds clean_year_of_establishment enforces."""
+        widget = OrganizationProfileForm().fields["year_of_establishment"].widget
+        years = [value for value, _label in widget.choices if value != ""]
+
+        assert widget.attrs.get("data-tomselect") == "1"
+        assert years[0] == timezone.now().year
+        assert years[-1] == EARLIEST_ESTABLISHMENT_YEAR
+        assert years == sorted(years, reverse=True)
 
     @pytest.mark.parametrize("field_name", ["countries", "primary_sectors"])
     def test_multi_select_is_a_tomselect_widget(self, field_name):

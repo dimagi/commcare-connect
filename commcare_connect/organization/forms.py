@@ -15,7 +15,7 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
-EARLIEST_ESTABLISHMENT_YEAR = 1800
+EARLIEST_ESTABLISHMENT_YEAR = 2000
 
 
 class OrganizationChangeForm(forms.ModelForm):
@@ -77,6 +77,9 @@ class OrganizationProfileForm(forms.ModelForm):
             "notes",
         )
         widgets = {
+            "year_of_establishment": forms.Select(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select year")}
+            ),
             "countries": forms.SelectMultiple(
                 attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select countries")}
             ),
@@ -111,6 +114,7 @@ class OrganizationProfileForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["team_size"].choices = [("", gettext("Select team size")), *TeamSizeRange.choices]
+        self.fields["year_of_establishment"].widget.choices = _year_choices()
         self.helper = helper.FormHelper(self)
         self.helper.form_tag = False
         self.helper.disable_csrf = True
@@ -186,6 +190,12 @@ def _wizard_step(number, title, *fields):
         x_show=f"step === {number}",
         x_cloak=True,
     )
+
+
+def _year_choices():
+    """Newest first: a recently founded organization is the likelier pick."""
+    years = range(timezone.now().year, EARLIEST_ESTABLISHMENT_YEAR - 1, -1)
+    return [("", gettext("Select year")), *((year, year) for year in years)]
 
 
 def validate_year_of_establishment(year):
