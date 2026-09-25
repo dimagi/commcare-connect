@@ -1,8 +1,6 @@
 {% load i18n %}
 {% load crispy_forms_tags %}
-{% load static %}
-<link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
-<script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
+{# The host page has to load the tom-select bundle and CSS, or these dropdowns are plain selects. #}
 {# H025: Alpine.js requires <template x-if> as a fragment container; djlint incorrectly flags it as an orphan tag #}
 {# djlint:off H025 #}
 <template x-if="{{ modal_name }}">
