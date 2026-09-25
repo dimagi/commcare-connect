@@ -374,6 +374,19 @@ class TestInviteUsers:
         )
         assert response.status_code == 400
 
+    def test_invite_users_opportunity_without_end_date(
+        self, api_client, program_manager_org_user_admin, active_managed_opportunity
+    ):
+        active_managed_opportunity.end_date = None
+        active_managed_opportunity.save(update_fields=["end_date"])
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
+            {"phone_numbers": ["+265999111222"]},
+            format="json",
+        )
+        assert response.status_code == 400
+
 
 @pytest.mark.django_db
 class TestFullPipeline:
