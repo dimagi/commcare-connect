@@ -240,10 +240,10 @@ def microplanning_home(request, *args, **kwargs):
 
     is_program_manager = is_opportunity_pm(request, opportunity)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
-    inaccessible_mode = is_program_manager and bool(request.GET.get("inaccessible_mode"))
+    inaccessible_mode = bool(request.GET.get("inaccessible_mode"))
     # Drives both the entry button's count and the list Inaccessible Mode renders, so the two
     # can never disagree.
-    inaccessibility_requests = pending_inaccessibility_requests(opportunity) if is_program_manager else []
+    inaccessibility_requests = pending_inaccessibility_requests(opportunity)
 
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
