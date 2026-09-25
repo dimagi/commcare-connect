@@ -17,20 +17,17 @@ class ProgramForm(forms.ModelForm):
     currency = forms.ModelChoiceField(
         label=_("Currency"),
         queryset=Currency.objects.order_by("code"),
-        widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label=_("Select a currency"),
     )
     country = forms.ModelChoiceField(
         label=_("Country"),
         queryset=Country.objects.order_by("name"),
-        widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label=_("Select a country"),
     )
     funder = forms.ModelChoiceField(
         label=_("Funder"),
         queryset=Organization.objects.none(),
         required=False,
-        widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label=_("Select a funder"),
     )
     watchers = forms.ModelMultipleChoiceField(
@@ -86,7 +83,6 @@ class ProgramForm(forms.ModelForm):
         value, so this is the enforcement, not merely a visual lock.
         """
         self.fields["funder"].disabled = True
-        self.fields["funder"].widget.attrs.pop("data-tomselect", None)
 
     def _layout_fields(self):
         layout_fields = [
