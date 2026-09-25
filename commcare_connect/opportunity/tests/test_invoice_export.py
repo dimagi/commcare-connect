@@ -187,6 +187,23 @@ class TestSummaryDataset:
         assert rows["INV-2"]["Payment Date"] is None
         assert "INV-1,Service Delivery,Paid" in dataset.export("csv")
 
+    @pytest.mark.parametrize(
+        "invoice_number, expected",
+        [
+            ("=HYPERLINK(1)", "'=HYPERLINK(1)"),
+            ("+1", "'+1"),
+            ("-1", "'-1"),
+            ("@SUM(A1)", "'@SUM(A1)"),
+            ("INV-1", "INV-1"),
+        ],
+    )
+    def test_invoice_number_cannot_become_a_formula(self, opportunity, invoice_number, expected):
+        PaymentInvoiceFactory(opportunity=opportunity, invoice_number=invoice_number)
+
+        dataset = build_invoice_summary_dataset(get_exportable_invoices(opportunity))
+
+        assert dataset[0][0] == expected
+
 
 @pytest.mark.parametrize(
     "filename, expected",
