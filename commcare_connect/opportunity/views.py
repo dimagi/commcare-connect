@@ -566,7 +566,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
                 "icon": "fa-money-bill",
             },
         ]
-        context["export_task_id"] = request.GET.get("export_task_id")
+        context["export_task_id"] = get_export_task_id(request, object)
         return context
 
 
@@ -605,6 +605,12 @@ def review_visit_export(request, org_slug, opp_id):
 
     result = generate_review_visit_export.delay(request.opportunity.pk, from_date, to_date, status, export_format)
     return redirect(f"{redirect_url}?export_task_id={result.id}")
+
+
+def get_export_task_id(request, opportunity):
+    if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
+        return None
+    return request.GET.get("export_task_id")
 
 
 @login_required
@@ -2898,7 +2904,7 @@ class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
             "opportunity": opportunity,
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
-            "export_task_id": self.request.GET.get("export_task_id"),
+            "export_task_id": get_export_task_id(self.request, opportunity),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)

@@ -69,9 +69,10 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView
+from commcare_connect.opportunity.views import WorkerPaymentsView, get_export_task_id
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.program.utils import AccessLevel
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
@@ -3631,3 +3632,20 @@ def test_worker_payments_reports_a_crashed_import_task(
     assert "The payment import failed. Please try again." in content
     # Nothing left to poll for, so the modal is not opened again.
     assert response.context["payment_import_task_id"] is None
+
+
+@pytest.mark.parametrize(
+    "access_level, expected",
+    [
+        (AccessLevel.NONE, None),
+        (AccessLevel.VIEW, None),
+        (AccessLevel.STANDARD, "task-123"),
+        (AccessLevel.ADMIN, "task-123"),
+    ],
+)
+def test_get_export_task_id_requires_standard_access(rf, opportunity, access_level, expected):
+    request = rf.get("/", {"export_task_id": "task-123"})
+    with mock.patch(
+        "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
+    ):
+        assert get_export_task_id(request, opportunity) == expected
