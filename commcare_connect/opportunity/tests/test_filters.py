@@ -3,9 +3,14 @@ from datetime import date, timedelta
 import pytest
 from django.utils import timezone
 
-from commcare_connect.opportunity.filters import AssignedTaskFilterSet, TasksFilterSet, UserTasksFilterSet
+from commcare_connect.opportunity.filters import (
+    AssignedTaskFilterSet,
+    OpportunityListFilterSet,
+    TasksFilterSet,
+    UserTasksFilterSet,
+)
 from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
-from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus
+from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, Opportunity
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
@@ -235,3 +240,22 @@ class TestAssignedTaskFilterSet:
             }
         )
         assert list(result) == [self.at_assigned]
+
+
+@pytest.mark.django_db
+class TestOpportunityListProgramFilter:
+    """The Program dropdown on the opportunity list is built from the programs the org can reach."""
+
+    @staticmethod
+    def filters_for(org, rf):
+        request = rf.get("/")
+        request.org = org
+        return OpportunityListFilterSet(queryset=Opportunity.objects.none(), request=request).filters
+
+    def test_every_accessible_program_is_offered(self, program, rf):
+        filters = self.filters_for(program.organization, rf)
+
+        assert filters["program"].extra["choices"] == [(program.slug, program.name)]
+
+    def test_the_filter_is_dropped_without_an_accessible_program(self, organization, rf):
+        assert "program" not in self.filters_for(organization, rf)
