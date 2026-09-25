@@ -3486,9 +3486,10 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     ("is_error", "expected_class"),
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
+@pytest.mark.parametrize("is_watcher", [False, True])
 @mock.patch("commcare_connect.opportunity.views.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
-    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
+    mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
     message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
     task = mock_async_result.return_value
@@ -3496,13 +3497,23 @@ def test_worker_payments_shows_import_banner_on_reload(
     task.status = "SUCCESS"
     task.result = {"message": message, "is_error": is_error}
     task.info = {"message": message}
-    client.force_login(org_user_member)
-    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    acting_org, user = organization, org_user_member
+    if is_watcher:
+        # A watcher can view the payments page but not the import, which needs standard access.
+        acting_org = OrganizationFactory()
+        user = MembershipFactory(organization=acting_org, role=UserOrganizationMembership.Role.MEMBER).user
+        opportunity.program.watchers.add(acting_org)
+    client.force_login(user)
+    url = reverse("opportunity:worker_payments", args=(acting_org.slug, opportunity.id))
 
     response = client.get(url, {"payment_import_task_id": "task-xyz"})
 
     content = response.content.decode()
     assert response.status_code == 200
+    if is_watcher:
+        assert message not in content
+        assert response.context["payment_import_task_id"] is None
+        return
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
 
