@@ -3022,8 +3022,10 @@ class WorkerPaymentsView(BaseWorkerListView):
                 self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
 
-    @property
+    @cached_property
     def _payment_import_task_id(self):
+        if opportunity_access_level_from_request(self.request, self.get_opportunity()) < AccessLevel.STANDARD:
+            return None
         return self.request.GET.get(PAYMENT_IMPORT_TASK_PARAM)
 
     @cached_property
