@@ -177,6 +177,25 @@ def supervisor_org(db) -> Organization:
     return OrganizationFactory()
 
 
+@pytest.fixture
+def opp_orgs(managed_opportunity, supervisor_org, funder_org, watcher_org):
+    """Every org with a distinct relationship to `managed_opportunity`."""
+    program = managed_opportunity.program
+    program.funder = funder_org
+    program.save()
+    program.watchers.add(watcher_org)
+    managed_opportunity.supervising_organization = supervisor_org
+    managed_opportunity.save()
+    return {
+        "delivery": managed_opportunity.organization,
+        "supervisor": supervisor_org,
+        "program_org": program.organization,
+        "funder": funder_org,
+        "watcher": watcher_org,
+        "unrelated": OrganizationFactory(),
+    }
+
+
 @pytest.fixture(autouse=True)
 def ensure_currency_country_data(db):
     # These models get flushed in between tests; so make sure they exist
