@@ -69,9 +69,10 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView
+from commcare_connect.opportunity.views import WorkerPaymentsView, get_export_task_id
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.program.utils import AccessLevel
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
@@ -3485,9 +3486,10 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     ("is_error", "expected_class"),
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
+@pytest.mark.parametrize("is_watcher", [False, True])
 @mock.patch("commcare_connect.opportunity.views.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
-    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
+    mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
     message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
     task = mock_async_result.return_value
@@ -3495,13 +3497,23 @@ def test_worker_payments_shows_import_banner_on_reload(
     task.status = "SUCCESS"
     task.result = {"message": message, "is_error": is_error}
     task.info = {"message": message}
-    client.force_login(org_user_member)
-    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    acting_org, user = organization, org_user_member
+    if is_watcher:
+        # A watcher can view the payments page but not the import, which needs standard access.
+        acting_org = OrganizationFactory()
+        user = MembershipFactory(organization=acting_org, role=UserOrganizationMembership.Role.MEMBER).user
+        opportunity.program.watchers.add(acting_org)
+    client.force_login(user)
+    url = reverse("opportunity:worker_payments", args=(acting_org.slug, opportunity.id))
 
     response = client.get(url, {"payment_import_task_id": "task-xyz"})
 
     content = response.content.decode()
     assert response.status_code == 200
+    if is_watcher:
+        assert message not in content
+        assert response.context["payment_import_task_id"] is None
+        return
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
 
@@ -3631,3 +3643,20 @@ def test_worker_payments_reports_a_crashed_import_task(
     assert "The payment import failed. Please try again." in content
     # Nothing left to poll for, so the modal is not opened again.
     assert response.context["payment_import_task_id"] is None
+
+
+@pytest.mark.parametrize(
+    "access_level, expected",
+    [
+        (AccessLevel.NONE, None),
+        (AccessLevel.VIEW, None),
+        (AccessLevel.STANDARD, "task-123"),
+        (AccessLevel.ADMIN, "task-123"),
+    ],
+)
+def test_get_export_task_id_requires_standard_access(rf, opportunity, access_level, expected):
+    request = rf.get("/", {"export_task_id": "task-123"})
+    with mock.patch(
+        "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
+    ):
+        assert get_export_task_id(request, opportunity) == expected
