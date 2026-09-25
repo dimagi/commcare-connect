@@ -1,0 +1,8 @@
+{% extends "email/base.html" %}
+{% block content %}
+  <p>Hi,</p>
+  <p>
+    {{ member_name }} has accepted the invitation and joined "{{ membership.organization.name }}" on Connect as
+    {{ membership.get_role_display }}.
+  </p>
+{% endblock %}

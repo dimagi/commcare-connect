@@ -1,1 +1,7 @@
-<span class="badge badge-sm primary-light">{{ record.get_role_display }}</span>
+{% if record.role == "admin" %}
+  <span class="badge badge-sm badge-amber">{{ record.get_role_display }}</span>
+{% elif record.role == "member" %}
+  <span class="badge badge-sm positive-light">{{ record.get_role_display }}</span>
+{% else %}
+  <span class="badge badge-sm label">{{ record.get_role_display }}</span>
+{% endif %}
