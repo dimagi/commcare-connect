@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from collections import Counter, defaultdict
+from collections import Counter
 from decimal import Decimal
 from uuid import uuid4
 
@@ -1170,37 +1170,50 @@ class OpportunityClaimLimit(models.Model):
 
     @classmethod
     def create_claim_limits(cls, opportunity: Opportunity, claim: OpportunityClaim):
-        """Allocate visit limits for a new claim based on remaining budget.
+        """Allocate visit limits for a new claim out of the opportunity's remaining budget.
 
-        For each payment unit, calculates how many visits are still available
-        (total capacity minus already-claimed visits) and creates a claim limit
-        with the lesser of the remaining visits or the per-user max.
+        Each payment unit is allocated up to its per-user ``max_total``, capped by what the
+        budget left over from existing claims can pay for. The budget is drawn down as units
+        are allocated, so the total committed across all claims can never exceed
+        ``total_budget``.
         """
-        claim_limits_by_payment_unit = defaultdict(list)
-        claim_limits = OpportunityClaimLimit.objects.filter(
-            opportunity_claim__opportunity_access__opportunity=opportunity
-        )
-        for claim_limit in claim_limits:
-            claim_limits_by_payment_unit[claim_limit.payment_unit].append(claim_limit)
+        with transaction.atomic():
+            opportunity = Opportunity.objects.select_for_update().get(pk=opportunity.pk)
+            remaining_budget = opportunity.remaining_budget
+            # Units are funded in creation order, so when the budget runs out mid-claim it is
+            # always the most recently added units that go short.
+            for payment_unit in opportunity.paymentunit_set.order_by("pk"):
+                max_visits = cls._max_funded_visits_for_worker(payment_unit, remaining_budget)
+                if max_visits < 1:
+                    # budget cannot pay for another visit of this payment unit
+                    continue
+                _, created = OpportunityClaimLimit.objects.get_or_create(
+                    opportunity_claim=claim,
+                    payment_unit=payment_unit,
+                    defaults={
+                        "max_visits": max_visits,
+                        "end_date": payment_unit.end_date,
+                    },
+                )
+                if created:
+                    remaining_budget -= max_visits * cls._budgeted_cost_per_visit(payment_unit)
 
-        for payment_unit in opportunity.paymentunit_set.all():
-            claim_limits = claim_limits_by_payment_unit.get(payment_unit, [])
-            total_claimed_visits = 0
-            for claim_limit in claim_limits:
-                total_claimed_visits += claim_limit.max_visits
+    @classmethod
+    def _max_funded_visits_for_worker(cls, payment_unit, remaining_budget):
+        """
+        Calculates the maximum number of visits a worker can claim for the payment_unit, taking
+        the opportunity's remaining budget into account.
+        """
+        if not payment_unit.max_total:
+            return 0
+        cost_per_visit = cls._budgeted_cost_per_visit(payment_unit)
+        if not cost_per_visit:
+            return payment_unit.max_total
+        return min(payment_unit.max_total, remaining_budget // cost_per_visit)
 
-            remaining = (payment_unit.max_total) * opportunity.number_of_users - total_claimed_visits
-            if remaining < 1:
-                # claimed limit exceeded for this paymentunit
-                continue
-            OpportunityClaimLimit.objects.get_or_create(
-                opportunity_claim=claim,
-                payment_unit=payment_unit,
-                defaults={
-                    "max_visits": min(remaining, payment_unit.max_total),
-                    "end_date": payment_unit.end_date,
-                },
-            )
+    @staticmethod
+    def _budgeted_cost_per_visit(payment_unit):
+        return payment_unit.amount + payment_unit.org_amount
 
 
 class BlobMeta(models.Model):
