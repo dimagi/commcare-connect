@@ -1824,7 +1824,7 @@ def invoice_list(request, org_slug, opp_id):
             "month_chips": month_chips,
             "older_months": older_months,
             "selected_month": selected_month,
-            "invoice_count": queryset.count(),
+            "invoice_count": table.paginator.count,
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
