@@ -58,7 +58,6 @@ from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
-    parse_invoice_month,
 )
 from commcare_connect.opportunity.utils.invoice_export import get_exportable_invoices
 from commcare_connect.opportunity.utils.invoice_line_items import (
@@ -71,6 +70,7 @@ from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.datetime import parse_year_month
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -1675,7 +1675,7 @@ class InvoiceExportForm(forms.Form):
         selected = self.cleaned_data["invoice_ids"]
         if selected:
             return selected
-        return get_exportable_invoices(self.opportunity, parse_invoice_month(self.cleaned_data["month"]))
+        return get_exportable_invoices(self.opportunity, parse_year_month(self.cleaned_data["month"]))
 
 
 class AutomatedPaymentInvoiceForm(forms.ModelForm):

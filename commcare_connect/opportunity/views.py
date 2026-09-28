@@ -1814,11 +1814,11 @@ def invoice_list(request, org_slug, opp_id):
             "month_chips": month_chips,
             "older_months": older_months,
             "selected_month": selected_month,
-            "invoice_count": queryset.count(),
+            "invoice_count": table.paginator.count,
             "export_task_id": export_task_id,
             # The month the page is actually showing, not the raw query value: an export
             # started from here must cover exactly what the user is looking at.
-            "month_param": selected_month.strftime("%Y-%m") if selected_month else "all",
+            "month_param": invoice_month_param(selected_month),
             "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
             "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
             "new_invoice_url": reverse(
