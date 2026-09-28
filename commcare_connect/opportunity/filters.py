@@ -7,7 +7,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
-from commcare_connect.program.models import Program
+from commcare_connect.program.utils import programs_accessible_to_org
 from commcare_connect.users.models import User
 
 
@@ -155,9 +155,9 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         super().__init__(*args, **kwargs)
 
         if request:
-            user_programs = Program.objects.filter(organization=request.org)
-            if user_programs.exists():
-                self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in user_programs]
+            accessible_programs = programs_accessible_to_org(request.org)
+            if accessible_programs.exists():
+                self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in accessible_programs]
             else:
                 del self.filters["program"]
 

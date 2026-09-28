@@ -11,6 +11,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityFactory,
     PaymentFactory,
+    PaymentInvoiceFactory,
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
@@ -254,6 +255,93 @@ class TestProgramHomeBudgetData(BaseProgramTest):
         for application in applications:
             expected_budget = self.expected_application_budgets[application.organization_id]
             assert application.current_budget == expected_budget
+
+
+@pytest.mark.django_db
+class TestProgramHomeListsAccessiblePrograms:
+    @pytest.fixture(autouse=True)
+    def setup(self, program: Program, funder_org: Organization, watcher_org: Organization, client: Client):
+        program.funder = funder_org
+        program.save()
+        program.watchers.add(watcher_org)
+        self.program = program
+        self.client = client
+        self.actors = {"owner": program.organization, "funder": funder_org, "watcher": watcher_org}
+
+    def home_for(self, org, role=Role.ADMIN):
+        user = UserFactory()
+        make_membership(org, user, role)
+        self.client.force_login(user)
+        return self.client.get(reverse("program:home", kwargs={"org_slug": org.slug}))
+
+    @staticmethod
+    def template_names(response):
+        return [template.name for template in response.templates]
+
+    @pytest.mark.parametrize("actor,has_admin_access", [("owner", True), ("funder", True), ("watcher", False)])
+    def test_relationship_lists_the_program_and_decides_its_operations(self, actor, has_admin_access):
+        response = self.home_for(self.actors[actor])
+
+        assert response.status_code == HTTPStatus.OK
+        assert "program/pm_home.html" in self.template_names(response)
+        programs = response.context["programs"]
+        assert [program.id for program in programs] == [self.program.id]
+        assert programs[0].user_has_admin_access is has_admin_access
+
+    @pytest.mark.parametrize("actor,offered", [("owner", True), ("funder", True), ("watcher", False)])
+    def test_manage_controls_are_rendered_only_for_admins(self, actor, offered):
+        org = self.actors[actor]
+        response = self.home_for(org)
+        content = response.content.decode()
+
+        edit_url = reverse("program:edit", kwargs={"org_slug": org.slug, "pk": self.program.program_id})
+        invite_url = reverse(
+            "program:invite_organization", kwargs={"org_slug": org.slug, "pk": self.program.program_id}
+        )
+        assert (edit_url in content) is offered
+        assert (invite_url in content) is offered
+
+    @pytest.mark.parametrize(
+        "actor,role,offered",
+        [("owner", Role.ADMIN, True), ("watcher", Role.ADMIN, False), ("owner", Role.VIEWER, False)],
+        ids=["owner_admin", "watching_org", "viewer_role"],
+    )
+    def test_pending_invoices_need_standard_access(self, actor, role, offered):
+        """The invoice list needs standard access."""
+        opportunity = OpportunityFactory(program=self.program, organization=OrganizationFactory())
+        PaymentInvoiceFactory(opportunity=opportunity)
+        org = self.actors[actor]
+
+        response = self.home_for(org, role=role)
+
+        invoice_url = reverse("opportunity:invoice_list", args=(org.slug, opportunity.opportunity_id))
+        assert (invoice_url in response.content.decode()) is offered
+
+    @pytest.mark.parametrize(
+        "flag,is_program_manager",
+        [("program_manager", True), ("funder", False)],
+        ids=["program_manager", "funder"],
+    )
+    def test_an_org_flagged_to_run_programs_keeps_its_home(self, flag, is_program_manager):
+        """Nothing to have a relationship with yet, but the org must still land on its own home."""
+        response = self.home_for(OrganizationFactory(**{flag: True}))
+
+        assert "program/pm_home.html" in self.template_names(response)
+        assert response.context["is_program_manager"] is is_program_manager
+
+    def test_a_funder_is_not_offered_program_creation(self):
+        """Creating a program stays gated on the org's own flag, not on a program relationship."""
+        response = self.home_for(self.actors["funder"])
+
+        assert "program/pm_home.html" in self.template_names(response)
+        assert response.context["is_program_manager"] is False
+
+    def test_an_org_with_only_an_application_stays_on_the_network_manager_home(self, organization: Organization):
+        ProgramApplicationFactory.create(program=self.program, organization=organization)
+
+        response = self.home_for(organization)
+
+        assert "program/nm_home.html" in self.template_names(response)
 
 
 @pytest.mark.django_db

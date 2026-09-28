@@ -5,13 +5,13 @@
     <button type="button"
             class="button-icon shadow-sm"
             @click="showPaymentImportModal= true"
-            {% if request.org_membership.is_viewer %}disabled{% endif %}>
+            {% if not has_standard_access %}disabled{% endif %}>
       <i class="fa-solid fa-upload text-brand-deep-purple"></i>
     </button>
     <button type="button"
             class="button-icon shadow-sm"
             @click="showPaymentExportModal = true"
-            {% if request.org_membership.is_viewer %}disabled{% endif %}>
+            {% if not has_standard_access %}disabled{% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% url 'opportunity:payment_import' request.org.slug opportunity.opportunity_id as payment_import_url %}

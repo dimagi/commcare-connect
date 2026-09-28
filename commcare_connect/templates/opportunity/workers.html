@@ -35,7 +35,7 @@
     <button type="button"
             class="button-icon shadow-sm"
             @click="showWorkerExportModal = true"
-            {% if request.org_membership.is_viewer %}disabled{% endif %}>
+            {% if not has_standard_access %}disabled{% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% block modals %}
@@ -43,7 +43,7 @@
       {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Connect Workers") export_url=user_status_export_url export_form=export_form %}
       {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
     {% endblock %}
-    {% if request.org_membership.is_viewer or opportunity.has_ended %}
+    {% if not has_standard_access or opportunity.has_ended %}
       <button disabled class="button-icon shadow-sm">
         <i class="fa-solid fa-plus"></i>
       </button>
@@ -64,7 +64,7 @@
       </template>
       <button type="submit"
               class="button-icon shadow-sm"
-              :disabled="{% if request.org_membership.is_viewer or opportunity.has_ended %}true{% else %}selected.length === 0{% endif %}"
+              :disabled="{% if not has_standard_access or opportunity.has_ended %}true{% else %}selected.length === 0{% endif %}"
               x-tooltip.raw="{% trans 'Resend Invite(s)' %}">
         <i class="fa-solid fa-rotate-right"></i>
       </button>
@@ -72,7 +72,7 @@
     <button type="button"
             class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
             @click="showConfirmDeleteInvitesModal = true"
-            :disabled="{% if request.org_membership.is_viewer %}true{% else %}selected.length === 0{% endif %}"
+            :disabled="{% if not has_standard_access %}true{% else %}selected.length === 0{% endif %}"
             x-tooltip.raw="{% trans 'Delete Worker(s)' %}">
       <i class="fa-solid fa-trash"></i>
     </button>
