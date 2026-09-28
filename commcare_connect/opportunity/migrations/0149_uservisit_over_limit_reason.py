@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0147_remove_catchment_area'),
+        ('opportunity', '0148_organization_label_wording'),
     ]
 
     operations = [
