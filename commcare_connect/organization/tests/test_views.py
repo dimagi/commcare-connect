@@ -45,7 +45,7 @@ class TestRemoveMembersView:
         assert response.status_code == 302
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the workspace."
+        assert str(messages[0]) == "You cannot remove yourself from the organization."
 
         assert UserOrganizationMembership.objects.filter(id=membership.id).exists()
 
@@ -61,7 +61,7 @@ class TestRemoveMembersView:
         assert response.status_code == 302
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
-        assert str(messages[0]) == "Selected members have been removed from the workspace."
+        assert str(messages[0]) == "Selected members have been removed from the organization."
 
         assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
@@ -78,7 +78,7 @@ class TestRemoveMembersView:
         assert response.status_code == 302
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the workspace."
+        assert str(messages[0]) == "You cannot remove yourself from the organization."
 
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
@@ -126,7 +126,7 @@ class TestOrganizationCreateView:
         return reverse("organization_create")
 
     def test_new_org_creates_admin_membership(self, client, user):
-        org_name = f"New Workspace {user.pk}"
+        org_name = f"New Organization {user.pk}"
         client.force_login(user)
         response = client.post(self.url(), data={"name": org_name})
 
@@ -140,7 +140,7 @@ class TestOrganizationCreateView:
     def test_profile_fields_are_saved(self, client, user):
         client.force_login(user)
 
-        org_name = f"Profiled Workspace {user.pk}"
+        org_name = f"Profiled Organization {user.pk}"
         response = client.post(
             self.url(),
             data={
@@ -182,7 +182,7 @@ class TestNoOrganizationView:
         assert response.status_code == 200
         assert reverse("organization_create") in response.content.decode()
 
-    def test_member_is_redirected_to_their_workspace(self, client, org_user_member):
+    def test_member_is_redirected_to_their_organization(self, client, org_user_member):
         client.force_login(org_user_member)
         response = client.get(self.url())
 
@@ -481,10 +481,10 @@ class TestPendingInvitesTableView:
         response = client.get(self._url(organization.slug))
         assert response.status_code == 404
 
-    def test_sort_links_point_at_the_workspace_page_not_the_partial(self, client, org_user_admin, organization):
+    def test_sort_links_point_at_the_organization_page_not_the_partial(self, client, org_user_admin, organization):
         """Headers must link to the page that hosts the table, not to the fragment endpoint.
 
-        The workspace page pulls this table in over htmx, so a header linking to
+        The organization page pulls this table in over htmx, so a header linking to
         ``request.path`` navigates the browser to the bare fragment: the pending invites
         render on their own and the members list disappears.
         """
@@ -500,7 +500,7 @@ class TestPendingInvitesTableView:
         assert sort_links, "no sortable column headers were rendered"
         for link in sort_links:
             assert not link.startswith(self._url(organization.slug)), f"header links to the fragment: {link}"
-            assert link.startswith(home_url), f"header does not link back to the workspace page: {link}"
+            assert link.startswith(home_url), f"header does not link back to the organization page: {link}"
 
     @pytest.mark.parametrize(
         "sort,expected_order",
@@ -524,7 +524,7 @@ class TestPendingInvitesTableView:
         assert sorted(expected_order, key=content.index) == expected_order
 
     def test_members_table_sort_does_not_reorder_pending_invites(self, client, org_user_admin, organization):
-        """Both tables are loaded from the workspace page's single query string.
+        """Both tables are loaded from the organization page's single query string.
 
         The members table sorts on the unprefixed ``sort`` param and ``role`` is a column on
         both tables, so without a prefix here sorting one table would reorder the other.

@@ -137,7 +137,7 @@ class Command(BaseCommand):
             "--org-slug",
             type=str,
             default=None,
-            help="Create the demo opportunity in this existing workspace instead of a new one",
+            help="Create the demo opportunity in this existing organization instead of a new one",
         )
         parser.add_argument("--clusters", type=int, default=3, help="Number of geographic clusters (default 3)")
         parser.add_argument(
@@ -229,12 +229,12 @@ class Command(BaseCommand):
         random.seed(options["seed"])
 
         with transaction.atomic():
-            opportunity, owns_workspace = self.resolve_opportunity(options)
+            opportunity, owns_organization = self.resolve_opportunity(options)
             if opportunity.deliver_app_id is None:
                 raise CommandError(
                     f"Opportunity {opportunity.name!r} has no deliver app, so no deliver units can be seeded."
                 )
-            assignment_mode = self.ensure_program_manager(opportunity.organization, owns_workspace)
+            assignment_mode = self.ensure_program_manager(opportunity.organization, owns_organization)
             if not options["no_admin"]:
                 self.ensure_admin(opportunity.organization)
             self.ensure_flag(opportunity)
@@ -257,7 +257,7 @@ class Command(BaseCommand):
     def resolve_opportunity(self, options):
         """The caller's existing opportunity, or the demo one (created on first run).
 
-        Returns the opportunity and whether its workspace is one this command owns — a workspace
+        Returns the opportunity and whether its organization is one this command owns — an organization
         the caller supplied is only ever read, never reconfigured, on this run or a later one.
         """
         if options["opp_id"]:
@@ -272,14 +272,14 @@ class Command(BaseCommand):
         return self.ensure_demo_opportunity(options["org_slug"])
 
     def ensure_demo_opportunity(self, org_slug):
-        """The demo opportunity, and whether its workspace is one this command owns."""
-        org, owns_workspace = self.ensure_demo_org(org_slug)
+        """The demo opportunity, and whether its organization is one this command owns."""
+        org, owns_organization = self.ensure_demo_org(org_slug)
         hq_server = self.ensure_hq_server()
         opportunity = org.opportunities.filter(name=DEMO_OPP_NAME).first()
         if opportunity:
             self.backfill_hq_server(opportunity, hq_server)
             self.stdout.write(f"Using existing demo opportunity in {org.slug}")
-            return opportunity, owns_workspace
+            return opportunity, owns_organization
 
         currency = Currency.objects.filter(code="USD").first()
         country = Country.objects.filter(code="USA").first()
@@ -323,52 +323,52 @@ class Command(BaseCommand):
             end_date=today + timedelta(days=120),
         )
         self.stdout.write(f"Created demo opportunity in {org.slug}")
-        return opportunity, owns_workspace
+        return opportunity, owns_organization
 
     def ensure_demo_org(self, org_slug):
-        """Reuse whichever workspace already holds the demo opportunity, else make one.
+        """Reuse whichever organization already holds the demo opportunity, else make one.
 
-        Anchoring on the opportunity rather than the workspace is deliberate:
+        Anchoring on the opportunity rather than the organization is deliberate:
         Organization.save() replaces any slug passed in with slugify_uniquely(name), so the slug
         is not a usable lookup key and matching on name alone breaks once a run has left a
         duplicate behind.
 
-        Also returns whether the workspace is this command's own, which is a question about the
-        workspace rather than about this run's arguments: once a --org-slug run has put the demo
-        opportunity in the caller's workspace, a later run without the flag finds it there again,
+        Also returns whether the organization is this command's own, which is a question about the
+        organization rather than about this run's arguments: once a --org-slug run has put the demo
+        opportunity in the caller's organization, a later run without the flag finds it there again,
         and must still not reconfigure it.
         """
         if org_slug:
             org = Organization.objects.filter(slug=org_slug).first()
             if not org:
-                raise CommandError(f"No workspace with slug {org_slug!r}")
+                raise CommandError(f"No organization with slug {org_slug!r}")
         else:
             existing = Opportunity.objects.filter(name=DEMO_OPP_NAME).select_related("organization").first()
             org = existing.organization if existing else Organization.objects.create(name=DEMO_ORG_NAME)
         return org, org.name == DEMO_ORG_NAME
 
-    def ensure_program_manager(self, org, owns_workspace):
-        """Assignment Mode needs an admin membership in a *program manager* workspace.
+    def ensure_program_manager(self, org, owns_organization):
+        """Assignment Mode needs an admin membership in a *program manager* organization.
 
-        Only set on the workspace this command created. program_manager changes what the whole
-        app shows for a workspace, well beyond microplanning, so flipping it on one the caller
+        Only set on the organization this command created. program_manager changes what the whole
+        app shows for an organization, well beyond microplanning, so flipping it on one the caller
         pointed us at would be a side effect nobody asked for — that case is reported instead.
 
         Returns whether Assignment Mode will actually work.
         """
         if org.program_manager:
             return True
-        if not owns_workspace:
+        if not owns_organization:
             self.stdout.write(
                 self.style.WARNING(
-                    f"{org.slug} is not a program manager workspace, so Assignment Mode will render the "
+                    f"{org.slug} is not a program manager organization, so Assignment Mode will render the "
                     "ordinary progress map. Set program_manager on it yourself to use Assignment Mode."
                 )
             )
             return False
         org.program_manager = True
         org.save(update_fields=["program_manager"])
-        self.stdout.write(f"Marked {org.slug} as a program manager workspace")
+        self.stdout.write(f"Marked {org.slug} as a program manager organization")
         return True
 
     def ensure_hq_server(self):
