@@ -26,6 +26,8 @@ servers:
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
+      # cap celery so an OOM kills a worker process, not the whole host (shared with web)
+      memory: 1536m
     cmd: /start_celery
     env:
       clear:
