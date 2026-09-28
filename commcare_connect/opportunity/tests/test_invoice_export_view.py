@@ -8,16 +8,10 @@ from django.urls import reverse
 from commcare_connect.opportunity.forms import InvoiceExportForm
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_pdf_zip_export, generate_invoice_summary_export
-from commcare_connect.opportunity.tests.factories import OpportunityFactory, PaymentInvoiceFactory
-from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.opportunity.tests.factories import PaymentInvoiceFactory
 from config.celery_app import app as celery_app
 
 JUNE = date(2026, 6, 1)
-
-
-@pytest.fixture
-def opportunity(organization):
-    return OpportunityFactory(program=ProgramFactory(organization=organization), organization=organization)
 
 
 def june_invoice(opportunity, **kwargs):
