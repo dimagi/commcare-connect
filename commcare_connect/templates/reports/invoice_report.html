@@ -17,17 +17,13 @@
       <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
         <p class="text-brand-deep-purple">{{ title }}</p>
         <div class="flex gap-x-4" x-cloak x-data="{ showFilterModal: false }">
-          {% if task_id %}
-            <div class="flex">
-              <div hx-get="{% url 'reports:export_status' task_id %}"
-                   hx-target="this"
-                   hx-trigger="load"
-                   hx-swap="outerHTML"
-                   class="flex items-center justify-center">
-                <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                <span class="sr-only">{% trans "Loading..." %}</span>
+          {% if export_task_ids %}
+            {% for export_task_id in export_task_ids %}
+              <div class="flex">
+                {% url 'reports:export_status' export_task_id as status_url %}
+                {% include "components/export_status_poll.html" %}
               </div>
-            </div>
+            {% endfor %}
           {% else %}
             <button type="button"
                     x-tooltip.raw="Export uses the currently applied filters."

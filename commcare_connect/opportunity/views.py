@@ -239,7 +239,9 @@ from commcare_connect.utils.celery import (
     download_export_file,
     get_task_progress,
     get_task_progress_message,
+    pending_exports,
     render_export_status,
+    track_export,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import get_start_end_date_range_with_time
@@ -575,7 +577,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
                 "icon": "fa-money-bill",
             },
         ]
-        context["export_task_id"] = request.GET.get("export_task_id")
+        context["export_task_ids"] = pending_exports(request, opportunity_export_scope(object))
         return context
 
 
@@ -594,7 +596,7 @@ def export_user_visits(request, org_slug, opp_id):
     flatten = form.cleaned_data["flatten_form_data"]
     result = generate_visit_export.delay(request.opportunity.pk, from_date, to_date, status, export_format, flatten)
     redirect_url = reverse("opportunity:worker_deliver", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect_to_export(request, redirect_url, result.id)
 
 
 @opp_standard_access_required
@@ -613,7 +615,16 @@ def review_visit_export(request, org_slug, opp_id):
     status = form.cleaned_data["status"]
 
     result = generate_review_visit_export.delay(request.opportunity.pk, from_date, to_date, status, export_format)
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect_to_export(request, redirect_url, result.id)
+
+
+def redirect_to_export(request, redirect_url, task_id):
+    track_export(request, opportunity_export_scope(request.opportunity), task_id)
+    return redirect(redirect_url)
+
+
+def opportunity_export_scope(opportunity):
+    return f"opportunity:{opportunity.pk}"
 
 
 @login_required
@@ -668,7 +679,7 @@ def update_visit_status_import(request, org_slug=None, opp_id=None):
         saved_path = default_storage.save(file_path, file)
         tracking_info = GATrackingInfo.from_request(request).dict()
         result = bulk_update_visit_status_task.delay(request.opportunity.pk, saved_path, file_format, tracking_info)
-        redirect_url = f"{redirect_url}?export_task_id={result.id}"
+        track_export(request, opportunity_export_scope(request.opportunity), result.id)
     return redirect(redirect_url)
 
 
@@ -825,7 +836,7 @@ def export_users_for_payment(request, org_slug, opp_id):
     export_format = form.cleaned_data["format"]
     result = generate_payment_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:worker_payments", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect_to_export(request, redirect_url, result.id)
 
 
 @opp_standard_access_required
@@ -1079,7 +1090,7 @@ def export_user_status(request, org_slug, opp_id):
     export_format = form.cleaned_data["format"]
     result = generate_user_status_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect_to_export(request, redirect_url, result.id)
 
 
 @opp_standard_access_required
@@ -1093,7 +1104,7 @@ def export_deliver_status(request, org_slug, opp_id):
     export_format = form.cleaned_data["format"]
     result = generate_deliver_status_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect_to_export(request, redirect_url, result.id)
 
 
 @opp_standard_access_required
@@ -1575,7 +1586,7 @@ def export_completed_work(request, org_slug, opp_id):
     export_format = form.cleaned_data["format"]
     result = generate_work_status_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect_to_export(request, redirect_url, result.id)
 
 
 @opp_standard_access_required
@@ -2934,7 +2945,7 @@ class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
             "opportunity": opportunity,
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
-            "export_task_id": self.request.GET.get("export_task_id"),
+            "export_task_ids": pending_exports(self.request, opportunity_export_scope(opportunity)),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)

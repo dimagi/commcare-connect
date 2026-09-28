@@ -41,18 +41,12 @@
       </ul>
       <div class="flex justify-end gap-2">
         <!-- Tab Options -->
-        {% if export_task_id %}
+        {% for export_task_id in export_task_ids %}
           <div class="flex">
-            <div hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
-                 hx-target="this"
-                 hx-trigger="load"
-                 hx-swap="outerHTML"
-                 class="flex items-center justify-center">
-              <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-              <span class="sr-only">Loading...</span>
-            </div>
+            {% url 'opportunity:export_status' request.org.slug export_task_id as status_url %}
+            {% include "components/export_status_poll.html" %}
           </div>
-        {% endif %}
+        {% endfor %}
         <div id="tab-options" class="flex gap-x-4 items-center"></div>
       </div>
     </div>

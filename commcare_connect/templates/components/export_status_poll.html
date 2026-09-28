@@ -1,0 +1,9 @@
+{% load i18n %}
+<div hx-get="{{ status_url }}"
+     hx-target="this"
+     hx-trigger="load"
+     hx-swap="outerHTML"
+     class="flex items-center justify-center">
+  <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+  <span class="sr-only">{% translate "Loading..." %}</span>
+</div>

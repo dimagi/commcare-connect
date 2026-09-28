@@ -5,16 +5,10 @@
   <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }} }"
        class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
     {% include 'components/breadcrumbs.html' with path=path %}
-    {% if export_task_id %}
+    {% for export_task_id in export_task_ids %}
       <div class="flex items-center justify-end">
-        <div hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
-             hx-target="this"
-             hx-trigger="load"
-             hx-swap="outerHTML"
-             class="flex items-center justify-center">
-          <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-          <span class="sr-only">Loading...</span>
-        </div>
+        {% url 'opportunity:export_status' request.org.slug export_task_id as status_url %}
+        {% include "components/export_status_poll.html" %}
         <button type="button"
                 class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
                 aria-label="Close"
@@ -22,7 +16,7 @@
           <i class="fa-solid fa-circle-xmark text-brand-deep-purple"></i>
         </button>
       </div>
-    {% endif %}
+    {% endfor %}
     <div class="flex flex-col gap-8 w-full rounded-lg p-4"
          :class="isTest ? 'bg-white shadow-xs' : 'bg-brand-deep-purple'">
       <div class="flex items-center relative"
