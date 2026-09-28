@@ -81,8 +81,8 @@ def test_generate_report_with_no_active_accesses(opportunity, fixed_calc):
         period_start=datetime.date(2026, 4, 13),
         period_end=datetime.date(2026, 4, 19),
     )
-    assert AuditReport.objects.filter(pk=report.pk).exists()
-    assert AuditReportEntry.objects.filter(audit_report=report).count() == 0
+    assert report is None
+    assert not AuditReport.objects.filter(opportunity=opportunity).exists()
 
 
 @pytest.mark.parametrize(

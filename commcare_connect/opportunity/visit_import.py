@@ -17,7 +17,6 @@ from django.utils.translation import ngettext
 from tablib import Dataset
 
 from commcare_connect.opportunity.models import (
-    CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
     ExchangeRate,
@@ -43,12 +42,6 @@ JUSTIFICATION_COL = "justification"
 WORK_ID_COL = "instance id"
 PAYMENT_APPROVAL_STATUS_COL = "payment approval"
 REQUIRED_COLS = [VISIT_ID_COL, STATUS_COL]
-LATITUDE_COL = "latitude"
-LONGITUDE_COL = "longitude"
-RADIUS_COL = "radius"
-AREA_NAME_COL = "area name"
-ACTIVE_COL = "active"
-SITE_CODE_COL = "site code"
 PAYMENT_METHOD_COL = "payment method"
 PAYMENT_OPERATOR_COL = "payment operator"
 REVIEW_STATUS_COL = "program manager review"
@@ -148,15 +141,6 @@ class CompletedWorkImportStatus:
                 ((u,) for u in missing),
             ),
         )
-
-
-@dataclass
-class CatchmentAreaImportStatus:
-    seen_catchments: set[str]
-    new_catchments: int
-
-    def __len__(self):
-        return len(self.seen_catchments)
 
 
 @dataclass
@@ -603,181 +587,6 @@ def get_status_by_completed_work_id(dataset):
     if invalid_rows:
         raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
     return status_by_work_id, reason_by_work_id
-
-
-def bulk_update_catchments(opportunity: Opportunity, file: UploadedFile):
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-    imported_data = get_imported_dataset(file, file_format)
-    return _bulk_update_catchments(opportunity, imported_data)
-
-
-class RowData:
-    def __init__(self, row: list[str], headers: list[str]):
-        self.row = row
-        self.headers = headers
-        self.latitude = self._get_latitude()
-        self.longitude = self._get_longitude()
-        self.radius = self._get_radius()
-        self.active = self._get_active()
-        self.area_name = self._get_area_name()
-        self.username = self._get_username()
-        self.site_code = self._get_site_code()
-
-    def _get_latitude(self) -> Decimal:
-        error_message = "Latitude must be between -90 and 90 degrees."
-        index = _get_header_index(self.headers, LATITUDE_COL)
-        try:
-            latitude = Decimal(self.row[index])
-        except (ValueError, TypeError, InvalidOperation):
-            raise InvalidValueError(error_message)
-        if not Decimal("-90") <= latitude <= Decimal("90"):
-            raise InvalidValueError(error_message)
-        return latitude
-
-    def _get_longitude(self) -> Decimal:
-        index = _get_header_index(self.headers, LONGITUDE_COL)
-        try:
-            longitude = Decimal(self.row[index])
-        except (ValueError, TypeError, InvalidOperation):
-            raise InvalidValueError(f"Invalid longitude value: {self.row[index]}")
-        if not Decimal("-180") <= longitude <= Decimal("180"):
-            raise InvalidValueError("Longitude must be between -180 and 180 degrees")
-        return longitude
-
-    def _get_radius(self) -> int:
-        index = _get_header_index(self.headers, RADIUS_COL)
-        try:
-            radius = int(self.row[index])
-        except (ValueError, TypeError):
-            raise InvalidValueError(f"Invalid radius value: {self.row[index]}")
-        if radius <= 0:
-            raise InvalidValueError("Radius must be a positive integer")
-        return radius
-
-    def _get_active(self) -> bool:
-        error_message = "Active status must be 'yes' or 'no'"
-        index = _get_header_index(self.headers, ACTIVE_COL)
-        active = self.row[index]
-        if not active or not isinstance(active, str):
-            raise InvalidValueError(error_message)
-        active = active.lower().strip()
-        if active not in ["yes", "no"]:
-            raise InvalidValueError(error_message)
-        return active == "yes"
-
-    def _get_area_name(self) -> str:
-        index = _get_header_index(self.headers, AREA_NAME_COL)
-        area_name = self.row[index]
-        if not area_name:
-            raise InvalidValueError("Area name is not valid.")
-        return area_name
-
-    def _get_username(self) -> str | None:
-        try:
-            index = _get_header_index(self.headers, USERNAME_COL)
-        except ImportException:
-            return None
-        username = self.row[index]
-        return username if username else None
-
-    def _get_site_code(self) -> str:
-        index = _get_header_index(self.headers, SITE_CODE_COL)
-        site_code = self.row[index]
-        if not site_code:
-            raise InvalidValueError("Site code is not provided.")
-        return site_code
-
-
-def create_or_update_catchment(row_data: RowData, opportunity: Opportunity, username_to_oa_map: dict):
-    try:
-        catchment = CatchmentArea.objects.get(site_code=row_data.site_code, opportunity=opportunity)
-        catchment.latitude = row_data.latitude
-        catchment.longitude = row_data.longitude
-        catchment.radius = row_data.radius
-        catchment.name = row_data.area_name
-        catchment.active = row_data.active
-        catchment.opportunity_access = username_to_oa_map.get(row_data.username, None)
-        return catchment, False
-    except CatchmentArea.DoesNotExist:
-        return (
-            CatchmentArea(
-                latitude=row_data.latitude,
-                longitude=row_data.longitude,
-                radius=row_data.radius,
-                opportunity=opportunity,
-                name=row_data.area_name,
-                active=row_data.active,
-                site_code=row_data.site_code,
-                opportunity_access=username_to_oa_map.get(row_data.username, None),
-            ),
-            True,
-        )
-
-
-def _bulk_update_catchments(opportunity: Opportunity, dataset: Dataset):
-    headers = [header.lower() for header in dataset.headers or [] if header]
-    if not headers:
-        raise ImportException("The uploaded file did not contain any headers")
-
-    with transaction.atomic():
-        to_create = []
-        to_update = []
-        invalid_rows = []
-        seen_catchments = set()
-        new_catchments = 0
-
-        username_to_oa_map = {}
-        if USERNAME_COL in headers:
-            username_index = _get_header_index(headers, USERNAME_COL)
-            usernames = []
-            for row in dataset:
-                row_list = list(row)
-                if row_list[username_index]:
-                    usernames.append(row_list[username_index])
-
-            opportunity_accesses = OpportunityAccess.objects.filter(
-                opportunity=opportunity, user__username__in=usernames
-            ).select_related("user")
-            username_to_oa_map = {oa.user.username: oa for oa in opportunity_accesses}
-
-        for row in dataset:
-            row = list(row)
-            try:
-                row_data = RowData(row, headers)
-                catchment, created = create_or_update_catchment(row_data, opportunity, username_to_oa_map)
-
-                if created:
-                    to_create.append(catchment)
-                    new_catchments += 1
-                else:
-                    to_update.append(catchment)
-                    seen_catchments.add(str(catchment.id))
-
-            except InvalidValueError as e:
-                invalid_rows.append(([escape(r) for r in row], f"Error in row: {e}"))
-
-        if to_create:
-            CatchmentArea.objects.bulk_create(to_create)
-
-        if to_update:
-            CatchmentArea.objects.bulk_update(
-                to_update,
-                [
-                    "latitude",
-                    "longitude",
-                    "radius",
-                    "active",
-                    "name",
-                    "opportunity_access",
-                ],
-            )
-
-        if invalid_rows:
-            raise ImportException(f"{len(invalid_rows)} rows have errors", invalid_rows)
-
-    return CatchmentAreaImportStatus(seen_catchments, new_catchments)
 
 
 class ReviewVisitRowData:

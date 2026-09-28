@@ -37,7 +37,6 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
-    OpportunityVerificationFlags,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -45,7 +44,6 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import bulk_approve_completed_work
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
-    CatchmentAreaFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -822,25 +820,6 @@ def test_receiver_verification_flags_form_json_rule_flagged(
         "form_value_not_found",
         f"Form does not satisfy {form_json_rule.name} validation rule.",
     ] in visit.flag_reason.get("flags", [])
-
-
-def test_receiver_verification_flags_catchment_areas(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.catchment_areas = True
-    verification_flags.save()
-
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    form_json["metadata"]["location"] = None
-
-    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
-    CatchmentAreaFactory(opportunity=opportunity, opportunity_access=access, active=True)
-    oauth_application = opportunity.hq_server.oauth_application
-    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.flagged
-    assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
 
 
 @pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)

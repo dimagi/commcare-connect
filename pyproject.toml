@@ -49,12 +49,20 @@ python_files = [
     "tests.py",
     "test_*.py",
 ]
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}"]
+# Only unactionable noise belongs here. Naive-datetime RuntimeWarnings and
+# RemovedInDjango60Warnings are left visible on purpose - they are real work.
+filterwarnings = [
+    # WhiteNoise, once per request, because collectstatic has not run locally.
+    "ignore:No directory at:UserWarning",
+    # allauth importing its own deprecated module.
+    "ignore:allauth.exceptions is deprecated:UserWarning",
+]
 
 # ==== Coverage ====
 [tool.coverage.run]
 include = ["commcare_connect/**"]
 omit = ["*/migrations/*", "*/tests/*"]
-plugins = ["django_coverage_plugin"]
 
 
 # ==== ruff ====
@@ -65,7 +73,12 @@ extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
 # E/W: pycodestyle, F: pyflakes (flake8 defaults), I: isort
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "UP", "RUF100"]
+
+[tool.ruff.lint.per-file-ignores]
+# Marketing page titles and meta descriptions: prose that has to stay on one
+# line to be readable and greppable against the rendered <head>.
+"commcare_connect/prelogin/route_meta.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["commcare_connect", "config"]
@@ -89,7 +102,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-django>=4.5.2",
     "pytest-httpx>=0.24.0",
-    "ruff>=0.15.17",
+    "ruff>=0.16.6",
     "xml2json",
 ]
 production = [

@@ -47,7 +47,9 @@ from waffle.decorators import waffle_flag
 
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.microplanning.buildings import buildings_overlay_config
 from commcare_connect.microplanning.const import (
+    INACCESSIBILITY_LEGEND,
     MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
@@ -70,9 +72,11 @@ from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWork
 from commcare_connect.microplanning.helpers import (
     MAP_WORK_AREA_FIELDS,
     assign_work_areas_and_sync_to_hq,
+    denied_inaccessibility_work_area_ids,
     exclude_work_areas_for_opportunity,
     map_work_areas,
     pct,
+    pending_inaccessibility_requests,
     unassign_work_areas_for_opportunity,
     work_area_detail,
     work_area_search_options,
@@ -89,11 +93,11 @@ from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWard
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
-    is_org_pm_or_all_access,
+    opp_admin_access_required,
+    opportunity_pm_required,
     opportunity_required,
-    org_admin_required,
-    org_pm_required,
 )
+from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.file import get_file_extension
@@ -118,7 +122,7 @@ PG_QUERY_CANCELED = "57014"  # SQLSTATE raised when statement_timeout cancels a 
 
 
 @require_GET
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
@@ -207,6 +211,12 @@ def microplanning_home(request, *args, **kwargs):
         args=[request.org.slug, opportunity.opportunity_id, 0],
     ).replace("/0/", "/")
 
+    # The review sidebar builds photo thumbnail URLs by appending a blob id to this.
+    attachment_url_base = reverse(
+        "opportunity:fetch_attachment",
+        args=[request.org.slug, opportunity.opportunity_id, "BLOB_ID"],
+    ).replace("BLOB_ID", "")
+
     status_meta = {
         status.value: {
             "label": status.label,
@@ -228,8 +238,12 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
-    is_program_manager = is_org_pm_or_all_access(request)
+    is_program_manager = is_opportunity_pm(request, opportunity)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
+    inaccessible_mode = bool(request.GET.get("inaccessible_mode"))
+    # Drives both the entry button's count and the list Inaccessible Mode renders, so the two
+    # can never disagree.
+    inaccessibility_requests = pending_inaccessibility_requests(opportunity)
 
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
@@ -246,6 +260,7 @@ def microplanning_home(request, *args, **kwargs):
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
+        "buildings_config": buildings_overlay_config(),
         "task_id": request.GET.get("task_id"),
         "import_status_url": import_status_url,
         "opportunity": opportunity,
@@ -277,6 +292,14 @@ def microplanning_home(request, *args, **kwargs):
         "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
+        "inaccessible_mode": inaccessible_mode,
+        "inaccessibility_requests": inaccessibility_requests,
+        "inaccessible_request_count": len(inaccessibility_requests),
+        "attachment_url_base": attachment_url_base,
+        "inaccessibility_legend": INACCESSIBILITY_LEGEND,
+        "denied_inaccessibility_work_area_ids": (
+            denied_inaccessibility_work_area_ids(opportunity) if inaccessible_mode else []
+        ),
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "bounds_url": bounds_url,
         "search_options_url": search_options_url,
@@ -468,7 +491,7 @@ def _get_assignment_mode_context(request, opportunity):
     }
 
 
-@method_decorator([org_admin_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
+@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
 class WorkAreaImport(View):
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type="text/csv")
@@ -528,7 +551,7 @@ class WorkAreaImport(View):
         return redirect(redirect_url)
 
 
-@method_decorator([org_admin_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
+@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
 class ImplementationAreaImport(View):
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type="text/csv")
@@ -567,7 +590,7 @@ class ImplementationAreaImport(View):
 
 
 @require_POST
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def clear_implementation_areas(request, org_slug, opp_id):
@@ -623,7 +646,7 @@ def _area_modal_context(org_slug, opp_id, area_type):
     }
 
 
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def import_status(request, org_slug, opp_id, area_type="work_area"):
@@ -673,7 +696,7 @@ class WorkAreaVectorLayer(VectorLayer):
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
 
 
-@method_decorator([org_admin_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
+@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
 class WorkAreaTileView(MVTView):
     layer_classes = [WorkAreaVectorLayer]
 
@@ -727,7 +750,7 @@ class UserVisitVectorLayer(VectorLayer):
         )
 
 
-@method_decorator([org_admin_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
+@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
 class UserVisitTileView(MVTView):
     layer_classes = [UserVisitVectorLayer]
 
@@ -740,7 +763,7 @@ class UserVisitTileView(MVTView):
         ]
 
 
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def workareas_group_geojson(request, org_slug, opp_id):
@@ -765,7 +788,7 @@ def workareas_group_geojson(request, org_slug, opp_id):
 
 
 @require_GET
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def workareas_bounds(request, org_slug, opp_id):
@@ -796,7 +819,7 @@ def work_area_bounds(queryset):
 
 
 @require_GET
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def search_options(request, org_slug, opp_id):
@@ -805,7 +828,7 @@ def search_options(request, org_slug, opp_id):
 
 
 @require_GET
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def work_area_detail_json(request, org_slug, opp_id, work_area_id):
@@ -817,7 +840,7 @@ def work_area_detail_json(request, org_slug, opp_id, work_area_id):
     return JsonResponse(detail)
 
 
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def implementation_areas_geojson(request, org_slug, opp_id):
@@ -839,7 +862,7 @@ def implementation_areas_geojson(request, org_slug, opp_id):
     return JsonResponse({"implementation_area_features": features})
 
 
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @require_POST
 @waffle_flag(MICROPLANNING)
@@ -891,7 +914,7 @@ def cluster_work_areas(request, org_slug, opp_id):
     return response
 
 
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 def clustering_status(request, org_slug, opp_id):
     task_id = request.GET.get("clustering_task_id", None)
@@ -937,7 +960,7 @@ def clustering_status(request, org_slug, opp_id):
 
 
 @require_POST
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 def exclude_work_areas(request, org_slug, opp_id):
     exclusion_reason = request.POST.get("exclusion_reason", "").strip()
@@ -974,7 +997,7 @@ def exclude_work_areas(request, org_slug, opp_id):
 
 
 @require_POST
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def clear_work_areas(request, org_slug, opp_id):
@@ -998,7 +1021,7 @@ def clear_work_areas(request, org_slug, opp_id):
 
 
 @require_POST
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def clear_work_area_groups(request, org_slug, opp_id):
@@ -1016,7 +1039,7 @@ def clear_work_area_groups(request, org_slug, opp_id):
 
 
 @require_GET
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def download_work_areas(request, org_slug, opp_id):
@@ -1029,7 +1052,7 @@ def download_work_areas(request, org_slug, opp_id):
     return response
 
 
-@method_decorator([org_admin_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
+@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
 class ModifyWorkAreaUpdateView(UpdateView):
     model = WorkArea
     form_class = WorkAreaModelForm
@@ -1098,7 +1121,7 @@ class ModifyWorkAreaUpdateView(UpdateView):
 
 
 @require_GET
-@org_pm_required
+@opportunity_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_work_areas_for_assignment(request, org_slug, opp_id):
@@ -1116,7 +1139,7 @@ def get_work_areas_for_assignment(request, org_slug, opp_id):
 
 
 @require_GET
-@org_pm_required
+@opportunity_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
@@ -1129,7 +1152,7 @@ def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
 
 
 @require_GET
-@org_pm_required
+@opportunity_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_summary_for_assignment(request, org_slug, opp_id):
@@ -1155,7 +1178,7 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@org_pm_required
+@opportunity_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def save_assignment(request, org_slug, opp_id):
@@ -1232,7 +1255,7 @@ def save_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@org_pm_required
+@opportunity_pm_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def unassign_work_areas(request, org_slug, opp_id):
@@ -1277,7 +1300,7 @@ def unassign_work_areas(request, org_slug, opp_id):
 
 
 @require_GET
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
@@ -1288,7 +1311,9 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
     inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest, work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
+        work_area=work_area,
+        status=InaccessibilityRequestStatus.PENDING,
     )
     try:
         photo = BlobMeta.objects.get(parent_id=inacc_request.xform_id)
@@ -1296,16 +1321,11 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         photo = None
     return render(
         request,
-        "microplanning/review_inaccessibility_modal.html",
+        "microplanning/review_inaccessibility_panel.html",
         context={
             "work_area": work_area,
             "inaccessibility_request": inacc_request,
             "photo": photo,
-            "boundary_geojson": json.loads(work_area.boundary.geojson),
-            "request_location_geojson": (
-                json.loads(inacc_request.location.geojson) if inacc_request.location else None
-            ),
-            "mapbox_api_key": settings.MAPBOX_TOKEN,
         },
     )
 
@@ -1327,14 +1347,14 @@ _ACTION_TO_REQUEST_STATUS = {
 
 
 @require_POST
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     try:
         action = InaccessibilityReviewAction(request.POST.get("action", ""))
     except ValueError:
-        return HttpResponseBadRequest("Invalid action")
+        return HttpResponseBadRequest("Invalid action", content_type="text/plain")
 
     new_status = _ACTION_TO_NEW_STATUS[action]
 
@@ -1342,13 +1362,21 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         WorkArea.objects.select_for_update(),
         id=work_area_id,
         opportunity=request.opportunity,
-        status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
-    inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
-        work_area=work_area,
-        status=InaccessibilityRequestStatus.PENDING,
+    inacc_request = (
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user")
+        .filter(work_area=work_area, status=InaccessibilityRequestStatus.PENDING)
+        .first()
     )
+    if inacc_request is None or work_area.status != WorkAreaStatus.REQUEST_FOR_INACCESSIBLE:
+        # The work area is not in a state this action can act on, for any number of reasons, so
+        # the panel is working from stale data either way. Its error box shows the body as text,
+        # so this has to be a message rather than an error page.
+        return HttpResponse(
+            status=409,
+            content=_("Invalid request. Please reload the page and try again."),
+            content_type="text/plain",
+        )
 
     work_area.status = new_status
     inacc_request.status = _ACTION_TO_REQUEST_STATUS[action]
@@ -1364,7 +1392,11 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
 
     except CommCareHQAPIException as e:
         logger.info(f"Failed to sync work area {work_area.id} to HQ after review action. Error: {e}")
-        return HttpResponse(status=500, content=_("Failed to sync work area status. Please try again."))
+        return HttpResponse(
+            status=500,
+            content=_("Failed to sync work area status. Please try again."),
+            content_type="text/plain",
+        )
 
     if action == InaccessibilityReviewAction.DENY:
         transaction.on_commit(
@@ -1381,7 +1413,7 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     return response
 
 
-@org_admin_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def coverage_progress(request, *args, **kwargs):

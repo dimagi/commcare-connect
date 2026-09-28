@@ -18,7 +18,6 @@ from django_tables2 import columns
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
-    CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
@@ -35,6 +34,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.utils.invoice import with_invoice_month
 from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
@@ -318,47 +318,6 @@ class SuspendedUsersTable(tables.Table):
         )
 
 
-class CatchmentAreaTable(tables.Table):
-    username = columns.Column(accessor="opportunity_access__user__username", verbose_name="Username")
-    name_of_user = columns.Column(accessor="opportunity_access__user__name", verbose_name="Name")
-    phone_number = columns.Column(accessor="opportunity_access__user__phone_number", verbose_name="Phone Number")
-    name = columns.Column(verbose_name="Area name")
-    active = columns.Column(verbose_name="Active")
-    latitude = columns.Column(verbose_name="Latitude")
-    longitude = columns.Column(verbose_name="Longitude")
-    radius = columns.Column(verbose_name="Radius")
-    site_code = columns.Column(verbose_name="Site code")
-
-    def render_active(self, value):
-        return "Yes" if value else "No"
-
-    class Meta:
-        model = CatchmentArea
-        fields = (
-            "username",
-            "site_code",
-            "name",
-            "name_of_user",
-            "phone_number",
-            "active",
-            "latitude",
-            "longitude",
-            "radius",
-        )
-        orderable = False
-        sequence = (
-            "username",
-            "name_of_user",
-            "phone_number",
-            "name",
-            "site_code",
-            "active",
-            "latitude",
-            "longitude",
-            "radius",
-        )
-
-
 class UserVisitReviewTable(OrgContextTable):
     pk = columns.CheckBoxColumn(
         accessor="pk",
@@ -464,6 +423,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.opportunity = kwargs.pop("opportunity")
         self.highlight_invoice_number = kwargs.pop("highlight_invoice_number", None)
         self.is_pm = kwargs.pop("is_pm", False)
+        self.month_param = kwargs.pop("month_param", None)
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
 
@@ -484,9 +444,12 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return record.get_status_display()
 
     def render_actions(self, record):
-        invoice_review_url = reverse(
-            "opportunity:invoice_review",
-            args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+        invoice_review_url = with_invoice_month(
+            reverse(
+                "opportunity:invoice_review",
+                args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+            ),
+            self.month_param,
         )
         review_button = (
             f'<a href="{invoice_review_url}" '
@@ -496,8 +459,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
         pay_button = ""
         if self.is_pm:
             if record.status == InvoiceStatus.READY_TO_PAY:
-                invoice_pay_url = reverse(
-                    "opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]
+                invoice_pay_url = with_invoice_month(
+                    reverse("opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]),
+                    self.month_param,
                 )
                 disabled = "disabled" if getattr(record, "payment", None) else ""
                 pay_button = f"""
@@ -509,7 +473,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                         {disabled}>
                         {_("Pay")}
                     </button>
-                """  # noqa: E501
+                """
         return mark_safe(f'<div class="flex gap-2">{review_button}{pay_button}</div>')
 
 
@@ -1405,7 +1369,7 @@ class WorkerLearnTable(OrgContextTable):
         accessor="modules_completed_percentage",
         template_code="""
             {% include "components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
-        """,  # noqa: E501
+        """,
     )
     completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="assessment_status_rank")
@@ -1839,10 +1803,14 @@ class InvoiceDeliveriesTable(tables.Table):
     username = tables.Column(
         accessor="completed_work__opportunity_access__user__name", verbose_name=gettext_lazy("Worker")
     )
-    date_created = DMYTColumn(accessor="completed_work__date_created", verbose_name=gettext_lazy("Date of Delivery"))
-    date_approved = DMYTColumn(
-        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("Date Approved")
+    first_visit_date = DMYTColumn(
+        accessor="completed_work__date_created", verbose_name=gettext_lazy("First Visit Date")
     )
+    first_approved_date = DMYTColumn(
+        accessor="completed_work__status_modified_date", verbose_name=gettext_lazy("First Approved Date")
+    )
+    billing_month = tables.Column(accessor="month", verbose_name=gettext_lazy("Billing Month"))
+    billing_type = tables.Column(accessor="is_delta", verbose_name=gettext_lazy("Billing Type"))
     approved_count = tables.Column(accessor="billed_count", verbose_name=gettext_lazy("Approved Deliveries"))
     flw_amount_local = tables.Column(accessor="flw_pay__local", verbose_name=gettext_lazy("FLW Pay"))
     org_amount_local = tables.Column(accessor="org_pay__local", verbose_name=gettext_lazy("Org Pay"))
@@ -1868,14 +1836,22 @@ class InvoiceDeliveriesTable(tables.Table):
             "opportunity",
             "entity_name",
             "username",
-            "date_created",
-            "date_approved",
+            "first_visit_date",
+            "first_approved_date",
+            "billing_month",
+            "billing_type",
             "approved_count",
             "flw_amount_local",
             "org_amount_local",
             "total_amount_local",
             "total_amount_usd",
         )
+
+    def render_billing_month(self, value):
+        return value.strftime("%B %Y")
+
+    def render_billing_type(self, value):
+        return _("Additional Delivery") if value else _("First Billing")
 
 
 _task_select_td_extra = {

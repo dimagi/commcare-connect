@@ -73,7 +73,8 @@ def test_invoice_deliveries_table_org_column_visibility(show_org):
     assert "Total Pay (USD)" in headers
 
 
-def test_invoice_deliveries_table_total_folds_in_org_pay():
+@pytest.mark.parametrize(("is_delta", "billing_type"), [(False, "First Billing"), (True, "Additional Delivery")])
+def test_invoice_deliveries_table_row_values(is_delta, billing_type):
     delivery = WorkPayRow(
         completed_work=CompletedWork(
             entity_name="Baby A",
@@ -87,7 +88,7 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
         flw_pay=Money(Decimal("40"), Decimal("4")),
         org_pay=Money(Decimal("10"), Decimal("1")),
         exchange_rate=ExchangeRate(rate=Decimal("10")),
-        is_delta=True,
+        is_delta=is_delta,
     )
     table = InvoiceDeliveriesTable("KES", [delivery], show_org=True)
 
@@ -99,6 +100,10 @@ def test_invoice_deliveries_table_total_folds_in_org_pay():
     assert row["Org Pay (KES)"] == 10
     assert row["Total Pay (KES)"] == 50  # 40 + 10
     assert row["Total Pay (USD)"] == 5  # 4 + 1
+    assert row["Billing Month"] == "January 2026"
+    assert row["Billing Type"] == billing_type
+    assert "First Visit Date" in headers
+    assert "First Approved Date" in headers
 
 
 def _make_table(opportunity, per_page=25):

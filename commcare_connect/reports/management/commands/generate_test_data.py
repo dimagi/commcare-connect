@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
@@ -36,8 +36,8 @@ class Command(BaseCommand):
                 OpportunityAccessFactory(user=user, opportunity=opportunity)
 
         # Generate completed work and user visits
-        start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end_date = datetime.now(timezone.utc)
+        start_date = datetime(2024, 1, 1, tzinfo=UTC)
+        end_date = datetime.now(UTC)
 
         for count in range(num_visits):
             print(f"{count + 1}/{num_visits}...")

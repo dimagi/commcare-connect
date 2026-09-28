@@ -12,7 +12,7 @@ from commcare_connect.opportunity.models import CommCareApp
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 XMLNS = "http://commcareconnect.com/data/v1/learn"
-XMLNS_PREFIX = "{%s}" % XMLNS
+XMLNS_PREFIX = f"{{{XMLNS}}}"
 
 
 @dataclass

@@ -40,53 +40,40 @@ MOCK_FORM = {
     },
 }
 
-MODULE_XML_TEMPLATE = (
-    """<data>
-<module xmlns="%s" id="{id}">
+MODULE_XML_TEMPLATE = """<data>
+<module xmlns="{xmlns}" id="{id}">
     <name>{name}</name>
     <description>{description}</description>
     <time_estimate>{time_estimate}</time_estimate>
 </module>
 </data>
 """
-    % CCC_LEARN_XMLNS
-)
 
-TASK_XML_TEMPLATE = (
-    """<data>
-<task xmlns="%s" id="{id}">
+TASK_XML_TEMPLATE = """<data>
+<task xmlns="{xmlns}" id="{id}">
     <name>{name}</name>
     <description>{description}</description>
 </task>
 </data>
 """
-    % CCC_LEARN_XMLNS
-)
 
-ASSESSMENT_XML_TEMPLATE = (
-    """<data>
-<assessment xmlns="%s" id="{id}">
+ASSESSMENT_XML_TEMPLATE = """<data>
+<assessment xmlns="{xmlns}" id="{id}">
     <user_score>{score}</user_score>
 </assessment>
 </data>"""
-    % CCC_LEARN_XMLNS
-)
 
-DELIVER_UNIT_XML_TEMPLATE = (
-    """<data>
-<deliver xmlns="%s" id="{id}">
+DELIVER_UNIT_XML_TEMPLATE = """<data>
+<deliver xmlns="{xmlns}" id="{id}">
     <name>{name}</name>
     <entity_id>{entity_id}</entity_id>
     <entity_name>{entity_name}</entity_name>
     <work_area_id>{work_area_id}</work_area_id>
 </deliver>
 </data>"""
-    % CCC_LEARN_XMLNS
-)
 
-WORK_AREA_UPDATE_XML_TEMPLATE = (
-    """<data>
-<work_area_update xmlns="%s" id="{id}">
+WORK_AREA_UPDATE_XML_TEMPLATE = """<data>
+<work_area_update xmlns="{xmlns}" id="{id}">
     <work_area_id>{work_area_id}</work_area_id>
     <status>{status}</status>
     <reason>{reason}</reason>
@@ -94,8 +81,6 @@ WORK_AREA_UPDATE_XML_TEMPLATE = (
     <additional_details>{additional_details}</additional_details>
 </work_area_update>
 </data>"""
-    % CCC_LEARN_XMLNS
-)
 
 
 def get_form_json(xmlns=DEFAULT_XMLNS, form_block=None, **kwargs):
@@ -123,7 +108,11 @@ class LearnModuleJsonFactory(factory.StubFactory):
     @factory.lazy_attribute
     def json(self):
         xml = MODULE_XML_TEMPLATE.format(
-            id=self.id, name=self.name, description=self.description, time_estimate=self.time_estimate
+            xmlns=CCC_LEARN_XMLNS,
+            id=self.id,
+            name=self.name,
+            description=self.description,
+            time_estimate=self.time_estimate,
         )
         _, module = xml2json(xml)
         return module
@@ -136,7 +125,7 @@ class TaskJsonFactory(factory.StubFactory):
 
     @factory.lazy_attribute
     def json(self):
-        xml = TASK_XML_TEMPLATE.format(id=self.id, name=self.name, description=self.description)
+        xml = TASK_XML_TEMPLATE.format(xmlns=CCC_LEARN_XMLNS, id=self.id, name=self.name, description=self.description)
         _, task = xml2json(xml)
         return task
 
@@ -147,7 +136,7 @@ class AssessmentStubFactory(factory.StubFactory):
 
     @factory.lazy_attribute
     def json(self):
-        xml = ASSESSMENT_XML_TEMPLATE.format(id=self.id, score=self.score)
+        xml = ASSESSMENT_XML_TEMPLATE.format(xmlns=CCC_LEARN_XMLNS, id=self.id, score=self.score)
         _, module = xml2json(xml)
         return module
 
@@ -162,6 +151,7 @@ class DeliverUnitStubFactory(factory.StubFactory):
     @factory.lazy_attribute
     def json(self):
         xml = DELIVER_UNIT_XML_TEMPLATE.format(
+            xmlns=CCC_LEARN_XMLNS,
             id=self.id,
             name=self.name,
             entity_id=self.entity_id,
@@ -183,6 +173,7 @@ class WorkAreaUpdateStubFactory(factory.StubFactory):
     @factory.lazy_attribute
     def json(self):
         xml = WORK_AREA_UPDATE_XML_TEMPLATE.format(
+            xmlns=CCC_LEARN_XMLNS,
             id=self.id,
             work_area_id=self.work_area_id,
             status=self.status,

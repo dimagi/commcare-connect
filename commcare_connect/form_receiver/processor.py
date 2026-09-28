@@ -332,10 +332,10 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             work_area.save(update_fields=["status"])
 
 
-def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
     """Validate a form submission against the opportunity's verification flags.
 
-    Checks GPS presence, location proximity, catchment areas, submission time window,
+    Checks GPS presence, location proximity, submission time window,
     duplicate entities, attachments, form duration, and custom JSON validation rules.
     Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
     side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
@@ -364,19 +364,6 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
             if dist.m <= opportunity_flags.location:
                 flags.append(["location", f"Visit location is {dist.m}m from another visit"])
                 break
-    if opportunity_flags.catchment_areas:
-        areas = access.catchmentarea_set.filter(active=True)
-        if areas:
-            within_catchment = False
-            if xform.metadata.location is not None:
-                cur_lat, cur_lon, *_ = xform.metadata.location.split(" ")
-                for area in areas:
-                    dist = distance((area.latitude, area.longitude), (cur_lat, cur_lon))
-                    if dist.meters < area.radius:
-                        within_catchment = True
-                        break
-            if not within_catchment:
-                flags.append(["catchment", "Visit outside worker catchment areas"])
     if (
         opportunity_flags.form_submission_start
         and opportunity_flags.form_submission_start > xform.metadata.timeStart.time()
@@ -505,7 +492,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        flags = clean_form_submission(access, user_visit, xform)
+        flags = clean_form_submission(user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
