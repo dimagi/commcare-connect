@@ -100,7 +100,7 @@
       },
 
       submitInvoice(newStatus, extraValues = {}) {
-        htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
+        htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}{% querystring month=month_param %}', {
           values: {
               invoice_id: this.invoiceId,
               description: this.$refs.description ? this.$refs.description.value : "",
