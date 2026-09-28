@@ -3,6 +3,11 @@
 {% load crispy_forms_tags %}
 {% load i18n %}
 {% load render_table from django_tables2 %}
+{% block javascript %}
+  {# Not deferred: it defines an x-data helper, so it has to run before Alpine starts. #}
+  <script src="{% static 'js/invoice_list.js' %}"></script>
+  {{ block.super }}
+{% endblock javascript %}
 {% block top_buttons %}
   {{ block.super }}
   {% if exportable_count %}
