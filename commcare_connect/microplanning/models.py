@@ -4,10 +4,12 @@ import pghistory
 import shapely
 from django.conf import settings
 from django.contrib.gis.db import models as geo_models
+from django.core.validators import RegexValidator
 from django.db.models import Count, Index, Q, Sum
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserVisit, VisitValidationStatus
+from commcare_connect.utils.db import BaseModel
 
 # The most common SRID for geographic coordinates is 4326,
 # which corresponds to “longitude/latitude on the WGS84 spheroid
@@ -192,3 +194,39 @@ class WorkAreaInaccessibilityRequest(geo_models.Model):
 
     def __str__(self):
         return f"WorkAreaInaccessibilityRequest {self.xform_id} - {self.work_area}"
+
+
+class OvertureRelease(BaseModel):
+    """
+    The Overture Maps release that building footprints are drawn from.
+
+    Overture publishes a new release roughly monthly and drops everything older than 60 days, so
+    this is kept current by ``microplanning.tasks.update_overture_release``, which runs daily.
+
+    There is only ever one row.
+    """
+
+    SINGLETON_PK = 1
+
+    release = geo_models.CharField(
+        max_length=32,
+        validators=[RegexValidator(r"^\d{4}-\d{2}-\d{2}\.\d+\Z")],
+        help_text="An Overture release, e.g. '2026-08-19.0'.",
+    )
+
+    def __str__(self):
+        return self.release
+
+    @classmethod
+    def current(cls):
+        """The release to draw footprints from, or None if we have never recorded one."""
+        row = cls.objects.filter(pk=cls.SINGLETON_PK).first()
+        return row.release if row else None
+
+    @classmethod
+    def set_current(cls, release):
+        """Record ``release`` as the current one. Raises ValidationError if it is not a release."""
+        row = cls.objects.filter(pk=cls.SINGLETON_PK).first() or cls(pk=cls.SINGLETON_PK)
+        row.release = release
+        row.full_clean(exclude=["created_by", "modified_by"])
+        row.save()

@@ -9,9 +9,10 @@ from commcare_connect.opportunity.tests.factories import OpportunityFactory, Pay
 from commcare_connect.opportunity.utils.invoice import (
     filter_invoices_by_month,
     get_invoice_month_options,
-    parse_invoice_month,
+    invoice_month_param,
     resolve_invoice_month,
     split_month_options,
+    with_invoice_month,
 )
 from commcare_connect.program.tests.factories import ProgramFactory
 
@@ -19,20 +20,6 @@ MAY = date(2026, 5, 1)
 JUNE = date(2026, 6, 1)
 JULY = date(2026, 7, 1)
 AUGUST = date(2026, 8, 1)
-
-
-@pytest.mark.parametrize(
-    "value, expected",
-    [
-        ("2026-06", JUNE),
-        ("", None),
-        (None, None),
-        ("June 2026", None),
-        ("2026-13", None),
-    ],
-)
-def test_parse_invoice_month(value, expected):
-    assert parse_invoice_month(value) == expected
 
 
 @pytest.mark.django_db
@@ -172,6 +159,19 @@ def test_resolve_invoice_month(month_param, highlight, expected):
 
 def test_resolve_invoice_month_without_options():
     assert resolve_invoice_month(None, []) is None
+
+
+@pytest.mark.parametrize("selected_month, expected", [(JUNE, "2026-06"), (None, "all")])
+def test_invoice_month_param(selected_month, expected):
+    assert invoice_month_param(selected_month) == expected
+
+
+@pytest.mark.parametrize(
+    "month_param, expected",
+    [("2026-06", "/invoice/?month=2026-06"), ("all", "/invoice/?month=all"), (None, "/invoice/"), ("", "/invoice/")],
+)
+def test_with_invoice_month(month_param, expected):
+    assert with_invoice_month("/invoice/", month_param) == expected
 
 
 @pytest.mark.django_db

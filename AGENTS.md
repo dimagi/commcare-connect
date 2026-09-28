@@ -67,7 +67,7 @@ commcare_connect/
   commcarehq_provider/ # OAuth provider: HQ as an identity provider
   ocs_provider/    # Open Chat Studio integration
   data_export/     # CSV/streaming exports over OAuth token scopes
-  microplanning/   # Maps, catchment areas (Mapbox)
+  microplanning/   # Work areas, coverage tracking, maps (Mapbox)
   reports/         # KPI and admin reports
   flags/           # Waffle feature flag/switch name constants
   multidb/         # Secondary DB support + logical replication
@@ -90,7 +90,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 
 - **Waffle flags**: per-request/per-user feature toggles. Names in `flags/flag_names.py`, checked with `flag_is_active(request, NAME)`, backed by the custom `Flag` model in `flags/models.py`.
 - **Waffle switches**: global on/off toggles. Names in `flags/switch_names.py`, checked with `switch_is_active(NAME)`.
-- **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, `catchment`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
+- **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
 - **Verification flag config**: which validation flags an opportunity applies — `OpportunityVerificationFlags` and `DeliverUnitFlagRules` in `opportunity/models.py`.
 
 **"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView`, the `Worker*Table` classes and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.

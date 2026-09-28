@@ -30,8 +30,19 @@ class ContactView(HomeView):
     template_name = "prelogin/contact.html"
 
 
+class InActionView(HomeView):
+    """ "Connect in action" story pages.
+
+    Standalone templates rather than SPA sections: each one carries its own
+    stylesheet and scroll script, and none of it belongs in home.html's bundle.
+    """
+
+    template_name = "prelogin/in-action.html"
+
+
 home = HomeView.as_view()
 contact = ContactView.as_view()
+in_action_nigeria_cholera = InActionView.as_view()
 
 
 @require_GET

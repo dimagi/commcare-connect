@@ -17,8 +17,7 @@
     <div x-data="invoiceFormHandler()">
       {% crispy form %}
       <div class="mt-6 flex justify-start gap-4">
-        <a href="{% url 'opportunity:invoice_list' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
-           class="button button-md outline-style">{% translate "Back to Invoices" %}</a>
+        <a href="{{ invoice_list_url }}" class="button button-md outline-style">{% translate "Back to Invoices" %}</a>
         <!--  I am a PM -->
         {% if request.is_opportunity_pm %}
           {% if invoice_status == 'pending_pm_review' %}
@@ -27,7 +26,7 @@
                class="button button-md primary-dark">{% translate "Approve for Payment Processing" %}</a>
           {% elif invoice_status == 'ready_to_pay' %}
             <a @click="rejectInvoice()" class="button button-md outline-style">{% translate "Reject" %}</a>
-            <button hx-post="{% url 'opportunity:invoice_pay' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
+            <button hx-post="{% url 'opportunity:invoice_pay' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}{% querystring month=month_param %}"
                     hx-vals='{"pk": "{{ form.instance.payment_invoice_id }}"}'
                     class="button button-md primary-dark justify-center !inline-flex"
                     {% if form.instance.payment %}disabled{% endif %}>{% translate "Pay" %}</button>

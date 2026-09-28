@@ -7,7 +7,7 @@ class Flags(Enum):
     DUPLICATE = "duplicate"
     GPS = "gps"
     LOCATION = "location"
-    CATCHMENT = "catchment"
+    CATCHMENT = "catchment"  # legacy: feature removed, kept so historical flag_reason data still resolves
     FORM_SUBMISSION_PERIOD = "form_submission_period"
     ATTACHMENT_MISSING = "attachment_missing"
     DURATION = "duration"
@@ -20,7 +20,7 @@ class FlagDescription(Enum):
     DUPLICATE = "A beneficiary with the same identifier already exists"
     GPS = "GPS data is missing"
     LOCATION = "Visit location is too close to another visit"
-    CATCHMENT = "Visit outside worker catchment areas"
+    CATCHMENT = "Visit outside worker catchment areas"  # legacy: feature removed, kept for historical flag_reason data
     FORM_SUBMISSION_PERIOD = "Form was submitted before the start time"
     ATTACHMENT_MISSING = "Form was submitted without attachements."
     DURATION = "The form was completed too quickly."
@@ -43,7 +43,7 @@ class FlagLabels(Enum):
     DUPLICATE = "Duplicate"
     GPS = "GPS"
     LOCATION = "Location"
-    CATCHMENT = "Catchment"
+    CATCHMENT = "Catchment"  # legacy: feature removed, kept so historical flag_reason data still resolves
     FORM_SUBMISSION_PERIOD = "Off Hours"
     ATTACHMENT_MISSING = "No Attachment"
     DURATION = "Duration"

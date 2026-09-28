@@ -8,14 +8,12 @@ from tablib import Dataset
 
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
-    export_catchment_area_table,
     export_user_status_table,
     export_user_visit_review_data,
 )
 from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit, VisitReviewStatus
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
-    CatchmentAreaFactory,
     CompletedModuleFactory,
     DeliverUnitFactory,
     LearnModuleFactory,
@@ -298,42 +296,6 @@ def test_export_user_status_table_data(opportunity: Opportunity):
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
-
-
-@pytest.mark.django_db
-def test_export_catchment_area_table_data(opportunity: Opportunity):
-    catchments = CatchmentAreaFactory.create_batch(5, opportunity=opportunity)
-    expected_headers = [
-        "Latitude",
-        "Longitude",
-        "Area name",
-        "Radius",
-        "Active",
-        "Username",
-        "Site code",
-        "Name",
-        "Phone Number",
-    ]
-
-    data_set = export_catchment_area_table(opportunity)
-
-    assert set(expected_headers).issubset(set(data_set.headers)), (
-        f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
-    )
-
-    assert len(data_set) == len(catchments), f"Expected {len(catchments)} catchments, but got {len(data_set)}"
-
-    for i, catchment in enumerate(catchments):
-        exported_data = data_set[i]
-        assert catchment.latitude == exported_data[data_set.headers.index("Latitude")]
-        assert catchment.longitude == exported_data[data_set.headers.index("Longitude")]
-        assert catchment.name == exported_data[data_set.headers.index("Area name")]
-        assert catchment.radius == exported_data[data_set.headers.index("Radius")]
-        expected_active = "Yes" if catchment.active else "No"
-        assert expected_active == exported_data[data_set.headers.index("Active")]
-        expected_username = catchment.opportunity_access.user.username if catchment.opportunity_access.user else ""
-        assert expected_username == exported_data[data_set.headers.index("Username")]
-        assert catchment.site_code == exported_data[data_set.headers.index("Site code")]
 
 
 @pytest.mark.django_db
