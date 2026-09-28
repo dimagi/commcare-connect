@@ -225,13 +225,17 @@ def test_selection_bar_bindings_are_invoked_as_functions(client, opportunity, or
 
 
 @pytest.mark.django_db
-def test_export_notification_shows_once(client, opportunity, org_user_member):
-    """The task id stays in the URL, so a refresh or back navigation must not bring the notification back."""
+@pytest.mark.parametrize("finished, shown_again", [(False, True), (True, False)])
+def test_export_notification_after_refresh(client, opportunity, org_user_member, finished, shown_again):
+    """The task id stays in the URL. A refresh keeps a running export's progress, but must not
+    bring back the notification for one that has finished."""
     june_invoice(opportunity)
     client.force_login(org_user_member)
     org_slug = opportunity.organization.slug
     url = reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id))
     status_url = reverse("opportunity:export_status", args=(org_slug, "task-1"))
 
-    assert status_url in client.get(url, {"export_task_id": "task-1"}).content.decode()
-    assert status_url not in client.get(url, {"export_task_id": "task-1"}).content.decode()
+    with mock.patch("commcare_connect.opportunity.views.AsyncResult") as async_result:
+        async_result.return_value.ready.return_value = finished
+        assert status_url in client.get(url, {"export_task_id": "task-1"}).content.decode()
+        assert (status_url in client.get(url, {"export_task_id": "task-1"}).content.decode()) is shown_again

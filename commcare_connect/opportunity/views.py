@@ -1793,7 +1793,12 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
     export_task_id = request.GET.get("export_task_id")
-    if export_task_id and not claim_task_outcome(request, INVOICE_EXPORT_CLAIMED_SESSION_KEY, export_task_id):
+    # Only a finished export is claimed, so a refresh while it runs keeps showing its progress.
+    if (
+        export_task_id
+        and AsyncResult(export_task_id).ready()
+        and not claim_task_outcome(request, INVOICE_EXPORT_CLAIMED_SESSION_KEY, export_task_id)
+    ):
         export_task_id = None
 
     all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
