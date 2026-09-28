@@ -1,6 +1,7 @@
 // Totals for the invoice list selection bar.
 //
-// The template combines this with the shared `selectableTable` mixin, which handles select-all:
+// The template combines this with the shared `selectableTable` mixin, which handles selecting and
+// clearing rows:
 //   x-data="{ ...selectableTable(), ...invoiceExportPricing() }"
 //
 // Define methods here, never getters. Spreading an object runs its getters immediately, before
@@ -8,11 +9,6 @@
 // calls these with `()`.
 function invoiceExportPricing() {
   return {
-    clearSelection() {
-      this.selected = [];
-      this.selectAll = false;
-    },
-
     // Adds up the selected rows. An invoice has no USD amount until an exchange rate has been
     // applied to it, so those are counted separately rather than added in as zero.
     selectionTotals() {
@@ -43,11 +39,6 @@ function invoiceExportPricing() {
 
     selectedUnpricedCount() {
       return this.selectionTotals().unpriced;
-    },
-
-    // Rows the user can select, which is however many this page of the table shows.
-    selectableRowCount() {
-      return document.querySelectorAll('input[name="row_select"]').length;
     },
   };
 }
