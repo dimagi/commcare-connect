@@ -31,9 +31,11 @@ from commcare_connect.reports.decorators import KPIReportMixin
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
 from commcare_connect.reports.tasks import export_invoice_report_task
-from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.celery import download_export_file, pending_exports, render_export_status, track_export
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, INVOICE_REPORT_ACCESS
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
+
+INVOICE_REPORT_EXPORT_SCOPE = "invoice_report"
 
 PERIOD_CHOICES = [
     ("monthly", "Monthly"),
@@ -266,7 +268,7 @@ class InvoiceReportView(
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["title"] = "Invoice Report"
-        context["task_id"] = self.request.GET.get("task_id")
+        context["export_task_ids"] = pending_exports(self.request, INVOICE_REPORT_EXPORT_SCOPE)
 
         if self.filterset:
             filter_fields = self.filterset.form.fields.keys()
@@ -319,10 +321,10 @@ def export_invoice_report(request):
         filters_data["to_date"] = filters_data["to_date"].isoformat()
 
     task = export_invoice_report_task.delay(filters_data, user_id=request.user.id)
+    track_export(request, INVOICE_REPORT_EXPORT_SCOPE, task.id)
 
     #  Build redirect URL preserving applied filters
     query_params = {k: v for k, v in filters_data.items() if v not in [None, "", []]}
-    query_params["task_id"] = task.id
     redirect_url = f"{reverse('reports:invoice_report')}?{urlencode(query_params, doseq=True)}"
     response = HttpResponse(status=204)
     response["HX-Redirect"] = redirect_url

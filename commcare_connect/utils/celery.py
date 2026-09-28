@@ -1,3 +1,6 @@
+import time
+
+from celery import current_app
 from celery.result import AsyncResult
 from django.http import FileResponse, Http404
 from django.shortcuts import render
@@ -7,6 +10,9 @@ CELERY_TASK_SUCCESS = "SUCCESS"
 CELERY_TASK_IN_PROGRESS = "PROGRESS"
 CELERY_TASK_PENDING = "PENDING"
 CELERY_TASK_FAILURE = "FAILURE"
+
+# {task_id: {"scope": ..., "started": epoch seconds}}
+PENDING_EXPORTS_SESSION_KEY = "pending_exports"
 
 
 def set_task_progress(task, message, is_complete=False, is_error=False, errors=None):
@@ -60,6 +66,8 @@ def render_export_status(
 ):
     """Generic export status renderer."""
     progress = get_task_progress(request, task_id, ownership_check)
+    if progress["complete"] or progress.get("error"):
+        forget_export(request, task_id)
     return render(
         request,
         "components/upload_progress_bar.html",
@@ -102,3 +110,27 @@ def download_export_file(
         filename=f"{filename_without_ext}.{export_format}",
         content_type=TableExport.FORMATS.get(export_format),
     )
+
+
+def track_export(request, scope, task_id):
+    """Kept in the session, not the URL, so a refresh doesn't replay the notification.
+    render_export_status forgets it once the outcome is shown."""
+    pending = request.session.get(PENDING_EXPORTS_SESSION_KEY, {})
+    pending[task_id] = {"scope": scope, "started": time.time()}
+    request.session[PENDING_EXPORTS_SESSION_KEY] = pending
+
+
+def pending_exports(request, scope):
+    pending = request.session.get(PENDING_EXPORTS_SESSION_KEY, {})
+    # An expired result reports as PENDING and would poll forever.
+    cutoff = time.time() - current_app.conf.result_expires.total_seconds()
+    live = {task_id: export for task_id, export in pending.items() if export["started"] > cutoff}
+    if live != pending:
+        request.session[PENDING_EXPORTS_SESSION_KEY] = live
+    return [task_id for task_id, export in live.items() if export["scope"] == scope]
+
+
+def forget_export(request, task_id):
+    pending = request.session.get(PENDING_EXPORTS_SESSION_KEY, {})
+    if pending.pop(task_id, None):
+        request.session[PENDING_EXPORTS_SESSION_KEY] = pending
