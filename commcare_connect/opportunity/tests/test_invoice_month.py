@@ -9,8 +9,10 @@ from commcare_connect.opportunity.tests.factories import OpportunityFactory, Pay
 from commcare_connect.opportunity.utils.invoice import (
     filter_invoices_by_month,
     get_invoice_month_options,
+    invoice_month_param,
     resolve_invoice_month,
     split_month_options,
+    with_invoice_month,
 )
 from commcare_connect.program.tests.factories import ProgramFactory
 
@@ -157,6 +159,19 @@ def test_resolve_invoice_month(month_param, highlight, expected):
 
 def test_resolve_invoice_month_without_options():
     assert resolve_invoice_month(None, []) is None
+
+
+@pytest.mark.parametrize("selected_month, expected", [(JUNE, "2026-06"), (None, "all")])
+def test_invoice_month_param(selected_month, expected):
+    assert invoice_month_param(selected_month) == expected
+
+
+@pytest.mark.parametrize(
+    "month_param, expected",
+    [("2026-06", "/invoice/?month=2026-06"), ("all", "/invoice/?month=all"), (None, "/invoice/"), ("", "/invoice/")],
+)
+def test_with_invoice_month(month_param, expected):
+    assert with_invoice_month("/invoice/", month_param) == expected
 
 
 @pytest.mark.django_db

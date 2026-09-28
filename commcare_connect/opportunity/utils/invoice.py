@@ -1,6 +1,7 @@
 import calendar
 import datetime
 import secrets
+from urllib.parse import urlencode
 
 from django.db.models import Count, Min, Q
 from django.utils.translation import gettext as _
@@ -121,6 +122,16 @@ def resolve_invoice_month(month_param, month_options, highlight=None):
     if requested and requested <= get_month_start_date(datetime.date.today()):
         return requested
     return month_options[0] if month_options else None
+
+
+def invoice_month_param(selected_month):
+    """The `month` query value that reopens the invoice list on `selected_month` (None means all months)."""
+    return selected_month.strftime("%Y-%m") if selected_month else "all"
+
+
+def with_invoice_month(url, month_param):
+    """Append the invoice list's `month` so pages reached from the list can return to the same month."""
+    return f"{url}?{urlencode({'month': month_param})}" if month_param else url
 
 
 def generate_invoice_number():
