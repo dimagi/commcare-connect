@@ -342,6 +342,19 @@
   @apply px-4 py-1;
 }
 
+.chip-group {
+  @apply inline-flex flex-wrap gap-1 rounded-full bg-gray-100 p-1;
+}
+
+.chip-group .chip {
+  @apply border-transparent text-gray-600;
+}
+
+/* The active chip is the current state, not an action: clicking it would only reload the page. */
+.chip-group .chip-active {
+  @apply text-brand-deep-purple pointer-events-none border-gray-200 bg-white shadow-sm;
+}
+
 /*-- tooltips ---------------------------------------*/
 @layer components {
   .tooltip {
