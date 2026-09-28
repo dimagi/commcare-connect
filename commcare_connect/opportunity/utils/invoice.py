@@ -1,3 +1,4 @@
+import calendar
 import datetime
 import secrets
 
@@ -7,7 +8,10 @@ from django.utils.translation import gettext_lazy
 
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.utils.invoice_line_items import billable_works_qs
-from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_start_date
+from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_series, get_month_start_date
+
+# Months shown as chips on the invoice list; older ones go into the dropdown.
+RECENT_MONTH_COUNT = 6
 
 
 def get_start_date_for_invoice(opportunity):
@@ -40,6 +44,88 @@ def get_end_date_for_invoice(start_date):
     if start_date > last_day_previous_month:
         return datetime.date.today() - datetime.timedelta(days=1)
     return last_day_previous_month
+
+
+def parse_invoice_month(value):
+    """Parse a `YYYY-MM` query value into the first day of that month, or None if absent or malformed."""
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(value, "%Y-%m").date()
+    except ValueError:
+        return None
+
+
+def filter_invoices_by_month(queryset, month_start):
+    """Invoices that belong to the calendar month starting on `month_start`.
+
+    A service delivery invoice belongs to every month its billing period overlaps, so an invoice
+    spanning several months is listed under each of them. A custom invoice belongs to the month
+    of its expense date. When those dates are missing the generation date decides.
+    """
+    month_end = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
+    month = (month_start, month_end)
+
+    period_overlaps = Q(
+        service_delivery=True,
+        start_date__isnull=False,
+        end_date__isnull=False,
+        start_date__lte=month_end,
+        end_date__gte=month_start,
+    )
+    period_missing = Q(service_delivery=True) & (Q(start_date__isnull=True) | Q(end_date__isnull=True))
+    expense_in_month = Q(service_delivery=False, date_of_expense__range=month)
+    expense_missing = Q(service_delivery=False, date_of_expense__isnull=True)
+    generated_in_month = Q(date__range=month)
+
+    return queryset.filter(
+        period_overlaps | expense_in_month | ((period_missing | expense_missing) & generated_in_month)
+    )
+
+
+def get_invoice_month_options(queryset):
+    """The months that list at least one invoice in `queryset`, newest first.
+
+    A billing period may run into the future; those months are not offered.
+    """
+    current_month = get_month_start_date(datetime.date.today())
+    months = set()
+    rows = queryset.values("service_delivery", "start_date", "end_date", "date_of_expense", "date")
+    for row in rows:
+        months.update(month for month in _invoice_months(row) if month <= current_month)
+    return sorted(months, reverse=True)
+
+
+def _invoice_months(row):
+    """Python mirror of the `filter_invoices_by_month` rule, for one invoice's date fields."""
+    if row["service_delivery"] and row["start_date"] and row["end_date"]:
+        return get_month_series(get_month_start_date(row["start_date"]), get_month_start_date(row["end_date"]))
+    if not row["service_delivery"] and row["date_of_expense"]:
+        return [get_month_start_date(row["date_of_expense"])]
+    return [get_month_start_date(row["date"])]
+
+
+def split_month_options(month_options, selected_month=None, recent_count=RECENT_MONTH_COUNT):
+    """Split the months into the chips shown inline and the ones behind the dropdown.
+
+    The selected month is always a chip, however old it is, so the current filter stays visible.
+    """
+    chips = month_options[:recent_count]
+    if selected_month and selected_month in month_options and selected_month not in chips:
+        chips = chips + [selected_month]
+    older = [month for month in month_options if month not in chips]
+    return chips, older
+
+
+def resolve_invoice_month(month_param, month_options, highlight=None):
+    """Which month the invoice list shows: the requested one, everything for `all` or a highlight
+    link, otherwise the most recent month. None means all months."""
+    if month_param == "all" or highlight:
+        return None
+    requested = parse_invoice_month(month_param)
+    if requested and requested <= get_month_start_date(datetime.date.today()):
+        return requested
+    return month_options[0] if month_options else None
 
 
 def generate_invoice_number():

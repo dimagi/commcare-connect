@@ -22,6 +22,8 @@ inv build-js --prod                 # production build
 npm run build                       # production build (what CI runs)
 
 # Celery (local dev)
+# Tasks run eagerly inside the request by default, so no worker is needed -- but that blocks the
+# request and hides progress UIs. Set CELERY_TASK_ALWAYS_EAGER=False in .env and run a worker:
 celery -A config.celery_app worker -B -l info
 
 # Tests
