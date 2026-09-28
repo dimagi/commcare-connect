@@ -34,6 +34,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.utils.invoice import with_invoice_month
 from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
@@ -432,6 +433,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.opportunity = kwargs.pop("opportunity")
         self.highlight_invoice_number = kwargs.pop("highlight_invoice_number", None)
         self.is_pm = kwargs.pop("is_pm", False)
+        self.month_param = kwargs.pop("month_param", None)
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
 
@@ -452,9 +454,12 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return record.get_status_display()
 
     def render_actions(self, record):
-        invoice_review_url = reverse(
-            "opportunity:invoice_review",
-            args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+        invoice_review_url = with_invoice_month(
+            reverse(
+                "opportunity:invoice_review",
+                args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+            ),
+            self.month_param,
         )
         review_button = (
             f'<a href="{invoice_review_url}" '
@@ -464,8 +469,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
         pay_button = ""
         if self.is_pm:
             if record.status == InvoiceStatus.READY_TO_PAY:
-                invoice_pay_url = reverse(
-                    "opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]
+                invoice_pay_url = with_invoice_month(
+                    reverse("opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]),
+                    self.month_param,
                 )
                 disabled = "disabled" if getattr(record, "payment", None) else ""
                 pay_button = f"""

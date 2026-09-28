@@ -193,8 +193,10 @@ from commcare_connect.opportunity.utils.invoice import (
     InvoiceWorkflow,
     filter_invoices_by_month,
     get_invoice_month_options,
+    invoice_month_param,
     resolve_invoice_month,
     split_month_options,
+    with_invoice_month,
 )
 from commcare_connect.opportunity.utils.invoice_export import (
     get_exportable_invoices,
@@ -1801,6 +1803,7 @@ def invoice_list(request, org_slug, opp_id):
         csrf_token=csrf_token,
         highlight_invoice_number=highlight_invoice_number,
         is_pm=request.is_opportunity_pm,
+        month_param=invoice_month_param(selected_month),
     )
 
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
@@ -1813,13 +1816,13 @@ def invoice_list(request, org_slug, opp_id):
             "month_chips": month_chips,
             "older_months": older_months,
             "selected_month": selected_month,
-            "invoice_count": queryset.count(),
             "export_task_id": export_task_id,
             # The month the page is actually showing, not the raw query value: an export
             # started from here must cover exactly what the user is looking at.
             "month_param": selected_month.strftime("%Y-%m") if selected_month else "all",
             "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
             "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
+            "invoice_count": table.paginator.count,
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
@@ -1929,10 +1932,16 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
         form = self.get_form()
+        month_param = self.request.GET.get("month")
+        invoice_list_url = with_invoice_month(
+            reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)), month_param
+        )
         context.update(
             {
                 "opportunity": opportunity,
                 "form": form,
+                "month_param": month_param,
+                "invoice_list_url": invoice_list_url,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
                 "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
@@ -1942,10 +1951,7 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
                         "title": opportunity.name,
                         "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
                     },
-                    {
-                        "title": "Invoices",
-                        "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)),
-                    },
+                    {"title": "Invoices", "url": invoice_list_url},
                     {
                         "title": self.breadcrumb_title,
                         "url": reverse(
@@ -2111,7 +2117,7 @@ def invoice_update_status(request, org_slug, opp_id):
 
     return HttpResponse(
         status=204,
-        headers={"HX-Redirect": reverse("opportunity:invoice_list", args=[org_slug, opp_id])},
+        headers={"HX-Redirect": _invoice_list_redirect_url(request, org_slug, opp_id)},
     )
 
 
@@ -2153,8 +2159,12 @@ def invoice_pay(request, org_slug, opp_id):
     transaction.on_commit(partial(send_invoice_paid_mail.delay, request.opportunity.pk, paid_invoice_ids))
     if paid_invoice_ids:
         messages.success(request, _("Invoice(s) successfully marked as paid."))
-    redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
-    return HttpResponse(headers={"HX-Redirect": redirect_url})
+    return HttpResponse(headers={"HX-Redirect": _invoice_list_redirect_url(request, org_slug, opp_id)})
+
+
+def _invoice_list_redirect_url(request, org_slug, opp_id):
+    """Back to the invoice list, on the month the action was started from."""
+    return with_invoice_month(reverse("opportunity:invoice_list", args=(org_slug, opp_id)), request.GET.get("month"))
 
 
 @opp_standard_access_required
