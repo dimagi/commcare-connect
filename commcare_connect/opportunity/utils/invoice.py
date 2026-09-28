@@ -8,7 +8,12 @@ from django.utils.translation import gettext_lazy
 
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.utils.invoice_line_items import billable_works_qs
-from commcare_connect.utils.datetime import get_end_date_previous_month, get_month_series, get_month_start_date
+from commcare_connect.utils.datetime import (
+    get_end_date_previous_month,
+    get_month_series,
+    get_month_start_date,
+    parse_year_month,
+)
 
 # Months shown as chips on the invoice list; older ones go into the dropdown.
 RECENT_MONTH_COUNT = 6
@@ -44,16 +49,6 @@ def get_end_date_for_invoice(start_date):
     if start_date > last_day_previous_month:
         return datetime.date.today() - datetime.timedelta(days=1)
     return last_day_previous_month
-
-
-def parse_invoice_month(value):
-    """Parse a `YYYY-MM` query value into the first day of that month, or None if absent or malformed."""
-    if not value:
-        return None
-    try:
-        return datetime.datetime.strptime(value, "%Y-%m").date()
-    except ValueError:
-        return None
 
 
 def filter_invoices_by_month(queryset, month_start):
@@ -122,7 +117,7 @@ def resolve_invoice_month(month_param, month_options, highlight=None):
     link, otherwise the most recent month. None means all months."""
     if month_param == "all" or highlight:
         return None
-    requested = parse_invoice_month(month_param)
+    requested = parse_year_month(month_param)
     if requested and requested <= get_month_start_date(datetime.date.today()):
         return requested
     return month_options[0] if month_options else None

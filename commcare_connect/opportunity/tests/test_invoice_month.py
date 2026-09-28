@@ -9,7 +9,6 @@ from commcare_connect.opportunity.tests.factories import OpportunityFactory, Pay
 from commcare_connect.opportunity.utils.invoice import (
     filter_invoices_by_month,
     get_invoice_month_options,
-    parse_invoice_month,
     resolve_invoice_month,
     split_month_options,
 )
@@ -19,20 +18,6 @@ MAY = date(2026, 5, 1)
 JUNE = date(2026, 6, 1)
 JULY = date(2026, 7, 1)
 AUGUST = date(2026, 8, 1)
-
-
-@pytest.mark.parametrize(
-    "value, expected",
-    [
-        ("2026-06", JUNE),
-        ("", None),
-        (None, None),
-        ("June 2026", None),
-        ("2026-13", None),
-    ],
-)
-def test_parse_invoice_month(value, expected):
-    assert parse_invoice_month(value) == expected
 
 
 @pytest.mark.django_db
