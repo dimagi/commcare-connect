@@ -45,7 +45,7 @@ class PendingInviteTable(tables.Table):
         fields = ("email", "role", "date_modified")
         sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
         empty_text = _("No pending invites.")
-        # The workspace page hosts this table alongside OrgMemberTable and feeds both
+        # The organization page hosts this table alongside OrgMemberTable and feeds both
         # from one query string, so prefix these params to keep sorting and paging
         # on the two tables independent.
         prefix = "invites-"

@@ -32,7 +32,7 @@ def workspace_label(organization: Organization) -> str:
 
 
 def merge_preview(source: Organization, target: Organization) -> dict:
-    """Side-by-side comparison of the two selected workspaces, in the column order the page renders."""
+    """Side-by-side comparison of the two selected organizations, in the column order the page renders."""
     organizations = [source, target]
     counts = [relation_counts(organization) for organization in organizations]
     return {
@@ -47,13 +47,13 @@ def merge_preview(source: Organization, target: Organization) -> dict:
 
 
 class OrganizationMergeForm(forms.Form):
-    """Picks which of the two selected workspaces survives the merge."""
+    """Picks which of the two selected organizations survives the merge."""
 
     target = forms.ModelChoiceField(
         queryset=Organization.objects.none(),
         widget=forms.RadioSelect,
         empty_label=None,
-        label="Workspace to keep",
+        label="Organization to keep",
     )
 
     def __init__(self, *args, selected: QuerySet, **kwargs):
@@ -90,14 +90,14 @@ class OrganizationAdmin(admin.ModelAdmin):
             actions.pop(MERGE_ACTION, None)
         return actions
 
-    @admin.action(description="Merge selected workspaces (irreversible)")
+    @admin.action(description="Merge selected organizations (irreversible)")
     def merge_workspaces(self, request, queryset):
         if not request.user.is_superuser:
             raise PermissionDenied
 
         selected = queryset.order_by("pk")
         if selected.count() != 2:
-            self.message_user(request, "Select exactly two workspaces to merge.", messages.WARNING)
+            self.message_user(request, "Select exactly two organizations to merge.", messages.WARNING)
             return None
 
         confirming = "confirm" in request.POST
@@ -122,7 +122,7 @@ class OrganizationAdmin(admin.ModelAdmin):
             object_repr=source_repr,
             action_flag=DELETION,
         )
-        self.log_change(request, target, f"Merged workspace {summary.source_slug} into this one")
+        self.log_change(request, target, f"Merged organization {summary.source_slug} into this one")
         self.message_user(
             request,
             f"Merged {summary.source_slug} into {summary.target_slug}. {summary}",
@@ -135,7 +135,7 @@ class OrganizationAdmin(admin.ModelAdmin):
         context = {
             **self.admin_site.each_context(request),
             **merge_preview(*organizations),
-            "title": "Merge workspaces",
+            "title": "Merge organizations",
             "opts": self.model._meta,
             "media": self.media + form.media,
             "form": form,

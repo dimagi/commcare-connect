@@ -580,7 +580,7 @@ class OpportunityInitForm(forms.ModelForm):
             queryset=program_members,
             required=True,
             widget=forms.Select(attrs={"class": "form-control"}),
-            label=_("Network Manager Workspace"),
+            label=_("Network Manager Organization"),
         )
         opportunity_details_row = self.helper.layout[0]
         opportunity_details_row.fields.insert(1, Column(Field("organization"), css_class="col-span-2"))

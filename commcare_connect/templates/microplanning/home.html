@@ -146,7 +146,7 @@
             </button>
           </div>
         </details>
-        {% if is_program_manager and not assignment_mode and not inaccessible_mode %}
+        {% if not assignment_mode and not inaccessible_mode %}
           <div class="ml-auto flex items-center gap-2">
             {% if inaccessible_request_count %}
               <a href="?inaccessible_mode=1" class="button button-md outline-style">
@@ -157,9 +157,11 @@
                 </span>
               </a>
             {% endif %}
-            <a href="?assignment_mode=1" class="button button-md primary-dark">
-              <i class="fa-solid fa-users-gear"></i> {% translate "Enter Assignment Mode" %}
-            </a>
+            {% if is_program_manager %}
+              <a href="?assignment_mode=1" class="button button-md primary-dark">
+                <i class="fa-solid fa-users-gear"></i> {% translate "Enter Assignment Mode" %}
+              </a>
+            {% endif %}
           </div>
         {% endif %}
         {% if inaccessible_mode %}
