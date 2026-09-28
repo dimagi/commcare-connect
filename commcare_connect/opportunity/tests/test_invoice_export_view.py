@@ -108,6 +108,7 @@ class TestExportInvoicesView:
         posted_month = re.search(r'name="month" value="([^"]*)"', listing.content.decode()).group(1)
 
         with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+            delay.return_value.id = "task-1"
             self._post(client, org_user_member, opportunity, export_type=InvoiceExportForm.PDF_ZIP, month=posted_month)
 
         delay.assert_called_once_with(opportunity.pk, [july.pk])
@@ -116,6 +117,7 @@ class TestExportInvoicesView:
         chosen = june_invoice(opportunity, invoice_number="A")
         june_invoice(opportunity, invoice_number="B")
         with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+            delay.return_value.id = "task-1"
             self._post(
                 client,
                 org_user_member,
@@ -226,10 +228,28 @@ def test_export_notification_after_refresh(client, opportunity, org_user_member,
     june_invoice(opportunity)
     client.force_login(org_user_member)
     org_slug = opportunity.organization.slug
-    url = reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id))
+    with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
+        delay.return_value.id = "task-1"
+        started = client.post(
+            reverse("opportunity:export_invoices", args=(org_slug, opportunity.opportunity_id)),
+            {"export_type": InvoiceExportForm.PDF_ZIP, "month": "2026-06"},
+        )
     status_url = reverse("opportunity:export_status", args=(org_slug, "task-1"))
 
     with mock.patch("commcare_connect.opportunity.views.AsyncResult") as async_result:
         async_result.return_value.ready.return_value = finished
-        assert status_url in client.get(url, {"export_task_id": "task-1"}).content.decode()
-        assert (status_url in client.get(url, {"export_task_id": "task-1"}).content.decode()) is shown_again
+        assert status_url in client.get(started.url).content.decode()
+        assert (status_url in client.get(started.url).content.decode()) is shown_again
+
+
+@pytest.mark.django_db
+def test_export_notification_ignores_a_task_this_user_did_not_start(client, opportunity, org_user_member):
+    """An expired or unknown task id looks like a queued one to Celery, so it would poll forever."""
+    june_invoice(opportunity)
+    client.force_login(org_user_member)
+    org_slug = opportunity.organization.slug
+    url = reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id))
+
+    body = client.get(url, {"export_task_id": "stale-task"}).content.decode()
+
+    assert reverse("opportunity:export_status", args=(org_slug, "stale-task")) not in body

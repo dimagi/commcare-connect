@@ -275,8 +275,8 @@ INVOICE_EXPORT_TASKS = {
 }
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
-# Task id of the invoice export whose notification has already been shown to the user.
-INVOICE_EXPORT_CLAIMED_SESSION_KEY = "shown_invoice_export"
+# Task id of the invoice export this user started whose outcome has not been shown yet.
+INVOICE_EXPORT_SESSION_KEY = "pending_invoice_export"
 
 
 def get_opportunity_or_404(opp_id):
@@ -1793,13 +1793,12 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
     export_task_id = request.GET.get("export_task_id")
-    # Only a finished export is claimed, so a refresh while it runs keeps showing its progress.
-    if (
-        export_task_id
-        and AsyncResult(export_task_id).ready()
-        and not claim_task_outcome(request, INVOICE_EXPORT_CLAIMED_SESSION_KEY, export_task_id)
-    ):
+    # The id stays in the URL, so only trust it while it is the export this user started. A
+    # running export keeps showing its progress; a finished one is shown once, then forgotten.
+    if not export_task_id or export_task_id != request.session.get(INVOICE_EXPORT_SESSION_KEY):
         export_task_id = None
+    elif AsyncResult(export_task_id).ready():
+        del request.session[INVOICE_EXPORT_SESSION_KEY]
 
     all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
     month_options = get_invoice_month_options(all_invoices)
@@ -2080,6 +2079,7 @@ def export_invoices(request, org_slug, opp_id):
     # A bare delay() is safe here: the export only reads rows that were committed long ago, so
     # there is nothing for the worker to race with.
     task = INVOICE_EXPORT_TASKS[form.cleaned_data["export_type"]].delay(request.opportunity.pk, invoice_ids)
+    request.session[INVOICE_EXPORT_SESSION_KEY] = task.id
 
     query = {"export_task_id": task.id}
     if form.cleaned_data["month"]:
