@@ -368,9 +368,10 @@ def _get_work_areas_blocked_message(work_area_count, areas_assigned):
 def get_metrics_for_microplanning(opportunity):
     qs = annotate_approved_visit_counts(WorkArea.objects.filter(opportunity=opportunity), opportunity, ncwa=True)
 
-    # REQUEST_FOR_INACCESSIBLE counts as inaccessible too for metrics pupose,
-    #  even though it isn't a final status.
-    inaccessible_status = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
+    # Work Areas Done counts an area still awaiting review, since raising the request is as far
+    # as the worker can take it. The Inaccessible Work Areas tile counts only the areas whose
+    # inaccessibility request was accepted.
+    inaccessible_or_requested = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
     has_evc_target = Q(expected_visit_count__gt=0)
     visited_children_found = Q(hsd_count__gte=1)
     visited_no_children_found = Q(ncwa_count__gte=1)
@@ -383,7 +384,8 @@ def get_metrics_for_microplanning(opportunity):
             "id",
             # An OR filter, so an area meeting several conditions (e.g. inaccessible with an
             # approved visit already on file) is still counted once.
-            filter=IN_SCOPE_WORK_AREA & (visited_children_found | visited_no_children_found | inaccessible_status),
+            filter=IN_SCOPE_WORK_AREA
+            & (visited_children_found | visited_no_children_found | inaccessible_or_requested),
         ),
         unvisited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.NOT_VISITED)),
         visited_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_children_found),
@@ -393,7 +395,7 @@ def get_metrics_for_microplanning(opportunity):
             # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
             filter=IN_SCOPE_WORK_AREA & has_evc_target & Q(hsd_count__gte=F("expected_visit_count")),
         ),
-        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & inaccessible_status),
+        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.INACCESSIBLE)),
         total_expected_visits=Sum("expected_visit_count", filter=IN_SCOPE_WORK_AREA),
         total_hsd_visits=Sum("hsd_count", filter=IN_SCOPE_WORK_AREA),
     )
