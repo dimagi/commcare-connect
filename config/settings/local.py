@@ -29,8 +29,15 @@ ACCOUNT_EMAIL_VERIFICATION = "optional"
 
 # Celery
 # ------------------------------------------------------------------------------
-CELERY_TASK_ALWAYS_EAGER = True
+# Tasks run inside the request by default, so no worker is needed. That also means the request
+# blocks until the task finishes, which hides any progress UI. To exercise the real asynchronous
+# flow, set CELERY_TASK_ALWAYS_EAGER=False in .env and run a worker:
+#     celery -A config.celery_app worker -B -l info
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=True)
 CELERY_TASK_EAGER_PROPAGATES = True
+# An eager task's result never reaches the result backend unless this is on. Pages that poll for
+# a task by id, such as the exports, would otherwise wait forever on work that already finished.
+CELERY_TASK_STORE_EAGER_RESULT = True
 
 # CommCareConnect
 # ------------------------------------------------------------------------------
