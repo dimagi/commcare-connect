@@ -125,6 +125,9 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
+        # Workspaces that already share a name must stay editable; only a new or changed name is checked.
+        if "name" not in self.changed_data:
+            return name
         duplicates = Organization.objects.filter(name__iexact=name)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)

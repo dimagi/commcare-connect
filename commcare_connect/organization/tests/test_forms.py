@@ -143,6 +143,25 @@ class TestOrganizationChangeForm:
         organization.refresh_from_db()
         assert organization.name == "New Name"
 
+    def test_workspace_sharing_a_name_stays_editable(self, organization: Organization, user: User):
+        Organization.objects.create(name=organization.name.upper())
+
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "short_name": "SHN"}, user=user, instance=organization
+        )
+
+        assert form.is_valid(), form.errors
+        form.save()
+        organization.refresh_from_db()
+        assert organization.short_name == "SHN"
+
+    def test_rename_to_a_taken_name_is_rejected(self, organization: Organization, user: User):
+        Organization.objects.create(name="Taken Name")
+
+        form = OrganizationChangeForm(data={"name": "taken name"}, user=user, instance=organization)
+
+        assert form.errors["name"] == ["A workspace with this name already exists."]
+
     @pytest.mark.parametrize("program_manager", [False, True])
     def test_program_manager_field_hidden_without_permission(
         self, organization: Organization, user: User, program_manager
