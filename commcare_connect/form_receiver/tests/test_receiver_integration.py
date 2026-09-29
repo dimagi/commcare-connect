@@ -36,6 +36,7 @@ from commcare_connect.opportunity.models import (
     LearnModule,
     Opportunity,
     OpportunityAccess,
+    OpportunityClaim,
     OpportunityClaimLimit,
     UserVisit,
     VisitReviewStatus,
@@ -266,6 +267,34 @@ def test_over_limit_status_preserved_when_duplicate_flag_disabled(
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
     assert visit.status_modified_date >= before_request
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "missing_model, user_lookup",
+    [
+        (OpportunityClaim, "opportunity_access__user"),
+        (OpportunityClaimLimit, "opportunity_claim__opportunity_access__user"),
+    ],
+)
+def test_receiver_deliver_form_without_claim_or_claim_limit(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity, missing_model, user_lookup
+):
+    # Delivering without a claim, or without a claim limit for the payment unit, is a rejected
+    # submission, not an unhandled error.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    missing_model.objects.filter(**{user_lookup: user_with_connectid_link}).delete()
+
+    make_request(
+        api_client,
+        form_json,
+        user_with_connectid_link,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        oauth_application=oauth_application,
+    )
+
+    assert not UserVisit.objects.filter(user=user_with_connectid_link).exists()
 
 
 @pytest.mark.django_db

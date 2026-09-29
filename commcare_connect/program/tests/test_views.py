@@ -186,7 +186,7 @@ class TestInviteOrganizationView(BaseProgramTest):
             return
         assert response.status_code == HttpResponseRedirect.status_code
         assert invited.exists()
-        assert "Workspace invited successfully!" in [
+        assert "Organization invited successfully!" in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
 

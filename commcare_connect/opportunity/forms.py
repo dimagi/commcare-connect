@@ -58,6 +58,7 @@ from commcare_connect.opportunity.utils.invoice import (
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
+from commcare_connect.opportunity.utils.invoice_export import get_exportable_invoices
 from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
@@ -65,6 +66,7 @@ from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.datetime import parse_year_month
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -580,7 +582,7 @@ class OpportunityInitForm(forms.ModelForm):
             queryset=program_members,
             required=True,
             widget=forms.Select(attrs={"class": "form-control"}),
-            label=_("Network Manager Workspace"),
+            label=_("Network Manager Organization"),
         )
         opportunity_details_row = self.helper.layout[0]
         opportunity_details_row.fields.insert(1, Column(Field("organization"), css_class="col-span-2"))
@@ -1193,7 +1195,10 @@ class AddBudgetExistingUsersForm(forms.Form):
         return end_date
 
     def _validate_budget_increase(self):
-        if self.budget_change > self.opportunity.remaining_budget:
+        # Lock the opportunity for the rest of the request so a concurrent claim or increase
+        # cannot spend the same budget between this check and save().
+        opportunity = Opportunity.objects.select_for_update().get(pk=self.opportunity.pk)
+        if self.budget_change > opportunity.remaining_budget:
             raise forms.ValidationError(
                 {"number_of_visits": gettext("The number of visits being increased exceeds the opportunity budget.")}
             )
@@ -1640,6 +1645,36 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
     invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
+
+
+class InvoiceExportForm(forms.Form):
+    """Which invoices a bulk export covers, and in what shape.
+
+    Selected invoices win; with nothing selected the export covers the whole month, or every
+    exportable invoice when the list is showing all months.
+    """
+
+    PDF_ZIP = "pdf_zip"
+    CSV_SUMMARY = "csv_summary"
+
+    export_type = forms.ChoiceField(
+        choices=[(PDF_ZIP, _("Invoice PDFs (.zip)")), (CSV_SUMMARY, _("Amounts due (.csv)"))]
+    )
+    month = forms.CharField(required=False)
+    invoice_ids = forms.ModelMultipleChoiceField(queryset=PaymentInvoice.objects.none(), required=False)
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+        # Scoping the queryset to the opportunity is what stops another workspace's invoice ids
+        # being exported through this form.
+        self.fields["invoice_ids"].queryset = PaymentInvoice.objects.filter(opportunity=self.opportunity)
+
+    def get_invoices(self):
+        selected = self.cleaned_data["invoice_ids"]
+        if selected:
+            return selected
+        return get_exportable_invoices(self.opportunity, parse_year_month(self.cleaned_data["month"]))
 
 
 class AutomatedPaymentInvoiceForm(forms.ModelForm):
