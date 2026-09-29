@@ -12,7 +12,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
 )
 from commcare_connect.opportunity.models import (
-    CatchmentArea,
     CompletedWork,
     Opportunity,
     OpportunityAccess,
@@ -21,7 +20,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    CatchmentAreaTable,
     CompletedWorkTable,
     DeliverStatusTable,
     UserStatusTable,
@@ -180,12 +178,6 @@ def export_work_status_table(opportunity: Opportunity) -> Dataset:
             completed_works.append(completed_work)
     table = CompletedWorkTable(completed_works, exclude=("date_popup"))
     return get_dataset(table, export_title="Payment Verification export")
-
-
-def export_catchment_area_table(opportunity):
-    catchment_areas = CatchmentArea.objects.filter(opportunity=opportunity)
-    table = CatchmentAreaTable(catchment_areas)
-    return get_dataset(table, export_title="Catchment Area Export")
 
 
 def get_dataset(table, export_title):

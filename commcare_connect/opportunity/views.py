@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -174,7 +175,6 @@ from commcare_connect.opportunity.tasks import (
     bulk_update_payments_task,
     bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
-    generate_catchment_area_export,
     generate_deliver_status_export,
     generate_payment_export,
     generate_review_visit_export,
@@ -187,7 +187,15 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
+from commcare_connect.opportunity.utils.invoice import (
+    InvoiceWorkflow,
+    filter_invoices_by_month,
+    get_invoice_month_options,
+    invoice_month_param,
+    resolve_invoice_month,
+    split_month_options,
+    with_invoice_month,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
@@ -201,7 +209,6 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
     ImportException,
-    bulk_update_catchments,
     bulk_update_completed_work_status,
     bulk_update_visit_review_status,
     update_payment_accrued,
@@ -568,7 +575,6 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
                 "icon": "fa-money-bill",
             },
         ]
-        context["export_form"] = PaymentExportForm()
         context["export_task_id"] = request.GET.get("export_task_id")
         return context
 
@@ -1645,35 +1651,6 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
 
 @opp_standard_access_required
 @opportunity_required
-def export_catchment_area(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
-    if not form.is_valid():
-        messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opp_id)
-
-    export_format = form.cleaned_data["format"]
-    result = generate_catchment_area_export.delay(request.opportunity.pk, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
-
-
-@opp_standard_access_required
-@opportunity_required
-@require_POST
-def import_catchment_area(request, org_slug=None, opp_id=None):
-    file = request.FILES.get("catchments")
-    try:
-        status = bulk_update_catchments(request.opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"{len(status)} catchment areas were updated successfully and {status.new_catchments} were created."
-        messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, opp_id)
-
-
-@opp_standard_access_required
-@opportunity_required
 def opportunity_user_invite(request, org_slug=None, opp_id=None):
     if request.opportunity.has_ended:
         messages.error(request, _("This opportunity has ended. You cannot invite more workers."))
@@ -1776,12 +1753,17 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = (
-        PaymentInvoice.objects.filter(**filter_kwargs)
-        .select_related("exchange_rate")
-        .annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
-        .order_by("date")
+    all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
+    month_options = get_invoice_month_options(all_invoices)
+    selected_month = resolve_invoice_month(request.GET.get("month"), month_options, highlight_invoice_number)
+    month_chips, older_months = split_month_options(month_options, selected_month)
+
+    queryset = all_invoices.select_related("exchange_rate").annotate(
+        last_status_modified_at=Max("status_events__pgh_created_at")
     )
+    if selected_month:
+        queryset = filter_invoices_by_month(queryset, selected_month)
+    queryset = queryset.order_by("date")
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1801,6 +1783,7 @@ def invoice_list(request, org_slug, opp_id):
         csrf_token=csrf_token,
         highlight_invoice_number=highlight_invoice_number,
         is_pm=request.is_opportunity_pm,
+        month_param=invoice_month_param(selected_month),
     )
 
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
@@ -1810,6 +1793,10 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
+            "month_chips": month_chips,
+            "older_months": older_months,
+            "selected_month": selected_month,
+            "invoice_count": table.paginator.count,
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
@@ -1919,10 +1906,16 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
         opportunity = invoice.opportunity
         org_slug = self.request.org.slug
         form = self.get_form()
+        month_param = self.request.GET.get("month")
+        invoice_list_url = with_invoice_month(
+            reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)), month_param
+        )
         context.update(
             {
                 "opportunity": opportunity,
                 "form": form,
+                "month_param": month_param,
+                "invoice_list_url": invoice_list_url,
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
                 "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
@@ -1932,10 +1925,7 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
                         "title": opportunity.name,
                         "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
                     },
-                    {
-                        "title": "Invoices",
-                        "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)),
-                    },
+                    {"title": "Invoices", "url": invoice_list_url},
                     {
                         "title": self.breadcrumb_title,
                         "url": reverse(
@@ -2006,22 +1996,32 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
     invoice = get_object_or_404(
-        PaymentInvoice.objects.select_related("exchange_rate", "payment"),
+        PaymentInvoice.objects.select_related("opportunity", "exchange_rate", "payment"),
         opportunity=request.opportunity,
         payment_invoice_id=invoice_id,
     )
-    context = {
-        "invoice": invoice,
-        "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
-    }
     return WeasyTemplateResponse(
         request=request,
         template="opportunity/invoice_download.html",
-        context=context,
+        context=get_invoice_pdf_context(invoice),
         content_type="application/pdf",
-        filename=f"invoice_{invoice_id}.pdf",
+        filename=invoice_pdf_filename(invoice),
     )
+
+
+def get_invoice_pdf_context(invoice):
+    return {
+        "invoice": invoice,
+        "opportunity": invoice.opportunity,
+        "service_summary_lines": get_invoice_service_summary(invoice),
+        "dimagi_address": DIMAGI_ADDRESS,
+    }
+
+
+def invoice_pdf_filename(invoice):
+    # invoice_number is free text on the form, and it is quoted into the Content-Disposition header.
+    safe_number = re.sub(r"[^A-Za-z0-9._-]", "_", invoice.invoice_number)
+    return f"invoice_{safe_number}.pdf"
 
 
 @opp_standard_access_required
@@ -2078,7 +2078,7 @@ def invoice_update_status(request, org_slug, opp_id):
 
     return HttpResponse(
         status=204,
-        headers={"HX-Redirect": reverse("opportunity:invoice_list", args=[org_slug, opp_id])},
+        headers={"HX-Redirect": _invoice_list_redirect_url(request, org_slug, opp_id)},
     )
 
 
@@ -2120,8 +2120,12 @@ def invoice_pay(request, org_slug, opp_id):
     transaction.on_commit(partial(send_invoice_paid_mail.delay, request.opportunity.pk, paid_invoice_ids))
     if paid_invoice_ids:
         messages.success(request, _("Invoice(s) successfully marked as paid."))
-    redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
-    return HttpResponse(headers={"HX-Redirect": redirect_url})
+    return HttpResponse(headers={"HX-Redirect": _invoice_list_redirect_url(request, org_slug, opp_id)})
+
+
+def _invoice_list_redirect_url(request, org_slug, opp_id):
+    """Back to the invoice list, on the month the action was started from."""
+    return with_invoice_month(reverse("opportunity:invoice_list", args=(org_slug, opp_id)), request.GET.get("month"))
 
 
 @opp_standard_access_required

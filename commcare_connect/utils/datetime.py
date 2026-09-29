@@ -16,6 +16,16 @@ def get_month_start_date(value: datetime.date | datetime.datetime) -> datetime.d
     return value.replace(day=1)
 
 
+def parse_year_month(value: str | None) -> datetime.date | None:
+    """Parse a `YYYY-MM` string into the first day of that month, or None if absent or malformed."""
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(value, "%Y-%m").date()
+    except ValueError:
+        return None
+
+
 def get_month_series(from_date: datetime.date, to_date: datetime.date):
     series = [from_date]
     current_date = from_date

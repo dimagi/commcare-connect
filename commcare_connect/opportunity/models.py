@@ -301,7 +301,6 @@ class OpportunityVerificationFlags(models.Model):
     location = models.PositiveIntegerField(default=0)
     form_submission_start = models.TimeField(null=True, blank=True)
     form_submission_end = models.TimeField(null=True, blank=True)
-    catchment_areas = models.BooleanField(default=False)
 
 
 class LearnModule(models.Model):
@@ -882,10 +881,13 @@ class CompletedWork(models.Model):
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
     saved_org_payment_accrued = models.IntegerField(
-        default=0, help_text=gettext_lazy("Payment accrued for the workspace")
+        default=0, help_text=gettext_lazy("Payment accrued for the organization")
     )
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text=gettext_lazy("Payment accrued for the organization in USD."),
     )
     invoiced_approved_count = models.IntegerField(
         default=0,
@@ -992,7 +994,7 @@ class CompletedWorkInvoice(BaseModel):
 
     One row per (invoice, completed_work). Snapshotted at invoice creation (and backfilled for legacy
     invoices) so invoice line items are read from frozen rows instead of recomputed from
-    CompletedWork.saved_* on every view. Stores both FLW pay and org (workspace) pay.
+    CompletedWork.saved_* on every view. Stores both FLW pay and org pay.
     """
 
     invoice = models.ForeignKey(
@@ -1266,20 +1268,6 @@ class DeliverUnitFlagRules(models.Model):
 
     class Meta:
         unique_together = ("deliver_unit", "opportunity")
-
-
-class CatchmentArea(models.Model):
-    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
-    latitude = models.DecimalField(max_digits=11, decimal_places=8)
-    longitude = models.DecimalField(max_digits=11, decimal_places=8)
-    radius = models.IntegerField(default=1000)
-    opportunity_access = models.ForeignKey(OpportunityAccess, null=True, on_delete=models.DO_NOTHING)
-    active = models.BooleanField(default=True)
-    name = models.CharField(max_length=255)
-    site_code = models.SlugField(max_length=255)
-
-    class Meta:
-        unique_together = ("site_code", "opportunity")
 
 
 class CredentialConfiguration(models.Model):
