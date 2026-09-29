@@ -139,7 +139,7 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         )
         source.delete()
 
-    logger.info("Merged workspace %s into %s: %s", summary.source_slug, summary.target_slug, summary)
+    logger.info("Merged organization %s into %s: %s", summary.source_slug, summary.target_slug, summary)
     return summary
 
 
@@ -161,9 +161,9 @@ def _reject_shared_commcare_apps(source: Organization, target: Organization) -> 
     if shared:
         conflicts = sorted({f"{cc_domain}/{cc_app_id}" for cc_app_id, cc_domain, _ in shared})
         raise MergeNotAllowed(
-            f"Both workspaces are connected to the same CommCare app(s): {', '.join(conflicts)}. "
-            "Merging would leave the surviving workspace with duplicates that break "
-            "opportunity creation. Remove the redundant app from one workspace first."
+            f"Both organizations are connected to the same CommCare app(s): {', '.join(conflicts)}. "
+            "Merging would leave the surviving organization with duplicates that break "
+            "opportunity creation. Remove the redundant app from one organization first."
         )
 
 
@@ -174,13 +174,13 @@ def _reject_unmatched_program_manager_status(source: Organization, target: Organ
     if source.program_manager and not target.program_manager:
         raise MergeNotAllowed(
             f"{source.slug} is marked as a program manager but {target.slug} is not, and a merge does not carry "
-            f"the status over. Mark the surviving workspace as a program manager first, or unmark {source.slug} "
+            f"the status over. Mark the surviving organization as a program manager first, or unmark {source.slug} "
             "to confirm the role is being retired with it."
         )
 
 
 def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, target: Organization) -> None:
-    """Refuse a merge that would make a workspace fund programs without being designated a funder.
+    """Refuse a merge that would make an organization fund programs without being designated a funder.
 
     ``Program.funder`` is repointed like any other relation, but ``Organization.funder`` is a profile field the
     target keeps as its own. Ticking "Funder" on the survivor first is a deliberate decision, not something the
@@ -192,14 +192,14 @@ def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, tar
     if funded_programs:
         raise MergeNotAllowed(
             f"{source.slug} funds the program(s): {', '.join(funded_programs)}, but {target.slug} is not marked "
-            "as a funder. A merge does not carry funder status over. Mark the surviving workspace as a funder "
+            "as a funder. A merge does not carry funder status over. Mark the surviving organization as a funder "
             "first if it should take these programs on."
         )
 
 
 def _reject_conflicting_program_applications(source: Organization, target: Organization) -> None:
     """
-    Refuse a merge where both workspaces applied to one program and the applications disagree.
+    Refuse a merge where both organizations applied to one program and the applications disagree.
     """
     target_statuses = dict(target.programapplication_set.values_list("program_id", "status"))
     conflicts = []
@@ -212,7 +212,7 @@ def _reject_conflicting_program_applications(source: Organization, target: Organ
 
     if conflicts:
         raise MergeNotAllowed(
-            f"Both workspaces have applied to the same program(s) with differing statuses: "
+            f"Both organizations have applied to the same program(s) with differing statuses: "
             f"{', '.join(sorted(conflicts))}. Only one application per program can survive a merge, and the "
             "statuses do not mean the same thing. Resolve the application that should not survive first."
         )
@@ -257,7 +257,7 @@ def _move_program_watchers(source: Organization, target: Organization) -> int:
 def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
     """Move the source's program applications, dropping the ones the target already holds.
 
-    A program both workspaces applied to is only reached here when the two statuses match — a disagreement is
+    A program both organizations applied to is only reached here when the two statuses match — a disagreement is
     refused by ``_reject_conflicting_program_applications`` before the merge starts — so the source's row is
     redundant and the target's is kept as-is.
     """
@@ -283,7 +283,7 @@ def _remove_self_program_applications(target: Organization) -> int:
 def _merge_memberships(source: Organization, target: Organization) -> tuple[int, int]:
     """Move the source's memberships, dropping the ones for users the target already has.
 
-    A user in both workspaces keeps the target's role, even where the source gave them a stronger one.
+    A user in both organizations keeps the target's role, even where the source gave them a stronger one.
     """
     target_user_ids = set(target.memberships.values_list("user_id", flat=True))
     source_memberships = source.memberships.all()
