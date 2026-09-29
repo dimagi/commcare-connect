@@ -58,6 +58,18 @@ class TestSendOrgInvite:
         assert invite.token in kwargs["html_message"]
         assert escape(organization.name) in kwargs["html_message"]
 
+    def test_special_characters_are_raw_in_text_and_escaped_in_html(self, send_mock):
+        organization = OrganizationFactory(name="""QA R&D "Alpha" O'Neil""")
+        inviter = UserFactory(name="Anne-Marie O'Brien <b>QA</b>")
+        invite = OrganizationInviteFactory(organization=organization, invited_by=inviter, email="invitee@example.com")
+
+        send_org_invite(invite.pk)
+
+        _, kwargs = send_mock.delay.call_args
+        for value in (organization.name, inviter.name):
+            assert value in kwargs["message"]
+            assert escape(value) in kwargs["html_message"]
+
 
 @pytest.mark.django_db
 @patch("commcare_connect.organization.tasks.send_mail_async")
@@ -91,6 +103,21 @@ class TestSendInviteAcceptedNotification:
         assert organization.name in kwargs["subject"]
         assert new_member.name in kwargs["message"]
         assert escape(organization.name) in kwargs["html_message"]
+
+    def test_special_characters_are_raw_in_text_and_escaped_in_html(self, send_mock):
+        organization = OrganizationFactory(name="""QA R&D "Alpha" O'Neil""")
+        MembershipFactory(organization=organization, role="admin")
+        new_member = UserFactory(name="Anne-Marie O'Brien <b>QA</b>")
+        membership = UserOrganizationMembership.objects.create(
+            organization=organization, user=new_member, role="member"
+        )
+
+        send_invite_accepted_notification(membership.pk)
+
+        _, kwargs = send_mock.delay.call_args
+        for value in (organization.name, new_member.name):
+            assert value in kwargs["message"]
+            assert escape(value) in kwargs["html_message"]
 
     def test_no_email_sent_when_org_has_no_other_admins(self, send_mock):
         organization = OrganizationFactory()
