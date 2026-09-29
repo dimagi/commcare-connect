@@ -31,4 +31,11 @@
   </div>
   <div id="invoice-line-items-wrapper"
        class="space-y-1 text-sm text-gray-500 mb-4"></div>
+  <div x-show="lineItemsLoading"
+       x-cloak
+       role="status"
+       class="flex items-center justify-center gap-2 py-6 text-gray-500">
+    <i class="fa-solid fa-spinner fa-spin"></i>
+    <span>{% translate "Loading deliveries for this period…" %}</span>
+  </div>
 {% endif %}
