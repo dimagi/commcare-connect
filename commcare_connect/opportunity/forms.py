@@ -13,7 +13,6 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
@@ -1742,9 +1741,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widgets = {
             "date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "end_date": forms.DateInput(
-                attrs={"type": "date", "max": timezone.localdate() - datetime.timedelta(days=1)}, format="%Y-%m-%d"
-            ),
+            "end_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "title": forms.TextInput(attrs={"placeholder": _("e.g. October Services")}),
         }
         labels = {
@@ -1762,6 +1759,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
         super().__init__(*args, **kwargs)
+        self.fields["end_date"].widget.attrs["max"] = localdate() - datetime.timedelta(days=1)
 
         self.prepare_fields()
 
