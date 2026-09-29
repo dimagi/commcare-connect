@@ -43,7 +43,7 @@ def restore_headcounts(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("organization", "0016_organization_is_test"),
+        ("organization", "0017_userorganizationmembership_accepted_at"),
     ]
 
     operations = [

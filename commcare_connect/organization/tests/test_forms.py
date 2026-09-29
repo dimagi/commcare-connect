@@ -387,6 +387,6 @@ class TestOrganizationChangeFormProfileFields:
 )
 def test_headcounts_bucket_into_ranges(headcount, expected):
     """Guards the boundaries the 0017 data migration used to convert the old integer column."""
-    migration = import_module("commcare_connect.organization.migrations.0017_organization_team_size_range")
+    migration = import_module("commcare_connect.organization.migrations.0018_organization_team_size_range")
 
     assert migration.bucket(headcount) == expected
