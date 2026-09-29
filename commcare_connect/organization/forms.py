@@ -19,7 +19,7 @@ EARLIEST_ESTABLISHMENT_YEAR = 2000
 
 
 class OrganizationProfileForm(forms.ModelForm):
-    """Collects a workspace's organization profile as the create wizard's steps.
+    """Collects an organization's profile as the create wizard's steps.
 
     Subclasses reuse the fields and validation and supply their own layout via `_layout`.
     """
@@ -59,7 +59,7 @@ class OrganizationProfileForm(forms.ModelForm):
             "notes": forms.Textarea(attrs={"rows": 4}),
         }
         labels = {
-            "name": gettext_lazy("Workspace Name"),
+            "name": gettext_lazy("Organization Name"),
             "short_name": gettext_lazy("Short Name"),
             "has_used_connect": gettext_lazy("Has Used CommCare Connect Before?"),
             "year_of_establishment": gettext_lazy("Year of Establishment"),
@@ -72,7 +72,8 @@ class OrganizationProfileForm(forms.ModelForm):
         }
         help_texts = {
             "name": gettext_lazy(
-                "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
+                "This would be used to create the Organization URL, "
+                "and you will not be able to change the URL in future."
             ),
             "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
         }
@@ -94,7 +95,7 @@ class OrganizationProfileForm(forms.ModelForm):
         return layout.Layout(
             _wizard_step(
                 1,
-                gettext("Workspace"),
+                gettext("Organization"),
                 "name",
                 "short_name",
                 layout.Field(
@@ -125,14 +126,14 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
-        # Workspaces that already share a name must stay editable; only a new or changed name is checked.
+        # Organizations that already share a name must stay editable; only a new or changed name is checked.
         if "name" not in self.changed_data:
             return name
         duplicates = Organization.objects.filter(name__iexact=name)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
         if duplicates.exists():
-            raise ValidationError(gettext("A workspace with this name already exists."))
+            raise ValidationError(gettext("An organization with this name already exists."))
         return name
 
     def clean_contact_emails(self):
@@ -154,7 +155,7 @@ class OrganizationProfileForm(forms.ModelForm):
 
 
 class OrganizationChangeForm(OrganizationProfileForm):
-    """Edits an existing workspace's profile from Organization Home."""
+    """Edits an existing organization's profile from Organization Home."""
 
     class Meta(OrganizationProfileForm.Meta):
         fields = OrganizationProfileForm.Meta.fields + ("program_manager",)
@@ -162,7 +163,7 @@ class OrganizationChangeForm(OrganizationProfileForm):
             "program_manager": gettext_lazy("Enable Program Manager"),
         }
         help_texts = OrganizationProfileForm.Meta.help_texts | {
-            "name": gettext_lazy("Renaming the workspace does not change its URL."),
+            "name": gettext_lazy("Renaming the organization does not change its URL."),
         }
 
     def __init__(self, *args, **kwargs):
@@ -176,7 +177,7 @@ class OrganizationChangeForm(OrganizationProfileForm):
     def _layout(self):
         return layout.Layout(
             _section(
-                gettext("Workspace"),
+                gettext("Organization"),
                 "name",
                 "short_name",
                 "year_of_establishment",
@@ -317,7 +318,7 @@ class OrganizationInviteForm(forms.ModelForm):
         email = self.cleaned_data["email"].strip().lower()
 
         if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
-            raise ValidationError(gettext("This person is already a member of this workspace."))
+            raise ValidationError(gettext("This person is already a member of this organization."))
 
         existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
         if existing and existing.is_in_reinvite_cooldown:

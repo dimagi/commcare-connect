@@ -143,7 +143,7 @@ class TestOrganizationChangeForm:
         organization.refresh_from_db()
         assert organization.name == "New Name"
 
-    def test_workspace_sharing_a_name_stays_editable(self, organization: Organization, user: User):
+    def test_organization_sharing_a_name_stays_editable(self, organization: Organization, user: User):
         Organization.objects.create(name=organization.name.upper())
 
         form = OrganizationChangeForm(
@@ -160,7 +160,7 @@ class TestOrganizationChangeForm:
 
         form = OrganizationChangeForm(data={"name": "taken name"}, user=user, instance=organization)
 
-        assert form.errors["name"] == ["A workspace with this name already exists."]
+        assert form.errors["name"] == ["An organization with this name already exists."]
 
     @pytest.mark.parametrize("program_manager", [False, True])
     def test_program_manager_field_hidden_without_permission(
@@ -263,7 +263,7 @@ class TestOrganizationProfileForm:
         assert organization.eoi_links == "https://example.com/eoi"
 
     def test_name_is_a_text_input(self):
-        # Workspaces are typed in, not picked from a list of existing ones.
+        # Organizations are typed in, not picked from a list of existing ones.
         widget = OrganizationProfileForm().fields["name"].widget
         assert isinstance(widget, forms.TextInput)
 
@@ -286,14 +286,14 @@ class TestOrganizationProfileForm:
         assert isinstance(widget, forms.SelectMultiple)
         assert widget.attrs.get("data-tomselect") == "1"
 
-    def test_new_workspace_is_created_with_a_slug(self):
-        form = OrganizationProfileForm(data=self._data(name="Brand New Workspace"))
+    def test_new_organization_is_created_with_a_slug(self):
+        form = OrganizationProfileForm(data=self._data(name="Brand New Organization"))
 
         assert form.is_valid(), form.errors
         org = form.save()
 
         assert org.pk is not None
-        assert org.slug == "brand-new-workspace"
+        assert org.slug == "brand-new-organization"
 
     def test_name_is_required(self):
         form = OrganizationProfileForm(data=self._data(name=""))
