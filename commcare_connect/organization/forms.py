@@ -15,7 +15,7 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
-EARLIEST_ESTABLISHMENT_YEAR = 2000
+EARLIEST_ESTABLISHMENT_YEAR = 1800
 
 
 class OrganizationProfileForm(forms.ModelForm):
