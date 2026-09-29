@@ -9,10 +9,13 @@ from django_tables2 import columns
 from commcare_connect.audit.calculations import format_value
 from commcare_connect.audit.chc_indicators import WorkAreasRemaining
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
+from commcare_connect.opportunity.tables import StatusIndicatorColumn
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, OrgContextTable
 
 # Metrics that exist in the registry but are not rendered as columns in the UI.
 NON_COLUMN_CALCULATIONS = frozenset({WorkAreasRemaining.name})
+
+_STATUS_INDICATOR_COLUMN = StatusIndicatorColumn()
 
 
 class AuditReportTable(OrgContextTable):
@@ -189,14 +192,25 @@ class AuditReportEntryTable(OrgContextTable):
         return format_html(
             """
             <div class="flex flex-col items-start">
-                <p class="text-sm text-slate-900">{}{}</p>
+                <p class="text-sm text-slate-900">{}{}{}</p>
                 <p class="text-xs text-slate-400">{}</p>
             </div>
             """,
             value,
+            self._worker_status_icon(record),
             self._no_work_areas_icon(record),
             record.opportunity_access.user.username or "",
         )
+
+    @staticmethod
+    def _worker_status_icon(record):
+        """The worker tables' status indicator, inline beside the name.
+
+        Entries are only generated for accepted, unsuspended workers, so in practice
+        this marks someone suspended since the report ran.
+        """
+        icon = _STATUS_INDICATOR_COLUMN.render(record)
+        return format_html('<span class="ml-1">{}</span>', icon) if icon else ""
 
     @staticmethod
     def _no_work_areas_icon(record):

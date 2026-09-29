@@ -6,6 +6,7 @@ from commcare_connect.audit.chc_indicators import WorkAreasRemaining
 from commcare_connect.audit.models import AuditReport
 from commcare_connect.audit.tables import AuditReportEntryTable, AuditReportTable
 from commcare_connect.audit.tests.factories import AuditReportFactory
+from commcare_connect.opportunity.models import UserInviteStatus
 from commcare_connect.opportunity.tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -69,3 +70,24 @@ def test_work_areas_remaining_gets_no_column_of_its_own():
 
     assert WorkAreasRemaining.name not in table.columns.names()
     assert "calc_a" in table.columns.names()
+
+
+@pytest.mark.parametrize(
+    "status, suspended, expected_icon",
+    [
+        (UserInviteStatus.accepted, False, "fa-circle-check"),
+        (UserInviteStatus.accepted, True, "fa-minus-square"),
+        # No invite row: the shared column has no branch for it, so nothing is drawn.
+        (None, False, None),
+    ],
+    ids=["accepted", "suspended", "no-invite"],
+)
+def test_worker_cell_shows_the_shared_status_indicator(status, suspended, expected_icon):
+    record = SimpleNamespace(status=status, opportunity_access=SimpleNamespace(suspended=suspended))
+
+    icon = AuditReportEntryTable._worker_status_icon(record)
+
+    if expected_icon is None:
+        assert icon == ""
+    else:
+        assert expected_icon in icon
