@@ -258,9 +258,17 @@ def _get_scoped_blob_meta(request):
     """Resolve the ``blob_id`` query param to its BlobMeta, enforcing that the requesting
     user has access to the opportunity that owns the blob."""
     blob_id = request.query_params["blob_id"]
-    blob_meta = BlobMeta.objects.get(blob_id=blob_id)
-    form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
-    _get_opportunity_or_404(request.user, form.opportunity_id)
+    blob_meta = BlobMeta.objects.filter(blob_id=blob_id).first()
+    if blob_meta is None:
+        raise NotFound()
+    # A form with several deliver units creates one UserVisit per unit, all sharing the
+    # xform_id and opportunity, so any one of them identifies the owning opportunity.
+    opportunity_id = (
+        UserVisit.objects.filter(xform_id=blob_meta.parent_id).values_list("opportunity_id", flat=True).first()
+    )
+    if opportunity_id is None:
+        raise NotFound()
+    _get_opportunity_or_404(request.user, opportunity_id)
     return blob_meta
 
 

@@ -423,6 +423,25 @@ class TestImageView:
         assert response.status_code == 200
         assert b"".join(response.streaming_content) == b"imagebytes"
 
+    def test_returns_image_for_form_with_multiple_visits(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        UserVisitFactory(opportunity=opportunity, opportunity_access=visit.opportunity_access, xform_id=visit.xform_id)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
+        _add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"imagebytes"
+
+    @pytest.mark.parametrize("has_blob_meta", [True, False])
+    def test_missing_blob_or_visit_returns_404(self, api_client, opportunity, org_user_member, has_blob_meta):
+        blob_id = BlobMetaFactory(parent_id="no-such-form").blob_id if has_blob_meta else "no-such-blob"
+        _add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_id})
+        assert response.status_code == 404
+
     def test_non_member_returns_404(self, api_client, opportunity, user):
         visit = UserVisitFactory(opportunity=opportunity)
         blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
