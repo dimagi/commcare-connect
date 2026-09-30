@@ -452,6 +452,17 @@ class TestImageView:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["data_export:image_export", "data_export:attachment_signed_url"])
+def test_blob_from_other_accessible_opportunity_returns_404(api_client, opportunity, org_user_member, url_name):
+    other_visit = UserVisitFactory(opportunity__organization=opportunity.organization)
+    blob_meta = BlobMetaFactory(parent_id=other_visit.xform_id, content_type="image/jpeg")
+    _add_export_credentials(api_client, org_user_member)
+    url = reverse(url_name, kwargs={"opp_id": opportunity.id})
+    response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
 class TestAttachmentSignedUrlView:
     def _url(self, opportunity):
         return reverse("data_export:attachment_signed_url", kwargs={"opp_id": opportunity.id})
