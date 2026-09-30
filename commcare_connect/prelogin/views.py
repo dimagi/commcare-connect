@@ -6,6 +6,7 @@ from django.templatetags.static import static
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from .external_coverage import get_entries as get_news_entries
 from .route_meta import meta_for, routes_for_client
 
 # dimagi.com fetches the blog manifest cross-origin from this exact host.
@@ -23,6 +24,11 @@ class HomeView(TemplateView):
         # description, and image no matter which page was shared.
         ctx["page_meta"] = meta_for(self.request.path, static)
         ctx["route_meta"] = routes_for_client(static)
+        # External "In the news" coverage entries -- see external_coverage.py.
+        # Every route renders this same template, so this is cheap to always
+        # compute; prelogin/includes/news_section.html decides per-page
+        # whether/which of them to show.
+        ctx["news_entries"] = get_news_entries()
         return ctx
 
 
