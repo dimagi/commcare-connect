@@ -6,25 +6,23 @@
       currency: false,
       startDate: "{% firstof form.instance.start_date|date:'Y-m-d' form.start_date.value  '' %}",
       endDate: "{% firstof form.instance.end_date|date:'Y-m-d' form.end_date.value '' %}",
-      amount: "{{ form.amount.value|default:'null' }}",
-      usdAmount: "{{ form.amount_usd.value|default:'null' }}",
+      // Preserve zero amounts; using `default` converts 0.00 to `null`.
+      amount: "{{ form.amount.value|default_if_none:'' }}",
+      usdAmount: "{{ form.amount_usd.value|default_if_none:'' }}",
       lateDeltaUnits: {{ form.late_delta_units.value|default:0 }},
       isServiceDelivery: "{{ is_service_delivery|yesno:'true,false' }}" == 'true',
       isReadOnly: "{{ is_read_only|yesno:'true,false'}}" == "true",
       invoiceId: "{{ form.instance.payment_invoice_id|default:'' }}",
-      showDownloadButton: false,
       showCancelModal: false,
       showRejectModal: false,
       showSubmitModal: false,
       certifyChecked: false,
+      lineItemsError: false,
+      lineItemsLoading: false,
 
       init() {
-        if (this.isServiceDelivery) {
-            if (this.isReadOnly) {
-                this.showDownloadButton = true;
-            } else {
-                this.fetchInvoiceLineItems();
-            }
+        if (this.isServiceDelivery && !this.isReadOnly) {
+            this.fetchInvoiceLineItems();
         }
       },
 
@@ -54,6 +52,9 @@
       fetchInvoiceLineItems() {
         if (!this.startDate || !this.endDate) return;
 
+        this.lineItemsError = false;
+        this.lineItemsLoading = true;
+
         fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           method: 'POST',
           headers: {
@@ -71,12 +72,17 @@
           this.amount = data.total_amount;
           this.usdAmount = data.total_usd_amount;
           this.lateDeltaUnits = data.late_delta_units;
-          this.showDownloadButton = true;
         }).catch(error => {
           console.error('Error fetching invoice items:', error);
           // Nothing known about the window, so drop the count rather than leave a stale one showing.
           this.lateDeltaUnits = null;
-          this.showDownloadButton = false;
+          // Clear totals and table on failure to avoid showing stale data from another window.
+          document.getElementById('invoice-line-items-wrapper').innerHTML = '';
+          this.amount = null;
+          this.usdAmount = null;
+          this.lineItemsError = true;
+        }).finally(() => {
+          this.lineItemsLoading = false;
         });
       },
 

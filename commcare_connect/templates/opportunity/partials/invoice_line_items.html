@@ -1,3 +1,14 @@
 {% load i18n %}
 {% load django_tables2 %}
-<div class="overflow-x-auto">{% render_table table %}</div>
+<div class="overflow-x-auto mb-4">{% render_table table %}</div>
+{% if table.rows %}
+  <div id="download-line-items-wrapper" class="my-4">
+    <a type="button"
+       class="button button-md outline-style"
+       :href="downloadLineItemsUrl()"
+       target="_blank">
+      <i class="fa-solid fa-download mr-2"></i>
+      {% translate "Download All Items" %}
+    </a>
+  </div>
+{% endif %}
