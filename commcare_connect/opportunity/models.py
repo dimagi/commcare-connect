@@ -271,10 +271,15 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user(self):
-        # A unit without a daily limit can do at most max_total visits in a day
+        # API 1.0: a unit without a daily limit can do at most max_total visits in a day
         return (
             self.paymentunit_set.aggregate(max_daily=Sum(Coalesce("max_daily", "max_total"))).get("max_daily", 0) or 0
         )
+
+    @property
+    def daily_max_visits_per_user_v2(self):
+        # API 2.0: a unit without a daily limit adds 0
+        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
 
     @property
     def budget_per_visit(self):

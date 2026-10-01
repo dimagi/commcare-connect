@@ -228,10 +228,11 @@ def test_opportunity_list_endpoint(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "headers",
+    "headers, expected_max_daily, expected_daily_max_visits_per_user",
     [
-        pytest.param({}, id="default_version"),
-        pytest.param({"HTTP_ACCEPT": "application/json; version=1.0"}, id="v1"),
+        pytest.param({}, [5, 1], 6, id="default_version"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=1.0"}, [5, 1], 6, id="v1"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=2.0"}, [5, None], 5, id="v2"),
     ],
 )
 def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
@@ -239,6 +240,8 @@ def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
     api_client: APIClient,
     opportunity: Opportunity,
     headers,
+    expected_max_daily,
+    expected_daily_max_visits_per_user,
 ):
     capped, uncapped = opportunity.paymentunit_set.order_by("pk")
     PaymentUnit.objects.filter(pk=capped.pk).update(max_daily=5, max_total=20)
@@ -248,8 +251,8 @@ def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
     response = api_client.get("/api/opportunity/", **headers)
 
     assert response.status_code == 200
-    assert [unit["max_daily"] for unit in response.data[0]["payment_units"]] == [5, 1]
-    assert response.data[0]["daily_max_visits_per_user"] == 6
+    assert [unit["max_daily"] for unit in response.data[0]["payment_units"]] == expected_max_daily
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
 
 
 @pytest.mark.django_db

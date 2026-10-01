@@ -810,16 +810,17 @@ def test_is_setup_complete_payment_unit_limits(opportunity, max_daily, max_total
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "limits, expected",
+    "limits, expected_v1, expected_v2",
     [
-        pytest.param([(5, 20), (3, 10)], 8, id="all_units_capped"),
-        pytest.param([(5, 20), (None, 1)], 6, id="mixed_units"),
-        pytest.param([(None, 4), (None, 6)], 10, id="no_units_capped"),
-        pytest.param([], 0, id="no_payment_units"),
+        pytest.param([(5, 20), (3, 10)], 8, 8, id="all_units_capped"),
+        pytest.param([(5, 20), (None, 1)], 6, 5, id="mixed_units"),
+        pytest.param([(None, 4), (None, 6)], 10, 0, id="no_units_capped"),
+        pytest.param([], 0, 0, id="no_payment_units"),
     ],
 )
-def test_daily_max_visits_per_user(opportunity, limits, expected):
+def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2):
     for max_daily, max_total in limits:
         PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
 
-    assert opportunity.daily_max_visits_per_user == expected
+    assert opportunity.daily_max_visits_per_user == expected_v1
+    assert opportunity.daily_max_visits_per_user_v2 == expected_v2
