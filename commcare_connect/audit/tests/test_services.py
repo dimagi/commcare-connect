@@ -147,8 +147,8 @@ def test_stream_audit_report_csv_outputs_header_and_rows(make_audit_entry):
     lines = "".join(stream_audit_report_csv(report)).splitlines()
 
     assert lines[0] == "Connect Worker,Username,Phone Number,Work Areas Remaining,Calc A"
-    assert f"Ann,{ann.opportunity_access.user.username},,False,N/A" in lines
-    assert f"Bob,{bob.opportunity_access.user.username},+2348031234567,True,0.5" in lines
+    assert f"Ann,{ann.opportunity_access.user.username},,No,N/A" in lines
+    assert f"Bob,{bob.opportunity_access.user.username},+2348031234567,Yes,0.5" in lines
 
 
 @pytest.mark.django_db
