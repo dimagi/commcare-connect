@@ -806,3 +806,20 @@ def test_is_setup_complete_payment_unit_limits(opportunity, max_daily, max_total
     PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
 
     assert opportunity.is_setup_complete is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "limits, expected",
+    [
+        pytest.param([(5, 20), (3, 10)], 8, id="all_units_capped"),
+        pytest.param([(5, 20), (None, 1)], 6, id="mixed_units"),
+        pytest.param([(None, 4), (None, 6)], 10, id="no_units_capped"),
+        pytest.param([], 0, id="no_payment_units"),
+    ],
+)
+def test_daily_max_visits_per_user(opportunity, limits, expected):
+    for max_daily, max_total in limits:
+        PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
+
+    assert opportunity.daily_max_visits_per_user == expected

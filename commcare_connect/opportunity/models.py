@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -270,7 +271,10 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user(self):
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
+        # A unit without a daily limit can do at most max_total visits in a day
+        return (
+            self.paymentunit_set.aggregate(max_daily=Sum(Coalesce("max_daily", "max_total"))).get("max_daily", 0) or 0
+        )
 
     @property
     def budget_per_visit(self):
