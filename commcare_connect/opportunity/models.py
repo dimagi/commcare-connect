@@ -170,7 +170,7 @@ class Opportunity(BaseModel):
         if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
-            if not (pu.max_total and pu.max_daily):
+            if not pu.max_total:
                 return False
         return True
 

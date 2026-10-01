@@ -791,3 +791,18 @@ class TestTaskFields:
             task.save()
         task.refresh_from_db()
         assert task.date_modified == updated_at
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_daily, max_total, expected",
+    [
+        pytest.param(2, 5, True, id="both_limits"),
+        pytest.param(None, 5, True, id="no_daily_limit"),
+        pytest.param(2, None, False, id="no_total_limit"),
+    ],
+)
+def test_is_setup_complete_payment_unit_limits(opportunity, max_daily, max_total, expected):
+    PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
+
+    assert opportunity.is_setup_complete is expected
