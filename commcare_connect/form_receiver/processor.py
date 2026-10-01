@@ -40,6 +40,8 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
+    OverLimitReasonChoices,
+    PaymentUnit,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -488,12 +490,10 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 defaults={"entity_name": entity_name},
             )
             user_visit.completed_work = completed_work
-            if (
-                counts["daily"] >= payment_unit.max_daily
-                or counts["total"] >= claim_limit.max_visits
-                or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
-            ):
+            is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
+            if is_over_limit:
                 user_visit.status = VisitValidationStatus.over_limit
+                user_visit.over_limit_reasons = over_limit_reasons
                 if not completed_work.status == CompletedWorkStatus.over_limit:
                     completed_work.status = CompletedWorkStatus.over_limit
                     completed_work_needs_save = True
@@ -560,6 +560,31 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     completed_work_id = completed_work.id if completed_work is not None else None
     update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+
+
+def check_visit_over_limit(
+    today: datetime.date,
+    claim: OpportunityClaim,
+    claim_limit: OpportunityClaimLimit,
+    payment_unit: PaymentUnit,
+    counts: dict,
+) -> tuple[bool, list[OverLimitReasonChoices]]:
+    """Return whether this visit is over limit and every limit that barred it.
+
+    A visit can breach more than one limit at once, so all of them are collected rather
+    than just the first. They are listed widest limit first. `counts` holds the worker's
+    existing visit counts for this deliver unit, as aggregated in process_deliver_unit().
+    """
+    reasons = []
+    if today > claim.end_date:
+        reasons.append(OverLimitReasonChoices.claim_ended)
+    if claim_limit.end_date and today > claim_limit.end_date:
+        reasons.append(OverLimitReasonChoices.claim_limit_ended)
+    if counts["total"] >= claim_limit.max_visits:
+        reasons.append(OverLimitReasonChoices.max_visits)
+    if counts["daily"] >= payment_unit.max_daily:
+        reasons.append(OverLimitReasonChoices.max_daily)
+    return bool(reasons), reasons
 
 
 def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
