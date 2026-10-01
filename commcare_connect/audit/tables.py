@@ -221,8 +221,10 @@ class AuditReportEntryTable(OrgContextTable):
         # Only mark explicitly calculated False values; older reports have no result.
         if result.get("value") is not False:
             return ""
+        label = _("No Work Areas remaining")
         return format_html(
-            '<span x-data x-tooltip.raw="{}" class="ml-1 cursor-help">'
-            '<i class="fa-solid fa-flag text-xs text-gray-400"></i></span>',
-            _("No Work Areas remaining"),
+            '<span x-data x-tooltip.raw="{}" role="img" aria-label="{}" class="ml-1 cursor-help">'
+            '<i class="fa-solid fa-flag text-xs text-gray-400" aria-hidden="true"></i></span>',
+            label,
+            label,
         )
