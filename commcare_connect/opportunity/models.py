@@ -678,7 +678,8 @@ class PaymentUnit(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
-    max_daily = models.IntegerField(null=True)
+    # None means the payment unit has no daily limit
+    max_daily = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     parent_payment_unit = models.ForeignKey(
         "self",
         on_delete=models.DO_NOTHING,

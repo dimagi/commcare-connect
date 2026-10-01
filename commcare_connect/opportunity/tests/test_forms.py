@@ -16,6 +16,7 @@ from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
     OPPORTUNITY_CREDENTIALS,
+    OPTIONAL_DAILY_LIMIT,
 )
 from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
@@ -1436,6 +1437,80 @@ class TestPaymentUnitFormBudgetValidation:
         assert form.is_valid() == expect_valid
         if not expect_valid:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
+
+
+@pytest.mark.django_db
+class TestPaymentUnitFormDailyLimit:
+    def _form(self, opportunity, data=None, instance=None):
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        if data is not None:
+            data = {
+                "name": "Bonus",
+                "description": "Bonus payment unit",
+                "amount": 5,
+                "org_amount": 0,
+                "max_total": 10,
+                "required_deliver_units": [str(deliver_unit.id)],
+                **data,
+            }
+        return PaymentUnitForm(
+            data=data,
+            deliver_units=[deliver_unit],
+            payment_units=[],
+            org_slug=opportunity.organization.slug,
+            opportunity=opportunity,
+            instance=instance,
+        )
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=False)
+    def test_daily_limit_required_when_switch_off(self, opportunity):
+        form = self._form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
+
+        assert "no_daily_limit" not in form.fields
+        assert not form.is_valid()
+        assert form.errors["max_daily"] == ["This field is required."]
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=True)
+    @pytest.mark.parametrize(
+        "data, expected_max_daily",
+        [
+            pytest.param({"max_daily": 5}, 5, id="daily_limit"),
+            pytest.param({"max_daily": "", "no_daily_limit": "on"}, None, id="no_daily_limit"),
+            pytest.param({"max_daily": 5, "no_daily_limit": "on"}, None, id="checkbox_overrides_value"),
+        ],
+    )
+    def test_valid_daily_limit_when_switch_on(self, opportunity, data, expected_max_daily):
+        form = self._form(opportunity, data)
+
+        assert form.is_valid(), form.errors
+        assert form.instance.max_daily == expected_max_daily
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=True)
+    @pytest.mark.parametrize(
+        "data, expected_error",
+        [
+            pytest.param(
+                {"max_daily": ""},
+                "Enter a daily limit or mark this payment unit as having no daily limit.",
+                id="blank_and_unchecked",
+            ),
+            pytest.param({"max_daily": 0}, "Ensure this value is greater than or equal to 1.", id="below_one"),
+        ],
+    )
+    def test_invalid_daily_limit_when_switch_on(self, opportunity, data, expected_error):
+        form = self._form(opportunity, data)
+
+        assert not form.is_valid()
+        assert form.errors["max_daily"] == [expected_error]
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=True)
+    @pytest.mark.parametrize("max_daily, expected_initial", [(None, True), (5, False)])
+    def test_no_daily_limit_initial_for_existing_unit(self, opportunity, max_daily, expected_initial):
+        unit = PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=10)
+
+        form = self._form(opportunity, instance=unit)
+
+        assert form.fields["no_daily_limit"].initial is expected_initial
 
 
 @pytest.fixture

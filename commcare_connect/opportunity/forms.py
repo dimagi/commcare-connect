@@ -23,6 +23,7 @@ from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
     OPPORTUNITY_CREDENTIALS,
+    OPTIONAL_DAILY_LIMIT,
 )
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
@@ -1315,14 +1316,24 @@ class AddBudgetNewUsersForm(forms.Form):
 
 
 class PaymentUnitForm(forms.ModelForm):
+    no_daily_limit = forms.BooleanField(
+        required=False,
+        label=_("This payment unit has no daily limit"),
+        help_text=_("Use when a daily cap doesn't fit the unit, such as a bonus that can only happen once per case."),
+    )
+
     class Meta:
         model = PaymentUnit
         fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
         help_texts = {
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
+            "max_daily": _(
+                "Caps the visits a worker can be paid for in a single day, to pace delivery or prevent gaming."
+            ),
         }
         widgets = {
+            "max_daily": forms.NumberInput(attrs={"min": 1}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
@@ -1343,6 +1354,11 @@ class PaymentUnitForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields["org_amount"].required = bool(self.opportunity)
+        if not switch_is_active(OPTIONAL_DAILY_LIMIT):
+            del self.fields["no_daily_limit"]
+            self.fields["max_daily"].required = True
+        elif self.instance.pk:
+            self.fields["no_daily_limit"].initial = self.instance.max_daily is None
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1352,7 +1368,7 @@ class PaymentUnitForm(forms.ModelForm):
                     Column(Field("name"), Field("description")),
                     Column(
                         self.get_amounts_div(),
-                        Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
+                        self.get_limits_div(),
                         Field("start_date"),
                         Field("end_date"),
                     ),
@@ -1433,12 +1449,35 @@ class PaymentUnitForm(forms.ModelForm):
             css_class="grid grid-cols-2 gap-4",
         )
 
+    def get_limits_div(self):
+        if "no_daily_limit" not in self.fields:
+            return Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4")
+
+        no_daily_limit = json.dumps(bool(self["no_daily_limit"].value()))
+        return Div(
+            Row(
+                Field("max_total"),
+                Field(
+                    "max_daily",
+                    **{"x-bind:disabled": "noDailyLimit", "x-effect": "if (noDailyLimit) $el.value = ''"},
+                ),
+                css_class="grid grid-cols-2 gap-4",
+            ),
+            Field("no_daily_limit", **{"x-model": "noDailyLimit"}),
+            **{"x-data": f"{{ noDailyLimit: {no_daily_limit} }}"},
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         start_date = cleaned_data.get("start_date")
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        if cleaned_data.get("no_daily_limit"):
+            cleaned_data["max_daily"] = None
+        elif cleaned_data.get("max_daily") is None and "max_daily" not in self.errors:
+            self.add_error("max_daily", _("Enter a daily limit or mark this payment unit as having no daily limit."))
 
         self._validate_budget_covers_claimants(cleaned_data)
 
