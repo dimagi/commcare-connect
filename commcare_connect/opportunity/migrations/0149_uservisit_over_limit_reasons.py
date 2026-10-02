@@ -14,6 +14,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='uservisit',
             name='over_limit_reasons',
-            field=django.contrib.postgres.fields.ArrayField(base_field=models.CharField(choices=[('claim_ended', 'Claim Period Ended'), ('claim_limit_ended', 'Payment Unit Claim Period Ended'), ('max_visits', 'Total Visit Limit Reached'), ('max_daily', 'Daily Visit Limit Reached')], max_length=50), blank=True, default=list, help_text='Every limit that barred this visit, set only when status is over_limit.', size=None),
+            field=django.contrib.postgres.fields.ArrayField(base_field=models.CharField(choices=[('claim_ended', "Worker's claim period for the opportunity has ended"), ('claim_limit_ended', "Worker's claim period for the payment unit has ended"), ('max_visits', "Worker's total visit limit reached"), ('max_daily', "Payment unit's daily visit limit reached")], max_length=50), blank=True, default=list, help_text='Every limit that barred this visit, set only when status is over_limit.', size=None),
         ),
     ]

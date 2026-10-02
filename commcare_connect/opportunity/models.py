@@ -718,10 +718,10 @@ class VisitValidationStatus(models.TextChoices):
 class OverLimitReasonChoices(models.TextChoices):
     """Which limits barred a visit that was given VisitValidationStatus.over_limit."""
 
-    claim_ended = "claim_ended", gettext("Claim Period Ended")
-    claim_limit_ended = "claim_limit_ended", gettext("Payment Unit Claim Period Ended")
-    max_visits = "max_visits", gettext("Total Visit Limit Reached")
-    max_daily = "max_daily", gettext("Daily Visit Limit Reached")
+    claim_ended = "claim_ended", gettext("Worker's claim period for the opportunity has ended")
+    claim_limit_ended = "claim_limit_ended", gettext("Worker's claim period for the payment unit has ended")
+    max_visits = "max_visits", gettext("Worker's total visit limit reached")
+    max_daily = "max_daily", gettext("Payment unit's daily visit limit reached")
 
 
 class ExchangeRate(models.Model):
