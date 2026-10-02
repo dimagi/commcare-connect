@@ -1,16 +1,21 @@
 from django.contrib.auth.models import Permission
 from django.test import Client, RequestFactory
+from django.utils.functional import SimpleLazyObject
 
 from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.utils import opportunity_access_level_from_request
 from commcare_connect.users.models import User
 
 
-def make_request(user, org=None, membership=None):
-    """A request carrying only what the access functions read: the user, the org, the role in it."""
+def make_request(user, org=None, membership=None, opportunity=None):
+    """A request carrying only what the access functions read: the user, the org, the role in it,
+    and the opportunity access level.
+    """
     request = RequestFactory().get("/")
     request.user = user
     request.org = org
     request.org_membership = membership
+    request.opp_access_level = SimpleLazyObject(lambda: opportunity_access_level_from_request(request, opportunity))
     return request
 
 

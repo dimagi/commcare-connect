@@ -165,11 +165,7 @@ def clear_managed_opp_cache(opportunity) -> None:
 
 
 def is_opportunity_pm(request, opportunity) -> bool:
-    return _can_manage_opportunity(request, opportunity) and request.org.id != opportunity.organization_id
-
-
-def _can_manage_opportunity(request, opportunity) -> bool:
-    return opportunity_access_level_from_request(request, opportunity) is AccessLevel.ADMIN
+    return request.opp_access_level.has_admin and request.org.id != opportunity.organization_id
 
 
 def populate_currency_and_country_fk_for_model(apps, model_name, app_label, total_label):

@@ -289,19 +289,27 @@ class TestOpportunityParties:
         self, relationship, is_pm, opp_orgs, managed_opportunity, user
     ):
         org = opp_orgs[relationship]
-        request = make_request(user, org=org, membership=make_membership(org, user, Role.ADMIN))
+        request = make_request(
+            user, org=org, membership=make_membership(org, user, Role.ADMIN), opportunity=managed_opportunity
+        )
         assert is_opportunity_pm(request, managed_opportunity) is is_pm
 
     @pytest.mark.parametrize("role", [Role.MEMBER, Role.VIEWER], ids=["member", "viewer"])
     def test_not_pm_without_manage_access(self, role, managed_opportunity, organization, user):
         """Being in the delivery org is not enough — the NM has to be able to have admin access to it."""
-        request = make_request(user, org=organization, membership=make_membership(organization, user, role))
+        request = make_request(
+            user,
+            org=organization,
+            membership=make_membership(organization, user, role),
+            opportunity=managed_opportunity,
+        )
         assert not is_opportunity_pm(request, managed_opportunity)
 
     def test_all_org_access_takes_the_side_of_the_org_it_acts_as(self, managed_opportunity, organization, user):
         """The parties are read off the acting org, so the same user is either side depending on the slug."""
         user = grant_all_org_access(user)
-        assert is_opportunity_pm(make_request(user, org=OrganizationFactory()), managed_opportunity)
+        request = make_request(user, org=OrganizationFactory(), opportunity=managed_opportunity)
+        assert is_opportunity_pm(request, managed_opportunity)
 
 
 class TestOpportunityById:
