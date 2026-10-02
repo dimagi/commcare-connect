@@ -57,7 +57,8 @@ def org_access_for_program(org, program) -> AccessLevel:
         return AccessLevel.NONE
     if org.id in (program.organization_id, program.funder_id):
         return AccessLevel.ADMIN
-    if program.watchers.filter(id=org.id).exists():
+    # .all() so a prefetched watchers cache is used.
+    if any(watcher.id == org.id for watcher in program.watchers.all()):
         return AccessLevel.VIEW
     return AccessLevel.NONE
 

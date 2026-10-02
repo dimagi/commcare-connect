@@ -496,7 +496,6 @@ class BaseOpportunityList(OrgContextTable):
     stats_style = "underline underline-offset-2 justify-center"
 
     def __init__(self, *args, **kwargs):
-        self.request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
         self.use_view_url = False
 
@@ -603,7 +602,7 @@ class BaseOpportunityList(OrgContextTable):
                 "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
             },
         ]
-        if self._access_to(record) >= AccessLevel.STANDARD:
+        if opportunity_access_level_from_request(self.request, record) >= AccessLevel.STANDARD:
             actions.append(
                 {
                     "title": "View Invoices",
@@ -620,9 +619,6 @@ class BaseOpportunityList(OrgContextTable):
             },
         )
         return mark_safe(html)
-
-    def _access_to(self, opportunity) -> AccessLevel:
-        return opportunity_access_level_from_request(self.request, opportunity)
 
     def render_worker_list_url_column(self, value, opp_id, url_slug="worker_list", sort=None):
         url = reverse(f"opportunity:{url_slug}", args=(self.org_slug, opp_id))

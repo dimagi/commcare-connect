@@ -155,9 +155,9 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         super().__init__(*args, **kwargs)
 
         if request:
-            accessible_programs = programs_accessible_to_org(request.org)
-            if accessible_programs.exists():
-                self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in accessible_programs]
+            choices = [(p.slug, p.name) for p in programs_accessible_to_org(request.org)]
+            if choices:
+                self.filters["program"].extra["choices"] = choices
             else:
                 del self.filters["program"]
 

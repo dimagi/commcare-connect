@@ -326,7 +326,6 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["org_slug"] = self.request.org.slug
-        kwargs["request"] = self.request
         return kwargs
 
     def get_table_data(self):
