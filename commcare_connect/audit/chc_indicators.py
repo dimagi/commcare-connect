@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 
 from django.db.models import Count, F, IntegerField, Max, Q, Sum, Value
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, NullIf
 
 from commcare_connect.audit.calculations import AuditCalculation, Measurement, register_calculation
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import UserVisit
 
@@ -43,7 +45,6 @@ VACCINE_CARD_LINK_FIELD = "child_vaccine_group__vaccine_photo_folder__photo_link
 MUAC_BIN_EDGES = [9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5]
 AGE_HEAPING_VALUES = ["12", "24", "36", "48"]
 MAX_VISITS_PER_BUILDING = 12  # threshold above which a WA is flagged as "camping"
-SERVICE_DELIVERY_SLUG = "services_delivery_unit"
 
 
 def _percent(numerator: int, denominator: int) -> float:
@@ -88,7 +89,7 @@ def _find_active_wag(opportunity_access, period_end) -> WorkAreaGroup | None:
             last_visit=Max(
                 "workarea__uservisit__visit_date",
                 filter=Q(workarea__uservisit__visit_date__date__lte=period_end)
-                & Q(workarea__uservisit__deliver_unit__slug=SERVICE_DELIVERY_SLUG),
+                & Q(workarea__uservisit__deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG),
             )
         )
         .filter(last_visit__isnull=False)
@@ -113,13 +114,67 @@ def _find_last_closed_wag(opportunity_access, period_end) -> WorkAreaGroup | Non
             last_visit=Max(
                 "workarea__uservisit__visit_date",
                 filter=Q(workarea__uservisit__visit_date__date__lte=period_end)
-                & Q(workarea__uservisit__deliver_unit__slug=SERVICE_DELIVERY_SLUG),
+                & Q(workarea__uservisit__deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG),
             ),
         )
         .filter(total=F("closed_count"), last_visit__isnull=False)
         .order_by("-last_visit")
         .first()
     )
+
+
+@register_calculation
+class WorkAreasRemaining(AuditCalculation):
+    """Whether the FLW still has Work Areas to complete.
+
+    False only once every assigned WA has reached a closed status. An FLW with no
+    WAs at all has nothing assigned rather than nothing left, so this returns True.
+    """
+
+    name = "work_areas_remaining"
+    label = "Work Areas Remaining"
+
+    def compute(self, opportunity_access, period_start, period_end):
+        counts = WorkArea.objects.filter(opportunity_access=opportunity_access).aggregate(
+            total=Count("id"),
+            open_count=Count("id", filter=~Q(status__in=CLOSED_STATUSES)),
+        )
+        return Measurement(counts["total"] == 0 or counts["open_count"] > 0, 1)
+
+
+class WeeklyVisitCount(AuditCalculation):
+    """A plain count, not an indicator: it declares no bounds, so it never flags an FLW.
+
+    ``min_sample_size = 0`` so an empty week shows as "0" rather than the "N/A" these
+    columns exist to explain.
+    """
+
+    deliver_unit_slug: ClassVar[str]
+    min_sample_size = 0
+
+    def compute(self, opportunity_access, period_start, period_end):
+        count = UserVisit.objects.filter(
+            opportunity_access=opportunity_access,
+            visit_date__date__range=(period_start, period_end),
+            deliver_unit__slug=self.deliver_unit_slug,
+        ).count()
+        return Measurement(count, count)
+
+
+@register_calculation
+class ServiceDeliveryVisitCount(WeeklyVisitCount):
+    name = "service_delivery_visit_count"
+    label = "Service Delivery Visits"
+    tooltip = "Visits recorded against the Service Delivery unit during the audited week."
+    deliver_unit_slug = SERVICE_DELIVERY_UNIT_SLUG
+
+
+@register_calculation
+class NoChildrenWorkAreaVisitCount(WeeklyVisitCount):
+    name = "no_children_wa_visit_count"
+    label = "No Children in WA Visits"
+    tooltip = "Visits recorded against the No Children in Work Area unit during the audited week."
+    deliver_unit_slug = NO_CHILDREN_WORK_AREA_UNIT_SLUG
 
 
 @register_calculation
@@ -142,7 +197,7 @@ class CampingRatio(AuditCalculation):
                 visit_date__date__range=(period_start, period_end),
                 work_area__isnull=False,
                 work_area__building_count__gt=0,
-                deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+                deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
             )
             .values("work_area_id", "work_area__building_count")
             .annotate(visit_count=Count("id"))
@@ -176,7 +231,7 @@ class GenderRatioDeviation(AuditCalculation):
         result = UserVisit.objects.filter(
             opportunity_access=opportunity_access,
             visit_date__date__range=(period_start, period_end),
-            deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+            deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
         ).aggregate(
             total=Count("id"),
             female=Count("id", filter=Q(**{f"form_json__form__{GENDER_FIELD}": FEMALE})),
@@ -207,7 +262,7 @@ class MUACPhotoCompliance(AuditCalculation):
             UserVisit.objects.filter(
                 opportunity_access=opportunity_access,
                 visit_date__date__range=(period_start, period_end),
-                deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+                deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
             )
             .annotate(age_months=_json_int(AGE_FIELD))
             .filter(age_months__gt=6)
@@ -241,7 +296,7 @@ class AgeHeaping(AuditCalculation):
         result = UserVisit.objects.filter(
             opportunity_access=opportunity_access,
             visit_date__date__range=(period_start, period_end),
-            deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+            deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
             **{f"form_json__form__{AGE_FIELD}__isnull": False},
         ).aggregate(
             total=Count("id"),
@@ -285,7 +340,7 @@ class WACoverageToVisitRatio(AuditCalculation):
             opportunity_access=opportunity_access,
             visit_date__date__lte=period_end,
             work_area__isnull=False,
-            deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+            deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
         ).count()
 
         if not (total_eligible and expected_visits and actual_visits):
@@ -401,7 +456,7 @@ class VaccineRate(AuditCalculation):
         result = UserVisit.objects.filter(
             opportunity_access=opportunity_access,
             visit_date__date__range=(period_start, period_end),
-            deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+            deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
         ).aggregate(
             total=Count("id"),
             vaccinated=Count("id", filter=Q(**{f"form_json__form__{VACCINE_FIELD}": YES})),
@@ -432,7 +487,7 @@ class VaccineCardPhotoCompliance(AuditCalculation):
         result = UserVisit.objects.filter(
             opportunity_access=opportunity_access,
             visit_date__date__range=(period_start, period_end),
-            deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+            deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
             **{f"form_json__form__{VACCINE_FIELD}": YES},
         ).aggregate(
             total=Count("id"),
@@ -557,7 +612,7 @@ class MUACDistributionPatternIndex(AuditCalculation):
         raw = UserVisit.objects.filter(
             opportunity_access=opportunity_access,
             visit_date__date__range=(period_start, period_end),
-            deliver_unit__slug=SERVICE_DELIVERY_SLUG,
+            deliver_unit__slug=SERVICE_DELIVERY_UNIT_SLUG,
             **{f"form_json__form__{MUAC_MEASUREMENT_FIELD}__isnull": False},
         ).values_list(f"form_json__form__{MUAC_MEASUREMENT_FIELD}", flat=True)
 
