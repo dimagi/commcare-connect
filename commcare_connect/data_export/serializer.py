@@ -149,6 +149,7 @@ class UserVisitDataSerializer(serializers.ModelSerializer):
         model = UserVisit
         fields = [
             "id",
+            "user_visit_id",
             "opportunity_id",
             "username",
             "user_id",
