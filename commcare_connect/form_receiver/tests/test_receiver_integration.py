@@ -566,6 +566,24 @@ def test_pending_task_delivery_gating(
         assert visit.completed_work.status == CompletedWorkStatus.rejected
 
 
+@pytest.mark.django_db
+def test_over_limit_reasons_cleared_when_visit_is_rejected_instead(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # A blocking task rejects the visit after the cap check has already run, so the
+    # recorded reasons would no longer describe the visit's status.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
+    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
+    AssignedTaskFactory(opportunity_access=access, task_type__app=opportunity.deliver_app)
+
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.status == VisitValidationStatus.rejected
+    assert visit.over_limit_reasons == []
+
+
 def test_auto_approve_payments_flagged_visit(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):

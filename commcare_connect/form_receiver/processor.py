@@ -478,6 +478,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         )
         completed_work_needs_save = False
         today = datetime.date.today()
+        over_limit_reasons = []
         paymentunit_startdate = payment_unit.start_date if payment_unit else None
         if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
             completed_work = None
@@ -493,7 +494,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
             if is_over_limit:
                 user_visit.status = VisitValidationStatus.over_limit
-                user_visit.over_limit_reasons = over_limit_reasons
                 if not completed_work.status == CompletedWorkStatus.over_limit:
                     completed_work.status = CompletedWorkStatus.over_limit
                     completed_work_needs_save = True
@@ -541,6 +541,11 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 user_visit.work_area = work_area
             except WorkArea.DoesNotExist:
                 raise ProcessingError("Work area not found")
+
+        # Suspension and blocking tasks above can move the visit off over_limit, so the
+        # reasons are only recorded once the status has settled.
+        if user_visit.status == VisitValidationStatus.over_limit:
+            user_visit.over_limit_reasons = over_limit_reasons
 
         user_visit.save()
 
