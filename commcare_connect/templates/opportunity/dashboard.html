@@ -30,7 +30,7 @@
            x-data="{ isOpen: false }">
         <h3 class="text-sm font-medium text-brand-sky flex-1">{{ object.program.name }}</h3>
         {% if object.is_test %}<span class="badge badge-md primary-light">Test</span>{% endif %}
-        {% if not request.org_membership.is_viewer and opp_access_level.has_standard %}
+        {% if request.opp_access_level.has_standard %}
           <i class="fa-solid cursor-pointer"
              :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark' : 'fa-bars']"
              @click="isOpen = !isOpen"></i>

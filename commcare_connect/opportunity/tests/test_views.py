@@ -829,12 +829,14 @@ def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp
     args = (org.slug, managed_opportunity.opportunity_id)
 
     # the tab partials, where the actions live, are what an htmx request renders
-    workers = client.get(reverse("opportunity:worker_list", args=args), headers={"hx-request": "true"})
-    payments = client.get(reverse("opportunity:worker_payments", args=args), headers={"hx-request": "true"})
+    tabs = {
+        name: client.get(reverse(f"opportunity:{name}", args=args), headers={"hx-request": "true"})
+        for name in ("worker_list", "worker_payments", "worker_deliver")
+    }
 
-    assert workers.context["opp_access_level"].has_standard is offered
-    assert payments.context["opp_access_level"].has_standard is offered
-    assert (reverse("opportunity:user_invite", args=args) in workers.content.decode()) is offered
+    for response in tabs.values():
+        assert response.wsgi_request.opp_access_level.has_standard is offered
+    assert (reverse("opportunity:user_invite", args=args) in tabs["worker_list"].content.decode()) is offered
 
 
 @pytest.mark.django_db
@@ -852,7 +854,7 @@ def test_opportunity_detail_menu_needs_standard_access(relationship, offered, op
     response = client.get(reverse("opportunity:detail", args=args))
     content = response.content.decode()
 
-    assert response.context["opp_access_level"].has_standard is offered
+    assert response.wsgi_request.opp_access_level.has_standard is offered
     for entry in ("invoice_list", "add_budget_existing_users", "user_invite", "send_message_mobile_users"):
         assert (reverse(f"opportunity:{entry}", args=args) in content) is offered
 

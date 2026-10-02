@@ -5,13 +5,13 @@
     <button type="button"
             class="button-icon shadow-sm"
             @click="showPaymentImportModal= true"
-            {% if not opp_access_level.has_standard %}disabled{% endif %}>
+            {% if not request.opp_access_level.has_standard %}disabled{% endif %}>
       <i class="fa-solid fa-upload text-brand-deep-purple"></i>
     </button>
     <button type="button"
             class="button-icon shadow-sm"
             @click="showPaymentExportModal = true"
-            {% if not opp_access_level.has_standard %}disabled{% endif %}>
+            {% if not request.opp_access_level.has_standard %}disabled{% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% url 'opportunity:payment_import' request.org.slug opportunity.opportunity_id as payment_import_url %}

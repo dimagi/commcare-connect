@@ -572,7 +572,6 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
             },
         ]
         context["export_task_id"] = request.GET.get("export_task_id")
-        context["opp_access_level"] = opportunity_access_level_from_request(request, object)
         return context
 
 
@@ -2905,7 +2904,6 @@ class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
             "export_task_id": self.request.GET.get("export_task_id"),
-            "opp_access_level": opportunity_access_level_from_request(self.request, opportunity),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)
