@@ -1,8 +1,9 @@
 import secrets
 from datetime import timedelta
+from functools import partial
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -20,6 +21,16 @@ class PrimarySector(models.Model):
         return self.name
 
 
+class TeamSizeRange(models.TextChoices):
+    """Team size is collected as a bracket rather than a headcount — nobody reports an exact number."""
+
+    XS = "1-10", "1-10"
+    S = "11-50", "11-50"
+    M = "51-200", "51-200"
+    L = "201-500", "201-500"
+    XL = "500+", "500+"
+
+
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
@@ -31,7 +42,7 @@ class Organization(BaseModel):
     short_name = models.CharField(max_length=40, null=True, blank=True)
     has_used_connect = models.BooleanField(default=False)
     year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
-    team_size = models.PositiveIntegerField(null=True, blank=True)
+    team_size = models.CharField(max_length=20, choices=TeamSizeRange, blank=True)
     flws_managed = models.PositiveIntegerField(null=True, blank=True)
     countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")
     regions = models.TextField(blank=True)
@@ -58,8 +69,11 @@ class Organization(BaseModel):
             return cls.objects.all()
         return cls.objects.filter(memberships__user=user)
 
-    def get_member_emails(self, exclude_viewer=False):
+    def get_member_emails(self, exclude_viewer=False, role=None):
         member_query = self.memberships.exclude(user__email__isnull=True).exclude(user__email="")
+
+        if role:
+            member_query = member_query.filter(role=role)
 
         if exclude_viewer:
             member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
@@ -84,6 +98,7 @@ class UserOrganizationMembership(models.Model):
         related_name="memberships",
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
+    accepted_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def is_admin(self):
@@ -170,10 +185,13 @@ class OrganizationInvite(BaseModel):
         return invite
 
     def accept(self, user):
+        from commcare_connect.organization.tasks import send_invite_accepted_notification
+
         membership, _created = UserOrganizationMembership.objects.update_or_create(
-            organization=self.organization, user=user, defaults={"role": self.role}
+            organization=self.organization, user=user, defaults={"role": self.role, "accepted_at": timezone.now()}
         )
         self.status = self.Status.ACCEPTED
         self.modified_by = user.email
         self.save(update_fields=["status", "modified_by", "date_modified"])
+        transaction.on_commit(partial(send_invite_accepted_notification, membership.pk), robust=True)
         return membership

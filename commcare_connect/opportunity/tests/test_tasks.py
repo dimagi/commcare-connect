@@ -32,6 +32,8 @@ from commcare_connect.opportunity.tasks import (
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
     generate_deliver_status_export,
+    generate_invoice_pdf_zip_export,
+    generate_invoice_summary_export,
     generate_payment_export,
     generate_review_visit_export,
     generate_user_status_export,
@@ -52,6 +54,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
@@ -409,6 +412,35 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice2.work_items.get().completed_work_id == completed_work2.id
         assert invoice2.work_items.get().billed_count == 1
 
+    def test_one_failing_opportunity_does_not_abort_the_run(self):
+        failing = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        billable = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=billable, amount=Decimal("100.00"), org_amount=0)
+        access = OpportunityAccessFactory(opportunity=billable)
+        CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 4),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
+        )
+
+        def start_date(opportunity):
+            if opportunity.id == failing.id:
+                raise Exception("no exchange rate for the billed month")
+            return datetime.date(2024, 1, 1)
+
+        self.mock_start_date.side_effect = start_date
+
+        with mock.patch("commcare_connect.opportunity.tasks._send_auto_invoice_created_notification") as mock_notify:
+            generate_automated_service_delivery_invoice()
+
+        assert not PaymentInvoice.objects.filter(opportunity=failing).exists()
+        invoice = PaymentInvoice.objects.get(opportunity=billable)
+        # The notification still fires, or the invoices that did get billed go unannounced.
+        mock_notify.assert_called_once_with([invoice.id])
+
     def test_no_invoice_for_inactive_opportunities(self):
         inactive_opportunity = OpportunityFactory(active=False, is_test=False, start_date=datetime.date(2026, 1, 1))
         payment_unit = PaymentUnitFactory(opportunity=inactive_opportunity)
@@ -615,6 +647,29 @@ def test_save_export_uses_export_storage():
 
 @pytest.mark.django_db
 class TestExportTasksCreateExportFile:
+    @mock.patch("commcare_connect.opportunity.tasks.save_export_file")
+    @mock.patch("commcare_connect.opportunity.tasks.build_invoice_pdf_zip")
+    def test_generate_invoice_pdf_zip_export(self, mock_build, mock_save, opportunity):
+        mine = PaymentInvoiceFactory(opportunity=opportunity)
+        other = PaymentInvoiceFactory()
+        mock_build.return_value = b"zip"
+        generate_invoice_pdf_zip_export(opportunity.id, [mine.id, other.id])
+        assert list(mock_build.call_args[0][0]) == [mine]
+        args = mock_save.call_args[0]
+        assert args[0].endswith("_invoice_pdfs.zip")
+        assert args[1] == b"zip"
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.build_invoice_summary_dataset")
+    def test_generate_invoice_summary_export(self, mock_build, mock_save, opportunity):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+        mock_build.return_value = Dataset()
+        generate_invoice_summary_export(opportunity.id, [invoice.id])
+        assert list(mock_build.call_args[0][0]) == [invoice]
+        args = mock_save.call_args[0]
+        assert args[1].endswith("_invoice_summary.csv")
+        assert args[2] == "csv"
+
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
     @mock.patch("commcare_connect.opportunity.tasks.UserVisitExporter")
     def test_generate_visit_export(self, mock_exporter_cls, mock_save, opportunity):

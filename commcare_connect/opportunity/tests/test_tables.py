@@ -18,12 +18,14 @@ from commcare_connect.opportunity.tables import (
     InvoiceDeliveriesTable,
     InvoiceLineItemsTable,
     OpportunityTable,
+    PaymentInvoiceTable,
     ProgramManagerOpportunityTable,
     WorkerTasksTable,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
+    PaymentInvoiceFactory,
     TaskTypeFactory,
     UserInviteFactory,
 )
@@ -173,3 +175,23 @@ def test_invoice_action_needs_more_than_view_access(
 
     assert "View Opportunity" in actions
     assert ("View Invoices" in actions) is offered
+
+
+@pytest.mark.parametrize(
+    "amount_usd, expected",
+    [
+        (Decimal("5931.80"), 'data-amount-usd="5931.80"'),
+        # An unpriced invoice must not look like a zero-value one to the selection bar.
+        (None, 'data-amount-usd=""'),
+        (Decimal("0.00"), 'data-amount-usd="0.00"'),
+    ],
+)
+def test_payment_invoice_table_carries_the_usd_amount_for_selection(opportunity, amount_usd, expected):
+    invoice = PaymentInvoiceFactory(opportunity=opportunity, amount_usd=amount_usd)
+    table = PaymentInvoiceTable(
+        [invoice],
+        org_slug=opportunity.organization.slug,
+        opportunity=opportunity,
+        csrf_token="token",
+    )
+    assert expected in table.as_html(RequestFactory().get("/"))

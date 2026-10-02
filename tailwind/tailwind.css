@@ -98,6 +98,12 @@
   @apply rounded-lg bg-white p-6 shadow-sm;
 }
 
+/* The card is the wrapper rather than the fieldset itself: a legend is laid out over
+   its fieldset's top border, which on a bordered card leaves the title hanging outside. */
+.form_section legend {
+  @apply text-brand-deep-purple mb-4 text-lg font-medium;
+}
+
 /* ------ Typography------ */
 
 .card_title {
@@ -340,6 +346,19 @@
 
 .chip-md {
   @apply px-4 py-1;
+}
+
+.chip-group {
+  @apply inline-flex flex-wrap gap-1 rounded-full bg-gray-100 p-1;
+}
+
+.chip-group .chip {
+  @apply border-transparent text-gray-600;
+}
+
+/* The active chip is the current state, not an action: clicking it would only reload the page. */
+.chip-group .chip-active {
+  @apply text-brand-deep-purple pointer-events-none border-gray-200 bg-white shadow-sm;
 }
 
 /*-- tooltips ---------------------------------------*/

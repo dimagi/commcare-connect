@@ -10,6 +10,7 @@ from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
+    TeamSizeRange,
 )
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
@@ -17,45 +18,11 @@ from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCE
 EARLIEST_ESTABLISHMENT_YEAR = 1800
 
 
-class OrganizationChangeForm(forms.ModelForm):
-    class Meta:
-        model = Organization
-        fields = ("name", "program_manager")
-        labels = {
-            "name": gettext_lazy("Workspace Name"),
-            "program_manager": gettext_lazy("Enable Program Manager"),
-        }
-
-    def __init__(self, *args, **kwargs):
-        self.user = kwargs.pop("user")
-        super().__init__(*args, **kwargs)
-
-        layout_fields = [layout.Field("name")]
-
-        if self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
-            layout_fields.append(
-                layout.Field(
-                    "program_manager",
-                    css_class=CHECKBOX_CLASS,
-                    wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
-                )
-            )
-        else:
-            del self.fields["program_manager"]
-
-        self.helper = helper.FormHelper(self)
-        self.helper.form_tag = False
-        self.helper.layout = layout.Layout(
-            *layout_fields,
-            layout.Div(
-                layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
-                css_class="flex justify-end",
-            ),
-        )
-
-
 class OrganizationProfileForm(forms.ModelForm):
-    """Creates or edits a workspace and its organization profile."""
+    """Collects an organization's profile as the create wizard's steps.
+
+    Subclasses reuse the fields and validation and supply their own layout via `_layout`.
+    """
 
     class Meta:
         model = Organization
@@ -76,6 +43,9 @@ class OrganizationProfileForm(forms.ModelForm):
             "notes",
         )
         widgets = {
+            "year_of_establishment": forms.Select(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select year")}
+            ),
             "countries": forms.SelectMultiple(
                 attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select countries")}
             ),
@@ -89,7 +59,7 @@ class OrganizationProfileForm(forms.ModelForm):
             "notes": forms.Textarea(attrs={"rows": 4}),
         }
         labels = {
-            "name": gettext_lazy("Workspace Name"),
+            "name": gettext_lazy("Organization Name"),
             "short_name": gettext_lazy("Short Name"),
             "has_used_connect": gettext_lazy("Has Used CommCare Connect Before?"),
             "year_of_establishment": gettext_lazy("Year of Establishment"),
@@ -102,20 +72,30 @@ class OrganizationProfileForm(forms.ModelForm):
         }
         help_texts = {
             "name": gettext_lazy(
-                "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
+                "This would be used to create the Organization URL, "
+                "and you will not be able to change the URL in future."
             ),
             "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["team_size"].choices = [("", gettext("Select team size")), *TeamSizeRange.choices]
+        self.fields["year_of_establishment"].widget.choices = _year_choices()
+        self._drop_unpermitted_fields()
         self.helper = helper.FormHelper(self)
         self.helper.form_tag = False
         self.helper.disable_csrf = True
-        self.helper.layout = layout.Layout(
+        self.helper.layout = self._layout()
+
+    def _drop_unpermitted_fields(self):
+        """Hook: remove fields the user may not edit, before the layout names them."""
+
+    def _layout(self):
+        return layout.Layout(
             _wizard_step(
                 1,
-                gettext("Workspace"),
+                gettext("Organization"),
                 "name",
                 "short_name",
                 layout.Field(
@@ -146,11 +126,14 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
+        # Organizations that already share a name must stay editable; only a new or changed name is checked.
+        if "name" not in self.changed_data:
+            return name
         duplicates = Organization.objects.filter(name__iexact=name)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
         if duplicates.exists():
-            raise ValidationError(gettext("A workspace with this name already exists."))
+            raise ValidationError(gettext("An organization with this name already exists."))
         return name
 
     def clean_contact_emails(self):
@@ -171,6 +154,64 @@ class OrganizationProfileForm(forms.ModelForm):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
 
 
+class OrganizationChangeForm(OrganizationProfileForm):
+    """Edits an existing organization's profile from Organization Home."""
+
+    class Meta(OrganizationProfileForm.Meta):
+        fields = OrganizationProfileForm.Meta.fields + ("program_manager",)
+        labels = OrganizationProfileForm.Meta.labels | {
+            "program_manager": gettext_lazy("Enable Program Manager"),
+        }
+        help_texts = OrganizationProfileForm.Meta.help_texts | {
+            "name": gettext_lazy("Renaming the organization does not change its URL."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+
+    def _drop_unpermitted_fields(self):
+        if not self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
+            del self.fields["program_manager"]
+
+    def _layout(self):
+        return layout.Layout(
+            _section(
+                gettext("Organization"),
+                "name",
+                "short_name",
+                "year_of_establishment",
+                "website",
+                *self._toggles(),
+            ),
+            _section(
+                gettext("Operations"),
+                "team_size",
+                "flws_managed",
+                "countries",
+                "primary_sectors",
+                _full_width("regions"),
+            ),
+            _section(
+                gettext("Contact & documents"),
+                "office_address",
+                "contact_emails",
+                "eoi_links",
+                "notes",
+            ),
+            layout.Div(
+                layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
+                css_class="flex justify-end",
+            ),
+        )
+
+    def _toggles(self):
+        """Pairs the two switches in one row, or spans the lone one when the user can't set both."""
+        if "program_manager" in self.fields:
+            return [_toggle("has_used_connect"), _toggle("program_manager")]
+        return [_full_width(_toggle("has_used_connect"))]
+
+
 def _wizard_step(number, title, *fields):
     """Wraps a field group as one wizard step.
 
@@ -184,6 +225,36 @@ def _wizard_step(number, title, *fields):
         x_show=f"step === {number}",
         x_cloak=True,
     )
+
+
+def _section(title, *fields):
+    return layout.Div(
+        layout.Fieldset(
+            title,
+            layout.Div(*fields, css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1"),
+        ),
+        css_class="card_bg mb-6 form_section",
+    )
+
+
+def _toggle(field):
+    """Renders a boolean as a labelled row rather than a bare checkbox beside its label."""
+    return layout.Field(
+        field,
+        css_class=CHECKBOX_CLASS,
+        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg [&>label]:mb-0",
+    )
+
+
+def _full_width(field):
+    """Spans a field across both columns — for the ones a half-width control would cramp."""
+    return layout.Div(field, css_class="sm:col-span-2")
+
+
+def _year_choices():
+    """Newest first: a recently founded organization is the likelier pick."""
+    years = range(timezone.now().year, EARLIEST_ESTABLISHMENT_YEAR - 1, -1)
+    return [("", gettext("Select year")), *((year, year) for year in years)]
 
 
 def validate_year_of_establishment(year):
@@ -247,7 +318,7 @@ class OrganizationInviteForm(forms.ModelForm):
         email = self.cleaned_data["email"].strip().lower()
 
         if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
-            raise ValidationError(gettext("This person is already a member of this workspace."))
+            raise ValidationError(gettext("This person is already a member of this organization."))
 
         existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
         if existing and existing.is_in_reinvite_cooldown:

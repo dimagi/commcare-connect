@@ -17,11 +17,12 @@ class OrgMemberTable(tables.Table):
     index = IndexColumn()
     user = columns.Column(verbose_name=_("Member"), accessor="user__email")
     role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
+    accepted_at = DMYTColumn(verbose_name=_("Accepted On"))
 
     class Meta:
         model = UserOrganizationMembership
-        fields = ("role", "user")
-        sequence = ("select", "index", "user", "role")
+        fields = ("role", "user", "accepted_at")
+        sequence = ("select", "index", "user", "role", "accepted_at")
 
 
 class PendingInviteTable(tables.Table):
@@ -45,7 +46,7 @@ class PendingInviteTable(tables.Table):
         fields = ("email", "role", "date_modified")
         sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
         empty_text = _("No pending invites.")
-        # The workspace page hosts this table alongside OrgMemberTable and feeds both
+        # The organization page hosts this table alongside OrgMemberTable and feeds both
         # from one query string, so prefix these params to keep sorting and paging
         # on the two tables independent.
         prefix = "invites-"

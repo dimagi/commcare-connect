@@ -1827,7 +1827,7 @@ class TestInaccessibleModeContext:
         assert response.context["inaccessible_request_count"] == 1
         assert response.context["inaccessibility_requests"][0]["work_area_id"] == work_area.id
 
-    def test_mode_is_closed_to_non_program_managers(self, client, settings, organization, org_user_admin, opportunity):
+    def test_opportunity_admin_can_enter_the_mode(self, client, settings, organization, org_user_admin, opportunity):
         settings.MAPBOX_TOKEN = "test-mapbox-token"
         work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
         WorkAreaInaccessibilityRequestFactory(work_area=work_area)
@@ -1839,8 +1839,9 @@ class TestInaccessibleModeContext:
         )
 
         assert response.status_code == 200
-        assert not response.context["inaccessible_mode"]
-        assert response.context["inaccessible_request_count"] == 0
+        assert response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 1
+        assert response.context["inaccessibility_requests"][0]["work_area_id"] == work_area.id
 
 
 class TestGetWorkAreasForAssignment:
@@ -2445,7 +2446,8 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 50  # round(2/4 * 100)
 
     def test_inaccessible_count_and_percentage(self, opp):
-        """Inaccessible = INACCESSIBLE or REQUEST_FOR_INACCESSIBLE, among in-scope areas."""
+        """Inaccessible = in-scope areas whose inaccessibility request was accepted. One still
+        awaiting review is not inaccessible yet — the reviewer may well deny it."""
         self._make_work_areas(
             opp,
             [
@@ -2457,9 +2459,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
         )
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Inaccessible Work Areas")
-        # in scope = 3; inaccessible = 2
-        assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        # in scope = 3; inaccessible = 1, the requested one not having been accepted yet
+        assert m["value"] == 1
+        assert m["percentage"] == 33  # round(1/3 * 100)
 
     def test_excluded_is_a_plain_count(self, opp):
         self._make_work_areas(
