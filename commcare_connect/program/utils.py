@@ -29,6 +29,14 @@ class AccessLevel(IntEnum):
         """Return the weaker of two access levels."""
         return min(level_a, level_b)
 
+    @property
+    def has_standard(self) -> bool:
+        return self >= AccessLevel.STANDARD
+
+    @property
+    def has_admin(self) -> bool:
+        return self >= AccessLevel.ADMIN
+
 
 def user_access_for_org(membership) -> AccessLevel:
     """What the user's role within the org allows: admin -> ADMIN, member -> STANDARD, viewer -> VIEW."""

@@ -832,8 +832,8 @@ def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp
     workers = client.get(reverse("opportunity:worker_list", args=args), headers={"hx-request": "true"})
     payments = client.get(reverse("opportunity:worker_payments", args=args), headers={"hx-request": "true"})
 
-    assert workers.context["has_standard_access"] is offered
-    assert payments.context["has_standard_access"] is offered
+    assert workers.context["opp_access_level"].has_standard is offered
+    assert payments.context["opp_access_level"].has_standard is offered
     assert (reverse("opportunity:user_invite", args=args) in workers.content.decode()) is offered
 
 
@@ -842,19 +842,19 @@ def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp
     "relationship,offered",
     [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
 )
-def test_opportunity_detail_invoice_menu_needs_standard_access(
-    relationship, offered, opp_orgs, managed_opportunity, client
-):
-    """The invoice list needs standard access, so a watcher must not be offered the menu entry."""
+def test_opportunity_detail_menu_needs_standard_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Every menu entry needs standard access at least, so a watcher must not be offered the menu."""
     PaymentUnitFactory(opportunity=managed_opportunity, max_total=100, max_daily=5)
     org = opp_orgs[relationship]
     client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
     args = (org.slug, managed_opportunity.opportunity_id)
 
     response = client.get(reverse("opportunity:detail", args=args))
+    content = response.content.decode()
 
-    assert response.context["has_standard_access"] is offered
-    assert (reverse("opportunity:invoice_list", args=args) in response.content.decode()) is offered
+    assert response.context["opp_access_level"].has_standard is offered
+    for entry in ("invoice_list", "add_budget_existing_users", "user_invite", "send_message_mobile_users"):
+        assert (reverse(f"opportunity:{entry}", args=args) in content) is offered
 
 
 @pytest.mark.django_db
