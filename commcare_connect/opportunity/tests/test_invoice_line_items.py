@@ -241,6 +241,22 @@ class TestLineItemGrouping:
         # 1 delta for first payment unit, covered in february
         assert by_key[(FEB, payment_unit.name)].number_approved == 1
 
+    def test_group_total_is_not_the_sum_of_per_work_rounded_amounts(self, billing_setup):
+        """CI-927: summing each work's already-rounded USD (27.23 + 5.45, three times over -> 98.04)
+        drifts from the group's true total (360 / 3.6725 -> 98.03). The displayed total must be
+        re-derived from the exact local total at the group's single rate, not accumulated per work."""
+        access, payment_unit = billing_setup
+        access.opportunity.currency = Currency.objects.get(code="KES")
+        access.opportunity.save(update_fields=["currency"])
+        ExchangeRateFactory(currency_code="KES", rate=Decimal("3.6725"), rate_date=date(2020, 1, 1))
+        for _ in range(3):
+            completed_work(access, payment_unit)
+
+        (item,) = group_line_items(billable_rows(access.opportunity, JAN, JAN_END))
+
+        assert item.total_pay.local == Decimal("360")
+        assert item.total_pay.usd == Decimal("98.03")
+
     def test_same_named_payment_units_stay_separate_line_items(self, billing_setup):
         """Grouping is by payment unit id: `name` is not unique within an opportunity, and merging
         two units into one line item would understate the row count and hide one unit's rate."""
@@ -284,19 +300,23 @@ class TestCreateInvoiceLineItems:
         assert work.invoiced_approved_count == approved
 
     @pytest.mark.parametrize(
-        "currency_code, rate, work_count, expected_local, expected_usd",
+        "currency_code, rate, work_count, expected_local, expected_usd, expected_stored_usd_sum",
         [
-            pytest.param("USD", Decimal("1"), 2, Decimal("240"), Decimal("240"), id="usd"),
-            # Each work is 100/3.6725 -> 27.23 plus 20/3.6725 -> 5.45, so 32.68 x 3. Without
-            # per-work rounding this invoice would total 98.03 and stop matching its line items.
-            pytest.param("KES", Decimal("3.6725"), 3, Decimal("360"), Decimal("98.04"), id="kes-rounds-per-work"),
+            pytest.param("USD", Decimal("1"), 2, Decimal("240"), Decimal("240"), Decimal("240"), id="usd"),
+            # Each work is 100/3.6725 -> 27.23 plus 20/3.6725 -> 5.45, so 32.68 x 3 = 98.04 if you
+            # naively sum each work's already-rounded USD (CI-927). The invoice total must instead
+            # be the group's exact local total (360) divided once by the rate -> 98.03.
+            pytest.param(
+                "KES", Decimal("3.6725"), 3, Decimal("360"), Decimal("98.03"), Decimal("98.04"), id="kes-per-work"
+            ),
         ],
     )
-    def test_invoice_totals_equal_the_sum_of_the_frozen_rows(
-        self, billing_setup, currency_code, rate, work_count, expected_local, expected_usd
+    def test_invoice_total_is_not_the_sum_of_the_frozen_rows_usd(
+        self, billing_setup, currency_code, rate, work_count, expected_local, expected_usd, expected_stored_usd_sum
     ):
-        """USD amounts are rounded per work before summing, so an invoice total can never drift from
-        the line items stored against it."""
+        """CI-927: the invoice's USD total is re-derived from the exact local total at the billed
+        rate, not accumulated from each frozen row's already-rounded USD -- that sum drifts further
+        from the true total the more works an invoice bills."""
         access, payment_unit = billing_setup
         if currency_code != "USD":
             access.opportunity.currency = Currency.objects.get(code=currency_code)
@@ -315,7 +335,9 @@ class TestCreateInvoiceLineItems:
             usd=Sum("flw_amount_usd") + Sum("org_amount_usd"),
         )
         assert invoice.amount == stored["local"]
-        assert invoice.amount_usd == stored["usd"]
+        # The frozen per-work rows still each round individually (they're each one delivery's real
+        # value); naively summing them is the exact drift this fix avoids at the invoice level.
+        assert stored["usd"] == expected_stored_usd_sum
 
     def test_leaves_the_billing_window_alone(self, billing_setup):
         """The window is the caller's input — an NM types it — so nothing here may narrow it to the
@@ -514,6 +536,22 @@ class TestInvoicedLineItems:
         invoice = PaymentInvoiceFactory(opportunity=access.opportunity, service_delivery=True, end_date=FEB_END)
 
         assert get_invoice_line_items(invoice) == []
+
+    def test_frozen_group_total_is_not_the_sum_of_per_work_rounded_amounts(self, billing_setup):
+        """CI-927, same drift as the preview (see TestLineItemGrouping) but read back from the
+        frozen `CompletedWorkInvoice` rows shown on the invoice review page."""
+        access, payment_unit = billing_setup
+        access.opportunity.currency = Currency.objects.get(code="KES")
+        access.opportunity.save(update_fields=["currency"])
+        ExchangeRateFactory(currency_code="KES", rate=Decimal("3.6725"), rate_date=date(2020, 1, 1))
+        for _ in range(3):
+            completed_work(access, payment_unit)
+        invoice = billed_invoice(access.opportunity)
+
+        (item,) = get_invoice_line_items(invoice)
+
+        assert item.total_pay.local == Decimal("360")
+        assert item.total_pay.usd == Decimal("98.03")
 
 
 @pytest.mark.django_db
