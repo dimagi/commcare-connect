@@ -178,6 +178,11 @@ class UserInviteSerializer(serializers.Serializer):
         opportunity = self.context["opportunity"]
         if not opportunity.active:
             raise serializers.ValidationError(_("Opportunity must be active to invite users."))
+        if opportunity.end_date is None:
+            # `has_ended` is False when end_date is NULL, so without this check an
+            # opportunity that was never given an end date passes both guards and
+            # is pushed to the worker's device.
+            raise serializers.ValidationError(_("Opportunity must have an end date to invite users."))
         if opportunity.has_ended:
             raise serializers.ValidationError(_("Opportunity has ended."))
         return data
