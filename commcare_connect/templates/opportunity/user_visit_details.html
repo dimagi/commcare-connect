@@ -312,10 +312,10 @@
     {% else %}
       <div>
         <button class="button button-md negative-light"
-                {% if request.org_membership.is_viewer %} disabled {% else %} {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %} disabled {% else %} @click="showRejectModal = true; showApproveModal = false;" {% endif %}
+                {% if not request.opp_access_level.has_standard %} disabled {% else %} {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %} disabled {% else %} @click="showRejectModal = true; showApproveModal = false;" {% endif %}
                 {% endif %}>{% translate "Reject" %}</button>
         <button class="button button-md positive-light"
-                {% if request.org_membership.is_viewer %} disabled {% else %} {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %} @click="showRejectModal = false; showApproveModal = true;" {% else %} disabled {% endif %}
+                {% if not request.opp_access_level.has_standard %} disabled {% else %} {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %} @click="showRejectModal = false; showApproveModal = true;" {% else %} disabled {% endif %}
                 {% endif %}>{% translate "Approve" %}</button>
       </div>
       <div x-cloak

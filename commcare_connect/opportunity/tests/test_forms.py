@@ -8,7 +8,6 @@ from allauth.socialaccount.models import SocialAccount
 from crispy_forms.utils import render_crispy_form
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
-from django.test.client import RequestFactory
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
@@ -61,7 +60,7 @@ from commcare_connect.program.tests.factories import ProgramApplicationFactory, 
 from commcare_connect.program.utils import AccessLevel, org_opportunity_access
 from commcare_connect.users.models import UserCredential
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
-from commcare_connect.utils.test_utils import make_membership
+from commcare_connect.utils.test_utils import make_membership, make_request
 
 
 @pytest.fixture
@@ -1852,13 +1851,9 @@ class TestSupervisingOrganizationOnChangeForm:
         )
         return opportunity
 
-    def _request_for(self, org, role=UserOrganizationMembership.Role.ADMIN):
+    def _request_for(self, org, opportunity, role=UserOrganizationMembership.Role.ADMIN):
         user = UserFactory()
-        request = RequestFactory().get("/")
-        request.user = user
-        request.org = org
-        request.org_membership = make_membership(org, user, role)
-        return request
+        return make_request(user, org=org, membership=make_membership(org, user, role), opportunity=opportunity)
 
     def _form(self, opportunity, request, **overrides):
         data = {
@@ -1876,7 +1871,7 @@ class TestSupervisingOrganizationOnChangeForm:
         return OpportunityChangeForm(data=data, instance=opportunity, request=request)
 
     def test_program_manager_can_reassign(self, managed_opportunity):
-        request = self._request_for(managed_opportunity.program.organization)
+        request = self._request_for(managed_opportunity.program.organization, managed_opportunity)
 
         form = self._form(
             managed_opportunity,
@@ -1892,7 +1887,7 @@ class TestSupervisingOrganizationOnChangeForm:
 
     def test_delivering_organization_cannot_see_or_set_it(self, managed_opportunity):
         original = managed_opportunity.supervising_organization
-        request = self._request_for(managed_opportunity.organization)
+        request = self._request_for(managed_opportunity.organization, managed_opportunity)
 
         form = self._form(
             managed_opportunity,
@@ -1910,7 +1905,7 @@ class TestSupervisingOrganizationOnChangeForm:
     def test_absent_for_unmanaged_opportunity(self, opportunity):
         opportunity.managed = False
         opportunity.save()
-        request = self._request_for(opportunity.program.organization)
+        request = self._request_for(opportunity.program.organization, opportunity)
 
         form = OpportunityChangeForm(instance=opportunity, request=request)
 
