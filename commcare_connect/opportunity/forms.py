@@ -1316,11 +1316,7 @@ class AddBudgetNewUsersForm(forms.Form):
 
 
 class PaymentUnitForm(forms.ModelForm):
-    no_daily_limit = forms.BooleanField(
-        required=False,
-        label=_("This payment unit has no daily limit"),
-        help_text=_("Use when a daily cap doesn't fit the unit, such as a bonus that can only happen once per case."),
-    )
+    no_daily_limit = forms.BooleanField(required=False, label=_("No daily limit"))
 
     class Meta:
         model = PaymentUnit
@@ -1328,9 +1324,6 @@ class PaymentUnitForm(forms.ModelForm):
         help_texts = {
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
-            "max_daily": _(
-                "Caps the visits a worker can be paid for in a single day, to pace delivery or prevent gaming."
-            ),
         }
         widgets = {
             "max_daily": forms.NumberInput(attrs={"min": 1}),
@@ -1454,17 +1447,21 @@ class PaymentUnitForm(forms.ModelForm):
             return Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4")
 
         no_daily_limit = json.dumps(bool(self["no_daily_limit"].value()))
-        return Div(
-            Row(
-                Field("max_total"),
+        return Row(
+            Field("max_total"),
+            Div(
                 Field(
                     "max_daily",
                     **{"x-bind:disabled": "noDailyLimit", "x-effect": "if (noDailyLimit) $el.value = ''"},
                 ),
-                css_class="grid grid-cols-2 gap-4",
+                Field(
+                    "no_daily_limit",
+                    wrapper_class="flex flex-row-reverse items-center justify-end gap-2 [&>label]:mb-0",
+                    **{"x-model": "noDailyLimit"},
+                ),
+                **{"x-data": f"{{ noDailyLimit: {no_daily_limit} }}"},
             ),
-            Field("no_daily_limit", **{"x-model": "noDailyLimit"}),
-            **{"x-data": f"{{ noDailyLimit: {no_daily_limit} }}"},
+            css_class="grid grid-cols-2 gap-4",
         )
 
     def clean(self):

@@ -848,8 +848,10 @@
 }
 
 select:disabled,
-.textinput:disabled {
+.textinput:disabled,
+.numberinput:disabled {
   @apply pointer-events-none opacity-50;
+  @apply bg-gray-200;
 }
 
 /* Multi-line truncation helper (2 lines). */
