@@ -40,10 +40,12 @@
            class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "Verification Rules" %}</a>
       </li>
     {% endif %}
-    <li>
-      <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.opportunity_id %}"
-         class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "Send Message" %}</a>
-    </li>
+    {% if request.opp_access_level.has_admin %}
+      <li>
+        <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.opportunity_id %}"
+           class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "Send Message" %}</a>
+      </li>
+    {% endif %}
     {% if request.is_opportunity_pm %}
       <li>
         <a href="{% url 'opportunity:task_types_config' request.org.slug opportunity.opportunity_id %}"

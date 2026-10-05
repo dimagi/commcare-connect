@@ -2,7 +2,7 @@ from django.utils.deprecation import MiddlewareMixin
 from django.utils.functional import SimpleLazyObject
 
 from ..organization.models import UserOrganizationMembership as Membership
-from ..program.utils import is_opportunity_pm, opportunity_by_id
+from ..program.utils import AccessLevel, is_opportunity_pm, opportunity_access_level_from_request, opportunity_by_id
 from .helpers import get_organization_for_request
 
 
@@ -45,9 +45,22 @@ def _is_opportunity_pm(request, view_kwargs):
     return request._cached_opportunity_pm
 
 
+def _opportunity_access_level(request, view_kwargs):
+    opp_id = view_kwargs.get("opp_id", None)
+
+    if not opp_id:
+        return AccessLevel.NONE
+
+    if not hasattr(request, "_cached_opp_access_level"):
+        opportunity = getattr(request, "opportunity", None) or opportunity_by_id(opp_id)
+        request._cached_opp_access_level = opportunity_access_level_from_request(request, opportunity)
+    return request._cached_opp_access_level
+
+
 class OrganizationMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
         request.org = SimpleLazyObject(lambda: _get_organization(request, view_kwargs))
         request.org_membership = SimpleLazyObject(lambda: _get_org_membership(request))
         request.memberships = SimpleLazyObject(lambda: _get_all_memberships(request))
         request.is_opportunity_pm = SimpleLazyObject(lambda: _is_opportunity_pm(request, view_kwargs))
+        request.opp_access_level = SimpleLazyObject(lambda: _opportunity_access_level(request, view_kwargs))

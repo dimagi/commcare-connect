@@ -9,14 +9,14 @@
       <button type="button"
               @click="showVisitImportModal = true"
               class="button-icon shadow-sm"
-              {% if request.org_membership.is_viewer %}disabled{% endif %}>
+              {% if not request.opp_access_level.has_standard %}disabled{% endif %}>
         <i class="fa-solid fa-upload text-brand-deep-purple"></i>
       </button>
     {% endif %}
     <button type="button"
             class="button-icon shadow-sm"
             @click="showVisitExportModal = true"
-            {% if request.org_membership.is_viewer %}disabled{% endif %}>
+            {% if not request.opp_access_level.has_standard %}disabled{% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% block modals %}
