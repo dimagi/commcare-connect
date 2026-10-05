@@ -172,7 +172,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
         return obj.budget_per_visit or -1
 
     def get_budget_per_user(self, obj):
-        return obj.budget_per_user
+        return obj.budget_per_user(include_org_pay=False)
 
     def get_payment_units(self, obj):
         payment_units = PaymentUnit.objects.filter(opportunity=obj).order_by("pk")

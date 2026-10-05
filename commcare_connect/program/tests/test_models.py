@@ -13,7 +13,7 @@ def test_managed_opportunity_stats():
 
     opportunity = Opportunity.objects.get(id=opportunity.id)
 
-    assert opportunity.budget_per_user == 450000
+    assert opportunity.budget_per_user(include_org_pay=False) == 450000
     assert opportunity.allotted_visits == 3000
     assert opportunity.number_of_users == 5
     assert opportunity.max_visits_per_user == 600
