@@ -14,7 +14,7 @@ from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
@@ -59,13 +59,18 @@ from commcare_connect.opportunity.utils.invoice import (
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
-from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
+from commcare_connect.opportunity.utils.invoice_export import get_exportable_invoices
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    bill_invoice,
+    get_billable_line_items,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.datetime import parse_year_month
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -856,16 +861,13 @@ class OpportunityFinalizeForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        self.budget_per_user = kwargs.pop("budget_per_user")
-        self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
-        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
-            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
+            f"id_total_budget.value = ({self.opportunity.budget_per_user()} * parseInt(this.value || 0))"
         )
 
         self.helper = FormHelper(self)
@@ -1194,7 +1196,10 @@ class AddBudgetExistingUsersForm(forms.Form):
         return end_date
 
     def _validate_budget_increase(self):
-        if self.budget_change > self.opportunity.remaining_budget:
+        # Lock the opportunity for the rest of the request so a concurrent claim or increase
+        # cannot spend the same budget between this check and save().
+        opportunity = Opportunity.objects.select_for_update().get(pk=self.opportunity.pk)
+        if self.budget_change > opportunity.remaining_budget:
             raise forms.ValidationError(
                 {"number_of_visits": gettext("The number of visits being increased exceeds the opportunity budget.")}
             )
@@ -1230,7 +1235,7 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
-        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total", "org_amount"))
+        self.budget_per_user = self.opportunity.budget_per_user()
 
         super().__init__(*args, **kwargs)
 
@@ -1250,11 +1255,7 @@ class AddBudgetNewUsersForm(forms.Form):
                 "oninput": f"""
                 id_total_budget.value =
                 {self.opportunity.total_budget} +
-                {json.dumps(self.payments_units)}.reduce(
-                    (sum, u) => sum + (u.amount + u.org_amount)
-                    * u.max_total * parseInt(this.value || 0),
-                    0
-                );
+                {self.budget_per_user} * parseInt(this.value || 0);
             """
             }
         )
@@ -1275,7 +1276,6 @@ class AddBudgetNewUsersForm(forms.Form):
         return cleaned_data
 
     def _validate_budget(self, add_users, total_budget):
-        increased_budget = 0
         program = self.opportunity.program
         total_program_budget = program.budget
         claimed_program_budget = (
@@ -1286,10 +1286,7 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         if add_users:
-            for payment_unit in self.payments_units:
-                increased_budget += (
-                    (payment_unit["amount"] + payment_unit["org_amount"]) * payment_unit["max_total"] * add_users
-                )
+            increased_budget = self.budget_per_user * add_users
 
             # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
             if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
@@ -1678,6 +1675,36 @@ class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
     invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
 
 
+class InvoiceExportForm(forms.Form):
+    """Which invoices a bulk export covers, and in what shape.
+
+    Selected invoices win; with nothing selected the export covers the whole month, or every
+    exportable invoice when the list is showing all months.
+    """
+
+    PDF_ZIP = "pdf_zip"
+    CSV_SUMMARY = "csv_summary"
+
+    export_type = forms.ChoiceField(
+        choices=[(PDF_ZIP, _("Invoice PDFs (.zip)")), (CSV_SUMMARY, _("Amounts due (.csv)"))]
+    )
+    month = forms.CharField(required=False)
+    invoice_ids = forms.ModelMultipleChoiceField(queryset=PaymentInvoice.objects.none(), required=False)
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+        # Scoping the queryset to the opportunity is what stops another workspace's invoice ids
+        # being exported through this form.
+        self.fields["invoice_ids"].queryset = PaymentInvoice.objects.filter(opportunity=self.opportunity)
+
+    def get_invoices(self):
+        selected = self.cleaned_data["invoice_ids"]
+        if selected:
+            return selected
+        return get_exportable_invoices(self.opportunity, parse_year_month(self.cleaned_data["month"]))
+
+
 class AutomatedPaymentInvoiceForm(forms.ModelForm):
     """
     Form used for creating new invoices or to show details by passing read_only=True.
@@ -1757,6 +1784,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
         super().__init__(*args, **kwargs)
+        self.fields["end_date"].widget.attrs["max"] = localdate() - datetime.timedelta(days=1)
 
         self.prepare_fields()
 
@@ -1850,7 +1878,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", gettext("Submit"), css_class="button button-md primary-dark"),
+                    Submit(
+                        "submit",
+                        gettext("Submit"),
+                        css_class="button button-md primary-dark",
+                        # Disable when there is an error while fetching the line items
+                        **{":disabled": "isServiceDelivery && lineItemsError"},
+                    ),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -2023,7 +2057,31 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+            if end_date >= localdate():
+                raise ValidationError({"end_date": _("End date must be before today.")})
+
+            self._reject_stale_total(amount, start_date, end_date)
+
         return cleaned_data
+
+    def _reject_stale_total(self, amount, start_date, end_date):
+        """Reject a submit if the posted total no longer matches the current billable total.
+
+        This provides a user-facing error when the preview has gone stale. `save()` still
+        recomputes the total under a lock and never trusts the posted amount.
+        """
+
+        # Use the same calculation as the preview, so a mismatch reflects a real state change.
+        billable_total = sum(
+            item.total_pay.local for item in get_billable_line_items(self.opportunity, start_date, end_date)
+        )
+        if amount != billable_total:
+            raise ValidationError(
+                _(
+                    "The billable total for this period has changed since this page was loaded. "
+                    "Please refresh the page to see the latest line items and total, then submit again."
+                )
+            )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -2059,39 +2117,17 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
     @property
     def line_items(self):
-        if self.line_items_table:
-            table = HTML(
-                """
-                {% load django_tables2 %}
-                <div class="overflow-x-auto mb-4">
-                    {% render_table form.line_items_table %}
-                </div>
-                """
-            )
-        else:
-            table = HTML(
-                """
-                <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
-            """
-            )
-
         return Fieldset(
             "Line Items",
-            table,
-            HTML(
-                """
-                <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
-                    <a type="button"
-                    class="button button-md outline-style"
-                    :href="downloadLineItemsUrl()"
-                    target="_blank"
-                    >
-                        <i class="fa-solid fa-download mr-2"></i>
-                        {% load i18n %}{% translate "Download All Items" %}
-                    </a>
-                </div>
-                """
-            ),
+            HTML('{% include "opportunity/partials/invoice_line_items_fieldset.html" %}'),
+        )
+
+    @property
+    def line_items_released(self):
+        """True when line items were released due to cancellation or rejection."""
+        return self.instance.pk is not None and self.instance.status in (
+            InvoiceStatus.CANCELLED_BY_NM,
+            InvoiceStatus.REJECTED_BY_PM,
         )
 
 

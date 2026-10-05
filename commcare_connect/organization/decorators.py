@@ -10,7 +10,6 @@ from commcare_connect.program.models import Program
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
-    opportunity_access_level_from_request,
     opportunity_by_id,
     org_access_level_from_request,
     program_access_level_from_request,
@@ -52,6 +51,13 @@ class IsProgramManagerOrgAdmin(BasePermission):
         return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
+def can_act_as_program_manager_admin(user, org) -> bool:
+    # Org that is program manager, funder or watcher can act as program manager
+    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_admin(
+        user, org
+    )
+
+
 def opp_view_access_required(view_func):
     return _opportunity_access_level_gate(AccessLevel.VIEW)(view_func)
 
@@ -84,12 +90,12 @@ def _program_access_level_gate(minimum, program_id_kwarg="pk"):
     return decorator
 
 
-def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
+def _opportunity_gate(has_required_access):
     def decorator(view_func):
         def permission_check(request, *args, **kwargs):
             opportunity = getattr(request, "opportunity", None)
             if opportunity is None:
-                opp_id = kwargs.get(opp_id_kwarg)
+                opp_id = kwargs.get("opp_id")
                 opportunity = opportunity_by_id(opp_id) if opp_id else None
                 if opportunity:
                     request.opportunity = opportunity
@@ -100,11 +106,9 @@ def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
     return decorator
 
 
-def _opportunity_access_level_gate(minimum, opp_id_kwarg="opp_id"):
-    return _opportunity_gate(
-        lambda request, opportunity: opportunity_access_level_from_request(request, opportunity) >= minimum,
-        opp_id_kwarg,
-    )
+def _opportunity_access_level_gate(minimum):
+    # AccessLevel() is used to resolve the lazy proxy before comparing; it doesn't support >= directly.
+    return _opportunity_gate(lambda request, _opportunity: AccessLevel(request.opp_access_level) >= minimum)
 
 
 def _org_access_level_gate(minimum):

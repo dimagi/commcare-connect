@@ -9,7 +9,7 @@
       <p class="text-sm text-slate-900">{{ payment.amount }}</p>
     </div>
   {% endfor %}
-  {% if not request.org_membership.is_viewer %}
+  {% if request.opp_access_level.has_standard %}
     <button class="button button-md mt-3 negative-light"
             @click="rollbackPaymentModal = true">Rollback Last Payment</button>
   {% endif %}

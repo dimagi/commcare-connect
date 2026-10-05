@@ -47,7 +47,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tables import TaskTable
+from commcare_connect.opportunity.tables import (
+    OpportunityTable,
+    ProgramManagerOpportunityTable,
+    TaskTable,
+)
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -70,9 +74,15 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView, invoice_pdf_filename
+from commcare_connect.opportunity.views import (
+    OpportunityList,
+    WorkerPaymentsView,
+    get_export_task_id,
+    invoice_pdf_filename,
+)
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.program.utils import AccessLevel
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
@@ -778,6 +788,82 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+RELATIONSHIPS_ON_THE_LIST = [
+    ("delivery", True),
+    ("program_org", True),
+    ("funder", True),
+    ("watcher", True),
+    ("supervisor", True),
+    ("unrelated", False),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("relationship,listed", RELATIONSHIPS_ON_THE_LIST)
+def test_opportunity_list_data_covers_every_accessible_relationship(
+    relationship, listed, opp_orgs, managed_opportunity
+):
+    queryset = OpportunityData(opp_orgs[relationship], False, {}).get_data()
+
+    assert [opp.id for opp in queryset] == ([managed_opportunity.id] if listed else [])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,manages",
+    [("delivery", False), ("supervisor", False), ("program_org", True), ("funder", True), ("watcher", True)],
+)
+def test_opportunity_list_table_follows_the_relationship(relationship, manages, opp_orgs, rf):
+    view = OpportunityList()
+    view.request = rf.get("/")
+    view.request.org = opp_orgs[relationship]
+
+    expected = ProgramManagerOpportunityTable if manages else OpportunityTable
+    assert view.get_table_class() is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Inviting, exporting and importing all need standard access, so a watcher must not be offered them."""
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    # the tab partials, where the actions live, are what an htmx request renders
+    tabs = {
+        name: client.get(reverse(f"opportunity:{name}", args=args), headers={"hx-request": "true"})
+        for name in ("worker_list", "worker_payments", "worker_deliver")
+    }
+
+    for response in tabs.values():
+        assert response.wsgi_request.opp_access_level.has_standard is offered
+    assert (reverse("opportunity:user_invite", args=args) in tabs["worker_list"].content.decode()) is offered
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_opportunity_detail_menu_needs_standard_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Every menu entry needs standard access at least, so a watcher must not be offered the menu."""
+    PaymentUnitFactory(opportunity=managed_opportunity, max_total=100, max_daily=5)
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    response = client.get(reverse("opportunity:detail", args=args))
+    content = response.content.decode()
+
+    assert response.wsgi_request.opp_access_level.has_standard is offered
+    for entry in ("invoice_list", "add_budget_existing_users", "user_invite", "send_message_mobile_users"):
+        assert (reverse(f"opportunity:{entry}", args=args) in content) is offered
 
 
 @pytest.mark.django_db
@@ -1504,8 +1590,8 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         ("ABC123", "invoice_ABC123.pdf"),
         ("INV-2026.01", "invoice_INV-2026.01.pdf"),
         # A hand-entered number would otherwise close the quoted Content-Disposition filename.
-        ('A"B', "invoice_A_B.pdf"),
-        ("../../etc/passwd", "invoice_.._.._etc_passwd.pdf"),
+        ('A"B', "invoice_AB.pdf"),
+        ("../../etc/passwd", "invoice_....etcpasswd.pdf"),
         ("INV 42", "invoice_INV_42.pdf"),
     ],
 )
@@ -3501,9 +3587,10 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     ("is_error", "expected_class"),
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
+@pytest.mark.parametrize("is_watcher", [False, True])
 @mock.patch("commcare_connect.opportunity.views.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
-    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
+    mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
     message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
     task = mock_async_result.return_value
@@ -3511,13 +3598,23 @@ def test_worker_payments_shows_import_banner_on_reload(
     task.status = "SUCCESS"
     task.result = {"message": message, "is_error": is_error}
     task.info = {"message": message}
-    client.force_login(org_user_member)
-    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    acting_org, user = organization, org_user_member
+    if is_watcher:
+        # A watcher can view the payments page but not the import, which needs standard access.
+        acting_org = OrganizationFactory()
+        user = MembershipFactory(organization=acting_org, role=UserOrganizationMembership.Role.MEMBER).user
+        opportunity.program.watchers.add(acting_org)
+    client.force_login(user)
+    url = reverse("opportunity:worker_payments", args=(acting_org.slug, opportunity.id))
 
     response = client.get(url, {"payment_import_task_id": "task-xyz"})
 
     content = response.content.decode()
     assert response.status_code == 200
+    if is_watcher:
+        assert message not in content
+        assert response.context["payment_import_task_id"] is None
+        return
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
 
@@ -3647,3 +3744,20 @@ def test_worker_payments_reports_a_crashed_import_task(
     assert "The payment import failed. Please try again." in content
     # Nothing left to poll for, so the modal is not opened again.
     assert response.context["payment_import_task_id"] is None
+
+
+@pytest.mark.parametrize(
+    "access_level, expected",
+    [
+        (AccessLevel.NONE, None),
+        (AccessLevel.VIEW, None),
+        (AccessLevel.STANDARD, "task-123"),
+        (AccessLevel.ADMIN, "task-123"),
+    ],
+)
+def test_get_export_task_id_requires_standard_access(rf, opportunity, access_level, expected):
+    request = rf.get("/", {"export_task_id": "task-123"})
+    with mock.patch(
+        "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
+    ):
+        assert get_export_task_id(request, opportunity) == expected

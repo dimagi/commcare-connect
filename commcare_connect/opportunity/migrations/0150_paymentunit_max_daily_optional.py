@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0148_organization_label_wording'),
+        ('opportunity', '0149_uservisit_over_limit_reasons'),
     ]
 
     operations = [

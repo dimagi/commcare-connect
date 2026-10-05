@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import datetime
-from collections import Counter, defaultdict
+from collections import Counter
 from decimal import Decimal
 from uuid import uuid4
 
 import pghistory
+from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
@@ -176,10 +177,6 @@ class Opportunity(BaseModel):
         return True
 
     @property
-    def minimum_budget_per_visit(self):
-        return min(self.paymentunit_set.all().values_list("amount", flat=True))
-
-    @property
     def remaining_budget(self) -> int:
         if self.total_budget is None:
             return 0
@@ -222,9 +219,12 @@ class Opportunity(BaseModel):
         ).count()
 
     @staticmethod
-    def budget_per_user_for_units(payment_units):
-        """Total budget consumed per user (worker + org pay) across the given payment units."""
-        return sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
+    def budget_per_user_for_units(payment_units, include_org_pay=True):
+        """
+        Budget consumed per user across the given payment units; includes org pay unless
+        include_org_pay is False.
+        """
+        return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
 
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
@@ -258,7 +258,7 @@ class Opportunity(BaseModel):
     def number_of_users(self):
         if not self.total_budget:
             return 0
-        return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
+        return self.total_budget / self.budget_per_user()
 
     @property
     def allotted_visits(self):
@@ -285,13 +285,11 @@ class Opportunity(BaseModel):
     def budget_per_visit(self):
         return self.paymentunit_set.aggregate(amount=Sum("amount")).get("amount", 0) or 0
 
-    @property
-    def budget_per_user(self):
-        payment_units = self.paymentunit_set.all()
-        budget = 0
-        for pu in payment_units:
-            budget += pu.max_total * pu.amount
-        return budget
+    def budget_per_user(self, include_org_pay=True):
+        return self.budget_per_user_for_units(
+            self.paymentunit_set.all(),
+            include_org_pay=include_org_pay,
+        )
 
     @property
     def is_active(self):
@@ -724,6 +722,15 @@ class VisitValidationStatus(models.TextChoices):
     trial = "trial", gettext("Trial")
 
 
+class OverLimitReasonChoices(models.TextChoices):
+    """Which limits barred a visit that was given VisitValidationStatus.over_limit."""
+
+    claim_ended = "claim_ended", gettext("Worker's claim period for the opportunity has ended")
+    claim_limit_ended = "claim_limit_ended", gettext("Worker's claim period for the payment unit has ended")
+    max_visits = "max_visits", gettext("Worker's total visit limit reached")
+    max_daily = "max_daily", gettext("Payment unit's daily visit limit reached")
+
+
 class ExchangeRate(models.Model):
     currency_code = models.CharField(max_length=3)
     rate = models.DecimalField(max_digits=10, decimal_places=6)
@@ -1069,7 +1076,14 @@ class UserVisit(XFormBaseModel):
         default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
+    # Free text written by org staff when they reject a visit
     reason = models.CharField(max_length=300, null=True, blank=True)
+    over_limit_reasons = ArrayField(
+        models.CharField(max_length=CHOICE_FIELD_MAX_LENGTH, choices=OverLimitReasonChoices),
+        default=list,
+        blank=True,
+        help_text=gettext_lazy("Every limit that barred this visit, set only when status is over_limit."),
+    )
     location = models.CharField(null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
@@ -1166,37 +1180,50 @@ class OpportunityClaimLimit(models.Model):
 
     @classmethod
     def create_claim_limits(cls, opportunity: Opportunity, claim: OpportunityClaim):
-        """Allocate visit limits for a new claim based on remaining budget.
+        """Allocate visit limits for a new claim out of the opportunity's remaining budget.
 
-        For each payment unit, calculates how many visits are still available
-        (total capacity minus already-claimed visits) and creates a claim limit
-        with the lesser of the remaining visits or the per-user max.
+        Each payment unit is allocated up to its per-user ``max_total``, capped by what the
+        budget left over from existing claims can pay for. The budget is drawn down as units
+        are allocated, so the total committed across all claims can never exceed
+        ``total_budget``.
         """
-        claim_limits_by_payment_unit = defaultdict(list)
-        claim_limits = OpportunityClaimLimit.objects.filter(
-            opportunity_claim__opportunity_access__opportunity=opportunity
-        )
-        for claim_limit in claim_limits:
-            claim_limits_by_payment_unit[claim_limit.payment_unit].append(claim_limit)
+        with transaction.atomic():
+            opportunity = Opportunity.objects.select_for_update().get(pk=opportunity.pk)
+            remaining_budget = opportunity.remaining_budget
+            # Units are funded in creation order, so when the budget runs out mid-claim it is
+            # always the most recently added units that go short.
+            for payment_unit in opportunity.paymentunit_set.order_by("pk"):
+                max_visits = cls._max_funded_visits_for_worker(payment_unit, remaining_budget)
+                if max_visits < 1:
+                    # budget cannot pay for another visit of this payment unit
+                    continue
+                _, created = OpportunityClaimLimit.objects.get_or_create(
+                    opportunity_claim=claim,
+                    payment_unit=payment_unit,
+                    defaults={
+                        "max_visits": max_visits,
+                        "end_date": payment_unit.end_date,
+                    },
+                )
+                if created:
+                    remaining_budget -= max_visits * cls._budgeted_cost_per_visit(payment_unit)
 
-        for payment_unit in opportunity.paymentunit_set.all():
-            claim_limits = claim_limits_by_payment_unit.get(payment_unit, [])
-            total_claimed_visits = 0
-            for claim_limit in claim_limits:
-                total_claimed_visits += claim_limit.max_visits
+    @classmethod
+    def _max_funded_visits_for_worker(cls, payment_unit, remaining_budget):
+        """
+        Calculates the maximum number of visits a worker can claim for the payment_unit, taking
+        the opportunity's remaining budget into account.
+        """
+        if not payment_unit.max_total:
+            return 0
+        cost_per_visit = cls._budgeted_cost_per_visit(payment_unit)
+        if not cost_per_visit:
+            return payment_unit.max_total
+        return min(payment_unit.max_total, remaining_budget // cost_per_visit)
 
-            remaining = (payment_unit.max_total) * opportunity.number_of_users - total_claimed_visits
-            if remaining < 1:
-                # claimed limit exceeded for this paymentunit
-                continue
-            OpportunityClaimLimit.objects.get_or_create(
-                opportunity_claim=claim,
-                payment_unit=payment_unit,
-                defaults={
-                    "max_visits": min(remaining, payment_unit.max_total),
-                    "end_date": payment_unit.end_date,
-                },
-            )
+    @staticmethod
+    def _budgeted_cost_per_visit(payment_unit):
+        return payment_unit.amount + payment_unit.org_amount
 
 
 class BlobMeta(models.Model):

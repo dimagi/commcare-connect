@@ -36,7 +36,9 @@ from commcare_connect.opportunity.models import (
     LearnModule,
     Opportunity,
     OpportunityAccess,
+    OpportunityClaim,
     OpportunityClaimLimit,
+    OverLimitReasonChoices,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -249,6 +251,7 @@ def test_receiver_deliver_form_daily_visits_reached(
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.over_limit_reasons == [OverLimitReasonChoices.max_daily]
     assert visit.status_modified_date >= before_request
 
 
@@ -300,6 +303,34 @@ def test_over_limit_status_preserved_when_duplicate_flag_disabled(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "missing_model, user_lookup",
+    [
+        (OpportunityClaim, "opportunity_access__user"),
+        (OpportunityClaimLimit, "opportunity_claim__opportunity_access__user"),
+    ],
+)
+def test_receiver_deliver_form_without_claim_or_claim_limit(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity, missing_model, user_lookup
+):
+    # Delivering without a claim, or without a claim limit for the payment unit, is a rejected
+    # submission, not an unhandled error.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    missing_model.objects.filter(**{user_lookup: user_with_connectid_link}).delete()
+
+    make_request(
+        api_client,
+        form_json,
+        user_with_connectid_link,
+        expected_status_code=HTTPStatus.BAD_REQUEST,
+        oauth_application=oauth_application,
+    )
+
+    assert not UserVisit.objects.filter(user=user_with_connectid_link).exists()
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("paymentunit_options", [pytest.param({"max_daily": 2})])
 @pytest.mark.parametrize("opportunity", [{"verification_flags": {"location": 10}}], indirect=True)
 def test_receiver_deliver_form_max_visits_reached(
@@ -328,6 +359,8 @@ def test_receiver_deliver_form_max_visits_reached(
     assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
+    # max_total, and so the claim limit, is twice max_daily here, so only the daily cap is hit
+    assert user_visits[4].over_limit_reasons == [OverLimitReasonChoices.max_daily]
     for visit in user_visits:
         assert visit.status_modified_date >= before_requests
 
@@ -348,6 +381,7 @@ def test_receiver_deliver_form_end_date_reached(
     assert CompletedWork.objects.count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.over_limit_reasons == [OverLimitReasonChoices.claim_ended]
     assert visit.status_modified_date >= before_request
 
 
@@ -561,6 +595,24 @@ def test_pending_task_delivery_gating(
     if expected_flagged:
         assert "pending_task" in {flag for flag, _ in visit.flag_reason["flags"]}
         assert visit.completed_work.status == CompletedWorkStatus.rejected
+
+
+@pytest.mark.django_db
+def test_over_limit_reasons_cleared_when_visit_is_rejected_instead(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # A blocking task rejects the visit after the cap check has already run, so the
+    # recorded reasons would no longer describe the visit's status.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
+    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
+    AssignedTaskFactory(opportunity_access=access, task_type__app=opportunity.deliver_app)
+
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.status == VisitValidationStatus.rejected
+    assert visit.over_limit_reasons == []
 
 
 def test_auto_approve_payments_flagged_visit(
@@ -942,6 +994,9 @@ def test_receiver_visit_payment_unit_dates(
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     assert visit.status == visit_status
     assert visit.status_modified_date >= before_request
+    # over_limit is only reachable here by the payment unit's claim window closing
+    is_over_limit = visit_status == VisitValidationStatus.over_limit
+    assert visit.over_limit_reasons == ([OverLimitReasonChoices.claim_limit_ended] if is_over_limit else [])
 
 
 def get_form_json_for_payment_unit(payment_unit):

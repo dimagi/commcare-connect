@@ -1,7 +1,6 @@
 import datetime
 import json
 import logging
-import re
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -90,6 +89,7 @@ from commcare_connect.opportunity.forms import (
     EditTaskTypeForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
+    InvoiceExportForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
@@ -176,6 +176,8 @@ from commcare_connect.opportunity.tasks import (
     bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
     generate_deliver_status_export,
+    generate_invoice_pdf_zip_export,
+    generate_invoice_summary_export,
     generate_payment_export,
     generate_review_visit_export,
     generate_user_status_export,
@@ -196,13 +198,17 @@ from commcare_connect.opportunity.utils.invoice import (
     split_month_options,
     with_invoice_month,
 )
+from commcare_connect.opportunity.utils.invoice_export import (
+    get_exportable_invoices,
+    get_invoice_pdf_context,
+    invoice_pdf_filename,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import (
     Money,
     get_billable_delivery_rows_for_export,
     get_billable_line_items,
     get_invoice_delivery_rows_for_export,
     get_invoice_line_items,
-    get_invoice_service_summary,
     rollback_invoice_line_items,
     total_late_delta_units,
 )
@@ -262,10 +268,15 @@ EXPORT_ROW_LIMIT = 10_000
 _NEXT_WORKER_TASKS = "worker_tasks"
 
 PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
+
+INVOICE_EXPORT_TASKS = {
+    InvoiceExportForm.PDF_ZIP: generate_invoice_pdf_zip_export,
+    InvoiceExportForm.CSV_SUMMARY: generate_invoice_summary_export,
+}
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
-
-DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
+# Task id of the invoice export this user started whose outcome has not been shown yet.
+INVOICE_EXPORT_SESSION_KEY = "pending_invoice_export"
 
 
 def get_opportunity_or_404(opp_id):
@@ -314,13 +325,18 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     paginate_by = 15
     filter_class = OpportunityListFilterSet
 
+    @cached_property
+    def can_act_as_program_manager(self):
+        org = self.request.org
+        return org.program_manager or org.funder or org.watched_programs.exists()
+
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
         return context
 
     def get_table_class(self):
-        if self.request.org.program_manager:
+        if self.can_act_as_program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
 
@@ -333,9 +349,8 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return kwargs
 
     def get_table_data(self):
-        org = self.request.org
-        is_program_manager = org.program_manager
-        return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
+        data = OpportunityData(self.request.org, self.can_act_as_program_manager, self.get_filter_values())
+        return data.get_data()
 
 
 class OpportunityInit(ProgramAdminAccessMixin, CreateView):
@@ -458,21 +473,8 @@ class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         opportunity = self.object
-        payment_units = opportunity.paymentunit_set.all()
-        budget_per_user = 0
-        payment_units_max_total = 0
-        cumulative_pu_budget_per_user = 0
-
-        for pu in payment_units:
-            budget_per_user += pu.amount * pu.max_total
-            payment_units_max_total += pu.max_total
-            cumulative_pu_budget_per_user += (pu.amount + pu.org_amount) * pu.max_total
-
-        kwargs["budget_per_user"] = budget_per_user
         kwargs["current_start_date"] = opportunity.start_date
         kwargs["opportunity"] = opportunity
-        kwargs["payment_units_max_total"] = payment_units_max_total
-        kwargs["cumulative_pu_budget_per_user"] = cumulative_pu_budget_per_user
         return kwargs
 
     def form_valid(self, form):
@@ -575,7 +577,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
                 "icon": "fa-money-bill",
             },
         ]
-        context["export_task_id"] = request.GET.get("export_task_id")
+        context["export_task_id"] = get_export_task_id(request, object)
         return context
 
 
@@ -614,6 +616,12 @@ def review_visit_export(request, org_slug, opp_id):
 
     result = generate_review_visit_export.delay(request.opportunity.pk, from_date, to_date, status, export_format)
     return redirect(f"{redirect_url}?export_task_id={result.id}")
+
+
+def get_export_task_id(request, opportunity):
+    if opportunity_access_level_from_request(request, opportunity) < AccessLevel.STANDARD:
+        return None
+    return request.GET.get("export_task_id")
 
 
 @login_required
@@ -881,7 +889,7 @@ def render_payment_import_progress(request, org_slug, task_id):
         response["HX-Refresh"] = "true"
         return response
     if finished:
-        claim_payment_import_outcome(request, task_id)
+        claim_task_outcome(request, PAYMENT_IMPORT_CLAIMED_SESSION_KEY, task_id)
 
     context = {
         "finished": finished,
@@ -892,16 +900,16 @@ def render_payment_import_progress(request, org_slug, task_id):
     return render(request, "opportunity/payment_import_modal.html", context)
 
 
-def claim_payment_import_outcome(request, task_id):
-    """Whether this request should show the import's outcome, claiming it if so.
+def claim_task_outcome(request, session_key, task_id):
+    """Whether this request should show the task's outcome, claiming it if so.
 
-    A finished import reports itself from the task id left in the URL, so a refresh or a back
-    navigation would otherwise show the same banner or error modal again. The first request to
-    ask for an outcome claims it; later ones are told there is nothing left to show.
+    A task reports itself from the task id left in the URL, so a refresh or a back navigation
+    would otherwise show the same banner, modal or notification again. The first request to ask
+    for an outcome claims it; later ones are told there is nothing left to show.
     """
-    if request.session.get(PAYMENT_IMPORT_CLAIMED_SESSION_KEY) == task_id:
+    if request.session.get(session_key) == task_id:
         return False
-    request.session[PAYMENT_IMPORT_CLAIMED_SESSION_KEY] = task_id
+    request.session[session_key] = task_id
     return True
 
 
@@ -1752,6 +1760,13 @@ def invoice_list(request, org_slug, opp_id):
     filter_kwargs = dict(opportunity=request.opportunity)
 
     highlight_invoice_number = request.GET.get("highlight")
+    export_task_id = request.GET.get("export_task_id")
+    # The id stays in the URL, so only trust it while it is the export this user started. A
+    # running export keeps showing its progress; a finished one is shown once, then forgotten.
+    if not export_task_id or export_task_id != request.session.get(INVOICE_EXPORT_SESSION_KEY):
+        export_task_id = None
+    elif AsyncResult(export_task_id).ready():
+        del request.session[INVOICE_EXPORT_SESSION_KEY]
 
     all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
     month_options = get_invoice_month_options(all_invoices)
@@ -1797,6 +1812,12 @@ def invoice_list(request, org_slug, opp_id):
             "older_months": older_months,
             "selected_month": selected_month,
             "invoice_count": table.paginator.count,
+            "export_task_id": export_task_id,
+            # The month the page is actually showing, not the raw query value: an export
+            # started from here must cover exactly what the user is looking at.
+            "month_param": invoice_month_param(selected_month),
+            "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
+            "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
             "new_invoice_url": reverse(
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
@@ -1871,7 +1892,9 @@ class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateVi
 
         form = self.get_form()
         if not form.is_valid():
-            return self.get(request, org_slug, opp_id, **kwargs)
+            # Re-render the bound form to preserve validation errors.
+            self.object = None
+            return self.form_invalid(form)
 
         form.save()
         return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
@@ -2009,19 +2032,33 @@ def download_invoice(request, org_slug, opp_id, invoice_id):
     )
 
 
-def get_invoice_pdf_context(invoice):
-    return {
-        "invoice": invoice,
-        "opportunity": invoice.opportunity,
-        "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
-    }
+@opp_standard_access_required
+@opportunity_required
+@require_POST
+def export_invoices(request, org_slug, opp_id):
+    """Start a bulk invoice export and send the user back to the list to watch it finish."""
+    form = InvoiceExportForm(data=request.POST, opportunity=request.opportunity)
+    redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
 
+    if not form.is_valid():
+        messages.error(request, _("That export request was not valid. Please try again."))
+        return redirect(redirect_url)
 
-def invoice_pdf_filename(invoice):
-    # invoice_number is free text on the form, and it is quoted into the Content-Disposition header.
-    safe_number = re.sub(r"[^A-Za-z0-9._-]", "_", invoice.invoice_number)
-    return f"invoice_{safe_number}.pdf"
+    invoices = form.get_invoices()
+    if not invoices:
+        messages.error(request, _("There are no invoices to export."))
+        return redirect(redirect_url)
+
+    invoice_ids = [invoice.pk for invoice in invoices]
+    # A bare delay() is safe here: the export only reads rows that were committed long ago, so
+    # there is nothing for the worker to race with.
+    task = INVOICE_EXPORT_TASKS[form.cleaned_data["export_type"]].delay(request.opportunity.pk, invoice_ids)
+    request.session[INVOICE_EXPORT_SESSION_KEY] = task.id
+
+    query = {"export_task_id": task.id}
+    if form.cleaned_data["month"]:
+        query["month"] = form.cleaned_data["month"]
+    return redirect(f"{redirect_url}?{urlencode(query)}")
 
 
 @opp_standard_access_required
@@ -2934,7 +2971,7 @@ class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
             "opportunity": opportunity,
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
-            "export_task_id": self.request.GET.get("export_task_id"),
+            "export_task_id": get_export_task_id(self.request, opportunity),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)
@@ -3047,13 +3084,17 @@ class WorkerPaymentsView(BaseWorkerListView):
         # A finished import surfaces its result as a banner, or as the error modal opened by
         # get_extra_context; a running one keeps the polling progress spinner.
         if not request.htmx and self._payment_import_complete():
-            self.show_import_outcome = claim_payment_import_outcome(request, self._payment_import_task_id)
+            self.show_import_outcome = claim_task_outcome(
+                request, PAYMENT_IMPORT_CLAIMED_SESSION_KEY, self._payment_import_task_id
+            )
             if self.show_import_outcome:
                 self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
 
-    @property
+    @cached_property
     def _payment_import_task_id(self):
+        if opportunity_access_level_from_request(self.request, self.get_opportunity()) < AccessLevel.STANDARD:
+            return None
         return self.request.GET.get(PAYMENT_IMPORT_TASK_PARAM)
 
     @cached_property

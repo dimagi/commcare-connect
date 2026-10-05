@@ -2446,7 +2446,8 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 50  # round(2/4 * 100)
 
     def test_inaccessible_count_and_percentage(self, opp):
-        """Inaccessible = INACCESSIBLE or REQUEST_FOR_INACCESSIBLE, among in-scope areas."""
+        """Inaccessible = in-scope areas whose inaccessibility request was accepted. One still
+        awaiting review is not inaccessible yet — the reviewer may well deny it."""
         self._make_work_areas(
             opp,
             [
@@ -2458,9 +2459,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
         )
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Inaccessible Work Areas")
-        # in scope = 3; inaccessible = 2
-        assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        # in scope = 3; inaccessible = 1, the requested one not having been accepted yet
+        assert m["value"] == 1
+        assert m["percentage"] == 33  # round(1/3 * 100)
 
     def test_excluded_is_a_plain_count(self, opp):
         self._make_work_areas(
