@@ -1,0 +1,174 @@
+# Claude Dependabot PR Review Workflow
+#
+# Runs the `dependabot-pr-review` skill against a Dependabot PR and posts the
+# resulting review as a PR comment.
+#
+# The review instructions are NOT duplicated here. They live in
+# `.claude/skills/dependabot-pr-review/`, which is the same skill a developer
+# invokes locally with `/dependabot-pr-review <N>`. This workflow only supplies
+# the CI-specific overrides (which PR, post the comment, non-interactive). Keep
+# it that way: when the prompt was inlined here it drifted from reality and sat
+# for months telling Claude to parse a pnpm lockfile this repo does not have.
+#
+# Triggered on: Dependabot PRs (opened, synchronize), or manual dispatch
+#
+# Requirements:
+# - `.claude/skills/dependabot-pr-review/` must be committed to the repo.
+# - ANTHROPIC_API_KEY. NOTE: a `pull_request` run triggered by Dependabot reads
+#   GitHub's *Dependabot* secrets store, not the Actions one, and gets a
+#   read-only GITHUB_TOKEN. The key must be added under Settings > Secrets >
+#   Dependabot, and commenting requires a token with write access (see the
+#   "Post the review" step). Manual `workflow_dispatch` runs use the normal
+#   Actions secrets and are the reliable path until that is sorted.
+#
+# Notes:
+# - No concurrency group is set, so runs are independent of one another.
+
+name: Claude Dependabot PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to analyze'
+        required: true
+        type: string
+
+jobs:
+  dependabot-review:
+    # Only run on Dependabot PRs, or manual dispatch for testing
+    if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      # Audit only: records egress without blocking. Flip to `block` plus an
+      # `allowed-endpoints` list once the recorded traffic looks stable.
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Resolve PR ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ inputs.pr_number || github.event.pull_request.number }}"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          REF=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefName --jq '.headRefName')
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          # Full history, all branches. The skill compares the PR against
+          # origin/main to detect PRs whose dependency was removed or whose
+          # target version main has already passed, and lockdiff.py needs a
+          # real merge-base. A shallow clone silently breaks both.
+          fetch-depth: 0
+
+      - name: Verify the skill is present
+        run: |
+          SKILL=.claude/skills/dependabot-pr-review/SKILL.md
+          if [ ! -f "$SKILL" ]; then
+            echo "::error::$SKILL not found. The review instructions live in the"
+            echo "::error::skill directory and must be committed for this workflow to run."
+            exit 1
+          fi
+          echo "Found $SKILL ($(wc -l < "$SKILL") lines)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          # The bundled scripts need 3.11+ for tomllib.
+          python-version: '3.13'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      # Installs the PR's *new* versions, so the review can run the suite or
+      # diff an installed package rather than only reading changelogs.
+      - name: Install Python dependencies
+        run: |
+          uv venv
+          uv sync --locked --dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Node.js
+        if: hashFiles('package-lock.json') != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      # This repo uses npm (package-lock.json). Guarded so the step is a no-op
+      # if that ever changes, rather than failing every run the way the old
+      # unconditional `pnpm install --frozen-lockfile` did.
+      - name: Install Node dependencies
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci
+
+      - name: Run Claude Dependabot Analysis
+        id: claude_review
+        uses: anthropics/claude-code-action@v1.0.206
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: 'dependabot[bot]'
+          claude_args: |
+            --allowedTools "Bash(gh:*),Bash(git:*),Bash(python:*),Bash(python3:*),Bash(uv:*),Bash(npm:*),Bash(node:*),Bash(curl:*),Bash(diff:*),Bash(/usr/bin/diff:*),Bash(base64:*),Bash(unzip:*),Bash(tar:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(sort:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Glob,Grep,WebFetch,WebSearch"
+          prompt: |
+            Review pull request #${{ steps.pr.outputs.pr_number }} on ${{ github.repository }}.
+
+            Read `.claude/skills/dependabot-pr-review/SKILL.md` and follow it. It is the
+            full review procedure — the classification and triage step, the validity and
+            CI checks, the bundled scripts, the research ordering, and the output format.
+            Follow it rather than improvising, including the parts that tell you to settle
+            a question empirically instead of relaying a changelog claim.
+
+            CI-specific overrides to the skill's defaults:
+
+            1. The PR number is ${{ steps.pr.outputs.pr_number }} and the repo is
+               ${{ github.repository }}. Substitute that repo everywhere the skill's
+               commands say `dimagi/commcare-connect`, and pass `--repo ${{ github.repository }}`
+               to the bundled scripts. Do not ask which PR to review; you have it.
+
+            2. Invoke the bundled scripts from the repo root, which is your working
+               directory:
+                 python .claude/skills/dependabot-pr-review/scripts/lockdiff.py ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }}
+               Use `scripts/triage.py` only if the PR turns out to be obsolete and you
+               want to check whether sibling PRs died the same way — this run reviews one
+               PR, not the queue.
+
+            3. The skill says to print the review to the terminal and not to comment.
+               Here, do the opposite: this run exists to post it. Write the review to
+               /tmp/review.md, then post it:
+                 gh pr comment ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }} --body-file /tmp/review.md
+               Post exactly once, at the end. If you cannot post, print the review to the
+               log so the run is still useful.
+
+            4. End the comment with this line so readers know what produced it:
+               `<sub>Automated review via the dependabot-pr-review skill — please sanity-check before acting.</sub>`
+
+            5. You are non-interactive. Where the skill says to ask the user, choose the
+               most reasonable option, state the assumption in the review, and continue.
+
+            6. Write scratch files under /tmp. Do not modify anything in the working tree,
+               and do not push, merge, or close anything. The only write to GitHub you may
+               make is the single PR comment above.
+
+            7. `uv sync --locked --dev` has already run against this PR's lockfile, so the
+               PR's new versions are installed in .venv — use that for artifact diffing
+               and for running the suite, rather than reinstalling. Node deps are
+               installed too when the repo has a package-lock.json.
