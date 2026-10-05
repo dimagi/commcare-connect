@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pghistory
+from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
@@ -714,6 +715,15 @@ class VisitValidationStatus(models.TextChoices):
     trial = "trial", gettext("Trial")
 
 
+class OverLimitReasonChoices(models.TextChoices):
+    """Which limits barred a visit that was given VisitValidationStatus.over_limit."""
+
+    claim_ended = "claim_ended", gettext("Worker's claim period for the opportunity has ended")
+    claim_limit_ended = "claim_limit_ended", gettext("Worker's claim period for the payment unit has ended")
+    max_visits = "max_visits", gettext("Worker's total visit limit reached")
+    max_daily = "max_daily", gettext("Payment unit's daily visit limit reached")
+
+
 class ExchangeRate(models.Model):
     currency_code = models.CharField(max_length=3)
     rate = models.DecimalField(max_digits=10, decimal_places=6)
@@ -1059,7 +1069,14 @@ class UserVisit(XFormBaseModel):
         default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
+    # Free text written by org staff when they reject a visit
     reason = models.CharField(max_length=300, null=True, blank=True)
+    over_limit_reasons = ArrayField(
+        models.CharField(max_length=CHOICE_FIELD_MAX_LENGTH, choices=OverLimitReasonChoices),
+        default=list,
+        blank=True,
+        help_text=gettext_lazy("Every limit that barred this visit, set only when status is over_limit."),
+    )
     location = models.CharField(null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
