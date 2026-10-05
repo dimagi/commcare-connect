@@ -7,7 +7,6 @@ import pytest
 
 from commcare_connect.audit.chc_indicators import (
     FEMALE,
-    SERVICE_DELIVERY_SLUG,
     YES,
     AgeHeaping,
     CampingRatio,
@@ -16,10 +15,14 @@ from commcare_connect.audit.chc_indicators import (
     InaccessibleWARateLastCompletedWAG,
     MUACDistributionPatternIndex,
     MUACPhotoCompliance,
+    NoChildrenWorkAreaVisitCount,
+    ServiceDeliveryVisitCount,
     VaccineCardPhotoCompliance,
     VaccineRate,
     WACoverageToVisitRatio,
+    WorkAreasRemaining,
 )
+from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, OpportunityAccessFactory, UserVisitFactory
@@ -32,7 +35,7 @@ AFTER_PERIOD = datetime.datetime(2026, 4, 25, 12, 0, tzinfo=datetime.UTC)
 
 
 def make_visit(access, work_area=None, visit_date=IN_PERIOD, **kwargs):
-    kwargs.setdefault("deliver_unit", DeliverUnitFactory(slug=SERVICE_DELIVERY_SLUG))
+    kwargs.setdefault("deliver_unit", DeliverUnitFactory(slug=SERVICE_DELIVERY_UNIT_SLUG))
     return UserVisitFactory(
         opportunity=access.opportunity,
         user=access.user,
@@ -212,6 +215,60 @@ def test_fresh_access_returns_insufficient_data(calc):
     access = OpportunityAccessFactory()
     sample = calc.compute(access, PERIOD_START, PERIOD_END).sample_size
     assert sample == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "calc, slug",
+    [
+        (ServiceDeliveryVisitCount(), SERVICE_DELIVERY_UNIT_SLUG),
+        (NoChildrenWorkAreaVisitCount(), NO_CHILDREN_WORK_AREA_UNIT_SLUG),
+    ],
+    ids=["service_delivery", "no_children_wa"],
+)
+def test_weekly_visit_count_counts_its_own_unit_and_reports_zero(calc, slug):
+    access = OpportunityAccessFactory()
+    own_unit = DeliverUnitFactory(slug=slug)
+    other_unit = DeliverUnitFactory(slug="some-other-unit")
+    make_visits(3, access, deliver_unit=own_unit)
+    make_visit(access, deliver_unit=own_unit, visit_date=OUT_OF_PERIOD)
+    make_visit(access, deliver_unit=other_unit)
+
+    result = calc.run(access, PERIOD_START, PERIOD_END)
+
+    assert result.value == 3
+    assert result.has_sufficient_data
+
+    # Unlike the indicators, an empty week reports 0 -- that zero is the whole point
+    # of these columns, so it must not collapse into the "N/A" they exist to explain.
+    result = calc.run(OpportunityAccessFactory(), PERIOD_START, PERIOD_END)
+    assert result.value == 0
+    assert result.has_sufficient_data
+    assert result.in_range
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "statuses, expected",
+    [
+        ([], True),
+        ([WorkAreaStatus.NOT_VISITED], True),
+        ([WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.VISITED], True),
+        ([WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.EXCLUDED], True),
+        ([WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.EXCLUDED], False),
+    ],
+    ids=["nothing-assigned", "not-visited-left", "visited-left", "review-pending", "all-closed"],
+)
+def test_work_areas_remaining(statuses, expected):
+    access = OpportunityAccessFactory()
+    # Another FLW's closed WAs must not count against this one.
+    WorkAreaFactory(opportunity=access.opportunity, status=WorkAreaStatus.EXPECTED_VISIT_REACHED)
+    for status in statuses:
+        WorkAreaFactory(opportunity=access.opportunity, opportunity_access=access, status=status)
+
+    result = WorkAreasRemaining().run(access, PERIOD_START, PERIOD_END)
+
+    assert result.value is expected
 
 
 @pytest.mark.django_db
