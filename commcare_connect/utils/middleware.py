@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponseRedirect
+from django.utils.cache import add_never_cache_headers
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
@@ -119,3 +120,21 @@ def _hsts_header_value():
     if settings.SECURE_HSTS_PRELOAD:
         value += "; preload"
     return value
+
+
+class NoStoreCacheMiddleware:
+    """
+    Stops browsers caching pages shown to logged-in users, so they can't be restored (e.g. with the Back button)
+    after logout. Views that set their own Cache-Control are left alone.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated and "Cache-Control" not in response.headers:
+            add_never_cache_headers(response)
+            response.headers["Pragma"] = "no-cache"
+        return response

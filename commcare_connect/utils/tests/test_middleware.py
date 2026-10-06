@@ -61,3 +61,13 @@ def test_hsts_header(client, settings):
     response = client.get("/accounts/login/")
 
     assert response.headers["Strict-Transport-Security"] == "max-age=60; includeSubDomains; preload"
+
+
+@pytest.mark.django_db
+def test_no_store_for_logged_in_user(client, user):
+    client.force_login(user)
+
+    response = client.get("/accounts/email/")
+
+    assert "no-store" in response.headers["Cache-Control"]
+    assert response.headers["Pragma"] == "no-cache"
