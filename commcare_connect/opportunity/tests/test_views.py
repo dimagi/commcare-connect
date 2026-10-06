@@ -934,6 +934,21 @@ def test_default_opportunity_list_url_shows_only_active_non_test(organization, r
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("start_date_range=last_3_months", ["start_date_range"]),
+        ("start_date_range=custom&start_date_from=2026-01-01&start_date_to=2026-02-01", ["start_date_range"]),
+        ("start_date_range=last_30_days&end_date_range=next_30_days", ["start_date_range", "end_date_range"]),
+    ],
+)
+def test_a_date_range_counts_as_one_filter(organization, rf, query, expected):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+
+    assert sorted(view.get_applied_filters()) == sorted(expected)
+
+
+@pytest.mark.django_db
 def test_bare_opportunity_list_url_applies_no_filters(organization, rf):
     view = _opportunity_list_view(rf, organization, reverse("opportunity:list", args=(organization.slug,)))
 

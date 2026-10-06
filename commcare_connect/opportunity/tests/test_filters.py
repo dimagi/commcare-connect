@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
@@ -283,3 +284,52 @@ class TestOpportunityListDeliveryTypeFilter:
 
     def test_the_filter_is_dropped_without_an_accessible_opportunity(self, organization, rf):
         assert "delivery_type" not in _opportunity_list_filters(organization, rf)
+
+
+class TestOpportunityListDateRanges:
+    """Each date's range dropdown is resolved into the from/to dates the opportunity list filters on."""
+
+    TODAY = date(2026, 5, 31)
+
+    def cleaned(self, data):
+        filterset = OpportunityListFilterSet(data=data, queryset=Opportunity.objects.none())
+        with patch("commcare_connect.opportunity.filters.now", return_value=datetime(2026, 5, 31, 12)):
+            assert filterset.form.is_valid(), filterset.form.errors
+        return filterset.form.cleaned_data
+
+    @pytest.mark.parametrize(
+        "field, preset, expected",
+        [
+            ("start_date", "last_30_days", (date(2026, 5, 1), TODAY)),
+            ("start_date", "last_3_months", (date(2026, 2, 28), TODAY)),
+            ("start_date", "last_12_months", (date(2025, 5, 31), TODAY)),
+            ("end_date", "last_6_months", (date(2025, 11, 30), TODAY)),
+            ("end_date", "next_30_days", (TODAY, date(2026, 6, 30))),
+            ("end_date", "next_3_months", (TODAY, date(2026, 8, 31))),
+        ],
+    )
+    def test_a_preset_sets_its_dates_and_ignores_custom_ones(self, field, preset, expected):
+        cleaned = self.cleaned({f"{field}_range": preset, f"{field}_from": "2020-01-01", f"{field}_to": "2020-12-31"})
+
+        assert (cleaned[f"{field}_from"], cleaned[f"{field}_to"]) == expected
+
+    def test_future_presets_are_offered_for_end_dates_only(self):
+        filterset = OpportunityListFilterSet(queryset=Opportunity.objects.none())
+
+        start_choices = dict(filterset.form.fields["start_date_range"].choices)
+        end_choices = dict(filterset.form.fields["end_date_range"].choices)
+        assert "next_30_days" not in start_choices
+        assert "next_30_days" in end_choices
+
+    @pytest.mark.parametrize(
+        "data, expected",
+        [
+            ({"start_date_range": "custom", "start_date_from": "2026-01-01"}, ("custom", date(2026, 1, 1), None)),
+            ({"start_date_range": "custom"}, ("", None, None)),
+            ({"start_date_from": "2026-01-01", "start_date_to": "2026-02-01"}, ("", None, None)),
+        ],
+    )
+    def test_custom_dates_apply_only_under_custom_range(self, data, expected):
+        cleaned = self.cleaned(data)
+
+        assert (cleaned["start_date_range"], cleaned["start_date_from"], cleaned["start_date_to"]) == expected

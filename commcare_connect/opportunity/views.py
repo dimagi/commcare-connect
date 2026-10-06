@@ -71,6 +71,7 @@ from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.decorators import require_manual_visit_verification
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.opportunity.filters import (
+    DATE_RANGE_BOUND_FILTERS,
     AssignedTaskFilterSet,
     DeliverFilterSet,
     FilterMixin,
@@ -350,6 +351,9 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         context["search_term"] = self.search_term
         context["search_carried_params"] = self._search_carried_params()
         return context
+
+    def get_applied_filters(self):
+        return [name for name in super().get_applied_filters() if name not in DATE_RANGE_BOUND_FILTERS]
 
     @cached_property
     def search_term(self):
