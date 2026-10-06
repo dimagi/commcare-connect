@@ -1,0 +1,162 @@
+import datetime
+from decimal import Decimal
+
+import pytest
+
+from commcare_connect.opportunity.models import Currency, InvoiceFinanceRequestStatus, InvoiceStatus
+from commcare_connect.opportunity.tests.factories import (
+    InvoiceFinanceRequestFactory,
+    OpportunityFactory,
+    PaymentFactory,
+    PaymentInvoiceFactory,
+)
+from commcare_connect.opportunity.utils.finance_request import (
+    Question,
+    build_form_answers,
+    build_request_fields,
+    can_submit_finance_request,
+    get_additional_information_lines,
+    get_previous_finance_request,
+    suggest_new_vendor,
+)
+from commcare_connect.users.tests.factories import UserFactory
+
+
+@pytest.fixture
+def invoice(opportunity):
+    opportunity.organization.name = "Health Partners"
+    opportunity.organization.save()
+    opportunity.name = "Malaria Outreach"
+    opportunity.currency = Currency.objects.get(code="KES")
+    opportunity.save()
+    return PaymentInvoiceFactory(
+        opportunity=opportunity,
+        invoice_number="INV-7",
+        service_delivery=False,
+        description="Community training",
+        amount=Decimal("1500.00"),
+        amount_usd=Decimal("11.60"),
+        start_date=datetime.date(2026, 6, 1),
+        end_date=datetime.date(2026, 6, 30),
+        status=InvoiceStatus.READY_TO_PAY,
+    )
+
+
+@pytest.fixture
+def finance_request(invoice):
+    submitter = UserFactory(name="Pat Manager", email="pat@example.com")
+    return InvoiceFinanceRequestFactory(invoice=invoice, submitted_by=submitter, gl_account="66")
+
+
+def test_request_fields(finance_request):
+    assert build_request_fields(finance_request) == {"summary": "Connect Payment request: Health Partners June 2026"}
+
+
+def test_form_answers_for_direct_account(finance_request):
+    answers = build_form_answers(finance_request, "temp-1")
+
+    assert {question: answer for question, answer in answers.items() if question != "59"} == {
+        Question.PRIORITY: {"choices": ["3"]},
+        Question.APPROVED: {"choices": ["1"]},
+        Question.APPROVER_NAME: {"text": "Pat Manager (pat@example.com)"},
+        Question.CONTRACTED_ENTITY: {"choices": ["1"]},
+        Question.STATEMENT_PERIOD: {"text": "June 2026"},
+        Question.NEW_VENDOR: {"choices": ["2"]},
+        Question.INVOICE_UPLOAD: {"files": ["temp-1"]},
+        Question.GL_ACCOUNT: {"choices": ["66"]},
+        Question.PROJECT_NAME: {"text": "Connect Delivery 2026"},
+        Question.SUBDIVISION: {"choices": ["50"]},
+        Question.MULTIPLE_ACCOUNTS: {"choices": ["2"]},
+        Question.BRIEF_DESCRIPTION: {"text": "Connect payment to Health Partners for Malaria Outreach, invoice INV-7"},
+    }
+    paragraphs = answers[Question.ADDITIONAL_INFORMATION]["adf"]["content"]
+    assert [p["content"][0]["text"] for p in paragraphs] == get_additional_information_lines(finance_request)
+
+
+def test_form_answers_leave_out_project_name_for_overhead_account(finance_request):
+    finance_request.gl_account = "50"
+
+    assert Question.PROJECT_NAME not in build_form_answers(finance_request, "temp-1")
+
+
+def test_form_answers_for_new_vendor(finance_request):
+    finance_request.new_vendor = True
+
+    assert build_form_answers(finance_request, "temp-1")[Question.NEW_VENDOR] == {"choices": ["1"]}
+
+
+def test_additional_information_uses_pm_approval(finance_request):
+    finance_request.invoice.__dict__["pm_certification"] = {
+        "name": "Ada Approver (ada@example.com)",
+        "certified_at": datetime.datetime(2026, 7, 2, 10, 0, tzinfo=datetime.UTC),
+    }
+
+    assert get_additional_information_lines(finance_request) == [
+        "Vendor: Health Partners",
+        "Connect Opportunity: Malaria Outreach",
+        "Invoice: INV-7",
+        "Description of services:",
+        "- Community training: KES 1,500.00",
+        "Total: KES 1,500.00 (USD 11.60)",
+        "Approved by Ada Approver (ada@example.com) on July 2, 2026",
+        "Submitted for CommCare Connect by Pat Manager (pat@example.com)",
+    ]
+
+
+def test_additional_information_without_approval_or_usd(finance_request):
+    finance_request.invoice.amount_usd = None
+
+    lines = get_additional_information_lines(finance_request)
+
+    assert lines[-3:] == [
+        "Total: KES 1,500.00",
+        "Approved by Pat Manager (pat@example.com)",
+        "Submitted for CommCare Connect by Pat Manager (pat@example.com)",
+    ]
+
+
+@pytest.mark.parametrize(
+    "invoice_status, request_status, expected",
+    [
+        (InvoiceStatus.READY_TO_PAY, None, True),
+        (InvoiceStatus.READY_TO_PAY, InvoiceFinanceRequestStatus.FAILED, True),
+        (InvoiceStatus.READY_TO_PAY, InvoiceFinanceRequestStatus.PENDING, False),
+        (InvoiceStatus.READY_TO_PAY, InvoiceFinanceRequestStatus.SUBMITTED, False),
+        (InvoiceStatus.PENDING_PM_REVIEW, None, False),
+        (InvoiceStatus.PAID, None, False),
+    ],
+)
+def test_can_submit_finance_request(invoice, invoice_status, request_status, expected):
+    invoice.status = invoice_status
+    if request_status:
+        InvoiceFinanceRequestFactory(invoice=invoice, status=request_status)
+
+    assert can_submit_finance_request(invoice) is expected
+
+
+class TestSuggestNewVendor:
+    def test_first_payment(self, invoice):
+        assert suggest_new_vendor(invoice.opportunity.organization) is True
+
+    def test_paid_before_on_another_opportunity(self, invoice):
+        other_opportunity = OpportunityFactory(organization=invoice.opportunity.organization)
+        PaymentFactory(invoice=PaymentInvoiceFactory(opportunity=other_opportunity), opportunity_access=None)
+
+        assert suggest_new_vendor(invoice.opportunity.organization) is False
+
+    @pytest.mark.parametrize(
+        "status, expected",
+        [(InvoiceFinanceRequestStatus.SUBMITTED, False), (InvoiceFinanceRequestStatus.FAILED, True)],
+    )
+    def test_requested_before(self, invoice, status, expected):
+        InvoiceFinanceRequestFactory(invoice=PaymentInvoiceFactory(opportunity=invoice.opportunity), status=status)
+
+        assert suggest_new_vendor(invoice.opportunity.organization) is expected
+
+
+def test_previous_finance_request_is_the_latest_on_the_opportunity(invoice):
+    InvoiceFinanceRequestFactory(invoice=PaymentInvoiceFactory(opportunity=invoice.opportunity))
+    latest = InvoiceFinanceRequestFactory(invoice=PaymentInvoiceFactory(opportunity=invoice.opportunity))
+    InvoiceFinanceRequestFactory()  # another opportunity
+
+    assert get_previous_finance_request(invoice.opportunity) == latest
