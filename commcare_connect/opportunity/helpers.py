@@ -454,6 +454,8 @@ class OpportunityData:
         delivery_types = filters.get("delivery_type", [])
         if delivery_types:
             base_filter &= Q(delivery_type_id__in=delivery_types)
+        base_filter &= _date_range_filter("start_date", filters.get("start_date"))
+        base_filter &= _date_range_filter("end_date", filters.get("end_date"))
         if search_term:
             base_filter &= Q(name__icontains=search_term)
         queryset = (
@@ -570,6 +572,17 @@ def _opportunity_status(today):
         default=Value(OpportunityStatus.INACTIVE),
         output_field=IntegerField(),
     )
+
+
+def _date_range_filter(field, date_range):
+    q = Q()
+    if not date_range:
+        return q
+    if date_range.start:
+        q &= Q(**{f"{field}__gte": date_range.start})
+    if date_range.stop:
+        q &= Q(**{f"{field}__lte": date_range.stop})
+    return q
 
 
 def get_worker_table_data(opportunity, search_term=None):

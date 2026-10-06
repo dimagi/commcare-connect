@@ -283,3 +283,24 @@ class TestOpportunityListDeliveryTypeFilter:
 
     def test_the_filter_is_dropped_without_an_accessible_opportunity(self, organization, rf):
         assert "delivery_type" not in _opportunity_list_filters(organization, rf)
+
+
+class TestOpportunityListDateRanges:
+    """Start and End Date are preset date ranges; the field itself is tested in utils/tests/test_forms.py."""
+
+    @staticmethod
+    def range_choices(name):
+        filterset = OpportunityListFilterSet(queryset=Opportunity.objects.none())
+        return dict(filterset.form.fields[name].fields[0].choices)
+
+    @pytest.mark.parametrize("name, offered", [("start_date", False), ("end_date", True)])
+    def test_future_presets_are_offered_for_end_dates_only(self, name, offered):
+        assert ("next_30_days" in self.range_choices(name)) is offered
+
+    def test_the_url_params_clean_to_a_date_range(self):
+        data = {"end_date_range": "custom", "end_date_from": "2026-01-01", "end_date_to": "2026-02-01"}
+        filterset = OpportunityListFilterSet(data=data, queryset=Opportunity.objects.none())
+
+        assert filterset.form.is_valid(), filterset.form.errors
+        assert filterset.form.cleaned_data["end_date"] == slice(date(2026, 1, 1), date(2026, 2, 1))
+        assert filterset.form.cleaned_data["start_date"] is None

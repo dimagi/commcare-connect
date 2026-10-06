@@ -16,6 +16,8 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
+from commcare_connect.utils.datetime import DateRanges
+from commcare_connect.utils.forms import PresetDateRangeField
 
 
 class FilterMixin:
@@ -63,9 +65,11 @@ class FilterMixin:
             return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
         return {}
 
+    def get_applied_filters(self):
+        return [name for name, value in self.get_filter_values().items() if value not in (None, "", [])]
+
     def get_filter_usage_data(self):
-        values = self.get_filter_values()
-        applied = [k for k, v in values.items() if v not in (None, "", [])]
+        applied = self.get_applied_filters()
         if not applied:
             return None
 
@@ -76,7 +80,7 @@ class FilterMixin:
         }
 
     def filters_applied_count(self):
-        return len([v for v in self.get_filter_values().values() if v not in (None, "", [])])
+        return len(self.get_applied_filters())
 
     def get_filter_context(self):
         return {
@@ -84,6 +88,10 @@ class FilterMixin:
             "filters_applied_count": self.filters_applied_count(),
             "filter_usage_data": self.get_filter_usage_data(),
         }
+
+
+class PresetDateRangeFilter(django_filters.RangeFilter):
+    field_class = PresetDateRangeField
 
 
 class CSRFExemptForm(forms.Form):
@@ -143,6 +151,15 @@ class DeliverFilterSet(django_filters.FilterSet):
             self.filters.pop("has_duplicates")
 
 
+_PAST_PRESETS = [
+    DateRanges.LAST_30_DAYS,
+    DateRanges.LAST_3_MONTHS,
+    DateRanges.LAST_6_MONTHS,
+    DateRanges.LAST_12_MONTHS,
+]
+_FUTURE_PRESETS = [DateRanges.NEXT_30_DAYS, DateRanges.NEXT_3_MONTHS, DateRanges.NEXT_6_MONTHS]
+
+
 class OpportunityListFilterSet(django_filters.FilterSet):
     is_test = YesNoFilter(label="Is Test")
     status = django_filters.MultipleChoiceFilter(
@@ -156,6 +173,8 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     delivery_type = django_filters.MultipleChoiceFilter(
         label=_("Delivery Type"), choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
+    start_date = PresetDateRangeFilter(label=_("Start Date"), presets=_PAST_PRESETS)
+    end_date = PresetDateRangeFilter(label=_("End Date"), presets=[*_PAST_PRESETS, *_FUTURE_PRESETS])
 
     class Meta:
         form = CSRFExemptForm
@@ -167,6 +186,13 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         if request:
             self._set_choices_or_drop("program", [(p.slug, p.name) for p in programs_accessible_to_org(request.org)])
             self._set_choices_or_drop("delivery_type", self._delivery_type_choices(request.org))
+        self.form.helper.layout = Layout(
+            "status",
+            "is_test",
+            *[name for name in ("program", "delivery_type") if name in self.filters],
+            "start_date",
+            "end_date",
+        )
 
     def _set_choices_or_drop(self, name, choices):
         if choices:

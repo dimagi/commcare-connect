@@ -798,6 +798,32 @@ def _listed_names(organization, filters, search_term=None):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters, expected",
+    [
+        ({}, {"jan", "feb", "mar", "open_ended"}),
+        ({"start_date": slice(date(2026, 2, 1), None)}, {"feb", "mar", "open_ended"}),
+        ({"start_date": slice(None, date(2026, 2, 1))}, {"jan", "feb"}),
+        ({"start_date": slice(date(2026, 2, 1), date(2026, 2, 1))}, {"feb"}),
+        ({"end_date": slice(date(2026, 2, 28), None)}, {"feb", "mar"}),
+        ({"end_date": slice(None, date(2026, 2, 28))}, {"jan", "feb"}),
+        ({"end_date": slice(date(2026, 1, 1), date(2026, 12, 31))}, {"jan", "feb", "mar"}),
+    ],
+)
+def test_opportunity_list_filters_by_date_ranges(organization, filters, expected):
+    """Bounds are inclusive, and an opportunity without an end date drops out once an end bound is set."""
+    for name, start, end in [
+        ("jan", date(2026, 1, 1), date(2026, 1, 31)),
+        ("feb", date(2026, 2, 1), date(2026, 2, 28)),
+        ("mar", date(2026, 3, 1), date(2026, 3, 31)),
+        ("open_ended", date(2026, 4, 1), None),
+    ]:
+        OpportunityFactory(organization=organization, name=name, start_date=start, end_date=end)
+
+    assert _listed_names(organization, filters) == expected
+
+
+@pytest.mark.django_db
 def test_opportunity_list_filters_by_delivery_type(organization):
     chc, nutrition, other = DeliveryTypeFactory.create_batch(3)
     OpportunityFactory(organization=organization, name="chc", delivery_type=chc)
@@ -905,6 +931,21 @@ def test_default_opportunity_list_url_shows_only_active_non_test(organization, r
 
     assert view.filters_applied_count() == 2
     assert _listed_names(organization, view.get_filter_values()) == {"active"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("start_date_range=last_3_months", ["start_date"]),
+        ("start_date_range=custom&start_date_from=2026-01-01&start_date_to=2026-02-01", ["start_date"]),
+        ("start_date_range=last_30_days&end_date_range=next_30_days", ["start_date", "end_date"]),
+    ],
+)
+def test_a_date_range_counts_as_one_filter(organization, rf, query, expected):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+
+    assert sorted(view.get_applied_filters()) == sorted(expected)
 
 
 @pytest.mark.django_db
