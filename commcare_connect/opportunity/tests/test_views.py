@@ -791,6 +791,20 @@ def test_opportunity_list_excludes_archived(organization):
     assert queryset.count() == 1
 
 
+def _listed_names(organization, filters):
+    return {opp.name for opp in OpportunityData(organization, False, filters).get_data()}
+
+
+@pytest.mark.django_db
+def test_opportunity_list_filters_by_delivery_type(organization):
+    chc, nutrition, other = DeliveryTypeFactory.create_batch(3)
+    OpportunityFactory(organization=organization, name="chc", delivery_type=chc)
+    OpportunityFactory(organization=organization, name="nutrition", delivery_type=nutrition)
+    OpportunityFactory(organization=organization, name="other", delivery_type=other)
+
+    assert _listed_names(organization, {"delivery_type": [str(chc.pk), str(nutrition.pk)]}) == {"chc", "nutrition"}
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("can_act_as_program_manager", [True, False])
 @pytest.mark.parametrize(

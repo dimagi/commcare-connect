@@ -6,8 +6,8 @@ from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
-from commcare_connect.program.utils import programs_accessible_to_org
+from commcare_connect.opportunity.models import AssignedTaskStatus, DeliveryType, OpportunityAccess, TaskType
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
 
 
@@ -146,6 +146,9 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     program = django_filters.MultipleChoiceFilter(
         label="Program", choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
+    delivery_type = django_filters.MultipleChoiceFilter(
+        label=_("Delivery Type"), choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
+    )
 
     class Meta:
         form = CSRFExemptForm
@@ -155,11 +158,21 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         super().__init__(*args, **kwargs)
 
         if request:
-            choices = [(p.slug, p.name) for p in programs_accessible_to_org(request.org)]
-            if choices:
-                self.filters["program"].extra["choices"] = choices
-            else:
-                del self.filters["program"]
+            self._set_choices_or_drop("program", [(p.slug, p.name) for p in programs_accessible_to_org(request.org)])
+            self._set_choices_or_drop("delivery_type", self._delivery_type_choices(request.org))
+
+    def _set_choices_or_drop(self, name, choices):
+        if choices:
+            self.filters[name].extra["choices"] = choices
+        else:
+            del self.filters[name]
+
+    @staticmethod
+    def _delivery_type_choices(org):
+        delivery_types = DeliveryType.objects.filter(
+            id__in=opportunities_accessible_to_org(org).filter(archived=False).values("delivery_type_id")
+        ).order_by("name")
+        return [(str(d.pk), d.name) for d in delivery_types]
 
 
 TASK_STATUS_CHOICES = [

@@ -242,20 +242,44 @@ class TestAssignedTaskFilterSet:
         assert list(result) == [self.at_assigned]
 
 
+def _opportunity_list_filters(org, rf):
+    request = rf.get("/")
+    request.org = org
+    return OpportunityListFilterSet(queryset=Opportunity.objects.none(), request=request).filters
+
+
 @pytest.mark.django_db
 class TestOpportunityListProgramFilter:
     """The Program dropdown on the opportunity list is built from the programs the org can reach."""
 
-    @staticmethod
-    def filters_for(org, rf):
-        request = rf.get("/")
-        request.org = org
-        return OpportunityListFilterSet(queryset=Opportunity.objects.none(), request=request).filters
-
     def test_every_accessible_program_is_offered(self, program, rf):
-        filters = self.filters_for(program.organization, rf)
+        filters = _opportunity_list_filters(program.organization, rf)
 
         assert filters["program"].extra["choices"] == [(program.slug, program.name)]
 
     def test_the_filter_is_dropped_without_an_accessible_program(self, organization, rf):
-        assert "program" not in self.filters_for(organization, rf)
+        assert "program" not in _opportunity_list_filters(organization, rf)
+
+
+@pytest.mark.django_db
+class TestOpportunityListDeliveryTypeFilter:
+    """The Delivery Type dropdown offers only the delivery types of opportunities the org can reach."""
+
+    def test_only_delivery_types_in_use_are_offered(self, organization, rf):
+        used = OpportunityFactory(organization=organization).delivery_type
+        OpportunityFactory()  # another org's opportunity and delivery type
+
+        assert _opportunity_list_filters(organization, rf)["delivery_type"].extra["choices"] == [
+            (str(used.pk), used.name)
+        ]
+
+    def test_archived_opportunities_delivery_types_are_not_offered(self, organization, rf):
+        live = OpportunityFactory(organization=organization).delivery_type
+        OpportunityFactory(organization=organization, archived=True)
+
+        assert _opportunity_list_filters(organization, rf)["delivery_type"].extra["choices"] == [
+            (str(live.pk), live.name)
+        ]
+
+    def test_the_filter_is_dropped_without_an_accessible_opportunity(self, organization, rf):
+        assert "delivery_type" not in _opportunity_list_filters(organization, rf)

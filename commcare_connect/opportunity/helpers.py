@@ -449,6 +449,9 @@ class OpportunityData:
         programs = filters.get("program", [])
         if programs:
             base_filter &= Q(program__slug__in=programs)
+        delivery_types = filters.get("delivery_type", [])
+        if delivery_types:
+            base_filter &= Q(delivery_type_id__in=delivery_types)
         queryset = (
             opportunities_accessible_to_org(organization)
             .filter(base_filter)
