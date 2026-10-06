@@ -3,13 +3,17 @@ from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
+from commcare_connect.opportunity.tables import value_with_icon_tooltip
 from commcare_connect.organization.models import (
+    ORGANIZATION_STATUS_DEFINITIONS,
     Organization,
     OrganizationInvite,
+    OrganizationStatus,
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
@@ -210,6 +214,94 @@ class OrganizationChangeForm(OrganizationProfileForm):
         if "program_manager" in self.fields:
             return [_toggle("has_used_connect"), _toggle("program_manager")]
         return [_full_width(_toggle("has_used_connect"))]
+
+
+class OrganizationDirectoryForm(OrganizationProfileForm):
+    """Organization profile form requiring countries, regions and sectors, with status and agreement links."""
+
+    REQUIRED_FIELDS = ("name", "short_name", "countries", "regions", "primary_sectors")
+
+    class Meta(OrganizationProfileForm.Meta):
+        fields = (
+            "name",
+            "short_name",
+            "status",
+            "year_of_establishment",
+            "has_used_connect",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "latest_msa_link",
+            "latest_work_order_link",
+            "notes",
+        )
+        widgets = OrganizationProfileForm.Meta.widgets | {
+            "has_used_connect": forms.Select(choices=((True, gettext_lazy("Yes")), (False, gettext_lazy("No")))),
+            "regions": forms.TextInput(),
+            "office_address": forms.TextInput(),
+        }
+        labels = OrganizationProfileForm.Meta.labels | {
+            "has_used_connect": gettext_lazy("Has Used Connect"),
+            "team_size": gettext_lazy("Org Team Size"),
+            "flws_managed": gettext_lazy("No. of FLWs Managed"),
+            "countries": gettext_lazy("Countries of Operation"),
+            "regions": gettext_lazy("Regions / States of Operation"),
+            "primary_sectors": gettext_lazy("Primary Sector(s)"),
+            "contact_emails": gettext_lazy("Email Addresses"),
+            "latest_msa_link": gettext_lazy("Latest MSA Link"),
+            "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
+            "notes": gettext_lazy("Organization Notes"),
+        }
+        help_texts = {
+            "name": gettext_lazy("Renaming the organization does not change its URL."),
+            "contact_emails": gettext_lazy("One email address per line."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.REQUIRED_FIELDS:
+            self.fields[field].required = True
+        self.fields["status"].choices = self._status_choices()
+        self.fields["status"].label = value_with_icon_tooltip(
+            self.fields["status"].label,
+            render_to_string(
+                "organization/directory/status_definitions.html",
+                {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+            ),
+        )
+
+    def _status_choices(self):
+        """Status choices, offering Archived only when the organization is already archived."""
+        excluded = () if self.instance.status == OrganizationStatus.ARCHIVED else (OrganizationStatus.ARCHIVED,)
+        return [("", "—"), *((value, label) for value, label in OrganizationStatus.choices if value not in excluded)]
+
+    def _layout(self):
+        return layout.Layout(
+            layout.Div(
+                _full_width("name"),
+                "short_name",
+                "status",
+                "year_of_establishment",
+                "has_used_connect",
+                "team_size",
+                "flws_managed",
+                _full_width("countries"),
+                _full_width("regions"),
+                _full_width("primary_sectors"),
+                "website",
+                "office_address",
+                _full_width("contact_emails"),
+                "latest_msa_link",
+                "latest_work_order_link",
+                _full_width("notes"),
+                css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
+            ),
+        )
 
 
 def _wizard_step(number, title, *fields):

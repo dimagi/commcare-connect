@@ -81,9 +81,16 @@ class OrganizationDirectoryTable(tables.Table):
     team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
     flws_managed = columns.Column(verbose_name=_("FLWs Managed"))
     date_created = columns.DateTimeColumn(verbose_name=_("Added"), format="d-M-Y")
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
 
     class Meta:
         model = Organization
         fields = ("name", "status", "primary_sectors", "team_size", "flws_managed", "date_created")
+        sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")

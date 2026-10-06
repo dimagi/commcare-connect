@@ -18,4 +18,6 @@ urlpatterns = [
 # Routes that are not scoped to one organization.
 directory_urlpatterns = [
     path("", views.OrganizationListView.as_view(), name="list"),
+    path("new/", views.OrganizationCreateView.as_view(), name="create"),
+    path("<slug:slug>/edit/", views.OrganizationUpdateView.as_view(), name="edit"),
 ]

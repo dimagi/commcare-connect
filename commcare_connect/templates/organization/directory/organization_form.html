@@ -1,0 +1,41 @@
+{% load i18n crispy_forms_tags %}
+<div class="flex justify-between items-start mb-4">
+  <div>
+    <h2 id="organization-form-title"
+        class="text-xl font-bold text-brand-deep-purple">
+      {% if object %}
+        {% translate "Edit Organization" %}
+      {% else %}
+        {% translate "Add Organization" %}
+      {% endif %}
+    </h2>
+    {% if object %}
+      <p class="hint">{% blocktranslate with name=object.name %}Editing {{ name }}{% endblocktranslate %}</p>
+    {% endif %}
+  </div>
+  <button type="button"
+          class="button-icon"
+          @click="formOpen = false"
+          aria-label="{% translate 'Close dialog' %}">
+    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+  </button>
+</div>
+<form method="post"
+      hx-post="{{ request.get_full_path }}"
+      hx-target="#organization-form"
+      hx-swap="innerHTML">
+  {% csrf_token %}
+  {% crispy form %}
+  <div class="flex justify-end gap-3 pt-4">
+    <button type="button"
+            class="button button-md outline-style"
+            @click="formOpen = false">{% translate "Cancel" %}</button>
+    <button type="submit" class="button button-md primary-dark">
+      {% if object %}
+        {% translate "Save Changes" %}
+      {% else %}
+        {% translate "Save" %}
+      {% endif %}
+    </button>
+  </div>
+</form>

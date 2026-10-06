@@ -6,11 +6,14 @@ from allauth.account.utils import complete_signup, setup_user_email
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.functional import cached_property
-from django.utils.translation import gettext
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
+from django.views.generic import CreateView, UpdateView
 from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
@@ -20,6 +23,7 @@ from commcare_connect.organization.filters import OrganizationFilterSet
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
+    OrganizationDirectoryForm,
     OrganizationInviteForm,
     OrganizationProfileForm,
 )
@@ -317,3 +321,42 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
             }
         )
         return context
+
+
+class OrganizationFormMixin(DirectoryAccessMixin):
+    """Serves the add/edit form as a modal fragment to htmx; other requests are sent to the listing."""
+
+    model = Organization
+    form_class = OrganizationDirectoryForm
+    template_name = "organization/directory/organization_form.html"
+    slug_field = "slug"
+    success_message = None
+
+    def get(self, request, *args, **kwargs):
+        if not request.htmx:
+            return redirect(self.get_return_url())
+        return super().get(request, *args, **kwargs)
+
+    def get_return_url(self):
+        """The `next` URL when it is a directory listing URL on this host, otherwise the listing itself."""
+        list_url = reverse("organization_directory:list")
+        next_url = self.request.GET.get("next", "")
+        if next_url.startswith(list_url) and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={self.request.get_host()}
+        ):
+            return next_url
+        return list_url
+
+    def form_valid(self, form):
+        self.object = form.save()
+        messages.success(self.request, self.success_message.format(name=self.object.name))
+        return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
+
+
+class OrganizationCreateView(OrganizationFormMixin, CreateView):
+    # Does not make the requesting user a member of the new organization.
+    success_message = gettext_lazy("Organization {name} added.")
+
+
+class OrganizationUpdateView(OrganizationFormMixin, UpdateView):
+    success_message = gettext_lazy("Organization {name} updated.")

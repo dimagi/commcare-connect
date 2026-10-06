@@ -13,13 +13,22 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-  <div class="flex flex-col gap-4 w-full">
+  <div class="flex flex-col gap-4 w-full"
+       x-data="{ formOpen: false }"
+       @htmx:after-swap.window="if ($event.detail.target.id === 'organization-form') formOpen = true">
     {% include "components/breadcrumbs.html" with path=path %}
     <div class="flex items-start justify-between gap-4">
       <div>
         <h1 class="title">{% translate "Organizations" %}</h1>
         <p class="hint">{% translate "All organizations in the Connect network." %}</p>
       </div>
+      <button type="button"
+              class="button button-md primary-dark"
+              hx-get="{% url 'organization_directory:create' %}?next={{ request.get_full_path|urlencode }}"
+              hx-target="#organization-form">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        {% translate "Add Organization" %}
+      </button>
     </div>
     {% include "organization/directory/tabs.html" %}
     <form method="get" class="card_bg flex flex-col gap-3">
@@ -40,5 +49,6 @@
       </p>
     </form>
     <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
+    {% include "organization/directory/form_modal.html" %}
   </div>
 {% endblock content %}
