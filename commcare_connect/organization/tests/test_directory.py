@@ -11,13 +11,13 @@ from commcare_connect.organization.models import Organization, OrganizationStatu
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
-def _filter(params, archived=False):
+def _filtered_organizations(params, archived=False):
     organizations = Organization.objects.archived() if archived else Organization.objects.unarchived()
     return set(OrganizationFilterSet(params, queryset=organizations, archived=archived).qs)
 
 
 @pytest.fixture
-def directory_user(db):
+def user_with_directory_access(db):
     user = UserFactory()
     user.user_permissions.add(Permission.objects.get(codename="workspace_entity_management_access"))
     return user
@@ -45,7 +45,7 @@ class TestOrganizationFilterSet:
         org.primary_sectors.add(sectors["wash"])
         OrganizationFactory(name="Unrelated")
 
-        assert _filter({"search": search}) == {org}
+        assert _filtered_organizations({"search": search}) == {org}
 
     def test_multi_select_filters_match_any_value_without_duplicates(self, countries, sectors):
         both = OrganizationFactory()
@@ -57,14 +57,15 @@ class TestOrganizationFilterSet:
 
         by_country = OrganizationFilterSet({"countries": ["KEN", "TZA"]}, queryset=Organization.objects.all()).qs
         assert list(by_country) == [both]
-        assert _filter({"primary_sectors": [sectors["health"].pk, sectors["wash"].pk]}) == {both, india}
+        sector_ids = [sectors["health"].pk, sectors["wash"].pk]
+        assert _filtered_organizations({"primary_sectors": sector_ids}) == {both, india}
 
     def test_status_filter(self):
         active = OrganizationFactory(status=OrganizationStatus.ACTIVE)
         prospective = OrganizationFactory(status=OrganizationStatus.PROSPECTIVE)
         OrganizationFactory(status=OrganizationStatus.INACTIVE)
 
-        assert _filter({"status": ["active", "prospective"]}) == {active, prospective}
+        assert _filtered_organizations({"status": ["active", "prospective"]}) == {active, prospective}
 
     def test_archive_tab_has_no_status_filter(self):
         filterset = OrganizationFilterSet({}, queryset=Organization.objects.archived(), archived=True)
@@ -77,9 +78,9 @@ class TestOrganizationListAccess:
         client.force_login(user)
         assert client.get(reverse("organization_directory:list")).status_code == 403
 
-    def test_lists_for_permitted_user(self, client, directory_user):
+    def test_lists_for_permitted_user(self, client, user_with_directory_access):
         org = OrganizationFactory()
-        client.force_login(directory_user)
+        client.force_login(user_with_directory_access)
 
         response = client.get(reverse("organization_directory:list"))
 
@@ -147,8 +148,8 @@ class TestOrganizationDirectoryForm:
 
 @pytest.mark.django_db
 class TestOrganizationFormViews:
-    def test_create_does_not_add_the_staff_member(self, client, directory_user, countries, sectors):
-        client.force_login(directory_user)
+    def test_create_does_not_add_the_staff_member(self, client, user_with_directory_access, countries, sectors):
+        client.force_login(user_with_directory_access)
 
         response = client.post(
             reverse("organization_directory:create"), _form_data(countries, sectors), HTTP_HX_REQUEST="true"
@@ -167,19 +168,19 @@ class TestOrganizationFormViews:
         ],
     )
     def test_edit_returns_to_the_listing_it_came_from(
-        self, client, directory_user, countries, sectors, next_url, expected
+        self, client, user_with_directory_access, countries, sectors, next_url, expected
     ):
         org = OrganizationFactory()
-        client.force_login(directory_user)
+        client.force_login(user_with_directory_access)
         url = f"{reverse('organization_directory:edit', args=(org.slug,))}?{urlencode({'next': next_url})}"
 
         response = client.post(url, _form_data(countries, sectors), HTTP_HX_REQUEST="true")
 
         assert response.headers["HX-Redirect"] == expected
 
-    def test_invalid_submission_rerenders_the_form(self, client, directory_user, countries, sectors):
+    def test_invalid_submission_rerenders_the_form(self, client, user_with_directory_access, countries, sectors):
         org = OrganizationFactory()
-        client.force_login(directory_user)
+        client.force_login(user_with_directory_access)
 
         response = client.post(
             reverse("organization_directory:edit", args=(org.slug,)),
@@ -192,9 +193,9 @@ class TestOrganizationFormViews:
         assert response.context["form"].errors["name"]
 
     @pytest.mark.parametrize("url_name", ["organization_directory:create", "organization_directory:edit"])
-    def test_direct_visit_redirects_to_the_listing(self, client, directory_user, url_name):
+    def test_direct_visit_redirects_to_the_listing(self, client, user_with_directory_access, url_name):
         org = OrganizationFactory()
-        client.force_login(directory_user)
+        client.force_login(user_with_directory_access)
         args = (org.slug,) if url_name.endswith("edit") else ()
 
         response = client.get(reverse(url_name, args=args))

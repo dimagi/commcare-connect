@@ -60,7 +60,7 @@ class PendingInviteTable(tables.Table):
         prefix = "invites-"
 
 
-def _status_header():
+def _status_column_header():
     definitions_html = render_to_string(
         "organization/directory/status_definitions.html",
         {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
@@ -73,7 +73,7 @@ class OrganizationDirectoryTable(tables.Table):
     name = columns.Column(verbose_name=_("Name"))
     status = columns.TemplateColumn(
         # Lazy so the template isn't rendered at import time.
-        verbose_name=lazy(_status_header, SafeString)(),
+        verbose_name=lazy(_status_column_header, SafeString)(),
         template_name="organization/directory/status_badge.html",
     )
     primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"))

@@ -323,7 +323,7 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
         return context
 
 
-class OrganizationFormMixin(DirectoryAccessMixin):
+class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
     """Serves the add/edit form as a modal fragment to htmx; other requests are sent to the listing."""
 
     model = Organization
@@ -353,10 +353,10 @@ class OrganizationFormMixin(DirectoryAccessMixin):
         return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
 
 
-class OrganizationCreateView(OrganizationFormMixin, CreateView):
+class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
     # Does not make the requesting user a member of the new organization.
     success_message = gettext_lazy("Organization {name} added.")
 
 
-class OrganizationUpdateView(OrganizationFormMixin, UpdateView):
+class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
     success_message = gettext_lazy("Organization {name} updated.")

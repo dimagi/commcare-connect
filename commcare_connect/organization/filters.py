@@ -12,7 +12,7 @@ STATUS_FILTER_CHOICES = [choice for choice in OrganizationStatus.choices if choi
 
 class OrganizationFilterSet(django_filters.FilterSet):
     search = django_filters.CharFilter(
-        method="filter_search",
+        method="filter_by_search_term",
         label=_("Search"),
         widget=forms.TextInput(attrs={"placeholder": _("Search organization, country, sector…")}),
     )
@@ -41,7 +41,7 @@ class OrganizationFilterSet(django_filters.FilterSet):
             # Archived organizations all share one status, so filtering by it would be meaningless.
             del self.filters["status"]
 
-    def filter_search(self, queryset, name, value):
+    def filter_by_search_term(self, queryset, name, value):
         return queryset.filter(
             Q(name__icontains=value)
             | Q(short_name__icontains=value)
