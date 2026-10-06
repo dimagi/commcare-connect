@@ -415,6 +415,12 @@ MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)
 
+# Jira Service Management: Finance payment requests are raised on the dimagi-operations site
+# by an Atlassian service account using an OAuth 2.0 client credential.
+JIRA_SERVICE_DESK_CLIENT_ID = env("JIRA_SERVICE_DESK_CLIENT_ID", default=None)
+JIRA_SERVICE_DESK_CLIENT_SECRET = env("JIRA_SERVICE_DESK_CLIENT_SECRET", default=None)
+JIRA_SERVICE_DESK_CLOUD_ID = env("JIRA_SERVICE_DESK_CLOUD_ID", default="811411a5-569c-4f1d-be86-7a1333077196")
+
 # Waffle Settings
 WAFFLE_FLAG_MODEL = "flags.Flag"
 WAFFLE_CREATE_MISSING_FLAGS = True
