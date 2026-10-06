@@ -17,6 +17,7 @@ from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
+from django_htmx.middleware import HtmxDetails
 from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
@@ -791,8 +792,8 @@ def test_opportunity_list_excludes_archived(organization):
     assert queryset.count() == 1
 
 
-def _listed_names(organization, filters):
-    return {opp.name for opp in OpportunityData(organization, False, filters).get_data()}
+def _listed_names(organization, filters, search_term=None):
+    return {opp.name for opp in OpportunityData(organization, False, filters, search_term).get_data()}
 
 
 @pytest.mark.django_db
@@ -803,6 +804,68 @@ def test_opportunity_list_filters_by_delivery_type(organization):
     OpportunityFactory(organization=organization, name="other", delivery_type=other)
 
     assert _listed_names(organization, {"delivery_type": [str(chc.pk), str(nutrition.pk)]}) == {"chc", "nutrition"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "search_term, expected",
+    [
+        (None, {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
+        ("", {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
+        ("malaria", {"Malaria Kenya", "Malaria Uganda"}),
+        ("KENYA", {"Malaria Kenya", "Nutrition Kenya"}),
+        ("tb", set()),
+    ],
+)
+def test_opportunity_list_searches_by_name(organization, search_term, expected):
+    for name in ("Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"):
+        OpportunityFactory(organization=organization, name=name)
+
+    assert _listed_names(organization, {}, search_term) == expected
+
+
+@pytest.mark.django_db
+def test_opportunity_list_search_does_not_match_organization_name(organization):
+    OpportunityFactory(organization=organization, name="Malaria")
+
+    assert _listed_names(organization, {}, organization.name) == set()
+
+
+@pytest.mark.django_db
+def test_opportunity_list_search_combines_with_filters(organization):
+    today = now().date()
+    OpportunityFactory(organization=organization, name="Malaria active", end_date=today + timedelta(days=1))
+    OpportunityFactory(organization=organization, name="Malaria ended", end_date=today - timedelta(days=1))
+    OpportunityFactory(organization=organization, name="Nutrition active", end_date=today + timedelta(days=1))
+
+    assert _listed_names(organization, {"status": ["0"]}, "malaria") == {"Malaria active"}
+
+
+@pytest.mark.parametrize(
+    "headers, template",
+    [
+        ({}, "opportunity/opportunities_list.html"),
+        ({"HX-Request": "true"}, "opportunity/partials/opportunities_table.html"),
+        # Going back to a searched URL whose snapshot htmx no longer has needs the whole page.
+        ({"HX-Request": "true", "HX-History-Restore-Request": "true"}, "opportunity/opportunities_list.html"),
+    ],
+)
+def test_opportunity_list_renders_only_the_table_for_htmx_searches(rf, headers, template):
+    view = OpportunityList()
+    view.request = rf.get("/", headers=headers)
+    view.request.htmx = HtmxDetails(view.request)
+    view.object_list = Opportunity.objects.none()
+
+    assert view.get_template_names()[0] == template
+
+
+@pytest.mark.django_db
+def test_opportunity_list_response_varies_on_htmx(org_user_admin, organization, client):
+    client.force_login(org_user_admin)
+
+    response = client.get(reverse("opportunity:list", args=(organization.slug,)))
+
+    assert "HX-Request" in response["Vary"]
 
 
 @pytest.mark.django_db
@@ -818,6 +881,24 @@ def test_opportunity_list_sorts_by_delivery_type(organization, can_act_as_progra
     data = OpportunityData(organization, can_act_as_program_manager, {}).get_data().order_by(order)
 
     assert [opp.name for opp in data] == expected
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("", []),
+        ("q=malaria&page=3", []),
+        (
+            "status=0&status=1&is_test=False&q=malaria&page=2&sort=name",
+            [("status", "0"), ("status", "1"), ("is_test", "False"), ("sort", "name")],
+        ),
+    ],
+)
+def test_opportunity_list_search_carries_everything_but_query_and_page(rf, query, expected):
+    view = OpportunityList()
+    view.request = rf.get(f"/?{query}")
+
+    assert view._search_carried_params() == expected
 
 
 RELATIONSHIPS_ON_THE_LIST = [

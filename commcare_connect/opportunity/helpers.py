@@ -426,13 +426,14 @@ class TieredQueryset:
 
 
 class OpportunityData:
-    def __init__(self, org, can_act_as_program_manager, filters):
+    def __init__(self, org, can_act_as_program_manager, filters, search_term=None):
         self.org = org
         self.can_act_as_program_manager = can_act_as_program_manager
         self.filters = filters
+        self.search_term = search_term
 
     def get_data(self):
-        base_qs = self.get_base_qs(self.org, self.filters)
+        base_qs = self.get_base_qs(self.org, self.filters, self.search_term)
 
         def data_qs(ids):
             return self.get_data_qs(self.org, ids, self.can_act_as_program_manager)
@@ -440,7 +441,7 @@ class OpportunityData:
         return TieredQueryset(base_qs, data_qs)
 
     @staticmethod
-    def get_base_qs(organization, filters):
+    def get_base_qs(organization, filters, search_term=None):
         today = now().date()
         base_filter = Q(archived=False)
         is_test = filters.get("is_test", None)
@@ -452,6 +453,8 @@ class OpportunityData:
         delivery_types = filters.get("delivery_type", [])
         if delivery_types:
             base_filter &= Q(delivery_type_id__in=delivery_types)
+        if search_term:
+            base_filter &= Q(name__icontains=search_term)
         queryset = (
             opportunities_accessible_to_org(organization)
             .filter(base_filter)

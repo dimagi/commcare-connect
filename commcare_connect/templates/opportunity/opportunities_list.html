@@ -1,6 +1,5 @@
 {% extends 'base.html' %}
 {% load static i18n %}
-{% load render_table from django_tables2 %}
 {% load crispy_forms_tags %}
 {% block css %}
   {{ block.super }}
@@ -29,7 +28,33 @@
         <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
         <div class="flex gap-x-6 items-center"
              x-cloak
-             x-data="{showFilterModal: false}">
+             x-data="{showFilterModal: false, search: '{{ search_term|escapejs }}'}">
+          {# Searching keeps the applied filters and sort (carried as hidden inputs) and goes back to page 1. #}
+          <form id="opportunity-search" class="relative" @submit.prevent>
+            {% for key, value in search_carried_params %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+            <input type="text"
+                   name="q"
+                   x-model="search"
+                   hx-get="{% url 'opportunity:list' request.org.slug %}"
+                   hx-trigger="keyup changed delay:400ms, clear-search from:window"
+                   hx-include="closest form"
+                   hx-target="#opportunity-table"
+                   hx-swap="outerHTML"
+                   hx-replace-url="true"
+                   hx-indicator="closest form"
+                   placeholder="{% translate 'Search by opportunity name' %}"
+                   aria-label="{% translate 'Search by opportunity name' %}"
+                   class="pl-9 pr-8 py-2 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-deep-purple/30">
+            <i class="fa-solid fa-spinner fa-spin htmx-indicator absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+            <button type="button"
+                    x-show="search"
+                    @click="search=''; $nextTick(() => { $dispatch('clear-search') })"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 [.htmx-request_&]:hidden"
+                    x-tooltip.raw="{% translate 'Clear search' %}">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </form>
           <button type="button"
                   @click="showFilterModal = true"
                   class="relative button-icon">
@@ -49,6 +74,8 @@
                 </button>
               </div>
               <form id="filterForm" class="content">
+                {# Carry the live search over so applying filters keeps it; disabled (not sent) when empty. #}
+                <input type="hidden" name="q" :value="search" :disabled="!search">
                 <div class="modal-body">{% crispy filter_form %}</div>
                 <div class="footer">
                   <button type="button"
@@ -65,9 +92,7 @@
         </div>
       </div>
       <!-- Table Header -->
-      <div class="flex flex-col w-full gap-2">
-        <div class="w-full overflow-y-auto  rounded-lg shadow-xs">{% render_table table %}</div>
-      </div>
+      <div class="flex flex-col w-full gap-2">{% include "opportunity/partials/opportunities_table.html" %}</div>
     </div>
   </div>
 {% endblock %}
