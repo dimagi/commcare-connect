@@ -33,7 +33,7 @@ from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
 from commcare_connect.reports.tasks import export_invoice_report_task
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, INVOICE_REPORT_ACCESS
-from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
+from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_page_size
 
 PERIOD_CHOICES = [
     ("monthly", "Monthly"),
@@ -258,7 +258,7 @@ class InvoiceReportView(
     paginate_by = DEFAULT_PAGE_SIZE
 
     def get_paginate_by(self, table):
-        return get_validated_page_size(self.request)
+        return get_page_size(self.request)
 
     def get_template_names(self):
         return ["reports/invoice_report.html"]

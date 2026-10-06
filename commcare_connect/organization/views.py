@@ -32,7 +32,7 @@ from commcare_connect.organization.tables import OrganizationDirectoryTable, Org
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
-from commcare_connect.utils.tables import get_validated_page_size
+from commcare_connect.utils.tables import get_page_size
 
 
 @login_required
@@ -247,7 +247,7 @@ def revoke_invite(request, org_slug, invite_id):
 def org_member_table(request, org_slug=None):
     members = UserOrganizationMembership.objects.filter(organization=request.org)
     table = OrgMemberTable(members)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_page_size(request)}).configure(table)
     return render(request, "components/tables/table.html", {"table": table})
 
 
@@ -266,7 +266,7 @@ def _render_pending_invites(request):
         if not invite.is_expired
     ]
     table = PendingInviteTable(invites)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_page_size(request)}).configure(table)
     return render(request, "organization/pending_invites_table.html", {"table": table})
 
 
@@ -302,7 +302,7 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
         return super().get_filterset_kwargs(filterset_class) | {"archived": self.showing_archive}
 
     def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
+        return get_page_size(self.request)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

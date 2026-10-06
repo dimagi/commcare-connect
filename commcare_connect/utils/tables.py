@@ -108,7 +108,8 @@ class DMYTColumn(tables.Column):
         return final_value
 
 
-def get_validated_page_size(request):
+def get_page_size(request):
+    """The `page_size` query parameter when it is one of PAGE_SIZE_OPTIONS, otherwise DEFAULT_PAGE_SIZE."""
     try:
         page_size = int(request.GET.get("page_size", DEFAULT_PAGE_SIZE))
         return page_size if page_size in PAGE_SIZE_OPTIONS else DEFAULT_PAGE_SIZE

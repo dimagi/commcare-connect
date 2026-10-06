@@ -259,7 +259,7 @@ from commcare_connect.utils.tables import (
     DEFAULT_PAGE_SIZE,
     PAGE_SIZE_OPTIONS,
     get_duration_min,
-    get_validated_page_size,
+    get_page_size,
 )
 
 logger = logging.getLogger(__name__)
@@ -341,7 +341,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return OpportunityTable
 
     def get_paginate_by(self, table):
-        return get_validated_page_size(self.request)
+        return get_page_size(self.request)
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
@@ -1446,7 +1446,7 @@ class TaskTypesConfig(OpportunityPMRequiredMixin, OppStandardAccessMixin, Templa
             {"title": _("Configure Task Types"), "url": self.request.path},
         ]
         table = TaskTable(tasks, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         context.update(
             {
                 "opportunity": opportunity,
@@ -1636,7 +1636,7 @@ def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
 def suspended_users_list(request, org_slug=None, opp_id=None):
     access_objects = OpportunityAccess.objects.filter(opportunity=request.opportunity, suspended=True)
     table = SuspendedUsersTable(access_objects, has_suspension_perm=request.is_opportunity_pm)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_page_size(request)}).configure(table)
     path = []
     path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
     path.append(
@@ -1711,7 +1711,7 @@ def payment_report(request, org_slug, opp_id):
     ).aggregate(total=Sum(amount_field))["total"] or Decimal("0.00")
     data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(request.opportunity, usd)
     table = PaymentReportTable(data)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_page_size(request)}).configure(table)
 
     def render_amount(amount):
         return f"{currency} {intcomma(amount or 0)}"
@@ -1801,7 +1801,7 @@ def invoice_list(request, org_slug, opp_id):
         month_param=invoice_month_param(selected_month),
     )
 
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_page_size(request)}).configure(table)
     return render(
         request,
         "opportunity/invoice_list.html",
@@ -2480,7 +2480,7 @@ class WorkerTableView(OppViewAccessMixin, OpportunityObjectMixin, SingleTableVie
     redirect_url_name = None  # subclasses must set this to the parent page URL name
 
     def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
+        return get_page_size(self.request)
 
     def dispatch(self, request, *args, **kwargs):
         self.opportunity = self.get_opportunity()
@@ -2586,7 +2586,7 @@ class WorkerVisitTableView(WorkerTableView):
         if visit_id and "page" not in self.request.GET:
             page = self._get_visit_page(visit_id)
             if page:
-                table.paginate(page=page, per_page=get_validated_page_size(self.request))
+                table.paginate(page=page, per_page=get_page_size(self.request))
         return table
 
     def _get_visit_page(self, visit_id):
@@ -2597,7 +2597,7 @@ class WorkerVisitTableView(WorkerTableView):
         preceding_count = queryset.filter(
             Q(visit_date__lt=target.visit_date) | Q(visit_date=target.visit_date, pk__lt=target.pk)
         ).count()
-        return preceding_count // get_validated_page_size(self.request) + 1
+        return preceding_count // get_page_size(self.request) + 1
 
 
 class VisitVerificationTableView(WorkerVisitTableView):
@@ -3006,7 +3006,7 @@ class WorkerView(BaseWorkerListView):
     def get_table(self, opportunity, org_slug):
         data = get_worker_table_data(opportunity, search_term=self._get_search_term())
         table = WorkerStatusTable(data)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         # Cache for get_extra_context so we can read paginator.count without requerying.
         self._table = table
         return table
@@ -3019,7 +3019,7 @@ class WorkerLearnView(BaseWorkerListView):
     def get_table(self, opportunity, org_slug):
         data = get_worker_learn_table_data(opportunity)
         table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         return table
 
 
@@ -3071,7 +3071,7 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
         if opportunity.automatic_visit_verification:
             table_kwargs["exclude"] = ("pending",)
         table = WorkerDeliveryTable(data, **table_kwargs)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         return table
 
 
@@ -3171,7 +3171,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             confirmed_paid_d=get_payment_subquery(True),
         )
         table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         return table
 
 
@@ -3193,7 +3193,7 @@ class WorkerTaskView(BaseWorkerListView, FilterMixin):
     def get_table(self, opportunity, org_slug):
         data = self._get_filter().qs
         table = WorkerTasksTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         return table
 
 
@@ -3210,7 +3210,7 @@ class WorkerWorkAreaView(BaseWorkerListView):
     def get_table(self, opportunity, org_slug):
         data = get_worker_work_area_table_data(opportunity)
         table = WorkerWorkAreaTable(data, org_slug=org_slug)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        RequestConfig(self.request, paginate={"per_page": get_page_size(self.request)}).configure(table)
         return table
 
 
@@ -3819,7 +3819,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMix
     filter_class = AssignedTaskFilterSet
 
     def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
+        return get_page_size(self.request)
 
     def get_filter_kwargs(self):
         return {
