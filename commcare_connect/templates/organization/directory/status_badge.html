@@ -1,0 +1,9 @@
+{% if value == "active" %}
+  <span class="badge badge-sm positive-light">{{ record.get_status_display }}</span>
+{% elif value == "inactive" %}
+  <span class="badge badge-sm label">{{ record.get_status_display }}</span>
+{% elif value == "prospective" %}
+  <span class="badge badge-sm badge-indigo">{{ record.get_status_display }}</span>
+{% else %}
+  <span class="badge badge-sm badge-amber">{{ record.get_status_display }}</span>
+{% endif %}

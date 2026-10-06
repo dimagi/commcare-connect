@@ -50,6 +50,10 @@
       {% if request.user.show_internal_features %}
         {% url 'users:internal_features' as internal_features_url %}
         {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url namespace='users' %}
+        {% if perms.users.workspace_entity_management_access %}
+          {% url 'organization_directory:list' as organization_directory_url %}
+          {% include "components/sidenav-items.html" with name='LLO Directory' icon='address-book' target=organization_directory_url namespace='organization_directory' %}
+        {% endif %}
       {% endif %}
     {% endif %}
   </div>

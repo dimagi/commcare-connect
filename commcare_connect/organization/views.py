@@ -5,14 +5,18 @@ from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.functional import cached_property
 from django.utils.translation import gettext
 from django.views.decorators.http import require_GET
-from django_tables2 import RequestConfig
+from django_filters.views import FilterView
+from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
 from commcare_connect.organization.decorators import org_admin_access_required
+from commcare_connect.organization.filters import OrganizationFilterSet
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
@@ -20,9 +24,10 @@ from commcare_connect.organization.forms import (
     OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
+from commcare_connect.organization.tables import OrganizationDirectoryTable, OrgMemberTable, PendingInviteTable
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.users.models import User
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 from commcare_connect.utils.tables import get_validated_page_size
 
 
@@ -259,3 +264,56 @@ def _render_pending_invites(request):
     table = PendingInviteTable(invites)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "organization/pending_invites_table.html", {"table": table})
+
+
+class DirectoryAccessMixin(LoginRequiredMixin, PermissionRequiredMixin):
+    permission_required = WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+    raise_exception = True
+
+
+class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
+    table_class = OrganizationDirectoryTable
+    filterset_class = OrganizationFilterSet
+    template_name = "organization/directory/organization_list.html"
+    ORGANIZATIONS_TAB = "organizations"
+    ARCHIVE_TAB = "archive"
+
+    @cached_property
+    def tab(self):
+        return self.ARCHIVE_TAB if self.request.GET.get("tab") == self.ARCHIVE_TAB else self.ORGANIZATIONS_TAB
+
+    @property
+    def showing_archive(self):
+        return self.tab == self.ARCHIVE_TAB
+
+    def _tab_organizations(self):
+        if self.showing_archive:
+            return Organization.objects.archived()
+        return Organization.objects.unarchived()
+
+    def get_queryset(self):
+        return self._tab_organizations().prefetch_related("primary_sectors").order_by("-date_created")
+
+    def get_filterset_kwargs(self, filterset_class):
+        return super().get_filterset_kwargs(filterset_class) | {"archived": self.showing_archive}
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "tab": self.tab,
+                "organizations_tab": self.ORGANIZATIONS_TAB,
+                "archive_tab": self.ARCHIVE_TAB,
+                "organizations_count": Organization.objects.unarchived().count(),
+                "archive_count": Organization.objects.archived().count(),
+                "result_count": context["table"].paginator.count,
+                "path": [
+                    {"title": gettext("Internal"), "url": reverse("users:internal_features")},
+                    {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+                ],
+            }
+        )
+        return context

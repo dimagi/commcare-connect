@@ -46,6 +46,14 @@ ORGANIZATION_STATUS_DEFINITIONS = {
 }
 
 
+class OrganizationQuerySet(models.QuerySet):
+    def archived(self):
+        return self.filter(status=OrganizationStatus.ARCHIVED)
+
+    def unarchived(self):
+        return self.exclude(status=OrganizationStatus.ARCHIVED)
+
+
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
@@ -72,6 +80,8 @@ class Organization(BaseModel):
     latest_work_order_link = models.URLField(blank=True)
     verified = models.BooleanField(default=False)
     is_test = models.BooleanField(default=False)
+
+    objects = OrganizationQuerySet.as_manager()
 
     def save(self, *args, **kwargs):
         if not self.id:

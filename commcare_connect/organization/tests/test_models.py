@@ -9,6 +9,7 @@ from django.utils import timezone
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
+    OrganizationStatus,
     UserOrganizationMembership,
 )
 from commcare_connect.users.models import User
@@ -233,3 +234,14 @@ class TestOrganizationInvite:
         assert membership.accepted_at is not None
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
+
+
+@pytest.mark.django_db
+class TestOrganizationQuerySet:
+    def test_archived_and_unarchived(self):
+        active = OrganizationFactory(status=OrganizationStatus.ACTIVE)
+        unset = OrganizationFactory(status="")
+        archived = OrganizationFactory(status=OrganizationStatus.ARCHIVED)
+
+        assert set(Organization.objects.unarchived()) == {active, unset}
+        assert set(Organization.objects.archived()) == {archived}
