@@ -38,6 +38,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityStatus,
     Payment,
     UserInvite,
     UserInviteStatus,
@@ -463,12 +464,7 @@ class OpportunityData:
             .annotate(
                 program_name=F("program__name"),
                 delivery_type_name=F("delivery_type__name"),
-                status=Case(
-                    When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                    When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                    default=Value(2),  # Inactive
-                    output_field=IntegerField(),
-                ),
+                status=_opportunity_status(today),
             )
         )
         status = filters.get("status", [])
@@ -515,12 +511,7 @@ class OpportunityData:
                     output_field=DecimalField(),
                 ),
                 inactive_workers=inactive_workers_subquery(three_days_ago),
-                status=Case(
-                    When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                    When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                    default=Value(2),  # Inactive
-                    output_field=IntegerField(),
-                ),
+                status=_opportunity_status(today),
             )
         )
 
@@ -572,6 +563,15 @@ class OpportunityData:
         # preserve the order of opp_ids argument
         qs_by_id = {opp.id: opp for opp in queryset}
         return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
+
+
+def _opportunity_status(today):
+    return Case(
+        When(Q(active=True) & Q(end_date__gte=today), then=Value(OpportunityStatus.ACTIVE)),
+        When(Q(active=True) & Q(end_date__lt=today), then=Value(OpportunityStatus.ENDED)),
+        default=Value(OpportunityStatus.INACTIVE),
+        output_field=IntegerField(),
+    )
 
 
 def _date_range_filter(field, date_from, date_to):

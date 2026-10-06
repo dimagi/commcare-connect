@@ -33,6 +33,7 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
+from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
@@ -76,7 +77,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
             return reverse("no_organization")
         organization = self.request.org
         if organization:
-            return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
+            return opportunity_list_url(organization.slug)
         return reverse("account_email")
 
 
