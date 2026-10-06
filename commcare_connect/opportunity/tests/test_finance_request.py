@@ -1,9 +1,15 @@
 import datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import httpx
 import pytest
+from celery.exceptions import Retry
 
+from commcare_connect.jira_service_desk import CustomerRequest, JiraServiceDeskNotConfigured
 from commcare_connect.opportunity.models import Currency, InvoiceFinanceRequestStatus, InvoiceStatus
+from commcare_connect.opportunity.tasks import FINANCE_REQUEST_MAX_RETRIES, submit_invoice_finance_request
 from commcare_connect.opportunity.tests.factories import (
     InvoiceFinanceRequestFactory,
     OpportunityFactory,
@@ -20,6 +26,12 @@ from commcare_connect.opportunity.utils.finance_request import (
     suggest_new_vendor,
 )
 from commcare_connect.users.tests.factories import UserFactory
+
+
+def _status_error(status_code, json=None):
+    request = httpx.Request("POST", "https://jira.example/request")
+    response = httpx.Response(status_code, json=json or {}, request=request)
+    return httpx.HTTPStatusError("error", request=request, response=response)
 
 
 @pytest.fixture
@@ -160,3 +172,99 @@ def test_previous_finance_request_is_the_latest_on_the_opportunity(invoice):
     InvoiceFinanceRequestFactory()  # another opportunity
 
     assert get_previous_finance_request(invoice.opportunity) == latest
+
+
+class TestSubmitInvoiceFinanceRequest:
+    @pytest.fixture(autouse=True)
+    def jira(self):
+        with (
+            patch("commcare_connect.opportunity.tasks.render_invoice_pdf", return_value=b"%PDF") as render,
+            patch("commcare_connect.opportunity.tasks.attach_temporary_file", return_value="temp-1") as attach,
+            patch(
+                "commcare_connect.opportunity.tasks.create_request",
+                return_value=CustomerRequest(key="FIN-9", url="https://jira.example/FIN-9"),
+            ) as create,
+        ):
+            yield SimpleNamespace(render=render, attach=attach, create=create)
+
+    def test_submits_and_links_ticket(self, finance_request, jira):
+        submit_invoice_finance_request(finance_request.id)
+
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.SUBMITTED
+        assert finance_request.issue_key == "FIN-9"
+        finance_request.invoice.refresh_from_db()
+        assert finance_request.invoice.invoice_ticket_link == "https://jira.example/FIN-9"
+        jira.attach.assert_called_once_with("19", "invoice_INV-7.pdf", b"%PDF", "application/pdf")
+        service_desk, request_type, fields, answers = jira.create.call_args.args
+        assert (service_desk, request_type) == ("19", "186")
+        assert fields == build_request_fields(finance_request)
+        assert answers[Question.INVOICE_UPLOAD] == {"files": ["temp-1"]}
+
+    @pytest.mark.parametrize("status", [InvoiceFinanceRequestStatus.SUBMITTED, InvoiceFinanceRequestStatus.FAILED])
+    def test_only_pending_requests_are_sent(self, finance_request, jira, status):
+        finance_request.status = status
+        finance_request.save()
+
+        submit_invoice_finance_request(finance_request.id)
+
+        jira.attach.assert_not_called()
+        jira.create.assert_not_called()
+
+    def test_unconfigured(self, finance_request, jira):
+        jira.attach.side_effect = JiraServiceDeskNotConfigured
+
+        submit_invoice_finance_request(finance_request.id)
+
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
+        assert finance_request.error == "Submitting to Finance is not configured."
+        jira.create.assert_not_called()
+
+    def test_rejected_request_shows_jira_message(self, finance_request, jira):
+        jira.create.side_effect = _status_error(422, {"errorMessage": "Some fields have invalid entries."})
+
+        submit_invoice_finance_request(finance_request.id)
+
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
+        assert finance_request.error == "Jira rejected the request: Some fields have invalid entries."
+
+    @pytest.mark.parametrize(
+        "step, error",
+        [
+            ("attach", httpx.ReadTimeout("slow")),
+            ("attach", _status_error(503)),
+            ("create", httpx.ConnectError("down")),
+            ("create", _status_error(429)),
+        ],
+    )
+    def test_transient_errors_are_retried(self, finance_request, jira, step, error):
+        getattr(jira, step).side_effect = error
+
+        with patch.object(submit_invoice_finance_request, "retry", side_effect=Retry) as retry:
+            with pytest.raises(Retry):
+                submit_invoice_finance_request(finance_request.id)
+
+        assert retry.call_args.kwargs == {"exc": error, "countdown": 60}
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.PENDING
+
+    @pytest.mark.parametrize("error", [httpx.ReadTimeout("slow"), _status_error(502)])
+    def test_create_that_may_have_reached_jira_is_not_resent(self, finance_request, jira, error):
+        jira.create.side_effect = error
+
+        submit_invoice_finance_request(finance_request.id)
+
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
+        assert "may have been created" in finance_request.error
+
+    def test_fails_once_retries_are_exhausted(self, finance_request, jira):
+        jira.attach.side_effect = httpx.ConnectError("down")
+
+        submit_invoice_finance_request.apply(args=[finance_request.id], retries=FINANCE_REQUEST_MAX_RETRIES)
+
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
+        assert finance_request.error == "Jira could not be reached. Try again later."
