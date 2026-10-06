@@ -3324,6 +3324,9 @@ class OpportunityPaymentUnitTableView(OppViewAccessMixin, OpportunityObjectMixin
     model = PaymentUnit
     table_class = PaymentUnitTable
     template_name = "tables/single_table.html"
+    # Rendered inside the dashboard's resource modal, where base_table.html's page links would reload
+    # the whole page and close the modal. Opportunities have few payment units, so show them all.
+    table_pagination = False
 
     def get_queryset(self):
         return PaymentUnit.objects.filter(opportunity=self.get_opportunity()).prefetch_related("deliver_units")
