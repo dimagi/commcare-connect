@@ -449,6 +449,11 @@ class OpportunityData:
         programs = filters.get("program", [])
         if programs:
             base_filter &= Q(program__slug__in=programs)
+        delivery_types = filters.get("delivery_type", [])
+        if delivery_types:
+            base_filter &= Q(delivery_type_id__in=delivery_types)
+        base_filter &= _date_range_filter("start_date", filters.get("start_date_from"), filters.get("start_date_to"))
+        base_filter &= _date_range_filter("end_date", filters.get("end_date_from"), filters.get("end_date_to"))
         queryset = (
             opportunities_accessible_to_org(organization)
             .filter(base_filter)
@@ -564,6 +569,15 @@ class OpportunityData:
         # preserve the order of opp_ids argument
         qs_by_id = {opp.id: opp for opp in queryset}
         return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
+
+
+def _date_range_filter(field, date_from, date_to):
+    q = Q()
+    if date_from:
+        q &= Q(**{f"{field}__gte": date_from})
+    if date_to:
+        q &= Q(**{f"{field}__lte": date_to})
+    return q
 
 
 def get_worker_table_data(opportunity, search_term=None):

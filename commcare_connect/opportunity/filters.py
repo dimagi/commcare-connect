@@ -4,10 +4,11 @@ import django_filters
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
-from commcare_connect.program.utils import programs_accessible_to_org
+from commcare_connect.opportunity.models import AssignedTaskStatus, DeliveryType, OpportunityAccess, TaskType
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
 
 
@@ -146,6 +147,13 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     program = django_filters.MultipleChoiceFilter(
         label="Program", choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
+    delivery_type = django_filters.MultipleChoiceFilter(
+        label=_("Delivery Type"), choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
+    )
+    start_date_from = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
+    start_date_to = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
+    end_date_from = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
+    end_date_to = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
 
     class Meta:
         form = CSRFExemptForm
@@ -155,11 +163,48 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         super().__init__(*args, **kwargs)
 
         if request:
-            choices = [(p.slug, p.name) for p in programs_accessible_to_org(request.org)]
-            if choices:
-                self.filters["program"].extra["choices"] = choices
-            else:
-                del self.filters["program"]
+            self._set_choices_or_drop("program", [(p.slug, p.name) for p in programs_accessible_to_org(request.org)])
+            self._set_choices_or_drop("delivery_type", self._delivery_type_choices(request.org))
+        self.form.helper.layout = Layout(
+            "status",
+            "is_test",
+            *[name for name in ("program", "delivery_type") if name in self.filters],
+            _date_range_layout(_("Start Date"), "start_date_from", "start_date_to"),
+            _date_range_layout(_("End Date"), "end_date_from", "end_date_to"),
+        )
+
+    def _set_choices_or_drop(self, name, choices):
+        if choices:
+            self.filters[name].extra["choices"] = choices
+        else:
+            del self.filters[name]
+
+    @staticmethod
+    def _delivery_type_choices(org):
+        delivery_types = DeliveryType.objects.filter(
+            id__in=opportunities_accessible_to_org(org).filter(archived=False).values("delivery_type_id")
+        ).order_by("name")
+        return [(str(d.pk), d.name) for d in delivery_types]
+
+
+def _date_range_layout(label, from_field, to_field):
+    return Div(
+        HTML(format_html('<p class="block text-gray-700 text-sm font-bold mb-2">{}</p>', label)),
+        Div(
+            Div(
+                HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("From"))),
+                from_field,
+                css_class="flex-1",
+            ),
+            Div(
+                HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("To"))),
+                to_field,
+                css_class="flex-1",
+            ),
+            css_class="flex gap-2",
+        ),
+        css_class="mb-3",
+    )
 
 
 TASK_STATUS_CHOICES = [
@@ -291,40 +336,8 @@ class UserTasksFilterSet(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             "task_status",
             "task_type",
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "date_assigned_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "date_assigned_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "due_date_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "due_date_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
+            _date_range_layout(_("Date Assigned"), "date_assigned_from", "date_assigned_to"),
+            _date_range_layout(_("Due Date"), "due_date_from", "due_date_to"),
         )
 
 

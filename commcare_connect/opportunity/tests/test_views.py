@@ -791,6 +791,46 @@ def test_opportunity_list_excludes_archived(organization):
     assert queryset.count() == 1
 
 
+def _listed_names(organization, filters):
+    return {opp.name for opp in OpportunityData(organization, False, filters).get_data()}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters, expected",
+    [
+        ({}, {"jan", "feb", "mar", "open_ended"}),
+        ({"start_date_from": date(2026, 2, 1)}, {"feb", "mar", "open_ended"}),
+        ({"start_date_to": date(2026, 2, 1)}, {"jan", "feb"}),
+        ({"start_date_from": date(2026, 2, 1), "start_date_to": date(2026, 2, 1)}, {"feb"}),
+        ({"end_date_from": date(2026, 2, 28)}, {"feb", "mar"}),
+        ({"end_date_to": date(2026, 2, 28)}, {"jan", "feb"}),
+        ({"end_date_from": date(2026, 1, 1), "end_date_to": date(2026, 12, 31)}, {"jan", "feb", "mar"}),
+    ],
+)
+def test_opportunity_list_filters_by_date_ranges(organization, filters, expected):
+    """Bounds are inclusive, and an opportunity without an end date drops out once an end bound is set."""
+    for name, start, end in [
+        ("jan", date(2026, 1, 1), date(2026, 1, 31)),
+        ("feb", date(2026, 2, 1), date(2026, 2, 28)),
+        ("mar", date(2026, 3, 1), date(2026, 3, 31)),
+        ("open_ended", date(2026, 4, 1), None),
+    ]:
+        OpportunityFactory(organization=organization, name=name, start_date=start, end_date=end)
+
+    assert _listed_names(organization, filters) == expected
+
+
+@pytest.mark.django_db
+def test_opportunity_list_filters_by_delivery_type(organization):
+    chc, nutrition, other = DeliveryTypeFactory.create_batch(3)
+    OpportunityFactory(organization=organization, name="chc", delivery_type=chc)
+    OpportunityFactory(organization=organization, name="nutrition", delivery_type=nutrition)
+    OpportunityFactory(organization=organization, name="other", delivery_type=other)
+
+    assert _listed_names(organization, {"delivery_type": [str(chc.pk), str(nutrition.pk)]}) == {"chc", "nutrition"}
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("can_act_as_program_manager", [True, False])
 @pytest.mark.parametrize(
