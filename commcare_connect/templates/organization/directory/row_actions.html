@@ -9,4 +9,15 @@
           x-tooltip.raw="{% translate 'Edit' %}">
     <i class="fa-solid fa-pen" aria-hidden="true"></i>
   </button>
+  {% if record.status != "archived" %}
+    {# The wrapper carries the tooltip, as a disabled button gets no hover events. #}
+    <span x-data x-tooltip.raw="{% translate 'Archive: coming soon' %}">
+      <button type="button"
+              class="button-icon cursor-not-allowed opacity-50"
+              disabled
+              aria-label="{% translate 'Archive (coming soon)' %}">
+        <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+      </button>
+    </span>
+  {% endif %}
 </div>
