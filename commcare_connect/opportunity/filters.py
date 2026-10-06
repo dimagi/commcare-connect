@@ -4,6 +4,7 @@ import django_filters
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import (
@@ -310,41 +311,29 @@ class UserTasksFilterSet(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             "task_status",
             "task_type",
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "date_assigned_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "date_assigned_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "due_date_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "due_date_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
+            _date_range_layout(_("Date Assigned"), "date_assigned_from", "date_assigned_to"),
+            _date_range_layout(_("Due Date"), "due_date_from", "due_date_to"),
         )
+
+
+def _date_range_layout(label, from_field, to_field):
+    return Div(
+        HTML(format_html('<p class="block text-gray-700 text-sm font-bold mb-2">{}</p>', label)),
+        Div(
+            Div(
+                HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("From"))),
+                from_field,
+                css_class="flex-1",
+            ),
+            Div(
+                HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("To"))),
+                to_field,
+                css_class="flex-1",
+            ),
+            css_class="flex gap-2",
+        ),
+        css_class="mb-3",
+    )
 
 
 class AssignedTaskFilterSet(django_filters.FilterSet):
