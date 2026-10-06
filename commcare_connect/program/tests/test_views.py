@@ -288,6 +288,17 @@ class TestProgramHomeListsAccessiblePrograms:
         assert [program.id for program in programs] == [self.program.id]
         assert programs[0].user_has_admin_access is has_admin_access
 
+    @pytest.mark.parametrize("role", [Role.ADMIN, Role.MEMBER, Role.VIEWER])
+    @pytest.mark.parametrize("actor,has_admin_access", [("owner", True), ("funder", True), ("watcher", False)])
+    def test_any_member_role_lands_on_pm_home_with_role_scoped_access(self, actor, has_admin_access, role):
+        response = self.home_for(self.actors[actor], role=role)
+
+        assert response.status_code == HTTPStatus.OK
+        assert "program/pm_home.html" in self.template_names(response)
+        programs = response.context["programs"]
+        assert [program.id for program in programs] == [self.program.id]
+        assert programs[0].user_has_admin_access is (has_admin_access and role == Role.ADMIN)
+
     @pytest.mark.parametrize("actor,offered", [("owner", True), ("funder", True), ("watcher", False)])
     def test_manage_controls_are_rendered_only_for_admins(self, actor, offered):
         org = self.actors[actor]

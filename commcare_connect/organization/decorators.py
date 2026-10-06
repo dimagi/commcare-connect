@@ -31,6 +31,12 @@ def user_is_org_admin(user, organization):
     ).exists()
 
 
+def user_is_org_member(user, organization):
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
+
+
 def is_user_pm_org_admin(user, organization):
     if user.has_perm(ALL_ORG_ACCESS):
         return True
@@ -51,9 +57,9 @@ class IsProgramManagerOrgAdmin(BasePermission):
         return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
-def can_act_as_program_manager_admin(user, org) -> bool:
-    # Org that is program manager, funder or watcher can act as program manager
-    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_admin(
+def can_act_as_program_manager_user(user, org) -> bool:
+    # Any member of an org that is program manager, funder or watcher can act as program manager
+    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_member(
         user, org
     )
 
