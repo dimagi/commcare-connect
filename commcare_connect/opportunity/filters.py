@@ -6,7 +6,13 @@ from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import AssignedTaskStatus, DeliveryType, OpportunityAccess, TaskType
+from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
+    DeliveryType,
+    OpportunityAccess,
+    OpportunityStatus,
+    TaskType,
+)
 from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
 
@@ -140,7 +146,7 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     is_test = YesNoFilter(label="Is Test")
     status = django_filters.MultipleChoiceFilter(
         label="Status",
-        choices=[(0, "Active"), (1, "Ended"), (2, "Inactive")],
+        choices=OpportunityStatus.choices,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
     )
     program = django_filters.MultipleChoiceFilter(

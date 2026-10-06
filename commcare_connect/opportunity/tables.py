@@ -24,6 +24,7 @@ from commcare_connect.opportunity.models import (
     InvoiceStatus,
     LearnModule,
     OpportunityAccess,
+    OpportunityStatus,
     PaymentInvoice,
     PaymentUnit,
     TaskType,
@@ -576,16 +577,16 @@ class BaseOpportunityList(OrgContextTable):
         order_by = ("status", "-start_date", "end_date")
         empty_text = gettext_lazy("No Opportunities created yet.")
 
+    STATUS_BADGE_CLASSES = {
+        OpportunityStatus.ACTIVE: "badge badge-sm bg-green-600/20 text-green-600",
+        OpportunityStatus.ENDED: "badge badge-sm bg-orange-600/20 text-orange-600",
+        OpportunityStatus.INACTIVE: "badge badge-sm bg-slate-100 text-slate-400",
+    }
+
     def render_status(self, value):
-        if value == 0:
-            badge_class = "badge badge-sm bg-green-600/20 text-green-600"
-            text = "Active"
-        elif value == 1:
-            badge_class = "badge badge-sm bg-orange-600/20 text-orange-600"
-            text = "Ended"
-        else:
-            badge_class = "badge badge-sm bg-slate-100 text-slate-400"
-            text = "Inactive"
+        status = OpportunityStatus(value)
+        badge_class = self.STATUS_BADGE_CLASSES[status]
+        text = status.label
 
         return format_html(
             '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'  # noqa: E501
