@@ -556,6 +556,9 @@ class BaseOpportunityList(OrgContextTable):
     status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
 
     program = tables.Column(accessor="program_name")
+    delivery_type = tables.Column(
+        verbose_name=gettext_lazy("Delivery Type"), accessor="delivery_type_name", empty_values=()
+    )
     start_date = DMYTColumn()
     end_date = DMYTColumn()
 
@@ -566,6 +569,7 @@ class BaseOpportunityList(OrgContextTable):
             "entity_type",
             "status",
             "program",
+            "delivery_type",
             "start_date",
             "end_date",
         )
@@ -606,6 +610,8 @@ class BaseOpportunityList(OrgContextTable):
 
     def render_program(self, value):
         return self._render_div(value if value else "--", extra_classes="justify-start")
+
+    render_delivery_type = render_program
 
     def render_actions(self, record):
         actions = [

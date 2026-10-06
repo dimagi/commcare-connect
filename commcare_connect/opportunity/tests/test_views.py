@@ -60,6 +60,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     CompletedWorkInvoiceFactory,
     DeliverUnitFactory,
+    DeliveryTypeFactory,
     FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -788,6 +789,21 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("can_act_as_program_manager", [True, False])
+@pytest.mark.parametrize(
+    "order, expected", [("delivery_type_name", ["a", "b", "none"]), ("-delivery_type_name", ["none", "b", "a"])]
+)
+def test_opportunity_list_sorts_by_delivery_type(organization, can_act_as_program_manager, order, expected):
+    OpportunityFactory(organization=organization, name="b", delivery_type=DeliveryTypeFactory(name="Beta"))
+    OpportunityFactory(organization=organization, name="none", delivery_type=None)
+    OpportunityFactory(organization=organization, name="a", delivery_type=DeliveryTypeFactory(name="Alpha"))
+
+    data = OpportunityData(organization, can_act_as_program_manager, {}).get_data().order_by(order)
+
+    assert [opp.name for opp in data] == expected
 
 
 RELATIONSHIPS_ON_THE_LIST = [

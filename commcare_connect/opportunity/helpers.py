@@ -454,6 +454,7 @@ class OpportunityData:
             .filter(base_filter)
             .annotate(
                 program_name=F("program__name"),
+                delivery_type_name=F("delivery_type__name"),
                 status=Case(
                     When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
                     When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
@@ -496,6 +497,7 @@ class OpportunityData:
             .prefetch_related("program__watchers")
             .annotate(
                 program_name=F("program__name"),
+                delivery_type_name=F("delivery_type__name"),
                 pending_invites=pending_invites_subquery(),
                 pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
                 total_accrued=total_accrued_sq(),
