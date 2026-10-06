@@ -44,6 +44,7 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
@@ -330,10 +331,34 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         org = self.request.org
         return org.program_manager or org.funder or org.watched_programs.exists()
 
+    def get_template_names(self):
+        # A history restore re-requests a searched URL over htmx but needs the whole page back.
+        if self.request.htmx and not self.request.htmx.history_restore_request:
+            return ["opportunity/partials/opportunities_table.html"]
+        return super().get_template_names()
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        # The same URL serves the full page or just the table, so caches must not mix them up.
+        patch_vary_headers(response, ("HX-Request",))
+        return response
+
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
+        context["search_term"] = self.search_term
+        context["search_carried_params"] = self._search_carried_params()
         return context
+
+    @cached_property
+    def search_term(self):
+        return self.request.GET.get("q", "").strip()
+
+    def _search_carried_params(self):
+        """Query params a new search keeps: everything but the search itself and the page, which resets."""
+        return [
+            (key, value) for key, values in self.request.GET.lists() if key not in ("q", "page") for value in values
+        ]
 
     def get_table_class(self):
         if self.can_act_as_program_manager:
@@ -349,7 +374,9 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return kwargs
 
     def get_table_data(self):
-        data = OpportunityData(self.request.org, self.can_act_as_program_manager, self.get_filter_values())
+        data = OpportunityData(
+            self.request.org, self.can_act_as_program_manager, self.get_filter_values(), self.search_term
+        )
         return data.get_data()
 
 
