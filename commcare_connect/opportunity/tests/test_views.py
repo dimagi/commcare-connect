@@ -76,6 +76,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
@@ -883,6 +884,36 @@ def test_opportunity_list_sorts_by_delivery_type(organization, can_act_as_progra
     assert [opp.name for opp in data] == expected
 
 
+def _opportunity_list_view(rf, organization, url):
+    view = OpportunityList()
+    view.request = rf.get(url)
+    view.request.org = organization
+    return view
+
+
+@pytest.mark.django_db
+def test_default_opportunity_list_url_shows_only_active_non_test(organization, rf):
+    """The default URL's params, parsed by the filter form, list only active, non-test opportunities."""
+    today = now().date()
+    tomorrow, yesterday = today + timedelta(days=1), today - timedelta(days=1)
+    OpportunityFactory(organization=organization, name="active", end_date=tomorrow, is_test=False)
+    OpportunityFactory(organization=organization, name="test", end_date=tomorrow, is_test=True)
+    OpportunityFactory(organization=organization, name="ended", end_date=yesterday, is_test=False)
+    OpportunityFactory(organization=organization, name="inactive", end_date=tomorrow, active=False, is_test=False)
+
+    view = _opportunity_list_view(rf, organization, opportunity_list_url(organization.slug))
+
+    assert view.filters_applied_count() == 2
+    assert _listed_names(organization, view.get_filter_values()) == {"active"}
+
+
+@pytest.mark.django_db
+def test_bare_opportunity_list_url_applies_no_filters(organization, rf):
+    view = _opportunity_list_view(rf, organization, reverse("opportunity:list", args=(organization.slug,)))
+
+    assert view.filters_applied_count() == 0
+
+
 @pytest.mark.parametrize(
     "query, expected",
     [
@@ -899,6 +930,17 @@ def test_opportunity_list_search_carries_everything_but_query_and_page(rf, query
     view.request = rf.get(f"/?{query}")
 
     assert view._search_carried_params() == expected
+
+
+@pytest.mark.parametrize(
+    "extra, expected_query",
+    [
+        ({}, "status=0&is_test=False"),
+        ({"program": "malaria"}, "status=0&is_test=False&program=malaria"),
+    ],
+)
+def test_opportunity_list_url_adds_default_filters(extra, expected_query):
+    assert opportunity_list_url("my-org", **extra) == f"/a/my-org/opportunity/?{expected_query}"
 
 
 RELATIONSHIPS_ON_THE_LIST = [

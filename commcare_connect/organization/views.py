@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET
 from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
+from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.organization.decorators import org_admin_access_required
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
@@ -33,7 +34,7 @@ def organization_create(request):
     if form.is_valid():
         org = form.save()
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
-        return redirect("opportunity:list", org.slug)
+        return redirect(opportunity_list_url(org.slug))
 
     return render(request, "organization/organization_create.html", context={"form": form})
 
@@ -157,7 +158,7 @@ def _accept_invite_for_authenticated_user(request, invite, org_slug):
     if request.user.email and request.user.email.lower() == invite.email.lower():
         invite.accept(request.user)
         messages.success(request, gettext("You've joined {org}.").format(org=invite.organization.name))
-        return redirect("opportunity:list", org_slug)
+        return redirect(opportunity_list_url(org_slug))
 
     messages.error(
         request,
@@ -165,7 +166,7 @@ def _accept_invite_for_authenticated_user(request, invite, org_slug):
             email=invite.email
         ),
     )
-    return redirect("opportunity:list", org_slug)
+    return redirect(opportunity_list_url(org_slug))
 
 
 def _redirect_existing_user_to_login(request, invite):
@@ -191,7 +192,7 @@ def _accept_invite_for_new_user(request, invite, org_slug):
             request,
             new_user,
             allauth_account_settings.EMAIL_VERIFICATION,
-            reverse("opportunity:list", args=(org_slug,)),
+            opportunity_list_url(org_slug),
         )
 
     return render(request, "organization/accept_invite.html", {"form": form, "invite": invite})

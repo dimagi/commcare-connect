@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import localtime
 
+from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
@@ -155,7 +156,7 @@ class TestOrganizationCreateView:
 
         assert response.status_code == 302
         org = Organization.objects.get(name=org_name)
-        assert response.url == reverse("opportunity:list", args=(org.slug,))
+        assert response.url == opportunity_list_url(org.slug)
         membership = UserOrganizationMembership.objects.get(user=user, organization=org)
         assert membership.role == UserOrganizationMembership.Role.ADMIN
         assert org.verified is False
@@ -254,7 +255,7 @@ class TestAcceptInviteView:
         response = client.get(self._url(organization.slug, invite.token))
 
         assert response.status_code == 302
-        assert response.url == reverse("opportunity:list", args=(organization.slug,))
+        assert response.url == opportunity_list_url(organization.slug)
         assert UserOrganizationMembership.objects.filter(user=user, organization=organization, role="member").exists()
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
@@ -298,7 +299,7 @@ class TestAcceptInviteView:
         )
 
         assert response.status_code == 302
-        assert response.url == reverse("opportunity:list", args=(organization.slug,))
+        assert response.url == opportunity_list_url(organization.slug)
         new_user = User.objects.get(email="brand-new@example.com")
         assert UserOrganizationMembership.objects.filter(
             user=new_user, organization=organization, role="admin"
