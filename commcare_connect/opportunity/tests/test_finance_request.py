@@ -6,9 +6,16 @@ from unittest.mock import patch
 import httpx
 import pytest
 from celery.exceptions import Retry
+from django.urls import reverse
 
 from commcare_connect.jira_service_desk import CustomerRequest, JiraServiceDeskNotConfigured
-from commcare_connect.opportunity.models import Currency, InvoiceFinanceRequestStatus, InvoiceStatus
+from commcare_connect.opportunity.forms import InvoiceFinanceRequestForm
+from commcare_connect.opportunity.models import (
+    Currency,
+    InvoiceFinanceRequest,
+    InvoiceFinanceRequestStatus,
+    InvoiceStatus,
+)
 from commcare_connect.opportunity.tasks import FINANCE_REQUEST_MAX_RETRIES, submit_invoice_finance_request
 from commcare_connect.opportunity.tests.factories import (
     InvoiceFinanceRequestFactory,
@@ -25,6 +32,7 @@ from commcare_connect.opportunity.utils.finance_request import (
     get_previous_finance_request,
     suggest_new_vendor,
 )
+from commcare_connect.opportunity.views import get_finance_request_context
 from commcare_connect.users.tests.factories import UserFactory
 
 
@@ -268,3 +276,201 @@ class TestSubmitInvoiceFinanceRequest:
         finance_request.refresh_from_db()
         assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
         assert finance_request.error == "Jira could not be reached. Try again later."
+
+
+class TestInvoiceFinanceRequestForm:
+    def _form(self, **data):
+        data = {"contracted_entity": "1", "gl_account": "66", "project_name": "", "new_vendor": "False", **data}
+        return InvoiceFinanceRequestForm(data=data)
+
+    def test_direct_account_requires_project_name(self):
+        form = self._form(gl_account="66", project_name="  ")
+
+        assert not form.is_valid()
+        assert "project_name" in form.errors
+
+    def test_overhead_account_drops_project_name(self):
+        form = self._form(gl_account="50", project_name="Not needed")
+
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["project_name"] == ""
+
+    @pytest.mark.parametrize("field, value", [("gl_account", "11"), ("contracted_entity", "9")])
+    def test_rejects_choices_outside_the_offered_lists(self, field, value):
+        assert field in self._form(**{field: value}).errors
+
+    @pytest.mark.parametrize("value, expected", [("True", True), ("False", False)])
+    def test_new_vendor(self, value, expected):
+        form = self._form(new_vendor=value, project_name="Project")
+
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["new_vendor"] is expected
+
+
+class TestFinanceRequestContext:
+    @pytest.fixture(autouse=True)
+    def configured(self, settings):
+        settings.JIRA_SERVICE_DESK_CLIENT_ID = "client-id"
+        settings.JIRA_SERVICE_DESK_CLIENT_SECRET = "client-secret"
+
+    def test_prefills_from_the_opportunitys_last_request(self, invoice):
+        InvoiceFinanceRequestFactory(
+            invoice=PaymentInvoiceFactory(opportunity=invoice.opportunity),
+            contracted_entity="2",
+            gl_account="1",
+            project_name="Malaria 2026",
+            status=InvoiceFinanceRequestStatus.SUBMITTED,
+        )
+
+        form = get_finance_request_context(invoice)["finance_request_form"]
+
+        assert form.initial == {
+            "contracted_entity": "2",
+            "gl_account": "1",
+            "project_name": "Malaria 2026",
+            "new_vendor": False,
+        }
+
+    def test_first_request_suggests_new_vendor(self, invoice):
+        form = get_finance_request_context(invoice)["finance_request_form"]
+
+        assert form.initial == {"new_vendor": True}
+
+    def test_no_form_when_unconfigured(self, invoice, settings):
+        settings.JIRA_SERVICE_DESK_CLIENT_ID = None
+
+        context = get_finance_request_context(invoice)
+
+        assert context["finance_request_form"] is None
+        assert context["finance_request_configured"] is False
+
+
+@pytest.mark.django_db
+class TestInvoiceFinanceRequestView:
+    DATA = {"contracted_entity": "1", "gl_account": "66", "project_name": "Malaria 2026", "new_vendor": "False"}
+
+    @pytest.fixture(autouse=True)
+    def configured(self, settings):
+        settings.JIRA_SERVICE_DESK_CLIENT_ID = "client-id"
+        settings.JIRA_SERVICE_DESK_CLIENT_SECRET = "client-secret"
+
+    @pytest.fixture
+    def pm_invoice(self, managed_opportunity):
+        return PaymentInvoiceFactory(opportunity=managed_opportunity, status=InvoiceStatus.READY_TO_PAY)
+
+    def _post(self, client, user, invoice, org_slug, data=None):
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_finance_request",
+            args=(org_slug, invoice.opportunity.opportunity_id, invoice.payment_invoice_id),
+        )
+        return client.post(url, data or self.DATA)
+
+    def test_pm_sends_invoice(
+        self,
+        client,
+        pm_invoice,
+        program_manager_org,
+        program_manager_org_user_admin,
+        django_capture_on_commit_callbacks,
+    ):
+        with patch.object(submit_invoice_finance_request, "delay") as delay:
+            with django_capture_on_commit_callbacks(execute=True):
+                response = self._post(client, program_manager_org_user_admin, pm_invoice, program_manager_org.slug)
+
+        assert response.status_code == 200
+        finance_request = InvoiceFinanceRequest.objects.get(invoice=pm_invoice)
+        assert finance_request.status == InvoiceFinanceRequestStatus.PENDING
+        assert finance_request.submitted_by == program_manager_org_user_admin
+        assert (finance_request.contracted_entity, finance_request.gl_account) == ("1", "66")
+        delay.assert_called_once_with(finance_request.id)
+
+    def test_retry_reuses_failed_request(
+        self,
+        client,
+        pm_invoice,
+        program_manager_org,
+        program_manager_org_user_admin,
+        django_capture_on_commit_callbacks,
+    ):
+        failed = InvoiceFinanceRequestFactory(
+            invoice=pm_invoice, status=InvoiceFinanceRequestStatus.FAILED, error="Jira could not be reached."
+        )
+        with patch.object(submit_invoice_finance_request, "delay") as delay:
+            with django_capture_on_commit_callbacks(execute=True):
+                self._post(client, program_manager_org_user_admin, pm_invoice, program_manager_org.slug)
+
+        failed.refresh_from_db()
+        assert (failed.status, failed.error) == (InvoiceFinanceRequestStatus.PENDING, "")
+        delay.assert_called_once_with(failed.id)
+
+    def test_invalid_answers_create_nothing(
+        self, client, pm_invoice, program_manager_org, program_manager_org_user_admin
+    ):
+        response = self._post(
+            client,
+            program_manager_org_user_admin,
+            pm_invoice,
+            program_manager_org.slug,
+            data={**self.DATA, "project_name": ""},
+        )
+
+        assert response.status_code == 200
+        assert "A project name is required" in response.content.decode()
+        assert not InvoiceFinanceRequest.objects.filter(invoice=pm_invoice).exists()
+
+    @pytest.mark.parametrize(
+        "invoice_status, existing_status",
+        [
+            (InvoiceStatus.PENDING_PM_REVIEW, None),
+            (InvoiceStatus.READY_TO_PAY, InvoiceFinanceRequestStatus.SUBMITTED),
+        ],
+    )
+    def test_ineligible_invoice_is_not_sent(
+        self,
+        client,
+        pm_invoice,
+        program_manager_org,
+        program_manager_org_user_admin,
+        invoice_status,
+        existing_status,
+    ):
+        pm_invoice.status = invoice_status
+        pm_invoice.save()
+        if existing_status:
+            InvoiceFinanceRequestFactory(invoice=pm_invoice, status=existing_status)
+
+        with patch.object(submit_invoice_finance_request, "delay") as delay:
+            self._post(client, program_manager_org_user_admin, pm_invoice, program_manager_org.slug)
+
+        delay.assert_not_called()
+        assert (
+            InvoiceFinanceRequest.objects.filter(
+                invoice=pm_invoice, status=InvoiceFinanceRequestStatus.PENDING
+            ).count()
+            == 0
+        )
+
+    def test_network_manager_cannot_send(self, client, pm_invoice, org_user_admin):
+        response = self._post(client, org_user_admin, pm_invoice, pm_invoice.opportunity.organization.slug)
+
+        assert response.status_code == 404
+        assert not InvoiceFinanceRequest.objects.filter(invoice=pm_invoice).exists()
+
+    @pytest.mark.parametrize("configured, expected", [(True, "Send to Finance"), (False, "not configured")])
+    def test_invoice_page_shows_finance_card(
+        self, client, settings, pm_invoice, program_manager_org, program_manager_org_user_admin, configured, expected
+    ):
+        if not configured:
+            settings.JIRA_SERVICE_DESK_CLIENT_ID = None
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            reverse(
+                "opportunity:invoice_review",
+                args=(program_manager_org.slug, pm_invoice.opportunity.opportunity_id, pm_invoice.payment_invoice_id),
+            )
+        )
+
+        assert response.status_code == 200
+        assert expected in response.content.decode()

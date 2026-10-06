@@ -38,6 +38,7 @@ from commcare_connect.opportunity.models import (
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
+    InvoiceFinanceRequest,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -53,6 +54,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import header_with_tooltip, value_with_icon_tooltip
+from commcare_connect.opportunity.utils import finance_request as finance_request_utils
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
@@ -1637,6 +1639,52 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
     invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
+
+
+class InvoiceFinanceRequestForm(forms.ModelForm):
+    """The answers a Program Manager gives when sending an approved invoice to Finance."""
+
+    contracted_entity = forms.ChoiceField(
+        label=_("Contracted entity"),
+        choices=[("", "---------"), *finance_request_utils.CONTRACTED_ENTITY_CHOICES],
+        help_text=_("The Dimagi entity contracted to pay this invoice."),
+    )
+    gl_account = forms.ChoiceField(
+        label=_("GL account (expense category)"),
+        choices=[("", "---------"), *finance_request_utils.GL_ACCOUNT_CHOICES],
+        help_text=_("Direct accounts are for project expenses; Overhead accounts for costs Dimagi bears."),
+        widget=forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"}),
+    )
+    project_name = forms.CharField(
+        label=_("Project name"),
+        required=False,
+        help_text=_("As it appears on the Salesforce contract. Required for Direct accounts."),
+    )
+    new_vendor = forms.TypedChoiceField(
+        label=_("Is this the first payment to this organization?"),
+        choices=[(True, _("Yes")), (False, _("No"))],
+        coerce=lambda value: value in (True, "True"),
+        widget=forms.RadioSelect,
+    )
+
+    class Meta:
+        model = InvoiceFinanceRequest
+        fields = ["contracted_entity", "gl_account", "project_name", "new_vendor"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        gl_account = cleaned_data.get("gl_account")
+        if gl_account and finance_request_utils.requires_project_name(gl_account):
+            if not cleaned_data.get("project_name", "").strip():
+                self.add_error("project_name", _("A project name is required for Direct accounts."))
+        else:
+            cleaned_data["project_name"] = ""
+        return cleaned_data
 
 
 class InvoiceExportForm(forms.Form):

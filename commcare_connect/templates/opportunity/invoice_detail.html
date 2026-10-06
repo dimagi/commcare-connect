@@ -1,5 +1,17 @@
 {% extends "base.html" %}
-{% load i18n crispy_forms_tags %}
+{% load i18n static crispy_forms_tags %}
+{% block css %}
+  {{ block.super }}
+  {% if show_finance_request %}
+    <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+  {% endif %}
+{% endblock css %}
+{% block javascript %}
+  {{ block.super }}
+  {% if show_finance_request %}
+    <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+  {% endif %}
+{% endblock javascript %}
 {% block content %}
   {% include 'components/breadcrumbs.html' with path=path %}
   <div class="card_bg">
@@ -52,6 +64,10 @@
       {% include "components/invoice_certify_modal.html" with modal_name="showSubmitModal" invoice_number=form.instance.invoice_number confirm_action="confirmSubmitInvoice()" %}
     </div>
   </div>
+  {% if show_finance_request %}
+    <br />
+    {% include "opportunity/partials/invoice_finance_request.html" %}
+  {% endif %}
   {% if show_payment_invoice_invoice_ticket_link_form %}
     <br />
     <div class="card_bg">
