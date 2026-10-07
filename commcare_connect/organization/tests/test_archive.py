@@ -10,7 +10,7 @@ from commcare_connect.organization.archive import ArchiveNotAllowed, archive_org
 from commcare_connect.organization.models import Organization, OrganizationStatus
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
-from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
+from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -69,6 +69,29 @@ class TestArchiveOrganization:
         organization.refresh_from_db()
         assert organization.status == OrganizationStatus.ARCHIVED
         assert not _has_live_program(organization)
+
+    def test_archives_the_organizations_contacts(self):
+        organization = OrganizationFactory()
+        contact = ContactFactory(organization=organization)
+        other_organizations_contact = ContactFactory()
+
+        archive_organization(organization)
+
+        contact.refresh_from_db()
+        other_organizations_contact.refresh_from_db()
+        assert contact.is_archived
+        assert not other_organizations_contact.is_archived
+
+    def test_refusal_leaves_contacts_unarchived(self):
+        organization = OrganizationFactory()
+        ProgramFactory(organization=organization, end_date=TODAY)
+        contact = ContactFactory(organization=organization)
+
+        with pytest.raises(ArchiveNotAllowed):
+            archive_organization(organization)
+
+        contact.refresh_from_db()
+        assert not contact.is_archived
 
 
 class TestOrganizationArchiveView:

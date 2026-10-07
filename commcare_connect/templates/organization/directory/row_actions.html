@@ -24,7 +24,7 @@
       </span>
     {% else %}
       {% translate "Archive organization" as archive_title %}
-      {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? It will move to the Archive tab.{% endblocktranslate %}
+      {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? It will move to the Archive tab, and its contacts will be archived.{% endblocktranslate %}
       <div x-data>
         <form x-ref="archiveForm"
               method="post"

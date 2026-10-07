@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
@@ -10,14 +11,16 @@ class ArchiveNotAllowed(Exception):
 
 
 def archive_organization(organization: Organization) -> None:
-    """Sets the organization's status to Archived, refusing while it has a live program."""
+    """Sets the organization's status to Archived and archives its contacts, refusing while it has a live program."""
     programs = list(live_programs(organization).values_list("name", flat=True))
     if programs:
         raise ArchiveNotAllowed(
             f"{organization.name} runs, funds or delivers in programs that haven't ended: {', '.join(programs)}."
         )
-    organization.status = OrganizationStatus.ARCHIVED
-    organization.save(update_fields=["status", "date_modified"])
+    with transaction.atomic():
+        organization.status = OrganizationStatus.ARCHIVED
+        organization.save(update_fields=["status", "date_modified"])
+        organization.contacts.filter(is_archived=False).update(is_archived=True, date_modified=timezone.now())
 
 
 def live_programs(organization):
