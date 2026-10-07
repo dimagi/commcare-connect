@@ -21,3 +21,5 @@ django_email_backend: anymail.backends.amazon_ses.EmailBackend
 deploy_environment: staging
 django_allow_registrations: True
 commcare_hq_url: https://staging.commcarehq.org
+# HubSpot tracking on the public pages; production only.
+hubspot_api_id: ''
