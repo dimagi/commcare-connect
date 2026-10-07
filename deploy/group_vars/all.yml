@@ -1,0 +1,5 @@
+# The inventories address hosts by EC2 instance ID, which only resolves through an SSM session.
+# Same proxy as Kamal's (deploy/config/deploy.yml); needs the AWS CLI, the Session Manager plugin
+# and an active AWS SSO login.
+ansible_ssh_common_args: >-
+  -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p"
