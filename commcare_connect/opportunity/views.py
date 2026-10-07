@@ -65,6 +65,7 @@ from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.form_receiver.serializers import XFormSerializer
+from commcare_connect.jira_service_desk import is_configured as is_jira_service_desk_configured
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -92,6 +93,7 @@ from commcare_connect.opportunity.forms import (
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
     InvoiceExportForm,
+    InvoiceFinanceRequestForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
@@ -128,6 +130,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     ExchangeRate,
     FormJsonValidationRules,
+    InvoiceFinanceRequestStatus,
     InvoiceStatus,
     LearnModule,
     Opportunity,
@@ -189,7 +192,13 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_invoice_paid_mail,
     send_push_notification_task,
+    submit_invoice_finance_request,
     update_user_and_send_invite,
+)
+from commcare_connect.opportunity.utils.finance_request import (
+    can_submit_finance_request,
+    get_previous_finance_request,
+    suggest_new_vendor,
 )
 from commcare_connect.opportunity.utils.invoice import (
     InvoiceWorkflow,
@@ -1992,6 +2001,11 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
             }
         )
         context["show_payment_invoice_invoice_ticket_link_form"] = self.request.is_opportunity_pm
+        context["show_finance_request"] = self.request.is_opportunity_pm and (
+            invoice.status == InvoiceStatus.READY_TO_PAY or hasattr(invoice, "finance_request")
+        )
+        if context["show_finance_request"]:
+            context.update(get_finance_request_context(invoice))
         return context
 
     def get_form(self):
@@ -2045,6 +2059,74 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
     else:
         messages.error(request, _("Error: {errors}").format(errors=form.errors.as_text()))
     return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
+
+
+class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
+    """Send an approved invoice to Finance as a Jira service desk request, and show how that is going.
+
+    Both methods return the invoice page's Finance card, which htmx swaps in place.
+    """
+
+    template_name = "opportunity/partials/invoice_finance_request.html"
+
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name, get_finance_request_context(self.get_invoice()))
+
+    def post(self, request, *args, **kwargs):
+        # Locking the invoice stops a double click from raising two tickets.
+        invoice = self.get_invoice(for_update=True)
+        if not is_jira_service_desk_configured() or not can_submit_finance_request(invoice):
+            return render(request, self.template_name, get_finance_request_context(invoice))
+
+        form = InvoiceFinanceRequestForm(request.POST, instance=getattr(invoice, "finance_request", None))
+        if not form.is_valid():
+            return render(request, self.template_name, get_finance_request_context(invoice, form=form))
+
+        finance_request = form.save(commit=False)
+        finance_request.invoice = invoice
+        finance_request.status = InvoiceFinanceRequestStatus.PENDING
+        finance_request.error = ""
+        finance_request.submitted_by = request.user
+        finance_request.created_by = finance_request.created_by or request.user.email
+        finance_request.modified_by = request.user.email
+        finance_request.save()
+        invoice.finance_request = finance_request
+        transaction.on_commit(partial(submit_invoice_finance_request.delay, finance_request.id))
+        return render(request, self.template_name, get_finance_request_context(invoice))
+
+    def get_invoice(self, for_update=False):
+        queryset = PaymentInvoice.objects.select_related("opportunity__organization", "finance_request")
+        if for_update:
+            queryset = queryset.select_for_update(of=("self",))
+        return get_object_or_404(
+            queryset, opportunity=self.get_opportunity(), payment_invoice_id=self.kwargs["invoice_id"]
+        )
+
+
+def get_finance_request_context(invoice, form=None):
+    finance_request = getattr(invoice, "finance_request", None)
+    can_submit = is_jira_service_desk_configured() and can_submit_finance_request(invoice)
+    if can_submit and form is None:
+        form = InvoiceFinanceRequestForm(instance=finance_request, initial=_finance_request_initial(invoice))
+    return {
+        "invoice": invoice,
+        "opportunity": invoice.opportunity,
+        "finance_request": finance_request,
+        "finance_request_configured": is_jira_service_desk_configured(),
+        "finance_request_form": form if can_submit else None,
+    }
+
+
+def _finance_request_initial(invoice):
+    """Answers from the opportunity's last request, which usually stay the same from invoice to invoice."""
+    initial = {"new_vendor": suggest_new_vendor(invoice.opportunity.organization)}
+    if previous := get_previous_finance_request(invoice.opportunity):
+        initial.update(
+            contracted_entity=previous.contracted_entity,
+            gl_account=previous.gl_account,
+            project_name=previous.project_name,
+        )
+    return initial
 
 
 @opp_standard_access_required

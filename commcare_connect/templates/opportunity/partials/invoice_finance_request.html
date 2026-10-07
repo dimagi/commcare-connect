@@ -1,0 +1,46 @@
+{% load i18n crispy_forms_tags %}
+{% url 'opportunity:invoice_finance_request' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=invoice.payment_invoice_id as finance_request_url %}
+<div id="invoice-finance-request"
+     class="card_bg"
+     {% if finance_request.status == 'pending' %}hx-get="{{ finance_request_url }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <div class="card_title mb-2">{% translate "Finance payment request" %}</div>
+  {% if finance_request.status == 'submitted' %}
+    <p class="card_description">
+      {% translate "Sent to Finance as" %}
+      <a class="underline"
+         href="{{ invoice.invoice_ticket_link }}"
+         target="_blank"
+         rel="noopener">{{ finance_request.issue_key }}</a>.
+    </p>
+  {% elif finance_request.status == 'pending' %}
+    <p class="card_description">
+      <i class="fa-solid fa-spinner fa-spin"></i>
+      {% translate "Sending this invoice to Finance…" %}
+    </p>
+  {% elif invoice.invoice_ticket_link %}
+    <p class="card_description">
+      {% translate "A Finance ticket was added manually:" %}
+      <a class="underline"
+         href="{{ invoice.invoice_ticket_link }}"
+         target="_blank"
+         rel="noopener">{{ invoice.invoice_ticket_link }}</a>
+    </p>
+  {% elif not finance_request_configured %}
+    <p class="card_description">
+      {% translate "Sending invoices to Finance is unavailable because the Jira service desk credentials are not configured." %}
+    </p>
+  {% elif finance_request_form %}
+    <p class="card_description mb-4">
+      {% translate "Raise a payment request for this invoice on the Project Finance Jira service desk. The invoice PDF is attached." %}
+    </p>
+    {% if finance_request.status == 'failed' %}
+      <p class="text-sm text-red-600 mb-4">{% translate "The last attempt failed:" %} {{ finance_request.error }}</p>
+    {% endif %}
+    <form hx-post="{{ finance_request_url }}"
+          hx-target="#invoice-finance-request"
+          hx-swap="outerHTML">
+      {% crispy finance_request_form %}
+      <button type="submit" class="button button-md primary-dark">{% translate "Send to Finance" %}</button>
+    </form>
+  {% endif %}
+</div>

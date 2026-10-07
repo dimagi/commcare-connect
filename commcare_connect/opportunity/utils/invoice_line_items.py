@@ -279,14 +279,14 @@ def get_invoice_service_summary(invoice):
         lines.append(
             ServiceSummaryLine(
                 label=gettext("Network management fee, %(period)s (%(percent)s%% of delivered service value)")
-                % {"period": _invoice_period_label(invoice), "percent": percent},
+                % {"period": invoice_period_label(invoice), "percent": percent},
                 amount_local=org_total,
             )
         )
     return lines
 
 
-def _invoice_period_label(invoice):
+def invoice_period_label(invoice):
     if (
         invoice.start_date
         and invoice.end_date
