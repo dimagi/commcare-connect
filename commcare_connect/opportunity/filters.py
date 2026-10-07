@@ -2,13 +2,22 @@ from datetime import date
 
 import django_filters
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import HTML, Column, Div, Layout, Row
+from crispy_forms.layout import HTML, Column, Div, Field, Layout, Row
 from django import forms
+from django.utils.html import format_html
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
-from commcare_connect.program.utils import programs_accessible_to_org
+from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
+    DeliveryType,
+    OpportunityAccess,
+    OpportunityStatus,
+    TaskType,
+)
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
+from commcare_connect.utils.datetime import DateRanges
 
 
 class FilterMixin:
@@ -56,9 +65,11 @@ class FilterMixin:
             return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
         return {}
 
+    def get_applied_filters(self):
+        return [name for name, value in self.get_filter_values().items() if value not in (None, "", [])]
+
     def get_filter_usage_data(self):
-        values = self.get_filter_values()
-        applied = [k for k, v in values.items() if v not in (None, "", [])]
+        applied = self.get_applied_filters()
         if not applied:
             return None
 
@@ -69,7 +80,7 @@ class FilterMixin:
         }
 
     def filters_applied_count(self):
-        return len([v for v in self.get_filter_values().values() if v not in (None, "", [])])
+        return len(self.get_applied_filters())
 
     def get_filter_context(self):
         return {
@@ -136,30 +147,139 @@ class DeliverFilterSet(django_filters.FilterSet):
             self.filters.pop("has_duplicates")
 
 
+_PAST_PRESETS = [
+    DateRanges.LAST_30_DAYS,
+    DateRanges.LAST_3_MONTHS,
+    DateRanges.LAST_6_MONTHS,
+    DateRanges.LAST_12_MONTHS,
+]
+_FUTURE_PRESETS = [DateRanges.NEXT_30_DAYS, DateRanges.NEXT_3_MONTHS, DateRanges.NEXT_6_MONTHS]
+
+
+def _preset_choices(*presets):
+    return [(preset.value, preset.label) for preset in presets]
+
+
+# (range dropdown, from date, to date) for each date the opportunity list filters on
+OPPORTUNITY_LIST_DATE_RANGES = (
+    ("start_date_range", "start_date_from", "start_date_to"),
+    ("end_date_range", "end_date_from", "end_date_to"),
+)
+# Filled in from their range dropdown, which is the filter the user applied
+DATE_RANGE_BOUND_FILTERS = {name for _range, *bounds in OPPORTUNITY_LIST_DATE_RANGES for name in bounds}
+
+
+class OpportunityListFilterForm(CSRFExemptForm):
+    def clean(self):
+        """Resolve each date range dropdown into the from/to dates the list filters on."""
+        cleaned_data = super().clean()
+        for range_name, from_name, to_name in OPPORTUNITY_LIST_DATE_RANGES:
+            preset = cleaned_data.get(range_name)
+            if preset == DateRanges.CUSTOM:
+                if not (cleaned_data.get(from_name) or cleaned_data.get(to_name)):
+                    cleaned_data[range_name] = ""
+            elif preset:
+                cleaned_data[from_name], cleaned_data[to_name] = DateRanges(preset).bounds(now().date())
+            else:
+                cleaned_data[from_name] = cleaned_data[to_name] = None
+        return cleaned_data
+
+
 class OpportunityListFilterSet(django_filters.FilterSet):
     is_test = YesNoFilter(label="Is Test")
     status = django_filters.MultipleChoiceFilter(
         label="Status",
-        choices=[(0, "Active"), (1, "Ended"), (2, "Inactive")],
+        choices=OpportunityStatus.choices,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
     )
     program = django_filters.MultipleChoiceFilter(
         label="Program", choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
+    delivery_type = django_filters.MultipleChoiceFilter(
+        label=_("Delivery Type"), choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
+    )
+    start_date_range = django_filters.ChoiceFilter(
+        label="",
+        choices=_preset_choices(*_PAST_PRESETS, DateRanges.CUSTOM),
+        empty_label=_("Any time"),
+        widget=forms.Select(attrs={"x-model": "preset"}),
+    )
+    start_date_from = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
+    start_date_to = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
+    end_date_range = django_filters.ChoiceFilter(
+        label="",
+        choices=_preset_choices(*_PAST_PRESETS, *_FUTURE_PRESETS, DateRanges.CUSTOM),
+        empty_label=_("Any time"),
+        widget=forms.Select(attrs={"x-model": "preset"}),
+    )
+    end_date_from = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
+    end_date_to = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
 
     class Meta:
-        form = CSRFExemptForm
+        form = OpportunityListFilterForm
 
     def __init__(self, *args, **kwargs):
         request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
 
         if request:
-            choices = [(p.slug, p.name) for p in programs_accessible_to_org(request.org)]
-            if choices:
-                self.filters["program"].extra["choices"] = choices
-            else:
-                del self.filters["program"]
+            self._set_choices_or_drop("program", [(p.slug, p.name) for p in programs_accessible_to_org(request.org)])
+            self._set_choices_or_drop("delivery_type", self._delivery_type_choices(request.org))
+        self.form.helper.layout = Layout(
+            "status",
+            "is_test",
+            *[name for name in ("program", "delivery_type") if name in self.filters],
+            _date_range_layout(_("Start Date"), "start_date_from", "start_date_to", range_field="start_date_range"),
+            _date_range_layout(_("End Date"), "end_date_from", "end_date_to", range_field="end_date_range"),
+        )
+
+    def _set_choices_or_drop(self, name, choices):
+        if choices:
+            self.filters[name].extra["choices"] = choices
+        else:
+            del self.filters[name]
+
+    @staticmethod
+    def _delivery_type_choices(org):
+        delivery_types = DeliveryType.objects.filter(
+            id__in=opportunities_accessible_to_org(org).filter(archived=False).values("delivery_type_id")
+        ).order_by("name")
+        return [(str(d.pk), d.name) for d in delivery_types]
+
+
+def _date_range_layout(label, from_field, to_field, range_field=None):
+    """From/To date inputs under a heading; with `range_field`, a preset dropdown (bound to Alpine `preset`) that
+    shows them for "Custom range"."""
+    heading = HTML(format_html('<p class="block text-gray-700 text-sm font-bold mb-2">{}</p>', label))
+    if range_field is None:
+        return Div(heading, _from_to_inputs(from_field, to_field), css_class="mb-3")
+
+    # Hidden From/To inputs are disabled too, so a preset doesn't send stale custom dates.
+    custom_only = {"x-bind:disabled": f"preset !== '{DateRanges.CUSTOM}'"}
+    return Div(
+        heading,
+        range_field,
+        Div(
+            _from_to_inputs(Field(from_field, **custom_only), Field(to_field, **custom_only)),
+            x_show=f"preset === '{DateRanges.CUSTOM}'",
+        ),
+        # Seed from the server-rendered selection before x-model takes over the dropdown.
+        x_data="{ preset: '' }",
+        x_init="preset = $el.querySelector('select').value",
+        css_class="mb-3",
+    )
+
+
+def _from_to_inputs(from_field, to_field):
+    return Div(
+        Div(
+            HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("From"))),
+            from_field,
+            css_class="flex-1",
+        ),
+        Div(HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("To"))), to_field, css_class="flex-1"),
+        css_class="flex gap-2",
+    )
 
 
 TASK_STATUS_CHOICES = [
@@ -291,40 +411,8 @@ class UserTasksFilterSet(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             "task_status",
             "task_type",
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "date_assigned_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "date_assigned_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "due_date_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "due_date_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
+            _date_range_layout(_("Date Assigned"), "date_assigned_from", "date_assigned_to"),
+            _date_range_layout(_("Due Date"), "due_date_from", "due_date_to"),
         )
 
 

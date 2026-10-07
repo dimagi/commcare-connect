@@ -2,7 +2,9 @@ import calendar
 import datetime
 
 from dateutil.relativedelta import relativedelta
+from django.db.models import TextChoices
 from django.utils.timezone import localdate, now
+from django.utils.translation import gettext_lazy as _
 
 
 def is_date_before(date: datetime.datetime, days: int):
@@ -69,3 +71,42 @@ def get_quarter_series(from_date: datetime.date, to_date: datetime.date):
 
 def get_end_date_previous_month():
     return datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+
+
+class DateRanges(TextChoices):
+    """Date ranges relative to today. Each place that offers them picks the subset it needs."""
+
+    LAST_7_DAYS = "last_7_days", _("Last 7 days")
+    LAST_30_DAYS = "last_30_days", _("Last 30 days")
+    LAST_90_DAYS = "last_90_days", _("Last 90 days")
+    LAST_3_MONTHS = "last_3_months", _("Last 3 months")
+    LAST_6_MONTHS = "last_6_months", _("Last 6 months")
+    LAST_12_MONTHS = "last_12_months", _("Last 12 months")
+    LAST_YEAR = "last_year", _("Last year")
+    NEXT_30_DAYS = "next_30_days", _("Next 30 days")
+    NEXT_3_MONTHS = "next_3_months", _("Next 3 months")
+    NEXT_6_MONTHS = "next_6_months", _("Next 6 months")
+    ALL = "all", _("All")
+    CUSTOM = "custom", _("Custom range")
+
+    def bounds(self, today: datetime.date) -> tuple[datetime.date, datetime.date]:
+        """The inclusive (from, to) dates of a relative range, counted back or forward from today.
+
+        ALL and CUSTOM have no dates of their own, so they have no bounds.
+        """
+        edge = today + _DATE_RANGE_OFFSETS[self]
+        return min(today, edge), max(today, edge)
+
+
+_DATE_RANGE_OFFSETS = {
+    DateRanges.LAST_7_DAYS: relativedelta(days=-7),
+    DateRanges.LAST_30_DAYS: relativedelta(days=-30),
+    DateRanges.LAST_90_DAYS: relativedelta(days=-90),
+    DateRanges.LAST_3_MONTHS: relativedelta(months=-3),
+    DateRanges.LAST_6_MONTHS: relativedelta(months=-6),
+    DateRanges.LAST_12_MONTHS: relativedelta(months=-12),
+    DateRanges.LAST_YEAR: relativedelta(years=-1),
+    DateRanges.NEXT_30_DAYS: relativedelta(days=30),
+    DateRanges.NEXT_3_MONTHS: relativedelta(months=3),
+    DateRanges.NEXT_6_MONTHS: relativedelta(months=6),
+}

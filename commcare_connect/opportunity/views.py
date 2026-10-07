@@ -44,6 +44,7 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
@@ -70,6 +71,7 @@ from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.decorators import require_manual_visit_verification
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.opportunity.filters import (
+    DATE_RANGE_BOUND_FILTERS,
     AssignedTaskFilterSet,
     DeliverFilterSet,
     FilterMixin,
@@ -212,6 +214,7 @@ from commcare_connect.opportunity.utils.invoice_line_items import (
     rollback_invoice_line_items,
     total_late_delta_units,
 )
+from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
     ImportException,
@@ -330,10 +333,37 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         org = self.request.org
         return org.program_manager or org.funder or org.watched_programs.exists()
 
+    def get_template_names(self):
+        # A history restore re-requests a searched URL over htmx but needs the whole page back.
+        if self.request.htmx and not self.request.htmx.history_restore_request:
+            return ["opportunity/partials/opportunities_table.html"]
+        return super().get_template_names()
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        # The same URL serves the full page or just the table, so caches must not mix them up.
+        patch_vary_headers(response, ("HX-Request",))
+        return response
+
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
+        context["search_term"] = self.search_term
+        context["search_carried_params"] = self._search_carried_params()
         return context
+
+    def get_applied_filters(self):
+        return [name for name in super().get_applied_filters() if name not in DATE_RANGE_BOUND_FILTERS]
+
+    @cached_property
+    def search_term(self):
+        return self.request.GET.get("q", "").strip()
+
+    def _search_carried_params(self):
+        """Query params a new search keeps: everything but the search itself and the page, which resets."""
+        return [
+            (key, value) for key, values in self.request.GET.lists() if key not in ("q", "page") for value in values
+        ]
 
     def get_table_class(self):
         if self.can_act_as_program_manager:
@@ -349,7 +379,9 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return kwargs
 
     def get_table_data(self):
-        data = OpportunityData(self.request.org, self.can_act_as_program_manager, self.get_filter_values())
+        data = OpportunityData(
+            self.request.org, self.can_act_as_program_manager, self.get_filter_values(), self.search_term
+        )
         return data.get_data()
 
 
@@ -524,7 +556,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
             return str(value)
 
         context["path"] = [
-            {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {"title": "Opportunities", "url": opportunity_list_url(request.org.slug)},
             {
                 "title": object.name,
                 "url": reverse("opportunity:detail", args=(request.org.slug, object.opportunity_id)),
@@ -758,7 +790,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
         )
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": "Opportunities", "url": opportunity_list_url(request.org.slug)},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
@@ -975,7 +1007,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         )
 
     path = [
-        {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": _("Opportunities"), "url": opportunity_list_url(request.org.slug)},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
@@ -1055,7 +1087,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
             return redirect("opportunity:detail", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id)
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": "Opportunities", "url": opportunity_list_url(request.org.slug)},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
@@ -1151,7 +1183,7 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
         return redirect("opportunity:detail", org_slug=request.org.slug, opp_id=opp_id)
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+        {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
@@ -1324,7 +1356,7 @@ class AudioAttachmentTranscribe(SuccessMessageMixin, OppStandardAccessMixin, Opp
 
         return [
             {"title": opportunity.program.name, "url": reverse("program:home", args=(org_slug,))},
-            {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": _("Opportunities"), "url": opportunity_list_url(org_slug)},
             {
                 "title": opportunity.name,
                 "url": reverse("opportunity:detail", args=(org_slug, opp_id)),
@@ -1404,7 +1436,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         messages.success(request, "Verification rules saved successfully.")
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+        {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
         {
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
@@ -1438,7 +1470,7 @@ class TaskTypesConfig(OpportunityPMRequiredMixin, OppStandardAccessMixin, Templa
 
         tasks = TaskType.objects.filter(app=opportunity.deliver_app)
         path = [
-            {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": _("Opportunities"), "url": opportunity_list_url(org_slug)},
             {
                 "title": opportunity.name,
                 "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
@@ -1647,7 +1679,7 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
     )
     path.extend(
         [
-            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
             {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
             {"title": "Suspended Users", "url": request.path},
         ]
@@ -1823,7 +1855,7 @@ def invoice_list(request, org_slug, opp_id):
                 args=(org_slug, request.opportunity.opportunity_id),
             ),
             "path": [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
                 {
                     "title": request.opportunity.name,
                     "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
@@ -1853,7 +1885,7 @@ class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateVi
                 "is_service_delivery": self.request.GET.get("invoice_type")
                 == PaymentInvoice.InvoiceType.service_delivery,
                 "path": [
-                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                    {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
                     {
                         "title": opportunity.name,
                         "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
@@ -1943,7 +1975,7 @@ class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
                 "invoice_status": invoice.status,
                 "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
                 "path": [
-                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                    {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
                     {
                         "title": opportunity.name,
                         "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
@@ -2344,7 +2376,7 @@ class WorkerPageView(OppViewAccessMixin, OpportunityObjectMixin, TemplateView):
         )
         path.extend(
             [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
                 {"title": self.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
                 {"title": "Connect Workers", "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id))},
                 {"title": self.page_title, "url": self.request.path},
@@ -2954,7 +2986,7 @@ class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
         )
         path.extend(
             [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
                 {
                     "title": opportunity.name,
                     "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
@@ -3227,7 +3259,7 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
     table = WorkerLearnStatusTable(completed_modules)
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": org_slug})},
+        {"title": "Opportunities", "url": opportunity_list_url(org_slug)},
         {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
         {
             "title": "Connect Workers",
@@ -3861,7 +3893,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMix
         context.update(self.get_filter_context())
 
         context["path"] = [
-            {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": self.request.org.slug})},
+            {"title": "Opportunities", "url": opportunity_list_url(self.request.org.slug)},
             {
                 "title": opportunity.name,
                 "url": reverse("opportunity:detail", args=(self.request.org.slug, opportunity.opportunity_id)),

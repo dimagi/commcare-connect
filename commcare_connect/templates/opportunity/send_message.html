@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load opportunity_list_url %}
 {% load i18n %}
 {% load crispy_forms_tags %}
 {% load duration_minutes %}
@@ -78,7 +79,7 @@
           <b>No Users yet.</b>
           <br />
           <a class="button button-md primary-dark mt-2"
-             href="{% url "opportunity:list" org_slug=request.org.slug %}">All
+             href="{% opportunity_list_url request.org.slug %}">All
           Opportunities</a>
         </div>
       {% endif %}

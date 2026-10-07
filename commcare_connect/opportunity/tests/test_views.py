@@ -17,6 +17,7 @@ from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
+from django_htmx.middleware import HtmxDetails
 from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
@@ -60,6 +61,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     CompletedWorkInvoiceFactory,
     DeliverUnitFactory,
+    DeliveryTypeFactory,
     FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -74,6 +76,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
@@ -788,6 +791,197 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+def _listed_names(organization, filters, search_term=None):
+    return {opp.name for opp in OpportunityData(organization, False, filters, search_term).get_data()}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters, expected",
+    [
+        ({}, {"jan", "feb", "mar", "open_ended"}),
+        ({"start_date_from": date(2026, 2, 1)}, {"feb", "mar", "open_ended"}),
+        ({"start_date_to": date(2026, 2, 1)}, {"jan", "feb"}),
+        ({"start_date_from": date(2026, 2, 1), "start_date_to": date(2026, 2, 1)}, {"feb"}),
+        ({"end_date_from": date(2026, 2, 28)}, {"feb", "mar"}),
+        ({"end_date_to": date(2026, 2, 28)}, {"jan", "feb"}),
+        ({"end_date_from": date(2026, 1, 1), "end_date_to": date(2026, 12, 31)}, {"jan", "feb", "mar"}),
+    ],
+)
+def test_opportunity_list_filters_by_date_ranges(organization, filters, expected):
+    """Bounds are inclusive, and an opportunity without an end date drops out once an end bound is set."""
+    for name, start, end in [
+        ("jan", date(2026, 1, 1), date(2026, 1, 31)),
+        ("feb", date(2026, 2, 1), date(2026, 2, 28)),
+        ("mar", date(2026, 3, 1), date(2026, 3, 31)),
+        ("open_ended", date(2026, 4, 1), None),
+    ]:
+        OpportunityFactory(organization=organization, name=name, start_date=start, end_date=end)
+
+    assert _listed_names(organization, filters) == expected
+
+
+@pytest.mark.django_db
+def test_opportunity_list_filters_by_delivery_type(organization):
+    chc, nutrition, other = DeliveryTypeFactory.create_batch(3)
+    OpportunityFactory(organization=organization, name="chc", delivery_type=chc)
+    OpportunityFactory(organization=organization, name="nutrition", delivery_type=nutrition)
+    OpportunityFactory(organization=organization, name="other", delivery_type=other)
+
+    assert _listed_names(organization, {"delivery_type": [str(chc.pk), str(nutrition.pk)]}) == {"chc", "nutrition"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "search_term, expected",
+    [
+        (None, {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
+        ("", {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
+        ("malaria", {"Malaria Kenya", "Malaria Uganda"}),
+        ("KENYA", {"Malaria Kenya", "Nutrition Kenya"}),
+        ("tb", set()),
+    ],
+)
+def test_opportunity_list_searches_by_name(organization, search_term, expected):
+    for name in ("Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"):
+        OpportunityFactory(organization=organization, name=name)
+
+    assert _listed_names(organization, {}, search_term) == expected
+
+
+@pytest.mark.django_db
+def test_opportunity_list_search_does_not_match_organization_name(organization):
+    OpportunityFactory(organization=organization, name="Malaria")
+
+    assert _listed_names(organization, {}, organization.name) == set()
+
+
+@pytest.mark.django_db
+def test_opportunity_list_search_combines_with_filters(organization):
+    today = now().date()
+    OpportunityFactory(organization=organization, name="Malaria active", end_date=today + timedelta(days=1))
+    OpportunityFactory(organization=organization, name="Malaria ended", end_date=today - timedelta(days=1))
+    OpportunityFactory(organization=organization, name="Nutrition active", end_date=today + timedelta(days=1))
+
+    assert _listed_names(organization, {"status": ["0"]}, "malaria") == {"Malaria active"}
+
+
+@pytest.mark.parametrize(
+    "headers, template",
+    [
+        ({}, "opportunity/opportunities_list.html"),
+        ({"HX-Request": "true"}, "opportunity/partials/opportunities_table.html"),
+        # Going back to a searched URL whose snapshot htmx no longer has needs the whole page.
+        ({"HX-Request": "true", "HX-History-Restore-Request": "true"}, "opportunity/opportunities_list.html"),
+    ],
+)
+def test_opportunity_list_renders_only_the_table_for_htmx_searches(rf, headers, template):
+    view = OpportunityList()
+    view.request = rf.get("/", headers=headers)
+    view.request.htmx = HtmxDetails(view.request)
+    view.object_list = Opportunity.objects.none()
+
+    assert view.get_template_names()[0] == template
+
+
+@pytest.mark.django_db
+def test_opportunity_list_response_varies_on_htmx(org_user_admin, organization, client):
+    client.force_login(org_user_admin)
+
+    response = client.get(reverse("opportunity:list", args=(organization.slug,)))
+
+    assert "HX-Request" in response["Vary"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("can_act_as_program_manager", [True, False])
+@pytest.mark.parametrize(
+    "order, expected", [("delivery_type_name", ["a", "b", "none"]), ("-delivery_type_name", ["none", "b", "a"])]
+)
+def test_opportunity_list_sorts_by_delivery_type(organization, can_act_as_program_manager, order, expected):
+    OpportunityFactory(organization=organization, name="b", delivery_type=DeliveryTypeFactory(name="Beta"))
+    OpportunityFactory(organization=organization, name="none", delivery_type=None)
+    OpportunityFactory(organization=organization, name="a", delivery_type=DeliveryTypeFactory(name="Alpha"))
+
+    data = OpportunityData(organization, can_act_as_program_manager, {}).get_data().order_by(order)
+
+    assert [opp.name for opp in data] == expected
+
+
+def _opportunity_list_view(rf, organization, url):
+    view = OpportunityList()
+    view.request = rf.get(url)
+    view.request.org = organization
+    return view
+
+
+@pytest.mark.django_db
+def test_default_opportunity_list_url_shows_only_active_non_test(organization, rf):
+    """The default URL's params, parsed by the filter form, list only active, non-test opportunities."""
+    today = now().date()
+    tomorrow, yesterday = today + timedelta(days=1), today - timedelta(days=1)
+    OpportunityFactory(organization=organization, name="active", end_date=tomorrow, is_test=False)
+    OpportunityFactory(organization=organization, name="test", end_date=tomorrow, is_test=True)
+    OpportunityFactory(organization=organization, name="ended", end_date=yesterday, is_test=False)
+    OpportunityFactory(organization=organization, name="inactive", end_date=tomorrow, active=False, is_test=False)
+
+    view = _opportunity_list_view(rf, organization, opportunity_list_url(organization.slug))
+
+    assert view.filters_applied_count() == 2
+    assert _listed_names(organization, view.get_filter_values()) == {"active"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("start_date_range=last_3_months", ["start_date_range"]),
+        ("start_date_range=custom&start_date_from=2026-01-01&start_date_to=2026-02-01", ["start_date_range"]),
+        ("start_date_range=last_30_days&end_date_range=next_30_days", ["start_date_range", "end_date_range"]),
+    ],
+)
+def test_a_date_range_counts_as_one_filter(organization, rf, query, expected):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+
+    assert sorted(view.get_applied_filters()) == sorted(expected)
+
+
+@pytest.mark.django_db
+def test_bare_opportunity_list_url_applies_no_filters(organization, rf):
+    view = _opportunity_list_view(rf, organization, reverse("opportunity:list", args=(organization.slug,)))
+
+    assert view.filters_applied_count() == 0
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("", []),
+        ("q=malaria&page=3", []),
+        (
+            "status=0&status=1&is_test=False&q=malaria&page=2&sort=name",
+            [("status", "0"), ("status", "1"), ("is_test", "False"), ("sort", "name")],
+        ),
+    ],
+)
+def test_opportunity_list_search_carries_everything_but_query_and_page(rf, query, expected):
+    view = OpportunityList()
+    view.request = rf.get(f"/?{query}")
+
+    assert view._search_carried_params() == expected
+
+
+@pytest.mark.parametrize(
+    "extra, expected_query",
+    [
+        ({}, "status=0&is_test=False"),
+        ({"program": "malaria"}, "status=0&is_test=False&program=malaria"),
+    ],
+)
+def test_opportunity_list_url_adds_default_filters(extra, expected_query):
+    assert opportunity_list_url("my-org", **extra) == f"/a/my-org/opportunity/?{expected_query}"
 
 
 RELATIONSHIPS_ON_THE_LIST = [
