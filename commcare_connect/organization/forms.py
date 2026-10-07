@@ -258,6 +258,18 @@ class ContactForm(forms.ModelForm):
             ),
         )
 
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip()
+        existing = (
+            Contact.objects.filter(email__iexact=email).exclude(pk=self.instance.pk).select_related("organization")
+        )
+        if contact := existing.first():
+            raise ValidationError(
+                gettext("This email already belongs to %(name)s at %(organization)s."),
+                params={"name": contact.name, "organization": contact.organization.name},
+            )
+        return email
+
     def _get_validation_exclusions(self):
         # save() unmarks the organization's other main contact first, so the one-main-contact
         # constraint can't be broken by this form and must not reject a new main contact.

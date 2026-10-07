@@ -14,6 +14,7 @@ from commcare_connect.organization.models import (
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
+    ContactFactory,
     MembershipFactory,
     OrganizationFactory,
     OrganizationInviteFactory,
@@ -245,3 +246,12 @@ class TestOrganizationQuerySet:
 
         assert set(Organization.objects.unarchived()) == {active, unset}
         assert set(Organization.objects.archived()) == {archived}
+
+
+@pytest.mark.django_db
+class TestContact:
+    def test_email_is_unique_ignoring_case(self):
+        ContactFactory(email="grace@umojahealth.org")
+
+        with pytest.raises(IntegrityError):
+            ContactFactory(email="Grace@UmojaHealth.org")

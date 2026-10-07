@@ -277,7 +277,7 @@ class TestContactForm:
     def test_becoming_main_poc_replaces_the_current_one(self):
         current_main = ContactFactory(is_main_poc=True)
         organization = current_main.organization
-        data = {"organization": organization.pk, "name": "New Lead", "is_main_poc": "on"}
+        data = {"organization": organization.pk, "name": "New Lead", "email": "lead@example.com", "is_main_poc": "on"}
 
         form = ContactForm(data=data)
 
@@ -287,10 +287,25 @@ class TestContactForm:
         assert new_main.is_main_poc
         assert not current_main.is_main_poc
 
-    def test_requires_organization_and_name(self):
+    def test_requires_organization_name_and_email(self):
         form = ContactForm(data={})
 
-        assert set(form.errors) == {"organization", "name"}
+        assert set(form.errors) == {"organization", "name", "email"}
+
+    def test_email_already_used_by_another_contact_is_rejected(self):
+        existing = ContactFactory(name="Grace Wanjiru", email="grace@umojahealth.org")
+        data = {"organization": OrganizationFactory().pk, "name": "Grace W", "email": "GRACE@umojahealth.org"}
+
+        form = ContactForm(data=data)
+
+        assert not form.is_valid()
+        assert existing.organization.name in form.errors["email"][0]
+
+    def test_a_contact_keeps_its_own_email_on_edit(self):
+        contact = ContactFactory(email="grace@umojahealth.org")
+        data = {"organization": contact.organization.pk, "name": "Grace Wanjiru", "email": "grace@umojahealth.org"}
+
+        assert ContactForm(data=data, instance=contact).is_valid()
 
 
 @pytest.mark.django_db
@@ -301,7 +316,7 @@ class TestContactFormViews:
 
         response = client.post(
             reverse("organization_directory:contact_create"),
-            {"organization": organization.pk, "name": "Grace Wanjiru"},
+            {"organization": organization.pk, "name": "Grace Wanjiru", "email": "grace@umojahealth.org"},
             HTTP_HX_REQUEST="true",
         )
 

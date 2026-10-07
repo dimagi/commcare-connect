@@ -61,7 +61,7 @@ class OrganizationFactory(DjangoModelFactory):
 class ContactFactory(DjangoModelFactory):
     organization = SubFactory(OrganizationFactory)
     name = Faker("name")
-    email = Faker("email")
+    email = Sequence(lambda n: f"contact{n}@example.com")
 
     class Meta:
         model = Contact
