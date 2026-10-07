@@ -324,7 +324,10 @@ def submit_invoice_finance_request(self, finance_request_id: int):
 
 
 def _retry_or_fail_finance_request(task, finance_request, exc: httpx.HTTPError, safe_to_resend: bool):
-    if _finance_request_error_is_retryable(exc, safe_to_resend) and task.request.retries < task.max_retries:
+    # A task run inline (local development) can't wait out a retry countdown; it would only raise
+    # Celery's Retry into the request that queued it.
+    can_retry = not task.request.is_eager and task.request.retries < task.max_retries
+    if can_retry and _finance_request_error_is_retryable(exc, safe_to_resend):
         raise task.retry(exc=exc, countdown=60 * 2**task.request.retries)
     logger.error("Finance request %s failed: %r", finance_request.id, exc)
     _fail_finance_request(finance_request, _describe_finance_request_error(exc, safe_to_resend))

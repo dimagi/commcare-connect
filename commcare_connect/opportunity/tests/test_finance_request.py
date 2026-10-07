@@ -268,10 +268,17 @@ class TestSubmitInvoiceFinanceRequest:
         assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
         assert "may have been created" in finance_request.error
 
-    def test_fails_once_retries_are_exhausted(self, finance_request, jira):
+    @pytest.mark.parametrize(
+        "retries",
+        [
+            FINANCE_REQUEST_MAX_RETRIES,
+            0,  # run inline, as in local development, where a retry can't wait
+        ],
+    )
+    def test_fails_without_retrying_when_retries_are_exhausted_or_inline(self, finance_request, jira, retries):
         jira.attach.side_effect = httpx.ConnectError("down")
 
-        submit_invoice_finance_request.apply(args=[finance_request.id], retries=FINANCE_REQUEST_MAX_RETRIES)
+        submit_invoice_finance_request.apply(args=[finance_request.id], retries=retries)
 
         finance_request.refresh_from_db()
         assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
@@ -457,11 +464,18 @@ class TestInvoiceFinanceRequestView:
         assert response.status_code == 404
         assert not InvoiceFinanceRequest.objects.filter(invoice=pm_invoice).exists()
 
-    @pytest.mark.parametrize("configured, expected", [(True, "Send to Finance"), (False, "not configured")])
+    @pytest.mark.parametrize("jira_configured, expected", [(True, "Send to Finance"), (False, "not configured")])
     def test_invoice_page_shows_finance_card(
-        self, client, settings, pm_invoice, program_manager_org, program_manager_org_user_admin, configured, expected
+        self,
+        client,
+        settings,
+        pm_invoice,
+        program_manager_org,
+        program_manager_org_user_admin,
+        jira_configured,
+        expected,
     ):
-        if not configured:
+        if not jira_configured:
             settings.JIRA_SERVICE_DESK_CLIENT_ID = None
         client.force_login(program_manager_org_user_admin)
 
