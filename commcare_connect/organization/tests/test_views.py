@@ -84,6 +84,14 @@ class TestRemoveMembersView:
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
 
+@pytest.fixture
+def profile_editor(db):
+    """A user with no memberships who holds ALL_ORG_PROFILE_EDIT_ACCESS."""
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="all_org_profile_edit_access"))
+    return User.objects.get(pk=user.pk)  # A fresh instance, so the permission cache sees the grant.
+
+
 @pytest.mark.django_db
 class TestOrganizationHomeView:
     def url(self, org_slug):
@@ -141,6 +149,56 @@ class TestOrganizationHomeView:
         assert response.status_code == 302
         organization.refresh_from_db()
         assert organization.program_manager
+
+    def test_non_member_without_permission_is_refused(self, client, user, organization):
+        client.force_login(user)
+
+        response = client.get(self.url(org_slug=organization.slug))
+
+        assert response.status_code == 404
+
+    def test_profile_editor_saves_any_organization_profile(self, client, profile_editor, organization):
+        client.force_login(profile_editor)
+
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "short_name": "PE", "team_size": TeamSizeRange.S},
+        )
+
+        assert response.status_code == 302
+        organization.refresh_from_db()
+        assert organization.short_name == "PE"
+        assert organization.team_size == TeamSizeRange.S
+
+    def test_profile_editor_cannot_enable_program_manager(self, client, profile_editor, organization):
+        organization.program_manager = False
+        organization.save(update_fields=["program_manager"])
+        client.force_login(profile_editor)
+
+        client.post(self.url(org_slug=organization.slug), data={"name": organization.name, "program_manager": "on"})
+
+        organization.refresh_from_db()
+        assert not organization.program_manager
+
+    @pytest.mark.parametrize(
+        "viewer, can_manage_members",
+        [("org_user_admin", True), ("profile_editor", False)],
+    )
+    def test_members_tab_only_shown_to_org_admins(self, client, request, organization, viewer, can_manage_members):
+        client.force_login(request.getfixturevalue(viewer))
+
+        response = client.get(self.url(org_slug=organization.slug))
+
+        assert response.context["can_manage_members"] is can_manage_members
+        member_table_url = reverse("organization:org_member_table", args=(organization.slug,))
+        assert (member_table_url in response.content.decode()) is can_manage_members
+
+    def test_profile_editor_cannot_reach_member_endpoints(self, client, profile_editor, organization):
+        client.force_login(profile_editor)
+
+        response = client.get(reverse("organization:org_member_table", args=(organization.slug,)))
+
+        assert response.status_code == 404
 
 
 @pytest.mark.django_db
