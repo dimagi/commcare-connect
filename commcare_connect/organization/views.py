@@ -315,7 +315,7 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
                 "archive_count": Organization.objects.archived().count(),
                 "result_count": context["table"].paginator.count,
                 "path": [
-                    {"title": gettext("Internal"), "url": reverse("users:internal_features")},
+                    {"title": gettext("Admin"), "url": reverse("users:internal_features")},
                     {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
                 ],
             }
