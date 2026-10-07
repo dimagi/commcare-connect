@@ -3,9 +3,7 @@ from datetime import date
 import django_filters
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Layout, Row
-from dateutil.relativedelta import relativedelta
 from django import forms
-from django.db import models
 from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -19,6 +17,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
+from commcare_connect.utils.datetime import DateRanges
 
 
 class FilterMixin:
@@ -148,38 +147,13 @@ class DeliverFilterSet(django_filters.FilterSet):
             self.filters.pop("has_duplicates")
 
 
-class DateRangePreset(models.TextChoices):
-    LAST_30_DAYS = "last_30_days", _("Last 30 days")
-    LAST_3_MONTHS = "last_3_months", _("Last 3 months")
-    LAST_6_MONTHS = "last_6_months", _("Last 6 months")
-    LAST_12_MONTHS = "last_12_months", _("Last 12 months")
-    NEXT_30_DAYS = "next_30_days", _("Next 30 days")
-    NEXT_3_MONTHS = "next_3_months", _("Next 3 months")
-    NEXT_6_MONTHS = "next_6_months", _("Next 6 months")
-    CUSTOM = "custom", _("Custom range")
-
-    def bounds(self, today):
-        """The inclusive (from, to) dates this preset covers, counted back or forward from today."""
-        edge = today + _PRESET_OFFSETS[self]
-        return min(today, edge), max(today, edge)
-
-
-_PRESET_OFFSETS = {
-    DateRangePreset.LAST_30_DAYS: relativedelta(days=-30),
-    DateRangePreset.LAST_3_MONTHS: relativedelta(months=-3),
-    DateRangePreset.LAST_6_MONTHS: relativedelta(months=-6),
-    DateRangePreset.LAST_12_MONTHS: relativedelta(months=-12),
-    DateRangePreset.NEXT_30_DAYS: relativedelta(days=30),
-    DateRangePreset.NEXT_3_MONTHS: relativedelta(months=3),
-    DateRangePreset.NEXT_6_MONTHS: relativedelta(months=6),
-}
 _PAST_PRESETS = [
-    DateRangePreset.LAST_30_DAYS,
-    DateRangePreset.LAST_3_MONTHS,
-    DateRangePreset.LAST_6_MONTHS,
-    DateRangePreset.LAST_12_MONTHS,
+    DateRanges.LAST_30_DAYS,
+    DateRanges.LAST_3_MONTHS,
+    DateRanges.LAST_6_MONTHS,
+    DateRanges.LAST_12_MONTHS,
 ]
-_FUTURE_PRESETS = [DateRangePreset.NEXT_30_DAYS, DateRangePreset.NEXT_3_MONTHS, DateRangePreset.NEXT_6_MONTHS]
+_FUTURE_PRESETS = [DateRanges.NEXT_30_DAYS, DateRanges.NEXT_3_MONTHS, DateRanges.NEXT_6_MONTHS]
 
 
 def _preset_choices(*presets):
@@ -201,11 +175,11 @@ class OpportunityListFilterForm(CSRFExemptForm):
         cleaned_data = super().clean()
         for range_name, from_name, to_name in OPPORTUNITY_LIST_DATE_RANGES:
             preset = cleaned_data.get(range_name)
-            if preset == DateRangePreset.CUSTOM:
+            if preset == DateRanges.CUSTOM:
                 if not (cleaned_data.get(from_name) or cleaned_data.get(to_name)):
                     cleaned_data[range_name] = ""
             elif preset:
-                cleaned_data[from_name], cleaned_data[to_name] = DateRangePreset(preset).bounds(now().date())
+                cleaned_data[from_name], cleaned_data[to_name] = DateRanges(preset).bounds(now().date())
             else:
                 cleaned_data[from_name] = cleaned_data[to_name] = None
         return cleaned_data
@@ -226,7 +200,7 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     )
     start_date_range = django_filters.ChoiceFilter(
         label="",
-        choices=_preset_choices(*_PAST_PRESETS, DateRangePreset.CUSTOM),
+        choices=_preset_choices(*_PAST_PRESETS, DateRanges.CUSTOM),
         empty_label=_("Any time"),
         widget=forms.Select(attrs={"x-model": "preset"}),
     )
@@ -234,7 +208,7 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     start_date_to = django_filters.DateFilter(label="", widget=forms.DateInput(attrs={"type": "date"}))
     end_date_range = django_filters.ChoiceFilter(
         label="",
-        choices=_preset_choices(*_PAST_PRESETS, *_FUTURE_PRESETS, DateRangePreset.CUSTOM),
+        choices=_preset_choices(*_PAST_PRESETS, *_FUTURE_PRESETS, DateRanges.CUSTOM),
         empty_label=_("Any time"),
         widget=forms.Select(attrs={"x-model": "preset"}),
     )
@@ -281,13 +255,13 @@ def _date_range_layout(label, from_field, to_field, range_field=None):
         return Div(heading, _from_to_inputs(from_field, to_field), css_class="mb-3")
 
     # Hidden From/To inputs are disabled too, so a preset doesn't send stale custom dates.
-    custom_only = {"x-bind:disabled": f"preset !== '{DateRangePreset.CUSTOM}'"}
+    custom_only = {"x-bind:disabled": f"preset !== '{DateRanges.CUSTOM}'"}
     return Div(
         heading,
         range_field,
         Div(
             _from_to_inputs(Field(from_field, **custom_only), Field(to_field, **custom_only)),
-            x_show=f"preset === '{DateRangePreset.CUSTOM}'",
+            x_show=f"preset === '{DateRanges.CUSTOM}'",
         ),
         # Seed from the server-rendered selection before x-model takes over the dropdown.
         x_data="{ preset: '' }",
