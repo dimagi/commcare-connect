@@ -309,7 +309,7 @@ class OrganizationListView(LLODirectoryListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["path"] = [
-            {"title": gettext("Internal"), "url": reverse("users:internal_features")},
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
             {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
         ]
         return context
