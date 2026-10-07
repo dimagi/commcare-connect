@@ -20,6 +20,8 @@ directory_urlpatterns = [
     path("", views.OrganizationListView.as_view(), name="list"),
     path("new/", views.OrganizationCreateView.as_view(), name="create"),
     path("contacts/", views.ContactListView.as_view(), name="contacts"),
+    path("contacts/new/", views.ContactCreateView.as_view(), name="contact_create"),
+    path("contacts/<int:pk>/edit/", views.ContactUpdateView.as_view(), name="contact_edit"),
     path("<slug:slug>/edit/", views.OrganizationUpdateView.as_view(), name="edit"),
     path("<slug:slug>/archive/", views.OrganizationArchiveView.as_view(), name="archive"),
 ]

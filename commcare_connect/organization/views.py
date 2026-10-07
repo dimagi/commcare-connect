@@ -23,6 +23,7 @@ from commcare_connect.organization.archive import ArchiveNotAllowed, archive_org
 from commcare_connect.organization.decorators import org_admin_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
+    ContactForm,
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationDirectoryForm,
@@ -368,22 +369,24 @@ class ContactListView(DirectoryListView):
         return context
 
 
-def directory_return_url(request):
-    """The `next` URL when it is a directory listing URL on this host, otherwise the listing itself."""
-    list_url = reverse("organization_directory:list")
+def directory_return_url(request, fallback_url_name="organization_directory:list"):
+    """The `next` URL when it is a directory URL on this host, otherwise the `fallback_url_name` listing."""
+    directory_url = reverse("organization_directory:list")
     next_url = request.GET.get("next", "")
-    if next_url.startswith(list_url) and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+    if next_url.startswith(directory_url) and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}
+    ):
         return next_url
-    return list_url
+    return reverse(fallback_url_name)
 
 
-class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
-    """Serves the add/edit form as a modal fragment to htmx; other requests are sent to the listing."""
+class DirectoryFormMixin(DirectoryAccessMixin):
+    """Serves an add/edit form as a modal fragment to htmx; other requests are sent to `list_url_name`."""
 
-    model = Organization
-    form_class = OrganizationDirectoryForm
-    template_name = "organization/directory/organization_form.html"
-    slug_field = "slug"
+    template_name = "organization/directory/modal_form.html"
+    list_url_name = None
+    add_title = None
+    edit_title = None
     success_message = None
 
     def get(self, request, *args, **kwargs):
@@ -391,13 +394,27 @@ class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
             return redirect(self.get_return_url())
         return super().get(request, *args, **kwargs)
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form_title"] = self.edit_title if self.object else self.add_title
+        return context
+
     def get_return_url(self):
-        return directory_return_url(self.request)
+        return directory_return_url(self.request, self.list_url_name)
 
     def form_valid(self, form):
         self.object = form.save()
         messages.success(self.request, self.success_message.format(name=self.object.name))
         return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
+
+
+class OrganizationDirectoryFormMixin(DirectoryFormMixin):
+    model = Organization
+    form_class = OrganizationDirectoryForm
+    slug_field = "slug"
+    list_url_name = "organization_directory:list"
+    add_title = gettext_lazy("Add Organization")
+    edit_title = gettext_lazy("Edit Organization")
 
 
 class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
@@ -423,3 +440,19 @@ class OrganizationArchiveView(DirectoryAccessMixin, SingleObjectMixin, View):
         else:
             messages.success(request, gettext("Organization {name} archived.").format(name=organization.name))
         return redirect(directory_return_url(request))
+
+
+class ContactFormMixin(DirectoryFormMixin):
+    model = Contact
+    form_class = ContactForm
+    list_url_name = "organization_directory:contacts"
+    add_title = gettext_lazy("Add Contact")
+    edit_title = gettext_lazy("Edit Contact")
+
+
+class ContactCreateView(ContactFormMixin, CreateView):
+    success_message = gettext_lazy("Contact {name} added.")
+
+
+class ContactUpdateView(ContactFormMixin, UpdateView):
+    success_message = gettext_lazy("Contact {name} updated.")

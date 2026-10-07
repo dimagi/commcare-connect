@@ -109,9 +109,16 @@ class ContactDirectoryTable(tables.Table):
     )
     email = columns.TemplateColumn(verbose_name=_("Email"), template_name="organization/directory/email_link.html")
     phone = columns.Column(verbose_name=_("Phone"), orderable=False)
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/contact_row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
 
     class Meta:
         model = Contact
         fields = ("name", "organization", "title", "is_main_poc", "email", "phone")
+        sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No contacts found.")

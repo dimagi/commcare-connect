@@ -1,0 +1,12 @@
+{% load i18n %}
+<div class="flex items-center gap-3">
+  <button type="button"
+          class="button-icon"
+          hx-get="{% url 'organization_directory:contact_edit' record.pk %}?next={{ request.get_full_path|urlencode }}"
+          hx-target="#organization-form"
+          aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
+          x-data
+          x-tooltip.raw="{% translate 'Edit' %}">
+    <i class="fa-solid fa-pen" aria-hidden="true"></i>
+  </button>
+</div>

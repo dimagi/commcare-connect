@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
-from commcare_connect.organization.forms import OrganizationDirectoryForm
+from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 
@@ -267,3 +267,50 @@ class TestContactListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [contact]
+
+
+@pytest.mark.django_db
+class TestContactForm:
+    def test_becoming_main_poc_replaces_the_current_one(self):
+        current_main = ContactFactory(is_main_poc=True)
+        organization = current_main.organization
+        data = {"organization": organization.pk, "name": "New Lead", "is_main_poc": "on"}
+
+        form = ContactForm(data=data)
+
+        assert form.is_valid(), form.errors
+        new_main = form.save()
+        current_main.refresh_from_db()
+        assert new_main.is_main_poc
+        assert not current_main.is_main_poc
+
+    def test_requires_organization_and_name(self):
+        form = ContactForm(data={})
+
+        assert set(form.errors) == {"organization", "name"}
+
+
+@pytest.mark.django_db
+class TestContactFormViews:
+    def test_create_returns_to_the_contacts_listing(self, client, user_with_directory_access):
+        organization = OrganizationFactory()
+        client.force_login(user_with_directory_access)
+
+        response = client.post(
+            reverse("organization_directory:contact_create"),
+            {"organization": organization.pk, "name": "Grace Wanjiru"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:contacts")
+        assert organization.contacts.get().name == "Grace Wanjiru"
+
+    @pytest.mark.parametrize(
+        "url_name", ["organization_directory:contact_create", "organization_directory:contact_edit"]
+    )
+    def test_requires_permission(self, client, user, url_name):
+        contact = ContactFactory()
+        client.force_login(user)
+        args = (contact.pk,) if url_name.endswith("edit") else ()
+
+        assert client.get(reverse(url_name, args=args)).status_code == 403

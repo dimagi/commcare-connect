@@ -2,13 +2,7 @@
 <div class="flex justify-between items-start mb-4">
   <div>
     <h2 id="organization-form-title"
-        class="text-xl font-bold text-brand-deep-purple">
-      {% if object %}
-        {% translate "Edit Organization" %}
-      {% else %}
-        {% translate "Add Organization" %}
-      {% endif %}
-    </h2>
+        class="text-xl font-bold text-brand-deep-purple">{{ form_title }}</h2>
     {% if object %}
       <p class="hint">{% blocktranslate with name=object.name %}Editing {{ name }}{% endblocktranslate %}</p>
     {% endif %}
