@@ -90,6 +90,7 @@ def run_ansible(
     user="ubuntu",
     become=True,
     limit=None,
+    check=False,
 ):
     ansible_cmd = f"ansible-playbook {play} -i {env}.inventory.yml"
     if tags:
@@ -104,6 +105,8 @@ def run_ansible(
         ansible_cmd += " -b"
     if limit:
         ansible_cmd += f" --limit {limit}"
+    if check:
+        ansible_cmd += " --check"
 
     with c.cd(PROJECT_DIR / "deploy"):
         c.run(ansible_cmd)
