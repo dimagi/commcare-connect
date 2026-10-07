@@ -278,6 +278,22 @@ class TestSubmitInvoiceFinanceRequest:
         assert "may have been created" in finance_request.error
 
     @pytest.mark.parametrize(
+        "step, expected_error",
+        [
+            ("render", "The request could not be prepared. Try again later."),
+            ("create", "Jira did not confirm the request, so it may have been created."),
+        ],
+    )
+    def test_unexpected_error_fails_the_request(self, finance_request, jira, step, expected_error):
+        getattr(jira, step).side_effect = KeyError("issueKey")
+
+        submit_invoice_finance_request(finance_request.id)
+
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
+        assert finance_request.error.startswith(expected_error)
+
+    @pytest.mark.parametrize(
         "retries",
         [
             FINANCE_REQUEST_MAX_RETRIES,

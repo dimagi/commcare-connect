@@ -18,7 +18,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.text import slugify
 from django.utils.timezone import now
-from django.utils.translation import gettext, ngettext
+from django.utils.translation import gettext, gettext_lazy, ngettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
@@ -274,6 +274,9 @@ def generate_invoice_summary_export(opportunity_id: int, invoice_ids: list[int])
 
 
 FINANCE_REQUEST_MAX_RETRIES = 3
+UNCONFIRMED_FINANCE_REQUEST_ERROR = gettext_lazy(
+    "Jira did not confirm the request, so it may have been created. Check with Finance before submitting it again."
+)
 
 
 @celery_app.task(bind=True, max_retries=FINANCE_REQUEST_MAX_RETRIES)
@@ -300,6 +303,11 @@ def submit_invoice_finance_request(self, finance_request_id: int):
     except httpx.HTTPError as exc:
         _retry_or_fail_finance_request(self, finance_request, exc, safe_to_resend=True)
         return
+    except Exception:
+        # Anything else would leave the request pending, and the invoice page polling it, forever.
+        logger.exception("Finance request %s failed before reaching Jira", finance_request_id)
+        _fail_finance_request(finance_request, gettext("The request could not be prepared. Try again later."))
+        return
 
     try:
         customer_request = create_request(
@@ -312,6 +320,10 @@ def submit_invoice_finance_request(self, finance_request_id: int):
         # Unlike the upload, a create that may have reached Jira must not be sent again: it would
         # raise a second ticket for the same invoice.
         _retry_or_fail_finance_request(self, finance_request, exc, safe_to_resend=False)
+        return
+    except Exception:
+        logger.exception("Finance request %s failed while creating the Jira request", finance_request_id)
+        _fail_finance_request(finance_request, str(UNCONFIRMED_FINANCE_REQUEST_ERROR))
         return
 
     with transaction.atomic():
@@ -353,10 +365,7 @@ def _describe_finance_request_error(exc: httpx.HTTPError, safe_to_resend: bool) 
             return gettext("Jira rejected the request: %(message)s") % {"message": jira_message}
         return gettext("Jira rejected the request (HTTP %(status)s).") % {"status": exc.response.status_code}
     if not safe_to_resend and not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
-        return gettext(
-            "Jira did not confirm the request, so it may have been created. "
-            "Check with Finance before submitting it again."
-        )
+        return str(UNCONFIRMED_FINANCE_REQUEST_ERROR)
     return gettext("Jira could not be reached. Try again later.")
 
 
