@@ -17,6 +17,14 @@
       <i class="fa-solid fa-spinner fa-spin"></i>
       {% translate "Sending this invoice to Finance…" %}
     </p>
+  {% elif invoice.invoice_ticket_link %}
+    <p class="card_description">
+      {% translate "A Finance ticket was added manually:" %}
+      <a class="underline"
+         href="{{ invoice.invoice_ticket_link }}"
+         target="_blank"
+         rel="noopener">{{ invoice.invoice_ticket_link }}</a>
+    </p>
   {% elif not finance_request_configured %}
     <p class="card_description">
       {% translate "Sending invoices to Finance is unavailable because the Jira service desk credentials are not configured." %}

@@ -121,8 +121,11 @@ def requires_project_name(gl_account: str) -> bool:
 
 
 def can_submit_finance_request(invoice) -> bool:
-    """Only approved invoices go to Finance, once each; a failed submission can be sent again."""
-    if invoice.status != InvoiceStatus.READY_TO_PAY:
+    """Only approved invoices go to Finance, once each; a failed submission can be sent again.
+
+    An invoice whose ticket link was filled in by hand already has a Finance ticket.
+    """
+    if invoice.status != InvoiceStatus.READY_TO_PAY or invoice.invoice_ticket_link:
         return False
     existing = getattr(invoice, "finance_request", None)
     return existing is None or existing.status == InvoiceFinanceRequestStatus.FAILED

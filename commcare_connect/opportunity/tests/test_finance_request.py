@@ -154,6 +154,15 @@ def test_can_submit_finance_request(invoice, invoice_status, request_status, exp
     assert can_submit_finance_request(invoice) is expected
 
 
+@pytest.mark.parametrize("request_status", [None, InvoiceFinanceRequestStatus.FAILED])
+def test_cannot_submit_when_ticket_was_added_manually(invoice, request_status):
+    invoice.invoice_ticket_link = "https://jira.example/FIN-1"
+    if request_status:
+        InvoiceFinanceRequestFactory(invoice=invoice, status=request_status)
+
+    assert can_submit_finance_request(invoice) is False
+
+
 class TestSuggestNewVendor:
     def test_first_payment(self, invoice):
         assert suggest_new_vendor(invoice.opportunity.organization) is True
@@ -464,7 +473,14 @@ class TestInvoiceFinanceRequestView:
         assert response.status_code == 404
         assert not InvoiceFinanceRequest.objects.filter(invoice=pm_invoice).exists()
 
-    @pytest.mark.parametrize("jira_configured, expected", [(True, "Send to Finance"), (False, "not configured")])
+    @pytest.mark.parametrize(
+        "jira_configured, ticket_link, expected",
+        [
+            (True, None, "Send to Finance"),
+            (False, None, "not configured"),
+            (True, "https://jira.example/FIN-1", "A Finance ticket was added manually"),
+        ],
+    )
     def test_invoice_page_shows_finance_card(
         self,
         client,
@@ -473,10 +489,13 @@ class TestInvoiceFinanceRequestView:
         program_manager_org,
         program_manager_org_user_admin,
         jira_configured,
+        ticket_link,
         expected,
     ):
         if not jira_configured:
             settings.JIRA_SERVICE_DESK_CLIENT_ID = None
+        pm_invoice.invoice_ticket_link = ticket_link
+        pm_invoice.save()
         client.force_login(program_manager_org_user_admin)
 
         response = client.get(
