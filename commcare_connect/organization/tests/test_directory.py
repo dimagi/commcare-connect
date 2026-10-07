@@ -99,6 +99,7 @@ def _form_data(country_by_code, sector_by_key, **overrides):
         "primary_sectors": [sector_by_key["health"].pk],
         "contact_emails": "a@example.com\nb@example.com",
         "latest_msa_link": "https://example.com/msa",
+        "eoi_links": "https://example.com/eoi-1\nhttps://example.com/eoi-2",
     }
     data.update(overrides)
     return data
@@ -144,6 +145,14 @@ class TestOrganizationDirectoryForm:
         assert org.latest_msa_link == "https://example.com/msa"
         assert list(org.countries.all()) == [countries["KEN"]]
         assert org.contact_emails == "a@example.com\nb@example.com"
+        assert org.eoi_links == "https://example.com/eoi-1\nhttps://example.com/eoi-2"
+
+    def test_eoi_links_must_be_urls(self, countries, sectors):
+        data = _form_data(countries, sectors, eoi_links="https://example.com/eoi-1\nnot a link")
+
+        form = OrganizationDirectoryForm(data=data)
+
+        assert "not a link" in form.errors["eoi_links"][0]
 
 
 @pytest.mark.django_db

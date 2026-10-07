@@ -236,6 +236,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "website",
             "office_address",
             "contact_emails",
+            "eoi_links",
             "latest_msa_link",
             "latest_work_order_link",
             "notes",
@@ -260,6 +261,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
         help_texts = {
             "name": gettext_lazy("Renaming the organization does not change its URL."),
             "contact_emails": gettext_lazy("One email address per line."),
+            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
         }
 
     def __init__(self, *args, **kwargs):
@@ -296,6 +298,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
                 "website",
                 "office_address",
                 _full_width("contact_emails"),
+                _full_width("eoi_links"),
                 "latest_msa_link",
                 "latest_work_order_link",
                 _full_width("notes"),
