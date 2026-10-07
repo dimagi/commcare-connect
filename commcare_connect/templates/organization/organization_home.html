@@ -32,29 +32,33 @@
           <span>{% trans 'Details' %}</span>
           <div x-show="selectedTab === 'details'"></div>
         </li>
-        <li @click="selectedTab = 'members';"
-            :class="{'active': selectedTab !== 'members'}">
-          <span>{% trans 'Members' %}</span>
-          <div x-show="selectedTab === 'members'"></div>
-        </li>
+        {% if can_manage_members %}
+          <li @click="selectedTab = 'members';"
+              :class="{'active': selectedTab !== 'members'}">
+            <span>{% trans 'Members' %}</span>
+            <div x-show="selectedTab === 'members'"></div>
+          </li>
+        {% endif %}
       </ul>
       <!-- Options -->
-      <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
-        <span x-show="selected.length > 0" class="hint">
-          <span x-text="selected.length"></span> {% trans 'selected' %}
-        </span>
-        <button class="button button-md negative-outline"
-                :disabled="selected.length === 0"
-                @click="showConfirmRemoveMembershipModal = true">
-          <i class="fa-solid fa-trash"></i>
-          {% trans 'Remove Member(s)' %}
-        </button>
-        <button class="button button-md primary-dark"
-                @click="showAddMemberModal = true">
-          <i class="fa-solid fa-plus"></i>
-          {% trans 'Add Members' %}
-        </button>
-      </div>
+      {% if can_manage_members %}
+        <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
+          <span x-show="selected.length > 0" class="hint">
+            <span x-text="selected.length"></span> {% trans 'selected' %}
+          </span>
+          <button class="button button-md negative-outline"
+                  :disabled="selected.length === 0"
+                  @click="showConfirmRemoveMembershipModal = true">
+            <i class="fa-solid fa-trash"></i>
+            {% trans 'Remove Member(s)' %}
+          </button>
+          <button class="button button-md primary-dark"
+                  @click="showAddMemberModal = true">
+            <i class="fa-solid fa-plus"></i>
+            {% trans 'Add Members' %}
+          </button>
+        </div>
+      {% endif %}
     </div>
     <!-- Tab Content Containers -->
     <div class="w-full">
@@ -65,21 +69,25 @@
           {% crispy form %}
         </form>
       </div>
-      <div x-show="selectedTab === 'members'"
-           id="invoice_members_container"
-           class="w-full"
-           hx-get="{% url 'organization:org_member_table' request.org.slug %}{% querystring_replace %}"
-           hx-swap="innerHTML"
-           hx-trigger="intersect once"></div>
-      <div x-show="selectedTab === 'members'"
-           id="pending_invites_container"
-           class="w-full"
-           hx-get="{% url 'organization:pending_invites_table' request.org.slug %}{% querystring_replace %}"
-           hx-swap="innerHTML"
-           hx-trigger="intersect once"></div>
+      {% if can_manage_members %}
+        <div x-show="selectedTab === 'members'"
+             id="invoice_members_container"
+             class="w-full"
+             hx-get="{% url 'organization:org_member_table' request.org.slug %}{% querystring_replace %}"
+             hx-swap="innerHTML"
+             hx-trigger="intersect once"></div>
+        <div x-show="selectedTab === 'members'"
+             id="pending_invites_container"
+             class="w-full"
+             hx-get="{% url 'organization:pending_invites_table' request.org.slug %}{% querystring_replace %}"
+             hx-swap="innerHTML"
+             hx-trigger="intersect once"></div>
+      {% endif %}
     </div>
-    {% include "components/organization_home_page/add_org_member_modal.html" %}
-    {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
+    {% if can_manage_members %}
+      {% include "components/organization_home_page/add_org_member_modal.html" %}
+      {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
+    {% endif %}
   </div>
 {% endblock content %}
 {% block inline_javascript %}
@@ -87,7 +95,7 @@
   <script>
   document.addEventListener('alpine:init', () => {
     Alpine.data('orgTabs', () => ({
-      selectedTab: '{{ request.GET.active_tab|default:"details" }}',
+      selectedTab: '{% if can_manage_members %}{{ request.GET.active_tab|default:"details" }}{% else %}details{% endif %}',
       showAddMemberModal: false,
       selected: [],
       selectAll: false,
