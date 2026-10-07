@@ -258,6 +258,39 @@ class TestOrganizationCreateView:
 
         assert Organization.objects.get(name=org_name).created_by == user.email
 
+    @pytest.mark.parametrize(
+        "creator, skip_membership, becomes_admin",
+        [
+            ("profile_editor", True, False),
+            ("profile_editor", False, True),
+            # Without the permission the field isn't offered, so a forged value is ignored.
+            ("user", True, True),
+        ],
+    )
+    def test_skip_membership(self, client, request, creator, skip_membership, becomes_admin):
+        creator = request.getfixturevalue(creator)
+        org_name = f"Skip Membership Organization {creator.pk}"
+        client.force_login(creator)
+        data = {"name": org_name, "skip_membership": "on"} if skip_membership else {"name": org_name}
+
+        response = client.post(self.url(), data=data)
+
+        org = Organization.objects.get(name=org_name)
+        is_admin = UserOrganizationMembership.objects.filter(
+            user=creator, organization=org, role=UserOrganizationMembership.Role.ADMIN
+        ).exists()
+        assert is_admin is becomes_admin
+        expected_url = "opportunity:list" if becomes_admin else "organization:home"
+        assert response.url == reverse(expected_url, args=(org.slug,))
+
+    @pytest.mark.parametrize("creator, offered", [("profile_editor", True), ("user", False)])
+    def test_skip_membership_only_offered_to_profile_editors(self, client, request, creator, offered):
+        client.force_login(request.getfixturevalue(creator))
+
+        response = client.get(self.url())
+
+        assert ('name="skip_membership"' in response.content.decode()) is offered
+
 
 @pytest.mark.django_db
 class TestNoOrganizationView:

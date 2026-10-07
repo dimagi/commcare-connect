@@ -16,8 +16,8 @@ from commcare_connect.organization.decorators import org_admin_access_required, 
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
+    OrganizationCreateForm,
     OrganizationInviteForm,
-    OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
@@ -29,11 +29,13 @@ from commcare_connect.utils.tables import get_validated_page_size
 
 @login_required
 def organization_create(request):
-    form = OrganizationProfileForm(data=request.POST or None)
+    form = OrganizationCreateForm(data=request.POST or None, user=request.user)
 
     if form.is_valid():
         form.instance.created_by = request.user.email
         org = form.save()
+        if form.cleaned_data.get("skip_membership"):
+            return redirect("organization:home", org.slug)
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
