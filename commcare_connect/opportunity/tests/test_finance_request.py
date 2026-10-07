@@ -7,6 +7,7 @@ import httpx
 import pytest
 from celery.exceptions import Retry
 from django.urls import reverse
+from django.utils.timezone import now
 
 from commcare_connect.jira_service_desk import CustomerRequest, JiraServiceDeskNotConfigured
 from commcare_connect.opportunity.forms import InvoiceFinanceRequestForm
@@ -28,6 +29,7 @@ from commcare_connect.opportunity.utils.finance_request import (
     build_form_answers,
     build_request_fields,
     can_submit_finance_request,
+    fail_stuck_finance_request,
     get_additional_information_lines,
     get_previous_finance_request,
     suggest_new_vendor,
@@ -166,6 +168,28 @@ def test_cannot_submit_when_ticket_was_added_manually(invoice, request_status):
         InvoiceFinanceRequestFactory(invoice=invoice, status=request_status)
 
     assert can_submit_finance_request(invoice) is False
+
+
+@pytest.mark.parametrize(
+    "status, minutes_ago, expected_status",
+    [
+        (InvoiceFinanceRequestStatus.PENDING, 31, InvoiceFinanceRequestStatus.FAILED),
+        (InvoiceFinanceRequestStatus.PENDING, 5, InvoiceFinanceRequestStatus.PENDING),
+        (InvoiceFinanceRequestStatus.SUBMITTED, 31, InvoiceFinanceRequestStatus.SUBMITTED),
+    ],
+)
+def test_fail_stuck_finance_request(invoice, status, minutes_ago, expected_status):
+    finance_request = InvoiceFinanceRequestFactory(invoice=invoice, status=status)
+    InvoiceFinanceRequest.objects.filter(pk=finance_request.pk).update(
+        date_modified=now() - datetime.timedelta(minutes=minutes_ago)
+    )
+    invoice.refresh_from_db()
+
+    fail_stuck_finance_request(invoice)
+
+    assert invoice.finance_request.status == expected_status
+    finance_request.refresh_from_db()
+    assert finance_request.status == expected_status
 
 
 class TestSuggestNewVendor:
@@ -392,6 +416,19 @@ class TestFinanceRequestContext:
 
         assert form.instance == failed
         assert (form.initial["gl_account"], form.initial["new_vendor"]) == ("30", True)
+
+    def test_stuck_request_can_be_resent(self, invoice):
+        finance_request = InvoiceFinanceRequestFactory(invoice=invoice, status=InvoiceFinanceRequestStatus.PENDING)
+        InvoiceFinanceRequest.objects.filter(pk=finance_request.pk).update(
+            date_modified=now() - datetime.timedelta(hours=1)
+        )
+        invoice.refresh_from_db()
+
+        context = get_finance_request_context(invoice)
+
+        assert context["finance_request"].status == InvoiceFinanceRequestStatus.FAILED
+        assert "may have been created" in context["finance_request"].error
+        assert context["finance_request_form"].instance == finance_request
 
     def test_first_request_suggests_new_vendor(self, invoice):
         form = get_finance_request_context(invoice)["finance_request_form"]

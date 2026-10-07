@@ -6,7 +6,10 @@ using the form's own choice IDs. The IDs here are copied from Finance's form, so
 if Finance edits it.
 """
 
+import datetime
+
 from django.utils.formats import date_format
+from django.utils.timezone import now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 
@@ -20,6 +23,13 @@ from commcare_connect.opportunity.utils.invoice_line_items import get_invoice_se
 
 SERVICE_DESK_ID = "19"
 REQUEST_TYPE_ID = "186"
+
+# The submit task gives up well within this, retries included, so a request still pending after this
+# has lost its task, e.g. to a worker stopped during a deploy.
+STUCK_FINANCE_REQUEST_TIMEOUT = datetime.timedelta(minutes=30)
+UNCONFIRMED_FINANCE_REQUEST_ERROR = _(
+    "Jira did not confirm the request, so it may have been created. Check with Finance before submitting it again."
+)
 
 
 class Question:
@@ -86,6 +96,25 @@ def can_submit_finance_request(invoice) -> bool:
         return False
     existing = getattr(invoice, "finance_request", None)
     return existing is None or existing.status == InvoiceFinanceRequestStatus.FAILED
+
+
+def fail_stuck_finance_request(invoice):
+    """Fail the invoice's request if it has been pending for longer than its task can take, so it can be resent."""
+    finance_request = getattr(invoice, "finance_request", None)
+    if finance_request is None or finance_request.status != InvoiceFinanceRequestStatus.PENDING:
+        return
+    # Conditional, so a task that finishes in the meantime is not overwritten.
+    failed = InvoiceFinanceRequest.objects.filter(
+        pk=finance_request.pk,
+        status=InvoiceFinanceRequestStatus.PENDING,
+        date_modified__lt=now() - STUCK_FINANCE_REQUEST_TIMEOUT,
+    ).update(
+        status=InvoiceFinanceRequestStatus.FAILED,
+        error=str(UNCONFIRMED_FINANCE_REQUEST_ERROR),
+        date_modified=now(),
+    )
+    if failed:
+        finance_request.refresh_from_db()
 
 
 def get_previous_finance_request(opportunity):

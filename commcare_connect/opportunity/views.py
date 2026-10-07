@@ -195,6 +195,7 @@ from commcare_connect.opportunity.tasks import (
 )
 from commcare_connect.opportunity.utils.finance_request import (
     can_submit_finance_request,
+    fail_stuck_finance_request,
     get_previous_finance_request,
     suggest_new_vendor,
 )
@@ -2043,6 +2044,7 @@ class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         # Locking the invoice stops a double click from raising two tickets.
         invoice = self.get_invoice(for_update=True)
+        fail_stuck_finance_request(invoice)
         if not is_jira_service_desk_configured() or not can_submit_finance_request(invoice):
             return render(request, self.template_name, get_finance_request_context(invoice))
 
@@ -2076,6 +2078,7 @@ class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
 
 
 def get_finance_request_context(invoice, form=None):
+    fail_stuck_finance_request(invoice)
     finance_request = getattr(invoice, "finance_request", None)
     configured = is_jira_service_desk_configured()
     can_submit = configured and can_submit_finance_request(invoice)
