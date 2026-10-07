@@ -94,7 +94,7 @@ def test_form_answers_for_direct_account(finance_request):
 
 
 def test_form_answers_leave_out_project_name_for_overhead_account(finance_request):
-    finance_request.gl_account = "50"
+    finance_request.gl_account = "30"
 
     assert Question.PROJECT_NAME not in build_form_answers(finance_request, "temp-1")
 
@@ -306,7 +306,7 @@ class TestInvoiceFinanceRequestForm:
         assert "project_name" in form.errors
 
     def test_overhead_account_drops_project_name(self):
-        form = self._form(gl_account="50", project_name="Not needed")
+        form = self._form(gl_account="30", project_name="Not needed")
 
         assert form.is_valid(), form.errors
         assert form.cleaned_data["project_name"] == ""
