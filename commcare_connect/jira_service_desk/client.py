@@ -75,11 +75,13 @@ def create_request(
 
 def _make_request(method: str, path: str, headers: dict | None = None, timeout: int = 10, **kwargs) -> httpx.Response:
     url = API_BASE_URL.format(cloud_id=settings.JIRA_SERVICE_DESK_CLOUD_ID) + path
-    headers = {"Authorization": f"Bearer {_get_access_token()}", "Accept": "application/json", **(headers or {})}
-    response = httpx.request(method, url, headers=headers, timeout=timeout, **kwargs)
-    if response.status_code == httpx.codes.UNAUTHORIZED:
-        # A revoked or rotated credential leaves a dead token in the cache; forget it so the
-        # next call fetches a fresh one.
+    for _attempt in range(2):
+        auth_headers = {"Authorization": f"Bearer {_get_access_token()}", "Accept": "application/json"}
+        response = httpx.request(method, url, headers={**auth_headers, **(headers or {})}, timeout=timeout, **kwargs)
+        if response.status_code != httpx.codes.UNAUTHORIZED:
+            break
+        # A revoked or rotated credential leaves a dead token in the cache. Jira rejects the call
+        # before acting on it, so it is safe to send once more with a fresh token.
         cache.delete(TOKEN_CACHE_KEY)
     response.raise_for_status()
     return response

@@ -100,13 +100,31 @@ def test_token_is_reused_until_it_expires(httpx_mock):
     assert [request.url for request in httpx_mock.get_requests()].count(TOKEN_URL) == 1
 
 
-def test_unauthorized_response_drops_cached_token(httpx_mock):
+def test_unauthorized_response_retries_with_a_fresh_token(httpx_mock):
+    cache.set(TOKEN_CACHE_KEY, "stale-token")
+    add_token_response(httpx_mock, token="token-2")
+    httpx_mock.add_response(method="POST", url=f"{API_URL}/request", status_code=401)
+    httpx_mock.add_response(
+        method="POST", url=f"{API_URL}/request", json={"issueKey": "FIN-1", "_links": {"web": "u"}}
+    )
+
+    assert create_request("19", "186", {}, {}).key == "FIN-1"
+
+    first, _token_request, second = httpx_mock.get_requests()
+    assert first.headers["Authorization"] == "Bearer stale-token"
+    assert second.headers["Authorization"] == "Bearer token-2"
+
+
+def test_unauthorized_twice_raises_and_drops_cached_token(httpx_mock):
     add_token_response(httpx_mock)
+    add_token_response(httpx_mock, token="token-2")
+    httpx_mock.add_response(method="POST", url=f"{API_URL}/request", status_code=401)
     httpx_mock.add_response(method="POST", url=f"{API_URL}/request", status_code=401)
 
     with pytest.raises(httpx.HTTPStatusError):
         create_request("19", "186", {}, {})
 
+    assert len([r for r in httpx_mock.get_requests() if r.url == f"{API_URL}/request"]) == 2
     assert cache.get(TOKEN_CACHE_KEY) is None
 
 
