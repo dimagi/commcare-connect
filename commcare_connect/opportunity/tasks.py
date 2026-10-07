@@ -290,12 +290,14 @@ def submit_invoice_finance_request(self, finance_request_id: int):
     invoice = finance_request.invoice
 
     try:
+        request_fields = finance_request_utils.build_request_fields(finance_request)
         attachment_id = attach_temporary_file(
             finance_request_utils.SERVICE_DESK_ID,
             invoice_pdf_filename(invoice),
             render_invoice_pdf(invoice),
             "application/pdf",
         )
+        form_answers = finance_request_utils.build_form_answers(finance_request, attachment_id)
     except JiraServiceDeskNotConfigured:
         logger.info("Jira service desk is not configured; finance request %s not submitted", finance_request_id)
         _fail_finance_request(finance_request, gettext("Submitting to Finance is not configured."))
@@ -313,8 +315,8 @@ def submit_invoice_finance_request(self, finance_request_id: int):
         customer_request = create_request(
             finance_request_utils.SERVICE_DESK_ID,
             finance_request_utils.REQUEST_TYPE_ID,
-            finance_request_utils.build_request_fields(finance_request),
-            finance_request_utils.build_form_answers(finance_request, attachment_id),
+            request_fields,
+            form_answers,
         )
     except httpx.HTTPError as exc:
         # Unlike the upload, a create that may have reached Jira must not be sent again: it would
