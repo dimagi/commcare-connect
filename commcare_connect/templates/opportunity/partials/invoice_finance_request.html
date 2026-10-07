@@ -42,5 +42,7 @@
       {% crispy finance_request_form %}
       <button type="submit" class="button button-md primary-dark">{% translate "Send to Finance" %}</button>
     </form>
+  {% elif finance_request.status == 'failed' %}
+    <p class="text-sm text-red-600">{% translate "The last attempt failed:" %} {{ finance_request.error }}</p>
   {% endif %}
 </div>
