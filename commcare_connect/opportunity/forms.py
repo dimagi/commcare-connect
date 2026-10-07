@@ -1658,6 +1658,7 @@ class InvoiceFinanceRequestForm(forms.ModelForm):
     project_name = forms.CharField(
         label=_("Project name"),
         required=False,
+        max_length=255,
         help_text=_("As it appears on the Salesforce contract. Required for Direct accounts."),
     )
     new_vendor = forms.TypedChoiceField(

@@ -327,6 +327,11 @@ class TestInvoiceFinanceRequestForm:
         assert form.is_valid(), form.errors
         assert form.cleaned_data["project_name"] == ""
 
+    def test_project_name_fits_the_model_field(self):
+        form = self._form(project_name="x" * 256)
+
+        assert "project_name" in form.errors
+
     @pytest.mark.parametrize("field, value", [("gl_account", "11"), ("contracted_entity", "9")])
     def test_rejects_choices_outside_the_offered_lists(self, field, value):
         assert field in self._form(**{field: value}).errors
