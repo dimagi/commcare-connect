@@ -169,10 +169,11 @@ def get_additional_information_lines(finance_request) -> list[str]:
 def _approver(finance_request) -> dict:
     """The PM who approved the invoice for payment, falling back to the person submitting it.
 
-    Invoices approved before approvals were recorded have no certification to read.
+    Invoices approved before approvals were recorded have no certification to read, and an approval
+    recorded without the approver's email has no name.
     """
     certification = finance_request.invoice.pm_certification
-    if certification:
+    if certification and certification["name"]:
         return {"name": certification["name"], "date": date_format(certification["certified_at"], "DATE_FORMAT")}
     return {"name": _user_label(finance_request.submitted_by), "date": None}
 

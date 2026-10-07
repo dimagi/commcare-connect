@@ -123,8 +123,13 @@ def test_additional_information_uses_pm_approval(finance_request):
     ]
 
 
-def test_additional_information_without_approval_or_usd(finance_request):
+@pytest.mark.parametrize(
+    "certification",
+    [None, {"name": None, "certified_at": datetime.datetime(2026, 7, 2, 10, 0, tzinfo=datetime.UTC)}],
+)
+def test_additional_information_without_approval_or_usd(finance_request, certification):
     finance_request.invoice.amount_usd = None
+    finance_request.invoice.__dict__["pm_certification"] = certification
 
     lines = get_additional_information_lines(finance_request)
 
