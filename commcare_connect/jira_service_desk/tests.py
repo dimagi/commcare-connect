@@ -117,3 +117,43 @@ def test_unconfigured_raises_before_any_call(jira_settings, httpx_mock):
         create_request("19", "186", {}, {})
 
     assert httpx_mock.get_requests() == []
+
+
+class TestDryRun:
+    @pytest.fixture(autouse=True)
+    def no_credentials(self, jira_settings):
+        jira_settings.JIRA_SERVICE_DESK_CLIENT_ID = None
+        jira_settings.JIRA_SERVICE_DESK_CLIENT_SECRET = None
+        return jira_settings
+
+    @pytest.mark.parametrize("value", ["true", "success", "1"])
+    def test_succeeds_without_calling_jira(self, jira_settings, httpx_mock, value):
+        jira_settings.JIRA_SERVICE_DESK_DRY_RUN = value
+
+        assert is_configured()
+        assert attach_temporary_file("19", "invoice.pdf", b"%PDF", "application/pdf").startswith("dry-run-")
+        result = create_request("19", "186", {"summary": "Pay"}, {})
+
+        assert result.key.startswith("DRY-RUN-")
+        assert httpx_mock.get_requests() == []
+
+    @pytest.mark.parametrize(
+        "mode, error",
+        [("reject", httpx.HTTPStatusError), ("timeout", httpx.ReadTimeout), ("unreachable", httpx.ConnectError)],
+    )
+    def test_simulated_failures(self, jira_settings, httpx_mock, mode, error):
+        jira_settings.JIRA_SERVICE_DESK_DRY_RUN = mode
+
+        with pytest.raises(error):
+            create_request("19", "186", {}, {})
+
+        assert httpx_mock.get_requests() == []
+
+    def test_unknown_mode_is_an_error(self, jira_settings):
+        jira_settings.JIRA_SERVICE_DESK_DRY_RUN = "maybe"
+
+        with pytest.raises(ValueError):
+            is_configured()
+
+    def test_off_by_default(self):
+        assert not is_configured()

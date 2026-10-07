@@ -11,6 +11,8 @@ import httpx
 from django.conf import settings
 from django.core.cache import cache
 
+from commcare_connect.jira_service_desk import dry_run
+
 TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 API_BASE_URL = "https://api.atlassian.com/ex/jira/{cloud_id}/rest/servicedeskapi"
 TOKEN_CACHE_KEY = "jira_service_desk:access_token"
@@ -30,6 +32,8 @@ class CustomerRequest:
 
 
 def is_configured() -> bool:
+    if dry_run.get_mode():
+        return True
     return bool(settings.JIRA_SERVICE_DESK_CLIENT_ID and settings.JIRA_SERVICE_DESK_CLIENT_SECRET)
 
 
@@ -39,6 +43,8 @@ def attach_temporary_file(service_desk_id: str, filename: str, content: bytes, c
     Temporary attachments expire unless a request uses them, so an upload that is never used
     leaves nothing behind.
     """
+    if dry_run.get_mode():
+        return dry_run.attach_temporary_file(filename, content)
     response = _make_request(
         "POST",
         f"/servicedesk/{service_desk_id}/attachTemporaryFile",
@@ -53,17 +59,16 @@ def create_request(
     service_desk_id: str, request_type_id: str, field_values: dict, form_answers: dict
 ) -> CustomerRequest:
     """Raise a customer request, answering the request type's Jira Form with `form_answers`."""
-    response = _make_request(
-        "POST",
-        "/request",
-        json={
-            "serviceDeskId": service_desk_id,
-            "requestTypeId": request_type_id,
-            "requestFieldValues": field_values,
-            "form": {"answers": form_answers},
-        },
-        timeout=30,
-    )
+    payload = {
+        "serviceDeskId": service_desk_id,
+        "requestTypeId": request_type_id,
+        "requestFieldValues": field_values,
+        "form": {"answers": form_answers},
+    }
+    if mode := dry_run.get_mode():
+        key, url = dry_run.create_request(mode, payload)
+        return CustomerRequest(key=key, url=url)
+    response = _make_request("POST", "/request", json=payload, timeout=30)
     data = response.json()
     return CustomerRequest(key=data["issueKey"], url=data["_links"]["web"])
 
