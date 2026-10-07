@@ -109,6 +109,28 @@ class Organization(BaseModel):
         return list(member_query.values_list("user__email", flat=True))
 
 
+class Contact(BaseModel):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="contacts")
+    name = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, blank=True)
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=32, blank=True)
+    is_main_poc = models.BooleanField(default=False)
+    is_archived = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_main_poc=True),
+                name="one_main_poc_per_organization",
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class UserOrganizationMembership(models.Model):
     class Role(models.TextChoices):
         ADMIN = "admin", _("Admin")
