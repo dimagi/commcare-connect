@@ -21,7 +21,7 @@ from rest_framework.decorators import api_view
 
 from commcare_connect.organization.archive import ArchiveNotAllowed, archive_organization, has_live_program
 from commcare_connect.organization.decorators import org_admin_access_required
-from commcare_connect.organization.filters import OrganizationFilterSet
+from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
@@ -29,8 +29,13 @@ from commcare_connect.organization.forms import (
     OrganizationInviteForm,
     OrganizationProfileForm,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrganizationDirectoryTable, OrgMemberTable, PendingInviteTable
+from commcare_connect.organization.models import Contact, Organization, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.tables import (
+    ContactDirectoryTable,
+    OrganizationDirectoryTable,
+    OrgMemberTable,
+    PendingInviteTable,
+)
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
@@ -277,12 +282,38 @@ class DirectoryAccessMixin(LoginRequiredMixin, PermissionRequiredMixin):
     raise_exception = True
 
 
-class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
+class DirectoryListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
+    """A filtered, paginated directory table with the tab bar shared by the directory's listings."""
+
+    ORGANIZATIONS_TAB = "organizations"
+    ARCHIVE_TAB = "archive"
+    CONTACTS_TAB = "contacts"
+    tab = None
+
+    def get_paginate_by(self, table_data):
+        return get_page_size(self.request)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "tab": self.tab,
+                "organizations_tab": self.ORGANIZATIONS_TAB,
+                "archive_tab": self.ARCHIVE_TAB,
+                "contacts_tab": self.CONTACTS_TAB,
+                "organizations_count": Organization.objects.unarchived().count(),
+                "archive_count": Organization.objects.archived().count(),
+                "contacts_count": Contact.objects.filter(is_archived=False).count(),
+                "result_count": context["table"].paginator.count,
+            }
+        )
+        return context
+
+
+class OrganizationListView(DirectoryListView):
     table_class = OrganizationDirectoryTable
     filterset_class = OrganizationFilterSet
     template_name = "organization/directory/organization_list.html"
-    ORGANIZATIONS_TAB = "organizations"
-    ARCHIVE_TAB = "archive"
 
     @cached_property
     def tab(self):
@@ -308,25 +339,32 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
     def get_filterset_kwargs(self, filterset_class):
         return super().get_filterset_kwargs(filterset_class) | {"archived": self.showing_archive}
 
-    def get_paginate_by(self, table_data):
-        return get_page_size(self.request)
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+        ]
+        context["reset_url"] = f"{reverse('organization_directory:list')}?tab={self.tab}"
+        return context
+
+
+class ContactListView(DirectoryListView):
+    table_class = ContactDirectoryTable
+    filterset_class = ContactFilterSet
+    template_name = "organization/directory/contact_list.html"
+    tab = DirectoryListView.CONTACTS_TAB
+
+    def get_queryset(self):
+        return Contact.objects.filter(is_archived=False).select_related("organization").order_by("name")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(
-            {
-                "tab": self.tab,
-                "organizations_tab": self.ORGANIZATIONS_TAB,
-                "archive_tab": self.ARCHIVE_TAB,
-                "organizations_count": Organization.objects.unarchived().count(),
-                "archive_count": Organization.objects.archived().count(),
-                "result_count": context["table"].paginator.count,
-                "path": [
-                    {"title": gettext("Admin"), "url": reverse("users:internal_features")},
-                    {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
-                ],
-            }
-        )
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
+        ]
+        context["reset_url"] = reverse("organization_directory:contacts")
         return context
 
 

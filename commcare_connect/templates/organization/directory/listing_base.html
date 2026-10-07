@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load static i18n %}
+{% load render_table from django_tables2 %}
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock css %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full"
+       x-data="{ formOpen: false }"
+       @htmx:after-swap.window="if ($event.detail.target.id === 'organization-form') formOpen = true">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h1 class="title">
+          {% block heading %}
+          {% endblock heading %}
+        </h1>
+        <p class="hint">
+          {% block subheading %}
+          {% endblock subheading %}
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        {% block header_actions %}
+        {% endblock header_actions %}
+      </div>
+    </div>
+    {% include "organization/directory/tabs.html" %}
+    <form method="get" class="card_bg flex flex-col gap-3">
+      {% block hidden_filter_inputs %}
+      {% endblock hidden_filter_inputs %}
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="simple-input w-full md:w-80">
+          <i class="fa-solid fa-magnifying-glass text-gray-400" aria-hidden="true"></i>
+          {{ filter.form.search }}
+        </div>
+        {% block filters %}
+        {% endblock filters %}
+        <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
+        <a href="{{ reset_url }}" class="underline text-sm text-gray-500">{% translate "Reset" %}</a>
+      </div>
+      <p class="text-sm text-gray-500 self-end">
+        {% block result_count %}
+        {% endblock result_count %}
+      </p>
+    </form>
+    <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
+    {% include "organization/directory/form_modal.html" %}
+    {% include "components/confirm_modal.html" %}
+  </div>
+{% endblock content %}

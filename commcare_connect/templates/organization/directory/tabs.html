@@ -1,23 +1,22 @@
 {% load i18n %}
+{% url 'organization_directory:list' as organizations_url %}
 <div class="flex items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
   <div class="tabs">
-    <a href="?tab={{ organizations_tab }}"
+    <a href="{{ organizations_url }}"
        class="tab {% if tab == organizations_tab %}tab-active{% endif %}">
       <i class="fa-solid fa-building" aria-hidden="true"></i>
       {% translate "Organizations" %}
       <span class="text-xs text-gray-400">{{ organizations_count }}</span>
     </a>
-    {# Not a link: there is no contacts page to go to. #}
-    <span class="tab cursor-not-allowed opacity-50"
-          aria-disabled="true"
-          x-data
-          x-tooltip.raw="{% translate 'Coming soon' %}">
+    <a href="{% url 'organization_directory:contacts' %}"
+       class="tab {% if tab == contacts_tab %}tab-active{% endif %}">
       <i class="fa-solid fa-address-card" aria-hidden="true"></i>
       {% translate "Contacts" %}
-    </span>
+      <span class="text-xs text-gray-400">{{ contacts_count }}</span>
+    </a>
   </div>
   <div class="tabs">
-    <a href="?tab={{ archive_tab }}"
+    <a href="{{ organizations_url }}?tab={{ archive_tab }}"
        class="tab {% if tab == archive_tab %}tab-active{% endif %}">
       <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
       {% translate "Archive" %}
