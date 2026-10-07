@@ -2063,9 +2063,13 @@ class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
         return render(request, self.template_name, get_finance_request_context(invoice))
 
     def get_invoice(self, for_update=False):
-        queryset = PaymentInvoice.objects.select_related("opportunity__organization", "finance_request")
+        queryset = PaymentInvoice.objects.select_related("opportunity__organization")
         if for_update:
+            # The finance request is left to a query of its own, run once the lock is held: a join
+            # here would read it as it was before a concurrent submission committed.
             queryset = queryset.select_for_update(of=("self",))
+        else:
+            queryset = queryset.select_related("finance_request")
         return get_object_or_404(
             queryset, opportunity=self.get_opportunity(), payment_invoice_id=self.kwargs["invoice_id"]
         )
