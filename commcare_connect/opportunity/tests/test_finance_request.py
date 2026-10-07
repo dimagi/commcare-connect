@@ -363,6 +363,26 @@ class TestFinanceRequestContext:
             "new_vendor": False,
         }
 
+    def test_failed_request_keeps_its_own_answers(self, invoice):
+        failed = InvoiceFinanceRequestFactory(
+            invoice=invoice,
+            gl_account="30",
+            project_name="",
+            new_vendor=True,
+            status=InvoiceFinanceRequestStatus.FAILED,
+        )
+        InvoiceFinanceRequestFactory(
+            invoice=PaymentInvoiceFactory(opportunity=invoice.opportunity),
+            gl_account="1",
+            status=InvoiceFinanceRequestStatus.SUBMITTED,
+        )
+        invoice.refresh_from_db()
+
+        form = get_finance_request_context(invoice)["finance_request_form"]
+
+        assert form.instance == failed
+        assert (form.initial["gl_account"], form.initial["new_vendor"]) == ("30", True)
+
     def test_first_request_suggests_new_vendor(self, invoice):
         form = get_finance_request_context(invoice)["finance_request_form"]
 

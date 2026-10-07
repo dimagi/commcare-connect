@@ -2077,14 +2077,17 @@ class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
 
 def get_finance_request_context(invoice, form=None):
     finance_request = getattr(invoice, "finance_request", None)
-    can_submit = is_jira_service_desk_configured() and can_submit_finance_request(invoice)
+    configured = is_jira_service_desk_configured()
+    can_submit = configured and can_submit_finance_request(invoice)
     if can_submit and form is None:
-        form = InvoiceFinanceRequestForm(instance=finance_request, initial=_finance_request_initial(invoice))
+        # A failed request is resent with the answers it was given; `initial` would override them.
+        initial = None if finance_request else _finance_request_initial(invoice)
+        form = InvoiceFinanceRequestForm(instance=finance_request, initial=initial)
     return {
         "invoice": invoice,
         "opportunity": invoice.opportunity,
         "finance_request": finance_request,
-        "finance_request_configured": is_jira_service_desk_configured(),
+        "finance_request_configured": configured,
         "finance_request_form": form if can_submit else None,
     }
 
