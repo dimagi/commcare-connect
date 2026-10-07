@@ -10,14 +10,35 @@
     <i class="fa-solid fa-pen" aria-hidden="true"></i>
   </button>
   {% if record.status != "archived" %}
-    {# The wrapper carries the tooltip, as a disabled button gets no hover events. #}
-    <span x-data x-tooltip.raw="{% translate 'Archive: coming soon' %}">
-      <button type="button"
-              class="button-icon cursor-not-allowed opacity-50"
-              disabled
-              aria-label="{% translate 'Archive (coming soon)' %}">
-        <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
-      </button>
-    </span>
+    {% translate "Archive" as archive_label %}
+    {% if record.has_live_program %}
+      {% translate "Can't archive: it runs, funds or delivers in a program that hasn't ended." as blocked_reason %}
+      {# The wrapper carries the tooltip, as a disabled button gets no hover events. #}
+      <span x-data x-tooltip.raw="{{ blocked_reason }}">
+        <button type="button"
+                class="button-icon cursor-not-allowed opacity-50"
+                disabled
+                aria-label="{{ blocked_reason }}">
+          <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+        </button>
+      </span>
+    {% else %}
+      {% translate "Archive organization" as archive_title %}
+      {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? It will move to the Archive tab.{% endblocktranslate %}
+      <div x-data>
+        <form x-ref="archiveForm"
+              method="post"
+              action="{% url 'organization_directory:archive' record.slug %}?next={{ request.get_full_path|urlencode }}">
+          {% csrf_token %}
+          <button type="button"
+                  class="button-icon"
+                  aria-label="{% blocktranslate with name=record.name %}Archive {{ name }}{% endblocktranslate %}"
+                  x-tooltip.raw="{{ archive_label }}"
+                  @click="$store.confirmModal.show({ title: '{{ archive_title|escapejs }}', message: '{{ archive_message|escapejs }}', confirmBtnText: '{{ archive_label|escapejs }}', confirmBtnRed: true, formRef: $refs.archiveForm })">
+            <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+          </button>
+        </form>
+      </div>
+    {% endif %}
   {% endif %}
 </div>

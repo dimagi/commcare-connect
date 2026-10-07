@@ -13,11 +13,13 @@ from django.utils.functional import cached_property
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, UpdateView
+from django.views.generic import CreateView, UpdateView, View
+from django.views.generic.detail import SingleObjectMixin
 from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.organization.archive import ArchiveNotAllowed, archive_organization, has_live_program
 from commcare_connect.organization.decorators import org_admin_access_required
 from commcare_connect.organization.filters import OrganizationFilterSet
 from commcare_connect.organization.forms import (
@@ -296,7 +298,12 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
         return Organization.objects.unarchived()
 
     def get_queryset(self):
-        return self._tab_organizations().prefetch_related("primary_sectors").order_by("-date_created")
+        return (
+            self._tab_organizations()
+            .annotate(has_live_program=has_live_program())
+            .prefetch_related("primary_sectors")
+            .order_by("-date_created")
+        )
 
     def get_filterset_kwargs(self, filterset_class):
         return super().get_filterset_kwargs(filterset_class) | {"archived": self.showing_archive}
@@ -323,6 +330,15 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
         return context
 
 
+def directory_return_url(request):
+    """The `next` URL when it is a directory listing URL on this host, otherwise the listing itself."""
+    list_url = reverse("organization_directory:list")
+    next_url = request.GET.get("next", "")
+    if next_url.startswith(list_url) and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return next_url
+    return list_url
+
+
 class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
     """Serves the add/edit form as a modal fragment to htmx; other requests are sent to the listing."""
 
@@ -338,14 +354,7 @@ class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
         return super().get(request, *args, **kwargs)
 
     def get_return_url(self):
-        """The `next` URL when it is a directory listing URL on this host, otherwise the listing itself."""
-        list_url = reverse("organization_directory:list")
-        next_url = self.request.GET.get("next", "")
-        if next_url.startswith(list_url) and url_has_allowed_host_and_scheme(
-            next_url, allowed_hosts={self.request.get_host()}
-        ):
-            return next_url
-        return list_url
+        return directory_return_url(self.request)
 
     def form_valid(self, form):
         self.object = form.save()
@@ -360,3 +369,19 @@ class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
 
 class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
     success_message = gettext_lazy("Organization {name} updated.")
+
+
+class OrganizationArchiveView(DirectoryAccessMixin, SingleObjectMixin, View):
+    model = Organization
+    slug_field = "slug"
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        organization = self.get_object()
+        try:
+            archive_organization(organization)
+        except ArchiveNotAllowed as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(request, gettext("Organization {name} archived.").format(name=organization.name))
+        return redirect(directory_return_url(request))
