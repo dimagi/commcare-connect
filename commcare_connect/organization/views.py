@@ -456,3 +456,15 @@ class ContactCreateView(ContactFormMixin, CreateView):
 
 class ContactUpdateView(ContactFormMixin, UpdateView):
     success_message = gettext_lazy("Contact {name} updated.")
+
+
+class ContactArchiveView(DirectoryAccessMixin, SingleObjectMixin, View):
+    model = Contact
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        contact = self.get_object()
+        contact.is_archived = True
+        contact.save(update_fields=["is_archived", "date_modified"])
+        messages.success(request, gettext("Contact {name} archived.").format(name=contact.name))
+        return redirect(directory_return_url(request, "organization_directory:contacts"))

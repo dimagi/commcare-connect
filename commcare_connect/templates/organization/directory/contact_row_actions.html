@@ -9,4 +9,21 @@
           x-tooltip.raw="{% translate 'Edit' %}">
     <i class="fa-solid fa-pen" aria-hidden="true"></i>
   </button>
+  {% translate "Archive contact" as archive_title %}
+  {% translate "Archive" as archive_label %}
+  {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? They will no longer appear in the contacts list.{% endblocktranslate %}
+  <div x-data>
+    <form x-ref="archiveForm"
+          method="post"
+          action="{% url 'organization_directory:contact_archive' record.pk %}?next={{ request.get_full_path|urlencode }}">
+      {% csrf_token %}
+      <button type="button"
+              class="button-icon"
+              aria-label="{% blocktranslate with name=record.name %}Archive {{ name }}{% endblocktranslate %}"
+              x-tooltip.raw="{{ archive_label }}"
+              @click="$store.confirmModal.show({ title: '{{ archive_title|escapejs }}', message: '{{ archive_message|escapejs }}', confirmBtnText: '{{ archive_label|escapejs }}', confirmBtnRed: true, formRef: $refs.archiveForm })">
+        <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+      </button>
+    </form>
+  </div>
 </div>
