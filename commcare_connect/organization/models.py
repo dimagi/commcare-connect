@@ -4,6 +4,7 @@ from functools import partial
 
 from django.conf import settings
 from django.db import models, transaction
+from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -95,6 +96,35 @@ class Organization(BaseModel):
             member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
 
         return list(member_query.values_list("user__email", flat=True))
+
+
+class Contact(BaseModel):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="contacts")
+    name = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, blank=True)
+    email = models.EmailField()
+    phone = models.CharField(max_length=32, blank=True)
+    is_main_poc = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    is_archived = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_main_poc=True),
+                name="one_main_poc_per_organization",
+            ),
+            # One contact per person, so a person is linked to only one organization.
+            models.UniqueConstraint(
+                Lower("email"),
+                name="unique_contact_email",
+                violation_error_message=_("A contact with this email already exists."),
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
 
 
 class UserOrganizationMembership(models.Model):

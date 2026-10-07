@@ -13,6 +13,7 @@ from commcare_connect.organization.models import (
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
+    ContactFactory,
     MembershipFactory,
     OrganizationFactory,
     OrganizationInviteFactory,
@@ -233,3 +234,12 @@ class TestOrganizationInvite:
         assert membership.accepted_at is not None
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
+
+
+@pytest.mark.django_db
+class TestContact:
+    def test_email_is_unique_ignoring_case(self):
+        ContactFactory(email="grace@umojahealth.org")
+
+        with pytest.raises(IntegrityError):
+            ContactFactory(email="Grace@UmojaHealth.org")

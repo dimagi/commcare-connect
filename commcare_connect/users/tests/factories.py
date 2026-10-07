@@ -4,6 +4,7 @@ from factory.django import DjangoModelFactory, Password
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.organization.models import (
+    Contact,
     Organization,
     OrganizationInvite,
     UserOrganizationMembership,
@@ -55,6 +56,15 @@ class OrganizationFactory(DjangoModelFactory):
 
     class Meta:
         model = Organization
+
+
+class ContactFactory(DjangoModelFactory):
+    organization = SubFactory(OrganizationFactory)
+    name = Faker("name")
+    email = Sequence(lambda n: f"contact{n}@example.com")
+
+    class Meta:
+        model = Contact
 
 
 class MembershipFactory(DjangoModelFactory):
