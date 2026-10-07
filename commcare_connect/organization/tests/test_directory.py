@@ -1,4 +1,5 @@
-from urllib.parse import urlencode
+from unittest import mock
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -8,7 +9,9 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
+from commcare_connect.organization.tasks import export_contacts
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
+from commcare_connect.utils.celery import get_export_storage
 
 
 def _filtered_organizations(params, archived=False):
@@ -347,3 +350,55 @@ class TestContactArchiveView:
         client.force_login(user)
 
         assert client.post(reverse("organization_directory:contact_archive", args=(contact.pk,))).status_code == 403
+
+
+@pytest.mark.django_db
+class TestExportContacts:
+    def test_exports_the_filtered_unarchived_contacts(self):
+        ContactFactory(name="Grace Wanjiru", is_main_poc=True)
+        ContactFactory(name="Peter Otieno")
+        ContactFactory(name="Grace Archived", is_archived=True)
+
+        with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+            saved_name = export_contacts("search=grace", user_id=1, export_format="csv")
+            with get_export_storage().open(saved_name) as saved:
+                rows = saved.read().decode().splitlines()
+
+        assert rows[0].startswith("Contact Name,Organization,Role / Title,Main POC")
+        assert len(rows) == 2
+        assert rows[1].startswith("Grace Wanjiru,")
+        assert ",Yes," in rows[1]
+
+
+@pytest.mark.django_db
+class TestContactExportViews:
+    def test_starts_the_export_with_the_listing_filters(
+        self, client, user_with_directory_access, django_capture_on_commit_callbacks
+    ):
+        client.force_login(user_with_directory_access)
+        url = f"{reverse('organization_directory:contact_export')}?search=grace"
+
+        with mock.patch.object(export_contacts, "apply_async") as apply_async:
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(url, {"export_format": "xlsx"})
+
+        task_id = parse_qs(urlparse(response.url).query)["export_task_id"][0]
+        apply_async.assert_called_once_with(
+            args=("search=grace", user_with_directory_access.pk, "xlsx"), task_id=task_id
+        )
+
+    def test_rejects_an_unsupported_format(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+
+        response = client.post(reverse("organization_directory:contact_export"), {"export_format": "pdf"})
+
+        assert response.status_code == 400
+
+    def test_download_is_refused_to_other_users(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+        other_users_task = mock.Mock(args=("", user_with_directory_access.pk + 1, "csv"))
+
+        with mock.patch("commcare_connect.organization.views.AsyncResult", return_value=other_users_task):
+            response = client.get(reverse("organization_directory:contact_export_download", args=("task-id",)))
+
+        assert response.status_code == 404

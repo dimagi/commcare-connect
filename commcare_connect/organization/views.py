@@ -1,12 +1,17 @@
+import uuid
+from datetime import date
+from functools import partial
 from urllib.parse import urlencode
 
 from allauth.account import app_settings as allauth_account_settings
 from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
+from celery.result import AsyncResult
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.http import HttpResponse
+from django.db import transaction
+from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.functional import cached_property
@@ -37,8 +42,9 @@ from commcare_connect.organization.tables import (
     OrgMemberTable,
     PendingInviteTable,
 )
-from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.organization.tasks import export_contacts, send_org_invite
 from commcare_connect.users.models import User
+from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 from commcare_connect.utils.tables import get_page_size
 
@@ -366,6 +372,7 @@ class ContactListView(DirectoryListView):
             {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
         ]
         context["reset_url"] = reverse("organization_directory:contacts")
+        context["export_task_id"] = self.request.GET.get("export_task_id")
         return context
 
 
@@ -468,3 +475,53 @@ class ContactArchiveView(DirectoryAccessMixin, SingleObjectMixin, View):
         contact.save(update_fields=["is_archived", "date_modified"])
         messages.success(request, gettext("Contact {name} archived.").format(name=contact.name))
         return redirect(directory_return_url(request, "organization_directory:contacts"))
+
+
+class ContactExportView(DirectoryAccessMixin, View):
+    http_method_names = ["post"]
+    EXPORT_FORMATS = ("csv", "xlsx")
+
+    def post(self, request, *args, **kwargs):
+        export_format = request.POST.get("export_format")
+        if export_format not in self.EXPORT_FORMATS:
+            return HttpResponseBadRequest(gettext("Unsupported export format."))
+        task_id = str(uuid.uuid4())
+        transaction.on_commit(
+            partial(
+                export_contacts.apply_async,
+                args=(request.GET.urlencode(), request.user.pk, export_format),
+                task_id=task_id,
+            )
+        )
+        filters = request.GET.copy()
+        filters["export_task_id"] = task_id
+        return redirect(f"{reverse('organization_directory:contacts')}?{filters.urlencode()}")
+
+
+def _contact_export_requested_by(request, task_args):
+    """Raises 404 unless the export task's arguments name the requesting user."""
+    if len(task_args) < 2 or task_args[1] != request.user.pk:
+        raise Http404()
+
+
+class ContactExportStatusView(DirectoryAccessMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, task_id):
+        return render_export_status(
+            request,
+            task_id=task_id,
+            download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
+            export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
+            ownership_check=lambda request, task_meta: _contact_export_requested_by(
+                request, task_meta.get("args") or []
+            ),
+        )
+
+
+class ContactExportDownloadView(DirectoryAccessMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, task_id):
+        _contact_export_requested_by(request, AsyncResult(task_id).args or [])
+        return download_export_file(task_id=task_id, filename_without_ext=f"contacts_{date.today().isoformat()}")

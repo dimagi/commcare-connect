@@ -1,9 +1,18 @@
+import uuid
+
 from allauth.utils import build_absolute_uri
+from django.core.files.base import ContentFile
+from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django_tables2.export import TableExport
 
-from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.filters import ContactFilterSet
+from commcare_connect.organization.models import Contact, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.tables import ContactExportTable
+from commcare_connect.utils.celery import get_export_storage
 from commcare_connect.utils.tasks import send_mail_async
+from config import celery_app
 
 
 def send_org_invite(invite_id):
@@ -49,3 +58,15 @@ def send_invite_accepted_notification(membership_id):
         recipient_list=admin_emails,
         html_message=render_to_string("organization/email/invite_accepted.html", context),
     )
+
+
+@celery_app.task()
+def export_contacts(query_string, user_id, export_format):
+    """Saves the unarchived contacts matching the listing filters in `query_string`, returning the file name.
+
+    `user_id` is not used here: it is kept in the task's stored arguments so only the requester can download the file.
+    """
+    contacts = Contact.objects.filter(is_archived=False).select_related("organization").order_by("name")
+    filterset = ContactFilterSet(QueryDict(query_string), queryset=contacts)
+    content = TableExport(export_format, ContactExportTable(filterset.qs)).export()
+    return get_export_storage().save(f"contacts-{uuid.uuid4()}.{export_format}", ContentFile(content))
