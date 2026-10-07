@@ -40,7 +40,6 @@ from commcare_connect.program.utils import AccessLevel, opportunity_access_level
 from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
-    TEXT_CENTER_ATTR,
     DMYTColumn,
     DurationColumn,
     GroupedTable,
@@ -509,6 +508,9 @@ def date_with_time_popup(table, date):
     )
 
 
+STAT_COLUMN_ATTRS = {"th": {"class": "col-stat"}, "td": {"class": "col-stat"}}
+
+
 class BaseOpportunityList(OrgContextTable):
     stats_style = "underline underline-offset-2 justify-center"
 
@@ -653,7 +655,7 @@ class BaseOpportunityList(OrgContextTable):
 
 
 class OpportunityTable(BaseOpportunityList):
-    col_attrs = merge_attrs(TEXT_CENTER_ATTR, STOP_CLICK_PROPAGATION_ATTR)
+    col_attrs = merge_attrs(STAT_COLUMN_ATTRS, STOP_CLICK_PROPAGATION_ATTR)
 
     pending_invites = tables.Column(
         verbose_name=header_with_tooltip(
@@ -718,23 +720,23 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         verbose_name=header_with_tooltip(
             "Active Connect Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
         ),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     total_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Total Deliveries", "Payment units completed"),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     verified_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Verified Deliveries", "Payment units fully approved by PM and NM"),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     worker_earnings = tables.Column(
         verbose_name=header_with_tooltip("Worker Earnings", "Total payment accrued to worker"),
         accessor="total_accrued",
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
