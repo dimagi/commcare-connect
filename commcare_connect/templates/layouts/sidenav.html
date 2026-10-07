@@ -47,13 +47,42 @@
           </div>
         {% endif %}
       {% endif %}
-      {% if request.user.show_internal_features %}
+      {% if request.user.show_admin_sidenav %}
         {% url 'users:internal_features' as internal_features_url %}
-        {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url namespace='users' %}
-        {% if request.user.can_access_organization_directory %}
-          {% url 'organization_directory:list' as organization_directory_url %}
-          {% include "components/sidenav-items.html" with name='LLO Directory' icon='address-book' target=organization_directory_url namespace='organization_directory' %}
-        {% endif %}
+        {% url 'organization_directory:list' as organization_directory_url %}
+        <div x-data="{ adminOpen:
+          {% if 'users' in request.resolver_match.namespaces or 'organization_directory' in request.resolver_match.namespaces %}
+            true
+          {% else %}
+            false
+          {% endif %}
+          }">
+          <button type="button"
+                  class="flex w-full rounded-lg items-center p-2 hover:bg-brand-sunset-light transition-all duration-300"
+                  @click="adminOpen = !adminOpen"
+                  :aria-expanded="adminOpen.toString()">
+            <div class="flex items-center justify-center w-8 h-8">
+              <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+            </div>
+            <div class="transition-all duration-300 overflow-hidden flex items-center justify-between"
+                 :class="sidebarOpen ? 'w-40 ml-4 opacity-100' : 'w-0 opacity-0'">
+              <span class="text-xs whitespace-nowrap">{% translate "Admin" %}</span>
+              <i class="fa-solid fa-chevron-down text-xs transition-transform"
+                 :class="adminOpen && 'rotate-180'"
+                 aria-hidden="true"></i>
+            </div>
+          </button>
+          {# The collapsed sidebar has no room for the header's label, so its items always show there. #}
+          <div x-show="adminOpen || !sidebarOpen"
+               :class="sidebarOpen && 'ml-3 border-l border-white/30'">
+            {% if request.user.show_internal_features %}
+              {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url namespace='users' %}
+            {% endif %}
+            {% if request.user.can_access_organization_directory %}
+              {% include "components/sidenav-items.html" with name='LLO Directory' icon='address-book' target=organization_directory_url namespace='organization_directory' %}
+            {% endif %}
+          </div>
+        </div>
       {% endif %}
     {% endif %}
   </div>

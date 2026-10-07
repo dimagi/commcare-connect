@@ -32,6 +32,19 @@ class TestUser:
         user = User.objects.get(pk=user.pk)
         assert user.show_internal_features
 
+    @pytest.mark.parametrize(
+        "codenames, expected",
+        [
+            ([], False),
+            (["otp_access"], True),
+            (["workspace_entity_management_access"], True),
+        ],
+    )
+    def test_show_admin_sidenav(self, user, codenames, expected):
+        user.user_permissions.add(*Permission.objects.filter(codename__in=codenames))
+        user = User.objects.get(pk=user.pk)
+        assert user.show_admin_sidenav == expected
+
 
 @pytest.mark.django_db
 class TestConnectIDUserLink:

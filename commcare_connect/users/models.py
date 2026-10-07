@@ -109,6 +109,10 @@ class User(AbstractUser):
     def can_access_organization_directory(self):
         return self.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS)
 
+    @property
+    def show_admin_sidenav(self):
+        return self.show_internal_features or self.can_access_organization_directory
+
 
 class ConnectIDUserLink(models.Model):
     user = models.ForeignKey(
