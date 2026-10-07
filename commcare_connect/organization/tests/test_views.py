@@ -192,6 +192,14 @@ class TestOrganizationCreateView:
         assert Organization.objects.filter(name=organization.name).count() == 1
         assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
 
+    def test_creator_is_recorded(self, client, user):
+        org_name = f"Recorded Organization {user.pk}"
+        client.force_login(user)
+
+        client.post(self.url(), data={"name": org_name})
+
+        assert Organization.objects.get(name=org_name).created_by == user.email
+
 
 @pytest.mark.django_db
 class TestNoOrganizationView:
