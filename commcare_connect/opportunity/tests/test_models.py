@@ -850,3 +850,36 @@ class TestTaskFields:
             task.save()
         task.refresh_from_db()
         assert task.date_modified == updated_at
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_daily, max_total, expected",
+    [
+        pytest.param(2, 5, True, id="both_limits"),
+        pytest.param(None, 5, True, id="no_daily_limit"),
+        pytest.param(2, None, False, id="no_total_limit"),
+    ],
+)
+def test_is_setup_complete_payment_unit_limits(opportunity, max_daily, max_total, expected):
+    PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
+
+    assert opportunity.is_setup_complete is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "limits, expected_v1, expected_v2",
+    [
+        pytest.param([(5, 20), (3, 10)], 8, 8, id="all_units_capped"),
+        pytest.param([(5, 20), (None, 1)], 6, 5, id="mixed_units"),
+        pytest.param([(None, 4), (None, 6)], 10, 0, id="no_units_capped"),
+        pytest.param([], 0, 0, id="no_payment_units"),
+    ],
+)
+def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2):
+    for max_daily, max_total in limits:
+        PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
+
+    assert opportunity.daily_max_visits_per_user == expected_v1
+    assert opportunity.daily_max_visits_per_user_v2 == expected_v2
