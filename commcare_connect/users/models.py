@@ -80,6 +80,11 @@ class User(AbstractUser):
             ("manage_internal_permissions", "Can manage internal permissions for users"),
             ("invoice_report_access", "Access the Invoice reports dashboard"),
             ("llo_entity_internal_access", "Can access the internal LLO organization profile export"),
+            (
+                "all_org_profile_edit_access",
+                "Can view and edit the profile of any organization "
+                "(not members, opportunities or the program manager setting)",
+            ),
         ]
 
     def __str__(self):

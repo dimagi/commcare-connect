@@ -13,7 +13,7 @@ from commcare_connect.organization.models import (
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_PROFILE_EDIT_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
 EARLIEST_ESTABLISHMENT_YEAR = 1800
 
@@ -121,8 +121,13 @@ class OrganizationProfileForm(forms.ModelForm):
                 "contact_emails",
                 "eoi_links",
                 "notes",
+                *self._final_step_extras(),
             ),
         )
+
+    def _final_step_extras(self):
+        """Hook: layout items to show after the profile fields, beside the submit button."""
+        return ()
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
@@ -152,6 +157,33 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def clean_year_of_establishment(self):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
+
+
+class OrganizationCreateForm(OrganizationProfileForm):
+    """Creates an organization from the create wizard.
+
+    Only ALL_ORG_PROFILE_EDIT_ACCESS holders may skip joining it: that permission still lets them
+    edit its profile, whereas anyone else would be locked out of the organization they just made.
+    """
+
+    skip_membership = forms.BooleanField(
+        required=False,
+        label=gettext_lazy("Create without becoming a member"),
+        help_text=gettext_lazy("You can still edit its profile, but not its members or opportunities."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+
+    def _drop_unpermitted_fields(self):
+        if not self.user.has_perm(ALL_ORG_PROFILE_EDIT_ACCESS):
+            del self.fields["skip_membership"]
+
+    def _final_step_extras(self):
+        if "skip_membership" in self.fields:
+            return (_toggle("skip_membership"),)
+        return ()
 
 
 class OrganizationChangeForm(OrganizationProfileForm):
@@ -238,11 +270,17 @@ def _section(title, *fields):
 
 
 def _toggle(field):
-    """Renders a boolean as a labelled row rather than a bare checkbox beside its label."""
+    """Renders a boolean as a labelled row rather than a bare checkbox beside its label.
+
+    Help text wraps onto its own line beneath, so it doesn't push the switch off the row's edge.
+    """
     return layout.Field(
         field,
         css_class=CHECKBOX_CLASS,
-        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg [&>label]:mb-0",
+        wrapper_class=(
+            "bg-slate-100 flex flex-wrap items-center justify-between p-4 rounded-lg "
+            "[&>label]:mb-0 [&>small]:basis-full [&>small]:mt-1"
+        ),
     )
 
 

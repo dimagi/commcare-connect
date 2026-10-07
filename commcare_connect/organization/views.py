@@ -13,26 +13,30 @@ from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
 from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
-from commcare_connect.organization.decorators import org_admin_access_required
+from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
+    OrganizationCreateForm,
     OrganizationInviteForm,
-    OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
 from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
 from commcare_connect.users.models import User
 from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
 def organization_create(request):
-    form = OrganizationProfileForm(data=request.POST or None)
+    form = OrganizationCreateForm(data=request.POST or None, user=request.user)
 
     if form.is_valid():
+        form.instance.created_by = request.user.email
         org = form.save()
+        if form.cleaned_data.get("skip_membership"):
+            return redirect("organization:home", org.slug)
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect(opportunity_list_url(org.slug))
 
@@ -48,7 +52,7 @@ def no_organization(request):
     return render(request, "organization/no_organization.html")
 
 
-@org_admin_access_required
+@org_profile_edit_access_required
 def organization_home(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
 
@@ -72,6 +76,8 @@ def organization_home(request, org_slug):
             "form": form,
             "invite_form": invite_form,
             "member_count": org.memberships.count(),
+            # Profile-edit permission holders reach this page without admin access to the member endpoints.
+            "can_manage_members": org_access_level_from_request(request) >= AccessLevel.ADMIN,
         },
     )
 
