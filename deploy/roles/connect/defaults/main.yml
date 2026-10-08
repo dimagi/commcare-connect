@@ -9,6 +9,8 @@ base_dir: '{{home_dir}}/www'
 project_dir: '{{ base_dir }}/{{ project_name }}'
 
 docker_env_file: '{{ project_dir }}/docker.env'
+# Template rendered into docker_env_file; the connectid hosts override it.
+env_file: connect.docker.env.j2
 
 # Django settings
 # Default region - can be overridden per-inventory
@@ -19,3 +21,5 @@ django_email_backend: anymail.backends.amazon_ses.EmailBackend
 deploy_environment: staging
 django_allow_registrations: True
 commcare_hq_url: https://staging.commcarehq.org
+# HubSpot tracking on the public pages; production only.
+hubspot_api_id: ''
