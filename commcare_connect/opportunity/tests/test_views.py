@@ -840,6 +840,7 @@ def test_opportunity_list_filters_by_delivery_type(organization):
         (None, {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
         ("", {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
         ("malaria", {"Malaria Kenya", "Malaria Uganda"}),
+        ("mal", {"Malaria Kenya", "Malaria Uganda"}),
         ("KENYA", {"Malaria Kenya", "Nutrition Kenya"}),
         ("tb", set()),
     ],
