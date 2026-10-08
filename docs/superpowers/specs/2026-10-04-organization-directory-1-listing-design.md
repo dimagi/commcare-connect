@@ -2,8 +2,9 @@
 
 ## Goal
 
-Give Connect staff (and GSP) one page in Connect to find, add, edit and archive organizations,
-replacing the spreadsheet they maintain today. Later phases add more tabs (starting with
+Give Connect staff and the Global Strategy Partnerships (GSP) team, who do business development
+for Connect, one page in Connect to find, add, edit and archive organizations, replacing the
+spreadsheet they maintain today. Later phases add more tabs (starting with
 Contacts) to the same page.
 
 ## Scope
