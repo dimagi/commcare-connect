@@ -293,9 +293,12 @@ class TestOpportunityListDateRanges:
         filterset = OpportunityListFilterSet(queryset=Opportunity.objects.none())
         return dict(filterset.form.fields[name].fields[0].choices)
 
-    @pytest.mark.parametrize("name, offered", [("start_date", False), ("end_date", True)])
-    def test_future_presets_are_offered_for_end_dates_only(self, name, offered):
-        assert ("next_30_days" in self.range_choices(name)) is offered
+    @pytest.mark.parametrize("name", ["start_date", "end_date"])
+    def test_past_and_future_presets_are_offered(self, name):
+        choices = self.range_choices(name)
+
+        assert "last_30_days" in choices
+        assert "next_30_days" in choices
 
     def test_the_url_params_clean_to_a_date_range(self):
         data = {"end_date_range": "custom", "end_date_from": "2026-01-01", "end_date_to": "2026-02-01"}

@@ -151,13 +151,15 @@ class DeliverFilterSet(django_filters.FilterSet):
             self.filters.pop("has_duplicates")
 
 
-_PAST_PRESETS = [
+_DATE_PRESETS = [
     DateRanges.LAST_30_DAYS,
     DateRanges.LAST_3_MONTHS,
     DateRanges.LAST_6_MONTHS,
     DateRanges.LAST_12_MONTHS,
+    DateRanges.NEXT_30_DAYS,
+    DateRanges.NEXT_3_MONTHS,
+    DateRanges.NEXT_6_MONTHS,
 ]
-_FUTURE_PRESETS = [DateRanges.NEXT_30_DAYS, DateRanges.NEXT_3_MONTHS, DateRanges.NEXT_6_MONTHS]
 
 
 class OpportunityListFilterSet(django_filters.FilterSet):
@@ -173,8 +175,8 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     delivery_type = django_filters.MultipleChoiceFilter(
         label=_("Delivery Type"), choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
-    start_date = PresetDateRangeFilter(label=_("Start Date"), presets=_PAST_PRESETS)
-    end_date = PresetDateRangeFilter(label=_("End Date"), presets=[*_PAST_PRESETS, *_FUTURE_PRESETS])
+    start_date = PresetDateRangeFilter(label=_("Start Date"), presets=_DATE_PRESETS)
+    end_date = PresetDateRangeFilter(label=_("End Date"), presets=_DATE_PRESETS)
 
     class Meta:
         form = CSRFExemptForm
