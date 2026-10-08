@@ -1,6 +1,5 @@
 {% extends 'program/program_base.html' %}
 {% load humanize %}
-{% load opportunity_list_url %}
 {% load i18n %}
 {% load static %}
 {% block css %}
@@ -204,7 +203,7 @@
                         </a>
                       {% endif %}
                       <a class="button button-md button-outline-rounded"
-                         href="{% opportunity_list_url request.org.slug program=program.slug %}">
+                         href="{% url "opportunity:list" request.org.slug %}?program={{ program.slug }}">
                         <div class="flex items-center justify-between gap-4">
                           <p class="text-sm">{% translate "View Opportunities" %}</p>
                           <i class="fa-solid fa-arrow-right"></i>

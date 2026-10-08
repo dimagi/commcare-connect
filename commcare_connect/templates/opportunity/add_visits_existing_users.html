@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% load static %}
-{% load opportunity_list_url %}
 {% load crispy_forms_tags %}
 {% load i18n %}
 {% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
@@ -213,7 +212,7 @@
               <b>{% trans "No Opportunity Claims yet." %}</b>
               <br />
               <a class="button button-md primary-dark mt-2"
-                 href="{% opportunity_list_url request.org.slug %}">{% trans "All Opportunities" %}</a>
+                 href="{% url "opportunity:list" org_slug=request.org.slug %}">{% trans "All Opportunities" %}</a>
             </div>
           {% endif %}
           <!-- Modal -->

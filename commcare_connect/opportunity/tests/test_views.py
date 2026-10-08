@@ -76,7 +76,6 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
@@ -991,17 +990,6 @@ def test_opportunity_list_search_carries_everything_but_query_and_page(rf, query
     view.request = rf.get(f"/?{query}")
 
     assert view._search_carried_params() == expected
-
-
-@pytest.mark.parametrize(
-    "extra, expected_query",
-    [
-        ({}, "status=0&is_test=False"),
-        ({"program": "malaria"}, "status=0&is_test=False&program=malaria"),
-    ],
-)
-def test_opportunity_list_url_adds_default_filters(extra, expected_query):
-    assert opportunity_list_url("my-org", **extra) == f"/a/my-org/opportunity/?{expected_query}"
 
 
 RELATIONSHIPS_ON_THE_LIST = [

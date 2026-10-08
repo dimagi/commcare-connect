@@ -92,7 +92,6 @@ from commcare_connect.microplanning.models import (
 from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tasks import send_push_notification_task
-from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
     opportunity_pm_required,
@@ -266,7 +265,7 @@ def microplanning_home(request, *args, **kwargs):
         "import_status_url": import_status_url,
         "opportunity": opportunity,
         "path": [
-            {"title": _("Opportunities"), "url": opportunity_list_url(request.org.slug)},
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {
                 "title": opportunity.name,
                 "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
@@ -1475,7 +1474,7 @@ def coverage_progress(request, *args, **kwargs):
         "export_hrefs": export_hrefs,
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "path": [
-            {"title": _("Opportunities"), "url": opportunity_list_url(request.org.slug)},
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {
                 "title": opportunity.name,
                 "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),

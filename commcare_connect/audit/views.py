@@ -17,7 +17,6 @@ from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import AssignedTask, TaskType
-from commcare_connect.opportunity.utils.opportunity_list import opportunity_list_url
 from commcare_connect.organization.decorators import opp_standard_access_required, opportunity_required
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
@@ -53,7 +52,7 @@ def audit_report_list(request, org_slug, opp_id):
     RequestConfig(request, paginate={"per_page": DEFAULT_PAGE_SIZE}).configure(table)
 
     path = [
-        {"title": _("Opportunities"), "url": opportunity_list_url(org_slug)},
+        {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
         {
             "title": opportunity.name,
             "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
@@ -116,7 +115,7 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
     RequestConfig(request, paginate={"per_page": DEFAULT_PAGE_SIZE}).configure(table)
 
     path = [
-        {"title": _("Opportunities"), "url": opportunity_list_url(org_slug)},
+        {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
         {
             "title": opportunity.name,
             "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),

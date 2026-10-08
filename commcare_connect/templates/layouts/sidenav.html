@@ -1,5 +1,4 @@
 {% load static i18n %}
-{% load opportunity_list_url %}
 <div x-cloak
      class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
      :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -36,7 +35,7 @@
       {% if request.org %}
         {% if request.org_membership or request.user.is_superuser %}
           <div class="mt-5">
-            {% opportunity_list_url request.org.slug as opportunity_url %}
+            {% url 'opportunity:list' request.org.slug as opportunity_url %}
             {% include "components/sidenav-items.html" with name='Opportunities' icon='table-cells-large' target=opportunity_url namespace='opportunity' %}
             {% if not request.org_membership.is_viewer %}
               {% url 'program:home' request.org.slug as program_home_url %}

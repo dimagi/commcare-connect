@@ -98,7 +98,7 @@ class TestUserRedirectView:
         request.org = organization
 
         view.request = request
-        assert view.get_redirect_url() == f"/a/{organization.slug}/opportunity/?status=0&is_test=False"
+        assert view.get_redirect_url() == f"/a/{organization.slug}/opportunity/"
 
 
 class TestCreateUserLinkView:
