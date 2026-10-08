@@ -85,6 +85,14 @@ class TestRemoveMembersView:
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
 
+@pytest.fixture
+def profile_editor(db):
+    """A user with no memberships who holds ALL_ORG_PROFILE_EDIT_ACCESS."""
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="all_org_profile_edit_access"))
+    return User.objects.get(pk=user.pk)  # A fresh instance, so the permission cache sees the grant.
+
+
 @pytest.mark.django_db
 class TestOrganizationHomeView:
     def url(self, org_slug):
@@ -143,6 +151,56 @@ class TestOrganizationHomeView:
         organization.refresh_from_db()
         assert organization.program_manager
 
+    def test_non_member_without_permission_is_refused(self, client, user, organization):
+        client.force_login(user)
+
+        response = client.get(self.url(org_slug=organization.slug))
+
+        assert response.status_code == 404
+
+    def test_profile_editor_saves_any_organization_profile(self, client, profile_editor, organization):
+        client.force_login(profile_editor)
+
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "short_name": "PE", "team_size": TeamSizeRange.S},
+        )
+
+        assert response.status_code == 302
+        organization.refresh_from_db()
+        assert organization.short_name == "PE"
+        assert organization.team_size == TeamSizeRange.S
+
+    def test_profile_editor_cannot_enable_program_manager(self, client, profile_editor, organization):
+        organization.program_manager = False
+        organization.save(update_fields=["program_manager"])
+        client.force_login(profile_editor)
+
+        client.post(self.url(org_slug=organization.slug), data={"name": organization.name, "program_manager": "on"})
+
+        organization.refresh_from_db()
+        assert not organization.program_manager
+
+    @pytest.mark.parametrize(
+        "viewer, can_manage_members",
+        [("org_user_admin", True), ("profile_editor", False)],
+    )
+    def test_members_tab_only_shown_to_org_admins(self, client, request, organization, viewer, can_manage_members):
+        client.force_login(request.getfixturevalue(viewer))
+
+        response = client.get(self.url(org_slug=organization.slug))
+
+        assert response.context["can_manage_members"] is can_manage_members
+        member_table_url = reverse("organization:org_member_table", args=(organization.slug,))
+        assert (member_table_url in response.content.decode()) is can_manage_members
+
+    def test_profile_editor_cannot_reach_member_endpoints(self, client, profile_editor, organization):
+        client.force_login(profile_editor)
+
+        response = client.get(reverse("organization:org_member_table", args=(organization.slug,)))
+
+        assert response.status_code == 404
+
 
 @pytest.mark.django_db
 class TestOrganizationCreateView:
@@ -192,6 +250,47 @@ class TestOrganizationCreateView:
         assert "name" in response.context["form"].errors
         assert Organization.objects.filter(name=organization.name).count() == 1
         assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
+
+    def test_creator_is_recorded(self, client, user):
+        org_name = f"Recorded Organization {user.pk}"
+        client.force_login(user)
+
+        client.post(self.url(), data={"name": org_name})
+
+        assert Organization.objects.get(name=org_name).created_by == user.email
+
+    @pytest.mark.parametrize(
+        "creator, skip_membership, becomes_admin",
+        [
+            ("profile_editor", True, False),
+            ("profile_editor", False, True),
+            # Without the permission the field isn't offered, so a forged value is ignored.
+            ("user", True, True),
+        ],
+    )
+    def test_skip_membership(self, client, request, creator, skip_membership, becomes_admin):
+        creator = request.getfixturevalue(creator)
+        org_name = f"Skip Membership Organization {creator.pk}"
+        client.force_login(creator)
+        data = {"name": org_name, "skip_membership": "on"} if skip_membership else {"name": org_name}
+
+        response = client.post(self.url(), data=data)
+
+        org = Organization.objects.get(name=org_name)
+        is_admin = UserOrganizationMembership.objects.filter(
+            user=creator, organization=org, role=UserOrganizationMembership.Role.ADMIN
+        ).exists()
+        assert is_admin is becomes_admin
+        expected_url = "opportunity:list" if becomes_admin else "organization:home"
+        assert response.url == reverse(expected_url, args=(org.slug,))
+
+    @pytest.mark.parametrize("creator, offered", [("profile_editor", True), ("user", False)])
+    def test_skip_membership_only_offered_to_profile_editors(self, client, request, creator, offered):
+        client.force_login(request.getfixturevalue(creator))
+
+        response = client.get(self.url())
+
+        assert ('name="skip_membership"' in response.content.decode()) is offered
 
 
 @pytest.mark.django_db
