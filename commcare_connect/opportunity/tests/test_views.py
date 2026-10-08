@@ -893,6 +893,7 @@ def test_opportunity_list_response_varies_on_htmx(org_user_admin, organization, 
     response = client.get(reverse("opportunity:list", args=(organization.slug,)))
 
     assert "HX-Request" in response["Vary"]
+    assert "HX-History-Restore-Request" in response["Vary"]
 
 
 @pytest.mark.django_db
