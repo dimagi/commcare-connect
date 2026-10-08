@@ -281,8 +281,10 @@ class TestOrganizationCreateView:
             user=creator, organization=org, role=UserOrganizationMembership.Role.ADMIN
         ).exists()
         assert is_admin is becomes_admin
-        expected_url = "opportunity:list" if becomes_admin else "organization:home"
-        assert response.url == reverse(expected_url, args=(org.slug,))
+        expected_url = (
+            opportunity_list_url(org.slug) if becomes_admin else reverse("organization:home", args=(org.slug,))
+        )
+        assert response.url == expected_url
 
     @pytest.mark.parametrize("creator, offered", [("profile_editor", True), ("user", False)])
     def test_skip_membership_only_offered_to_profile_editors(self, client, request, creator, offered):
