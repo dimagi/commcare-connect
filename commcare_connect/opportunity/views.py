@@ -134,6 +134,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityStatus,
     OpportunityVerificationFlags,
     Payment,
     PaymentInvoice,
@@ -326,6 +327,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
     template_name = "opportunity/opportunities_list.html"
     paginate_by = 15
     filter_class = OpportunityListFilterSet
+    default_filters = {"status": OpportunityStatus.ACTIVE.value, "is_test": False}
 
     @cached_property
     def can_act_as_program_manager(self):

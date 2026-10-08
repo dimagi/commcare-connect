@@ -76,6 +76,8 @@
               <form id="filterForm" class="content">
                 {# Carry the live search over so applying filters keeps it; disabled (not sent) when empty. #}
                 <input type="hidden" name="q" :value="search" :disabled="!search">
+                {# Marks the filters as the user's choice, so clearing them all doesn't bring the defaults back. #}
+                <input type="hidden" name="{{ filters_submitted_param }}" value="1">
                 <div class="modal-body">{% crispy filter_form %}</div>
                 <div class="footer">
                   <button type="button"

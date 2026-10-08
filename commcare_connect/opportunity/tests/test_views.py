@@ -920,8 +920,7 @@ def _opportunity_list_view(rf, organization, url):
 
 
 @pytest.mark.django_db
-def test_default_opportunity_list_url_shows_only_active_non_test(organization, rf):
-    """The default URL's params, parsed by the filter form, list only active, non-test opportunities."""
+def test_opportunity_list_opens_on_active_non_test(organization, rf):
     today = now().date()
     tomorrow, yesterday = today + timedelta(days=1), today - timedelta(days=1)
     OpportunityFactory(organization=organization, name="active", end_date=tomorrow, is_test=False)
@@ -929,7 +928,7 @@ def test_default_opportunity_list_url_shows_only_active_non_test(organization, r
     OpportunityFactory(organization=organization, name="ended", end_date=yesterday, is_test=False)
     OpportunityFactory(organization=organization, name="inactive", end_date=tomorrow, active=False, is_test=False)
 
-    view = _opportunity_list_view(rf, organization, opportunity_list_url(organization.slug))
+    view = _opportunity_list_view(rf, organization, reverse("opportunity:list", args=(organization.slug,)))
 
     assert view.filters_applied_count() == 2
     assert _listed_names(organization, view.get_filter_values()) == {"active"}
@@ -939,9 +938,9 @@ def test_default_opportunity_list_url_shows_only_active_non_test(organization, r
 @pytest.mark.parametrize(
     "query, expected",
     [
-        ("start_date_range=last_3_months", ["start_date"]),
-        ("start_date_range=custom&start_date_from=2026-01-01&start_date_to=2026-02-01", ["start_date"]),
-        ("start_date_range=last_30_days&end_date_range=next_30_days", ["start_date", "end_date"]),
+        ("filtered=1&start_date_range=last_3_months", ["start_date"]),
+        ("filtered=1&start_date_range=custom&start_date_from=2026-01-01&start_date_to=2026-02-01", ["start_date"]),
+        ("filtered=1&start_date_range=last_30_days&end_date_range=next_30_days", ["start_date", "end_date"]),
     ],
 )
 def test_a_date_range_counts_as_one_filter(organization, rf, query, expected):
@@ -951,10 +950,29 @@ def test_a_date_range_counts_as_one_filter(organization, rf, query, expected):
 
 
 @pytest.mark.django_db
-def test_bare_opportunity_list_url_applies_no_filters(organization, rf):
-    view = _opportunity_list_view(rf, organization, reverse("opportunity:list", args=(organization.slug,)))
+@pytest.mark.parametrize(
+    "query, status, is_test",
+    [
+        ("", ["0"], False),
+        # A param in the URL wins over its default; the other defaults still apply.
+        ("status=1", ["1"], False),
+        # Once the user has submitted the filters, the defaults are gone, even when they cleared everything.
+        ("filtered=1", None, None),
+        ("filtered=1&status=1", ["1"], None),
+    ],
+)
+def test_opportunity_list_defaults_apply_until_filters_are_submitted(organization, rf, query, status, is_test):
+    filter_values = _opportunity_list_view(rf, organization, f"/?{query}").get_filter_values()
 
-    assert view.filters_applied_count() == 0
+    assert (filter_values["status"] or None, filter_values["is_test"]) == (status, is_test)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query, tracked", [("", False), ("status=1", False), ("filtered=1&status=0", True)])
+def test_opportunity_list_tracks_filter_usage_only_once_submitted(organization, rf, query, tracked):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+
+    assert (view.get_filter_usage_data() is not None) is tracked
 
 
 @pytest.mark.parametrize(

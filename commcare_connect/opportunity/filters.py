@@ -27,9 +27,13 @@ class FilterMixin:
         - Mixin this on a view and set filter_class to the above filter
         - Use get_filter_form() to use it in the template
         - Use get_filter_values() to get filter values in the template
+        - Optionally set default_filters to the query params the page opens with. They apply until the
+          user submits the filter form, which must then carry a hidden `filters_submitted_param` field
     """
 
     filter_class = None
+    default_filters = {}
+    filters_submitted_param = "filtered"
 
     def _get_filter_class(self):
         return self.filter_class
@@ -48,10 +52,24 @@ class FilterMixin:
         if not hasattr(self, "_filter_instance"):
             filter_class = self._get_filter_class()
             if filter_class:
-                self._filter_instance = filter_class(self.request.GET, **self.get_filter_kwargs())
+                self._filter_instance = filter_class(self._get_filter_data(), **self.get_filter_kwargs())
             else:
                 self._filter_instance = None
         return self._filter_instance
+
+    def _get_filter_data(self):
+        """The request's query params, filled in with the defaults until the user has submitted filters."""
+        if not self.default_filters or self.filters_submitted():
+            return self.request.GET
+        data = self.request.GET.copy()
+        for name, value in self.default_filters.items():
+            if name not in data:
+                data[name] = str(value)
+        return data
+
+    def filters_submitted(self):
+        """Whether the user chose the filters, rather than the page opening with its defaults."""
+        return self.filters_submitted_param in self.request.GET
 
     def get_filter_form(self):
         f = self._get_filter()
@@ -70,7 +88,8 @@ class FilterMixin:
 
     def get_filter_usage_data(self):
         applied = self.get_applied_filters()
-        if not applied:
+        # Defaults the page opened with are not the user engaging with the filters.
+        if not applied or (self.default_filters and not self.filters_submitted()):
             return None
 
         return {
@@ -87,6 +106,7 @@ class FilterMixin:
             "filter_form": self.get_filter_form(),
             "filters_applied_count": self.filters_applied_count(),
             "filter_usage_data": self.get_filter_usage_data(),
+            "filters_submitted_param": self.filters_submitted_param,
         }
 
 
