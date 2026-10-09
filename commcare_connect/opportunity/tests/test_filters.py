@@ -242,20 +242,68 @@ class TestAssignedTaskFilterSet:
         assert list(result) == [self.at_assigned]
 
 
+def _opportunity_list_filters(org, rf):
+    request = rf.get("/")
+    request.org = org
+    return OpportunityListFilterSet(queryset=Opportunity.objects.none(), request=request).filters
+
+
 @pytest.mark.django_db
 class TestOpportunityListProgramFilter:
     """The Program dropdown on the opportunity list is built from the programs the org can reach."""
 
-    @staticmethod
-    def filters_for(org, rf):
-        request = rf.get("/")
-        request.org = org
-        return OpportunityListFilterSet(queryset=Opportunity.objects.none(), request=request).filters
-
     def test_every_accessible_program_is_offered(self, program, rf):
-        filters = self.filters_for(program.organization, rf)
+        filters = _opportunity_list_filters(program.organization, rf)
 
         assert filters["program"].extra["choices"] == [(program.slug, program.name)]
 
     def test_the_filter_is_dropped_without_an_accessible_program(self, organization, rf):
-        assert "program" not in self.filters_for(organization, rf)
+        assert "program" not in _opportunity_list_filters(organization, rf)
+
+
+@pytest.mark.django_db
+class TestOpportunityListDeliveryTypeFilter:
+    """The Delivery Type dropdown offers only the delivery types of opportunities the org can reach."""
+
+    def test_only_delivery_types_in_use_are_offered(self, organization, rf):
+        used = OpportunityFactory(organization=organization).delivery_type
+        OpportunityFactory()  # another org's opportunity and delivery type
+
+        assert _opportunity_list_filters(organization, rf)["delivery_type"].extra["choices"] == [
+            (str(used.pk), used.name)
+        ]
+
+    def test_archived_opportunities_delivery_types_are_not_offered(self, organization, rf):
+        live = OpportunityFactory(organization=organization).delivery_type
+        OpportunityFactory(organization=organization, archived=True)
+
+        assert _opportunity_list_filters(organization, rf)["delivery_type"].extra["choices"] == [
+            (str(live.pk), live.name)
+        ]
+
+    def test_the_filter_is_dropped_without_an_accessible_opportunity(self, organization, rf):
+        assert "delivery_type" not in _opportunity_list_filters(organization, rf)
+
+
+class TestOpportunityListDateRanges:
+    """Start and End Date are preset date ranges; the field itself is tested in utils/tests/test_forms.py."""
+
+    @staticmethod
+    def range_choices(name):
+        filterset = OpportunityListFilterSet(queryset=Opportunity.objects.none())
+        return dict(filterset.form.fields[name].fields[0].choices)
+
+    @pytest.mark.parametrize("name", ["start_date", "end_date"])
+    def test_past_and_future_presets_are_offered(self, name):
+        choices = self.range_choices(name)
+
+        assert "last_30_days" in choices
+        assert "next_30_days" in choices
+
+    def test_the_url_params_clean_to_a_date_range(self):
+        data = {"end_date_range": "custom", "end_date_from": "2026-01-01", "end_date_to": "2026-02-01"}
+        filterset = OpportunityListFilterSet(data=data, queryset=Opportunity.objects.none())
+
+        assert filterset.form.is_valid(), filterset.form.errors
+        assert filterset.form.cleaned_data["end_date"] == slice(date(2026, 1, 1), date(2026, 2, 1))
+        assert filterset.form.cleaned_data["start_date"] is None

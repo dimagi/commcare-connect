@@ -4,11 +4,20 @@ import django_filters
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
-from commcare_connect.program.utils import programs_accessible_to_org
+from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
+    DeliveryType,
+    OpportunityAccess,
+    OpportunityStatus,
+    TaskType,
+)
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
+from commcare_connect.utils.datetime import DateRanges
+from commcare_connect.utils.forms import PresetDateRangeField
 
 
 class FilterMixin:
@@ -18,9 +27,13 @@ class FilterMixin:
         - Mixin this on a view and set filter_class to the above filter
         - Use get_filter_form() to use it in the template
         - Use get_filter_values() to get filter values in the template
+        - Optionally set default_filters to the query params the page opens with. They apply until the
+          user submits the filter form, which must then carry a hidden `filters_submitted_param` field
     """
 
     filter_class = None
+    default_filters = {}
+    filters_submitted_param = "filtered"
 
     def _get_filter_class(self):
         return self.filter_class
@@ -39,10 +52,24 @@ class FilterMixin:
         if not hasattr(self, "_filter_instance"):
             filter_class = self._get_filter_class()
             if filter_class:
-                self._filter_instance = filter_class(self.request.GET, **self.get_filter_kwargs())
+                self._filter_instance = filter_class(self._get_filter_data(), **self.get_filter_kwargs())
             else:
                 self._filter_instance = None
         return self._filter_instance
+
+    def _get_filter_data(self):
+        """The request's query params, filled in with the defaults until the user has submitted filters."""
+        if not self.default_filters or self.filters_submitted():
+            return self.request.GET
+        data = self.request.GET.copy()
+        for name, value in self.default_filters.items():
+            if name not in data:
+                data[name] = str(value)
+        return data
+
+    def filters_submitted(self):
+        """Whether the user chose the filters, rather than the page opening with its defaults."""
+        return self.filters_submitted_param in self.request.GET
 
     def get_filter_form(self):
         f = self._get_filter()
@@ -56,10 +83,13 @@ class FilterMixin:
             return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
         return {}
 
+    def get_applied_filters(self):
+        return [name for name, value in self.get_filter_values().items() if value not in (None, "", [])]
+
     def get_filter_usage_data(self):
-        values = self.get_filter_values()
-        applied = [k for k, v in values.items() if v not in (None, "", [])]
-        if not applied:
+        applied = self.get_applied_filters()
+        # Defaults the page opened with are not the user engaging with the filters.
+        if not applied or (self.default_filters and not self.filters_submitted()):
             return None
 
         return {
@@ -69,14 +99,19 @@ class FilterMixin:
         }
 
     def filters_applied_count(self):
-        return len([v for v in self.get_filter_values().values() if v not in (None, "", [])])
+        return len(self.get_applied_filters())
 
     def get_filter_context(self):
         return {
             "filter_form": self.get_filter_form(),
             "filters_applied_count": self.filters_applied_count(),
             "filter_usage_data": self.get_filter_usage_data(),
+            "filters_submitted_param": self.filters_submitted_param,
         }
+
+
+class PresetDateRangeFilter(django_filters.RangeFilter):
+    field_class = PresetDateRangeField
 
 
 class CSRFExemptForm(forms.Form):
@@ -136,16 +171,32 @@ class DeliverFilterSet(django_filters.FilterSet):
             self.filters.pop("has_duplicates")
 
 
+_DATE_PRESETS = [
+    DateRanges.LAST_30_DAYS,
+    DateRanges.LAST_3_MONTHS,
+    DateRanges.LAST_6_MONTHS,
+    DateRanges.LAST_12_MONTHS,
+    DateRanges.NEXT_30_DAYS,
+    DateRanges.NEXT_3_MONTHS,
+    DateRanges.NEXT_6_MONTHS,
+]
+
+
 class OpportunityListFilterSet(django_filters.FilterSet):
     is_test = YesNoFilter(label="Is Test")
     status = django_filters.MultipleChoiceFilter(
         label="Status",
-        choices=[(0, "Active"), (1, "Ended"), (2, "Inactive")],
+        choices=OpportunityStatus.choices,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
     )
     program = django_filters.MultipleChoiceFilter(
         label="Program", choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
+    delivery_type = django_filters.MultipleChoiceFilter(
+        label=_("Delivery Type"), choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
+    )
+    start_date = PresetDateRangeFilter(label=_("Start Date"), presets=_DATE_PRESETS)
+    end_date = PresetDateRangeFilter(label=_("End Date"), presets=_DATE_PRESETS)
 
     class Meta:
         form = CSRFExemptForm
@@ -155,11 +206,28 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         super().__init__(*args, **kwargs)
 
         if request:
-            choices = [(p.slug, p.name) for p in programs_accessible_to_org(request.org)]
-            if choices:
-                self.filters["program"].extra["choices"] = choices
-            else:
-                del self.filters["program"]
+            self._set_choices_or_drop("program", [(p.slug, p.name) for p in programs_accessible_to_org(request.org)])
+            self._set_choices_or_drop("delivery_type", self._delivery_type_choices(request.org))
+        self.form.helper.layout = Layout(
+            "status",
+            "is_test",
+            *[name for name in ("program", "delivery_type") if name in self.filters],
+            "start_date",
+            "end_date",
+        )
+
+    def _set_choices_or_drop(self, name, choices):
+        if choices:
+            self.filters[name].extra["choices"] = choices
+        else:
+            del self.filters[name]
+
+    @staticmethod
+    def _delivery_type_choices(org):
+        delivery_types = DeliveryType.objects.filter(
+            id__in=opportunities_accessible_to_org(org).filter(archived=False).values("delivery_type_id")
+        ).order_by("name")
+        return [(str(d.pk), d.name) for d in delivery_types]
 
 
 TASK_STATUS_CHOICES = [
@@ -291,41 +359,29 @@ class UserTasksFilterSet(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             "task_status",
             "task_type",
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "date_assigned_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "date_assigned_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
-            Div(
-                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
-                Div(
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
-                        "due_date_from",
-                        css_class="flex-1",
-                    ),
-                    Div(
-                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
-                        "due_date_to",
-                        css_class="flex-1",
-                    ),
-                    css_class="flex gap-2",
-                ),
-                css_class="mb-3",
-            ),
+            _date_range_layout(_("Date Assigned"), "date_assigned_from", "date_assigned_to"),
+            _date_range_layout(_("Due Date"), "due_date_from", "due_date_to"),
         )
+
+
+def _date_range_layout(label, from_field, to_field):
+    return Div(
+        HTML(format_html('<p class="block text-gray-700 text-sm font-bold mb-2">{}</p>', label)),
+        Div(
+            Div(
+                HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("From"))),
+                from_field,
+                css_class="flex-1",
+            ),
+            Div(
+                HTML(format_html('<p class="text-gray-600 text-sm mb-1">{}</p>', _("To"))),
+                to_field,
+                css_class="flex-1",
+            ),
+            css_class="flex gap-2",
+        ),
+        css_class="mb-3",
+    )
 
 
 class AssignedTaskFilterSet(django_filters.FilterSet):

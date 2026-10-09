@@ -7,7 +7,6 @@ from urllib.parse import urlencode
 import httpx
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
-from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
@@ -924,27 +923,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 self.add_error("total_budget", "Budget exceeds the program budget.")
 
             return cleaned_data
-
-
-class DateRanges(TextChoices):
-    LAST_7_DAYS = "last_7_days", "Last 7 days"
-    LAST_30_DAYS = "last_30_days", "Last 30 days"
-    LAST_90_DAYS = "last_90_days", "Last 90 days"
-    LAST_YEAR = "last_year", "Last year"
-    ALL = "all", "All"
-
-    def get_cutoff_date(self):
-        match self:
-            case DateRanges.LAST_7_DAYS:
-                return now() - relativedelta(days=7)
-            case DateRanges.LAST_30_DAYS:
-                return now() - relativedelta(days=30)
-            case DateRanges.LAST_90_DAYS:
-                return now() - relativedelta(days=90)
-            case DateRanges.LAST_YEAR:
-                return now() - relativedelta(years=1)
-            case DateRanges.ALL:
-                return None
 
 
 class VisitExportForm(forms.Form):

@@ -1,0 +1,16 @@
+{% load i18n %}
+{% with preset=widget.subwidgets.0 date_from=widget.subwidgets.1 date_to=widget.subwidgets.2 %}
+  <div x-data="{ preset: '{{ preset.value.0|default:''|escapejs }}' }">
+    {% include preset.template_name with widget=preset %}
+    <div class="flex gap-2 mt-2" x-show="preset === '{{ custom }}'" x-cloak>
+      <div class="flex-1">
+        <p class="text-gray-600 text-sm mb-1">{% translate "From" %}</p>
+        {% include date_from.template_name with widget=date_from %}
+      </div>
+      <div class="flex-1">
+        <p class="text-gray-600 text-sm mb-1">{% translate "To" %}</p>
+        {% include date_to.template_name with widget=date_to %}
+      </div>
+    </div>
+  </div>
+{% endwith %}
