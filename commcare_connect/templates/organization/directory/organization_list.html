@@ -4,6 +4,14 @@
 {% block title %}
   {% translate "Organizations" %}
 {% endblock title %}
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock css %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
 {% block content %}
   <div class="flex flex-col gap-4 w-full">
     {% include "components/breadcrumbs.html" with path=path %}
@@ -14,6 +22,22 @@
       </div>
     </div>
     {% include "organization/directory/tabs.html" %}
+    <form method="get" class="card_bg flex flex-col gap-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="simple-input w-full md:w-80">
+          <i class="fa-solid fa-magnifying-glass text-gray-400" aria-hidden="true"></i>
+          {{ filter.form.search }}
+        </div>
+        <div class="min-w-48">{{ filter.form.countries }}</div>
+        <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
+        <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
+        <a href="{% url 'organization_directory:list' %}"
+           class="underline text-sm text-gray-500">{% translate "Reset" %}</a>
+      </div>
+      <p class="text-sm text-gray-500 self-end">
+        {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}
+      </p>
+    </form>
     <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
   </div>
 {% endblock content %}
