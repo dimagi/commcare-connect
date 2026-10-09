@@ -63,7 +63,7 @@ sequenceDiagram
         FLW->>OCS: Interview chat in Connect messaging
         OCS->>C: POST /api/receiver/ (HQ-shaped completion)
         C->>C: Approved UserVisit, CompletedWork, payment accrues
-        C->>C: schedule_next_interview: due at completed_at + next_trigger_days
+        C->>C: schedule_next_interview: due at completed_at + next_interview_trigger_days
     end
 ```
 
@@ -71,7 +71,7 @@ sequenceDiagram
 2. The FLW finishes the Learn app. With no Deliver app, Connect claims the opportunity for them in a Celery task; with a Deliver app, the FLW claims in the app as today. Either way, the first interview session is created, due at the later of now and the opportunity and payment unit start dates.
 3. The beat task claims each due session and triggers it through `ocs_api.trigger_bot`, and the FLW is notified.
 4. The FLW has the interview chat with the OCS bot in Connect messaging.
-5. OCS posts the completion to `/api/receiver/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next interview is scheduled for `completed_at + next_trigger_days`.
+5. OCS posts the completion to `/api/receiver/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next interview is scheduled for `completed_at + next_interview_trigger_days`.
 6. Steps 3–5 repeat until the last interview is complete.
 
 The work splits into 9 tickets:
@@ -219,7 +219,7 @@ The work splits into 9 tickets:
   - `prompt_text` (TextField, blank): the Prompt column; sent as `prompt_text` to start the conversation, not shown to the FLW.
   - `session_data` (JSONField, default `dict`): the Session data column; sent as `session_data` on trigger, with Connect's keys added.
   - `order` (PositiveInteger): the Order column; unique per schedule.
-  - `next_trigger_days` (PositiveInteger): the Next Trigger column; days after this interview is completed before the next one triggers; unused on the last row.
+  - `next_interview_trigger_days` (PositiveInteger): the Next Trigger column; days after this interview is completed before the next one triggers; unused on the last row.
 - New `InterviewSession`:
   - `interview_session_id` (UUID)
   - `opportunity_access` (FK)
@@ -282,7 +282,7 @@ The work splits into 9 tickets:
 - `schedule_next_interview(access)` is the only place sessions are created or reopened, and it is idempotent:
   - It does nothing if the FLW already has an open session (`scheduled`, `triggering`, `triggered`, `failed`).
   - Otherwise it picks the lowest-order interview with no `completed` or `skipped` session for this FLW, and creates its session, or reopens a `cancelled` one.
-  - `scheduled_for` is the latest of: now (or `completed_at + next_trigger_days` of the previous interview), `opportunity.start_date` and the interview's payment unit `start_date`. Interviews never run before they can be paid; otherwise the visit would be a `trial` visit and never paid.
+  - `scheduled_for` is the latest of: now (or `completed_at + next_interview_trigger_days` of the previous interview), `opportunity.start_date` and the interview's payment unit `start_date`. Interviews never run before they can be paid; otherwise the visit would be a `trial` visit and never paid.
   - The selection rule is a pure function over plain data, so it can be unit tested without the database.
   - It is called on claim, completion, skip, un-suspension, opportunity end-date extension and schedule reactivation.
 - Beat task `trigger_due_interview_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions with `select_for_update(skip_locked=True)`, moves them to `triggering`, increments `attempts` and dispatches `trigger_interview_session` with `transaction.on_commit`. Sessions stuck in `triggering` for more than 30 minutes are picked up again.
