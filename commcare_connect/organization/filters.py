@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.filters import CSRFExemptForm
 from commcare_connect.opportunity.models import Country
-from commcare_connect.organization.models import PrimarySector
+from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
 class OrganizationFilterSet(django_filters.FilterSet):
@@ -23,6 +23,11 @@ class OrganizationFilterSet(django_filters.FilterSet):
         queryset=PrimarySector.objects.order_by("name"),
         label=_("Sectors"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("All Sectors")}),
+    )
+    status = django_filters.MultipleChoiceFilter(
+        choices=OrganizationStatus.choices,
+        label=_("Status"),
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
 
     class Meta:

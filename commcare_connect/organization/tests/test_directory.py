@@ -7,7 +7,7 @@ from django.urls import reverse
 from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import OrganizationFilterSet
 from commcare_connect.organization.forms import OrganizationDirectoryForm
-from commcare_connect.organization.models import Organization, PrimarySector
+from commcare_connect.organization.models import Organization, OrganizationStatus, PrimarySector
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
@@ -59,6 +59,13 @@ class TestOrganizationFilterSet:
         sector_ids = [sectors["health"].pk, sectors["wash"].pk]
         assert _filtered_organizations({"primary_sectors": sector_ids}) == {both, india}
 
+    def test_status_filter(self):
+        active = OrganizationFactory(status=OrganizationStatus.ACTIVE)
+        prospective = OrganizationFactory(status=OrganizationStatus.PROSPECTIVE)
+        OrganizationFactory(status=OrganizationStatus.INACTIVE)
+
+        assert _filtered_organizations({"status": ["active", "prospective"]}) == {active, prospective}
+
 
 @pytest.mark.django_db
 class TestOrganizationListAccess:
@@ -80,11 +87,13 @@ def _form_data(country_by_code, sector_by_key, **overrides):
     data = {
         "name": "Umoja Health Trust",
         "short_name": "UCHT",
+        "status": OrganizationStatus.ACTIVE,
         "has_used_connect": "False",
         "countries": [country_by_code["KEN"].pk],
         "regions": "Nyanza",
         "primary_sectors": [sector_by_key["health"].pk],
         "contact_emails": "a@example.com\nb@example.com",
+        "latest_msa_link": "https://example.com/msa",
         "eoi_links": "https://example.com/eoi-1\nhttps://example.com/eoi-2",
     }
     data.update(overrides)
@@ -110,6 +119,8 @@ class TestOrganizationDirectoryForm:
         assert form.is_valid(), form.errors
         org = form.save()
 
+        assert org.status == OrganizationStatus.ACTIVE
+        assert org.latest_msa_link == "https://example.com/msa"
         assert list(org.countries.all()) == [countries["KEN"]]
         assert org.contact_emails == "a@example.com\nb@example.com"
         assert org.eoi_links == "https://example.com/eoi-1\nhttps://example.com/eoi-2"
