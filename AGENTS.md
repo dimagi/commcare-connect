@@ -112,6 +112,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
 - **Searchable selects are opt-in**: nothing enhances a `<select>` by default. Add `data-tomselect="1"` to the widget's attrs (or the tag) to have `static/js/tomselect.js` turn it into a tom-select, and add `data-tomselect:no-remove-button` on single selects or the chosen value renders as a removable chip. Extra TomSelect options go through `data-tomselect:settings` as JSON; anything needing render _functions_ gets its own module and must **not** carry `data-tomselect`, or the generic initializer claims it first (see `static/js/work_area_search.js`). Use it for long or searchable lists, not short fixed choices. The page must also load `bundles/js/tomselect-bundle.js` and `bundles/css/tomselect.css` or a marked field silently stays native — check they are there, and that they don't arrive by accident: `opportunity/user_tasks.html` gets them only from its permission-gated Create Task modal include, so its filters are searchable for some users and plain for others
 - **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists all 76 of them. Plenty of templates still use raw utilities; that's legacy
+- **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md` and `flags/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR. A stale README is worse than none
 
 ## Robustness
 
@@ -153,3 +154,4 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
+- `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, form_receiver, flags)
