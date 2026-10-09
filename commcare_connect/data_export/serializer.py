@@ -9,6 +9,7 @@ from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
+from commcare_connect.data_export.const import OPPORTUNITY_ACCESS_CHECK_MAX_IDS
 from commcare_connect.microplanning.helpers import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
@@ -99,6 +100,14 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
 
     def get_visit_count(self, obj) -> int:
         return getattr(obj, "visit_count", 0)
+
+
+class OpportunityAccessCheckSerializer(serializers.Serializer):
+    opportunity_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        min_length=1,
+        max_length=OPPORTUNITY_ACCESS_CHECK_MAX_IDS,
+    )
 
 
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
