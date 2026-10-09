@@ -36,7 +36,45 @@ This change lets an opportunity run without a CommCare Deliver app and adds OCS 
 
 **Proposed Solution:**
 
-Interviews are modelled as a new kind of `DeliverUnit`, so they reuse payment units, `UserVisit`, `CompletedWork`, claim limits and invoicing. A per-opportunity scheduler triggers them one at a time through OCS. The first interview triggers when the FLW finishes the Learn app, and Connect claims the opportunity for them at that moment, so no interview is ever paid without a claim. OCS posts each completion to the existing form receiver in the HQ form shape, using a dedicated OAuth application. The work splits into 9 tickets:
+Interviews are modelled as a new kind of `DeliverUnit`, so they reuse payment units, `UserVisit`, `CompletedWork`, claim limits and invoicing. A per-opportunity scheduler triggers them one at a time through OCS. The first interview triggers when the FLW finishes the Learn app, and Connect claims the opportunity for them at that moment, so no interview is ever paid without a claim. OCS posts each completion to the existing form receiver in the HQ form shape, using a dedicated OAuth application.
+
+**Flow:**
+
+```mermaid
+sequenceDiagram
+    actor PM as Program Manager
+    participant C as Connect
+    actor FLW as FLW (Connect app)
+    participant OCS as Open Chat Studio
+
+    PM->>C: Configure interview schedule, cohort ID and payment units
+    FLW->>C: Finish Learn app (forms through the form receiver)
+    alt No Deliver app
+        C->>C: claim_opportunity (auto-claim)
+    else Has Deliver app
+        FLW->>C: Claim in the app
+    end
+    C->>C: start_interview_schedule: first session due now
+    loop Each interview, in order
+        Note over C: Beat task picks up the due session
+        C->>OCS: trigger_bot (chatbot, prompt, session data, connectInterviewId, cohortId)
+        OCS-->>C: Session ID and channel ID
+        C-->>FLW: Push notification
+        FLW->>OCS: Interview chat in Connect messaging
+        OCS->>C: POST /api/receiver/ (HQ-shaped completion)
+        C->>C: Approved UserVisit, CompletedWork, payment accrues
+        C->>C: Next session due at completed_at + next_trigger_days
+    end
+```
+
+1. A Program Manager sets up the interview schedule (chatbot, prompt, session data, order, Next Trigger days), the opportunity's cohort ID, and payment units that use the interview units.
+2. The FLW finishes the Learn app. With no Deliver app, Connect claims the opportunity for them; with a Deliver app, the FLW claims in the app as today. Either way, the first interview session is created, due now.
+3. The beat task triggers each due session through `ocs_api.trigger_bot`, and the FLW is notified.
+4. The FLW has the interview chat with the OCS bot in Connect messaging.
+5. OCS posts the completion to `/api/receiver/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next interview (skipping archived ones) is scheduled for `completed_at + next_trigger_days`.
+6. Steps 3–5 repeat until the last interview is complete.
+
+The work splits into 9 tickets:
 
 | #   | Ticket                                                           | Repo             | Depends on |
 | --- | ---------------------------------------------------------------- | ---------------- | ---------- |
