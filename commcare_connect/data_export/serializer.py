@@ -89,6 +89,7 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "supervising_organization",
             "end_date",
             "is_active",
+            "is_test",
             "program",
             "visit_count",
         ]
