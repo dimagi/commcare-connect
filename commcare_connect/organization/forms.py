@@ -3,13 +3,17 @@ from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
+from commcare_connect.opportunity.tables import value_with_icon_tooltip
 from commcare_connect.organization.models import (
+    ORGANIZATION_STATUS_DEFINITIONS,
     Organization,
     OrganizationInvite,
+    OrganizationStatus,
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
@@ -245,7 +249,7 @@ class OrganizationChangeForm(OrganizationProfileForm):
 
 
 class OrganizationDirectoryForm(OrganizationProfileForm):
-    """Organization profile form requiring countries, regions and sectors."""
+    """Organization profile form requiring countries, regions and sectors, with status and agreement links."""
 
     REQUIRED_FIELDS = ("name", "short_name", "countries", "regions", "primary_sectors")
 
@@ -253,6 +257,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
         fields = (
             "name",
             "short_name",
+            "status",
             "year_of_establishment",
             "has_used_connect",
             "team_size",
@@ -264,6 +269,8 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "office_address",
             "contact_emails",
             "eoi_links",
+            "latest_msa_link",
+            "latest_work_order_link",
             "notes",
         )
         widgets = OrganizationProfileForm.Meta.widgets | {
@@ -279,6 +286,8 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "regions": gettext_lazy("Regions / States of Operation"),
             "primary_sectors": gettext_lazy("Primary Sector(s)"),
             "contact_emails": gettext_lazy("Email Addresses"),
+            "latest_msa_link": gettext_lazy("Latest MSA Link"),
+            "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
             "notes": gettext_lazy("Organization Notes"),
         }
         help_texts = {
@@ -291,12 +300,21 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
         super().__init__(*args, **kwargs)
         for field in self.REQUIRED_FIELDS:
             self.fields[field].required = True
+        self.fields["status"].choices = [("", "—"), *OrganizationStatus.choices]
+        self.fields["status"].label = value_with_icon_tooltip(
+            self.fields["status"].label,
+            render_to_string(
+                "organization/directory/status_definitions.html",
+                {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+            ),
+        )
 
     def _layout(self):
         return layout.Layout(
             layout.Div(
                 _full_width("name"),
                 "short_name",
+                "status",
                 "year_of_establishment",
                 "has_used_connect",
                 "team_size",
@@ -308,6 +326,8 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
                 "office_address",
                 _full_width("contact_emails"),
                 _full_width("eoi_links"),
+                "latest_msa_link",
+                "latest_work_order_link",
                 _full_width("notes"),
                 css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
             ),

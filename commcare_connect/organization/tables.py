@@ -1,8 +1,12 @@
 import django_tables2 as tables
+from django.template.loader import render_to_string
+from django.utils.functional import lazy
+from django.utils.safestring import SafeString
 from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
 from commcare_connect.organization.models import (
+    ORGANIZATION_STATUS_DEFINITIONS,
     Organization,
     OrganizationInvite,
     UserOrganizationMembership,
@@ -56,9 +60,22 @@ class PendingInviteTable(tables.Table):
         prefix = "invites-"
 
 
+def _status_column_header():
+    definitions_html = render_to_string(
+        "organization/directory/status_definitions.html",
+        {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+    )
+    return render_to_string("organization/directory/status_header.html", {"definitions_html": definitions_html})
+
+
 class OrganizationDirectoryTable(tables.Table):
     use_view_url = False
     name = columns.Column(verbose_name=_("Name"))
+    status = columns.TemplateColumn(
+        # Lazy so the template isn't rendered at import time.
+        verbose_name=lazy(_status_column_header, SafeString)(),
+        template_name="organization/directory/status_badge.html",
+    )
     primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"))
     # Team size is stored as a bracket ("11-50"), which doesn't sort meaningfully as text.
     team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
@@ -73,7 +90,7 @@ class OrganizationDirectoryTable(tables.Table):
 
     class Meta:
         model = Organization
-        fields = ("name", "primary_sectors", "team_size", "flws_managed", "date_created")
+        fields = ("name", "status", "primary_sectors", "team_size", "flws_managed", "date_created")
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")

@@ -1,0 +1,7 @@
+{% load i18n %}
+<span class="inline-flex items-center gap-1">
+  {% translate "Status" %}
+  <span x-data x-tooltip.raw.html="{{ definitions_html }}">
+    <i class="fa-solid fa-circle-info text-gray-400" aria-hidden="true"></i>
+  </span>
+</span>
