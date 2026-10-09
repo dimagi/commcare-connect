@@ -1,0 +1,13 @@
+{% load i18n %}
+<div x-show="formOpen"
+     x-cloak
+     x-transition.opacity
+     class="modal-backdrop"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="organization-form-title"
+     @keydown.escape.window="formOpen = false">
+  <div class="modal modal-lg" @click.outside="formOpen = false">
+    <div id="organization-form"></div>
+  </div>
+</div>
