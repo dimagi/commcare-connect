@@ -10,10 +10,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext
 from django.views.decorators.http import require_GET
-from django_tables2 import RequestConfig, SingleTableView
+from django_filters.views import FilterView
+from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
+from commcare_connect.organization.filters import OrganizationFilterSet
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
@@ -275,20 +277,26 @@ class LLODirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.can_access_organization_directory
 
 
-class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableView):
-    """A paginated directory table under the directory's tab bar."""
+class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView):
+    """A filtered, paginated directory table under the directory's tab bar."""
 
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["organizations_count"] = Organization.objects.count()
+        context.update(
+            {
+                "organizations_count": Organization.objects.count(),
+                "result_count": context["table"].paginator.count,
+            }
+        )
         return context
 
 
 class OrganizationListView(LLODirectoryListView):
     table_class = OrganizationDirectoryTable
+    filterset_class = OrganizationFilterSet
     template_name = "organization/directory/organization_list.html"
 
     def get_queryset(self):

@@ -9,3 +9,10 @@
 {% block subheading %}
   {% translate "All organizations in the Connect network." %}
 {% endblock subheading %}
+{% block filters %}
+  <div class="min-w-48">{{ filter.form.countries }}</div>
+  <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
+{% endblock filters %}
+{% block result_count %}
+  {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}
+{% endblock result_count %}
