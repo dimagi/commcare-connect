@@ -24,6 +24,7 @@ from tablib import Dataset
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.jira_service_desk import JiraServiceDeskNotConfigured, attach_temporary_file, create_request
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.deletion import delete_opportunity
@@ -43,6 +44,8 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     DeliverUnit,
     ExchangeRate,
+    InvoiceFinanceRequest,
+    InvoiceFinanceRequestStatus,
     InvoiceStatus,
     LearnModule,
     Opportunity,
@@ -56,9 +59,15 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.utils import finance_request as finance_request_utils
 from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
-from commcare_connect.opportunity.utils.invoice_export import build_invoice_pdf_zip, build_invoice_summary_dataset
+from commcare_connect.opportunity.utils.invoice_export import (
+    build_invoice_pdf_zip,
+    build_invoice_summary_dataset,
+    invoice_pdf_filename,
+    render_invoice_pdf,
+)
 from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
@@ -262,6 +271,99 @@ def generate_invoice_summary_export(opportunity_id: int, invoice_ids: list[int])
     dataset = build_invoice_summary_dataset(_invoices_for_export(opportunity, invoice_ids))
     export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_invoice_summary.csv"
     return save_export(dataset, export_tmp_name, "csv")
+
+
+FINANCE_REQUEST_MAX_RETRIES = 3
+
+
+@celery_app.task(bind=True, max_retries=FINANCE_REQUEST_MAX_RETRIES)
+def submit_invoice_finance_request(self, finance_request_id: int):
+    """Raise the Finance payment request for an invoice on the Jira service desk and link it from the invoice."""
+    finance_request = InvoiceFinanceRequest.objects.select_related(
+        "invoice__opportunity__organization", "invoice__exchange_rate", "invoice__payment", "submitted_by"
+    ).get(id=finance_request_id)
+    if finance_request.status != InvoiceFinanceRequestStatus.PENDING:
+        return
+    invoice = finance_request.invoice
+
+    try:
+        attachment_id = attach_temporary_file(
+            finance_request_utils.SERVICE_DESK_ID,
+            invoice_pdf_filename(invoice),
+            render_invoice_pdf(invoice),
+            "application/pdf",
+        )
+    except JiraServiceDeskNotConfigured:
+        logger.info("Jira service desk is not configured; finance request %s not submitted", finance_request_id)
+        _fail_finance_request(finance_request, gettext("Submitting to Finance is not configured."))
+        return
+    except httpx.HTTPError as exc:
+        _retry_or_fail_finance_request(self, finance_request, exc, safe_to_resend=True)
+        return
+
+    try:
+        customer_request = create_request(
+            finance_request_utils.SERVICE_DESK_ID,
+            finance_request_utils.REQUEST_TYPE_ID,
+            finance_request_utils.build_request_fields(finance_request),
+            finance_request_utils.build_form_answers(finance_request, attachment_id),
+        )
+    except httpx.HTTPError as exc:
+        # Unlike the upload, a create that may have reached Jira must not be sent again: it would
+        # raise a second ticket for the same invoice.
+        _retry_or_fail_finance_request(self, finance_request, exc, safe_to_resend=False)
+        return
+
+    with transaction.atomic():
+        finance_request.status = InvoiceFinanceRequestStatus.SUBMITTED
+        finance_request.issue_key = customer_request.key
+        finance_request.error = ""
+        finance_request.save(update_fields=["status", "issue_key", "error", "date_modified"])
+        invoice.invoice_ticket_link = customer_request.url
+        invoice.save(update_fields=["invoice_ticket_link"])
+
+
+def _retry_or_fail_finance_request(task, finance_request, exc: httpx.HTTPError, safe_to_resend: bool):
+    # A task run inline (local development) can't wait out a retry countdown; it would only raise
+    # Celery's Retry into the request that queued it.
+    can_retry = not task.request.is_eager and task.request.retries < task.max_retries
+    if can_retry and _finance_request_error_is_retryable(exc, safe_to_resend):
+        raise task.retry(exc=exc, countdown=60 * 2**task.request.retries)
+    logger.error("Finance request %s failed: %r", finance_request.id, exc)
+    _fail_finance_request(finance_request, _describe_finance_request_error(exc, safe_to_resend))
+
+
+def _finance_request_error_is_retryable(exc: httpx.HTTPError, safe_to_resend: bool) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        # Jira rejects a rate-limited call before acting on it; a server error may come after.
+        return status_code == httpx.codes.TOO_MANY_REQUESTS or (safe_to_resend and status_code >= 500)
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return True  # the call never reached Jira
+    return safe_to_resend and isinstance(exc, httpx.TransportError)
+
+
+def _describe_finance_request_error(exc: httpx.HTTPError, safe_to_resend: bool) -> str:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
+        try:
+            jira_message = exc.response.json().get("errorMessage")
+        except ValueError:
+            jira_message = None
+        if jira_message:
+            return gettext("Jira rejected the request: %(message)s") % {"message": jira_message}
+        return gettext("Jira rejected the request (HTTP %(status)s).") % {"status": exc.response.status_code}
+    if not safe_to_resend and not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return gettext(
+            "Jira did not confirm the request, so it may have been created. "
+            "Check with Finance before submitting it again."
+        )
+    return gettext("Jira could not be reached. Try again later.")
+
+
+def _fail_finance_request(finance_request, error: str):
+    finance_request.status = InvoiceFinanceRequestStatus.FAILED
+    finance_request.error = error
+    finance_request.save(update_fields=["status", "error", "date_modified"])
 
 
 def _invoices_for_export(opportunity, invoice_ids):

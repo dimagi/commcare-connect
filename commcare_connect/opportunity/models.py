@@ -831,6 +831,35 @@ class PaymentInvoice(models.Model):
         return f"{user.name} ({email})" if user and user.name else email
 
 
+class InvoiceFinanceRequestStatus(models.TextChoices):
+    PENDING = "pending", gettext_lazy("Submitting")
+    SUBMITTED = "submitted", gettext_lazy("Submitted")
+    FAILED = "failed", gettext_lazy("Failed")
+
+
+class InvoiceFinanceRequest(BaseModel):
+    """The payment request raised with Finance for one invoice: a ticket on the Project Finance service desk.
+
+    The answers are kept so a failed submission can be retried, and so the opportunity's next request can be
+    prefilled. `contracted_entity` and `gl_account` hold the Jira Form's choice IDs. Their labels live in
+    `utils/finance_request.py`, so a change to Finance's form needs no migration.
+    """
+
+    invoice = models.OneToOneField(PaymentInvoice, on_delete=models.CASCADE, related_name="finance_request")
+    status = models.CharField(
+        choices=InvoiceFinanceRequestStatus,
+        default=InvoiceFinanceRequestStatus.PENDING,
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+    )
+    submitted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    contracted_entity = models.CharField(max_length=10)
+    gl_account = models.CharField(max_length=10)
+    project_name = models.CharField(max_length=255, blank=True)
+    new_vendor = models.BooleanField()
+    issue_key = models.CharField(max_length=50, blank=True)
+    error = models.TextField(blank=True)
+
+
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
