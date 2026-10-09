@@ -1666,6 +1666,7 @@ class PaymentUnitTable(OrgContextTable):
     index = IndexColumn()
     name = tables.Column(verbose_name="Payment Unit Name")
     max_total = tables.Column(verbose_name="Total Deliveries")
+    max_daily = tables.Column(default=gettext_lazy("No limit"))
     deliver_units = tables.Column(verbose_name="Delivery Units")
     amount = tables.Column(verbose_name="Worker pay per delivery")
     org_amount = tables.Column(verbose_name="Org pay per delivery")

@@ -11,6 +11,7 @@ from commcare_connect.opportunity.api.serializers.mobile import (
     OpportunityClaimSerializer,
     OpportunitySerializer,
     PaymentSerializer,
+    PaymentUnitSerializer,
 )
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
@@ -19,6 +20,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    PaymentUnit,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -285,6 +287,43 @@ def test_opportunity_list_endpoint(
 
     payment_unit_fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
     assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "headers, expected_max_daily, expected_daily_max_visits_per_user",
+    [
+        pytest.param({}, [5, 1], 6, id="default_version"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=1.0"}, [5, 1], 6, id="v1"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=2.0"}, [5, None], 5, id="v2"),
+    ],
+)
+def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    headers,
+    expected_max_daily,
+    expected_daily_max_visits_per_user,
+):
+    capped, uncapped = opportunity.paymentunit_set.order_by("pk")
+    PaymentUnit.objects.filter(pk=capped.pk).update(max_daily=5, max_total=20)
+    PaymentUnit.objects.filter(pk=uncapped.pk).update(max_daily=None, max_total=1)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    response = api_client.get("/api/opportunity/", **headers)
+
+    assert response.status_code == 200
+    assert [unit["max_daily"] for unit in response.data[0]["payment_units"]] == expected_max_daily
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
+
+
+@pytest.mark.django_db
+def test_payment_unit_serializer_keeps_null_daily_limit(opportunity):
+    # The data export reuses this serializer and must not imply a daily limit that doesn't exist
+    unit = PaymentUnitFactory(opportunity=opportunity, max_daily=None, max_total=1)
+
+    assert PaymentUnitSerializer(unit).data["max_daily"] is None
 
 
 @pytest.mark.django_db

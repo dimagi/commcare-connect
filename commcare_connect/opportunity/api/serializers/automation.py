@@ -1,7 +1,9 @@
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
+from waffle import switch_is_active
 
+from commcare_connect.flags.switch_names import OPTIONAL_DAILY_LIMIT
 from commcare_connect.opportunity.models import (
     DeliverUnit,
     Opportunity,
@@ -17,11 +19,17 @@ class PaymentUnitItemSerializer(serializers.Serializer):
     amount = serializers.IntegerField(min_value=0)
     org_amount = serializers.IntegerField(min_value=0, required=False)
     max_total = serializers.IntegerField(min_value=1)
-    max_daily = serializers.IntegerField(min_value=1)
+    # Required, but null opts the payment unit out of a daily limit when OPTIONAL_DAILY_LIMIT is on
+    max_daily = serializers.IntegerField(min_value=1, allow_null=True)
     required_deliver_units = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
     optional_deliver_units = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
     start_date = serializers.DateField(required=False, allow_null=True, default=None)
     end_date = serializers.DateField(required=False, allow_null=True, default=None)
+
+    def validate_max_daily(self, value):
+        if value is None and not switch_is_active(OPTIONAL_DAILY_LIMIT):
+            raise serializers.ValidationError(_("This field may not be null."))
+        return value
 
     def validate(self, data):
         opportunity = self.context["opportunity"]
