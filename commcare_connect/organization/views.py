@@ -300,7 +300,7 @@ class OrganizationListView(LLODirectoryListView):
     template_name = "organization/directory/organization_list.html"
 
     def get_queryset(self):
-        return Organization.objects.order_by("-date_created")
+        return Organization.objects.prefetch_related("primary_sectors").order_by("-date_created")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
