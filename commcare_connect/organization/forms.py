@@ -244,6 +244,76 @@ class OrganizationChangeForm(OrganizationProfileForm):
         return [_full_width(_toggle("has_used_connect"))]
 
 
+class OrganizationDirectoryForm(OrganizationProfileForm):
+    """Organization profile form requiring countries, regions and sectors."""
+
+    REQUIRED_FIELDS = ("name", "short_name", "countries", "regions", "primary_sectors")
+
+    class Meta(OrganizationProfileForm.Meta):
+        fields = (
+            "name",
+            "short_name",
+            "year_of_establishment",
+            "has_used_connect",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+        )
+        widgets = OrganizationProfileForm.Meta.widgets | {
+            "has_used_connect": forms.Select(choices=((True, gettext_lazy("Yes")), (False, gettext_lazy("No")))),
+            "regions": forms.TextInput(),
+            "office_address": forms.TextInput(),
+        }
+        labels = OrganizationProfileForm.Meta.labels | {
+            "has_used_connect": gettext_lazy("Has Used Connect"),
+            "team_size": gettext_lazy("Org Team Size"),
+            "flws_managed": gettext_lazy("No. of FLWs Managed"),
+            "countries": gettext_lazy("Countries of Operation"),
+            "regions": gettext_lazy("Regions / States of Operation"),
+            "primary_sectors": gettext_lazy("Primary Sector(s)"),
+            "contact_emails": gettext_lazy("Email Addresses"),
+            "notes": gettext_lazy("Organization Notes"),
+        }
+        help_texts = {
+            "name": gettext_lazy("Renaming the organization does not change its URL."),
+            "contact_emails": gettext_lazy("One email address per line."),
+            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.REQUIRED_FIELDS:
+            self.fields[field].required = True
+
+    def _layout(self):
+        return layout.Layout(
+            layout.Div(
+                _full_width("name"),
+                "short_name",
+                "year_of_establishment",
+                "has_used_connect",
+                "team_size",
+                "flws_managed",
+                _full_width("countries"),
+                _full_width("regions"),
+                _full_width("primary_sectors"),
+                "website",
+                "office_address",
+                _full_width("contact_emails"),
+                _full_width("eoi_links"),
+                _full_width("notes"),
+                css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
+            ),
+        )
+
+
 def _wizard_step(number, title, *fields):
     """Wraps a field group as one wizard step.
 
