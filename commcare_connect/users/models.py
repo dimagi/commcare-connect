@@ -14,6 +14,7 @@ from commcare_connect.utils.permission_const import (
     DEMO_USER_ACCESS,
     INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
+    LLO_DIRECTORY_MANAGEMENT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
     ORG_MANAGEMENT_SETTINGS_ACCESS,
     OTP_ACCESS,
@@ -105,6 +106,10 @@ class User(AbstractUser):
             INVOICE_REPORT_ACCESS,
         ]
         return any([self.has_perm(perm) for perm in internal_features])
+
+    @property
+    def can_access_organization_directory(self):
+        return self.has_perm(LLO_DIRECTORY_MANAGEMENT_ACCESS)
 
 
 class ConnectIDUserLink(models.Model):
