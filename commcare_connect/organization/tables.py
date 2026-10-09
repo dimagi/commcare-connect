@@ -2,7 +2,11 @@ import django_tables2 as tables
 from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
-from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    Organization,
+    OrganizationInvite,
+    UserOrganizationMembership,
+)
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
 
 ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
@@ -50,3 +54,15 @@ class PendingInviteTable(tables.Table):
         # from one query string, so prefix these params to keep sorting and paging
         # on the two tables independent.
         prefix = "invites-"
+
+
+class OrganizationDirectoryTable(tables.Table):
+    use_view_url = False
+    name = columns.Column(verbose_name=_("Name"))
+    date_created = columns.DateTimeColumn(verbose_name=_("Added"), format="d-M-Y")
+
+    class Meta:
+        model = Organization
+        fields = ("name", "date_created")
+        default = "—"
+        empty_text = _("No organizations found.")

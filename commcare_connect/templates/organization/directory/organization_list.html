@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load static i18n %}
+{% load render_table from django_tables2 %}
+{% block title %}
+  {% translate "Organizations" %}
+{% endblock title %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h1 class="title">{% translate "Organizations" %}</h1>
+        <p class="hint">{% translate "All organizations in the Connect network." %}</p>
+      </div>
+    </div>
+    {% include "organization/directory/tabs.html" %}
+    <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
+  </div>
+{% endblock content %}

@@ -105,6 +105,10 @@ class User(AbstractUser):
         ]
         return any([self.has_perm(perm) for perm in internal_features])
 
+    @property
+    def can_access_organization_directory(self):
+        return self.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS)
+
 
 class ConnectIDUserLink(models.Model):
     user = models.ForeignKey(

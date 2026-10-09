@@ -5,11 +5,12 @@ from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext
 from django.views.decorators.http import require_GET
-from django_tables2 import RequestConfig
+from django_tables2 import RequestConfig, SingleTableView
 from rest_framework.decorators import api_view
 
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
@@ -20,7 +21,7 @@ from commcare_connect.organization.forms import (
     OrganizationInviteForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
+from commcare_connect.organization.tables import OrganizationDirectoryTable, OrgMemberTable, PendingInviteTable
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
 from commcare_connect.users.models import User
@@ -265,3 +266,34 @@ def _render_pending_invites(request):
     table = PendingInviteTable(invites)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "organization/pending_invites_table.html", {"table": table})
+
+
+class DirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
+    raise_exception = True
+
+    def test_func(self):
+        return self.request.user.can_access_organization_directory
+
+
+class OrganizationListView(DirectoryAccessMixin, SingleTableView):
+    table_class = OrganizationDirectoryTable
+    template_name = "organization/directory/organization_list.html"
+
+    def get_queryset(self):
+        return Organization.objects.order_by("-date_created")
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "organizations_count": Organization.objects.count(),
+                "path": [
+                    {"title": gettext("Internal"), "url": reverse("users:internal_features")},
+                    {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+                ],
+            }
+        )
+        return context
