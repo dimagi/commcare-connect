@@ -59,10 +59,14 @@ class PendingInviteTable(tables.Table):
 class OrganizationDirectoryTable(tables.Table):
     use_view_url = False
     name = columns.Column(verbose_name=_("Name"))
+    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"))
+    # Team size is stored as a bracket ("11-50"), which doesn't sort meaningfully as text.
+    team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
+    flws_managed = columns.Column(verbose_name=_("FLWs Managed"))
     date_created = columns.DateTimeColumn(verbose_name=_("Added"), format="d-M-Y")
 
     class Meta:
         model = Organization
-        fields = ("name", "date_created")
+        fields = ("name", "primary_sectors", "team_size", "flws_managed", "date_created")
         default = "—"
         empty_text = _("No organizations found.")
