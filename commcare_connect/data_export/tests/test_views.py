@@ -215,6 +215,20 @@ class TestImplementationAreaDataView:
 
 
 @pytest.mark.django_db
+class TestProgramOpportunityOrganizationDataView:
+    def test_includes_is_test(self, api_client, organization, org_user_member):
+        live_opp = OpportunityFactory(organization=organization, is_test=False)
+        test_opp = OpportunityFactory(organization=organization, is_test=True)
+        _add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:opp_org_program_list")
+        response = api_client.get(url)
+        assert response.status_code == 200
+        is_test_by_id = {opp["id"]: opp["is_test"] for opp in response.json()["opportunities"]}
+        assert is_test_by_id[live_opp.id] is False
+        assert is_test_by_id[test_opp.id] is True
+
+
+@pytest.mark.django_db
 class TestLLOEntityDataView:
     def test_returns_organization_profiles(self, api_client, user):
         org = OrgWithUsersFactory(
