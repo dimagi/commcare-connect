@@ -43,6 +43,7 @@ from commcare_connect.data_export.serializer import (
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
     LLOEntityDataSerializer,
+    OpportunityAccessCheckSerializer,
     OpportunityDataExportSerializer,
     OpportunitySerializer,
     OpportunityUserDataSerializer,
@@ -237,19 +238,18 @@ class BaseDataExportListViewV2(BaseDataExportListView):
     versioning_class = V2OnlyVersioning
 
 
+def _accessible_opportunities(user):
+    return Opportunity.objects.filter(
+        Q(organization__memberships__user=user)
+        | Q(supervising_organization__memberships__user=user)
+        | Q(program__organization__memberships__user=user)
+        | Q(program__funder__memberships__user=user),
+    ).distinct()
+
+
 def _get_opportunity_or_404(user, opp_id):
     try:
-        return (
-            Opportunity.objects.filter(
-                Q(organization__memberships__user=user)
-                | Q(supervising_organization__memberships__user=user)
-                | Q(program__organization__memberships__user=user)
-                | Q(program__funder__memberships__user=user),
-                id=opp_id,
-            )
-            .distinct()
-            .get()
-        )
+        return _accessible_opportunities(user).get(id=opp_id)
     except Opportunity.DoesNotExist:
         raise NotFound()
 
@@ -326,6 +326,27 @@ class SingleOpportunityDataView(RetrieveAPIView, BaseDataExportView):
 
     def get_object(self):
         return _get_opportunity_or_404(self.request.user, self.kwargs.get("opp_id"))
+
+
+class OpportunityAccessCheckView(BaseDataExportView):
+    """Batch form of the access check behind ``SingleOpportunityDataView``. An id the user can't
+    access maps to ``false`` whether or not it exists, matching that view's 404."""
+
+    @extend_schema(
+        request=OpportunityAccessCheckSerializer,
+        responses=inline_serializer(
+            "OpportunityAccessCheckResponseSerializer",
+            {"opportunities": serializers.DictField(child=serializers.BooleanField())},
+        ),
+    )
+    def post(self, request):
+        serializer = OpportunityAccessCheckSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested_ids = serializer.validated_data["opportunity_ids"]
+        accessible_ids = set(
+            _accessible_opportunities(request.user).filter(id__in=requested_ids).values_list("id", flat=True)
+        )
+        return Response({"opportunities": {str(opp_id): opp_id in accessible_ids for opp_id in requested_ids}})
 
 
 class OpportunityScopedDataView(OpportunityDataExportView, BaseDataExportListView):
