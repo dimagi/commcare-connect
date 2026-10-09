@@ -765,6 +765,35 @@ def test_auto_approve_duplicate_visit_accrues_payment_for_each_visit(
     validate_saved_fields(completed_work)
 
 
+def test_over_limit_visit_keeps_approval_date_of_approved_work(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # Invoicing bills a work, and prices it, in the month it was approved, so a later visit over
+    # the limit must not move that date.
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=1)
+    opportunity.auto_approve_visits = True
+    opportunity.auto_approve_payments = True
+    opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
+
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    completed_work = CompletedWork.objects.get(opportunity_access__user=user_with_connectid_link)
+    assert completed_work.status == CompletedWorkStatus.approved
+    approved_on = now() - timedelta(days=40)
+    CompletedWork.objects.filter(pk=completed_work.pk).update(status_modified_date=approved_on)
+
+    over_limit_json = deepcopy(form_json)
+    over_limit_json["id"] = over_limit_json["metadata"]["instanceID"] = str(uuid4())
+    make_request(api_client, over_limit_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    over_limit_visit = UserVisit.objects.filter(user=user_with_connectid_link).latest("id")
+    assert over_limit_visit.status == VisitValidationStatus.over_limit
+    completed_work.refresh_from_db()
+    assert completed_work.status == CompletedWorkStatus.approved
+    assert completed_work.status_modified_date == approved_on
+    assert completed_work.saved_approved_count == 1
+
+
 @pytest.mark.parametrize(
     "opportunity",
     [
