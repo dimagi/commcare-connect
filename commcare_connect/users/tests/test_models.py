@@ -24,13 +24,27 @@ class TestUser:
 
     @pytest.mark.parametrize(
         "codename",
-        ["otp_access", "demo_users_access", "kpi_report_access", "all_org_access", "product_features_access"],
+        ["otp_access", "demo_users_access", "kpi_report_access", "product_features_access"],
     )
     def test_show_internal_features_with_permission(self, user, codename):
         perm = Permission.objects.get(codename=codename)
         user.user_permissions.add(perm)
         user = User.objects.get(pk=user.pk)
         assert user.show_internal_features
+
+    @pytest.mark.parametrize(
+        "codenames, expected",
+        [
+            ([], False),
+            (["all_org_access", "org_management_settings_access"], False),
+            (["otp_access"], True),
+            (["workspace_entity_management_access"], True),
+        ],
+    )
+    def test_show_admin_sidenav(self, user, codenames, expected):
+        user.user_permissions.add(*Permission.objects.filter(codename__in=codenames))
+        user = User.objects.get(pk=user.pk)
+        assert user.show_admin_sidenav == expected
 
 
 @pytest.mark.django_db
