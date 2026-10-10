@@ -12,7 +12,8 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, UpdateView
+from django.views.generic import CreateView, UpdateView, View
+from django.views.generic.detail import SingleObjectMixin
 from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
@@ -398,3 +399,16 @@ class ContactCreateView(ContactFormMixin, CreateView):
 
 class ContactUpdateView(ContactFormMixin, UpdateView):
     success_message = gettext_lazy("Contact {name} updated.")
+
+
+class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
+    model = Contact
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        contact = self.get_object()
+        contact.is_archived = True
+        contact.modified_by = request.user.email
+        contact.save(update_fields=["is_archived", "modified_by", "date_modified"])
+        messages.success(request, gettext("Contact {name} archived.").format(name=contact.name))
+        return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
