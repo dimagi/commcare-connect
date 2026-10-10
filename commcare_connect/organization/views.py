@@ -338,13 +338,10 @@ class ContactListView(DirectoryListView):
         return context
 
 
-class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
-    """Serves the add/edit form as a modal fragment to htmx; other requests are sent to the listing."""
+class DirectoryFormMixin(DirectoryAccessMixin):
+    """Serves an add/edit form as a modal fragment to htmx; other requests are sent to `list_url_name`."""
 
-    model = Organization
-    form_class = OrganizationDirectoryForm
-    template_name = "organization/directory/organization_form.html"
-    slug_field = "slug"
+    list_url_name = None
     success_message = None
 
     def get(self, request, *args, **kwargs):
@@ -353,19 +350,26 @@ class OrganizationDirectoryFormMixin(DirectoryAccessMixin):
         return super().get(request, *args, **kwargs)
 
     def get_return_url(self):
-        """The `next` URL when it is a directory listing URL on this host, otherwise the listing itself."""
-        list_url = reverse("organization_directory:list")
+        """The `next` URL when it is a directory URL on this host, otherwise the `list_url_name` listing."""
         next_url = self.request.GET.get("next", "")
-        if next_url.startswith(list_url) and url_has_allowed_host_and_scheme(
+        if next_url.startswith(reverse("organization_directory:list")) and url_has_allowed_host_and_scheme(
             next_url, allowed_hosts={self.request.get_host()}
         ):
             return next_url
-        return list_url
+        return reverse(self.list_url_name)
 
     def form_valid(self, form):
         self.object = form.save()
         messages.success(self.request, self.success_message.format(name=self.object.name))
         return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
+
+
+class OrganizationDirectoryFormMixin(DirectoryFormMixin):
+    model = Organization
+    form_class = OrganizationDirectoryForm
+    template_name = "organization/directory/organization_form.html"
+    slug_field = "slug"
+    list_url_name = "organization_directory:list"
 
 
 class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
