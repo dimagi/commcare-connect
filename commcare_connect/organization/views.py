@@ -20,6 +20,7 @@ from rest_framework.decorators import api_view
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
+    ContactForm,
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
@@ -379,3 +380,18 @@ class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
 
 class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
     success_message = gettext_lazy("Organization {name} updated.")
+
+
+class ContactFormMixin(DirectoryFormMixin):
+    model = Contact
+    form_class = ContactForm
+    template_name = "organization/directory/contact_form.html"
+    list_url_name = "organization_directory:contacts"
+
+
+class ContactCreateView(ContactFormMixin, CreateView):
+    success_message = gettext_lazy("Contact {name} added.")
+
+
+class ContactUpdateView(ContactFormMixin, UpdateView):
+    success_message = gettext_lazy("Contact {name} updated.")

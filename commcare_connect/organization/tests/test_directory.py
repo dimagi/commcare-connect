@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
-from commcare_connect.organization.forms import OrganizationDirectoryForm
+from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 
@@ -245,3 +245,77 @@ class TestContactListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [contact]
+
+
+def _contact_form_data(organization, **overrides):
+    return {"organization": organization.pk, "name": "Grace Wanjiru", "email": "grace@umojahealth.org"} | overrides
+
+
+@pytest.mark.django_db
+class TestContactForm:
+    def test_requires_name_organization_and_email(self):
+        form = ContactForm(data={})
+
+        assert set(form.errors) == {"name", "organization", "email"}
+
+    def test_saves_all_fields(self, organization):
+        data = _contact_form_data(
+            organization, title="Executive Director", is_main_poc="True", phone="+254 722 118 340", notes="Met at AMR"
+        )
+        form = ContactForm(data=data)
+
+        assert form.is_valid(), form.errors
+        contact = form.save()
+
+        assert contact.organization == organization
+        assert contact.title == "Executive Director"
+        assert contact.is_main_poc
+        assert contact.phone == "+254 722 118 340"
+        assert contact.notes == "Met at AMR"
+
+    def test_becoming_main_poc_replaces_the_current_one(self):
+        current_main = ContactFactory(is_main_poc=True)
+        form = ContactForm(data=_contact_form_data(current_main.organization, is_main_poc="True"))
+
+        assert form.is_valid(), form.errors
+        new_main = form.save()
+
+        current_main.refresh_from_db()
+        assert new_main.is_main_poc
+        assert not current_main.is_main_poc
+
+    def test_email_already_used_by_another_contact_is_rejected(self, organization):
+        existing = ContactFactory(email="grace@umojahealth.org")
+
+        form = ContactForm(data=_contact_form_data(organization, email="GRACE@umojahealth.org"))
+
+        assert not form.is_valid()
+        assert existing.organization.name in form.errors["email"][0]
+
+    def test_a_contact_keeps_its_own_email_on_edit(self):
+        contact = ContactFactory(email="grace@umojahealth.org")
+
+        assert ContactForm(data=_contact_form_data(contact.organization), instance=contact).is_valid()
+
+
+@pytest.mark.django_db
+class TestContactFormViews:
+    def test_create_returns_to_the_contacts_listing(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = client.post(
+            reverse("organization_directory:contact_create"), _contact_form_data(organization), HTTP_HX_REQUEST="true"
+        )
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:contacts")
+        assert organization.contacts.get().name == "Grace Wanjiru"
+
+    @pytest.mark.parametrize(
+        "url_name", ["organization_directory:contact_create", "organization_directory:contact_edit"]
+    )
+    def test_requires_permission(self, client, user, url_name):
+        contact = ContactFactory()
+        client.force_login(user)
+        args = (contact.pk,) if url_name.endswith("edit") else ()
+
+        assert client.get(reverse(url_name, args=args)).status_code == 403

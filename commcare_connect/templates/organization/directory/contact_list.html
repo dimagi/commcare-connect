@@ -9,6 +9,15 @@
 {% block subheading %}
   {% translate "Every named contact across the Connect network." %}
 {% endblock subheading %}
+{% block header_actions %}
+  <button type="button"
+          class="button button-md primary-dark"
+          hx-get="{% url 'organization_directory:contact_create' %}?next={{ request.get_full_path|urlencode }}"
+          hx-target="#directory-form">
+    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+    {% translate "Add Contact" %}
+  </button>
+{% endblock header_actions %}
 {% block filters %}
   <div class="min-w-48">{{ filter.form.countries }}</div>
   <div class="min-w-48">{{ filter.form.organization_status }}</div>
