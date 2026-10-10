@@ -1,54 +1,28 @@
-{% extends "base.html" %}
-{% load static i18n %}
-{% load render_table from django_tables2 %}
+{% extends "organization/directory/listing_base.html" %}
+{% load i18n %}
 {% block title %}
   {% translate "Organizations" %}
 {% endblock title %}
-{% block css %}
-  {{ block.super }}
-  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
-{% endblock css %}
-{% block javascript %}
-  {{ block.super }}
-  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-{% endblock javascript %}
-{% block content %}
-  <div class="flex flex-col gap-4 w-full"
-       x-data="{ formOpen: false }"
-       @htmx:after-swap.window="if ($event.detail.target.id === 'organization-form') formOpen = true">
-    {% include "components/breadcrumbs.html" with path=path %}
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <h1 class="title">{% translate "Organizations" %}</h1>
-        <p class="hint">{% translate "All organizations in the Connect network." %}</p>
-      </div>
-      <button type="button"
-              class="button button-md primary-dark"
-              hx-get="{% url 'organization_directory:create' %}?next={{ request.get_full_path|urlencode }}"
-              hx-target="#organization-form">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>
-        {% translate "Add Organization" %}
-      </button>
-    </div>
-    {% include "organization/directory/tabs.html" %}
-    <form method="get" class="card_bg flex flex-col gap-3">
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="simple-input w-full md:w-80">
-          <i class="fa-solid fa-magnifying-glass text-gray-400" aria-hidden="true"></i>
-          {{ filter.form.search }}
-        </div>
-        <div class="min-w-48">{{ filter.form.countries }}</div>
-        <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
-        <div class="min-w-48">{{ filter.form.status }}</div>
-        <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
-        <a href="{% url 'organization_directory:list' %}"
-           class="underline text-sm text-gray-500">{% translate "Reset" %}</a>
-      </div>
-      <p class="text-sm text-gray-500 self-end">
-        {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}
-      </p>
-    </form>
-    <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
-    {% include "organization/directory/form_modal.html" %}
-  </div>
-{% endblock content %}
+{% block heading %}
+  {% translate "Organizations" %}
+{% endblock heading %}
+{% block subheading %}
+  {% translate "All organizations in the Connect network." %}
+{% endblock subheading %}
+{% block header_actions %}
+  <button type="button"
+          class="button button-md primary-dark"
+          hx-get="{% url 'organization_directory:create' %}?next={{ request.get_full_path|urlencode }}"
+          hx-target="#directory-form">
+    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+    {% translate "Add Organization" %}
+  </button>
+{% endblock header_actions %}
+{% block filters %}
+  <div class="min-w-48">{{ filter.form.countries }}</div>
+  <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
+  <div class="min-w-48">{{ filter.form.status }}</div>
+{% endblock filters %}
+{% block result_count %}
+  {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}
+{% endblock result_count %}

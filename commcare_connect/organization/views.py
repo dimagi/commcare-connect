@@ -281,13 +281,8 @@ class DirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.can_access_organization_directory
 
 
-class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
-    table_class = OrganizationDirectoryTable
-    filterset_class = OrganizationFilterSet
-    template_name = "organization/directory/organization_list.html"
-
-    def get_queryset(self):
-        return Organization.objects.prefetch_related("primary_sectors").order_by("-date_created")
+class DirectoryListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
+    """A filtered, paginated directory table under the directory's tab bar."""
 
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
@@ -298,12 +293,25 @@ class OrganizationListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
             {
                 "organizations_count": Organization.objects.count(),
                 "result_count": context["table"].paginator.count,
-                "path": [
-                    {"title": gettext("Admin"), "url": reverse("users:internal_features")},
-                    {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
-                ],
             }
         )
+        return context
+
+
+class OrganizationListView(DirectoryListView):
+    table_class = OrganizationDirectoryTable
+    filterset_class = OrganizationFilterSet
+    template_name = "organization/directory/organization_list.html"
+
+    def get_queryset(self):
+        return Organization.objects.prefetch_related("primary_sectors").order_by("-date_created")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+        ]
         return context
 
 

@@ -1,7 +1,7 @@
 {% load i18n crispy_forms_tags %}
 <div class="flex justify-between items-start mb-4">
   <div>
-    <h2 id="organization-form-title"
+    <h2 id="directory-form-title"
         class="text-xl font-bold text-brand-deep-purple">
       {% if object %}
         {% translate "Edit Organization" %}
@@ -22,7 +22,7 @@
 </div>
 <form method="post"
       hx-post="{{ request.get_full_path }}"
-      hx-target="#organization-form"
+      hx-target="#directory-form"
       hx-swap="innerHTML">
   {% csrf_token %}
   {% crispy form %}
