@@ -3,7 +3,7 @@
   <button type="button"
           class="button-icon"
           hx-get="{% url 'organization_directory:edit' record.slug %}?next={{ request.get_full_path|urlencode }}"
-          hx-target="#organization-form"
+          hx-target="#directory-form"
           aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
           x-data
           x-tooltip.raw="{% translate 'Edit' %}">
