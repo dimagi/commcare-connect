@@ -40,3 +40,39 @@ class OrganizationFilterSet(django_filters.FilterSet):
             | Q(countries__name__icontains=value)
             | Q(primary_sectors__name__icontains=value)
         ).distinct()
+
+
+class ContactFilterSet(django_filters.FilterSet):
+    search = django_filters.CharFilter(
+        method="filter_by_search_term",
+        label=_("Search"),
+        widget=forms.TextInput(attrs={"placeholder": _("Search name, organization, email…")}),
+    )
+    countries = django_filters.ModelMultipleChoiceFilter(
+        field_name="organization__countries",
+        queryset=Country.objects.order_by("name"),
+        label=_("Countries"),
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("All Countries")}),
+    )
+    organization_status = django_filters.MultipleChoiceFilter(
+        field_name="organization__status",
+        choices=OrganizationStatus.choices,
+        label=_("Organization Status"),
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
+    )
+    main_poc = django_filters.BooleanFilter(
+        field_name="is_main_poc",
+        label=_("Contacts"),
+        widget=forms.Select(
+            choices=[("", _("Any Contacts")), ("true", _("Main POC Only"))],
+            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
+        ),
+    )
+
+    class Meta:
+        form = CSRFExemptForm
+
+    def filter_by_search_term(self, queryset, name, value):
+        return queryset.filter(
+            Q(name__icontains=value) | Q(organization__name__icontains=value) | Q(email__icontains=value)
+        )

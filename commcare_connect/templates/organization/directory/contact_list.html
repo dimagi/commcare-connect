@@ -1,0 +1,19 @@
+{% extends "organization/directory/listing_base.html" %}
+{% load i18n %}
+{% block title %}
+  {% translate "Contacts" %}
+{% endblock title %}
+{% block heading %}
+  {% translate "Contacts" %}
+{% endblock heading %}
+{% block subheading %}
+  {% translate "Every named contact across the Connect network." %}
+{% endblock subheading %}
+{% block filters %}
+  <div class="min-w-48">{{ filter.form.countries }}</div>
+  <div class="min-w-48">{{ filter.form.organization_status }}</div>
+  <div class="min-w-48">{{ filter.form.main_poc }}</div>
+{% endblock filters %}
+{% block result_count %}
+  {% blocktranslate count counter=result_count %}{{ counter }} contact{% plural %}{{ counter }} contacts{% endblocktranslate %}
+{% endblock result_count %}
