@@ -5,10 +5,10 @@ from django.contrib.auth.models import Permission
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
-from commcare_connect.organization.filters import OrganizationFilterSet
+from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import OrganizationDirectoryForm
-from commcare_connect.organization.models import Organization, OrganizationStatus, PrimarySector
-from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
+from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
+from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 
 
 def _filtered_organizations(params):
@@ -197,3 +197,51 @@ class TestOrganizationFormViews:
         args = (org.slug,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
+
+
+def _filtered_contacts(params):
+    return list(ContactFilterSet(params, queryset=Contact.objects.order_by("name")).qs)
+
+
+@pytest.mark.django_db
+class TestContactFilterSet:
+    @pytest.mark.parametrize("search", ["grace", "umoja", "UMOJAHEALTH.or"])
+    def test_search_matches_name_organization_and_email(self, search):
+        organization = OrganizationFactory(name="Umoja Health Trust")
+        contact = ContactFactory(organization=organization, name="Grace Wanjiru", email="g@umojahealth.org")
+        ContactFactory(name="Someone Else", email="else@example.com")
+
+        assert _filtered_contacts({"search": search}) == [contact]
+
+    def test_country_and_status_filters_use_the_organization(self, countries):
+        kenyan = OrganizationFactory(status=OrganizationStatus.ACTIVE)
+        kenyan.countries.add(countries["KEN"], countries["TZA"])
+        contact = ContactFactory(organization=kenyan)
+        ContactFactory(organization=OrganizationFactory(status=OrganizationStatus.INACTIVE))
+
+        assert _filtered_contacts({"countries": ["KEN", "TZA"]}) == [contact]
+        assert _filtered_contacts({"organization_status": ["active"]}) == [contact]
+
+    def test_main_poc_only(self):
+        main = ContactFactory(name="A Main", is_main_poc=True)
+        other = ContactFactory(name="B Other", organization=main.organization)
+
+        assert _filtered_contacts({"main_poc": "true"}) == [main]
+        assert _filtered_contacts({"main_poc": ""}) == [main, other]
+
+
+@pytest.mark.django_db
+class TestContactListAccess:
+    def test_requires_permission(self, client, user):
+        client.force_login(user)
+        assert client.get(reverse("organization_directory:contacts")).status_code == 403
+
+    def test_lists_unarchived_contacts(self, client, user_with_directory_access):
+        contact = ContactFactory()
+        ContactFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contacts"))
+
+        assert response.status_code == 200
+        assert list(response.context["table"].data) == [contact]

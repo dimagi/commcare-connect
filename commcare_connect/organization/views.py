@@ -18,7 +18,7 @@ from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
-from commcare_connect.organization.filters import OrganizationFilterSet
+from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
@@ -26,8 +26,13 @@ from commcare_connect.organization.forms import (
     OrganizationDirectoryForm,
     OrganizationInviteForm,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrganizationDirectoryTable, OrgMemberTable, PendingInviteTable
+from commcare_connect.organization.models import Contact, Organization, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.tables import (
+    ContactDirectoryTable,
+    OrganizationDirectoryTable,
+    OrgMemberTable,
+    PendingInviteTable,
+)
 from commcare_connect.organization.tasks import send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
 from commcare_connect.users.models import User
@@ -292,6 +297,7 @@ class DirectoryListView(DirectoryAccessMixin, SingleTableMixin, FilterView):
         context.update(
             {
                 "organizations_count": Organization.objects.count(),
+                "contacts_count": Contact.objects.filter(is_archived=False).count(),
                 "result_count": context["table"].paginator.count,
             }
         )
@@ -311,6 +317,23 @@ class OrganizationListView(DirectoryListView):
         context["path"] = [
             {"title": gettext("Admin"), "url": reverse("users:internal_features")},
             {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+        ]
+        return context
+
+
+class ContactListView(DirectoryListView):
+    table_class = ContactDirectoryTable
+    filterset_class = ContactFilterSet
+    template_name = "organization/directory/contact_list.html"
+
+    def get_queryset(self):
+        return Contact.objects.filter(is_archived=False).select_related("organization").order_by("name")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
         ]
         return context
 
