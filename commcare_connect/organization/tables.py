@@ -122,3 +122,16 @@ class ContactDirectoryTable(tables.Table):
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No contacts found.")
+
+
+class ContactExportTable(tables.Table):
+    name = columns.Column(verbose_name=_("Contact Name"))
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    title = columns.Column(verbose_name=_("Role / Title"))
+    is_main_poc = columns.Column(verbose_name=_("Main POC"))
+    email = columns.Column(verbose_name=_("Email"))
+    phone = columns.Column(verbose_name=_("Phone"))
+    notes = columns.Column(verbose_name=_("Notes"))
+
+    def value_is_main_poc(self, value):
+        return _("Yes") if value else _("No")
