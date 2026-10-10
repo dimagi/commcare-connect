@@ -10,6 +10,33 @@
   {% translate "Every named contact across the Connect network." %}
 {% endblock subheading %}
 {% block header_actions %}
+  {% if export_task_id %}
+    <div hx-get="{% url 'organization_directory:contact_export_status' export_task_id %}"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+      <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-brand-indigo"></div>
+      <span class="sr-only">{% translate "Loading..." %}</span>
+    </div>
+  {% else %}
+    <form method="post"
+          action="{% url 'organization_directory:contact_export' %}?{{ request.GET.urlencode }}"
+          class="dropdown"
+          x-data="{ open: false }"
+          @click.outside="open = false">
+      {% csrf_token %}
+      <button type="button"
+              class="button button-md outline-style"
+              @click="open = !open"
+              :aria-expanded="open.toString()">
+        <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+        {% translate "Export" %}
+      </button>
+      <div x-show="open" x-cloak class="dropdown-content right-0">
+        <button type="submit" name="export_format" value="csv" class="dropdown-item">{% translate "CSV" %}</button>
+        <button type="submit" name="export_format" value="xlsx" class="dropdown-item">{% translate "Excel (XLSX)" %}</button>
+      </div>
+    </form>
+  {% endif %}
   <button type="button"
           class="button button-md primary-dark"
           hx-get="{% url 'organization_directory:contact_create' %}?next={{ request.get_full_path|urlencode }}"
