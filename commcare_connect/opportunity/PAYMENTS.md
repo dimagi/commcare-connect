@@ -55,14 +55,14 @@ erDiagram
 
 > What a worker is paid for, and how much. Belongs to one `Opportunity`.
 
-| Field                         | Meaning                                                                                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------- |
-| `amount`                    | Worker pay per completed unit, in the opportunity's currency (integer)                        |
-| `org_amount`                | Organization pay per completed unit (default 0). Applies to every opportunity                 |
-| `max_total`                 | Maximum units per worker. Required for setup to be complete                                   |
-| `max_daily`                 | Maximum visits per worker per day. Required for setup to be complete                          |
-| `parent_payment_unit`       | Optional parent. A parent unit can only complete as many times as its children completed      |
-| `start_date` / `end_date` | Optional window. Visits before`start_date` are `trial`; `end_date` caps the claim limit |
+| Field                     | Meaning                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| `amount`                  | Worker pay per completed unit, in the opportunity's currency (integer)                   |
+| `org_amount`              | Organization pay per completed unit (default 0). Applies to every opportunity            |
+| `max_total`               | Maximum units per worker. Required for setup to be complete                              |
+| `max_daily`               | Maximum visits per worker per day. Required for setup to be complete                     |
+| `parent_payment_unit`     | Optional parent. A parent unit can only complete as many times as its children completed |
+| `start_date` / `end_date` | Optional window. Visits before`start_date` are `trial`; `end_date` caps the claim limit  |
 
 ### DeliverUnit
 
@@ -89,10 +89,10 @@ One row per deliver block in a form submission. A form with several deliver bloc
 
 Two independent statuses decide whether a visit counts toward payment:
 
-| Field             | Values                                                                            | Set by                                          |
-| ----------------- | --------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Field           | Values                                                                | Set by                                          |
+| --------------- | --------------------------------------------------------------------- | ----------------------------------------------- |
 | `status`        | `pending`, `approved`, `rejected`, `over_limit`, `duplicate`, `trial` | Form processing, staff visit approval/rejection |
-| `review_status` | `pending`, `agree`, `disagree`                                              | Auto-approval, PM review                        |
+| `review_status` | `pending`, `agree`, `disagree`                                        | Auto-approval, PM review                        |
 
 **A visit counts toward payment only when `status=approved` and `review_status=agree`.**
 
@@ -135,9 +135,9 @@ Limits are counted **per deliver unit** and exclude `over_limit` and `trial` vis
 
 One row per `(opportunity_access, entity_id, payment_unit)`: everything a worker delivered for one beneficiary under one payment unit. It is the unit that gets approved, accrues payment, and is invoiced.
 
-| Status         | Meaning                                                                        |
-| -------------- | ------------------------------------------------------------------------------ |
-| `incomplete` | Default on creation. Moved to`pending` once a visit is saved                 |
+| Status       | Meaning                                                                        |
+| ------------ | ------------------------------------------------------------------------------ |
+| `incomplete` | Default on creation. Moved to`pending` once a visit is saved                   |
 | `pending`    | Has visits, not yet approved                                                   |
 | `approved`   | Accrues payment                                                                |
 | `rejected`   | A visit was rejected, or the worker was suspended or blocked by a pending task |
@@ -232,14 +232,14 @@ flowchart LR
     B2 --> U
 ```
 
-| Trigger                                | Entry point                                                                       | Works recalculated                                                                |
-| -------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Form received                          | `process_deliver_unit` → `update_payment_accrued_for_user(incremental=True)` | Works not yet approved with`saved_approved_count=0`, plus the work just touched |
-| Bulk approve visits                    | `views.approve_visits` → `update_payment_accrued(incremental=True)`          | Works not yet approved with`saved_approved_count=0`                             |
-| Reject visits                          | `views.reject_visits` → `update_payment_accrued()`                           | All of the worker's works                                                         |
-| PM review                              | `views.user_visit_review` → `update_payment_accrued()`                       | All of the worker's works                                                         |
-| Visit, review or work status imports   | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)              | All works except`rejected`                                                      |
-| Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)           | All works except`rejected`                                                      |
+| Trigger                              | Entry point                                                                  | Works recalculated                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Form received                        | `process_deliver_unit` → `update_payment_accrued_for_user(incremental=True)` | Works not yet approved with`saved_approved_count=0`, plus the work just touched |
+| Bulk approve visits                  | `views.approve_visits` → `update_payment_accrued(incremental=True)`          | Works not yet approved with`saved_approved_count=0`                             |
+| Reject visits                        | `views.reject_visits` → `update_payment_accrued()`                           | All of the worker's works                                                       |
+| PM review                            | `views.user_visit_review` → `update_payment_accrued()`                       | All of the worker's works                                                       |
+| Visit, review or work status imports | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)              | All works except`rejected`                                                      |
+| Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)        | All works except`rejected`                                                      |
 
 All paths except the nightly task run under a Redis lock `update_payment_accrued_lock_<access_id>`. `update_payment_accrued` and `bulk_update_payment_accrued` skip suspended workers.
 
@@ -247,11 +247,11 @@ All paths except the nightly task run under a Redis lock `update_payment_accrued
 
 `CompletedWork` has both cached fields and live properties for the same numbers:
 
-| Cached (stored)           | Live (queried on access) | Used by                                                                                           |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
-| `saved_completed_count` | `completed_count`      | Cached: reports,`OpportunityAccess.visit_count`                                                 |
-| `saved_approved_count`  | `approved_count`       | Cached: invoicing (`invoiced_approved_count` watermark), reports                                |
-| `saved_payment_accrued` | `payment_accrued`      | Cached:`OpportunityAccess.payment_accrued`, payment reports. Live: `update_work_payment_date` |
+| Cached (stored)         | Live (queried on access) | Used by                                                                                       |
+| ----------------------- | ------------------------ | --------------------------------------------------------------------------------------------- |
+| `saved_completed_count` | `completed_count`        | Cached: reports,`OpportunityAccess.visit_count`                                               |
+| `saved_approved_count`  | `approved_count`         | Cached: invoicing (`invoiced_approved_count` watermark), reports                              |
+| `saved_payment_accrued` | `payment_accrued`        | Cached:`OpportunityAccess.payment_accrued`, payment reports. Live: `update_work_payment_date` |
 
 The live properties run several queries per work. Prefer the cached fields in anything that loops over many works.
 
@@ -259,17 +259,17 @@ The live properties run several queries per work. Prefer the cached fields in an
 
 ### Where the money values are stored
 
-| Value                      | Location                                                      | Currency    |
-| -------------------------- | ------------------------------------------------------------- | ----------- |
-| Worker accrual per work    | `CompletedWork.saved_payment_accrued` / `_usd`            | Local / USD |
-| Org accrual per work       | `CompletedWork.saved_org_payment_accrued` / `_usd`        | Local / USD |
-| Worker accrual per worker  | `OpportunityAccess.payment_accrued`                         | Local       |
-| Units already billed       | `CompletedWork.invoiced_approved_count`                     | —          |
+| Value                      | Location                                                | Currency    |
+| -------------------------- | ------------------------------------------------------- | ----------- |
+| Worker accrual per work    | `CompletedWork.saved_payment_accrued` / `_usd`          | Local / USD |
+| Org accrual per work       | `CompletedWork.saved_org_payment_accrued` / `_usd`      | Local / USD |
+| Worker accrual per worker  | `OpportunityAccess.payment_accrued`                     | Local       |
+| Units already billed       | `CompletedWork.invoiced_approved_count`                 | —           |
 | Billed line item           | `CompletedWorkInvoice` (`flw_amount_*`, `org_amount_*`) | Local + USD |
-| Invoice total              | `PaymentInvoice.amount` / `amount_usd`                    | Local / USD |
-| Worker payment             | `Payment` with `opportunity_access`                       | Local + USD |
+| Invoice total              | `PaymentInvoice.amount` / `amount_usd`                  | Local / USD |
+| Worker payment             | `Payment` with `opportunity_access`                     | Local + USD |
 | Organization payment       | `Payment` with `organization` and `invoice`             | Local + USD |
-| Date a work was fully paid | `CompletedWork.payment_date`                                | —          |
+| Date a work was fully paid | `CompletedWork.payment_date`                            | —           |
 
 ### Worker payments
 
