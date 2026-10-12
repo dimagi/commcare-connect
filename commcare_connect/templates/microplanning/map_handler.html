@@ -2,6 +2,7 @@
 {{ map_config|json_script:"microplanning-config" }}
 <script>
     document.addEventListener("alpine:init", () => {
+        const config = JSON.parse(document.getElementById('microplanning-config').textContent);
         const WORKAREAS_FILL_LAYER = 'workareas-fill';
 
         Alpine.data("mapController", () => ({
@@ -30,7 +31,7 @@
             hoveredWorkArea: null,
 
             // Inaccessible mode state
-            inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
+            inaccessibleMode: config.inaccessible_mode,
             inaccessibilityRequests: [],
             deniedInaccessibilityWorkAreaIds: [],
             inaccessibilityColors: {},
@@ -40,7 +41,7 @@
             totalRequestCount: 0,
 
             // Assignment mode state
-            assignmentMode: {{ assignment_mode|yesno:'true,false' }},
+            assignmentMode: config.assignment_mode,
             selectedWorkAreas: new Set(),
             groupWorkAreaIds: new Set(),
             flwFilterWorkAreaIds: new Set(),
@@ -95,14 +96,14 @@
             },
 
             openWorkAreaEditModal(workAreaId) {
-                const editWorkAreaUrl = '{{ edit_work_area_url|escapejs }}';
+                const editWorkAreaUrl = config.edit_work_area_url;
                 const url = editWorkAreaUrl + workAreaId + '/';
                 htmx.ajax('GET', url, { target: '#work-area-form', swap: 'innerHTML' })
                 .then(() => this.showWorkAreaEditModal = true)
             },
 
             showVisitPopup(feature, lngLat) {
-                const userVisitDataUrl = '{{ user_visit_data_url|escapejs }}';
+                const userVisitDataUrl = config.user_visit_data_url;
                 const url = userVisitDataUrl + feature.properties.visit_uuid + '/';
                 fetch(url)
                     .then((res) => {
@@ -215,7 +216,7 @@
             // `zoom` follows the rest of the map: picking a work area from a sidebar frames it,
             // clicking one already on screen leaves the camera alone.
             openInaccessibilityReview(workAreaId, { zoom = false } = {}) {
-                const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
+                const reviewUrl = config.review_inaccessibility_url;
                 const url = reviewUrl + workAreaId + '/';
                 const fragment = document.getElementById('review-inaccessibility-fragment');
                 // Clear any previously loaded content so an errored fetch (htmx does not swap
@@ -293,11 +294,11 @@
             },
 
             attachmentUrl(blobId) {
-                return '{{ attachment_url_base|escapejs }}' + blobId;
+                return config.attachment_url_base + blobId;
             },
 
             getDownloadUrl() {
-                const baseUrl = '{{ download_url|escapejs }}';
+                const baseUrl = config.download_url;
                 return this.filterQuery ? `${baseUrl}?${this.filterQuery}` : baseUrl;
             },
 
@@ -343,7 +344,7 @@
             // Bounding box of the work areas matching `query`, or null when nothing matches.
             fetchWorkAreaBounds(query) {
                 const requestId = this.invalidateBoundsRequest();
-                const baseUrl = '{{ bounds_url|escapejs }}';
+                const baseUrl = config.bounds_url;
                 return fetch(query ? `${baseUrl}?${query}` : baseUrl)
                     .then((res) => {
                         if (!res.ok) throw new Error('Failed to load work area bounds');
@@ -358,16 +359,16 @@
             // the user sees the map; filter-driven fits animate so the movement is followable.
             zoomToBounds(bounds, { animate = true } = {}) {
                 if (!this.map || !bounds) return;
-                const options = { padding: 40, maxZoom: {{ max_autozoom_zoom }} };
+                const options = { padding: 40, maxZoom: config.max_autozoom_zoom };
                 // Omit `duration` entirely to animate. Mapbox merges the options over its defaults
                 // with Object.assign, so an explicit `duration: undefined` overwrites the default
                 // instead of falling back to it — leaving the camera with a NaN zoom.
                 if (!animate) options.duration = 0;
                 // Work area tiles are not served below the layer's minzoom, so check the camera zoom and reset if we're below the minimum.
                 const camera = this.map.cameraForBounds(bounds, options);
-                if (camera && camera.zoom < {{ workarea_min_zoom }}) {
+                if (camera && camera.zoom < config.workarea_min_zoom) {
                     options.center = camera.center;
-                    options.zoom = {{ workarea_min_zoom }};
+                    options.zoom = config.workarea_min_zoom;
                 }
                 this.map.fitBounds(bounds, options);
             },
@@ -412,12 +413,12 @@
                 const source = this.map?.getSource('workareas');
                 if (!source) return false;
 
-                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
+                const baseUrl = `${window.location.origin}${config.tiles_url}`;
                 source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
 
                 const visitSource = this.map.getSource('user-visits');
                 if (visitSource) {
-                    const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
+                    const visitBaseUrl = `${window.location.origin}${config.visit_tiles_url}`;
                     visitSource.setTiles([query ? `${visitBaseUrl}?${query}` : visitBaseUrl]);
                 }
                 return true;
@@ -490,7 +491,7 @@
 
             showWorkAreaDetail(workAreaId) {
                 const requestId = this.invalidateWorkAreaDetailRequest();
-                const url = '{{ work_area_detail_url|escapejs }}' + workAreaId + '/';
+                const url = config.work_area_detail_url + workAreaId + '/';
                 fetch(url)
                     .then((res) => {
                         if (!res.ok) throw new Error('Failed to load work area details');
@@ -611,7 +612,7 @@
                 if (!this.groupWorkAreasCache.has(groupId)) {
                     // The endpoint takes repeatable ?group_id= query params (to support
                     // fetching several groups in one call); a single id is just the 1-param case.
-                    const url = `{{ group_work_areas_url|escapejs }}?group_id=${encodeURIComponent(groupId)}`;
+                    const url = `${config.group_work_areas_url}?group_id=${encodeURIComponent(groupId)}`;
                     const promise = fetch(url)
                         .then(resp => {
                             if (!resp.ok) throw new Error(`Failed to load group work areas (status ${resp.status})`);
@@ -709,7 +710,7 @@
                     // Not cached: unlike group membership, an assignee's work areas change
                     // during a session (that's the point of this workflow), so a stale
                     // cached list here would hide assignments just made this session.
-                    fetchSelection: () => fetch('{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId))
+                    fetchSelection: () => fetch(config.flw_work_areas_url.replace('__assignee_id__', assigneeId))
                         .then(resp => {
                             if (!resp.ok) throw new Error(`Failed to load FLW work areas (status ${resp.status})`);
                             return resp.json();
@@ -785,7 +786,7 @@
                 }
                 this.flwSummaryLoading = true;
                 try {
-                    const url = `{{ flw_summary_url|escapejs }}?assignee_id=${this.flwSummaryAssigneeId}`;
+                    const url = `${config.flw_summary_url}?assignee_id=${this.flwSummaryAssigneeId}`;
                     const resp = await fetch(url);
                     this.flwSummary = await resp.json();
                 } catch (e) {
@@ -938,11 +939,11 @@
             async saveAssignment() {
                 this.isSaving = true;
                 try {
-                    const resp = await fetch('{{ assignment_save_url|escapejs }}', {
+                    const resp = await fetch(config.assignment_save_url, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}',
+                            'X-CSRFToken': config.csrf_token,
                         },
                         body: JSON.stringify({ assignments: this.assignmentQueue }),
                     });
@@ -976,11 +977,11 @@
                 }
                 this.isUnassigning = true;
                 try {
-                    const resp = await fetch('{{ assignment_unassign_url|escapejs }}', {
+                    const resp = await fetch(config.assignment_unassign_url, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}',
+                            'X-CSRFToken': config.csrf_token,
                         },
                         body: JSON.stringify({ work_area_ids: eligibleIds }),
                     });
@@ -1151,10 +1152,10 @@
 
 
             async initializeMap() {
-                const accessToken = '{{ mapbox_api_key|escapejs }}';
-                const tilesUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const groupsUrl = '{{ groups_url|escapejs }}';
-                const minZoom = parseInt("{{ workarea_min_zoom|escapejs }}");
+                const accessToken = config.mapbox_api_key;
+                const tilesUrl = `${window.location.origin}${config.tiles_url}`;
+                const groupsUrl = config.groups_url;
+                const minZoom = parseInt(config.workarea_min_zoom);
 
                 if (!MapboxUtils.setAccessToken(accessToken)) return;
 
@@ -1380,7 +1381,7 @@
 
                 // Source and layer are added lazily on first toggle to avoid
                 // fetching tiles while the layer is hidden.
-                const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
+                const visitBaseUrl = `${window.location.origin}${config.visit_tiles_url}`;
                 let visitsLayerAdded = false;
 
                 this.$watch('showVisits', (visible) => {
@@ -1589,7 +1590,7 @@
             // called from initializeMap after the Work Area layers are added, so the outline
             // draws on top of them. Assumes this.map exists and its style has loaded.
             initImplementationAreas() {
-                const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
+                const implementationAreasUrl = config.implementation_areas_url;
 
                 // generateId gives each feature a stable id so hover can be tracked per
                 // area via setFeatureState.
