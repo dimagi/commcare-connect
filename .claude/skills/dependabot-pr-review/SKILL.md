@@ -146,7 +146,7 @@ python .claude/skills/dependabot-pr-review/scripts/triage.py
 check on a grouped bump usually points straight at the one package that broke.
 
 ```bash
-gh pr checks <N> --repo dimagi/commcare-connect
+gh pr checks <N> --repo dimagi/commcare-connect   # or mcp__github_ci__get_ci_status
 ```
 
 Attribute failures to the PR only after establishing they're not pre-existing. Two ways,
@@ -160,10 +160,12 @@ production`), so a dev-only bump cannot change its result, whatever it reports.
   flag, and a `pull_request`-triggered workflow has no `main` baseline run at all — so
   "is main green" is often unanswerable and sibling comparison is the real method.
 
-To read a failing job, `gh api repos/dimagi/commcare-connect/actions/jobs/<job-id>/logs`
-works better than `gh run view --log-failed` (which sometimes returns empty) — but GitHub
-expires logs after ~90 days and returns HTTP 410, which is exactly what happens on the
-stale PRs where you most want them. Fall back to sibling comparison.
+To read a failing job, prefer the `github_ci` MCP tools when the environment provides them
+(`mcp__github_ci__get_ci_status`, then `mcp__github_ci__download_job_log`); running locally
+without them, `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs` works better than
+`gh run view --log-failed`, which sometimes returns empty. Either way GitHub expires logs
+after ~90 days and returns HTTP 410, which is exactly what happens on the stale PRs where
+you most want them. Fall back to sibling comparison.
 
 Histogram the failures rather than reading them linearly: 176 failures with one root cause
 is a very different finding from 176 unrelated ones.
@@ -222,15 +224,12 @@ mattered. So: enumerate which packages and which versions the body actually cove
 treat the rest as unresearched. Only the version table at the top is complete.
 
 ```bash
-gh pr view <N> --repo dimagi/commcare-connect --json body -q .body >| "$SCRATCH/pr-<N>-body.md"
+gh pr view <N> --repo dimagi/commcare-connect --json body -q .body > /tmp/pr-<N>-body.md
 ```
 
-Use `>|` and a PR-numbered filename: zsh runs with `noclobber` here, so a plain `>` onto an
-existing path fails _non-fatally_ and leaves you reading a previous PR's body without any
-error to tell you.
-
-Fetch `body` on its own — combined with `files` it returns tens of KB of noise. Write
-scratch files to the session scratchpad directory rather than `/tmp`.
+Fetch `body` on its own — combined with `files` it returns tens of KB of noise. Name the
+scratch file after the PR; reusing one fixed path across reviews is how you end up
+reading a previous PR's body without noticing.
 
 ## Step 2: Find out what really changed
 
@@ -247,7 +246,7 @@ and diff it against what's installed. This proves things no changelog mentions:
 # Python -- works without a configured venv, which a fresh clone won't have
 uv pip install --target /tmp/old --no-deps <pkg>==<old>
 uv pip install --target /tmp/new --no-deps <pkg>==<new>
-/usr/bin/diff -ru /tmp/old/<pkg> /tmp/new/<pkg> | head -200
+diff -ru /tmp/old/<pkg> /tmp/new/<pkg> | head -200
 
 # JavaScript — compare the export surface when a changelog claims exports changed
 npm pack <pkg>@<new> --silent && tar xzf <pkg>-<new>.tgz -C /tmp/new
@@ -323,18 +322,8 @@ settings module, CI config) rather than searching for these literally:
 | `Dockerfile`, `docker/`, `deploy/` | Worker classes, runtime flags                           |
 | `.github/workflows/`               | CI-pinned versions                                      |
 
-Three more zsh traps worth knowing, all silent rather than loud:
-
-- `diff` may resolve to a shell function — use `/usr/bin/diff` if it errors with "function
-  definition file not found".
-- Quote the ref in `git show "$SHA:path"`. Unquoted, zsh reads `:u` as the uppercase
-  parameter modifier and you get a mangled path with no useful error.
-- `gh pr diff <N> -- <path>` does **not** filter by path; it silently ignores the pathspec
-  and prints everything. Pipe through `awk`/`grep` instead.
-
-Quote anything containing glob characters — `--include="*.py"`, and URLs with a query
-string like `...contents/action.yml?ref=v3`. Unquoted, zsh tries to expand them and the
-command dies with "no matches found."
+Note that `gh pr diff <N> -- <path>` does **not** filter by path — it silently ignores
+the pathspec and prints the whole diff. Pipe through `grep`/`awk` instead.
 
 **When you find zero usage, say which kind of zero it is.** No importers and no reverse
 dependencies means the package is dead weight — recommend removing it rather than bumping
@@ -348,20 +337,25 @@ affect views" is not.
 `npm audit` on each and compare, run the test suite, diff a function's output across
 versions. These take minutes and convert a hedge into a finding.
 
-Running the suite is the single highest-value one, and on an unfamiliar repo the setup is
-the only hard part:
+Running the suite is the single highest-value one. If the dependencies are already
+installed — CI installs them from the PR's own lockfile before the review starts — all
+that's missing is a database:
 
 ```bash
-docker run -d --rm -p 55432:5432 -e POSTGRES_PASSWORD=x --name pgtmp postgres:15
-uv export --frozen --no-hashes -o /tmp/reqs.txt
-sed -i 's/^psycopg2==/psycopg2-binary==/' /tmp/reqs.txt   # source build needs python-dev headers
-uv pip install -r /tmp/reqs.txt
+docker run -d --rm -p 55432:5432 -e POSTGRES_PASSWORD=x --name pgtmp postgis/postgis:15-3.5
 DATABASE_URL=postgres://postgres:x@localhost:55432/postgres pytest
 ```
 
-Swapping `psycopg2` for `psycopg2-binary` and picking a non-default port are what usually
-block this. Also worth running: `makemigrations --check` (catches a model change the bump
-implies) and the repo's linter at the new pin.
+Match the image to what the repo's own CI uses — this one needs PostGIS, and plain
+`postgres` will fail every test at `CREATE EXTENSION`. The port is deliberately not 5432
+so it can't collide with a database already running.
+
+Installing from scratch adds one wrinkle: `uv export --frozen --no-hashes` then swap
+`psycopg2` for `psycopg2-binary` before installing, since the source build needs
+`python3-dev` headers that most images lack.
+
+Also worth running: `makemigrations --check`, which catches a model change the bump
+implies, and the repo's linter at the new pin.
 
 ## Step 4: Write the review
 

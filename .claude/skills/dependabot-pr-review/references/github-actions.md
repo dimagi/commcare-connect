@@ -46,16 +46,16 @@ complete contract: inputs, outputs, and runtime.
 ```bash
 for tag in <old> <new>; do
   for f in action.yml action.yaml; do
-    gh api "repos/<owner>/<repo>/contents/$f?ref=$tag" -q .content 2>/dev/null \
-      | base64 -d > "/tmp/action-$tag.yml" && break
+    curl -sfL "https://raw.githubusercontent.com/<owner>/<repo>/$tag/$f" \
+      -o "/tmp/action-$tag.yml" && break
   done
 done
-/usr/bin/diff -u /tmp/action-<old>.yml /tmp/action-<new>.yml
+diff -u /tmp/action-<old>.yml /tmp/action-<new>.yml
 ```
 
-Quote the URL — the `?ref=` makes zsh try to glob it — and try both `action.yml` and
-`action.yaml`; actions use either. Use `/usr/bin/diff`, since `diff` may be shadowed by a
-shell function.
+Try both `action.yml` and `action.yaml` — actions use either. Fetching the raw file keeps
+this working where `gh api` isn't available; it needs no auth, since any action you can
+reference is a public repo.
 
 **Do this before counting call sites when you have several bumps to get through.** The
 contract diff is cheap and self-scaling: a one-line diff (only `runs.using` moved) ends the
@@ -90,6 +90,11 @@ INPUT_FOO=bar INPUT_BAZ=qux node /tmp/a.js  # reproduce the step locally
 For a deploy or release workflow, the logs answer questions no changelog can — which auth
 path is actually taken, what the runner version is, which inputs resolve to what, and
 which other actions are already printing deprecation warnings.
+
+Use the `github_ci` MCP tools where they're available (they are, inside the review
+workflow): `mcp__github_ci__get_ci_status` to find recent runs, then
+`mcp__github_ci__get_workflow_run_details` and `mcp__github_ci__download_job_log`. Running
+locally instead, the CLI equivalents are:
 
 ```bash
 gh run list --repo dimagi/commcare-connect --workflow deploy.yml --limit 5

@@ -169,7 +169,17 @@ def main():
     base = sh("gh", "pr", "view", args.pr, "--repo", args.repo, "--json", "baseRefName", "-q", ".baseRefName").strip()
 
     # The PR head is usually not local; fetch it without touching any branch.
-    sh("git", "fetch", "--quiet", f"https://github.com/{args.repo}.git", f"pull/{args.pr}/head")
+    # Try the configured remote first -- on a CI runner that carries the auth
+    # header actions/checkout installed. Fall back to the HTTPS URL, which is
+    # what works locally when origin is an SSH remote and no key is loaded.
+    ref = f"pull/{args.pr}/head"
+    fetched = subprocess.run(["git", "fetch", "--quiet", "origin", ref], capture_output=True, text=True)
+    if fetched.returncode != 0:
+        fetched = subprocess.run(
+            ["git", "fetch", "--quiet", f"https://github.com/{args.repo}.git", ref], capture_output=True, text=True
+        )
+    if fetched.returncode != 0:
+        sys.exit(f"could not fetch {ref} from origin or https://github.com/{args.repo}.git\n{fetched.stderr.strip()}")
     head = sh("git", "rev-parse", "FETCH_HEAD").strip()
     sh("git", "fetch", "--quiet", "origin", base, check=False)
 
