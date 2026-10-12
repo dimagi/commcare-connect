@@ -499,26 +499,6 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert b"Implementation Area" in response.content
         assert b"selectedFeature.implementation_area_name" in response.content
 
-    def test_map_wires_implementation_area_hover(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # The map registers a hover handler on the Implementation Area outline layer
-        # (highlight + name tooltip).
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"'mousemove', 'implementation-areas-outline'" in response.content
-        assert b"implementationAreaPopup" in response.content
-
-    def test_map_shows_toast_on_implementation_area_fetch_error(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"Failed to load Implementation Areas." in response.content
-
     def test_map_has_implementation_area_layer_toggle(
         self, client: Client, settings, organization, org_user_admin, opportunity
     ):
@@ -1813,7 +1793,7 @@ class TestMapPageWiring:
             pytest.param({"inaccessible_mode": "1"}, False, True, id="inaccessible"),
         ],
     )
-    def test_config_and_catalog_are_on_the_page(
+    def test_config_catalog_and_bundle_are_on_the_page(
         self,
         client,
         settings,
@@ -1837,6 +1817,7 @@ class TestMapPageWiring:
 
         body = response.content.decode()
         assert f'<script src="{reverse("javascript-catalog")}">' in body
+        assert "bundles/js/microplanning-bundle.js" in body
         match = re.search(r'<script id="microplanning-config" type="application/json">(.*?)</script>', body)
         assert match
         config = json.loads(match.group(1))
