@@ -45,7 +45,7 @@ The user submits forms through the deliver app in CommCare. Each form submission
 
 ### 6. Payment
 
-Approved work accrues payment. Payments can be distributed manually via CSV upload or through the invoicing workflow for managed opportunities.
+Approved work accrues payment. Payments can be distributed manually via CSV upload or through the invoicing workflow for managed opportunities. See [PAYMENTS.md](PAYMENTS.md) for how accrual is calculated and how invoicing works.
 
 ## Verification Flags
 
