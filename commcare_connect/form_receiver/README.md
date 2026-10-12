@@ -123,14 +123,14 @@ Only these fields are read. Example payloads are in `tests/xforms.py`.
 | `task`             | deliver | `@id` (task type slug)                                                      |
 | `work_area_update` | deliver | `work_area_id`, `status`, `reason`, `photo_evidence`, `additional_details`  |
 
-**Trusted from HQ:** the form's username, timestamps and GPS are taken as sent. `timeStart` is device time, so it decides the visit date and the daily-limit day.
+**Not re-validated:** Connect stores the form's username, timestamps and GPS as sent. `timeStart` is device time, so a wrong phone clock shifts the visit date and the daily-limit day.
 
 ## Validation & Business Rules
 
 ### Learn forms
 
 - **Modules** (`process_learn_modules`): one `CompletedModule` per block, and `LearnModule` is created on first sight. When learning reaches 100%, `completed_learn_date` is set to the latest of each module's _earliest_ completion, so a re-taken module doesn't move it.
-- **Assessments** (`process_assessments`): `passed = user_score >= app.passing_score`. Only one `Assessment` per `xform_id`, and a resent assessment form is rejected with a 400.
+- **Assessments** (`process_assessments`): `passed = user_score >= app.passing_score`. Only one `Assessment` per `xform_id`, so each attempt is recorded separately. If HQ resends the same form (same `xform_id`), it is rejected with a 400.
 - **Access:** learn processing looks up `OpportunityAccess` without a guard, so a learn form from a worker with no access returns a 500 (unlike deliver, which returns a 400).
 
 ### Deliver forms: visits (`process_deliver_unit`)
@@ -138,21 +138,21 @@ Only these fields are read. Example payloads are in `tests/xforms.py`.
 Each `deliver` block becomes one `UserVisit`.
 
 - **Required records:** `OpportunityAccess`, `OpportunityClaim`, an `OpportunityClaimLimit` for the deliver unit's `PaymentUnit`, and the `PaymentUnit` itself. A missing one gives a 400.
-- **New deliver units:** a `DeliverUnit` seen for the first time is created without a `PaymentUnit`, so its forms are rejected until a program manager links one.
+- **Unlinked deliver units:** forms for a `DeliverUnit` with no `PaymentUnit` are rejected until a program manager links one. A new deliver unit starts out unlinked.
 - **Concurrency:** the `OpportunityClaimLimit` row is locked (`select_for_update`) before visits are counted. That serializes concurrent forms for the same worker and payment unit, so two forms can't both pass the daily limit or the duplicate check.
 
 **Visit status:** the visit starts as `pending`, and these rules apply in order.
 
-| Step | Condition                                                            | Result                                                                          |
-| ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| 1    | Opportunity or payment unit `start_date` is after today              | `trial`, no `CompletedWork`                                                     |
-| 2    | `check_visit_over_limit` finds any limit breached                    | `over_limit`, and the `CompletedWork` is `over_limit` too                       |
-| 3    | A counted visit already exists for this `entity_id`                  | `duplicate`                                                                     |
-| 4    | `clean_form_submission` runs the verification flags                  | Visit flagged; `duplicate` falls back to `pending` if the duplicate flag is off |
-| 5    | `OpportunityAccess.suspended`                                        | `rejected`, flag `user_suspended`                                               |
-| 6    | Worker has an active `AssignedTask` still assigned on this app       | `rejected`, flag `pending_task`                                                 |
-| 7    | `automatic_visit_verification`, and the visit is `pending` + flagged | `rejected`                                                                      |
-| 8    | `auto_approve_visits`, and the visit is `pending` + unflagged        | `approved`, `review_status=agree`                                               |
+| Step | Condition                                                                    | Result                                                                          |
+| ---- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 1    | Opportunity or payment unit `start_date` is after today                      | `trial`, no `CompletedWork`                                                     |
+| 2    | `check_visit_over_limit` finds any limit breached                            | `over_limit`, and the `CompletedWork` is `over_limit` too                       |
+| 3    | A counted visit already exists for this `entity_id`, worker and deliver unit | `duplicate`                                                                     |
+| 4    | `clean_form_submission` runs the verification flags                          | Visit flagged; `duplicate` falls back to `pending` if the duplicate flag is off |
+| 5    | `OpportunityAccess.suspended`                                                | `rejected`, flag `user_suspended`                                               |
+| 6    | Worker has an active `AssignedTask` still assigned on this app               | `rejected`, flag `pending_task`                                                 |
+| 7    | `automatic_visit_verification`, and the visit is `pending` + flagged         | `rejected`                                                                      |
+| 8    | `auto_approve_visits`, and the visit is `pending` + unflagged                | `approved`, `review_status=agree`                                               |
 
 - **Counting:** steps 2–3 leave out `over_limit` and `trial` visits. The claim end-date limits compare against _today_ on the server; the daily limit uses the form's `timeStart` date.
 - **Over-limit reasons:** every breached limit is recorded on `UserVisit.over_limit_reasons`, widest first: `claim_ended`, `claim_limit_ended`, `max_visits`, `max_daily`.
