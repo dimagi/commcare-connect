@@ -1813,7 +1813,7 @@ class TestMapPageWiring:
             pytest.param({"inaccessible_mode": "1"}, False, True, id="inaccessible"),
         ],
     )
-    def test_config_tag_parses(
+    def test_config_and_catalog_are_on_the_page(
         self,
         client,
         settings,
@@ -1836,6 +1836,7 @@ class TestMapPageWiring:
         )
 
         body = response.content.decode()
+        assert f'<script src="{reverse("javascript-catalog")}">' in body
         match = re.search(r'<script id="microplanning-config" type="application/json">(.*?)</script>', body)
         assert match
         config = json.loads(match.group(1))

@@ -1,4 +1,3 @@
-{% load i18n %}
 {{ map_config|json_script:"microplanning-config" }}
 <script>
     document.addEventListener("alpine:init", () => {
@@ -115,19 +114,19 @@
                             .setLngLat(lngLat)
                             .setHTML(`
                                 <table><tbody>
-                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Connect Worker" %}</th><td>${data.worker_name}</td></tr>
-                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Phone Number" %}</th><td>${data.phone_number ?? '—'}</td></tr>
-                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Visit Date" %}</th><td>${data.visit_date}</td></tr>
-                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Deliver Type" %}</th><td>${data.deliver_type ?? '—'}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">${gettext("Connect Worker")}</th><td>${data.worker_name}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">${gettext("Phone Number")}</th><td>${data.phone_number ?? '—'}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">${gettext("Visit Date")}</th><td>${data.visit_date}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">${gettext("Deliver Type")}</th><td>${data.deliver_type ?? '—'}</td></tr>
                                 </tbody></table>
-                                <a href="${data.worker_url}" class="button button-sm button-outline-rounded mt-2">{% translate "View Visit" %}</a>
+                                <a href="${data.worker_url}" class="button button-sm button-outline-rounded mt-2">${gettext("View Visit")}</a>
                             `)
                             .addTo(this.map);
                     })
                     .catch(() => {
                         new mapboxgl.Popup()
                             .setLngLat(lngLat)
-                            .setHTML(`<p>{% translate "Visit details unavailable." %}</p>`)
+                            .setHTML(`<p>${gettext("Visit details unavailable.")}</p>`)
                             .addTo(this.map);
                     });
             },
@@ -226,7 +225,7 @@
                     .then(() => {
                         if (!fragment.innerHTML.trim()) {
                             this.showToast(
-                                "{% translate 'This request is no longer available. Refresh the map and try again.' %}",
+                                gettext("This request is no longer available. Refresh the map and try again."),
                                 true,
                             );
                             return;
@@ -280,7 +279,7 @@
             // "3 of 12 reviewed" — the total is what the queue held when the page loaded, so the
             // count keeps making sense as reviewed rows leave the list.
             reviewedRequestsLabel() {
-                return '{% translate "{reviewed} of {total} reviewed" %}'
+                return gettext("{reviewed} of {total} reviewed")
                     .replace('{reviewed}', this.reviewedRequestCount)
                     .replace('{total}', this.totalRequestCount);
             },
@@ -378,7 +377,7 @@
                     if (bounds === undefined) return;  // superseded, or the request failed
                     if (bounds === null) {
                         if (this.hasActiveFilters(query)) {
-                            this.showToast("{% translate 'No work areas match these filters.' %}", true);
+                            this.showToast(gettext("No work areas match these filters."), true);
                         }
                         return;
                     }
@@ -432,7 +431,7 @@
                 this.invalidateWorkAreaDetailRequest();
                 this.enableVisitsForDateFilter(query);
                 this.applyTileQuery(query);
-                this.showToast("{% translate 'Filters updated!' %}", false, 500);
+                this.showToast(gettext("Filters updated!"), false, 500);
                 // Every filter here narrows the work areas, so any of them is worth a re-fit —
                 // including the search box, which reaches this via onSearchChanged().
                 this.zoomToQuery(query);
@@ -507,7 +506,7 @@
                     })
                     .catch(() => {
                         if (requestId !== this.workAreaDetailRequestId) return;  // superseded
-                        this.showToast("{% translate 'Could not load work area details.' %}", true);
+                        this.showToast(gettext("Could not load work area details."), true);
                     });
             },
 
@@ -645,7 +644,7 @@
                     workAreas = await this.fetchGroupWorkAreas(groupId);
                 } catch (e) {
                     console.error(e);
-                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
+                    this.showToast(gettext("Failed to load group work areas"), true);
                     return;
                 }
 
@@ -698,7 +697,7 @@
                             workAreas: results.flatMap(result => result.work_areas),
                             bounds: results.reduce((box, result) => this.combineBounds(box, result.bounds), null),
                         })),
-                    errorMsg: "{% translate 'Failed to load group work areas' %}",
+                    errorMsg: gettext("Failed to load group work areas"),
                 });
             },
 
@@ -716,7 +715,7 @@
                             return resp.json();
                         })
                         .then(data => ({ workAreas: data.work_areas, bounds: data.bounds })),
-                    errorMsg: "{% translate 'Failed to load FLW work areas' %}",
+                    errorMsg: gettext("Failed to load FLW work areas"),
                 });
             },
 
@@ -790,7 +789,7 @@
                     const resp = await fetch(url);
                     this.flwSummary = await resp.json();
                 } catch (e) {
-                    this.showToast("{% translate 'Failed to load FLW summary' %}", true);
+                    this.showToast(gettext("Failed to load FLW summary"), true);
                 }
                 this.flwSummaryLoading = false;
             },
@@ -949,7 +948,7 @@
                     });
                     this.showConfirmModal = false;
                     if (resp.ok) {
-                        this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.showToast(gettext("Assignment saved successfully!"));
                         this.invalidateGroupWorkAreasCache();
                         this.assignmentQueue = [];
                         this.clearSelection();
@@ -958,11 +957,11 @@
                         this.flwSummary = null;
                     } else {
                         const data = await resp.json().catch(() => ({}));
-                        this.showToast(data.error || "{% translate 'Failed to save assignment' %}", true);
+                        this.showToast(data.error || gettext("Failed to save assignment"), true);
                     }
                 } catch (e) {
                     this.showConfirmModal = false;
-                    this.showToast("{% translate 'Failed to save assignment' %}", true);
+                    this.showToast(gettext("Failed to save assignment"), true);
                 } finally {
                     this.isSaving = false;
                 }
@@ -972,7 +971,7 @@
                 const eligibleIds = Array.from(this.selectedWorkAreas).filter(id => !this.cannotUnassign(id));
                 if (eligibleIds.length === 0) {
                     this.showUnassignModal = false;
-                    this.showToast("{% translate 'No eligible work areas to unassign.' %}");
+                    this.showToast(gettext("No eligible work areas to unassign."));
                     return;
                 }
                 this.isUnassigning = true;
@@ -1009,18 +1008,18 @@
                             this.setWorkAreaSelected(id, true, this.workAreaProperties.get(id)?.group_id);
                         }
                         const msg = data.skipped || failedIds.length
-                            ? "{% translate 'Unassigned' %} " + unassignedIds.length + " " + "{% translate 'work area(s).' %}"
-                              + (data.skipped ? " " + data.skipped + " " + "{% translate 'skipped.' %}" : "")
-                              + (failedIds.length ? " " + failedIds.length + " " + "{% translate 'failed to sync and remain selected for retry.' %}" : "")
-                            : "{% translate 'Work area(s) unassigned successfully.' %}";
+                            ? gettext("Unassigned") + " " + unassignedIds.length + " " + gettext("work area(s).")
+                              + (data.skipped ? " " + data.skipped + " " + gettext("skipped.") : "")
+                              + (failedIds.length ? " " + failedIds.length + " " + gettext("failed to sync and remain selected for retry.") : "")
+                            : gettext("Work area(s) unassigned successfully.");
                         this.showToast(msg, failedIds.length > 0);
                         if (this.flwSummaryAssigneeId) this.updateFlwSummary();
                     } else {
                         const data = await resp.json().catch(() => ({}));
-                        this.showToast(data.error || "{% translate 'Failed to unassign work areas' %}", true);
+                        this.showToast(data.error || gettext("Failed to unassign work areas"), true);
                     }
                 } catch (e) {
-                    this.showToast("{% translate 'Failed to unassign work areas' %}", true);
+                    this.showToast(gettext("Failed to unassign work areas"), true);
                 } finally {
                     this.isUnassigning = false;
                 }
@@ -1099,7 +1098,7 @@
                     });
 
                     this.showWorkAreaEditModal = false;
-                    this.showToast("{% translate 'Work area updated successfully!' %}");
+                    this.showToast(gettext("Work area updated successfully!"));
                 });
 
                 document.addEventListener('inaccessibilityReviewed', (e) => {
@@ -1127,7 +1126,7 @@
                     }
                     this.reviewedRequestCount += 1;
                     this.showInaccessibilityReview = false;
-                    this.showToast("{% translate 'Work area review saved.' %}");
+                    this.showToast(gettext("Work area review saved."));
                 });
 
                 document.addEventListener('work_areas_excluded', (e) => {
@@ -1141,11 +1140,11 @@
                     this.showExcludeModal = false;
                     this.clearSelection();
                     if (excluded.length > 0 && skipped === 0) {
-                        this.showToast(`{% translate "Work area(s) excluded successfully." %}`);
+                        this.showToast(gettext("Work area(s) excluded successfully."));
                     } else if (excluded.length > 0 && skipped > 0) {
-                        this.showToast(`${excluded.length} {% translate "excluded" %}, ${skipped} {% translate "skipped (already excluded or not eligible)." %}`);
+                        this.showToast(`${excluded.length} ${gettext("excluded")}, ${skipped} ${gettext("skipped (already excluded or not eligible).")}`);
                     } else if (skipped > 0) {
-                        this.showToast(`{% translate "No work areas were excluded. Only 'Not Visited' or 'Unassigned' work areas can be excluded." %}`, true);
+                        this.showToast(gettext("No work areas were excluded. Only 'Not Visited' or 'Unassigned' work areas can be excluded."), true);
                     }
                 });
             },
@@ -1640,7 +1639,7 @@
                     } catch (err) {
                         console.error(err);
                         implementationAreasLoaded = false;
-                        this.showToast("{% translate 'Failed to load Implementation Areas.' %}", true);
+                        this.showToast(gettext("Failed to load Implementation Areas."), true);
                     }
                 };
 
