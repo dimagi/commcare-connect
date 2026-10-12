@@ -1,4 +1,5 @@
 {% load i18n %}
+{{ map_config|json_script:"microplanning-config" }}
 <script>
     document.addEventListener("alpine:init", () => {
         const WORKAREAS_FILL_LAYER = 'workareas-fill';

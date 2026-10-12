@@ -81,6 +81,7 @@ from commcare_connect.microplanning.helpers import (
     work_area_detail,
     work_area_search_options,
 )
+from commcare_connect.microplanning.map_config import map_js_config
 from commcare_connect.microplanning.models import (
     ImplementationArea,
     InaccessibilityRequestStatus,
@@ -308,6 +309,7 @@ def microplanning_home(request, *args, **kwargs):
 
     if assignment_mode:
         context.update(_get_assignment_mode_context(request, opportunity))
+    context["map_config"] = map_js_config(context, request)
 
     return render(
         request,
