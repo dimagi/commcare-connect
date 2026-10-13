@@ -85,6 +85,7 @@ class User(AbstractUser):
                 "Can view and edit the profile of any organization "
                 "(not members, opportunities or the program manager setting)",
             ),
+            ("llo_directory_management_access", "Can view and manage organizations in the LLO Directory"),
         ]
 
     def __str__(self):
