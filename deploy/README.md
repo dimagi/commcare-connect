@@ -61,12 +61,6 @@ vault = "Connect Tech"
 
 See https://developer.1password.com/docs/ssh/agent for more details.
 
-To test that this is working you can run:
-
-```bash
-ssh connect@54.172.148.144
-```
-
 #### AWS CLI
 
 ```bash
@@ -76,11 +70,22 @@ aws sso login --profile commcare-connect
 
 Note: If you used a different profile name you will need to set the `AWS_PROFILE` environment variable to the profile name.
 
+The servers are reached over SSH through AWS Systems Manager, using their EC2 instance IDs (see the inventory
+files), so you also need the
+[Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
+for the AWS CLI. Kamal and Ansible both set up the proxy themselves.
+
+To test that SSH, 1Password and AWS are all working you can run (instance ID from `staging.inventory.yml`):
+
+```bash
+ssh -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p" connect@i-08bbcc89fcb90b8c7
+```
+
 ## Updating Django Settings
 
-The Django settings are configured using the `deploy/roles/connect/templates/docker.env.j2` file. The plain text
-settings values are in the `deploy/roles/connect/vars/main.yml` file. Secrets are stored in the 1Password under the
-`Ansible Secrets` entry.
+The Django settings are configured using the `deploy/roles/connect/templates/connect.docker.env.j2` file. The plain text
+settings values are in `deploy/roles/connect/defaults/main.yml`, overridden per environment in the inventory files.
+Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansible Secrets - Production` entries.
 
 To update the Django settings:
 
