@@ -278,8 +278,13 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user_v2(self):
-        # API 2.0: a unit without a daily limit adds 0
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
+        # API 2.0: a unit without a daily limit leaves the opportunity without one, sent as 0
+        limits = self.paymentunit_set.aggregate(
+            max_daily=Sum("max_daily"), uncapped=Count("pk", filter=Q(max_daily__isnull=True))
+        )
+        if limits["uncapped"]:
+            return 0
+        return limits["max_daily"] or 0
 
     @property
     def budget_per_visit(self):

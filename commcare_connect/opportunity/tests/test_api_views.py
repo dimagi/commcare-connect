@@ -295,7 +295,7 @@ def test_opportunity_list_endpoint(
     [
         pytest.param({}, [5, 1], 6, id="default_version"),
         pytest.param({"HTTP_ACCEPT": "application/json; version=1.0"}, [5, 1], 6, id="v1"),
-        pytest.param({"HTTP_ACCEPT": "application/json; version=2.0"}, [5, None], 5, id="v2"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=2.0"}, [5, None], 0, id="v2"),
     ],
 )
 def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
