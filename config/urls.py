@@ -4,7 +4,6 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views import defaults as default_views
 from django.views.generic import TemplateView
-from django.views.i18n import JavaScriptCatalog
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
@@ -33,7 +32,7 @@ urlpatterns = [
     ),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     # gettext()/ngettext()/interpolate() for JS, from the djangojs domain (`inv translations`).
-    path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
+    path("jsi18n/", views.javascript_catalog_view(settings.APP_RELEASE), name="javascript-catalog"),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
