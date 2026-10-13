@@ -5,6 +5,7 @@ from django.contrib.admin.options import get_content_type_for_model
 from django.core.exceptions import PermissionDenied
 from django.db.models import QuerySet
 from django.template.response import TemplateResponse
+from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.organization.merge import (
     HANDLED_RELATIONS,
@@ -15,10 +16,12 @@ from commcare_connect.organization.merge import (
 from commcare_connect.organization.models import (
     Contact,
     Organization,
+    OrganizationEvent,
     OrganizationInvite,
     UserOrganizationMembership,
 )
 from commcare_connect.users.forms import AdminOrganizationForm
+from commcare_connect.utils.admin import AuditEventAdmin, audited_object
 
 MERGE_ACTION = "merge_workspaces"
 
@@ -175,3 +178,16 @@ class OrganizationAdmin(admin.ModelAdmin):
             "selected_pks": [organization.pk for organization in organizations],
         }
         return TemplateResponse(request, "admin/organization/merge_confirmation.html", context)
+
+
+@admin.register(OrganizationEvent)
+class OrganizationEventAdmin(AuditEventAdmin):
+    list_display = ("pgh_created_at", "organization", "pgh_label", "changed_by")
+    list_filter = ("pgh_label", ("pgh_obj", admin.RelatedOnlyFieldListFilter))
+    search_fields = ("name", "short_name")
+    readonly_fields = ("changed_by", "changed_by_email")
+
+    organization = audited_object("pgh_obj", _("Organization"))
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("pgh_obj")
