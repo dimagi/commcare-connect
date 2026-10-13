@@ -1824,7 +1824,7 @@ class TestMapPageWiring:
         assert config["assignment_mode"] is assignment_mode
         assert config["inaccessible_mode"] is inaccessible_mode
         assert config["mapbox_api_key"] == "test-mapbox-token"
-        assert ("assignment_save_url" in config) is assignment_mode
+        assert (config["assignment_save_url"] is not None) is assignment_mode
 
 
 @pytest.mark.django_db
