@@ -108,6 +108,9 @@ class Organization(BaseModel):
         return list(member_query.values_list("user__email", flat=True))
 
 
+@pghistory.track(
+    pghistory.InsertEvent(), pghistory.UpdateEvent(), pghistory.DeleteEvent(), exclude=UNTRACKED_MODEL_FIELDS
+)
 class Contact(BaseModel):
     """A named person at an organization.
 

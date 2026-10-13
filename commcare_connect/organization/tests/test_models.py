@@ -7,6 +7,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from commcare_connect.organization.models import (
+    ContactEvent,
     Organization,
     OrganizationEvent,
     OrganizationInvite,
@@ -283,3 +284,35 @@ class TestOrganizationHistory:
         event = OrganizationEvent.objects.filter(pgh_obj_id=organization_id).latest("pgh_id")
         assert event.pgh_label == "delete"
         assert event.name == "Merged Away"
+
+
+@pytest.mark.django_db
+class TestContactHistory:
+    def test_records_a_change_to_a_tracked_field(self):
+        contact = ContactFactory()
+
+        contact.is_archived = True
+        contact.save()
+
+        event = contact.events.latest("pgh_id")
+        assert event.pgh_label == "update"
+        assert event.is_archived
+
+    def test_ignores_a_change_to_audit_fields_only(self):
+        contact = ContactFactory()
+        events_before = contact.events.count()
+
+        contact.modified_by = "someone@example.com"
+        contact.save()
+
+        assert contact.events.count() == events_before
+
+    def test_records_contacts_deleted_with_their_organization(self):
+        contact = ContactFactory(name="Grace Wanjiru")
+        contact_id = contact.pk
+
+        contact.organization.delete()
+
+        event = ContactEvent.objects.filter(pgh_obj_id=contact_id).latest("pgh_id")
+        assert event.pgh_label == "delete"
+        assert event.name == "Grace Wanjiru"

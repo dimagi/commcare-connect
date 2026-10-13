@@ -15,6 +15,7 @@ from commcare_connect.organization.merge import (
 )
 from commcare_connect.organization.models import (
     Contact,
+    ContactEvent,
     Organization,
     OrganizationEvent,
     OrganizationInvite,
@@ -191,3 +192,17 @@ class OrganizationEventAdmin(AuditEventAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("pgh_obj")
+
+
+@admin.register(ContactEvent)
+class ContactEventAdmin(AuditEventAdmin):
+    # `organization` is snapshotted on the event, so it still resolves after the contact is deleted.
+    list_display = ("pgh_created_at", "contact", "organization", "pgh_label", "changed_by")
+    list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
+    search_fields = ("name", "email", "organization__name")
+    readonly_fields = ("changed_by", "changed_by_email")
+
+    contact = audited_object("pgh_obj", _("Contact"))
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("pgh_obj", "organization")
