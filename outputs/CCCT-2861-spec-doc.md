@@ -20,15 +20,15 @@
 
 ### Relevant Codebases
 
-- [commcare-connect](https://github.com/dimagi/commcare-connect) — optional deliver app, interview unit and scheduler models, Program Manager UI, form receiver changes, mobile API fields.
+- [commcare-connect](https://github.com/dimagi/commcare-connect) — optional deliver app, interview unit and scheduler models, Program Manager UI, interview completion endpoint, mobile API fields.
 - [commcare-android](https://github.com/dimagi/commcare-android) — skip the Deliver app launch after Learn when there is none; show interviews and interview payment units.
-- [open-chat-studio](https://github.com/dimagi/open-chat-studio) — configuration only, no code changes: OCS is set up to post interview completions to Connect's form receiver in the HQ form shape.
+- [open-chat-studio](https://github.com/dimagi/open-chat-studio) — configuration only, no code changes: an OCS pipeline step posts each interview completion to Connect's interview completion endpoint.
 
 ---
 
 ### Introduction
 
-This change lets an opportunity run without a CommCare Deliver app and adds OCS interviews as a paid unit of work. Interviews are modelled as a new kind of `DeliverUnit`, triggered one at a time by a per-opportunity scheduler, and completed through the existing form receiver. This lets them reuse the whole payment, claim-limit and invoicing pipeline instead of building a parallel one.
+This change lets an opportunity run without a CommCare Deliver app and adds OCS interviews as a paid unit of work. Interviews are modelled as a new kind of `DeliverUnit`, triggered one at a time by a per-opportunity scheduler, and completed through a dedicated OCS completion endpoint that records the visit with the same helpers as the form receiver. This lets them reuse the whole payment, claim-limit and invoicing pipeline instead of building a parallel one.
 
 ---
 
@@ -36,7 +36,7 @@ This change lets an opportunity run without a CommCare Deliver app and adds OCS 
 
 **Proposed Solution:**
 
-Interviews are modelled as a new kind of `DeliverUnit`, so they reuse payment units, `UserVisit`, `CompletedWork`, claim limits and invoicing. A per-opportunity scheduler triggers them one at a time through OCS. The first interview triggers once the FLW has a claim: on opportunities with no Deliver app, Connect claims the opportunity for them when they finish the Learn app; on opportunities with a Deliver app, the FLW claims in the app as today. No interview is ever paid without a claim. OCS posts each completion to the existing form receiver in the HQ form shape, using a dedicated OAuth application that Connect recognises through an `OCSServer` record.
+Interviews are modelled as a new kind of `DeliverUnit`, so they reuse payment units, `UserVisit`, `CompletedWork`, claim limits and invoicing. A per-opportunity scheduler triggers them one at a time through OCS. The first interview triggers once the FLW has a claim: on opportunities with no Deliver app, Connect claims the opportunity for them when they finish the Learn app; on opportunities with a Deliver app, the FLW claims in the app as today. No interview is ever paid without a claim. OCS posts each completion to a dedicated endpoint, `/api/interview_completed/`, with a small payload keyed by `connectInterviewId`, using a dedicated OAuth application that Connect recognises through an `OCSServer` record.
 
 **Flow:**
 
@@ -61,7 +61,7 @@ sequenceDiagram
         OCS-->>C: Session ID and channel ID
         C-->>FLW: Push notification
         FLW->>OCS: Interview chat in Connect messaging
-        OCS->>C: POST /api/receiver/ (HQ-shaped completion)
+        OCS->>C: POST /api/interview_completed/ (connectInterviewId)
         C->>C: Approved UserVisit, CompletedWork, payment accrues
         C->>C: schedule_next_interview: due at completed_at + next_interview_trigger_days
     end
@@ -71,7 +71,7 @@ sequenceDiagram
 2. The FLW finishes the Learn app. With no Deliver app, Connect claims the opportunity for them in a Celery task; with a Deliver app, the FLW claims in the app as today. Either way, the first interview session is created, due at the later of now and the opportunity and payment unit start dates.
 3. The beat task claims each due session and triggers it through `ocs_api.trigger_bot`, and the FLW is notified.
 4. The FLW has the interview chat with the OCS bot in Connect messaging.
-5. OCS posts the completion to `/api/receiver/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next interview is scheduled for `completed_at + next_interview_trigger_days`.
+5. OCS posts the completion to `/api/interview_completed/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next interview is scheduled for `completed_at + next_interview_trigger_days`.
 6. Steps 3–5 repeat until the last interview is complete.
 
 The work splits into 9 tickets:
@@ -84,15 +84,15 @@ The work splits into 9 tickets:
 | 4   | Interview data model                                             | commcare-connect | 1          |
 | 5   | Interview schedule page and payment unit linking                 | commcare-connect | 4          |
 | 6   | Trigger interviews: auto-claim on Learn completion and beat task | commcare-connect | 3, 5       |
-| 7   | Receive interview completions through the form receiver          | commcare-connect | 5, 6       |
+| 7   | Interview completion endpoint                                    | commcare-connect | 5, 6       |
 | 8   | Mobile API: interview fields                                     | commcare-connect | 4, 7       |
 | 9   | Android: show interviews and auto-claimed opportunities          | commcare-android | 8          |
 
-- **External components:** OCS (trigger API, which already exists, and a completion post to Connect that is configured in OCS with no code changes). Mobile app changes in commcare-android.
+- **External components:** OCS (trigger API, which already exists, and a completion post to Connect's new endpoint that is configured in an OCS pipeline with no code changes). Mobile app changes in commcare-android.
 - **Auto-claim:** `claim_opportunity(access)` is extracted from `ClaimOpportunityView` (opportunity row lock, budget and end-date checks, `OpportunityClaim` and `create_claim_limits`, and `create_hq_user_and_link` on the Deliver app's domain only when the opportunity has a Deliver app). The view and the Learn-completion task both call it, so manual and automatic claims follow the same budget rules. Learn processing never claims inline: it dispatches `auto_claim_and_start_interviews(access_id)` on commit, so a claim failure can't fail or slow the Learn form. Only opportunities with no Deliver app are auto-claimed, so auto-claim never makes the HQ call; on opportunities with a Deliver app, the FLW claims manually as today and their interviews start at that point.
 - **Security:**
-  - The receiver only takes the OCS path for requests whose OAuth application matches an `OCSServer` record, with read/write scope. Requests from any other application keep the HQ path.
-  - Each payload must reference an existing `InterviewSession` whose FLW matches `metadata.username`, so OCS cannot create visits for arbitrary users or units.
+  - `/api/interview_completed/` only accepts tokens whose OAuth application matches an `OCSServer` record, with read/write scope; any other application gets `403`. `/api/receiver/` does not change.
+  - Each payload must reference an existing `InterviewSession` by `connectInterviewId`. The session fixes the FLW, opportunity and interview unit, so OCS cannot create visits for arbitrary users or units.
   - Interview units have no `app`. Every `DeliverUnit` query that filters by `app=opportunity.deliver_app` is patched, because `filter(app=None)` matches `app IS NULL` and would return every opportunity's interview units.
   - Triggering uses the OCS OAuth token of the Program Manager who owns the schedule's OCS connection (`InterviewSchedule.configured_by`), as OCS tasks do today.
 - **Scaling:** the beat task selects due sessions with `select_for_update(skip_locked=True)` and an index on (`status`, `scheduled_for`), moves each to `triggering` in the same transaction and dispatches `trigger_interview_session` on commit. The worker only proceeds while the session is still `triggering`, so a session is never triggered twice. At most one open session exists per FLW per opportunity, so volume is bounded by active FLWs.
@@ -102,8 +102,8 @@ The work splits into 9 tickets:
   - The schedule can't be edited once its first session exists, except to take over the OCS connection.
   - Form deliver units and interview units can't share a payment unit, because their `entity_id`s differ.
   - Opportunities with no Deliver app have no tasks (neither relearn nor OCS).
-- **API changes:** `/api/receiver/` accepts OCS-sourced payloads. The mobile opportunity serializer emits `deliver_app: null`, `unit_type` on payment units and visits, and a new `interviews` list.
-- **Error logging:** missing configuration (no OCS account for `configured_by`, unset `OCS_BASE_URL`) is logged and marks the session `failed` without retrying. Transient OCS errors retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (OCS may have created the session), so it is never retried past the cap; the Program Manager re-triggers it. Receiver payloads with an unknown or mismatched `interview_session_id` raise `ProcessingError` and are logged, as other invalid forms are.
+- **API changes:** new `POST /api/interview_completed/` for OCS; `/api/receiver/` is unchanged. The mobile opportunity serializer emits `deliver_app: null`, `unit_type` on payment units and visits, and a new `interviews` list.
+- **Error logging:** missing configuration (no OCS account for `configured_by`, unset `OCS_BASE_URL`) is logged and marks the session `failed` without retrying. Transient OCS errors retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (OCS may have created the session), so it is never retried past the cap; the Program Manager re-triggers it. Completion posts with an unknown `connectInterviewId` return `404`, and posts for an FLW with no claim raise `ProcessingError`; both are logged.
 
 **Monitoring and Alerting Plan:**
 
@@ -111,18 +111,18 @@ The work splits into 9 tickets:
 - Log auto-claim failures (budget full, opportunity ended) with the access and the reason.
 - On the opportunity page, show a banner to Program Managers when sessions are `failed` because of OCS credentials.
 - On the worker page, flag sessions that have been `triggered` for more than 7 days.
-- Add Sentry alerts on `ProcessingError` rates from OCS-sourced receiver calls and on `trigger_interview_session` final failures.
+- Add Sentry alerts on `4xx`/`5xx` rates from `/api/interview_completed/` and on `trigger_interview_session` final failures.
 
 **Deployment and Release:**
 
 - Migrations are additive and run with `migrate_multi`; the beat task is registered by data migration.
 - Mobile: opportunities with no deliver app are hidden from clients below the new mobile API version (_Add version_), so older apps never see `deliver_app: null`.
-- OCS must be configured with the Connect OAuth client and receiver URL, and an `OCSServer` record created for that OAuth application, before the feature is used.
+- OCS must be configured with the Connect OAuth client and the `/api/interview_completed/` URL, and an `OCSServer` record created for that OAuth application, before the feature is used.
 - Rollback: revert the deploy. Already-recorded interview visits stay as ordinary approved visits.
 
 **Alternative Solutions:**
 
-- **A dedicated completion endpoint** (like `TaskCompletedView`), calling the same helpers extracted from `process_deliver_unit`. It would give OCS a smaller, explicit payload instead of an HQ-shaped one. Rejected for v1 to keep a single entry point for visit-producing submissions.
+- **Posting completions to `/api/receiver/` in the HQ form shape**, with `FormReceiver` branching on the OAuth application. Rejected because OCS would have to fabricate an HQ form (`domain`, `app_id`, `xmlns`, a deliver block) that means nothing for an interview, the HQ receiver would carry OCS branching, and the OCS session ID used as `xform_id` changes on re-trigger. A dedicated endpoint gives OCS a small, explicit payload and reuses the same helpers extracted from `process_deliver_unit`.
 - **A separate `InterviewUnit` model with its own accrual path.** Rejected because it would need parallel versions of `calculate_completed`, visit listings, exports, invoicing and the mobile payment views, and the two paths would drift.
 - **Sending `connectInterviewId` in `participant_data`** (as OCS tasks send `connectTaskId`). Rejected because OCS participant data belongs to the participant, not the session: two open sessions on the same chatbot for one FLW would overwrite each other's ID.
 
@@ -233,7 +233,7 @@ The work splits into 9 tickets:
   - `last_error` (TextField, blank): the error from the most recent failed trigger call (the exception text or OCS's error response). Cleared on a successful trigger and on re-trigger.
   - `user_visit` (OneToOne, nullable)
   - Unique on (`opportunity_access`, `ocs_interview`); index on (`status`, `scheduled_for`).
-- New `OCSServer`, mirroring `HQServer`: `name` and `oauth_application` (OneToOne to the OAuth application OCS uses for receiver access).
+- New `OCSServer`, mirroring `HQServer`: `name` and `oauth_application` (OneToOne to the OAuth application OCS uses to post interview completions).
 
 **Acceptance criteria:**
 
@@ -308,58 +308,48 @@ The work splits into 9 tickets:
 - A failed trigger is visible on the worker page and can be re-triggered.
 - A suspended and then un-suspended FLW resumes at the interview they were on.
 
-#### Ticket 7 – Receive interview completions through the form receiver
+#### Ticket 7 – Interview completion endpoint
 
 **Repo:** commcare-connect · **Depends on:** 5, 6
 
 **Changes:**
 
-- OCS has a dedicated OAuth application in Connect, used only for receiver access, linked from an `OCSServer` record.
-- `FormReceiver.post` checks `request.auth.application`: if it matches an `OCSServer`, the request goes to a new `process_ocs_interview_xform(xform)`; everything else keeps the HQ path. With no `OCSServer` record the HQ path is unchanged.
-- Processing locks the `InterviewSession` found from the deliver block's `interview_session_id`, checks that its FLW matches `metadata.username`, then branches on its status:
-  - `completed`: return 200 and do nothing.
-  - `cancelled` or `skipped`: return 200, log it and record nothing.
-  - `triggering`, `triggered` or `failed`: record the visit, mark the session completed and call `schedule_next_interview`, all in one atomic block. `failed` is accepted because OCS may have created the session even though Connect's trigger call timed out.
+- OCS has a dedicated OAuth application in Connect, used only for posting interview completions, linked from an `OCSServer` record.
+- New class-based view `InterviewCompletedView` at `POST /api/interview_completed/` (`api:interview_completed`), next to `TaskCompletedView`. It uses `OAuth2Authentication` and `TokenHasReadWriteScope`, plus a permission class that requires `request.auth.application` to match an `OCSServer` record. `FormReceiver` is not changed.
+- `InterviewCompletionSerializer` validates the payload. The view hands the validated data to a service function, `complete_interview(connect_interview_id, ocs_session_id, started_at, completed_at, data)`, which holds all the logic and is tested directly.
+- `complete_interview` locks the `InterviewSession` found by `connectInterviewId` (`404` if none), then branches on its status:
+  - `completed`: return and do nothing.
+  - `cancelled` or `skipped`: log it and record nothing.
+  - `triggering`, `triggered` or `failed`: record the visit, mark the session completed (`completed_at`, and `ocs_session_id` from the payload) and call `schedule_next_interview`, all in one atomic block. `failed` is accepted because OCS may have created the session even though Connect's trigger call timed out.
 - Completions from an earlier OCS session after a re-trigger are handled by the same status rules, so the interview is paid once and the next one is scheduled once.
-- `process_deliver_unit` is split into small helpers (claim lookup and claim-limit lock, visit counts, trial and over-limit handling with `CompletedWork`, finalizing `CompletedWork`). `process_deliver_unit` and the interview path each compose them with their own status rules, rather than sharing one helper with flags. `update_payment_accrued_for_user` is called by both.
-- For interviews: `entity_id` = the FLW's `User.user_id`, `xform_id` = the OCS session ID, `form_json` = the OCS payload. Status is always `approved` + `review_status=agree` unless over limit or the FLW is suspended. `clean_form_submission`, the blocking-task check and attachment downloads are skipped.
-- A missing claim raises `ProcessingError`, as for forms.
+- `process_deliver_unit` is split into small helpers (claim lookup and claim-limit lock, visit counts, trial and over-limit handling with `CompletedWork`, finalizing `CompletedWork`). `process_deliver_unit` and `complete_interview` each compose them with their own status rules, rather than sharing one helper with flags. `update_payment_accrued_for_user` is called by both.
+- The `UserVisit` for an interview:
+  - `user`, `opportunity`, `opportunity_access` and `deliver_unit` come from the session, not the payload.
+  - `entity_id` = the FLW's `User.user_id`; `entity_name` = the FLW's name.
+  - `xform_id` = the session's `interview_session_id`. It is stable across re-triggers, so `unique_xform_entity_deliver_unit` also blocks a second visit for the same session.
+  - `visit_date` = `completed_at`.
+  - `form_json` = `{"metadata": {"timeStart": started_at, "timeEnd": completed_at, "location": null}, "ocs_session_id": ..., "interview": data}`. The `metadata` block keeps `UserVisit.duration` and other `form_json` readers working.
+  - Status is always `approved` + `review_status=agree` unless over limit or the FLW is suspended.
+  - No `clean_form_submission`, blocking-task check, attachment downloads, location or flags.
+- A missing claim raises `ProcessingError` (`400`), as for forms.
 
-`POST /api/receiver/` (existing endpoint):
+`POST /api/interview_completed/` (new endpoint):
 
 - Auth: OAuth2 bearer token from the OCS OAuth application, scope read/write.
-- Request body (HQ form JSON shape, validated by `XFormSerializer`):
+- Request body:
 
 ```json
 {
-  "domain": "ocs",
-  "id": "<ocs_session_id>",
-  "app_id": "<ocs_chatbot_id>",
-  "build_id": null,
-  "received_on": "2026-10-09T10:15:00Z",
-  "metadata": {
-    "timeStart": "2026-10-09T09:50:00Z",
-    "timeEnd": "2026-10-09T10:14:30Z",
-    "app_build_version": null,
-    "username": "<connect username>",
-    "location": null
-  },
-  "form": {
-    "@xmlns": "http://commcareconnect.com/data/v1/learn",
-    "deliver": {
-      "@xmlns": "http://commcareconnect.com/data/v1/learn",
-      "@id": "<interview unit slug>",
-      "name": "<interview unit name>",
-      "entity_id": "<FLW user_id>",
-      "entity_name": "<FLW name>",
-      "interview_session_id": "<connectInterviewId>"
-    },
-    "interview": { "summary": "_[Add fields OCS will send]_" }
-  }
+  "connectInterviewId": "<InterviewSession.interview_session_id>",
+  "ocs_session_id": "<OCS session ID>",
+  "started_at": "2026-10-09T09:50:00Z",
+  "completed_at": "2026-10-09T10:14:30Z",
+  "data": { "summary": "_[Add fields OCS will send]_" }
 }
 ```
 
-- Response: `200` on success, on a duplicate, and on a completion for a `cancelled` or `skipped` session. `400` when serializer validation fails. Processing errors (unknown or mismatched session) follow the receiver's existing `ProcessingError` handling.
+- `connectInterviewId` (UUID) and `ocs_session_id` are required. `completed_at` defaults to the time of receipt, as on `/api/task_completed/`. `started_at` is optional. `data` is an optional JSON object stored on the visit.
+- Response: `200` on success, on a duplicate, and on a completion for a `cancelled` or `skipped` session. `400` on validation errors or a missing claim. `403` when the token's application is not an `OCSServer`. `404` when no session matches `connectInterviewId`.
 
 **Acceptance criteria:**
 
@@ -369,7 +359,9 @@ The work splits into 9 tickets:
 - A completion for a `cancelled` or `skipped` session records nothing.
 - A completion for a `failed` session is recorded.
 - A set payment unit pays only after its last required interview.
-- HQ form processing is unchanged.
+- A token from any application other than the `OCSServer`'s is rejected with `403`, including an HQ server's.
+- `UserVisit.duration` works for interview visits.
+- `/api/receiver/` and HQ form processing are unchanged.
 
 #### Ticket 8 – Mobile API: interview fields
 
@@ -412,7 +404,7 @@ The work splits into 9 tickets:
 - **OCS credentials:** triggering uses one Program Manager's OCS token. If that Program Manager leaves or disconnects, every trigger fails until another Program Manager takes over the connection. Consider an org-level OCS service token.
 - **Stalled interviews:** with one-at-a-time triggering, an abandoned interview blocks the rest. v1 flags it after 7 days and lets a Program Manager re-trigger or skip it; skipped interviews are never paid.
 - **Schedule lock:** the schedule is set up before FLWs start. Once the first session exists it can't be changed, so there is no backfill for FLWs who claimed or finished Learn before the schedule existed, and no handling for interviews reordered or added mid-run.
-- **Session data from OCS:** confirm that the OCS pipeline that posts completions can read `connectInterviewId` from session data.
-- **Payload contract with OCS:** agree the exact `form.interview` fields and the `id` uniqueness rule (`xform_id` max length is 50).
+- **Session data from OCS:** confirm that the OCS pipeline that posts completions can read `connectInterviewId` from session data and make an authenticated HTTP call to Connect.
+- **Payload contract with OCS:** agree the exact `data` fields OCS sends with a completion.
 - **Mobile compatibility:** agree the minimum mobile API version for opportunities with no Deliver app.
 - **QA:** test opportunities with a Deliver app only, interviews only, and both. Cover Learn finishing through module completion and through the assessment, auto-claim when the budget is full or the opportunity has ended, an FLW who had already claimed manually, duplicate OCS posts, late posts after a re-trigger, suspended FLWs, FLWs who finish Learn before the start date, and over-limit.
