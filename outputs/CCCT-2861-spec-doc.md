@@ -103,7 +103,7 @@ The work splits into 9 tickets:
   - Form deliver units and interview units can't share a payment unit, because their `entity_id`s differ.
   - Opportunities with no Deliver app have no tasks (neither relearn nor OCS).
 - **API changes:** `/api/receiver/` accepts OCS-sourced payloads. The mobile opportunity serializer emits `deliver_app: null`, `unit_type` on payment units and visits, and a new `interviews` list.
-- **Error logging:** missing configuration (no OCS account for `configured_by`, unset `OCS_BASE_URL`) is logged and marks the session `failed` without retrying. Transient OCS errors retry with backoff (`autoretry_for` + `retry_backoff`) up to a small cap, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (OCS may have created the session), so it is never retried past the cap; the Program Manager re-triggers it. Receiver payloads with an unknown or mismatched `interview_session_id` raise `ProcessingError` and are logged, as other invalid forms are.
+- **Error logging:** missing configuration (no OCS account for `configured_by`, unset `OCS_BASE_URL`) is logged and marks the session `failed` without retrying. Transient OCS errors retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (OCS may have created the session), so it is never retried past the cap; the Program Manager re-triggers it. Receiver payloads with an unknown or mismatched `interview_session_id` raise `ProcessingError` and are logged, as other invalid forms are.
 
 **Monitoring and Alerting Plan:**
 
@@ -227,8 +227,8 @@ The work splits into 9 tickets:
   - `completed_at`
   - `ocs_session_id`
   - `connect_channel_id`
-  - `attempts`
-  - `last_error`
+  - `attempts` (PositiveSmallIntegerField, default `0`): OCS trigger calls made for this session, including Celery retries. The session ends `failed` when it reaches `MAX_TRIGGER_ATTEMPTS`. A Program Manager re-trigger resets it to `0`.
+  - `last_error` (TextField, blank): the error from the most recent failed trigger call (the exception text or OCS's error response). Cleared on a successful trigger and on re-trigger.
   - `user_visit` (OneToOne, nullable)
   - Unique on (`opportunity_access`, `ocs_interview`); index on (`status`, `scheduled_for`).
 - New `OCSServer`, mirroring `HQServer`: `name` and `oauth_application` (OneToOne to the OAuth application OCS uses for receiver access).
@@ -282,12 +282,12 @@ The work splits into 9 tickets:
   - `scheduled_for` is the latest of: now (or `completed_at + next_interview_trigger_days` of the previous interview), `opportunity.start_date` and the interview's payment unit `start_date`. Interviews never run before they can be paid; otherwise the visit would be a `trial` visit and never paid.
   - The selection rule is a pure function over plain data, so it can be unit tested without the database.
   - It is called on claim, completion, skip, un-suspension, opportunity end-date extension and schedule reactivation.
-- Beat task `trigger_due_interview_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions with `select_for_update(skip_locked=True)`, moves them to `triggering`, increments `attempts` and dispatches `trigger_interview_session` with `transaction.on_commit`. Sessions stuck in `triggering` for more than 30 minutes are picked up again.
-- `trigger_interview_session` locks the session and returns unless it is still `triggering`. It then calls `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=ocs_interview.ocs_chatbot_id, prompt_text=ocs_interview.prompt_text, session_data={**ocs_interview.session_data, "connectInterviewId": <session uuid>})`, stores `ocs_session_id` / `connect_channel_id` and sets `status=triggered`.
+- Beat task `trigger_due_interview_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions with `select_for_update(skip_locked=True)`, moves them to `triggering` and dispatches `trigger_interview_session` with `transaction.on_commit`. Sessions stuck in `triggering` for more than 30 minutes are picked up again.
+- `trigger_interview_session` locks the session and returns unless it is still `triggering`. It increments `attempts` in its own committed update before calling OCS, so the count survives a failed call; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=ocs_interview.ocs_chatbot_id, prompt_text=ocs_interview.prompt_text, session_data={**ocs_interview.session_data, "connectInterviewId": <session uuid>})`, stores `ocs_session_id` / `connect_channel_id` and sets `status=triggered`.
 - `ocs_api.trigger_bot` gains a `prompt_text` parameter; the current hard-coded training prompt becomes the default, so OCS tasks are unchanged. A blank interview prompt is sent as `None` and gets that default.
-- Transient OCS errors retry with `autoretry_for` + `retry_backoff`, capped at a small number of attempts, then mark the session `failed` with `last_error`. Missing configuration marks the session `failed` without retrying.
+- Transient OCS errors retry with `autoretry_for` + `retry_backoff`. Every retry is another OCS call and increments `attempts`, so `attempts` is the single cap: at `MAX_TRIGGER_ATTEMPTS` (a module constant, initially 3) the session is marked `failed` with `last_error`. Each failed call overwrites `last_error`. Missing configuration marks the session `failed` without retrying.
 - Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_interview` when the FLW is un-suspended or the end date is extended.
-- Worker page: an interview sessions panel with re-trigger and skip actions. Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now. Skip marks it `skipped` (unpaid) and calls `schedule_next_interview`.
+- Worker page: an interview sessions panel with re-trigger and skip actions. Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0` and clears `last_error`. Skip marks it `skipped` (unpaid) and calls `schedule_next_interview`.
 - The opportunity page shows a banner when sessions fail because of OCS credentials.
 
 **Acceptance criteria:**
@@ -299,7 +299,8 @@ The work splits into 9 tickets:
 - The trigger call carries the interview's prompt, its session data plus `connectInterviewId`.
 - No interview triggers for an FLW without a claim.
 - Running `trigger_interview_session` twice for the same session makes one OCS call.
-- A trigger that keeps failing stops at the retry cap and ends `failed`.
+- A trigger that keeps failing makes exactly `MAX_TRIGGER_ATTEMPTS` OCS calls (Celery retries included), then ends `failed` with `last_error` set.
+- Re-triggering a `failed` session resets `attempts` to `0` and allows a fresh set of attempts.
 - A failed trigger is visible on the worker page and can be re-triggered.
 - A suspended and then un-suspended FLW resumes at the interview they were on.
 
