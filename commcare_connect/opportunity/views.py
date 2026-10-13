@@ -350,6 +350,7 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         context.update(self.get_filter_context())
         context["search_term"] = self.search_term
         context["search_carried_params"] = self._search_carried_params()
+        context["clear_filters_carried_params"] = self._clear_filters_carried_params()
         return context
 
     @cached_property
@@ -360,6 +361,15 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         """Query params a new search keeps: everything but the search itself and the page, which resets."""
         return [
             (key, value) for key, values in self.request.GET.lists() if key not in ("q", "page") for value in values
+        ]
+
+    def _clear_filters_carried_params(self):
+        """Query params that outlive clearing the filters: how the table is sorted and sized."""
+        return [
+            (key, value)
+            for key, values in self.request.GET.lists()
+            if key in ("sort", "page_size")
+            for value in values
         ]
 
     def get_table_class(self):

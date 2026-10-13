@@ -987,6 +987,12 @@ def test_opportunity_list_keeps_the_valid_filters_when_a_date_range_is_invalid(
     assert (filter_values["status"], filter_values["is_test"], filter_values["start_date"]) == (status, is_test, None)
 
 
+def test_clearing_the_filters_keeps_only_the_sort_and_page_size(organization, rf):
+    view = _opportunity_list_view(rf, organization, "/?filtered=1&status=1&q=abc&page=2&sort=-name&page_size=50")
+
+    assert view._clear_filters_carried_params() == [("sort", "-name"), ("page_size", "50")]
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("query, tracked", [("", False), ("status=1", False), ("filtered=1&status=0", True)])
 def test_opportunity_list_tracks_filter_usage_only_once_submitted(organization, rf, query, tracked):
