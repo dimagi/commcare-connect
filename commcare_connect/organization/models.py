@@ -68,9 +68,11 @@ class Organization(BaseModel):
     year_of_establishment = models.PositiveSmallIntegerField(null=True, blank=True)
     team_size = models.CharField(max_length=20, choices=TeamSizeRange, blank=True)
     flws_managed = models.PositiveIntegerField(null=True, blank=True)
-    countries = models.ManyToManyField("opportunity.Country", blank=True, related_name="organizations")
+    countries = models.ManyToManyField(
+        "opportunity.Country", blank=True, related_name="organizations", through="OrganizationCountry"
+    )
     regions = models.TextField(blank=True)
-    primary_sectors = models.ManyToManyField(PrimarySector, null=True, blank=True)
+    primary_sectors = models.ManyToManyField(PrimarySector, null=True, blank=True, through="OrganizationPrimarySector")
     website = models.URLField(blank=True)
     office_address = models.TextField(blank=True)
     contact_emails = models.TextField(blank=True, help_text=_("One email address per line."))
@@ -106,6 +108,39 @@ class Organization(BaseModel):
             member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
 
         return list(member_query.values_list("user__email", flat=True))
+
+
+# Insert and delete rather than the default insert and update: adding and removing a country or
+# sector are a row insert and a row delete, and a removal would otherwise go unrecorded.
+@pghistory.track(pghistory.InsertEvent(), pghistory.DeleteEvent())
+class OrganizationCountry(models.Model):
+    """Explicit through model for Organization.countries.
+
+    Declared explicitly only so its rows can be audited. Django's autodetector ignores
+    auto-created through models, so pghistory generates an event model for one but never
+    installs the triggers that would populate it.
+    """
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    country = models.ForeignKey("opportunity.Country", on_delete=models.CASCADE)
+
+    class Meta:
+        # The table Django generated for the ManyToManyField, so this model adopts the existing
+        # table and its rows instead of creating a new one.
+        db_table = "organization_organization_countries"
+        unique_together = [("organization", "country")]
+
+
+@pghistory.track(pghistory.InsertEvent(), pghistory.DeleteEvent())
+class OrganizationPrimarySector(models.Model):
+    """Explicit through model for Organization.primary_sectors, declared so its rows can be audited."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    primary_sector = models.ForeignKey(PrimarySector, on_delete=models.CASCADE, db_column="primarysector_id")
+
+    class Meta:
+        db_table = "organization_organization_primary_sectors"
+        unique_together = [("organization", "primary_sector")]
 
 
 @pghistory.track(

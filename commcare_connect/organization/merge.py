@@ -88,9 +88,15 @@ SKIPPED_RELATIONS = frozenset(
     {
         "opportunity.OpportunitySupervisingOrganizationEvent.supervising_organization",
         "organization.ContactEvent.organization",
+        "organization.OrganizationCountryEvent.organization",
         "organization.OrganizationEvent.pgh_obj",
+        "organization.OrganizationPrimarySectorEvent.organization",
         "program.ProgramFunderEvent.funder",
         "program.ProgramWatcherEvent.organization",
+        # The source's own countries and sectors describe the source, so they are deleted with it
+        # and the target keeps its own.
+        "organization.OrganizationCountry.organization",
+        "organization.OrganizationPrimarySector.organization",
     }
 )
 

@@ -6,12 +6,16 @@ from django.contrib.auth.models import Permission
 from django.db import IntegrityError
 from django.utils import timezone
 
+from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import (
     ContactEvent,
     Organization,
+    OrganizationCountryEvent,
     OrganizationEvent,
     OrganizationInvite,
+    OrganizationPrimarySectorEvent,
     OrganizationStatus,
+    PrimarySector,
     UserOrganizationMembership,
 )
 from commcare_connect.users.models import User
@@ -316,3 +320,28 @@ class TestContactHistory:
         event = ContactEvent.objects.filter(pgh_obj_id=contact_id).latest("pgh_id")
         assert event.pgh_label == "delete"
         assert event.name == "Grace Wanjiru"
+
+
+@pytest.mark.django_db
+class TestOrganizationCountryAndSectorHistory:
+    def test_records_countries_added_and_removed(self, organization):
+        kenya, tanzania = Country.objects.get(code="KEN"), Country.objects.get(code="TZA")
+        organization.countries.add(kenya)
+
+        organization.countries.set([tanzania])
+
+        events = OrganizationCountryEvent.objects.filter(organization=organization).order_by("pgh_id")
+        assert [(event.pgh_label, event.country_id) for event in events] == [
+            ("insert", "KEN"),
+            ("delete", "KEN"),
+            ("insert", "TZA"),
+        ]
+
+    def test_records_sectors_added_and_removed(self, organization):
+        sector = PrimarySector.objects.create(name="Health", slug="health", description="")
+        organization.primary_sectors.add(sector)
+
+        organization.primary_sectors.remove(sector)
+
+        events = OrganizationPrimarySectorEvent.objects.filter(organization=organization).order_by("pgh_id")
+        assert [event.pgh_label for event in events] == ["insert", "delete"]
