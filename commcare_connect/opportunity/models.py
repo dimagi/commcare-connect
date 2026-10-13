@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -171,7 +172,7 @@ class Opportunity(BaseModel):
         if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
-            if not (pu.max_total and pu.max_daily):
+            if not pu.max_total:
                 return False
         return True
 
@@ -270,6 +271,14 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user(self):
+        # API 1.0: a unit without a daily limit can do at most max_total visits in a day
+        return (
+            self.paymentunit_set.aggregate(max_daily=Sum(Coalesce("max_daily", "max_total"))).get("max_daily", 0) or 0
+        )
+
+    @property
+    def daily_max_visits_per_user_v2(self):
+        # API 2.0: a unit without a daily limit adds 0
         return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
 
     @property
@@ -667,7 +676,8 @@ class PaymentUnit(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
-    max_daily = models.IntegerField(null=True)
+    # None means the payment unit has no daily limit
+    max_daily = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     parent_payment_unit = models.ForeignKey(
         "self",
         on_delete=models.DO_NOTHING,
