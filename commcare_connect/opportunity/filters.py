@@ -79,9 +79,12 @@ class FilterMixin:
 
     def get_filter_values(self):
         f = self._get_filter()
-        if f and f.form.is_valid():
-            return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
-        return {}
+        if not f:
+            return {}
+        # An invalid field is left out of cleaned_data, so it alone is dropped: the valid filters (and the
+        # defaults) still apply while the form shows the error.
+        f.form.is_valid()
+        return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
 
     def get_applied_filters(self):
         return [name for name, value in self.get_filter_values().items() if value not in (None, "", [])]

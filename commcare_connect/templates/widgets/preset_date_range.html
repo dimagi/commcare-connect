@@ -1,6 +1,6 @@
 {% load i18n %}
 {% with preset=widget.subwidgets.0 date_from=widget.subwidgets.1 date_to=widget.subwidgets.2 %}
-  <div x-data="{ preset: '{{ preset.value.0|default:''|escapejs }}' }">
+  <div x-data="{ preset: '{{ preset.value.0|default:''|escapejs }}', dateFrom: '{{ date_from.value|default:''|escapejs }}' }">
     {% include preset.template_name with widget=preset %}
     <div class="flex gap-2 mt-2" x-show="preset === '{{ custom }}'" x-cloak>
       <div class="flex-1">

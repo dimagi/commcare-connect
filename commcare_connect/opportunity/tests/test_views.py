@@ -966,6 +966,27 @@ def test_opportunity_list_defaults_apply_until_filters_are_submitted(organizatio
     assert (filter_values["status"] or None, filter_values["is_test"]) == (status, is_test)
 
 
+_BACKWARDS_START_DATE = "start_date_range=custom&start_date_from=2026-02-01&start_date_to=2026-01-01"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, status, is_test",
+    [
+        (_BACKWARDS_START_DATE, ["0"], False),
+        (f"filtered=1&status=1&{_BACKWARDS_START_DATE}", ["1"], None),
+    ],
+)
+def test_opportunity_list_keeps_the_valid_filters_when_a_date_range_is_invalid(
+    organization, rf, query, status, is_test
+):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+    filter_values = view.get_filter_values()
+
+    assert "start_date" in view.get_filter_form().errors
+    assert (filter_values["status"], filter_values["is_test"], filter_values["start_date"]) == (status, is_test, None)
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("query, tracked", [("", False), ("status=1", False), ("filtered=1&status=0", True)])
 def test_opportunity_list_tracks_filter_usage_only_once_submitted(organization, rf, query, tracked):

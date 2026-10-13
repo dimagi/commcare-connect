@@ -28,7 +28,7 @@
         <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
         <div class="flex gap-x-6 items-center"
              x-cloak
-             x-data="{showFilterModal: false, search: '{{ search_term|escapejs }}'}">
+             x-data="{showFilterModal: {{ filter_form.errors|yesno:'true,false' }}, search: '{{ search_term|escapejs }}'}">
           {# Searching keeps the applied filters and sort (carried as hidden inputs) and goes back to page 1. #}
           <form id="opportunity-search" class="relative" @submit.prevent>
             {% for key, value in search_carried_params %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
@@ -73,7 +73,7 @@
                   <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
               </div>
-              <form id="filterForm" class="content">
+              <form id="filterForm" class="content" @submit="showFilterModal = false">
                 {# Carry the live search over so applying filters keeps it; disabled (not sent) when empty. #}
                 <input type="hidden" name="q" :value="search" :disabled="!search">
                 {# Marks the filters as the user's choice, so clearing them all doesn't bring the defaults back. #}
@@ -83,10 +83,7 @@
                   <button type="button"
                           @click="showFilterModal = false"
                           class="button button-md outline-style">Close</button>
-                  <button form="filterForm"
-                          type="submit"
-                          @click="showFilterModal = false"
-                          class="button button-md primary-dark">Apply</button>
+                  <button form="filterForm" type="submit" class="button button-md primary-dark">Apply</button>
                 </div>
               </form>
             </div>

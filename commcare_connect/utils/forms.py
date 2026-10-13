@@ -40,7 +40,10 @@ class PresetDateRangeField(forms.MultiValueField):
 
 
 class PresetDateRangeWidget(forms.MultiWidget):
-    """A preset dropdown, with From/To date inputs that Alpine shows (and enables) only for "Custom range"."""
+    """A preset dropdown, with From/To date inputs that Alpine shows (and enables) only for "Custom range".
+
+    The To input's `min` follows the From date, so the browser refuses a range that ends before it starts.
+    """
 
     template_name = "widgets/preset_date_range.html"
 
@@ -50,8 +53,8 @@ class PresetDateRangeWidget(forms.MultiWidget):
         custom_only = {"type": "date", "class": "base-input", "x-bind:disabled": f"preset !== '{DateRanges.CUSTOM}'"}
         widgets = {
             "range": forms.Select(choices=choices, attrs={"class": "base-input", "x-model": "preset"}),
-            "from": forms.DateInput(format="%Y-%m-%d", attrs=custom_only),
-            "to": forms.DateInput(format="%Y-%m-%d", attrs=custom_only),
+            "from": forms.DateInput(format="%Y-%m-%d", attrs={**custom_only, "x-model": "dateFrom"}),
+            "to": forms.DateInput(format="%Y-%m-%d", attrs={**custom_only, "x-bind:min": "dateFrom"}),
         }
         super().__init__(widgets, attrs)
 

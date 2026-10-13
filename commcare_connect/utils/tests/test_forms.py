@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from unittest.mock import patch
 
@@ -86,3 +87,10 @@ def test_the_widget_keeps_the_submitted_values_and_shows_custom_dates_only_for_c
     assert '<option value="custom" selected>' in html
     assert 'name="period_from" value="2026-01-01"' in html
     assert "x-show=\"preset === 'custom'\"" in html
+
+
+def test_the_to_date_cannot_be_picked_before_the_from_date():
+    html = RangeForm(data={"period_range": "custom", "period_from": "2026-01-01"})["period"].as_widget()
+
+    assert re.search(r'<input[^>]*name="period_from"[^>]*x-model="dateFrom"', html)
+    assert re.search(r'<input[^>]*name="period_to"[^>]*x-bind:min="dateFrom"', html)
