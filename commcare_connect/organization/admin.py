@@ -17,8 +17,10 @@ from commcare_connect.organization.models import (
     Contact,
     ContactEvent,
     Organization,
+    OrganizationCountryEvent,
     OrganizationEvent,
     OrganizationInvite,
+    OrganizationPrimarySectorEvent,
     UserOrganizationMembership,
 )
 from commcare_connect.users.forms import AdminOrganizationForm
@@ -120,6 +122,15 @@ class OrganizationAdmin(admin.ModelAdmin):
     list_filter = ["status", "program_manager", "funder"]
     actions = [MERGE_ACTION]
 
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        # Without this, countries and primary sectors don't appear on the admin form at all: the
+        # admin drops any many-to-many field with an explicit through model, because it can't fill in
+        # extra columns on the through rows. OrganizationCountry and OrganizationPrimarySector have no
+        # extra columns, so this gives both fields back their default form field.
+        if db_field.name in ("countries", "primary_sectors"):
+            return db_field.formfield(**kwargs)
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
     def get_actions(self, request):
         actions = super().get_actions(request)
         if not request.user.is_superuser:
@@ -206,3 +217,27 @@ class ContactEventAdmin(AuditEventAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("pgh_obj", "organization")
+
+
+@admin.register(OrganizationCountryEvent)
+class OrganizationCountryEventAdmin(AuditEventAdmin):
+    # `organization` and `country` are snapshotted on the event itself, so unlike pgh_obj they still
+    # resolve for a delete, when the through row they described is gone.
+    list_display = ("pgh_created_at", "organization", "country", "pgh_label", "changed_by")
+    list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
+    search_fields = ("organization__name", "country__name")
+    readonly_fields = ("changed_by", "changed_by_email")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("organization", "country")
+
+
+@admin.register(OrganizationPrimarySectorEvent)
+class OrganizationPrimarySectorEventAdmin(AuditEventAdmin):
+    list_display = ("pgh_created_at", "organization", "primary_sector", "pgh_label", "changed_by")
+    list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
+    search_fields = ("organization__name", "primary_sector__name")
+    readonly_fields = ("changed_by", "changed_by_email")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("organization", "primary_sector")
