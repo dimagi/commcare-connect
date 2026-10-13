@@ -3,6 +3,7 @@ from datetime import timedelta
 from functools import partial
 from uuid import uuid4
 
+import pghistory
 from django.conf import settings
 from django.db import models, transaction
 from django.db.models.functions import Lower
@@ -46,6 +47,14 @@ ORGANIZATION_STATUS_DEFINITIONS = {
 }
 
 
+# Every field except BaseModel's audit fields, which the event row already records as its own
+# timestamp and pghistory context.
+UNTRACKED_MODEL_FIELDS = ["created_by", "modified_by", "date_created", "date_modified"]
+
+
+@pghistory.track(
+    pghistory.InsertEvent(), pghistory.UpdateEvent(), pghistory.DeleteEvent(), exclude=UNTRACKED_MODEL_FIELDS
+)
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)

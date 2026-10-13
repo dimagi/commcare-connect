@@ -87,6 +87,7 @@ HANDLED_RELATIONS = frozenset(
 SKIPPED_RELATIONS = frozenset(
     {
         "opportunity.OpportunitySupervisingOrganizationEvent.supervising_organization",
+        "organization.OrganizationEvent.pgh_obj",
         "program.ProgramFunderEvent.funder",
         "program.ProgramWatcherEvent.organization",
     }
