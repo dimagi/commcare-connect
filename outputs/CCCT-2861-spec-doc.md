@@ -47,7 +47,7 @@ sequenceDiagram
     actor FLW as FLW (Connect app)
     participant OCS as Open Chat Studio
 
-    PM->>C: Configure interview schedule and payment units
+    PM->>C: Configure interview schedule, opportunity session data and payment units
     FLW->>C: Finish Learn app (forms through the form receiver)
     alt No Deliver app
         C->>C: auto_claim_and_start_interviews task (claim_opportunity)
@@ -57,7 +57,7 @@ sequenceDiagram
     C->>C: schedule_next_interview: first session due at max(now, start dates)
     loop Each interview, in order
         Note over C: Beat task claims the due session (triggering)
-        C->>OCS: trigger_bot (chatbot, prompt, session data incl. connectInterviewId)
+        C->>OCS: trigger_bot (chatbot, prompt, merged session data incl. connectInterviewId)
         OCS-->>C: Session ID and channel ID
         C-->>FLW: Push notification
         FLW->>OCS: Interview chat in Connect messaging
@@ -67,7 +67,7 @@ sequenceDiagram
     end
 ```
 
-1. A Program Manager sets up the interview schedule (chatbot, prompt, session data, order, Next Trigger days) and payment units that use the interview units. The schedule locks when its first session is created.
+1. A Program Manager sets up the interview schedule (chatbot, prompt, session data, order, Next Trigger days), the opportunity's interview session data (for example the FLW cohort) and payment units that use the interview units. The schedule locks when its first session is created.
 2. The FLW finishes the Learn app. With no Deliver app, Connect claims the opportunity for them in a Celery task; with a Deliver app, the FLW claims in the app as today. Either way, the first interview session is created, due at the later of now and the opportunity and payment unit start dates.
 3. The beat task claims each due session and triggers it through `ocs_api.trigger_bot`, and the FLW is notified.
 4. The FLW has the interview chat with the OCS bot in Connect messaging.
@@ -204,6 +204,8 @@ The work splits into 9 tickets:
   - Make `app` nullable.
   - Add a check constraint: `form` requires `app`; `ocs_interview` requires `opportunity` and no `app`.
 - Add `Opportunity.available_deliver_units()`: the Deliver app's form units plus the opportunity's interview units.
+- `Opportunity`:
+  - Add `interview_session_data` (JSONField, default `dict`, blank): session state sent to OCS with every interview trigger on this opportunity, such as the FLW cohort (`cohortId`). It is merged with each interview's `session_data`.
 - New `InterviewSchedule`:
   - `opportunity` (OneToOne)
   - `configured_by` (FK User, `SET_NULL`): the Program Manager whose OCS connection triggers interviews.
@@ -246,8 +248,9 @@ The work splits into 9 tickets:
 **Changes:**
 
 - New class-based view `InterviewScheduleView` (`opportunity:interview_schedule`): Program Manager CRUD for interview units and schedule rows. Adding an interview creates its interview `DeliverUnit` (`unit_type=ocs_interview`, `opportunity` set) together with the `OCSInterview` row. The page shows them as an orderable table (Interview, Chatbot, Prompt, Session data, Order, Next Trigger in days, session counts).
-- Session data is edited as JSON and must be an object. The key Connect sets (`connectInterviewId`) is reserved and rejected.
-- The schedule is locked once its first session exists: interviews, order, prompts, session data and Next Trigger days become read-only, and the page says why. Taking over the OCS connection stays available.
+- The page also edits the opportunity's `interview_session_data`.
+- Session data, for the opportunity and for each interview, is edited as JSON and must be an object. The key Connect sets (`connectInterviewId`) is reserved and rejected.
+- The schedule is locked once its first session exists: interviews, order, prompts, session data (the opportunity's and each interview's) and Next Trigger days become read-only, and the page says why. Taking over the OCS connection stays available.
 - OCS connection takeover: saving the schedule does not change `configured_by`. A "Use my OCS connection" action sets `configured_by` to the current Program Manager after checking their token with `ocs_api.list_chatbots`. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup.
 - The schedule can only be activated when every interview's unit belongs to a payment unit.
 - The chatbot select is a tom-select (`data-tomselect="1"`) loaded from `ocs_api.list_chatbots`. If the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`; if `OCS_BASE_URL` is unset, hide the page and nav item.
@@ -283,7 +286,8 @@ The work splits into 9 tickets:
   - The selection rule is a pure function over plain data, so it can be unit tested without the database.
   - It is called on claim, completion, skip, un-suspension, opportunity end-date extension and schedule reactivation.
 - Beat task `trigger_due_interview_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions with `select_for_update(skip_locked=True)`, moves them to `triggering` and dispatches `trigger_interview_session` with `transaction.on_commit`. Sessions stuck in `triggering` for more than 30 minutes are picked up again.
-- `trigger_interview_session` locks the session and returns unless it is still `triggering`. It increments `attempts` in its own committed update before calling OCS, so the count survives a failed call; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=ocs_interview.ocs_chatbot_id, prompt_text=ocs_interview.prompt_text, session_data={**ocs_interview.session_data, "connectInterviewId": <session uuid>})`, stores `ocs_session_id` / `connect_channel_id` and sets `status=triggered`.
+- `trigger_interview_session` locks the session and returns unless it is still `triggering`. It increments `attempts` in its own committed update before calling OCS, so the count survives a failed call; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=ocs_interview.ocs_chatbot_id, prompt_text=ocs_interview.prompt_text, session_data={**opportunity.interview_session_data, **ocs_interview.session_data, "connectInterviewId": <session uuid>})`, stores `ocs_session_id` / `connect_channel_id` and sets `status=triggered`.
+- Session data merge order: the opportunity's `interview_session_data` first, then the interview's `session_data` (an interview key overrides the same opportunity key), then `connectInterviewId`.
 - `ocs_api.trigger_bot` gains a `prompt_text` parameter; the current hard-coded training prompt becomes the default, so OCS tasks are unchanged. A blank interview prompt is sent as `None` and gets that default.
 - Transient OCS errors retry with `autoretry_for` + `retry_backoff`. Every retry is another OCS call and increments `attempts`, so `attempts` is the single cap: at `MAX_TRIGGER_ATTEMPTS` (a module constant, initially 3) the session is marked `failed` with `last_error`. Each failed call overwrites `last_error`. Missing configuration marks the session `failed` without retrying.
 - Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_interview` when the FLW is un-suspended or the end date is extended.
@@ -296,7 +300,7 @@ The work splits into 9 tickets:
 - On an opportunity with a Deliver app, finishing Learn creates no claim; claiming in the app triggers the first interview within one beat interval.
 - A Learn form is processed normally when the auto-claim fails.
 - No interview triggers before the opportunity or payment unit start date.
-- The trigger call carries the interview's prompt, its session data plus `connectInterviewId`.
+- The trigger call carries the interview's prompt and the opportunity's `interview_session_data` merged with the interview's `session_data` (interview keys win), plus `connectInterviewId`.
 - No interview triggers for an FLW without a claim.
 - Running `trigger_interview_session` twice for the same session makes one OCS call.
 - A trigger that keeps failing makes exactly `MAX_TRIGGER_ATTEMPTS` OCS calls (Celery retries included), then ends `failed` with `last_error` set.
