@@ -16,7 +16,7 @@
 | **Author**                 | Pawan Verma                                                |
 | **Feature Release Path**   | Path 2: New features with stability                        |
 | **Release Switch**         | Not required                                               |
-| **Implementation Tickets** | 9 tickets, listed in order under Implementation Tickets    |
+| **Implementation Tickets** | 10 tickets, listed in order under Implementation Tickets   |
 
 ### Relevant Codebases
 
@@ -67,14 +67,14 @@ sequenceDiagram
     end
 ```
 
-1. A Program Manager sets up the interview schedule (chatbot, prompt, session data, order, Next Trigger days), the opportunity's interview session data (for example the FLW cohort) and payment units that use the interview units. The schedule locks when its first session is created.
+1. A Program Manager sets up the interview schedule (chatbot, prompt, session data, order, Next Trigger days), the opportunity's interview session data (for example the FLW cohort) and payment units that use the interview units. The schedule stays editable while interviews run; edits apply to sessions not yet triggered.
 2. The FLW finishes the Learn app. With no Deliver app, Connect claims the opportunity for them in a Celery task; with a Deliver app, the FLW claims in the app as today. Either way, the first interview session is created, due at the later of now and the opportunity and payment unit start dates.
 3. The beat task claims each due session and triggers it through `ocs_api.trigger_bot`, and the FLW is notified.
 4. The FLW has the interview chat with the OCS bot in Connect messaging.
 5. OCS posts the completion to `/api/interview_completed/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next interview is scheduled for `completed_at + next_interview_trigger_days`.
 6. Steps 3–5 repeat until the last interview is complete.
 
-The work splits into 9 tickets:
+The work splits into 10 tickets:
 
 | #   | Ticket                                                           | Repo             | Depends on |
 | --- | ---------------------------------------------------------------- | ---------------- | ---------- |
@@ -87,6 +87,7 @@ The work splits into 9 tickets:
 | 7   | Interview completion endpoint                                    | commcare-connect | 5, 6       |
 | 8   | Mobile API: interview fields                                     | commcare-connect | 4, 7       |
 | 9   | Android: show interviews and auto-claimed opportunities          | commcare-android | 8          |
+| 10  | Edit a running interview schedule                                | commcare-connect | 6, 7       |
 
 - **External components:** OCS (trigger API, which already exists, and a completion post to Connect's new endpoint that is configured in an OCS pipeline with no code changes). Mobile app changes in commcare-android.
 - **Auto-claim:** `claim_opportunity(access)` is extracted from `ClaimOpportunityView` (opportunity row lock, budget and end-date checks, `OpportunityClaim` and `create_claim_limits`, and `create_hq_user_and_link` on the Deliver app's domain only when the opportunity has a Deliver app). The view and the Learn-completion task both call it, so manual and automatic claims follow the same budget rules. Learn processing never claims inline: it dispatches `auto_claim_and_start_interviews(access_id)` on commit, so a claim failure can't fail or slow the Learn form. Only opportunities with no Deliver app are auto-claimed, so auto-claim never makes the HQ call; on opportunities with a Deliver app, the FLW claims manually as today and their interviews start at that point.
@@ -99,7 +100,7 @@ The work splits into 9 tickets:
 - **Limitations:**
   - An interview the FLW never finishes blocks the rest of their schedule until a Program Manager re-triggers or skips it.
   - Triggering depends on one Program Manager's OCS connection. Another Program Manager can take it over explicitly.
-  - The schedule can't be edited once its first session exists, except to take over the OCS connection.
+  - Edits to a running schedule never change a session that has already been triggered; it finishes with the chatbot, prompt and session data it was triggered with.
   - Form deliver units and interview units can't share a payment unit, because their `entity_id`s differ.
   - Opportunities with no Deliver app have no tasks (neither relearn nor OCS).
 - **API changes:** new `POST /api/interview_completed/` for OCS; `/api/receiver/` is unchanged. The mobile opportunity serializer emits `deliver_app: null`, `unit_type` on payment units and visits, and a new `interviews` list.
@@ -111,7 +112,7 @@ The work splits into 9 tickets:
 - Log auto-claim failures (budget full, opportunity ended) with the access and the reason.
 - On the opportunity page, show a banner to Program Managers when sessions are `failed` because of OCS credentials.
 - On the worker page, flag sessions that have been `triggered` for more than 7 days.
-- Add Sentry alerts on `4xx`/`5xx` rates from `/api/interview_completed/` and on `trigger_interview_session` final failures.
+- Add Sentry alerts on unhandled errors (`5xx`) from `/api/interview_completed/` and on `trigger_interview_session` final failures. `4xx` responses (unknown session, missing claim, wrong application) are not sent to Sentry; they are logged in the application logs, and OCS logs failed posts on its side.
 
 **Deployment and Release:**
 
@@ -210,7 +211,6 @@ The work splits into 9 tickets:
   - `opportunity` (OneToOne)
   - `configured_by` (FK User, `SET_NULL`): the Program Manager whose OCS connection triggers interviews.
   - `active`
-  - `is_locked`: true once any `InterviewSession` exists for the opportunity.
 - New `OCSInterview` (one row per interview in the schedule; the scheduler's columns):
   - `schedule` (FK `InterviewSchedule`, `CASCADE`): the schedule this interview belongs to.
   - `deliver_unit` (OneToOne interview `DeliverUnit`, `PROTECT`): the Interview ID column; the OCS interview unit.
@@ -219,6 +219,7 @@ The work splits into 9 tickets:
   - `session_data` (JSONField, default `dict`): the Session data column; sent as `session_data` on trigger, with Connect's keys added.
   - `order` (PositiveInteger): the Order column; unique per schedule.
   - `next_interview_trigger_days` (PositiveInteger): the Next Trigger column; days after this interview is completed before the next one triggers; unused on the last row.
+  - `active` (default `True`): false once the interview is retired from a running schedule (Ticket 10). Retired interviews are never picked for new sessions.
 - New `InterviewSession`:
   - `interview_session_id` (UUID)
   - `opportunity_access` (FK)
@@ -252,7 +253,7 @@ The work splits into 9 tickets:
 - New class-based view `InterviewScheduleView` (`opportunity:interview_schedule`): Program Manager CRUD for interview units and schedule rows. Adding an interview creates its interview `DeliverUnit` (`unit_type=ocs_interview`, `opportunity` set) together with the `OCSInterview` row. The page shows them as an orderable table (Interview, Chatbot, Prompt, Session data, Order, Next Trigger in days, session counts).
 - The page also edits the opportunity's `interview_session_data`.
 - Session data, for the opportunity and for each interview, is edited as JSON and must be an object. The key Connect sets (`connectInterviewSessionId`) is reserved and rejected.
-- The schedule is locked once its first session exists: interviews, order, prompts, session data (the opportunity's and each interview's) and Next Trigger days become read-only, and the page says why. Taking over the OCS connection stays available.
+- Until Ticket 10 ships, the schedule is read-only once its first session exists: interviews, order, prompts, session data (the opportunity's and each interview's) and Next Trigger days, and the page says why. Taking over the OCS connection stays available.
 - OCS connection takeover: saving the schedule does not change `configured_by`. A "Use my OCS connection" action sets `configured_by` to the current Program Manager after checking their token with `ocs_api.list_chatbots`. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup.
 - The schedule can only be activated when every interview's unit belongs to a payment unit.
 - The chatbot select is a tom-select (`data-tomselect="1"`) loaded from `ocs_api.list_chatbots`. If the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`; if `OCS_BASE_URL` is unset, hide the page and nav item.
@@ -263,7 +264,7 @@ The work splits into 9 tickets:
 **Acceptance criteria:**
 
 - A Program Manager can add, reorder and remove interviews and set Next Trigger days until the first session exists.
-- Once a session exists, every edit except the OCS connection takeover is rejected, in the UI and on the server.
+- Once a session exists, every edit except the OCS connection takeover is rejected, in the UI and on the server, until Ticket 10 lifts the lock.
 - Saving the schedule never changes `configured_by`; the takeover action does, and fails with a clear error when the Program Manager's OCS token doesn't work.
 - Invalid session data JSON (not an object, or using a reserved key) fails validation with a clear error.
 - The schedule can't be activated while an interview has no payment unit.
@@ -283,11 +284,11 @@ The work splits into 9 tickets:
 - Opportunities with a Deliver app are never auto-claimed. `ClaimOpportunityView` calls `schedule_next_interview(access)` on commit after a successful claim when the opportunity has an active schedule.
 - `schedule_next_interview(access)` is the only place sessions are created or reopened, and it is idempotent:
   - It does nothing if the FLW already has an open session (`scheduled`, `triggering`, `triggered`, `failed`).
-  - Otherwise it picks the lowest-order interview with no `completed` or `skipped` session for this FLW, and creates its session, or reopens a `cancelled` one.
+  - Otherwise it picks the lowest-order active interview with no `completed` or `skipped` session for this FLW, and creates its session, or reopens a `cancelled` one.
   - `scheduled_for` is the latest of: now (or `completed_at + next_interview_trigger_days` of the previous interview), `opportunity.start_date` and the interview's payment unit `start_date`. Interviews never run before they can be paid; otherwise the visit would be a `trial` visit and never paid.
   - The selection rule is a pure function over plain data, so it can be unit tested without the database.
   - It is called on claim, completion, skip, un-suspension, opportunity end-date extension and schedule reactivation.
-- Beat task `trigger_due_interview_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions with `select_for_update(skip_locked=True)`, moves them to `triggering`, sets a fresh `trigger_token` and `trigger_claimed_at`, and dispatches `trigger_interview_session(session_id, trigger_token)` with `transaction.on_commit`. Sessions stuck in `triggering` (by `trigger_claimed_at`) for more than 30 minutes are picked up again the same way, with a new token, which retires the old worker. The 30 minutes must stay well above the OCS call timeout plus the longest Celery retry backoff (`retry_backoff_max`), so only dead workers are recovered.
+- Beat task `trigger_due_interview_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions on active schedules, for active interviews, with `select_for_update(skip_locked=True)`, moves them to `triggering`, sets a fresh `trigger_token` and `trigger_claimed_at`, and dispatches `trigger_interview_session(session_id, trigger_token)` with `transaction.on_commit`. Sessions stuck in `triggering` (by `trigger_claimed_at`) for more than 30 minutes are picked up again the same way, with a new token, which retires the old worker. This is separate from Celery retries, which happen inside one worker's chain: recovery covers a worker that died or a task that was lost before it ran. The 30 minutes must stay well above the OCS call timeout plus the longest Celery retry backoff (`retry_backoff_max`), so only dead workers are recovered.
 - `trigger_interview_session(session_id, trigger_token)` locks the session and returns unless it is still `triggering` and its `trigger_token` matches. Before every OCS call, Celery retries included, it repeats that check and increments `attempts` in its own committed update, so the count survives a failed call and a worker retired by recovery stops at its next attempt; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=ocs_interview.ocs_chatbot_id, prompt_text=ocs_interview.prompt_text, session_data={**opportunity.interview_session_data, **ocs_interview.session_data, "connectInterviewSessionId": <session uuid>})`. It records the result with a conditional update, `filter(pk=..., status=triggering, trigger_token=trigger_token).update(status=triggered, ocs_session_id=..., connect_channel_id=..., triggered_at=now)`. If no row matches, a completion or a newer worker has already won, so it does nothing; a `completed` session stays `completed`. Marking the session `failed` uses the same conditional update.
 - Session data merge order: the opportunity's `interview_session_data` first, then the interview's `session_data` (an interview key overrides the same opportunity key), then `connectInterviewSessionId`.
 - `ocs_api.trigger_bot` gains a `prompt_text` parameter; the current hard-coded training prompt becomes the default, so OCS tasks are unchanged. A blank interview prompt is sent as `None` and gets that default.
@@ -398,6 +399,42 @@ The work splits into 9 tickets:
 - An FLW sees each interview's status and can open the active one.
 - Earnings from interviews show alongside other payment units.
 
+#### Ticket 10 – Edit a running interview schedule
+
+**Repo:** commcare-connect · **Depends on:** 6, 7
+
+Lifts the Ticket 5 lock, so a Program Manager can change the schedule after interviews have started. The rule throughout: a session that has been triggered (`triggering`, `triggered`) keeps going as it was triggered; everything not yet triggered follows the new schedule.
+
+**Changes:**
+
+- `InterviewScheduleView` allows every edit once sessions exist. Saving locks the `InterviewSchedule` row (`select_for_update`), so two Program Managers saving at once are applied one after the other, and dispatches `replan_interview_sessions(schedule_id)` with `transaction.on_commit` when the edit can change which interview comes next or when (order, Next Trigger days, adding or retiring an interview, reactivating).
+- What each edit affects:
+  - **Chatbot, prompt, interview session data, opportunity `interview_session_data`:** read at trigger time, so they apply to every session triggered after the save, including re-triggers. No replan.
+  - **Next Trigger days:** recomputes `scheduled_for` of `scheduled` sessions. The delay is always the Next Trigger days of the interview the FLW most recently completed, not its neighbour in the new order.
+  - **Order:** the next interview is the lowest-order active interview the FLW hasn't completed or skipped, so after a reorder an FLW may get an earlier-placed interview next. Completed interviews are never repeated.
+  - **Adding an interview:** saved only with a payment unit for its unit, as on activation. FLWs who had already finished every interview get it scheduled from their last completion.
+  - **Removing an interview:** an interview with no sessions is deleted with its `DeliverUnit`, as before the lock. One with sessions is retired (`active=False`) instead, because its unit can have paid visits. Its `scheduled` and `failed` sessions are cancelled and the FLW moves on to their next interview; its `triggering` and `triggered` sessions can still complete and are paid.
+  - **Retiring a required unit of a set:** rejected while the interview is a required unit of a payment unit with other required units, because FLWs could then never complete the set. The page says to change the payment unit first.
+  - **Pausing (`active` off):** the beat task stops triggering the schedule's sessions; triggered sessions can still complete and are paid. Reactivating runs the replan.
+- `replan_interview_sessions(schedule_id)` (Celery, idempotent, on commit):
+  - For each `scheduled` session, locked with `select_for_update(skip_locked=True)` (a session the beat task is claiming is skipped and triggers with the version it read): re-run the selection rule from `schedule_next_interview`. If it picks the same interview, update `scheduled_for`; otherwise cancel this session and create or reopen the picked one.
+  - For each claimed, unsuspended FLW on a running opportunity with no open session, call `schedule_next_interview(access)`. This also starts interviews for FLWs who claimed before the schedule existed.
+  - It reuses the pure selection function from Ticket 6, so the outcome of an edit can be unit tested without the database.
+- The page warns before saving an edit that changes what comes next, with the number of `scheduled` sessions it will replan, and shows retired interviews with their session counts.
+- Track `OCSInterview`, `InterviewSchedule` and `Opportunity.interview_session_data` with pghistory, so mid-run changes can be traced to the Program Manager who made them.
+
+**Acceptance criteria:**
+
+- After an edit to the chatbot, prompt or session data, the next trigger uses the new values and already-triggered sessions are untouched.
+- Changing Next Trigger days moves the due date of `scheduled` sessions and of nothing else.
+- Reordering changes the next interview for FLWs whose next session is `scheduled`, and never for FLWs whose session is `triggering` or `triggered`.
+- Adding an interview schedules it for FLWs who had already finished every interview.
+- Removing an interview with sessions retires it: its open, untriggered sessions are cancelled, its triggered sessions can still complete and are paid, and no new session is created for it.
+- Retiring an interview that is a required unit of a multi-unit payment unit is rejected with a clear error.
+- Pausing stops new triggers; reactivating replans and resumes.
+- Running `replan_interview_sessions` twice gives the same result as running it once.
+- A replan running while the beat task claims sessions never triggers a session twice.
+
 ---
 
 ### Further Considerations
@@ -407,7 +444,7 @@ The work splits into 9 tickets:
 - **Mixed payment units:** disallowed in v1, because form visits use a beneficiary `entity_id` and interviews use the FLW. Confirm no program needs "form + interview" sets.
 - **OCS credentials:** triggering uses one Program Manager's OCS token. If that Program Manager leaves or disconnects, every trigger fails until another Program Manager takes over the connection. Consider an org-level OCS service token.
 - **Stalled interviews:** with one-at-a-time triggering, an abandoned interview blocks the rest. v1 flags it after 7 days and lets a Program Manager re-trigger or skip it; skipped interviews are never paid.
-- **Schedule lock:** the schedule is set up before FLWs start. Once the first session exists it can't be changed, so there is no backfill for FLWs who claimed or finished Learn before the schedule existed, and no handling for interviews reordered or added mid-run.
+- **Editing a running schedule:** edits apply only to sessions not yet triggered (Ticket 10). Confirm with programs that a mid-run reorder sending some FLWs to an inserted interview before their next planned one is acceptable, and whether a retired interview's `triggered` sessions should still be paid (v1 pays them).
 - **OCS trigger idempotency:** the token stops two Connect workers calling OCS for one session, but a call that times out after OCS created the session is retried, which can leave two OCS sessions. Ask OCS whether the trigger API can accept an idempotency key; the `trigger_token` fits, because it is shared by Celery retries and replaced on recovery and re-trigger.
 - **Session data from OCS:** confirm that the OCS pipeline that posts completions can read `connectInterviewSessionId` from session data and make an authenticated HTTP call to Connect.
 - **Payload contract with OCS:** agree the exact `data` fields OCS sends with a completion.
