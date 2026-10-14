@@ -31,6 +31,19 @@ class TeamSizeRange(models.TextChoices):
     XL = "500+", "500+"
 
 
+class OrganizationStatus(models.TextChoices):
+    ACTIVE = "active", _("Active")
+    INACTIVE = "inactive", _("Inactive")
+    PROSPECTIVE = "prospective", _("Prospective")
+
+
+ORGANIZATION_STATUS_DEFINITIONS = {
+    OrganizationStatus.ACTIVE: _("1+ open contracts"),
+    OrganizationStatus.INACTIVE: _("0 open contracts, and 1+ previously active contracts"),
+    OrganizationStatus.PROSPECTIVE: _("0 open contracts, 0 previously active contracts, 1 active contact"),
+}
+
+
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
@@ -52,6 +65,9 @@ class Organization(BaseModel):
     contact_emails = models.TextField(blank=True, help_text=_("One email address per line."))
     eoi_links = models.TextField(blank=True, help_text=_("One EOI link per line."))
     notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=OrganizationStatus, blank=True)
+    latest_msa_link = models.URLField(blank=True)
+    latest_work_order_link = models.URLField(blank=True)
     verified = models.BooleanField(default=False)
     is_test = models.BooleanField(default=False)
 

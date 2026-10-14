@@ -1,0 +1,10 @@
+{% load i18n %}
+<div class="flex items-center w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
+  <div class="tabs">
+    <a href="{% url 'organization_directory:list' %}" class="tab tab-active">
+      <i class="fa-solid fa-building" aria-hidden="true"></i>
+      {% translate "Organizations" %}
+      <span class="text-xs text-gray-400">{{ organizations_count }}</span>
+    </a>
+  </div>
+</div>
