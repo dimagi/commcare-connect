@@ -334,7 +334,7 @@ class TestContactFormViews:
     def test_requires_permission(self, client, user, url_name):
         contact = ContactFactory()
         client.force_login(user)
-        args = (contact.pk,) if url_name.endswith("edit") else ()
+        args = (contact.contact_id,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
 
@@ -345,7 +345,9 @@ class TestContactArchiveView:
         contact = ContactFactory()
         client.force_login(user_with_directory_access)
 
-        response = client.post(f"{reverse('organization_directory:contact_archive', args=(contact.pk,))}?search=x")
+        url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        response = client.post(f"{url}?search=x")
 
         contact.refresh_from_db()
         assert contact.is_archived
@@ -356,7 +358,7 @@ class TestContactArchiveView:
         contact = ContactFactory()
         client.force_login(user_with_directory_access)
 
-        response = client.get(reverse("organization_directory:contact_archive", args=(contact.pk,)))
+        response = client.get(reverse("organization_directory:contact_archive", args=(contact.contact_id,)))
 
         assert response.status_code == 405
         contact.refresh_from_db()
@@ -366,7 +368,9 @@ class TestContactArchiveView:
         contact = ContactFactory()
         client.force_login(user)
 
-        assert client.post(reverse("organization_directory:contact_archive", args=(contact.pk,))).status_code == 403
+        url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        assert client.post(url).status_code == 403
 
 
 @pytest.mark.django_db

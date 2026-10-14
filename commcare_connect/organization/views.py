@@ -395,6 +395,8 @@ class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
 
 class ContactFormMixin(LLODirectoryFormMixin):
     model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
     form_class = ContactForm
     template_name = "organization/directory/contact_form.html"
     list_url_name = "organization_directory:contacts"
@@ -410,6 +412,8 @@ class ContactUpdateView(ContactFormMixin, UpdateView):
 
 class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
     http_method_names = ["post"]
 
     def post(self, request, *args, **kwargs):

@@ -2,7 +2,7 @@
 <div class="flex items-center gap-3">
   <button type="button"
           class="button-icon"
-          hx-get="{% url 'organization_directory:contact_edit' record.pk %}?next={{ request.get_full_path|urlencode }}"
+          hx-get="{% url 'organization_directory:contact_edit' record.contact_id %}?next={{ request.get_full_path|urlencode }}"
           hx-target="#directory-form"
           aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
           x-data
@@ -15,7 +15,7 @@
   <form x-data
         x-ref="archiveForm"
         method="post"
-        action="{% url 'organization_directory:contact_archive' record.pk %}?{{ request.GET.urlencode }}">
+        action="{% url 'organization_directory:contact_archive' record.contact_id %}?{{ request.GET.urlencode }}">
     {% csrf_token %}
     <button type="button"
             class="button-icon"
