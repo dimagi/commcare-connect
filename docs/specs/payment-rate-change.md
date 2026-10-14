@@ -293,9 +293,9 @@ with transaction.atomic():
             earned_on=now(),
         )
         completed_work.saved_payment_accrued += new_pay
-        completed_work.saved_payment_accrued_usd += new_pay / exchange_rate
+        completed_work.saved_payment_accrued_usd += Decimal(new_pay) / exchange_rate  # USD rate is int 1
         completed_work.saved_org_payment_accrued += new_org_pay
-        completed_work.saved_org_payment_accrued_usd += new_org_pay / exchange_rate
+        completed_work.saved_org_payment_accrued_usd += Decimal(new_org_pay) / exchange_rate
         completed_work.saved_approved_count = approved_count
         completed_work.save(update_fields=[...])  # the fields above
 ```
@@ -318,8 +318,8 @@ Effects:
 approved or at which pay rate and exchange rate. Invoices work around this by comparing counts, which breaks once
 pay rates can change:
 
-- **Duplicate in the same month.** A delivery approved on September 30 at 1.00 and its duplicate on October 1 at
-  1.25, both before the September invoice, are billed together as 2 deliveries at 1.125, a pay rate that never existed.
+- **Duplicate in the same month.** A delivery approved on September 30 at 4 and its duplicate on October 1 at
+  5, both before the September invoice, are billed together as 2 deliveries at 4.5, a pay rate that never existed.
 - **Additional deliveries.** A duplicate approved after its work was invoiced is listed under the next invoice's month,
   since we don't know when it was approved, and its amount is found by subtracting what was already invoiced.
 
@@ -375,8 +375,9 @@ Invoices bill **earned pay records** (section [7.1](#71-earned-pay-records)) tha
 multiplying by the current pay rate, so they always match earned pay and never look up a pay rate.
 
 - **One invoice row (`CompletedWorkInvoice`) per record,** linked to it and copying its amounts. This replaces one row
-  per invoice and piece of work, so a delivery and its duplicate at different pay rates get two rows. Copying the
-  amounts could be dropped later (section [15](#15-future-improvements)).
+  per invoice and piece of work, so a delivery and its duplicate at different pay rates get two rows, and
+  `unique_together = ("invoice", "completed_work")` is dropped (ticket 4). Copying the amounts could be dropped
+  later (section [15](#15-future-improvements)).
 
   ```python
   class CompletedWorkInvoice(BaseModel):
@@ -401,19 +402,19 @@ multiplying by the current pay rate, so they always match earned pay and never l
   shown), worked out as pay ÷ deliveries.
 - Invoices already created keep their amounts; the earned pay backfill only links their rows to records.
 
-**Example.** Worker pay goes from 1.00 to 1.25 on October 1. One worker's records:
+**Example.** Worker pay goes from 4 to 5 on October 1. One worker's records:
 
 | Record         | Earned on | Deliveries | Worker pay |
 | -------------- | --------- | ---------- | ---------- |
-| Delivery A     | Sep 12    | 1          | 1.00       |
-| Delivery B     | Sep 30    | 1          | 1.00       |
-| Duplicate of A | Oct 1     | 1          | 1.25       |
-| Delivery C     | Oct 8     | 1          | 1.25       |
+| Delivery A     | Sep 12    | 1          | 4          |
+| Delivery B     | Sep 30    | 1          | 4          |
+| Duplicate of A | Oct 1     | 1          | 5          |
+| Delivery C     | Oct 8     | 1          | 5          |
 
-- **October 2 invoice (September):** A and B, as one line: "2 verified visits x USD 1.00". The duplicate was earned
+- **October 2 invoice (September):** A and B, as one line: "2 verified visits x USD 4". The duplicate was earned
   after the end date, so it waits for the next invoice.
 - **November 2 invoice (October):** the duplicate of A and C, as one line under October: "2 verified visits x USD
-  1.25". The duplicate is billed at the pay rate it earned, as part of the normal line.
+  5". The duplicate is billed at the pay rate it earned, as part of the normal line.
 
 ## Part 2: Scheduling and applying pay rate changes
 
@@ -701,24 +702,24 @@ change cancelled before the 1st leaves nothing to undo.
 
 **Example**
 
-Pay rate goes from 1.00 to 1.25.
+Pay rate goes from 4 to 5.
 
 | Worker | Limit | Approved | Waiting | Money left | Deliveries it buys | Scaled limit | New limit |
 | ------ | ----- | -------- | ------- | ---------- | ------------------ | ------------ | --------- |
-| Asha   | 100   | 20       | 20      | 80.00      | 64                 | 84           | 84        |
-| Ben    | 150   | 10       | 0       | 140.00     | 112                | 122          | 122       |
-| Chen   | 100   | 100      | 0       | 0.00       | 0                  | 100          | 100       |
-| Dev    | 100   | 10       | 90      | 90.00      | 72                 | 82           | **100**   |
+| Asha   | 100   | 20       | 20      | 320        | 64                 | 84           | 84        |
+| Ben    | 150   | 10       | 0       | 560        | 112                | 122          | 122       |
+| Chen   | 100   | 100      | 0       | 0          | 0                  | 100          | 100       |
+| Dev    | 100   | 10       | 90      | 360        | 72                 | 82           | **100**   |
 
-Money left = (limit − approved) × 1.00; deliveries it buys = money left ÷ 1.25, rounded down.
+Money left = (limit − approved) × 4; deliveries it buys = money left ÷ 5, rounded down.
 
-Dev has completed 100 deliveries (10 approved + 90 waiting), so the limit stays at 100. The 90 waiting cost 112.50 at
-the new pay rate, but only 90.00 is left: the extra 22.50 is the **shortfall** (section [11.4](#114-no-overspend-funding-check)).
+Dev has completed 100 deliveries (10 approved + 90 waiting), so the limit stays at 100. The 90 waiting cost 450 at
+the new pay rate, but only 360 is left: the extra 90 is the **shortfall** (section [11.4](#114-no-overspend-funding-check)).
 
 **New workers**
 
-The payment unit's **max visits per worker** is scaled by the same ratio, rounded down: 100 × 1.00 ÷ 1.25 = **80**.
-80 × 1.25 = 100 × 1.00, so new workers get the same money as existing ones.
+The payment unit's **max visits per worker** is scaled by the same ratio, rounded down: 100 × 4 ÷ 5 = **80**.
+80 × 5 = 100 × 4, so new workers get the same money as existing ones.
 
 **Code**
 
@@ -750,7 +751,7 @@ One message for the payment unit, with no per-worker numbers.
 > "This increase will reduce workers' remaining visits for this payment unit by up to `<Percent>`% when it takes
 > effect on `<Effective date>`. Add budget first if you want workers to keep their visits."
 
-`<Percent>` = 1 − old cost ÷ new cost (e.g. 20% for 1.00 → 1.25).
+`<Percent>` = 1 − old cost ÷ new cost (e.g. 20% for 4 → 5).
 
 **Decrease**
 
@@ -788,26 +789,26 @@ ahead.
 
 **Example**
 
-| Case                                                       | Shortfall               | Remaining budget | Result                                                                   |
-| ---------------------------------------------------------- | ----------------------- | ---------------- | ------------------------------------------------------------------------ |
-| Section [11.2](#112-what-a-pay-rate-increase-does) example | 22.50 (Dev)             | 100.00           | Scheduled. On the 1st, 22.50 covers Dev, leaving 77.50.                  |
-| Section [11.2](#112-what-a-pay-rate-increase-does) example | 22.50 (Dev)             | 20.00            | Blocked until pending visits at current rate are agreed or budget added. |
-| Unit A, scheduled first                                    | 400.00                  | 500.00           | Scheduled.                                                               |
-| Unit B, same opportunity                                   | 300.00 (+ 400.00 for A) | 500.00           | Blocked: together they need 700.00.                                      |
+| Case                                                       | Shortfall         | Remaining budget | Result                                                                   |
+| ---------------------------------------------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------ |
+| Section [11.2](#112-what-a-pay-rate-increase-does) example | 90 (Dev)          | 100              | Scheduled. On the 1st, 90 covers Dev, leaving 10.                        |
+| Section [11.2](#112-what-a-pay-rate-increase-does) example | 90 (Dev)          | 20               | Blocked until pending visits at current rate are agreed or budget added. |
+| Unit A, scheduled first                                    | 400               | 500              | Scheduled.                                                               |
+| Unit B, same opportunity                                   | 300 (+ 400 for A) | 500              | Blocked: together they need 700.                                         |
 
 ### 11.5 Adding or reducing visits from the Add Budget form
 
 Both parts of the Add Budget form keep working as today; only the cost per delivery they use changes. Example: pay
-rate goes from 1.00 to 1.25 on October 1, max visits per worker is 100.
+rate goes from 4 to 5 on October 1, max visits per worker is 100.
 
-- **Existing workers, between scheduling and the 1st:** "+10 visits" adds 10 × 1.00 = 10.00 of budget. Visits
+- **Existing workers, between scheduling and the 1st:** "+10 visits" adds 10 × 4 = 40 of budget. Visits
   approved before the 1st earn the old pay rate; the rest is scaled on the 1st with the worker's other money, so if
   none are approved by then, the worker ends up with 8 extra visits, not 10.
-- **Existing workers, after the 1st:** "+10 visits" adds 12.50 and gives 10 extra visits. Decreases work the same
+- **Existing workers, after the 1st:** "+10 visits" adds 50 and gives 10 extra visits. Decreases work the same
   way, and a limit still can't go below the visits already done.
-- **New workers:** "+10 workers" adds 10 × (100 × 1.00) = 1,000.00 before the 1st, or 10 × (80 × 1.25) = 1,000.00
+- **New workers:** "+10 workers" adds 10 × (100 × 4) = 4,000 before the 1st, or 10 × (80 × 5) = 4,000
   after. Workers who join before the 1st get 100 visits, scaled to 80 on the 1st; later joiners get 80. Either way
-  each worker's share is 100.00.
+  each worker's share is 400.
 
 **Note on the form.** While a change is scheduled, the Add Budget form notes that visits not approved by the effective
 date, including any added now, will be adjusted to the new pay rate.
@@ -873,7 +874,7 @@ Screenshots from the Claude design are included below. This section only lists w
 
 ![Payment units list page](payment-rate-change-units-list.png)
 
-- The Upcoming Change column says what changes, for example "Worker pay 1.00 → 1.25 (USD) from October 1, 2026".
+- The Upcoming Change column says what changes, for example "Worker pay 4 → 5 (USD) from October 1, 2026".
   If both worker pay and org pay change, show both lines.
 - Only PMs see the org pay line, like the existing "Org pay per delivery" column, which NMs don't see.
 
