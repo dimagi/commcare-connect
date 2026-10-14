@@ -19,6 +19,7 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.tables import DATE_TIME_FORMAT
+from commcare_connect.utils.test_utils import grant_all_org_access
 
 
 @pytest.mark.django_db
@@ -705,3 +706,28 @@ class TestPendingInvitesTableView:
         assert content.index(newest.email) < content.index(oldest.email), (
             "the members table's sort param leaked into the pending invites table"
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role,sees_programs,sees_my_organization",
+    [
+        ("admin", True, True),
+        ("member", True, False),
+        ("viewer", False, False),
+        ("superuser", True, True),
+        ("all_org_access", True, True),
+    ],
+)
+def test_sidenav_entries_follow_org_access(client, organization, role, sees_programs, sees_my_organization):
+    user = UserFactory(is_superuser=role == "superuser")
+    if role == "all_org_access":
+        user = grant_all_org_access(user)
+    if role in UserOrganizationMembership.Role.values:
+        UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
+    client.force_login(user)
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert (reverse("program:home", args=(organization.slug,)) in content) is sees_programs
+    assert (reverse("organization:home", args=(organization.slug,)) in content) is sees_my_organization
