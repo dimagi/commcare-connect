@@ -458,7 +458,7 @@ class ImplementationAreaDataSerializer(GeoCentroidBoundarySerializer):
         fields = ["id", "name", "centroid", "boundary"]
 
 
-class LLOEntityDataSerializer(serializers.ModelSerializer):
+class OrganizationProfileDataSerializer(serializers.ModelSerializer):
     """Exports the organization profile that used to be modelled as a separate LLO entity."""
 
     countries = serializers.SlugRelatedField(many=True, read_only=True, slug_field="code")

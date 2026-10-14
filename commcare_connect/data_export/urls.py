@@ -59,7 +59,10 @@ urlpatterns = [
         name="work_area_group_data",
     ),
     path("opportunity/<int:opp_id>/work_areas/", views.WorkAreaDataView.as_view(), name="work_area_data"),
-    path("llo_entity/", views.LLOEntityDataView.as_view(), name="llo_entity_data"),
+    path("organization/", views.OrganizationProfileDataView.as_view(), name="organization_profile_data"),
+    # Deprecated alias of organization/, from when these rows were LLOEntity rows. Kept so existing
+    # consumers keep working; remove once they have moved to organization/.
+    path("llo_entity/", views.OrganizationProfileDataView.as_view(), name="llo_entity_data"),
     path("organization_merge/", views.OrganizationMergeDataView.as_view(), name="organization_merge_data"),
     path(
         "opportunity/<int:opp_id>/work_area_groups/write/",

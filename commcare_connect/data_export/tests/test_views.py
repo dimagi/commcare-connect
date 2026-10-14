@@ -242,8 +242,9 @@ class TestProgramOpportunityOrganizationDataView:
 
 
 @pytest.mark.django_db
-class TestLLOEntityDataView:
-    def test_returns_organization_profiles(self, api_client, user):
+@pytest.mark.parametrize("url_name", ["organization_profile_data", "llo_entity_data"])
+class TestOrganizationProfileDataView:
+    def test_returns_organization_profiles(self, api_client, user, url_name):
         org = OrgWithUsersFactory(
             short_name="TST",
             verified=True,
@@ -256,7 +257,7 @@ class TestLLOEntityDataView:
         user.user_permissions.add(permission)
         _add_export_credentials(api_client, user)
         _add_v2_header(api_client)
-        url = reverse("data_export:llo_entity_data")
+        url = reverse(f"data_export:{url_name}")
         response = api_client.get(url)
         assert response.status_code == 200
         data = response.json()
@@ -272,16 +273,16 @@ class TestLLOEntityDataView:
         assert result["contact_emails"] == "one@example.com"
         assert sorted(result["members"]) == sorted(org.get_member_emails())
 
-    def test_requires_export_scope(self, api_client, user):
+    def test_requires_export_scope(self, api_client, user, url_name):
         _add_v2_header(api_client)
-        url = reverse("data_export:llo_entity_data")
+        url = reverse(f"data_export:{url_name}")
         response = api_client.get(url)
         assert response.status_code == 401
 
-    def test_requires_internal_access_permission(self, api_client, user):
+    def test_requires_internal_access_permission(self, api_client, user, url_name):
         _add_export_credentials(api_client, user)
         _add_v2_header(api_client)
-        url = reverse("data_export:llo_entity_data")
+        url = reverse(f"data_export:{url_name}")
         response = api_client.get(url)
         assert response.status_code == 404
 

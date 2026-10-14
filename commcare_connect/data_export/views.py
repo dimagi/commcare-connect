@@ -42,12 +42,12 @@ from commcare_connect.data_export.serializer import (
     ImplementationAreaDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
-    LLOEntityDataSerializer,
     OpportunityDataExportSerializer,
     OpportunitySerializer,
     OpportunityUserDataSerializer,
     OrganizationDataExportSerializer,
     OrganizationMergeDataSerializer,
+    OrganizationProfileDataSerializer,
     PaymentDataSerializer,
     ProgramDataExportSerializer,
     TaskTypeDataSerializer,
@@ -736,10 +736,10 @@ class ImplementationAreaDataView(OpportunityDataExportView, BaseDataExportListVi
         return ImplementationArea.objects.filter(opportunity=self.opportunity)
 
 
-class LLOEntityDataView(BaseDataExportListViewV2):
-    """Exports organization profiles. Kept under the `llo_entity` name for existing consumers."""
+class OrganizationProfileDataView(BaseDataExportListViewV2):
+    """Exports organization profiles, at organization/ and at the deprecated llo_entity/ alias."""
 
-    serializer_class = LLOEntityDataSerializer
+    serializer_class = OrganizationProfileDataSerializer
 
     def check_permissions(self, request):
         super().check_permissions(request)
