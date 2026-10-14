@@ -19,7 +19,6 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.tables import DATE_TIME_FORMAT
-from commcare_connect.utils.test_utils import grant_all_org_access
 
 
 @pytest.mark.django_db
@@ -710,24 +709,40 @@ class TestPendingInvitesTableView:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "role,sees_programs,sees_my_organization",
+    "role,permission,sees_programs,sees_my_organization",
     [
-        ("admin", True, True),
-        ("member", True, False),
-        ("viewer", False, False),
-        ("superuser", True, True),
-        ("all_org_access", True, True),
+        ("admin", None, True, True),
+        ("member", None, True, False),
+        ("viewer", None, False, False),
+        ("member", "all_org_profile_edit_access", True, True),
+        ("viewer", "all_org_profile_edit_access", False, True),
+        (None, "all_org_access", True, True),
     ],
 )
-def test_sidenav_entries_follow_org_access(client, organization, role, sees_programs, sees_my_organization):
-    user = UserFactory(is_superuser=role == "superuser")
-    if role == "all_org_access":
-        user = grant_all_org_access(user)
-    if role in UserOrganizationMembership.Role.values:
+def test_sidenav_entries_follow_org_access(
+    client, organization, role, permission, sees_programs, sees_my_organization
+):
+    user = UserFactory()
+    if role:
         UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
+    if permission:
+        user.user_permissions.add(Permission.objects.get(codename=permission))
+        user = User.objects.get(pk=user.pk)  # a fresh instance, so the permission cache sees the grant
     client.force_login(user)
 
     content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
 
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
     assert (reverse("program:home", args=(organization.slug,)) in content) is sees_programs
     assert (reverse("organization:home", args=(organization.slug,)) in content) is sees_my_organization
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_all_entries_to_superuser_without_membership(client, organization):
+    client.force_login(UserFactory(is_superuser=True))
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert reverse("program:home", args=(organization.slug,)) in content
+    assert reverse("organization:home", args=(organization.slug,)) in content
