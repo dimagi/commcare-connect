@@ -390,10 +390,11 @@ class ContactForm(forms.ModelForm):
             Contact.objects.filter(email__iexact=email).exclude(pk=self.instance.pk).select_related("organization")
         )
         if contact := existing.first():
-            raise ValidationError(
-                gettext("This email already belongs to %(name)s at %(organization)s."),
-                params={"name": contact.name, "organization": contact.organization.name},
-            )
+            if contact.is_archived:
+                message = gettext("This email already belongs to %(name)s (archived) at %(organization)s.")
+            else:
+                message = gettext("This email already belongs to %(name)s at %(organization)s.")
+            raise ValidationError(message, params={"name": contact.name, "organization": contact.organization.name})
         return email
 
     def _get_validation_exclusions(self):

@@ -310,6 +310,13 @@ class TestContactForm:
         assert not form.is_valid()
         assert existing.organization.name in form.errors["email"][0]
 
+    def test_email_used_by_an_archived_contact_says_it_is_archived(self, organization):
+        ContactFactory(name="Grace Wanjiru", email="grace@umojahealth.org", is_archived=True)
+
+        form = ContactForm(data=_contact_form_data(organization, email="grace@umojahealth.org"))
+
+        assert "Grace Wanjiru (archived)" in form.errors["email"][0]
+
     def test_a_contact_keeps_its_own_email_on_edit(self):
         contact = ContactFactory(email="grace@umojahealth.org")
 
