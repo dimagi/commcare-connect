@@ -1,0 +1,4 @@
+{% load static %}
+{% if request.method == "POST" %}
+  <script src="{% static 'js/forget_form_submission.js' %}" defer></script>
+{% endif %}
