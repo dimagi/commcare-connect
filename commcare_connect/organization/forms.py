@@ -61,7 +61,7 @@ class OrganizationProfileForm(forms.ModelForm):
         labels = {
             "name": gettext_lazy("Organization Name"),
             "short_name": gettext_lazy("Short Name"),
-            "has_used_connect": gettext_lazy("Has Used CommCare Connect Before?"),
+            "has_used_connect": gettext_lazy("Has Used Connect Before?"),
             "year_of_establishment": gettext_lazy("Year of Establishment"),
             "team_size": gettext_lazy("Team Size"),
             "flws_managed": gettext_lazy("Number of FLW's Managed"),
