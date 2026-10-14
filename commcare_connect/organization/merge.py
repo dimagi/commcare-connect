@@ -45,6 +45,7 @@ SIMPLE_REASSIGNMENTS: Sequence[OrganizationReassignment] = (
     OrganizationReassignment("opportunity", "Opportunity", "supervising_organization"),
     OrganizationReassignment("opportunity", "Payment", "organization"),
     OrganizationReassignment("opportunity", "LabsRecord", "organization"),
+    OrganizationReassignment("organization", "Contact", "organization"),
     OrganizationReassignment("program", "Program", "organization"),
     OrganizationReassignment("program", "Program", "funder"),
 )
@@ -60,6 +61,7 @@ HANDLED_RELATIONS = frozenset(
         "opportunity.Opportunity.organization",
         "opportunity.Opportunity.supervising_organization",
         "opportunity.Payment.organization",
+        "organization.Contact.organization",
         "organization.OrganizationInvite.organization",
         "organization.UserOrganizationMembership.organization",
         "program.Program.funder",
@@ -108,6 +110,7 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
     stale_opportunities = _opportunities_linked_to_source(source)
 
     with transaction.atomic():
+        _keep_target_main_contact(source, target)
         reassigned = _reassign_simple_relations(source, target)
         moved_watchers_count = _move_program_watchers(source, target)
         program_applications_moved, program_applications_deduped = _merge_program_applications(source, target)
@@ -141,6 +144,12 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
 
     logger.info("Merged organization %s into %s: %s", summary.source_slug, summary.target_slug, summary)
     return summary
+
+
+def _keep_target_main_contact(source: Organization, target: Organization) -> None:
+    """Unmark the source's main contact when the target has one, as an organization has at most one."""
+    if target.contacts.filter(is_main_poc=True).exists():
+        source.contacts.filter(is_main_poc=True).update(is_main_poc=False)
 
 
 def _reject_invalid_merge(source: Organization, target: Organization) -> None:
