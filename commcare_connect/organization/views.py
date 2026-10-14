@@ -335,7 +335,7 @@ class ContactListView(LLODirectoryListView):
     template_name = "organization/directory/contact_list.html"
 
     def get_queryset(self):
-        return Contact.objects.filter(is_archived=False).select_related("organization").order_by("name")
+        return Contact.objects.select_related("organization").order_by("name")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -415,14 +415,21 @@ class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     slug_field = "contact_id"
     slug_url_kwarg = "contact_id"
     http_method_names = ["post"]
+    is_archived = True
+    success_message = gettext_lazy("Contact {name} archived.")
 
     def post(self, request, *args, **kwargs):
         contact = self.get_object()
-        contact.is_archived = True
+        contact.is_archived = self.is_archived
         contact.modified_by = request.user.email
         contact.save(update_fields=["is_archived", "modified_by", "date_modified"])
-        messages.success(request, gettext("Contact {name} archived.").format(name=contact.name))
+        messages.success(request, self.success_message.format(name=contact.name))
         return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
+
+
+class ContactRestoreView(ContactArchiveView):
+    is_archived = False
+    success_message = gettext_lazy("Contact {name} restored.")
 
 
 class ContactExportView(LLODirectoryAccessMixin, View):

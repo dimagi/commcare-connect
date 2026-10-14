@@ -247,6 +247,13 @@ class TestContactFilterSet:
         assert _filtered_contacts({"main_poc": "true"}) == [main]
         assert _filtered_contacts({"main_poc": ""}) == [main, other]
 
+    def test_lists_archived_contacts_only_when_asked_for(self):
+        active = ContactFactory()
+        archived = ContactFactory(is_archived=True)
+
+        assert _filtered_contacts({}) == [active]
+        assert _filtered_contacts({"archived": "true"}) == [archived]
+
 
 @pytest.mark.django_db
 class TestContactListAccess:
@@ -376,6 +383,28 @@ class TestContactArchiveView:
         client.force_login(user)
 
         url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        assert client.post(url).status_code == 403
+
+
+@pytest.mark.django_db
+class TestContactRestoreView:
+    def test_restores_and_returns_to_the_filtered_listing(self, client, user_with_directory_access):
+        contact = ContactFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+        url = reverse("organization_directory:contact_restore", args=(contact.contact_id,))
+
+        response = client.post(f"{url}?archived=true")
+
+        contact.refresh_from_db()
+        assert not contact.is_archived
+        assert contact.modified_by == user_with_directory_access.email
+        assert response.url == f"{reverse('organization_directory:contacts')}?archived=true"
+
+    def test_requires_permission(self, client, user):
+        contact = ContactFactory(is_archived=True)
+        client.force_login(user)
+        url = reverse("organization_directory:contact_restore", args=(contact.contact_id,))
 
         assert client.post(url).status_code == 403
 
