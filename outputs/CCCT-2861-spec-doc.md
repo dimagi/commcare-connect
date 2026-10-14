@@ -76,18 +76,18 @@ sequenceDiagram
 
 The work splits into 10 tickets:
 
-| #   | Ticket                                                           | Repo             | Depends on |
-| --- | ---------------------------------------------------------------- | ---------------- | ---------- |
-| 1   | Make the Deliver app optional                                    | commcare-connect | —          |
-| 2   | Android: skip the Deliver app after Learn                        | commcare-android | 1          |
-| 3   | Extract the `claim_opportunity` service                          | commcare-connect | 1          |
-| 4   | Interview data model                                             | commcare-connect | 1          |
-| 5   | Interview schedule page and payment unit linking                 | commcare-connect | 4          |
-| 6   | Trigger interviews: auto-claim on Learn completion and beat task | commcare-connect | 3, 5       |
-| 7   | Interview completion endpoint                                    | commcare-connect | 5, 6       |
-| 8   | Mobile API: interview fields                                     | commcare-connect | 4, 7       |
-| 9   | Android: show interviews and auto-claimed opportunities          | commcare-android | 8          |
-| 10  | Edit a running interview schedule                                | commcare-connect | 6, 7       |
+| #                                                                               | Ticket                                                           | Repo             | Depends on |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------- | ---------- |
+| [1](#ticket-1--make-the-deliver-app-optional)                                   | Make the Deliver app optional                                    | commcare-connect | —          |
+| [2](#ticket-2--android-skip-the-deliver-app-after-learn)                        | Android: skip the Deliver app after Learn                        | commcare-android | 1          |
+| [3](#ticket-3--extract-the-claim_opportunity-service)                           | Extract the `claim_opportunity` service                          | commcare-connect | 1          |
+| [4](#ticket-4--interview-data-model)                                            | Interview data model                                             | commcare-connect | 1          |
+| [5](#ticket-5--interview-schedule-page-and-payment-unit-linking)                | Interview schedule page and payment unit linking                 | commcare-connect | 4          |
+| [6](#ticket-6--trigger-interviews-auto-claim-on-learn-completion-and-beat-task) | Trigger interviews: auto-claim on Learn completion and beat task | commcare-connect | 3, 5       |
+| [7](#ticket-7--interview-completion-endpoint)                                   | Interview completion endpoint                                    | commcare-connect | 5, 6       |
+| [8](#ticket-8--mobile-api-interview-fields)                                     | Mobile API: interview fields                                     | commcare-connect | 4, 7       |
+| [9](#ticket-9--android-show-interviews-and-auto-claimed-opportunities)          | Android: show interviews and auto-claimed opportunities          | commcare-android | 8          |
+| [10](#ticket-10--edit-a-running-interview-schedule)                             | Edit a running interview schedule                                | commcare-connect | 6, 7       |
 
 - **External components:** OCS (trigger API, which already exists, and a completion post to Connect's new endpoint that is configured in an OCS pipeline with no code changes). Mobile app changes in commcare-android.
 - **Auto-claim:** `claim_opportunity(access)` is extracted from `ClaimOpportunityView` (opportunity row lock, budget and end-date checks, `OpportunityClaim` and `create_claim_limits`, and `create_hq_user_and_link` on the Deliver app's domain only when the opportunity has a Deliver app). The view and the Learn-completion task both call it, so manual and automatic claims follow the same budget rules. Learn processing never claims inline: it dispatches `auto_claim_and_start_interviews(access_id)` on commit, so a claim failure can't fail or slow the Learn form. Only opportunities with no Deliver app are auto-claimed, so auto-claim never makes the HQ call; on opportunities with a Deliver app, the FLW claims manually as today and their interviews start at that point.
