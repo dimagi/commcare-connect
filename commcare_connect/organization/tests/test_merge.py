@@ -20,7 +20,12 @@ from commcare_connect.organization.merge import (
     merge_organizations,
     relation_counts,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    Organization,
+    OrganizationInvite,
+    OrganizationMerge,
+    UserOrganizationMembership,
+)
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import get_managed_opp
@@ -599,6 +604,43 @@ class TestRelationCoverage:
         assert dangling == []
 
 
+class TestMergeRecord:
+    def test_merging_records_where_the_source_went(self, source, target):
+        source_id, source_slug = source.pk, source.slug
+
+        merge_organizations(source, target, merged_by="operator@example.com")
+
+        merge = OrganizationMerge.objects.get()
+        assert merge.source_id == source_id
+        assert merge.source_slug == source_slug
+        assert merge.source_name == "Source Organization"
+        assert merge.target == target
+        assert merge.target_slug == target.slug
+        assert merge.merged_by == "operator@example.com"
+        assert merge.merged_at is not None
+
+    def test_a_later_merge_of_the_target_leaves_the_earlier_record_as_written(self, source, target):
+        source_slug = source.slug
+        merge_organizations(source, target)
+        final = OrganizationFactory(name="Final Organization")
+        target_slug = target.slug
+
+        merge_organizations(target, final)
+
+        first, second = OrganizationMerge.objects.order_by("merged_at")
+        assert first.source_slug == source_slug
+        assert first.target is None
+        assert first.target_slug == target_slug
+        assert second.source_slug == target_slug
+        assert second.target == final
+
+    def test_a_refused_merge_records_nothing(self, source):
+        with pytest.raises(MergeNotAllowed):
+            merge_organizations(source, source)
+
+        assert not OrganizationMerge.objects.exists()
+
+
 class TestRollback:
     def test_any_error_rolls_the_whole_merge_back(self, target, failing_merge):
         source = OrganizationFactory(name="Rollback Source", funder=True)
@@ -615,6 +657,7 @@ class TestRollback:
         assert membership.organization == source
         target.refresh_from_db()
         assert target.funder is False
+        assert not OrganizationMerge.objects.exists()
 
 
 class TestRelationCounts:

@@ -195,3 +195,26 @@ class OrganizationInvite(BaseModel):
         self.save(update_fields=["status", "modified_by", "date_modified"])
         transaction.on_commit(partial(send_invite_accepted_notification, membership.pk), robust=True)
         return membership
+
+
+class OrganizationMerge(models.Model):
+    """A record that one organization was merged into another.
+
+    The merge deletes the source, so this row is the only place its id and slug survive. The source is kept as plain
+    values rather than a foreign key for that reason, and the target's slug is snapshotted because the target can
+    itself be merged away later, which nulls ``target``.
+    """
+
+    source_id = models.PositiveIntegerField(db_index=True)
+    source_slug = models.SlugField(max_length=255)
+    source_name = models.CharField(max_length=255)
+    target = models.ForeignKey(Organization, on_delete=models.SET_NULL, null=True, related_name="+")
+    target_slug = models.SlugField(max_length=255)
+    merged_at = models.DateTimeField(auto_now_add=True)
+    merged_by = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["merged_at"]
+
+    def __str__(self):
+        return f"{self.source_slug} -> {self.target_slug}"

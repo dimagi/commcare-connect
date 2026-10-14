@@ -12,7 +12,12 @@ from commcare_connect.organization.merge import (
     merge_organizations,
     relation_counts,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    Organization,
+    OrganizationInvite,
+    OrganizationMerge,
+    UserOrganizationMembership,
+)
 from commcare_connect.users.forms import AdminOrganizationForm
 
 MERGE_ACTION = "merge_workspaces"
@@ -83,6 +88,25 @@ class OrganizationInviteAdmin(admin.ModelAdmin):
     autocomplete_fields = ["organization", "invited_by"]
 
 
+@admin.register(OrganizationMerge)
+class OrganizationMergeAdmin(admin.ModelAdmin):
+    """Merge records are written by the merge itself and are history, so they are read-only here."""
+
+    list_display = ["merged_at", "source_slug", "source_id", "target_slug", "merged_by"]
+    search_fields = ["source_slug", "source_name", "target_slug"]
+    fields = ["merged_at", "source_id", "source_slug", "source_name", "target", "target_slug", "merged_by"]
+    readonly_fields = fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     form = AdminOrganizationForm
@@ -119,7 +143,7 @@ class OrganizationAdmin(admin.ModelAdmin):
         # Captured up front: ``source.delete()`` clears the instance's pk, and the log entry needs it.
         source_pk, source_repr = source.pk, str(source)
         try:
-            summary = merge_organizations(source, target)
+            summary = merge_organizations(source, target, merged_by=request.user.email or "")
         except MergeNotAllowed as error:
             self.message_user(request, str(error), messages.ERROR)
             return None

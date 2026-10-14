@@ -35,7 +35,7 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, OrganizationMerge, UserOrganizationMembership
 from commcare_connect.program.models import Program
 
 
@@ -102,9 +102,16 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
 
 
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+
     class Meta:
         model = Organization
-        fields = ["id", "slug", "name", "funder"]
+        fields = ["id", "slug", "name", "funder", "role"]
+
+    @extend_schema_field(serializers.ChoiceField(choices=UserOrganizationMembership.Role.choices))
+    def get_role(self, obj):
+        """The requesting user's role in this organization, from ``roles_by_org_id`` in the context."""
+        return self.context.get("roles_by_org_id", {}).get(obj.id)
 
 
 class ProgramDataExportSerializer(serializers.ModelSerializer):
@@ -462,8 +469,12 @@ class LLOEntityDataSerializer(serializers.ModelSerializer):
         model = Organization
         fields = [
             "id",
+            "slug",
             "name",
             "short_name",
+            "is_test",
+            "program_manager",
+            "funder",
             "has_used_connect",
             "year_of_establishment",
             "team_size",
@@ -479,6 +490,12 @@ class LLOEntityDataSerializer(serializers.ModelSerializer):
             "verified",
             "members",
         ]
+
+
+class OrganizationMergeDataSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrganizationMerge
+        fields = ["id", "source_id", "source_slug", "source_name", "target_id", "target_slug", "merged_at"]
 
 
 class AuditReportDataSerializer(serializers.ModelSerializer):

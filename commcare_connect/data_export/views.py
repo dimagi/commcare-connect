@@ -47,6 +47,7 @@ from commcare_connect.data_export.serializer import (
     OpportunitySerializer,
     OpportunityUserDataSerializer,
     OrganizationDataExportSerializer,
+    OrganizationMergeDataSerializer,
     PaymentDataSerializer,
     ProgramDataExportSerializer,
     TaskTypeDataSerializer,
@@ -74,7 +75,7 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Organization, OrganizationMerge, UserOrganizationMembership
 from commcare_connect.program.models import Program
 from commcare_connect.program.utils import orgs_ids_with_admin_access_to_opportunity
 from commcare_connect.users.models import User
@@ -314,8 +315,13 @@ class ProgramOpportunityOrganizationDataView(BaseDataExportView):
             .distinct()
         )
         programs = Program.objects.filter(organization__in=organizations)
+        roles_by_org_id = dict(
+            UserOrganizationMembership.objects.filter(user=request.user).values_list("organization_id", "role")
+        )
 
-        org_data = OrganizationDataExportSerializer(organizations, many=True).data
+        org_data = OrganizationDataExportSerializer(
+            organizations, many=True, context={"roles_by_org_id": roles_by_org_id}
+        ).data
         opp_data = OpportunityDataExportSerializer(opportunities, many=True).data
         program_data = ProgramDataExportSerializer(programs, many=True).data
         return JsonResponse({"organizations": org_data, "opportunities": opp_data, "programs": program_data})
@@ -742,6 +748,21 @@ class LLOEntityDataView(BaseDataExportListViewV2):
 
     def get_queryset(self, *args, **kwargs):
         return Organization.objects.prefetch_related("countries", "primary_sectors", "members")
+
+
+class OrganizationMergeDataView(BaseDataExportListViewV2):
+    """Exports organization merges, so a consumer holding a merged-away organization's id or slug can find where it
+    went. Paginated by id, which follows ``merged_at`` because rows are only ever appended."""
+
+    serializer_class = OrganizationMergeDataSerializer
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if not request.user.has_perm(LLO_ENTITY_INTERNAL_ACCESS):
+            raise NotFound
+
+    def get_queryset(self, *args, **kwargs):
+        return OrganizationMerge.objects.all()
 
 
 class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):

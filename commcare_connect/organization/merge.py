@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from commcare_connect.opportunity.models import Opportunity
-from commcare_connect.organization.models import Organization, OrganizationInvite
+from commcare_connect.organization.models import Organization, OrganizationInvite, OrganizationMerge
 from commcare_connect.program.models import ProgramApplication
 from commcare_connect.program.utils import clear_managed_opp_cache
 
@@ -79,6 +79,10 @@ SKIPPED_RELATIONS = frozenset(
         "opportunity.OpportunitySupervisingOrganizationEvent.supervising_organization",
         "program.ProgramFunderEvent.funder",
         "program.ProgramWatcherEvent.organization",
+        # A merge record is history in the same way: "A was merged into B" stays true when B is later merged into C,
+        # and that second merge writes its own record. Repointing it would also lose the hop through B. The foreign
+        # key is SET_NULL, and target_slug keeps the name once B is gone.
+        "organization.OrganizationMerge.target",
     }
 )
 
@@ -99,8 +103,8 @@ class MergeSummary:
     flags_cleared: int = 0
 
 
-def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
-    """Merge ``source`` into ``target``, then delete ``source``.
+def merge_organizations(source: Organization, target: Organization, merged_by: str = "") -> MergeSummary:
+    """Merge ``source`` into ``target``, then delete ``source``, leaving an ``OrganizationMerge`` record behind.
 
     Raises ``MergeNotAllowed`` before any change is made; any other exception rolls the whole merge back.
     """
@@ -136,6 +140,14 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             invites_moved=invites_moved,
             invites_discarded=invites_dropped,
             flags_cleared=flags_cleared,
+        )
+        OrganizationMerge.objects.create(
+            source_id=source.pk,
+            source_slug=source.slug,
+            source_name=source.name,
+            target=target,
+            target_slug=target.slug,
+            merged_by=merged_by,
         )
         source.delete()
 

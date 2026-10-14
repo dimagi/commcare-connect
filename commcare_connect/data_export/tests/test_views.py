@@ -30,7 +30,9 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
-from commcare_connect.users.tests.factories import OrgWithUsersFactory
+from commcare_connect.organization.merge import merge_organizations
+from commcare_connect.organization.models import OrganizationMerge
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -227,6 +229,17 @@ class TestProgramOpportunityOrganizationDataView:
         assert is_test_by_id[live_opp.id] is False
         assert is_test_by_id[test_opp.id] is True
 
+    def test_each_organization_carries_the_requesting_users_role(self, api_client, organization, org_user_member):
+        viewed_org = OrganizationFactory()
+        MembershipFactory(organization=viewed_org, user=org_user_member, role="viewer")
+        OrganizationFactory()  # an organization the user is not a member of is not listed
+        _add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:opp_org_program_list")
+        response = api_client.get(url)
+        assert response.status_code == 200
+        role_by_id = {org["id"]: org["role"] for org in response.json()["organizations"]}
+        assert role_by_id == {organization.id: "member", viewed_org.id: "viewer"}
+
 
 @pytest.mark.django_db
 class TestLLOEntityDataView:
@@ -236,6 +249,8 @@ class TestLLOEntityDataView:
             verified=True,
             year_of_establishment=2005,
             contact_emails="one@example.com",
+            is_test=True,
+            program_manager=True,
         )
         permission = Permission.objects.get(codename="llo_entity_internal_access")
         user.user_permissions.add(permission)
@@ -247,7 +262,11 @@ class TestLLOEntityDataView:
         data = response.json()
         result = next(row for row in data["results"] if row["id"] == org.id)
         assert result["name"] == org.name
+        assert result["slug"] == org.slug
         assert result["short_name"] == "TST"
+        assert result["is_test"] is True
+        assert result["program_manager"] is True
+        assert result["funder"] is False
         assert result["verified"] is True
         assert result["year_of_establishment"] == 2005
         assert result["contact_emails"] == "one@example.com"
@@ -264,6 +283,42 @@ class TestLLOEntityDataView:
         _add_v2_header(api_client)
         url = reverse("data_export:llo_entity_data")
         response = api_client.get(url)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestOrganizationMergeDataView:
+    def test_returns_merge_records(self, api_client, user):
+        source = OrganizationFactory(name="Merged Away")
+        target = OrganizationFactory(name="Survivor")
+        source_id, source_slug = source.id, source.slug
+        merge_organizations(source, target)
+        user.user_permissions.add(Permission.objects.get(codename="llo_entity_internal_access"))
+        _add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        response = api_client.get(reverse("data_export:organization_merge_data"))
+        assert response.status_code == 200
+        [result] = response.json()["results"]
+        merge = OrganizationMerge.objects.get()
+        assert result == {
+            "id": merge.id,
+            "source_id": source_id,
+            "source_slug": source_slug,
+            "source_name": "Merged Away",
+            "target_id": target.id,
+            "target_slug": target.slug,
+            "merged_at": merge.merged_at.isoformat().replace("+00:00", "Z"),
+        }
+
+    def test_requires_export_scope(self, api_client, user):
+        _add_v2_header(api_client)
+        response = api_client.get(reverse("data_export:organization_merge_data"))
+        assert response.status_code == 401
+
+    def test_requires_internal_access_permission(self, api_client, user):
+        _add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        response = api_client.get(reverse("data_export:organization_merge_data"))
         assert response.status_code == 404
 
 
