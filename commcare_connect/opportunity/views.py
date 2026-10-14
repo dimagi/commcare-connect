@@ -1822,6 +1822,8 @@ def invoice_list(request, org_slug, opp_id):
                 "opportunity:invoice_create",
                 args=(org_slug, request.opportunity.opportunity_id),
             ),
+            # Same rule as InvoiceCreateView: only the opportunity's own (NM) org creates invoices.
+            "can_create_invoice": request.org.id == request.opportunity.organization_id,
             "path": [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                 {
