@@ -460,6 +460,21 @@ class TestContactExportViews:
 
         assert response.status_code == 400
 
+    def test_status_of_another_users_export_shows_a_notice(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+        other_users_task = mock.Mock()
+        other_users_task._get_task_meta.return_value = {
+            "status": "SUCCESS",
+            "args": ["", user_with_directory_access.pk + 1, "csv"],
+        }
+
+        with mock.patch("commcare_connect.utils.celery.AsyncResult", return_value=other_users_task):
+            response = client.get(reverse("organization_directory:contact_export_status", args=("task-id",)))
+
+        assert response.status_code == 200
+        assert "Start a new export" in response.content.decode()
+        assert "Download Export" not in response.content.decode()
+
     def test_download_is_refused_to_other_users(self, client, user_with_directory_access):
         client.force_login(user_with_directory_access)
         other_users_task = mock.Mock(args=("", user_with_directory_access.pk + 1, "csv"))

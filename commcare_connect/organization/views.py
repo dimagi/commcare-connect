@@ -457,13 +457,24 @@ class ContactExportStatusView(LLODirectoryAccessMixin, View):
     http_method_names = ["get"]
 
     def get(self, request, task_id):
-        return render_export_status(
-            request,
-            task_id=task_id,
-            download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
-            export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
-            ownership_check=lambda request, task_meta: _check_export_requester(request, task_meta.get("args") or []),
-        )
+        try:
+            return render_export_status(
+                request,
+                task_id=task_id,
+                download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
+                export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
+                ownership_check=lambda request, task_meta: _check_export_requester(
+                    request, task_meta.get("args") or []
+                ),
+            )
+        except Http404:
+            # htmx doesn't swap in an error response, so a 404 would leave the listing's loading
+            # spinner in place for good. Someone else's export is answered with a notice instead.
+            return render(
+                request,
+                "organization/directory/export_unavailable.html",
+                {"contacts_url": reverse("organization_directory:contacts")},
+            )
 
 
 class ContactExportDownloadView(LLODirectoryAccessMixin, View):
