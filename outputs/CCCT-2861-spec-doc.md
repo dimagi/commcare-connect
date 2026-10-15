@@ -12,7 +12,7 @@
 | Field                      | Details                                                    |
 | -------------------------- | ---------------------------------------------------------- |
 | **Related Materials**      | [CCCT-2861](https://dimagi.atlassian.net/browse/CCCT-2861) |
-| **Mockups / Wireframes**   | _Add link_                                                 |
+| **Mockups / Wireframes**   | [Web mockups](CCCT-2861-mockups.html) (Android not mocked) |
 | **Author**                 | Pawan Verma                                                |
 | **Feature Release Path**   | Path 2: New features with stability                        |
 | **Release Switch**         | Not required                                               |
@@ -152,9 +152,9 @@ The work splits into 11 tickets:
   - `program/api/serializers.py`: `get_deliver_app`
   - `opportunity/api/serializers/automation.py`: the payment unit deliver-unit validation, which must accept the opportunity's external units and reject other opportunities' units
 - The other callers of the Deliver app's domain (work-area case sync, attachment downloads, usercase updates for relearn tasks) only run when a Deliver app exists, so they are unchanged.
-- Hide the Deliver app link (`opportunity_resource_modal.html`), "sync deliver units", verification flags and microplanning when there is no Deliver app.
-- Tasks are disabled when there is no Deliver app: hide the Tasks UI and nav item, and reject task type creation and task assignment. `TaskType.app` stays required.
-- `OpportunityInitForm` and `OpportunityInitUpdateForm`: the deliver domain and app fields become optional (with help text); skip `_build_commcare_app("deliver")` when empty; compare learn and deliver apps only when both are set.
+- Hide, not grey out, everything that needs the Deliver app when there is none: the Deliver app link and resource chip, the Deliver units tab of `opportunity_resource_modal.html`, "sync deliver units", Verification Rules in the opportunity menu, microplanning, and the Deliver worker tab.
+- Tasks are disabled when there is no Deliver app: hide Configure Task Types in the opportunity menu, the Tasks worker tab and the Tasks tab on the single-worker page, and reject task type creation and task assignment. `TaskType.app` stays required.
+- `OpportunityInitForm` and `OpportunityInitUpdateForm`: the Apps card gets a "This opportunity uses a Deliver app" checkbox, on by default. Unticking it hides the deliver domain and app fields, clears them and skips their validation, and shows a note that the Schedule step becomes required and Deliver-only features aren't available. The checkbox is disabled once Connect Workers have joined, like the app fields today. Skip `_build_commcare_app("deliver")` when there is no Deliver app; compare learn and deliver apps only when both are set.
 - Program API serializer (`program/api/serializers.py`): `deliver_app` becomes `required=False, allow_null=True`; `get_deliver_app` returns `null` when absent.
 - `OpportunitySerializer` (mobile) and the data export serializer emit `deliver_app: null` when absent.
 - Opportunities with no Deliver app are left out of the opportunity list for clients below the new mobile API version (`AcceptHeaderVersioning`; _Add version_).
@@ -167,6 +167,8 @@ The work splits into 11 tickets:
 - Two opportunities without a Deliver app never see each other's external units in any page, form or API listed above, and the automation API rejects another opportunity's unit.
 - A Program Manager can create, edit and activate an opportunity with no Deliver app, through the web and the program API.
 - An opportunity with no Deliver app shows no Tasks UI, and task types can't be created on it.
+- Unticking "This opportunity uses a Deliver app" saves the opportunity with no Deliver app; the checkbox can't be changed once workers have joined.
+- Deliver-only menu items, tabs and links are not rendered (rather than shown disabled) when there is no Deliver app.
 - Older clients never receive an opportunity with `deliver_app: null`; new clients receive it, and can claim it (no HQ user is created).
 
 #### Ticket 2 – Android: skip the Deliver app after Learn
@@ -297,19 +299,28 @@ class ExternalProvider(Protocol):
 
 **Changes:**
 
-- New class-based view `ExternalScheduleView` (`opportunity:external_schedule`): Program Manager CRUD for external units and schedule steps. Adding a step creates its external `DeliverUnit` (`unit_type=external`, `opportunity` set) together with the `ExternalStep` row. The page shows the steps as an orderable table (name, provider, the provider's summary of its config, order, Next Trigger in days, session counts) and labels them with the provider's `display_noun` ("Interview" for OCS).
+- New class-based view `ExternalScheduleView` (`opportunity:external_schedule`): Program Manager CRUD for external units and schedule steps. Adding a step creates its external `DeliverUnit` (`unit_type=external`, `opportunity` set) together with the `ExternalStep` row.
+- Opportunity creation: the stepper (`opportunity/steps.html`) becomes Create Opportunity → **Schedule** → Payment Unit → Budget, so steps exist before payment units are built from them. The Schedule step has a "Skip" button only when the opportunity has a Deliver app; without one, at least one step is required to continue. Once the opportunity exists, the page opens from a "Configure Schedule" item in the opportunity menu (`is_opportunity_pm`) with breadcrumbs instead of the stepper. The resources modal gets a Schedule tab and the dashboard a Schedule chip.
+- Page layout (see the mockups):
+  - Two cards above the steps: **connection** (owner, a status pill for connected / not working / not connected, and "Use my connection") and **schedule** (an Active toggle, disabled until every step has a payment unit, and the shared session data shown as chips with an Edit modal).
+  - The **steps table**: a drag handle and ↑/↓ buttons, order, the step's name with its provider's `display_noun` badge ("Interview"), the provider's summary of its config (the chatbot for OCS), "Next step after" (Next Trigger days; "last step" on the last row), the payment unit (a "None yet" warning when it has none) and session counts (done · open). A Provider column is shown only when more than one provider is configured.
+  - Adding and editing a step happens in a modal (the `tasks/new_task_modal.html` pattern, re-rendered by htmx on errors). The modal holds the step's name, the provider, the provider's `config_form` and Next Trigger days.
+- Reordering follows open-chat-studio's annotation fields form (`human_annotations/queue_form.html`): native HTML5 drag on the handle plus ↑/↓ buttons, in an Alpine component in its own JS file, with no new dependency. Moves happen client-side; a "Save order / Discard" bar appears once the order changes, and "Save order" posts the ordered step IDs in one request.
+- Session data (the schedule's and each step's) is edited as key/value rows with add and remove, stored as a JSON object of strings. The reserved `connectSessionId` key is rejected on its row.
 - Each step's config is edited through its provider's `config_form`; the schedule's provider config through `schedule_config_form`. Saving runs `validate_config`.
 - Only providers whose `is_configured()` is true are offered. If none is, hide the page and nav item.
-- Until Ticket 11 ships, the schedule is read-only once its first session exists: steps, order, provider config (the schedule's and each step's) and Next Trigger days, and the page says why. Taking over the connection stays available.
-- Connection takeover: saving the schedule does not change `configured_by`. A "Use my connection" action sets `configured_by` to the current Program Manager after `provider.check_connection(user)` succeeds. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup. For OCS, if the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`.
+- Until Ticket 11 ships, the schedule is read-only once its first session exists: steps, order, provider config (the schedule's and each step's) and Next Trigger days. An info banner says why, the add, reorder and edit controls are disabled, and Edit becomes View. Taking over the connection stays available.
+- Connection takeover: saving the schedule does not change `configured_by`. A "Use my connection" action sets `configured_by` to the current Program Manager after `provider.check_connection(user)` succeeds. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup. For OCS, if the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`. "Use my connection" asks for confirmation first.
 - The schedule can only be activated when every step's unit belongs to a payment unit.
-- `add_payment_unit` / `edit_payment_unit` / `PaymentUnitForm`: choices come from `available_deliver_units()`, grouped as "Form deliver units" and the external units, labelled with their provider's noun.
+- `add_payment_unit` / `edit_payment_unit` / `PaymentUnitForm`: choices come from `available_deliver_units()`. The existing checkbox lists for required and optional units are split into a group per unit type, "Form deliver units" and the external units labelled with their provider's noun ("Interviews (OCS)"); the form-units group is hidden when there is no Deliver app.
 - A payment unit's required and optional units must all be one `unit_type`; mixed payment units are rejected.
 - Individual payment = one payment unit per external unit; set payment = one payment unit with several required external units.
 
 **Acceptance criteria:**
 
 - A Program Manager can add, reorder and remove steps and set Next Trigger days until the first session exists.
+- The creation stepper includes the Schedule step; it can be skipped only when the opportunity has a Deliver app.
+- Reordering by drag and by the arrow buttons both work, and the order is saved only on "Save order".
 - Once a session exists, every edit except the connection takeover is rejected, in the UI and on the server, until Ticket 11 lifts the lock.
 - Saving the schedule never changes `configured_by`; the takeover action does, and fails with a clear error when the provider's connection check fails.
 - Invalid provider config fails validation with the provider's error.
@@ -340,8 +351,12 @@ class ExternalProvider(Protocol):
 - `trigger_external_session(session_id, trigger_token)` locks the session and returns unless it is still `triggering` and its `trigger_token` matches. It then repeats the payable check for today: if the claim, claim limit or payment unit has ended, or the limit is used up, since the session was scheduled, it marks the session `cancelled` (conditional on its token), logs the reason and makes no provider call. Before every provider call, Celery retries included, it repeats that check and increments `attempts` in its own committed update, so the count survives a failed call and a worker retired by recovery stops at its next attempt; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `provider.trigger(session)` for the step's provider and records the result with a conditional update, `filter(pk=..., status=triggering, trigger_token=trigger_token).update(status=triggered, external_ref=..., provider_data=..., triggered_at=now)`. If no row matches, a completion or a newer worker has already won, so it does nothing; a `completed` session stays `completed`. Marking the session `failed` uses the same conditional update.
 - `ProviderTransientError` retries with `autoretry_for` + `retry_backoff`. Every retry is another provider call and increments `attempts`, so `attempts` is the single cap: at `MAX_TRIGGER_ATTEMPTS` (a module constant, initially 3) the session is marked `failed` with `last_error`. Each failed call overwrites `last_error`. `ProviderNotConfigured` marks the session `failed` without retrying.
 - Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_step` when the FLW is un-suspended or the end date is extended.
-- Worker page: a sessions panel with re-trigger and skip actions, labelled with the provider's noun. Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0`, clears `last_error` and `trigger_token`. Skip marks it `skipped` (unpaid) and calls `schedule_next_step`.
-- The opportunity page shows a banner when sessions fail because of provider credentials.
+- Worker views, both labelled with the provider's noun ("Interviews"):
+  - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and flags (in progress for more than 7 days, couldn't start, or the waiting reason). Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
+  - The single-worker page gets a tab next to Visits (`components/worker_page/visit_task_tabs.html`): a card per step with its status, dates and, when it failed, the last error and attempts. Re-trigger (in progress or failed) and Skip (any open session) both ask for confirmation: Re-trigger warns that the worker may see two chats, Skip that the step won't be paid and can't be undone.
+  - Statuses as Program Managers see them: Scheduled (with the due date), Starting (`triggering`), In progress (`triggered`), Completed, Failed, Skipped, Cancelled, and Waiting when nothing could be scheduled.
+- Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0`, clears `last_error` and `trigger_token`. Skip marks it `skipped` (unpaid) and calls `schedule_next_step`.
+- The opportunity page shows a banner when sessions fail because of provider credentials, linking to the connection card on the schedule page.
 
 **Acceptance criteria:**
 
@@ -473,7 +488,9 @@ Lifts the Ticket 6 lock, so a Program Manager can change the schedule after step
   - For each `scheduled` session, locked with `select_for_update(skip_locked=True)` (a session the beat task is claiming is skipped and triggers with the version it read): re-run the selection rule from `schedule_next_step`. If it picks the same step, update `scheduled_for`; otherwise cancel this session and create or reopen the picked one.
   - For each claimed, unsuspended FLW on a running opportunity with no open session, call `schedule_next_step(access)`. This also starts schedules for FLWs who claimed before the schedule existed.
   - It reuses the pure selection function from Ticket 7, so the outcome of an edit can be unit tested without the database.
-- The page warns before saving an edit that changes what comes next, with the number of `scheduled` sessions it will replan, and shows retired steps with their session counts.
+- Edits that change what comes next ask for confirmation in a dialog with the number of workers and `scheduled` sessions they re-plan, e.g. "The new order applies to 7 workers whose next interview hasn't started". Provider config edits don't confirm.
+- Retired steps are listed in a collapsed "Retired steps" section below the steps table, with how many sessions are done and how many are still finishing.
+- In the step modal, "Remove step" becomes "Retire step" once the step has sessions, with a confirmation that says what is cancelled and what is still paid. When retiring is rejected (a required unit of a set), a dialog explains why and links to the payment unit. The provider field explains that it can't be changed once workers have sessions.
 - Track `ExternalStep` and `ExternalSchedule` with pghistory, so mid-run changes can be traced to the Program Manager who made them.
 
 **Acceptance criteria:**
