@@ -9,6 +9,7 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
+from commcare_connect.organization.tables import OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.celery import get_export_storage
@@ -84,6 +85,24 @@ class TestOrganizationListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [org]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status, badge_class",
+    [
+        (OrganizationStatus.ACTIVE, "positive-light"),
+        (OrganizationStatus.INACTIVE, "label"),
+        (OrganizationStatus.PROSPECTIVE, "badge-indigo"),
+    ],
+)
+def test_status_column_shows_a_badge(status, badge_class):
+    table = OrganizationDirectoryTable([OrganizationFactory(status=status)])
+
+    cell = table.rows[0].get_cell("status")
+
+    assert badge_class in cell
+    assert str(status.label) in cell
 
 
 def _form_data(country_by_code, sector_by_key, **overrides):
