@@ -9,14 +9,14 @@
 **Epic:** _Add Epic_
 **Ticket Number & Description:** [CCCT-2861](https://dimagi.atlassian.net/browse/CCCT-2861) — Optional Deliver Apps and External Units (OCS interviews first)
 
-| Field                      | Details                                                    |
-| -------------------------- | ---------------------------------------------------------- |
-| **Related Materials**      | [CCCT-2861](https://dimagi.atlassian.net/browse/CCCT-2861) |
-| **Mockups / Wireframes**   | [Web mockups](CCCT-2861-mockups.html) (Android not mocked) |
-| **Author**                 | Pawan Verma                                                |
-| **Feature Release Path**   | Path 2: New features with stability                        |
-| **Release Switch**         | Not required                                               |
-| **Implementation Tickets** | 11 tickets, listed in order under Implementation Tickets   |
+| Field                      | Details                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| **Related Materials**      | [CCCT-2861](https://dimagi.atlassian.net/browse/CCCT-2861)                            |
+| **Mockups / Wireframes**   | [Web mockups](https://claude.ai/artifact/VQnbjnfkok9XrDw2orZubu) (Android not mocked) |
+| **Author**                 | Pawan Verma                                                                           |
+| **Feature Release Path**   | Path 2: New features with stability                                                   |
+| **Release Switch**         | Not required                                                                          |
+| **Implementation Tickets** | 11 tickets, listed in order under Implementation Tickets                              |
 
 ### Relevant Codebases
 
