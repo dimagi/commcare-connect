@@ -80,22 +80,14 @@
                 <input type="hidden" name="{{ filters_submitted_param }}" value="1">
                 <div class="modal-body">{% crispy filter_form %}</div>
                 <div class="footer">
-                  <button form="clearFiltersForm"
-                          type="submit"
+                  <button type="button"
+                          @click="clearFilterForm('filterForm')"
                           class="button button-md outline-style float-left">{% translate "Clear all" %}</button>
                   <button type="button"
                           @click="showFilterModal = false"
                           class="button button-md outline-style">Close</button>
                   <button form="filterForm" type="submit" class="button button-md primary-dark">Apply</button>
                 </div>
-              </form>
-              {# Clearing submits no filters at all, still marked as the user's choice so the defaults stay off. #}
-              <form id="clearFiltersForm">
-                <input type="hidden" name="q" :value="search" :disabled="!search">
-                <input type="hidden" name="{{ filters_submitted_param }}" value="1">
-                {% for key, value in clear_filters_carried_params %}
-                  <input type="hidden" name="{{ key }}" value="{{ value }}">
-                {% endfor %}
               </form>
             </div>
           </div>
