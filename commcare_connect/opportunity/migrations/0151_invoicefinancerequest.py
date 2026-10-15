@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0149_uservisit_over_limit_reasons'),
+        ('opportunity', '0150_paymentunit_max_daily_optional'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
