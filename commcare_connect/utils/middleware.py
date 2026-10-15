@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponseRedirect
+from django.utils.cache import add_never_cache_headers
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
@@ -88,3 +90,51 @@ class CustomPGHistoryMiddleware(HistoryMiddleware):
         # add username to context if user is authenticated
         context["username"] = request.user.username
         context["user_email"] = request.user.email
+
+
+XSS_PROTECTION_HEADER_VALUE = "1; mode=block"
+
+
+class SecurityHeadersMiddleware:
+    """Adds X-XSS-Protection and Strict-Transport-Security to every response, unless the view already set them."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.headers = {"X-XSS-Protection": XSS_PROTECTION_HEADER_VALUE}
+        if hsts := _hsts_header_value():
+            self.headers["Strict-Transport-Security"] = hsts
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        for name, value in self.headers.items():
+            response.headers.setdefault(name, value)
+        return response
+
+
+def _hsts_header_value():
+    if not settings.SECURE_HSTS_SECONDS:
+        return None
+    value = f"max-age={settings.SECURE_HSTS_SECONDS}"
+    if settings.SECURE_HSTS_INCLUDE_SUBDOMAINS:
+        value += "; includeSubDomains"
+    if settings.SECURE_HSTS_PRELOAD:
+        value += "; preload"
+    return value
+
+
+class NoStoreCacheMiddleware:
+    """
+    Stops browsers caching pages shown to logged-in users, so they can't be restored (e.g. with the Back button)
+    after logout. Views that set their own Cache-Control are left alone.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated and "Cache-Control" not in response.headers:
+            add_never_cache_headers(response)
+            response.headers["Pragma"] = "no-cache"
+        return response

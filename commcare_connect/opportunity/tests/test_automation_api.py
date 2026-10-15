@@ -2,8 +2,10 @@ import datetime
 from unittest.mock import patch
 
 import pytest
+from waffle.testutils import override_switch
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
+from commcare_connect.flags.switch_names import OPTIONAL_DAILY_LIMIT
 from commcare_connect.opportunity.models import PaymentUnit
 from commcare_connect.opportunity.tests.factories import (
     CommCareAppFactory,
@@ -126,6 +128,49 @@ class TestPaymentUnits:
             format="json",
         )
         assert response.status_code == 400
+
+    @pytest.mark.parametrize(
+        "switch_active, max_daily_payload, expected_status, expected_max_daily",
+        [
+            pytest.param(True, {"max_daily": None}, 201, [None], id="null_with_switch_on"),
+            pytest.param(False, {"max_daily": None}, 400, [], id="null_with_switch_off"),
+            pytest.param(True, {}, 400, [], id="missing_with_switch_on"),
+        ],
+    )
+    def test_payment_unit_without_daily_limit(
+        self,
+        api_client,
+        program_manager_org_user_admin,
+        managed_opp_with_deliver_units,
+        switch_active,
+        max_daily_payload,
+        expected_status,
+        expected_max_daily,
+    ):
+        opportunity, du1, _ = managed_opp_with_deliver_units
+        api_client.force_authenticate(program_manager_org_user_admin)
+        with override_switch(OPTIONAL_DAILY_LIMIT, active=switch_active):
+            response = api_client.post(
+                f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
+                {
+                    "payment_units": [
+                        {
+                            "name": "Bonus",
+                            "amount": 500,
+                            "org_amount": 100,
+                            "max_total": 1,
+                            "required_deliver_units": [du1.id],
+                            **max_daily_payload,
+                        }
+                    ]
+                },
+                format="json",
+            )
+
+        assert response.status_code == expected_status
+        assert list(PaymentUnit.objects.filter(opportunity=opportunity).values_list("max_daily", flat=True)) == (
+            expected_max_daily
+        )
 
     def test_payment_unit_rejects_overlap_between_required_and_optional(
         self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units

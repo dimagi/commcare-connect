@@ -63,6 +63,21 @@ class PaymentUnitSerializer(serializers.ModelSerializer):
         fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
 
 
+def _is_api_v2(context):
+    return getattr(context.get("request"), "version", None) == "2.0"
+
+
+class MobilePaymentUnitSerializer(PaymentUnitSerializer):
+    max_daily = serializers.SerializerMethodField()
+
+    def get_max_daily(self, obj):
+        if obj.max_daily is not None or _is_api_v2(self.context):
+            return obj.max_daily
+        # Apps before API 2.0 can't parse a null max_daily and hide the whole opportunity.
+        # A daily cap of max_total never triggers before the total limit
+        return obj.max_total
+
+
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
     payment_unit_id = serializers.UUIDField(
         source="payment_unit.payment_unit_id",
@@ -166,6 +181,8 @@ class OpportunitySerializer(serializers.ModelSerializer):
         return obj.max_visits_per_user or -1
 
     def get_daily_max_visits_per_user(self, obj):
+        if _is_api_v2(self.context):
+            return obj.daily_max_visits_per_user_v2
         return obj.daily_max_visits_per_user or -1
 
     def get_budget_per_visit(self, obj):
@@ -176,7 +193,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_payment_units(self, obj):
         payment_units = PaymentUnit.objects.filter(opportunity=obj).order_by("pk")
-        return PaymentUnitSerializer(payment_units, many=True).data
+        return MobilePaymentUnitSerializer(payment_units, many=True, context=self.context).data
 
     def get_is_user_suspended(self, obj):
         opp_access = _get_opp_access(self.context.get("request").user, obj)
