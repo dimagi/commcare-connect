@@ -168,3 +168,10 @@ class TestMergeActionRequiresSuperuser:
             admin.merge_workspaces(request, _selected(source, target))
 
         assert Organization.objects.filter(pk__in=[source.pk, target.pk]).count() == 2
+
+
+class TestOrganizationChangeForm:
+    def test_countries_and_sectors_can_be_edited(self, admin_client, source):
+        response = admin_client.get(reverse("admin:organization_organization_change", args=(source.pk,)))
+
+        assert {"countries", "primary_sectors"} <= set(response.context["adminform"].form.fields)
