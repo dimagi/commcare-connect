@@ -34,6 +34,8 @@ on:
 
 jobs:
   deploy:
+    # Staging only deploys the autostaging branch
+    if: ${{ inputs.environment != 'staging' || github.ref == 'refs/heads/autostaging' }}
     runs-on: ubuntu-latest
     outputs:
       slack_ts: ${{ steps.slack.outputs.ts }}
