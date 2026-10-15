@@ -71,4 +71,8 @@ def export_contacts(query_string, user_id, export_format):
     contacts = Contact.objects.select_related("organization").order_by("name")
     filterset = ContactFilterSet(QueryDict(query_string), queryset=contacts)
     content = TableExport(export_format, ContactExportTable(filterset.qs)).export()
+    if isinstance(content, str):
+        # CSV comes back as text. Encoding it here keeps names with accents or other non-ASCII
+        # characters intact, rather than leaving the encoding to the storage backend's default.
+        content = content.encode()
     return get_export_storage().save(f"contacts-{uuid.uuid4()}.{export_format}", ContentFile(content))

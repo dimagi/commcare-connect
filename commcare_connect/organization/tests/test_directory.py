@@ -426,6 +426,15 @@ class TestExportContacts:
         assert rows[1].startswith("Grace Wanjiru,")
         assert ",Yes," in rows[1]
 
+    def test_saves_names_with_special_characters_as_utf8(self):
+        ContactFactory(name="José Ñúñez")
+
+        with mock.patch("commcare_connect.organization.tasks.get_export_storage") as get_storage:
+            export_contacts("", user_id=1, export_format="csv")
+
+        saved_content = get_storage.return_value.save.call_args.args[1].read()
+        assert "José Ñúñez" in saved_content.decode("utf-8")
+
 
 @pytest.mark.django_db
 class TestContactExportViews:
