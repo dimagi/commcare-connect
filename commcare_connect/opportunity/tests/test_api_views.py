@@ -319,6 +319,35 @@ def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_dailies, expected_daily_max_visits_per_user",
+    [
+        pytest.param([5, 3], 8, id="all_units_capped"),
+        pytest.param([None, None], -1, id="no_units_capped"),
+        pytest.param([], -1, id="no_payment_units"),
+    ],
+)
+def test_opportunity_list_endpoint_v2_daily_max(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    max_dailies,
+    expected_daily_max_visits_per_user,
+):
+    units = opportunity.paymentunit_set.order_by("pk")
+    if not max_dailies:
+        units.delete()
+    for unit, max_daily in zip(units, max_dailies):
+        PaymentUnit.objects.filter(pk=unit.pk).update(max_daily=max_daily)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    response = api_client.get("/api/opportunity/", HTTP_ACCEPT="application/json; version=2.0")
+
+    assert response.status_code == 200
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
+
+
+@pytest.mark.django_db
 def test_payment_unit_serializer_keeps_null_daily_limit(opportunity):
     # The data export reuses this serializer and must not imply a daily limit that doesn't exist
     unit = PaymentUnitFactory(opportunity=opportunity, max_daily=None, max_total=1)

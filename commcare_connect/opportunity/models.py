@@ -283,8 +283,8 @@ class Opportunity(BaseModel):
             daily_total=Sum("max_daily"), uncapped=Count("pk", filter=Q(max_daily__isnull=True))
         )
         if limits["uncapped"]:
-            return 0
-        return limits["daily_total"] or 0
+            return None
+        return limits["daily_total"]
 
     @property
     def budget_per_visit(self):
