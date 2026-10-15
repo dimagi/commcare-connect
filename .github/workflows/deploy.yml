@@ -1,5 +1,5 @@
 name: Deploy
-run-name: Deploy to ${{ inputs.environment }} (${{ inputs.deploy_type }})
+run-name: Deploy to ${{ inputs.environment || 'staging' }} (${{ inputs.deploy_type || 'push' }})
 
 env:
   SENTRY_ORG: 'dimagi'
@@ -10,6 +10,8 @@ permissions:
   contents: write
 
 on:
+  push:
+    branches: [autostaging]
   #  workflow_run:
   #    workflows: [CI]
   #    types: [completed]
@@ -32,11 +34,18 @@ on:
           - scheduled
           - adhoc
 
+# One deploy per environment at a time; later runs wait rather than cancel a deploy in progress
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    # Staging only deploys the autostaging branch
-    if: ${{ inputs.environment != 'staging' || github.ref == 'refs/heads/autostaging' }}
+    # Pushes to autostaging deploy to staging; staging only deploys the autostaging branch
+    if: ${{ github.event_name == 'push' || inputs.environment != 'staging' || github.ref == 'refs/heads/autostaging' }}
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ENV: ${{ inputs.environment || 'staging' }}
     outputs:
       slack_ts: ${{ steps.slack.outputs.ts }}
     steps:
@@ -70,13 +79,13 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::037129986032:role/github_deploy
           role-session-name: GithubDeploy
-          aws-region: ${{ inputs.environment == 'production' && 'eu-west-1' || 'us-east-1' }}
+          aws-region: ${{ env.DEPLOY_ENV == 'production' && 'eu-west-1' || 'us-east-1' }}
 
       - id: slack
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           payload: |
             {
               "blocks": [
@@ -84,7 +93,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ inputs.environment }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
                   }
                 },
                 {
@@ -113,7 +122,7 @@ jobs:
 
       - id: deploy
         working-directory: ./deploy
-        run: 'kamal deploy -d ${{ inputs.environment }}'
+        run: 'kamal deploy -d ${{ env.DEPLOY_ENV }}'
 
       - name: Create Sentry release
         if: ${{ success() }}
@@ -121,7 +130,7 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         with:
-          environment: ${{ inputs.environment }}
+          environment: ${{ env.DEPLOY_ENV }}
           release: ${{ env.APP_RELEASE }}
           projects: ${{ env.SENTRY_PROJECT }}
           set_commits: manual
@@ -129,11 +138,11 @@ jobs:
           commit: ${{ github.sha }}
 
       - name: Set release tag
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() && env.DEPLOY_ENV == 'production' }}
         run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() && env.DEPLOY_ENV == 'production' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -145,7 +154,7 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {
@@ -154,7 +163,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ inputs.environment }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
                   }
                 },
                 {
