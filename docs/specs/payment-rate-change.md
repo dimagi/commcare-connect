@@ -150,8 +150,11 @@ A pay rate's **status** is worked out, not stored:
 | --------- | ---------------------------------------------------------------------------- |
 | Scheduled | not cancelled, and `effective_from` is in the future or it isn't applied yet |
 | Active    | the latest non-cancelled, applied pay rate with `effective_from` ≤ today     |
-| Ended     | an older non-cancelled, applied pay rate                                     |
+| Ended     | an older non-cancelled, applied pay rate when a newer active pay rate exists |
 | Cancelled | `cancelled_on` is set                                                        |
+
+A pay rate counts once it is applied, not when its `effective_from` date comes (section
+[6.2](#62-looking-up-a-pay-rate)).
 
 **Initial Rate:** a payment unit's first pay rate (its earliest non-cancelled row, `is_initial_rate`).
 
