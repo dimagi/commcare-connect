@@ -11,4 +11,4 @@ def test_form_submission_forgotten_only_on_post_responses(rf, user, method, expe
 
     html = render_to_string("components/forget_form_submission.html", request=request)
 
-    assert ("js/forget_form_submission.js" in html) is expected
+    assert ("history.replaceState" in html) is expected
