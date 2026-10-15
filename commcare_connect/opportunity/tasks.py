@@ -308,28 +308,43 @@ def submit_invoice_finance_request(self, finance_request_id: int):
         _fail_finance_request(finance_request, gettext("The request could not be prepared. Try again later."))
         return
 
-    try:
-        customer_request = create_request(
-            finance_request_utils.SERVICE_DESK_ID,
-            finance_request_utils.REQUEST_TYPE_ID,
-            request_fields,
-            form_answers,
-        )
-    except httpx.HTTPError as exc:
-        # Unlike the upload, a create that may have reached Jira must not be sent again: it would
-        # raise a second ticket for the same invoice.
-        _retry_or_fail_finance_request(self, finance_request, exc, safe_to_resend=False)
-        return
-    except Exception:
-        logger.exception("Finance request %s failed while creating the Jira request", finance_request_id)
-        _fail_finance_request(finance_request, str(finance_request_utils.UNCONFIRMED_FINANCE_REQUEST_ERROR))
-        return
+    _create_jira_request(self, finance_request, request_fields, form_answers)
 
+
+def _create_jira_request(task, finance_request, request_fields: dict, form_answers: dict):
+    """Create the Jira request while holding the invoice lock, the one the view takes to resend a request.
+
+    The lock keeps a task that was delayed past the stuck-request timeout from raising a second ticket
+    alongside the resend's. The request is reloaded under it, since it may have changed while this task
+    prepared the PDF.
+    """
     with transaction.atomic():
+        PaymentInvoice.objects.select_for_update().get(pk=finance_request.invoice_id)
+        finance_request.refresh_from_db()
+        if finance_request.status != InvoiceFinanceRequestStatus.PENDING:
+            return
+        try:
+            customer_request = create_request(
+                finance_request_utils.SERVICE_DESK_ID,
+                finance_request_utils.REQUEST_TYPE_ID,
+                request_fields,
+                form_answers,
+            )
+        except httpx.HTTPError as exc:
+            # Unlike the upload, a create that may have reached Jira must not be sent again: it would
+            # raise a second ticket for the same invoice.
+            _retry_or_fail_finance_request(task, finance_request, exc, safe_to_resend=False)
+            return
+        except Exception:
+            logger.exception("Finance request %s failed while creating the Jira request", finance_request.id)
+            _fail_finance_request(finance_request, str(finance_request_utils.UNCONFIRMED_FINANCE_REQUEST_ERROR))
+            return
+
         finance_request.status = InvoiceFinanceRequestStatus.SUBMITTED
         finance_request.issue_key = customer_request.key
         finance_request.error = ""
         finance_request.save(update_fields=["status", "issue_key", "error", "date_modified"])
+        invoice = finance_request.invoice
         invoice.invoice_ticket_link = customer_request.url
         invoice.save(update_fields=["invoice_ticket_link"])
 

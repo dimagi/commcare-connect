@@ -257,6 +257,21 @@ class TestSubmitInvoiceFinanceRequest:
         jira.attach.assert_not_called()
         jira.create.assert_not_called()
 
+    def test_request_recovered_while_preparing_is_not_created(self, finance_request, jira):
+        def recover_request(*args):
+            InvoiceFinanceRequest.objects.filter(pk=finance_request.pk).update(
+                status=InvoiceFinanceRequestStatus.SUBMITTED, issue_key="FIN-1"
+            )
+            return "temp-1"
+
+        jira.attach.side_effect = recover_request
+
+        submit_invoice_finance_request(finance_request.id)
+
+        jira.create.assert_not_called()
+        finance_request.refresh_from_db()
+        assert finance_request.issue_key == "FIN-1"
+
     def test_unconfigured(self, finance_request, jira):
         jira.attach.side_effect = JiraServiceDeskNotConfigured
 
