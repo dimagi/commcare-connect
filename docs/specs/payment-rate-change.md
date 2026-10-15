@@ -280,7 +280,7 @@ with transaction.atomic():
     # same deliveries
     completed_work = CompletedWork.objects.select_for_update().get(pk=completed_work.pk)
     new_deliveries = approved_count - completed_work.saved_approved_count
-    if new_deliveries > 0:
+    if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
         pay_rate = completed_work.payment_unit.current_pay_rate
         new_pay = new_deliveries * pay_rate.flw_amount
         new_org_pay = new_deliveries * pay_rate.org_amount
@@ -322,7 +322,8 @@ approved or at which pay rate and exchange rate. Invoices work around this by co
 pay rates can change:
 
 - **Duplicate in the same month.** A delivery approved on September 30 at 4 and its duplicate on October 1 at
-  5, both before the September invoice, are billed together as 2 deliveries at 4.5, a pay rate that never existed.
+  5, both before the September invoice, are billed together as 2 deliveries at 5, the pay rate on the invoice date,
+  though one was earned at 4.
 - **Additional deliveries.** A duplicate approved after its work was invoiced is listed under the next invoice's month,
   since we don't know when it was approved, and its amount is found by subtracting what was already invoiced.
 
@@ -613,15 +614,15 @@ def apply_pay_rate_changes():
 )
 def apply_pay_rate_change(pay_rate_id):
     with transaction.atomic():
-        pay_rate = PaymentUnitRate.objects.select_for_update().select_related("payment_unit").get(pk=pay_rate_id)
-        if pay_rate.applied_on or pay_rate.cancelled_on:
-            return  # already applied, or cancelled in the meantime
-        payment_unit = pay_rate.payment_unit
-        previous = payment_unit.pay_rate_on(pay_rate.effective_from - timedelta(days=1))
-        # Same locks as an immediate change (section 9.1)
+        payment_unit = PaymentUnitRate.objects.select_related("payment_unit").get(pk=pay_rate_id).payment_unit
+        # Same locks in the same order as an immediate change (section 9.1), so the two can't deadlock
         opportunity = Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
         list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
         PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
+        pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
+        if pay_rate.applied_on or pay_rate.cancelled_on:
+            return  # already applied, or cancelled in the meantime
+        previous = payment_unit.pay_rate_on(pay_rate.effective_from - timedelta(days=1))
         if not opportunity.active or opportunity.has_ended:
             cancel_automatically(pay_rate, reason="The opportunity has ended")
             return
