@@ -3,6 +3,7 @@ import datetime
 import pytest
 from rest_framework.test import APIClient
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.api.serializers.mobile import (
     AssignedTaskSerializer,
     CommCareAppSerializer,
@@ -26,6 +27,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     AssignedTaskFactory,
+    CommCareAppFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     LearnModuleFactory,
@@ -579,3 +581,14 @@ def test_confirm_payment_request_v2(
         HTTP_ACCEPT="application/json; version=2.0",
     )
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_install_url_targets_latest_released_build():
+    app = CommCareAppFactory(
+        hq_server=HQServerFactory(url="https://www.commcarehq.org"), cc_domain="demo", cc_app_id="abc123"
+    )
+
+    install_url = CommCareAppSerializer().get_install_url(app)
+
+    assert install_url == "https://www.commcarehq.org/a/demo/apps/download/abc123/media_profile.ccpr?latest=true"
