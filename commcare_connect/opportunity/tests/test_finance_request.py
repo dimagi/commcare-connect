@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     InvoiceFinanceRequest,
     InvoiceFinanceRequestStatus,
     InvoiceStatus,
+    PaymentInvoice,
 )
 from commcare_connect.opportunity.tasks import FINANCE_REQUEST_MAX_RETRIES, submit_invoice_finance_request
 from commcare_connect.opportunity.tests.factories import (
@@ -271,6 +272,24 @@ class TestSubmitInvoiceFinanceRequest:
         jira.create.assert_not_called()
         finance_request.refresh_from_db()
         assert finance_request.issue_key == "FIN-1"
+
+    @pytest.mark.parametrize(
+        "changes",
+        [{"status": InvoiceStatus.PAID}, {"invoice_ticket_link": "https://jira.example/FIN-1"}],
+    )
+    def test_invoice_that_became_ineligible_while_preparing_is_not_sent(self, finance_request, jira, changes):
+        def change_invoice(*args):
+            PaymentInvoice.objects.filter(pk=finance_request.invoice_id).update(**changes)
+            return "temp-1"
+
+        jira.attach.side_effect = change_invoice
+
+        submit_invoice_finance_request(finance_request.id)
+
+        jira.create.assert_not_called()
+        finance_request.refresh_from_db()
+        assert finance_request.status == InvoiceFinanceRequestStatus.FAILED
+        assert finance_request.error == "The invoice changed, so it was not sent to Finance."
 
     def test_unconfigured(self, finance_request, jira):
         jira.attach.side_effect = JiraServiceDeskNotConfigured

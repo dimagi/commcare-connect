@@ -315,13 +315,16 @@ def _create_jira_request(task, finance_request, request_fields: dict, form_answe
     """Create the Jira request while holding the invoice lock, the one the view takes to resend a request.
 
     The lock keeps a task that was delayed past the stuck-request timeout from raising a second ticket
-    alongside the resend's. The request is reloaded under it, since it may have changed while this task
-    prepared the PDF.
+    alongside the resend's. The request and invoice are read under it, since either may have changed while
+    this task prepared the PDF.
     """
     with transaction.atomic():
-        PaymentInvoice.objects.select_for_update().get(pk=finance_request.invoice_id)
+        invoice = PaymentInvoice.objects.select_for_update().get(pk=finance_request.invoice_id)
         finance_request.refresh_from_db()
         if finance_request.status != InvoiceFinanceRequestStatus.PENDING:
+            return
+        if invoice.status != InvoiceStatus.READY_TO_PAY or invoice.invoice_ticket_link:
+            _fail_finance_request(finance_request, gettext("The invoice changed, so it was not sent to Finance."))
             return
         try:
             customer_request = create_request(
@@ -344,7 +347,6 @@ def _create_jira_request(task, finance_request, request_fields: dict, form_answe
         finance_request.issue_key = customer_request.key
         finance_request.error = ""
         finance_request.save(update_fields=["status", "issue_key", "error", "date_modified"])
-        invoice = finance_request.invoice
         invoice.invoice_ticket_link = customer_request.url
         invoice.save(update_fields=["invoice_ticket_link"])
 
