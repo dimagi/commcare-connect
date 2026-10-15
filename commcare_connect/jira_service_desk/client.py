@@ -88,12 +88,12 @@ def _make_request(method: str, path: str, headers: dict | None = None, timeout: 
 
 
 def _get_access_token() -> str:
-    if token := cache.get(TOKEN_CACHE_KEY):
-        return token
     if not is_configured():
         raise JiraServiceDeskNotConfigured(
             "JIRA_SERVICE_DESK_CLIENT_ID and JIRA_SERVICE_DESK_CLIENT_SECRET are not set"
         )
+    if token := cache.get(TOKEN_CACHE_KEY):
+        return token
     response = httpx.post(
         TOKEN_URL,
         data={

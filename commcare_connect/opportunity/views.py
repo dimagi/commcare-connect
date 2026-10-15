@@ -2022,9 +2022,17 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 
     form = PaymentInvoiceInvoiceTicketLinkForm(request.POST)
     if form.is_valid():
-        invoice.invoice_ticket_link = form.cleaned_data["invoice_ticket_link"]
-        invoice.save(update_fields=["invoice_ticket_link"])
-        messages.success(request, _("Invoice ticket link saved!"))
+        link = form.cleaned_data["invoice_ticket_link"]
+        if link:
+            invoice.invoice_ticket_link = link
+            invoice.save(update_fields=["invoice_ticket_link"])
+            messages.success(request, _("Invoice ticket link saved!"))
+        elif invoice.invoice_ticket_link:
+            invoice.invoice_ticket_link = link
+            invoice.save(update_fields=["invoice_ticket_link"])
+            messages.success(request, _("Invoice ticket link removed!"))
+        else:
+            messages.error(request, _("Enter a ticket link."))
     else:
         messages.error(request, _("Error: {errors}").format(errors=form.errors.as_text()))
     return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
