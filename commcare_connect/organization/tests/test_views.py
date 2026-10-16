@@ -736,6 +736,19 @@ def test_sidenav_entries_visibility(client, organization, role, permission, sees
 
 
 @pytest.mark.django_db
+def test_sidenav_shows_my_organization_to_profile_editor_without_membership(client, organization):
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="all_org_profile_edit_access"))
+    client.force_login(user)
+
+    content = client.get(reverse("organization:home", args=(organization.slug,))).content.decode()
+
+    assert reverse("organization:home", args=(organization.slug,)) in content
+    assert reverse("opportunity:list", args=(organization.slug,)) not in content
+    assert reverse("program:home", args=(organization.slug,)) not in content
+
+
+@pytest.mark.django_db
 def test_sidenav_shows_all_entries_to_superuser_without_membership(client, organization):
     client.force_login(UserFactory(is_superuser=True))
 
