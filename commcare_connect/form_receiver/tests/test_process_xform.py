@@ -54,38 +54,33 @@ def test_process_learn_form_no_matching_blocks():
     assert process_assessments.call_count == 0
 
 
-def test_process_learn_module():
-    learn_module = LearnModuleJsonFactory().json
-    xform = get_form_model(form_block=learn_module)
+@pytest.mark.parametrize(
+    "stub_factory, expected_learn_module_calls, expected_assessment_calls",
+    [
+        pytest.param(LearnModuleJsonFactory, 1, 0, id="learn_module"),
+        pytest.param(AssessmentStubFactory, 0, 1, id="assessment"),
+    ],
+)
+def test_process_learn_form_dispatches_block(stub_factory, expected_learn_module_calls, expected_assessment_calls):
+    xform = get_form_model(form_block=stub_factory().json)
     with patch_multiple(*LEARN_PROCESSOR_PATCHES) as [process_learn_module, process_assessment]:
         process_learn_form(None, xform, None, None)
-    assert process_learn_module.call_count == 1
-    assert process_assessment.call_count == 0
+    assert process_learn_module.call_count == expected_learn_module_calls
+    assert process_assessment.call_count == expected_assessment_calls
 
 
-def test_process_assessment():
-    assessment = AssessmentStubFactory().json
-    xform = get_form_model(form_block=assessment)
-    with patch_multiple(*LEARN_PROCESSOR_PATCHES) as [process_learn_module, process_assessment]:
-        process_learn_form(None, xform, None, None)
-    assert process_learn_module.call_count == 0
-    assert process_assessment.call_count == 1
-
-
-def test_process_deliver_form():
-    deliver_block = DeliverUnitStubFactory().json
-    xform = get_form_model(form_block=deliver_block)
+@pytest.mark.parametrize(
+    "stub_factory, expected_deliver_unit_calls",
+    [
+        pytest.param(DeliverUnitStubFactory, 1, id="deliver_unit"),
+        pytest.param(None, 0, id="no_matches"),
+    ],
+)
+def test_process_deliver_form(stub_factory, expected_deliver_unit_calls):
+    xform = get_form_model(form_block=stub_factory().json if stub_factory else None)
     with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
         process_deliver_form(None, xform, None, None)
-    assert process_deliver_unit.call_count == 1
-    assert process_task_module.call_count == 0
-
-
-def test_process_deliver_form_no_matches():
-    xform = get_form_model()
-    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
-        process_deliver_form(None, xform, None, None)
-    assert process_deliver_unit.call_count == 0
+    assert process_deliver_unit.call_count == expected_deliver_unit_calls
     assert process_task_module.call_count == 0
 
 
