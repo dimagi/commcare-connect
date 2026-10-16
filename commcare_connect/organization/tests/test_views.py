@@ -713,15 +713,13 @@ class TestPendingInvitesTableView:
     [
         ("admin", None, True, True),
         ("member", None, True, False),
-        ("viewer", None, False, False),
+        ("viewer", None, True, False),
         ("member", "all_org_profile_edit_access", True, True),
-        ("viewer", "all_org_profile_edit_access", False, True),
+        ("viewer", "all_org_profile_edit_access", True, True),
         (None, "all_org_access", True, True),
     ],
 )
-def test_sidenav_entries_follow_org_access(
-    client, organization, role, permission, sees_programs, sees_my_organization
-):
+def test_sidenav_entries_visibility(client, organization, role, permission, sees_programs, sees_my_organization):
     user = UserFactory()
     if role:
         UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
