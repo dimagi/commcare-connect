@@ -72,18 +72,24 @@ What to read out of the diff:
   the action no longer declares is usually ignored silently rather than erroring.
 - **Removed outputs** — check whether any step has an `id:` and whether later steps or job
   outputs reference `steps.<id>.outputs.*`.
-- **`runs.using`** — `node16`/`node20` are deprecated. Runners already force newer actions
-  onto node24 and print a warning, so a runtime bump is usually an argument _for_ merging,
-  not a risk. Only self-hosted runners complicate this.
+- **`runs.using`** — node16 and node20 are both **retired**: GitHub removed node20 from
+  the runners on 2026-09-23, and JavaScript actions now execute on node24 regardless of
+  what they declare. So a runtime bump is an argument _for_ merging — it makes the
+  declared runtime match what already happens — rather than a risk. Only self-hosted
+  runners complicate this.
 
 For a bundled JS action you can go further and confirm behavior directly, which beats any
 changelog:
 
 ```bash
 curl -sL "https://raw.githubusercontent.com/<owner>/<repo>/<tag>/dist/index.js" > /tmp/a.js
-grep -c "<input-name>" /tmp/a.js          # 0 means the input is genuinely gone
-INPUT_FOO=bar INPUT_BAZ=qux node /tmp/a.js  # reproduce the step locally
+grep -c "<input-name>" /tmp/a.js   # 0 means the input is genuinely gone
 ```
+
+The grep settles most questions on its own. Actually running the bundle
+(`INPUT_FOO=bar node /tmp/a.js`) reproduces the step exactly and is sometimes worth it —
+but it executes third-party code, so keep it to a throwaway container with no credentials
+in the environment, and never do it inside the review workflow.
 
 ## 3. Read recent runs of the workflow
 

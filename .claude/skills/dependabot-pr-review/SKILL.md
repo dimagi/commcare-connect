@@ -51,8 +51,12 @@ gh pr list --repo dimagi/commcare-connect --author "app/dependabot" --json numbe
 
 Commands below say `dimagi/commcare-connect` because that's the usual target, but nothing
 here is specific to it — **substitute the repo the user named**, and work from a local
-clone of it so the `git` and script steps have something to read. The bundled scripts take
-`--repo`; invoke them by absolute path, since a foreign clone has no `.claude/skills/`.
+clone of it so the `git` and script steps have something to read.
+
+`<skill-dir>` below is this skill's own directory. Use its absolute path: the examples run
+with the _target_ repo as the working directory, and that repo may have no
+`.claude/skills/` of its own. The bundled scripts always need `--repo`, since they read the
+checkout for git history but query GitHub for PRs.
 
 Output goes to the terminal only — do **not** post a comment to GitHub unless the user
 explicitly asks.
@@ -73,7 +77,7 @@ gh pr view <N> --repo dimagi/commcare-connect --json files -q '.files[].path'
 mostly dead PRs, and reviewing them individually wastes most of the effort:
 
 ```bash
-python .claude/skills/dependabot-pr-review/scripts/triage.py
+python <skill-dir>/scripts/triage.py --repo <owner>/<repo>
 ```
 
 It compares every open Dependabot PR against `origin/main` and separates the obsolete from
@@ -116,8 +120,13 @@ behind, so a working-tree grep can show a package that was already removed upstr
 ```bash
 git fetch -q origin main
 gh pr view <N> --repo dimagi/commcare-connect --json title,author,state,mergeable,mergeStateStatus,createdAt
-git show origin/main:pyproject.toml | grep -i <package>
-git show origin/main:uv.lock | grep -i "name = \"<package>\""
+
+# Check the manifests the repo actually has -- a Python-only lookup on an npm
+# repo finds nothing and reads as "removed", which is the worst wrong answer
+# here because it recommends closing a live PR.
+for f in pyproject.toml uv.lock package.json package-lock.json; do
+  git show "origin/main:$f" 2>/dev/null | grep -i "<package>" && echo "  ^ found in $f"
+done
 ```
 
 A PR decays in two ways, and the second is far more common in an old queue:
@@ -139,7 +148,7 @@ once, and a big grouped bump supersedes many PRs at once, so **check whether oth
 Dependabot PRs died the same way** — often the most valuable thing this review produces:
 
 ```bash
-python .claude/skills/dependabot-pr-review/scripts/triage.py
+python <skill-dir>/scripts/triage.py --repo <owner>/<repo>
 ```
 
 **b. Is CI green, and if not, is it this PR's fault?** The highest-signal step. A red
@@ -202,7 +211,7 @@ and hand-written parsers drop packages silently. Use the bundled script, which d
 lockfiles structurally against the merge base:
 
 ```bash
-python .claude/skills/dependabot-pr-review/scripts/lockdiff.py <N>
+python <skill-dir>/scripts/lockdiff.py <N> --repo <owner>/<repo>
 ```
 
 It prints every version change marked `[direct]` and `[MAJOR]`, and calls out **transitive
@@ -243,15 +252,25 @@ can't pin down_; on a small or dev-only bump, skip it entirely. Download the new
 and diff it against what's installed. This proves things no changelog mentions:
 
 ```bash
-# Python -- works without a configured venv, which a fresh clone won't have
-uv pip install --target /tmp/old --no-deps <pkg>==<old>
-uv pip install --target /tmp/new --no-deps <pkg>==<new>
+# Python -- works without a configured venv, which a fresh clone won't have.
+# --only-binary=:all: takes wheels only: installing an sdist would run the
+# package's build backend, i.e. execute the code you are about to review.
+uv pip install --target /tmp/old --no-deps --only-binary=:all: <pkg>==<old>
+uv pip install --target /tmp/new --no-deps --only-binary=:all: <pkg>==<new>
 diff -ru /tmp/old/<pkg> /tmp/new/<pkg> | head -200
 
-# JavaScript — compare the export surface when a changelog claims exports changed
+# JavaScript -- compare the export surface when a changelog claims exports changed
+mkdir -p /tmp/new
 npm pack <pkg>@<new> --silent && tar xzf <pkg>-<new>.tgz -C /tmp/new
-node -e "console.log(Object.keys(require('/tmp/new/package/dist/<file>')))"
+grep -oE "exports\.[A-Za-z_]+|module\.exports" /tmp/new/package/dist/<file> | sort -u
 ```
+
+**Read the package rather than running it.** A `require()` or an import executes the code
+under review, which is the one thing you have no basis to trust yet — on CI that happens
+next to your secrets, and locally next to everything else you have. Grepping the bundle
+for export names answers "was this symbol removed?" just as definitively. If a question
+genuinely needs execution, do it in a throwaway container with no credentials mounted and
+say so in the review.
 
 Behavior changes hide in defaults, `__str__` methods, and settings flags — exactly what a
 diff shows and a release note omits.

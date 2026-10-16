@@ -40,8 +40,14 @@ on:
 
 jobs:
   dependabot-review:
-    # Only run on Dependabot PRs, or manual dispatch for testing
-    if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
+    # Gate on who authored the PR, not github.actor -- the actor is whoever
+    # triggered this event, which is not necessarily the PR's author. The
+    # event_name guard matters because github.event.pull_request is null on
+    # workflow_dispatch.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login == 'dependabot[bot]') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -49,7 +55,10 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
-      id-token: write
+      # Deliberately no `id-token: write`. This job never authenticates to a
+      # cloud provider, and the repo's deploy workflow assumes an AWS role via
+      # OIDC -- so minting an OIDC token here would hand any code that runs in
+      # this job a path to those deploy credentials.
       # Gates the github_ci MCP server, which replaces shelling out to
       # `gh pr checks` / `gh run view` / `gh api .../jobs/<id>/logs`.
       actions: read
@@ -96,6 +105,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.pr.outputs.ref }}
+          # This job executes third-party dependency code (installs and tests),
+          # so don't leave a credential behind in .git/config for it to read.
+          # The repo is public, so the unauthenticated fetches lockdiff.py makes
+          # still work.
+          persist-credentials: false
           # Full history, all branches. The skill compares the PR against
           # origin/main to detect PRs whose dependency was removed or whose
           # target version main has already passed, and lockdiff.py needs a
@@ -147,9 +161,12 @@ jobs:
       # This repo uses npm (package-lock.json). Guarded so the step is a no-op
       # if that ever changes, rather than failing every run the way the old
       # unconditional `pnpm install --frozen-lockfile` did.
+      # --ignore-scripts: a Dependabot PR's whole content is new dependency
+      # versions, and lifecycle scripts would run that code before anyone has
+      # reviewed it. Nothing here needs a build step from a transitive package.
       - name: Install Node dependencies
         if: hashFiles('package-lock.json') != ''
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run Claude Dependabot Analysis
         id: claude_review
@@ -197,8 +214,9 @@ jobs:
                commands say `dimagi/commcare-connect`, and pass `--repo ${{ github.repository }}`
                to the bundled scripts. Do not ask which PR to review; you have it.
 
-            2. For a grouped bump, inventory it with the bundled script, run from the
-               repo root (your working directory):
+            2. Where the skill writes `<skill-dir>`, it means
+               `.claude/skills/dependabot-pr-review` — it is checked out here, and the
+               repo root is your working directory. For a grouped bump, inventory it with:
                  python .claude/skills/dependabot-pr-review/scripts/lockdiff.py ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }}
                Skip it for a single-package PR, where the diff is already readable.
                Ignore the skill's references to `scripts/triage.py`: that tool scans the

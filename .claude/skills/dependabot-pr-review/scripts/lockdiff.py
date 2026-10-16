@@ -61,23 +61,32 @@ def blob(ref, path):
     return r.stdout if r.returncode == 0 else None
 
 
+# Both lockfiles can hold several versions of one package: npm nests a private
+# copy under "node_modules/a/node_modules/b", and a uv resolution fork can lock
+# two versions behind different markers. Mapping name -> version would let the
+# last one encountered win, which both hides real changes and invents fake ones
+# as dict ordering shifts. Map to a set of versions instead and compare sets.
+
+
 def parse_uv_lock(text):
     if not text:
         return {}
-    data = tomllib.loads(text)
-    return {p["name"]: p["version"] for p in data.get("package", []) if "version" in p}
+    out = {}
+    for pkg in tomllib.loads(text).get("package", []):
+        if "version" in pkg:
+            out.setdefault(pkg["name"], set()).add(pkg["version"])
+    return out
 
 
 def parse_npm_lock(text):
     if not text:
         return {}
-    data = json.loads(text)
     out = {}
-    for path, meta in data.get("packages", {}).items():
+    for path, meta in json.loads(text).get("packages", {}).items():
         if not path or "version" not in meta:
             continue  # "" is the root project itself
         # "node_modules/a/node_modules/b" -> "b"
-        out[path.split("node_modules/")[-1]] = meta["version"]
+        out.setdefault(path.split("node_modules/")[-1], set()).add(meta["version"])
     return out
 
 
@@ -106,6 +115,17 @@ def major(v):
     return m.group(1) if m else None
 
 
+def majors(versions):
+    """The set of major components across every locked version of a package."""
+    return {major(v) for v in versions}
+
+
+def show(versions):
+    """Render a version set: a bare version when there is one, else a list."""
+    ordered = sorted(versions, key=lambda v: [int(x) for x in re.findall(r"\d+", v)[:3]] or [0])
+    return ordered[0] if len(ordered) == 1 else "{" + ", ".join(ordered) + "}"
+
+
 def report(label, old, new, direct, file_changed=False, present=True):
     moved = {n: (old[n], new[n]) for n in set(old) & set(new) if old[n] != new[n]}
     added = {n: new[n] for n in set(new) - set(old)}
@@ -126,11 +146,15 @@ def report(label, old, new, direct, file_changed=False, present=True):
             print("  no changes")
         return
 
+    def is_major(o, n):
+        """A major move is any change in the set of major versions locked."""
+        return majors(o) != majors(n)
+
     def tags(name, o=None, n=None):
         t = []
         if name.lower() in direct:
             t.append("direct")
-        if o and n and major(o) != major(n):
+        if o and n and is_major(o, n):
             t.append("MAJOR")
         return f"  [{', '.join(t)}]" if t else ""
 
@@ -140,21 +164,21 @@ def report(label, old, new, direct, file_changed=False, present=True):
         # majors and direct deps first -- that is the reading order that matters
         def rank(item):
             name, (o, n) = item
-            return (major(o) == major(n), name.lower() not in direct, name.lower())
+            return (not is_major(o, n), name.lower() not in direct, name.lower())
 
         for name, (o, n) in sorted(moved.items(), key=rank):
-            print(f"    {name}: {o} -> {n}{tags(name, o, n)}")
+            print(f"    {name}: {show(o)} -> {show(n)}{tags(name, o, n)}")
     if added:
         print(f"\n  Added ({len(added)}):")
         for name, v in sorted(added.items()):
-            print(f"    {name}: {v}{tags(name)}")
+            print(f"    {name}: {show(v)}{tags(name)}")
     if removed:
         print(f"\n  Removed ({len(removed)}):")
         for name, v in sorted(removed.items()):
-            print(f"    {name}: {v}{tags(name)}")
+            print(f"    {name}: {show(v)}{tags(name)}")
 
-    direct_majors = [n for n, (o, n2) in moved.items() if major(o) != major(n2) and n.lower() in direct]
-    trans_majors = [n for n, (o, n2) in moved.items() if major(o) != major(n2) and n.lower() not in direct]
+    direct_majors = [n for n, (o, n2) in moved.items() if is_major(o, n2) and n.lower() in direct]
+    trans_majors = [n for n, (o, n2) in moved.items() if is_major(o, n2) and n.lower() not in direct]
     print(f"\n  Summary: {len(moved)} moved, {len(direct_majors)} direct major, {len(trans_majors)} transitive major")
     if trans_majors:
         print(f"  Transitive majors (not in the PR body): {', '.join(sorted(trans_majors))}")

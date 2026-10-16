@@ -123,7 +123,20 @@ def main():
             )
             continue
 
-        cur = python_pkgs.get(pkg.lower()) or npm_pkgs.get(pkg) or sorted(actions.get(pkg, set()), key=ver)[-1]
+        # Branch on kind rather than chaining `or`: a uv.lock entry with no
+        # version (an editable or virtual root package) yields None for a
+        # Python package and would otherwise fall through to indexing an empty
+        # action set, crashing the whole run.
+        if kind == "py":
+            cur = python_pkgs.get(pkg.lower())
+        elif kind == "npm":
+            cur = npm_pkgs.get(pkg)
+        else:
+            cur = max(actions[pkg], key=ver)
+        if cur is None:
+            rows.append((n, created, pkg[:40], f"{old}->{new}", "NO VERSION", f"REVIEW ({kind}) - unpinned on main"))
+            review.append(n)
+            continue
         if ver(cur) >= ver(new):
             rows.append((n, created, pkg[:40], f"{old}->{new}", cur, "OBSOLETE - main already at/past target"))
         else:
