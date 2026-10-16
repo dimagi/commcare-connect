@@ -1,36 +1,49 @@
+import uuid
+from datetime import date
+from functools import partial
 from urllib.parse import urlencode
 
 from allauth.account import app_settings as allauth_account_settings
 from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
+from celery.result import AsyncResult
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.http import HttpResponse
+from django.db import transaction
+from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, UpdateView
+from django.views.generic import CreateView, UpdateView, View
+from django.views.generic.detail import SingleObjectMixin
 from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
-from commcare_connect.organization.filters import OrganizationFilterSet
+from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
+    ContactForm,
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
     OrganizationDirectoryForm,
     OrganizationInviteForm,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrganizationDirectoryTable, OrgMemberTable, PendingInviteTable
-from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.organization.models import Contact, Organization, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.tables import (
+    ContactDirectoryTable,
+    OrganizationDirectoryTable,
+    OrgMemberTable,
+    PendingInviteTable,
+)
+from commcare_connect.organization.tasks import export_contacts, send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
 from commcare_connect.users.models import User
+from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
 
 
@@ -292,6 +305,7 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
         context.update(
             {
                 "organizations_count": Organization.objects.count(),
+                "contacts_count": Contact.objects.filter(is_archived=False).count(),
                 "result_count": context["table"].paginator.count,
             }
         )
@@ -312,6 +326,24 @@ class OrganizationListView(LLODirectoryListView):
             {"title": gettext("Admin"), "url": reverse("users:internal_features")},
             {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
         ]
+        return context
+
+
+class ContactListView(LLODirectoryListView):
+    table_class = ContactDirectoryTable
+    filterset_class = ContactFilterSet
+    template_name = "organization/directory/contact_list.html"
+
+    def get_queryset(self):
+        return Contact.objects.select_related("organization").order_by("name")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
+        ]
+        context["export_task_id"] = self.request.GET.get("export_task_id")
         return context
 
 
@@ -359,3 +391,101 @@ class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
 
 class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
     success_message = gettext_lazy("Organization {name} updated.")
+
+
+class ContactFormMixin(LLODirectoryFormMixin):
+    model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
+    form_class = ContactForm
+    template_name = "organization/directory/contact_form.html"
+    list_url_name = "organization_directory:contacts"
+
+
+class ContactCreateView(ContactFormMixin, CreateView):
+    success_message = gettext_lazy("Contact {name} added.")
+
+
+class ContactUpdateView(ContactFormMixin, UpdateView):
+    success_message = gettext_lazy("Contact {name} updated.")
+
+
+class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
+    model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
+    http_method_names = ["post"]
+    is_archived = True
+    success_message = gettext_lazy("Contact {name} archived.")
+
+    def post(self, request, *args, **kwargs):
+        contact = self.get_object()
+        contact.is_archived = self.is_archived
+        contact.modified_by = request.user.email
+        contact.save(update_fields=["is_archived", "modified_by", "date_modified"])
+        messages.success(request, self.success_message.format(name=contact.name))
+        return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
+
+
+class ContactRestoreView(ContactArchiveView):
+    is_archived = False
+    success_message = gettext_lazy("Contact {name} restored.")
+
+
+class ContactExportView(LLODirectoryAccessMixin, View):
+    http_method_names = ["post"]
+    EXPORT_FORMATS = ("csv", "xlsx")
+
+    def post(self, request, *args, **kwargs):
+        export_format = request.POST.get("export_format")
+        if export_format not in self.EXPORT_FORMATS:
+            return HttpResponseBadRequest(gettext("Unsupported export format."))
+        task_id = str(uuid.uuid4())
+        transaction.on_commit(
+            partial(
+                export_contacts.apply_async,
+                args=(request.GET.urlencode(), request.user.pk, export_format),
+                task_id=task_id,
+            )
+        )
+        filters = request.GET.copy()
+        filters["export_task_id"] = task_id
+        return redirect(f"{reverse('organization_directory:contacts')}?{filters.urlencode()}")
+
+
+class ContactExportStatusView(LLODirectoryAccessMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, task_id):
+        try:
+            return render_export_status(
+                request,
+                task_id=task_id,
+                download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
+                export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
+                ownership_check=lambda request, task_meta: _check_export_requester(
+                    request, task_meta.get("args") or []
+                ),
+            )
+        except Http404:
+            # htmx doesn't swap in an error response, so a 404 would leave the listing's loading
+            # spinner in place for good. Someone else's export is answered with a notice instead.
+            return render(
+                request,
+                "organization/directory/export_unavailable.html",
+                {"contacts_url": reverse("organization_directory:contacts")},
+            )
+
+
+class ContactExportDownloadView(LLODirectoryAccessMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, task_id):
+        _check_export_requester(request, AsyncResult(task_id).args or [])
+        return download_export_file(task_id=task_id, filename_without_ext=f"contacts_{date.today().isoformat()}")
+
+
+def _check_export_requester(request, task_args):
+    """Raises 404 unless the export task's arguments name the requesting user."""
+    if len(task_args) < 2 or task_args[1] != request.user.pk:
+        raise Http404()
