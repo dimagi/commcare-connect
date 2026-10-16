@@ -256,6 +256,37 @@ def test_receiver_deliver_form_daily_visits_reached(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_visits_per_user, expected_over_limit",
+    [
+        pytest.param(100, [False, False, False], id="no_daily_cap"),
+        pytest.param(2, [False, False, True], id="total_limit_still_applies"),
+    ],
+)
+def test_receiver_deliver_form_without_daily_limit(
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    max_visits_per_user,
+    expected_over_limit,
+):
+    # Budget large enough that the claim limit is the payment unit's max_total
+    opportunity.total_budget = 10**7
+    opportunity.save(update_fields=["total_budget"])
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(
+        opportunity, user=user_with_connectid_link, max_visits_per_user=max_visits_per_user, daily_max_per_user=None
+    )
+    for _ in range(3):
+        visit_json = deepcopy(form_json)
+        visit_json["form"]["deliver"]["entity_id"] = str(uuid4())
+        make_request(api_client, visit_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visits = UserVisit.objects.filter(user=user_with_connectid_link).order_by("id")
+    assert [visit.status == VisitValidationStatus.over_limit for visit in visits] == expected_over_limit
+
+
+@pytest.mark.django_db
 def test_over_limit_status_preserved_when_duplicate_flag_disabled(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
