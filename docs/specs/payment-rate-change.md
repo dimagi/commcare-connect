@@ -291,7 +291,7 @@ with transaction.atomic():
     new_deliveries = approved_count - completed_work.saved_approved_count
     if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
         pay_rate = completed_work.payment_unit.current_pay_rate
-        new_pay = new_deliveries * pay_rate.flw_amount
+        new_flw_pay = new_deliveries * pay_rate.flw_amount
         new_org_pay = new_deliveries * pay_rate.org_amount
         exchange_rate = get_exchange_rate(currency, now())
 
@@ -299,13 +299,13 @@ with transaction.atomic():
             completed_work=completed_work,
             deliveries=new_deliveries,
             pay_rate=pay_rate,
-            flw_amount=new_pay,
+            flw_amount=new_flw_pay,
             org_amount=new_org_pay,
             exchange_rate=exchange_rate,
             earned_on=now(),
         )
-        completed_work.saved_payment_accrued += new_pay
-        completed_work.saved_payment_accrued_usd += Decimal(new_pay) / exchange_rate  # USD rate is int 1
+        completed_work.saved_payment_accrued += new_flw_pay
+        completed_work.saved_payment_accrued_usd += Decimal(new_flw_pay) / exchange_rate  # USD rate is int 1
         completed_work.saved_org_payment_accrued += new_org_pay
         completed_work.saved_org_payment_accrued_usd += Decimal(new_org_pay) / exchange_rate
         completed_work.saved_approved_count = approved_count
@@ -1002,5 +1002,8 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 - **Drop the cached earned pay totals from `CompletedWork`.** Once the earned pay backfill has run (ticket 10),
   `saved_payment_accrued`, `saved_org_payment_accrued` and their USD versions are just sums of the work's earned pay
   records. Read them from the records instead, after checking that worker totals, reports and exports stay fast.
+- **Let the PM choose what a raise does.** In the change modal, either scale visit limits down (as now) or add the
+  budget needed to keep them. Today the PM does the second with Add Budget, before or after the change (section
+  [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)).
 - **Alert if the job doesn't run.** A Sentry cron monitor on the daily job, alerting if it hasn't started or finished
   within an hour. One monitor is free; extras cost about $0.78 a month.
