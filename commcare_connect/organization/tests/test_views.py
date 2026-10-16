@@ -696,3 +696,44 @@ class TestPendingInvitesTableView:
         assert content.index(newest.email) < content.index(oldest.email), (
             "the members table's sort param leaked into the pending invites table"
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role,permission,sees_programs,sees_my_organization",
+    [
+        ("admin", None, True, True),
+        ("member", None, True, False),
+        ("viewer", None, False, False),
+        ("member", "all_org_profile_edit_access", True, True),
+        ("viewer", "all_org_profile_edit_access", False, True),
+        (None, "all_org_access", True, True),
+    ],
+)
+def test_sidenav_entries_follow_org_access(
+    client, organization, role, permission, sees_programs, sees_my_organization
+):
+    user = UserFactory()
+    if role:
+        UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
+    if permission:
+        user.user_permissions.add(Permission.objects.get(codename=permission))
+        user = User.objects.get(pk=user.pk)  # a fresh instance, so the permission cache sees the grant
+    client.force_login(user)
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert (reverse("program:home", args=(organization.slug,)) in content) is sees_programs
+    assert (reverse("organization:home", args=(organization.slug,)) in content) is sees_my_organization
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_all_entries_to_superuser_without_membership(client, organization):
+    client.force_login(UserFactory(is_superuser=True))
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert reverse("program:home", args=(organization.slug,)) in content
+    assert reverse("organization:home", args=(organization.slug,)) in content
