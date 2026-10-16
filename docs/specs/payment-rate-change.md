@@ -791,8 +791,9 @@ ahead.
      all the opportunity's scheduled changes, including this one.
 2. **Between scheduling and the 1st**: PMs and NMs see a warning banner as soon as the total can no longer be funded
    (section [12.4](#124-banners)).
-3. **On the 1st at 00:00**, before limits are scaled. By then workers may have submitted more visits, or new workers
-   may have used up the remaining budget. If there isn't enough budget, the change is **cancelled automatically**:
+3. **On the 1st at 00:00**, before limits are scaled. By then the change may no longer fit: workers may have submitted
+   more visits, new workers may have joined, limits may have been raised (Add Budget or max visits per worker), or
+   over-limit visits may have been approved. If there isn't enough budget, the change is **cancelled automatically**:
    - the old pay rate stays
    - the row shows as "Cancelled" in the history, with a `cancellation_reason`
    - all opportunity admins are emailed, so it gets resolved quickly
@@ -1006,5 +1007,8 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 - **Let the PM choose what a raise does.** In the change modal, either scale visit limits down (as now) or add the
   budget needed to keep them. Today the PM does the second with Add Budget, before or after the change (section
   [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)).
+- **Email when a scheduled change stops fitting.** The funding warning banner only reaches people who open Connect
+  Web. The daily job could email opportunity admins once when a scheduled change can no longer be funded, before the
+  1st, instead of only when it is cancelled.
 - **Alert if the job doesn't run.** A Sentry cron monitor on the daily job, alerting if it hasn't started or finished
   within an hour. One monitor is free; extras cost about $0.78 a month.
