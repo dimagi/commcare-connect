@@ -828,8 +828,9 @@ date, including any added now, will be adjusted to the new pay rate.
 
 ### 11.6 Claimed budget
 
-Today claimed budget = visit limit × current cost. After a change, that prices approved deliveries at the new pay rate,
-understating the remaining budget and wrongly blocking new workers. So claimed budget **must** be:
+Today claimed budget = visit limit × current cost. Once a new pay rate is applied, that also prices deliveries already
+approved at the new pay rate, though they were paid at the old one. Claimed budget looks too high, the remaining budget
+too low, and new workers can be wrongly blocked. So claimed budget **must** be:
 
 ```
 worker pay + org pay already earned (at the pay rates that applied)
