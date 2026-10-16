@@ -48,23 +48,10 @@ class TestPaymentUnits:
     def test_create_payment_units(self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units):
         opportunity, du1, du2 = managed_opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit",
-                        "description": "A visit",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],
-                        "optional_deliver_units": [du2.id],
-                    }
-                ]
-            },
-            format="json",
+        response = _post_payment_units(
+            api_client=api_client,
+            opportunity=opportunity,
+            payment_units=[_payment_unit(required=[du1.id], optional=[du2.id])],
         )
         assert response.status_code == 201
         assert len(response.data["payment_units"]) == 1
@@ -83,23 +70,8 @@ class TestPaymentUnits:
     ):
         opportunity, du1, du2 = managed_opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit",
-                        "description": "A visit",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [99999],
-                        "optional_deliver_units": [],
-                    }
-                ]
-            },
-            format="json",
+        response = _post_payment_units(
+            api_client=api_client, opportunity=opportunity, payment_units=[_payment_unit(required=[99999])]
         )
         assert response.status_code == 400
 
@@ -107,24 +79,10 @@ class TestPaymentUnits:
         self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
     ):
         opportunity, du1, du2 = managed_opp_with_deliver_units
+        payment_unit = _payment_unit(required=[du1.id])
+        del payment_unit["org_amount"]
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit",
-                        "description": "A visit",
-                        "amount": 500,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],
-                        "optional_deliver_units": [],
-                    }
-                ]
-            },
-            format="json",
-        )
+        response = _post_payment_units(api_client=api_client, opportunity=opportunity, payment_units=[payment_unit])
         assert response.status_code == 400
 
     def test_payment_unit_rejects_overlap_between_required_and_optional(
@@ -132,23 +90,10 @@ class TestPaymentUnits:
     ):
         opportunity, du1, du2 = managed_opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit",
-                        "description": "A visit",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],
-                        "optional_deliver_units": [du1.id],
-                    }
-                ]
-            },
-            format="json",
+        response = _post_payment_units(
+            api_client=api_client,
+            opportunity=opportunity,
+            payment_units=[_payment_unit(required=[du1.id], optional=[du1.id])],
         )
         assert response.status_code == 400
 
@@ -162,23 +107,8 @@ class TestPaymentUnits:
         du1.save()
 
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit",
-                        "description": "A visit",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],
-                        "optional_deliver_units": [],
-                    }
-                ]
-            },
-            format="json",
+        response = _post_payment_units(
+            api_client=api_client, opportunity=opportunity, payment_units=[_payment_unit(required=[du1.id])]
         )
         assert response.status_code == 400
 
@@ -187,33 +117,13 @@ class TestPaymentUnits:
     ):
         opportunity, du1, du2 = managed_opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit A",
-                        "description": "",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],
-                        "optional_deliver_units": [],
-                    },
-                    {
-                        "name": "Visit B",
-                        "description": "",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],  # conflict
-                        "optional_deliver_units": [],
-                    },
-                ]
-            },
-            format="json",
+        response = _post_payment_units(
+            api_client=api_client,
+            opportunity=opportunity,
+            payment_units=[
+                _payment_unit(name="Visit A", required=[du1.id]),
+                _payment_unit(name="Visit B", required=[du1.id]),  # conflict
+            ],
         )
         assert response.status_code == 400
 
@@ -267,25 +177,31 @@ class TestPaymentUnits:
         other_pm_org = ProgramManagerOrgWithUsersFactory()
         other_admin = other_pm_org.memberships.filter(role="admin").first().user
         api_client.force_authenticate(other_admin)
-        response = api_client.post(
-            f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
-            {
-                "payment_units": [
-                    {
-                        "name": "Visit",
-                        "description": "",
-                        "amount": 500,
-                        "org_amount": 100,
-                        "max_total": 50,
-                        "max_daily": 10,
-                        "required_deliver_units": [du1.id],
-                        "optional_deliver_units": [],
-                    }
-                ]
-            },
-            format="json",
+        response = _post_payment_units(
+            api_client=api_client, opportunity=opportunity, payment_units=[_payment_unit(required=[du1.id])]
         )
         assert response.status_code == 403
+
+
+def _post_payment_units(*, api_client, opportunity, payment_units):
+    return api_client.post(
+        f"/api/opportunities/{opportunity.opportunity_id}/payment_units/",
+        {"payment_units": payment_units},
+        format="json",
+    )
+
+
+def _payment_unit(*, required, optional=(), name="Visit"):
+    return {
+        "name": name,
+        "description": "A visit",
+        "amount": 500,
+        "org_amount": 100,
+        "max_total": 50,
+        "max_daily": 10,
+        "required_deliver_units": list(required),
+        "optional_deliver_units": list(optional),
+    }
 
 
 @pytest.mark.django_db

@@ -54,17 +54,18 @@ class TestRequireManualVisitVerificationDecorator:
 
 @pytest.mark.django_db
 class TestOpportunityVerificationFlagsConfigForm:
-    def test_hides_fields_when_automatic_verification_on(self):
-        opp = OpportunityFactory(automatic_visit_verification=True)
+    @pytest.mark.parametrize(
+        "automatic_visit_verification, fields_shown",
+        [
+            pytest.param(True, False, id="hidden_when_on"),
+            pytest.param(False, True, id="kept_when_off"),
+        ],
+    )
+    def test_flag_fields_follow_automatic_verification(self, automatic_visit_verification, fields_shown):
+        opp = OpportunityFactory(automatic_visit_verification=automatic_visit_verification)
         form = OpportunityVerificationFlagsConfigForm(opportunity=opp)
         for field in ("duplicate", "gps", "location"):
-            assert field not in form.fields
-
-    def test_keeps_fields_when_off(self):
-        opp = OpportunityFactory(automatic_visit_verification=False)
-        form = OpportunityVerificationFlagsConfigForm(opportunity=opp)
-        for field in ("duplicate", "gps", "location"):
-            assert field in form.fields
+            assert (field in form.fields) is fields_shown
 
     def test_save_forces_falsy_when_flag_on(self):
         opp = OpportunityFactory(automatic_visit_verification=True)
@@ -122,17 +123,20 @@ class TestDeliverFilterSet:
 
 @pytest.mark.django_db
 class TestVisitExportForm:
-    def test_strips_pending_when_flag_on_and_not_review_export(self, organization):
-        opp = OpportunityFactory(automatic_visit_verification=True, organization=organization)
+    @pytest.mark.parametrize(
+        "automatic_visit_verification, pending_offered",
+        [
+            pytest.param(True, False, id="stripped_when_on"),
+            pytest.param(False, True, id="kept_when_off"),
+        ],
+    )
+    def test_pending_choice_follows_automatic_verification(
+        self, organization, automatic_visit_verification, pending_offered
+    ):
+        opp = OpportunityFactory(automatic_visit_verification=automatic_visit_verification, organization=organization)
         form = VisitExportForm(opportunity=opp, org_slug=organization.slug)
         choices = dict(form.fields["status"].choices)
-        assert VisitValidationStatus.pending.value not in choices
-
-    def test_keeps_pending_when_flag_off(self, organization):
-        opp = OpportunityFactory(automatic_visit_verification=False, organization=organization)
-        form = VisitExportForm(opportunity=opp, org_slug=organization.slug)
-        choices = dict(form.fields["status"].choices)
-        assert VisitValidationStatus.pending.value in choices
+        assert (VisitValidationStatus.pending.value in choices) is pending_offered
 
     def test_review_export_unaffected(self, organization):
         opp = OpportunityFactory(automatic_visit_verification=True, organization=organization)
@@ -158,13 +162,7 @@ class TestProgramHomePendingReview:
             )
 
         client.force_login(program_manager_org_user_admin)
-        response = client.get(reverse("program:home", args=(program_manager_org.slug,)))
-        assert response.status_code == HTTPStatus.OK
-        pending_review_card = next(
-            (a for a in response.context["recent_activities"] if a["title"] == "Pending Review"), None
-        )
-        assert pending_review_card is not None
-        opp_names = {row["opportunity__name"] for row in pending_review_card["rows"]}
+        opp_names = self._pending_review_opp_names(client=client, org_slug=program_manager_org.slug)
         assert manual_opp.name in opp_names
         assert auto_opp.name not in opp_names
 
@@ -176,15 +174,19 @@ class TestProgramHomePendingReview:
             UserVisitFactory(opportunity=opp, status=VisitValidationStatus.pending)
 
         client.force_login(org_user_admin)
-        response = client.get(reverse("program:home", args=(organization.slug,)))
+        opp_names = self._pending_review_opp_names(client=client, org_slug=organization.slug)
+        assert manual_opp.name in opp_names
+        assert auto_opp.name not in opp_names
+
+    def _pending_review_opp_names(self, client, org_slug):
+        """Names of the opportunities listed on the program home's Pending Review card."""
+        response = client.get(reverse("program:home", args=(org_slug,)))
         assert response.status_code == HTTPStatus.OK
         pending_review_card = next(
             (a for a in response.context["recent_activities"] if a["title"] == "Pending Review"), None
         )
         assert pending_review_card is not None
-        opp_names = {row["opportunity__name"] for row in pending_review_card["rows"]}
-        assert manual_opp.name in opp_names
-        assert auto_opp.name not in opp_names
+        return {row["opportunity__name"] for row in pending_review_card["rows"]}
 
 
 @pytest.mark.django_db
@@ -228,43 +230,38 @@ class TestReviewVisitImportRequirePost:
 
 @pytest.mark.django_db
 class TestVisitVerificationFilterStatusClamping:
-    def test_stale_filter_status_clamped_in_auto_verify_mode(self, client, organization, org_user_member, mobile_user):
-        """A bookmarked ?filter_status=pending must not surface pending visits when auto-verify is on."""
+    @pytest.mark.parametrize(
+        "visit_statuses, filter_status, expected_count",
+        [
+            # A bookmarked ?filter_status=pending must not surface pending visits when auto-verify is on:
+            # it is clamped to "all", so every visit is returned.
+            pytest.param(
+                [VisitValidationStatus.pending, VisitValidationStatus.approved],
+                "pending",
+                2,
+                id="stale_pending_clamped_to_all",
+            ),
+            pytest.param(
+                [VisitValidationStatus.approved, VisitValidationStatus.rejected],
+                "approved",
+                1,
+                id="allowed_status_passes_through",
+            ),
+        ],
+    )
+    def test_filter_status_in_auto_verify_mode(
+        self, client, organization, org_user_member, mobile_user, visit_statuses, filter_status, expected_count
+    ):
         opp = mobile_user.opportunityaccess_set.first().opportunity
         opp.automatic_visit_verification = True
         opp.save()
 
         access = mobile_user.opportunityaccess_set.first()
-        UserVisitFactory(
-            opportunity=opp, user=mobile_user, opportunity_access=access, status=VisitValidationStatus.pending
-        )
-        UserVisitFactory(
-            opportunity=opp, user=mobile_user, opportunity_access=access, status=VisitValidationStatus.approved
-        )
+        for status in visit_statuses:
+            UserVisitFactory(opportunity=opp, user=mobile_user, opportunity_access=access, status=status)
 
         client.force_login(org_user_member)
         url = reverse("opportunity:user_visit_verification_table", args=(organization.slug, opp.opportunity_id))
-        response = client.get(f"{url}?filter_status=pending&user={mobile_user.user_id}")
+        response = client.get(f"{url}?filter_status={filter_status}&user={mobile_user.user_id}")
         assert response.status_code == HTTPStatus.OK
-        # Returned queryset includes all visits (clamped to "all"), not the pending-only filter.
-        assert response.context["table"].rows.data.data.count() == 2
-
-    def test_allowed_filter_status_passes_through(self, client, organization, org_user_member, mobile_user):
-        opp = mobile_user.opportunityaccess_set.first().opportunity
-        opp.automatic_visit_verification = True
-        opp.save()
-
-        access = mobile_user.opportunityaccess_set.first()
-        UserVisitFactory(
-            opportunity=opp, user=mobile_user, opportunity_access=access, status=VisitValidationStatus.approved
-        )
-        UserVisitFactory(
-            opportunity=opp, user=mobile_user, opportunity_access=access, status=VisitValidationStatus.rejected
-        )
-
-        client.force_login(org_user_member)
-        url = reverse("opportunity:user_visit_verification_table", args=(organization.slug, opp.opportunity_id))
-        response = client.get(f"{url}?filter_status=approved&user={mobile_user.user_id}")
-        assert response.status_code == HTTPStatus.OK
-        # Only the approved visit remains
-        assert response.context["table"].rows.data.data.count() == 1
+        assert response.context["table"].rows.data.data.count() == expected_count
