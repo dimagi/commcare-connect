@@ -86,11 +86,21 @@ class OrganizationInviteAdmin(admin.ModelAdmin):
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     form = AdminOrganizationForm
-    list_display = ["name", "short_name", "slug", "created_by", "program_manager", "funder", "verified", "is_test"]
+    list_display = [
+        "name",
+        "short_name",
+        "slug",
+        "status",
+        "created_by",
+        "program_manager",
+        "funder",
+        "verified",
+        "is_test",
+    ]
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [UserOrganizationMembershipInline]
-    list_filter = ["program_manager", "funder"]
+    list_filter = ["status", "program_manager", "funder"]
     actions = [MERGE_ACTION]
 
     def get_actions(self, request):
