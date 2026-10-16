@@ -15,7 +15,7 @@ from commcare_connect.program.utils import (
     program_access_level_from_request,
 )
 from commcare_connect.utils.db import get_object_by_uuid_or_int
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, ALL_ORG_PROFILE_EDIT_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
 from .models import Organization, UserOrganizationMembership
 
@@ -42,10 +42,10 @@ def org_is_program_manager(organization):
 
 
 def can_edit_org_profile(request) -> bool:
-    """Org admins edit their own org's profile; ALL_ORG_PROFILE_EDIT_ACCESS extends that to every org."""
+    """Org admins edit their own org's profile; ORG_MANAGEMENT_SETTINGS_ACCESS extends that to every org."""
     if not request.org:
         return False
-    return request.user.has_perm(ALL_ORG_PROFILE_EDIT_ACCESS) or org_access_level_from_request(request) >= (
+    return request.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS) or org_access_level_from_request(request) >= (
         AccessLevel.ADMIN
     )
 
