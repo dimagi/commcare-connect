@@ -153,8 +153,8 @@ A pay rate's **status** is worked out, not stored:
 | Ended     | an older non-cancelled, applied pay rate when a newer active pay rate exists |
 | Cancelled | `cancelled_on` is set                                                        |
 
-A pay rate counts once it is applied, not when its `effective_from` date comes (section
-[6.2](#62-looking-up-a-pay-rate)).
+**Active Pay Rate** is the pay rate workers are paid at today: the one whose `effective_from` has come **and** that is
+applied (section [6.2](#62-looking-up-a-pay-rate)).
 
 **Initial Rate:** a payment unit's first pay rate (its earliest non-cancelled row, `is_initial_rate`).
 
@@ -196,9 +196,14 @@ Earned pay uses `current_pay_rate`, since nothing can be approved before the uni
 ### 6.3 First pay rate of a payment unit
 
 Every payment unit needs an Initial Rate row, with `effective_from` on or before the first approval it covers. New
-payment units get it when created: `effective_from` is the unit's `start_date` if set, otherwise today. `applied_on`
-is set straight away, since limits already match this pay rate; otherwise the job on the 1st would treat it as a
-change.
+payment units get it when created. `effective_from` is:
+
+- the unit's `start_date`, if set and in the future
+- otherwise, the opportunity's start date, if in the future
+- otherwise, today
+
+`applied_on` is set straight away, since limits already match this pay rate; otherwise the job on the 1st would treat
+it as a change.
 
 ### 6.4 Data migration for existing payment units
 
@@ -211,8 +216,8 @@ its current `amount` and `org_amount`. `applied_on` is set, for the same reason 
 
 ### 6.5 Changing a payment unit's start date
 
-The Initial Rate starts on the unit's start date, and every approval must fall on or after it. Today a PM can edit
-`start_date` at any time, which could break this.
+The Initial Rate starts on its `effective_from` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), and every
+approval must fall on or after it. Today a PM can edit `start_date` at any time, which could break this.
 
 **Rule.** A PM can change `start_date` only if:
 
@@ -225,6 +230,10 @@ When the date changes, the Initial Rate's `effective_from` moves with it in the 
 
 Otherwise the form shows an error: the unit has already started, or (if only the last rule fails) the PM must cancel
 the pay rate change first.
+
+**Opportunity start date.** A unit with no `start_date` starts with its opportunity, so when the opportunity's start
+date changes, the Initial Rates of those units move with it in the same save. The opportunity form already only allows
+this before the opportunity starts.
 
 **Why these rules**
 
@@ -551,11 +560,11 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
 
 ### 9.2 Payment units that haven't started yet
 
-If a payment unit's `start_date` is in the future, its Initial Rate starts on that date (section [6.3](#63-first-pay-rate-of-a-payment-unit)), so it isn't
-active yet.
+Until the Initial Rate's `effective_from` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), the unit hasn't
+started and no pay rate is active.
 
-- The Initial Rate shows as **Scheduled** ("Takes effect `<Start date>`"), with Edit but no Cancel (cancelling would
-  leave the unit with no pay rate). The modal shows the start date as the effective date.
+- The Initial Rate shows as **Scheduled** ("Takes effect `<effective_from>`"), with Edit but no Cancel (cancelling
+  would leave the unit with no pay rate). The modal shows `effective_from` as the effective date.
 - A change **edits the Initial Rate in place** through `change_pay_rate_in_place` (section [9.1](#91-payment-units-with-no-visits)), so if the cost goes up,
   joined workers' limits are scaled on save under the same locks. There are no approved deliveries, so no shortfall.
 - Workers are not notified and there is no NM banner.
@@ -871,7 +880,7 @@ Screenshots from the Claude design are included below. This section only lists w
 
 - The same modal, pre-filled, is used for **Edit**.
 - Setting worker pay or org pay to 0 asks the PM to confirm before saving.
-- **Effective date** is shown, not editable: the 1st of next month, today (section [9.1](#91-payment-units-with-no-visits)), or the start date (section [9.2](#92-payment-units-that-havent-started-yet)).
+- **Effective date** is shown, not editable: the 1st of next month, today (section [9.1](#91-payment-units-with-no-visits)), or the Initial Rate's `effective_from` (section [9.2](#92-payment-units-that-havent-started-yet)).
 - Messages: section [11.3](#113-message-before-confirming); funding error, which stops the save: section [11.4](#114-no-overspend-funding-check).
 
 ### 12.3 Payment units list
