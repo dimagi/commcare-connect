@@ -6,11 +6,14 @@ import pytest
 from django.contrib.auth.models import Permission
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import now
 
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
+from commcare_connect.data_export.const import OPPORTUNITY_ACCESS_CHECK_MAX_IDS
 from commcare_connect.data_export.views import ImplementationAreaBulkCreateView, WorkAreaBulkCreateView
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
@@ -30,7 +33,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
-from commcare_connect.users.tests.factories import OrgWithUsersFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -226,6 +229,124 @@ class TestProgramOpportunityOrganizationDataView:
         is_test_by_id = {opp["id"]: opp["is_test"] for opp in response.json()["opportunities"]}
         assert is_test_by_id[live_opp.id] is False
         assert is_test_by_id[test_opp.id] is True
+
+
+@pytest.mark.django_db
+class TestOpportunityAccessCheckView:
+    URL = reverse("data_export:opportunity_access")
+
+    def _check(self, api_client, opportunity_ids):
+        return _post_json(api_client, self.URL, {"opportunity_ids": opportunity_ids})
+
+    def test_grants_via_org_membership(self, api_client, opportunity, org_user_member):
+        _add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {str(opportunity.id): True}}
+
+    def test_grants_via_managing_program_org(self, api_client, managed_opportunity, program_manager_org_user_member):
+        _add_export_credentials(api_client, program_manager_org_user_member)
+        response = self._check(api_client, [managed_opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {str(managed_opportunity.id): True}}
+
+    @pytest.mark.parametrize(
+        "relationship,expected",
+        [
+            ("delivery", True),
+            ("supervisor", True),
+            ("program_org", True),
+            ("funder", True),
+            ("watcher", False),
+            ("unrelated", False),
+        ],
+    )
+    def test_matches_single_opportunity_endpoint(
+        self, api_client, opp_orgs, managed_opportunity, user, relationship, expected
+    ):
+        MembershipFactory(organization=opp_orgs[relationship], user=user, role="member")
+        _add_export_credentials(api_client, user)
+        response = self._check(api_client, [managed_opportunity.id])
+        assert response.status_code == 200
+        assert response.json()["opportunities"] == {str(managed_opportunity.id): expected}
+        single = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": managed_opportunity.id}))
+        assert single.status_code == (200 if expected else 404)
+
+    def test_denies_without_membership(self, api_client, opportunity, user):
+        _add_export_credentials(api_client, user)
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {str(opportunity.id): False}}
+
+    def test_nonexistent_id_is_false(self, api_client, org_user_member):
+        _add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, [999999999])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {"999999999": False}}
+
+    def test_mixed_batch(self, api_client, opportunity, org_user_member):
+        other_opportunity = OpportunityFactory()
+        _add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, [opportunity.id, other_opportunity.id, 999999999, opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {
+            "opportunities": {
+                str(opportunity.id): True,
+                str(other_opportunity.id): False,
+                "999999999": False,
+            }
+        }
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"opportunity_ids": []},
+            {"opportunity_ids": "1,2"},
+            {"opportunity_ids": ["abc"]},
+            {"opportunity_ids": [1.5]},
+            {"opportunity_ids": [None]},
+            {"opportunity_ids": [0]},
+            {"opportunity_ids": [-1]},
+            {"opportunity_ids": list(range(1, OPPORTUNITY_ACCESS_CHECK_MAX_IDS + 2))},
+        ],
+        ids=["missing", "empty", "not_a_list", "non_int", "float", "null", "zero", "negative", "too_many"],
+    )
+    def test_rejects_invalid_payload(self, api_client, org_user_member, payload):
+        _add_export_credentials(api_client, org_user_member)
+        response = _post_json(api_client, self.URL, payload)
+        assert response.status_code == 400
+
+    def test_accepts_max_ids(self, api_client, org_user_member):
+        _add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, list(range(1, OPPORTUNITY_ACCESS_CHECK_MAX_IDS + 1)))
+        assert response.status_code == 200
+
+    def test_requires_authentication(self, api_client, opportunity):
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 401
+
+    def test_requires_export_scope(self, api_client, opportunity, org_user_member):
+        token = org_user_member.oauth2_provider_accesstoken.create(
+            token="no-export-token", scope="read write", expires=now() + datetime.timedelta(hours=1)
+        )
+        api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 403
+
+    def test_query_count_is_independent_of_batch_size(self, api_client, organization, org_user_member):
+        opportunity_ids = [OpportunityFactory(organization=organization).id for _ in range(5)]
+        _add_export_credentials(api_client, org_user_member)
+        self._check(api_client, opportunity_ids[:1])  # warm per-process caches
+
+        with CaptureQueriesContext(connection) as single:
+            assert self._check(api_client, opportunity_ids[:1]).status_code == 200
+        with CaptureQueriesContext(connection) as batch:
+            response = self._check(api_client, opportunity_ids + list(range(10**9, 10**9 + 50)))
+
+        assert response.status_code == 200
+        assert all(response.json()["opportunities"][str(opp_id)] for opp_id in opportunity_ids)
+        assert len(batch) == len(single)
 
 
 @pytest.mark.django_db
