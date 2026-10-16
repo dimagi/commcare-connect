@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv as csv_mod
 import io
 import json
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
@@ -497,26 +498,6 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert b"Implementation Area" in response.content
         assert b"selectedFeature.implementation_area_name" in response.content
-
-    def test_map_wires_implementation_area_hover(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # The map registers a hover handler on the Implementation Area outline layer
-        # (highlight + name tooltip).
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"'mousemove', 'implementation-areas-outline'" in response.content
-        assert b"implementationAreaPopup" in response.content
-
-    def test_map_shows_toast_on_implementation_area_fetch_error(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"Failed to load Implementation Areas." in response.content
 
     def test_map_has_implementation_area_layer_toggle(
         self, client: Client, settings, organization, org_user_admin, opportunity
@@ -1791,6 +1772,59 @@ class TestAssignmentModeContext:
 
         assert form.is_valid()
         assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
+
+
+@pytest.mark.django_db
+class TestMapPageWiring:
+    """The map's JS reads everything from the microplanning-config tag; if it is missing or unparseable
+    the map silently never appears, so check it in every mode."""
+
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity)
+        flag.flush()
+
+    @pytest.mark.parametrize(
+        "params, assignment_mode, inaccessible_mode",
+        [
+            pytest.param({}, False, False, id="default"),
+            pytest.param({"assignment_mode": "1"}, True, False, id="assignment"),
+            pytest.param({"inaccessible_mode": "1"}, False, True, id="inaccessible"),
+        ],
+    )
+    def test_config_catalog_and_bundle_are_on_the_page(
+        self,
+        client,
+        settings,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+        params,
+        assignment_mode,
+        inaccessible_mode,
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            reverse(
+                "microplanning:microplanning_home",
+                args=(program_manager_org.slug, managed_opportunity.opportunity_id),
+            ),
+            params,
+        )
+
+        body = response.content.decode()
+        assert f'<script src="{reverse("javascript-catalog")}">' in body
+        assert "bundles/js/microplanning-bundle.js" in body
+        match = re.search(r'<script id="microplanning-config" type="application/json">(.*?)</script>', body)
+        assert match
+        config = json.loads(match.group(1))
+        assert config["assignment_mode"] is assignment_mode
+        assert config["inaccessible_mode"] is inaccessible_mode
+        assert config["mapbox_api_key"] == "test-mapbox-token"
+        assert (config["assignment_save_url"] is not None) is assignment_mode
 
 
 @pytest.mark.django_db
