@@ -499,6 +499,40 @@ def test_approve_visits(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("role", ["admin", "member", "viewer"])
+@pytest.mark.parametrize("actor", ["nm", "pm", "funder", "watcher", "supervisor"])
+def test_only_nm_org_can_create_invoices(client: Client, managed_opportunity, actor, role):
+    program = managed_opportunity.program
+    program.funder = OrganizationFactory(funder=True)
+    program.save()
+    watcher_org = OrganizationFactory()
+    program.watchers.add(watcher_org)
+    managed_opportunity.supervising_organization = OrganizationFactory()
+    managed_opportunity.save()
+    org = {
+        "nm": managed_opportunity.organization,
+        "pm": program.organization,
+        "funder": program.funder,
+        "watcher": watcher_org,
+        "supervisor": managed_opportunity.supervising_organization,
+    }[actor]
+    client.force_login(MembershipFactory(organization=org, role=role).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    list_response = client.get(reverse("opportunity:invoice_list", args=args))
+    create_response = client.get(reverse("opportunity:invoice_create", args=args))
+
+    # The invoice list needs standard access: watchers and viewers can't open it at all.
+    has_standard_access = actor != "watcher" and role != "viewer"
+    can_create = actor == "nm" and has_standard_access
+    if has_standard_access:
+        assert list_response.context["can_create_invoice"] is can_create
+    else:
+        assert list_response.status_code == HTTPStatus.NOT_FOUND
+    assert create_response.status_code == (HTTPStatus.OK if can_create else HTTPStatus.NOT_FOUND)
+
+
+@pytest.mark.django_db
 def test_approve_visits_resets_disagree_and_sets_status_modified_date(client: Client, organization, opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity)
     visit = UserVisitFactory.create(

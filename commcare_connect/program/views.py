@@ -25,7 +25,7 @@ from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitU
 from commcare_connect.organization.decorators import (
     OrgPMRequiredMixin,
     ProgramAdminAccessMixin,
-    can_act_as_program_manager_admin,
+    can_act_as_program_manager_user,
     is_user_pm_org_admin,
     org_admin_access_required,
     org_view_access_required,
@@ -272,7 +272,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
 @org_view_access_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
-    if can_act_as_program_manager_admin(request.user, org):
+    if can_act_as_program_manager_user(request.user, org):
         return program_manager_home(request, org)
     return network_manager_home(request, org)
 
