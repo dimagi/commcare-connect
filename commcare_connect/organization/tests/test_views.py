@@ -704,15 +704,13 @@ class TestPendingInvitesTableView:
     [
         ("admin", None, True, True),
         ("member", None, True, False),
-        ("viewer", None, False, False),
+        ("viewer", None, True, False),
         ("member", "all_org_profile_edit_access", True, True),
-        ("viewer", "all_org_profile_edit_access", False, True),
+        ("viewer", "all_org_profile_edit_access", True, True),
         (None, "all_org_access", True, True),
     ],
 )
-def test_sidenav_entries_follow_org_access(
-    client, organization, role, permission, sees_programs, sees_my_organization
-):
+def test_sidenav_entries_visibility(client, organization, role, permission, sees_programs, sees_my_organization):
     user = UserFactory()
     if role:
         UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
@@ -726,6 +724,19 @@ def test_sidenav_entries_follow_org_access(
     assert reverse("opportunity:list", args=(organization.slug,)) in content
     assert (reverse("program:home", args=(organization.slug,)) in content) is sees_programs
     assert (reverse("organization:home", args=(organization.slug,)) in content) is sees_my_organization
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_my_organization_to_profile_editor_without_membership(client, organization):
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="all_org_profile_edit_access"))
+    client.force_login(user)
+
+    content = client.get(reverse("organization:home", args=(organization.slug,))).content.decode()
+
+    assert reverse("organization:home", args=(organization.slug,)) in content
+    assert reverse("opportunity:list", args=(organization.slug,)) not in content
+    assert reverse("program:home", args=(organization.slug,)) not in content
 
 
 @pytest.mark.django_db
