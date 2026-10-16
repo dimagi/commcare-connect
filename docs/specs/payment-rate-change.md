@@ -999,5 +999,8 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 
 - **Drop copied columns from invoice rows.** Once every row is linked to a record (ticket 10), read `completed_work`,
   `billed_count`, local amounts and `month` from the record, and derive `is_delta`.
+- **Drop the cached earned pay totals from `CompletedWork`.** Once the earned pay backfill has run (ticket 10),
+  `saved_payment_accrued`, `saved_org_payment_accrued` and their USD versions are just sums of the work's earned pay
+  records. Read them from the records instead, after checking that worker totals, reports and exports stay fast.
 - **Alert if the job doesn't run.** A Sentry cron monitor on the daily job, alerting if it hasn't started or finished
   within an hour. One monitor is free; extras cost about $0.78 a month.
