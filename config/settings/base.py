@@ -23,6 +23,8 @@ SITE_ID = 1
 USE_I18N = True
 USE_TZ = True
 LOCALE_PATHS = [str(BASE_DIR / "locale")]
+# The deployed git SHA (set by deploy/config/deploy.yml); unset locally and in CI.
+APP_RELEASE = env("APP_RELEASE", default=None)
 
 # DATABASES
 # ------------------------------------------------------------------------------
