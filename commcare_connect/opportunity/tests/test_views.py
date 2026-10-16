@@ -1829,6 +1829,32 @@ def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org)
     assert str(messages[0]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "existing_link, expected_message, expected_link",
+    [
+        (None, "Enter a ticket link.", None),
+        ("https://www.home.com", "Invoice ticket link removed!", ""),
+    ],
+)
+def test_update_invoice_invoice_ticket_link_empty(
+    existing_link, expected_message, expected_link, client, program_manager_org
+):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    invoice.invoice_ticket_link = existing_link
+    invoice.save()
+    _act_as_admin_of(client, program_manager_org)
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    response = client.post(url, data={"invoice_ticket_link": ""})
+    assert response.status_code == HTTPStatus.FOUND
+    messages = list(get_messages(response.wsgi_request))
+    assert [str(m) for m in messages] == [expected_message]
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link == expected_link
+
+
 def _setup_data_for_invoice_ticket_link_update(pm_org):
     """Delivered by a separate org, so pm_org is the owner org, funder, or supervisor
     here and not also the NM."""
