@@ -202,37 +202,33 @@ class TestOrganizationProfileForm:
     def _data(**overrides):
         return {"name": "Profile Org", **overrides}
 
-    def test_contact_emails_are_normalized(self, organization: Organization):
-        form = OrganizationProfileForm(
-            data=self._data(contact_emails="  one@example.com \n\n two@example.com  "),
-            instance=organization,
-        )
+    @pytest.mark.parametrize(
+        "field,raw,expected",
+        [
+            ("contact_emails", "  one@example.com \n\n two@example.com  ", "one@example.com\ntwo@example.com"),
+            (
+                "eoi_links",
+                " https://example.com/eoi \n\n https://example.org/eoi ",
+                "https://example.com/eoi\nhttps://example.org/eoi",
+            ),
+        ],
+    )
+    def test_line_fields_are_normalized(self, organization: Organization, field, raw, expected):
+        form = OrganizationProfileForm(data=self._data(**{field: raw}), instance=organization)
         assert form.is_valid(), form.errors
-        assert form.cleaned_data["contact_emails"] == "one@example.com\ntwo@example.com"
+        assert form.cleaned_data[field] == expected
 
-    def test_invalid_contact_emails_are_rejected(self, organization: Organization):
-        form = OrganizationProfileForm(
-            data=self._data(contact_emails="ok@example.com\nnot-an-email"),
-            instance=organization,
-        )
+    @pytest.mark.parametrize(
+        "field,raw,invalid_line",
+        [
+            ("contact_emails", "ok@example.com\nnot-an-email", "not-an-email"),
+            ("eoi_links", "https://example.com/eoi\nnope", "nope"),
+        ],
+    )
+    def test_invalid_line_fields_are_rejected(self, organization: Organization, field, raw, invalid_line):
+        form = OrganizationProfileForm(data=self._data(**{field: raw}), instance=organization)
         assert not form.is_valid()
-        assert "not-an-email" in form.errors["contact_emails"][0]
-
-    def test_eoi_links_are_normalized(self, organization: Organization):
-        form = OrganizationProfileForm(
-            data=self._data(eoi_links=" https://example.com/eoi \n\n https://example.org/eoi "),
-            instance=organization,
-        )
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["eoi_links"] == "https://example.com/eoi\nhttps://example.org/eoi"
-
-    def test_invalid_eoi_links_are_rejected(self, organization: Organization):
-        form = OrganizationProfileForm(
-            data=self._data(eoi_links="https://example.com/eoi\nnope"),
-            instance=organization,
-        )
-        assert not form.is_valid()
-        assert "nope" in form.errors["eoi_links"][0]
+        assert invalid_line in form.errors[field][0]
 
     @pytest.mark.parametrize("year", [1799, 3000])
     def test_year_of_establishment_out_of_range_is_rejected(self, organization: Organization, year):

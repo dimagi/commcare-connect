@@ -143,26 +143,25 @@ class TestRetrieveUserOTPView:
 
         assert response.status_code == 403
 
+    @pytest.mark.parametrize(
+        "otp,expected_message",
+        [
+            pytest.param("1234", "The user's OTP is: 1234", id="otp_found"),
+            pytest.param(
+                None,
+                "Failed to fetch OTP. Please make sure the number is correct "
+                "and that the user has started their device seating process.",
+                id="no_otp",
+            ),
+        ],
+    )
     @patch("commcare_connect.users.views.get_user_otp")
-    def test_can_get_user_otp(self, get_user_otp_mock, user, client):
-        get_user_otp_mock.return_value = "1234"
+    def test_otp_message(self, get_user_otp_mock, user, client, otp, expected_message):
+        get_user_otp_mock.return_value = otp
         response = self._get_response(client, user)
 
         messages = list(response.context["messages"])
-        assert str(messages[0]) == "The user's OTP is: 1234"
-
-    @patch("commcare_connect.users.views.get_user_otp")
-    def test_no_otp_returned(self, get_user_otp_mock, user, client):
-        get_user_otp_mock.return_value = None
-        response = self._get_response(client, user)
-
-        expected_failure_message = (
-            "Failed to fetch OTP. Please make sure the number is correct "
-            "and that the user has started their device seating process."
-        )
-
-        messages = list(response.context["messages"])
-        assert str(messages[0]) == expected_failure_message
+        assert str(messages[0]) == expected_message
 
     def _get_response(self, client, user):
         perm = Permission.objects.get(codename="otp_access")

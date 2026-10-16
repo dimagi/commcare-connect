@@ -92,9 +92,5 @@ class ProgramManagerOrganisationFactory(DjangoModelFactory):
         model = Organization
 
 
-class ProgramManagerOrgWithUsersFactory(ProgramManagerOrganisationFactory):
-    admin = RelatedFactory(MembershipFactory, "organization", role="admin")
-    member = RelatedFactory(MembershipFactory, "organization", role="member")
-
-    class Meta:
-        skip_postgeneration_save = True
+class ProgramManagerOrgWithUsersFactory(OrgWithUsersFactory):
+    program_manager = True
