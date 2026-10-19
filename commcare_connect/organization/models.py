@@ -20,6 +20,10 @@ class PrimarySector(models.Model):
     def __str__(self):
         return self.name
 
+    def is_in_use(self):
+        """Deleting a sector an organization uses would silently drop it from that profile."""
+        return self.organization_set.exists()
+
 
 class TeamSizeRange(models.TextChoices):
     """Team size is collected as a bracket rather than a headcount — nobody reports an exact number."""

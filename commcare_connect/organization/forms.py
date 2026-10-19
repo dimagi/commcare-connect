@@ -4,12 +4,14 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
 from django.utils import timezone
+from django.utils.text import slugify
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
+    PrimarySector,
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
@@ -320,6 +322,41 @@ def _clean_lines(raw, validator, error_message):
     if bad:
         raise ValidationError(error_message, params={"bad": ", ".join(bad)})
     return "\n".join(entries)
+
+
+class PrimarySectorForm(forms.ModelForm):
+    """Adds or edits a primary sector option from Internal Features.
+
+    The slug is set once, on create: the data export identifies sectors by it, so a rename must not change it.
+    """
+
+    class Meta:
+        model = PrimarySector
+        fields = ("name", "description")
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["description"].required = False
+        self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        others = PrimarySector.objects.exclude(pk=self.instance.pk)
+        if others.filter(name__iexact=name).exists():
+            raise ValidationError(gettext("A primary sector with this name already exists."))
+        if not self.instance.pk and not slugify(name):
+            raise ValidationError(gettext("Name must contain at least one letter or number."))
+        if not self.instance.pk and others.filter(slug=slugify(name)).exists():
+            raise ValidationError(gettext("A primary sector with a similar name already exists."))
+        return name
+
+    def save(self, commit=True):
+        if not self.instance.pk:
+            self.instance.slug = slugify(self.instance.name)
+        return super().save(commit=commit)
 
 
 class OrganizationInviteForm(forms.ModelForm):
