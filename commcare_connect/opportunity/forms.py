@@ -7,7 +7,6 @@ from urllib.parse import urlencode
 import httpx
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
-from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
@@ -23,6 +22,7 @@ from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
     OPPORTUNITY_CREDENTIALS,
+    OPTIONAL_DAILY_LIMIT,
 )
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
@@ -926,27 +926,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
             return cleaned_data
 
 
-class DateRanges(TextChoices):
-    LAST_7_DAYS = "last_7_days", "Last 7 days"
-    LAST_30_DAYS = "last_30_days", "Last 30 days"
-    LAST_90_DAYS = "last_90_days", "Last 90 days"
-    LAST_YEAR = "last_year", "Last year"
-    ALL = "all", "All"
-
-    def get_cutoff_date(self):
-        match self:
-            case DateRanges.LAST_7_DAYS:
-                return now() - relativedelta(days=7)
-            case DateRanges.LAST_30_DAYS:
-                return now() - relativedelta(days=30)
-            case DateRanges.LAST_90_DAYS:
-                return now() - relativedelta(days=90)
-            case DateRanges.LAST_YEAR:
-                return now() - relativedelta(years=1)
-            case DateRanges.ALL:
-                return None
-
-
 class VisitExportForm(forms.Form):
     format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
     from_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
@@ -1312,6 +1291,8 @@ class AddBudgetNewUsersForm(forms.Form):
 
 
 class PaymentUnitForm(forms.ModelForm):
+    no_daily_limit = forms.BooleanField(required=False, label=_("No daily limit"))
+
     class Meta:
         model = PaymentUnit
         fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
@@ -1320,6 +1301,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
         widgets = {
+            "max_daily": forms.NumberInput(attrs={"min": 1}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
@@ -1340,6 +1322,11 @@ class PaymentUnitForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields["org_amount"].required = bool(self.opportunity)
+        if not switch_is_active(OPTIONAL_DAILY_LIMIT):
+            del self.fields["no_daily_limit"]
+            self.fields["max_daily"].required = True
+        elif self.instance.pk:
+            self.fields["no_daily_limit"].initial = self.instance.max_daily is None
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1349,7 +1336,7 @@ class PaymentUnitForm(forms.ModelForm):
                     Column(Field("name"), Field("description")),
                     Column(
                         self.get_amounts_div(),
-                        Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
+                        self.get_limits_div(),
                         Field("start_date"),
                         Field("end_date"),
                     ),
@@ -1430,12 +1417,39 @@ class PaymentUnitForm(forms.ModelForm):
             css_class="grid grid-cols-2 gap-4",
         )
 
+    def get_limits_div(self):
+        if "no_daily_limit" not in self.fields:
+            return Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4")
+
+        no_daily_limit = json.dumps(bool(self["no_daily_limit"].value()))
+        return Row(
+            Field("max_total"),
+            Div(
+                Field(
+                    "max_daily",
+                    **{"x-bind:disabled": "noDailyLimit", "x-effect": "if (noDailyLimit) $el.value = ''"},
+                ),
+                Field(
+                    "no_daily_limit",
+                    wrapper_class="flex flex-row-reverse items-center justify-end gap-2 [&>label]:mb-0",
+                    **{"x-model": "noDailyLimit"},
+                ),
+                **{"x-data": f"{{ noDailyLimit: {no_daily_limit} }}"},
+            ),
+            css_class="grid grid-cols-2 gap-4",
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         start_date = cleaned_data.get("start_date")
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        if cleaned_data.get("no_daily_limit"):
+            cleaned_data["max_daily"] = None
+        elif cleaned_data.get("max_daily") is None and "max_daily" not in self.errors:
+            self.add_error("max_daily", _("Enter a daily limit or mark this payment unit as having no daily limit."))
 
         self._validate_budget_covers_claimants(cleaned_data)
 

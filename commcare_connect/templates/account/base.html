@@ -25,6 +25,7 @@
       <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
       <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
     {% endblock javascript %}
+    {% include 'components/forget_form_submission.html' %}
   </head>
   <body class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
     <div class="container relative flex items-center justify-center h-screen mx-auto md:max-w-screen-md">

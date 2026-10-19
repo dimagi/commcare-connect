@@ -123,10 +123,13 @@ def export_user_visit_review_data(
 
 
 def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
+    # Accrued is informational only: the payment import reads columns by header and ignores it.
+    accrued_header = f"Accrued ({opportunity.currency_code})" if opportunity.currency_code else "Accrued"
     headers = [
         "Username",
         "Phone Number",
         "Name",
+        accrued_header,
         "Payment Amount",
         "Payment Date (YYYY-MM-DD)",
         "Payment Method",
@@ -145,6 +148,7 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
             access.user.username,
             access.user.phone_number,
             access.user.name,
+            access.payment_accrued,
             "",
             "",
             "",
