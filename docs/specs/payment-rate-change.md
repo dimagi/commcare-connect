@@ -289,8 +289,9 @@ New rule: **only add to earned pay for newly approved deliveries**, at the pay r
 # Before this run, the updater locks its works when loading them and sets their status in memory
 if completed_work.status != CompletedWorkStatus.approved:
     set_totals(completed_work, records=[])  # 0 while not approved, as today
-elif status_before_this_run != CompletedWorkStatus.approved:
-    set_totals(completed_work, completed_work.earned_pay_records.all())  # re-approved: back to its records
+elif completed_work.saved_payment_accrued == 0 and completed_work.earned_pay_records.exists():
+    # Re-approved (only rejection zeroes the totals of work with records), however the status changed
+    set_totals(completed_work, completed_work.earned_pay_records.all())
 
 new_deliveries = approved_count - completed_work.saved_approved_count
 if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
