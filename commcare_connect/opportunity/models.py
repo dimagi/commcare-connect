@@ -86,6 +86,14 @@ class Country(models.Model):
         return self.name
 
 
+class OpportunityStatus(models.IntegerChoices):
+    """Derived from `active` and `end_date` by the opportunity list; ordered so Active sorts first."""
+
+    ACTIVE = 0, gettext_lazy("Active")
+    ENDED = 1, gettext_lazy("Ended")
+    INACTIVE = 2, gettext_lazy("Inactive")
+
+
 # Tracked separately from the fields=["active"] tracker below rather than by adding
 # supervising_organization to its field list: pghistory derives the event model name from
 # the fields, so extending it would rename OpportunityActiveEvent, which is referred to by
