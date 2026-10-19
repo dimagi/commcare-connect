@@ -3,7 +3,6 @@ from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
-from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
@@ -398,18 +397,9 @@ class ContactForm(forms.ModelForm):
         return email
 
     def _get_validation_exclusions(self):
-        # save() unmarks the organization's other main contact first, so the one-main-contact
+        # Contact.save() unmarks the organization's other main contact first, so the one-main-contact
         # constraint can't be broken by this form and must not reject a new main contact.
         return super()._get_validation_exclusions() | {"is_main_poc"}
-
-    def save(self, commit=True):
-        """Saves the contact, first unmarking the organization's other main contact if this one is now main."""
-        with transaction.atomic():
-            if self.cleaned_data["is_main_poc"]:
-                Contact.objects.filter(organization=self.cleaned_data["organization"], is_main_poc=True).exclude(
-                    pk=self.instance.pk
-                ).update(is_main_poc=False)
-            return super().save(commit=commit)
 
 
 def _wizard_step(number, title, *fields):

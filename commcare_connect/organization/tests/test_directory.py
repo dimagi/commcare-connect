@@ -328,6 +328,16 @@ class TestContactForm:
         assert new_main.is_main_poc
         assert not current_main.is_main_poc
 
+    def test_saving_without_commit_leaves_the_current_main_poc(self):
+        current_main = ContactFactory(is_main_poc=True)
+        form = ContactForm(data=_contact_form_data(current_main.organization, is_main_poc="True"))
+
+        assert form.is_valid(), form.errors
+        form.save(commit=False)
+
+        current_main.refresh_from_db()
+        assert current_main.is_main_poc
+
     def test_email_already_used_by_another_contact_is_rejected(self, organization):
         existing = ContactFactory(email="grace@umojahealth.org")
 

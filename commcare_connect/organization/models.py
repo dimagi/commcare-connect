@@ -134,6 +134,15 @@ class Contact(BaseModel):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        """Saves the contact, first unmarking the organization's other main contact if this one is now main."""
+        with transaction.atomic():
+            if self.is_main_poc:
+                Contact.objects.filter(organization_id=self.organization_id, is_main_poc=True).exclude(
+                    pk=self.pk
+                ).update(is_main_poc=False)
+            super().save(*args, **kwargs)
+
 
 class UserOrganizationMembership(models.Model):
     class Role(models.TextChoices):
