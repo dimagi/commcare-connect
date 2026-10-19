@@ -58,7 +58,7 @@ class Solicitation(BaseModel):
         return self.title
 
 
-class EvaluationCriterion(BaseModel):
+class SolicitationEvaluationCriterion(BaseModel):
     """Internal-only scored dimension. Never shown to applicants or on public pages."""
 
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="criteria")
@@ -91,7 +91,7 @@ class SolicitationQuestion(BaseModel):
     display_order = models.PositiveSmallIntegerField(default=0)
     # Internal link only: a question maps to at most one criterion; a criterion may cover many questions.
     criterion = models.ForeignKey(
-        EvaluationCriterion, on_delete=models.SET_NULL, null=True, blank=True, related_name="questions"
+        SolicitationEvaluationCriterion, on_delete=models.SET_NULL, null=True, blank=True, related_name="questions"
     )
 
 
@@ -117,7 +117,7 @@ class SolicitationInvitation(BaseModel):
         constraints = [models.UniqueConstraint(fields=["solicitation", "organization"], name="one_invitation_per_org")]
 
 
-class Application(BaseModel):
+class SolicitationApplication(BaseModel):
     """One submission from an organization in response to a solicitation."""
 
     class Status(models.TextChoices):
@@ -155,10 +155,10 @@ class Application(BaseModel):
         ]
 
 
-class ApplicationAnswer(BaseModel):
+class SolicitationApplicationAnswer(BaseModel):
     """An applicant's response to a single question."""
 
-    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="answers")
+    application = models.ForeignKey(SolicitationApplication, on_delete=models.CASCADE, related_name="answers")
     question = models.ForeignKey(SolicitationQuestion, on_delete=models.CASCADE)
     answer = models.JSONField(null=True, blank=True)  # text / number / choice / date
     file = models.FileField(upload_to="solicitations/answers/", null=True, blank=True)  # for FILE questions
@@ -167,7 +167,7 @@ class ApplicationAnswer(BaseModel):
         constraints = [models.UniqueConstraint(fields=["application", "question"], name="one_answer_per_question")]
 
 
-class ApplicationReviewer(BaseModel):
+class SolicitationReviewer(BaseModel):
     """Grants a user scoped access to review one solicitation."""
 
     class Role(models.TextChoices):
@@ -183,7 +183,7 @@ class ApplicationReviewer(BaseModel):
         constraints = [models.UniqueConstraint(fields=["solicitation", "user"], name="one_assignment_per_user")]
 
 
-class Review(BaseModel):
+class SolicitationApplicationReview(BaseModel):
     """A single reviewer's scoring of one application."""
 
     class Recommendation(models.TextChoices):
@@ -191,7 +191,7 @@ class Review(BaseModel):
         REJECT = "reject", _("Reject")
         NEEDS_REVISION = "needs_revision", _("Needs Revision")
 
-    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="reviews")
+    application = models.ForeignKey(SolicitationApplication, on_delete=models.CASCADE, related_name="reviews")
     reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     recommendation = models.CharField(max_length=20, choices=Recommendation.choices, blank=True)
     # Weighted average of the criterion scores, normalized to /100.
@@ -204,11 +204,13 @@ class Review(BaseModel):
         constraints = [models.UniqueConstraint(fields=["application", "reviewer"], name="one_review_per_reviewer")]
 
 
-class CriterionScore(BaseModel):
-    """Per-criterion score within a review; these roll up into Review.overall_score."""
+class SolicitationCriterionScore(BaseModel):
+    """Per-criterion score within a review; these roll up into SolicitationApplicationReview.overall_score."""
 
-    review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name="criterion_scores")
-    criterion = models.ForeignKey(EvaluationCriterion, on_delete=models.CASCADE)
+    review = models.ForeignKey(
+        SolicitationApplicationReview, on_delete=models.CASCADE, related_name="criterion_scores"
+    )
+    criterion = models.ForeignKey(SolicitationEvaluationCriterion, on_delete=models.CASCADE)
     score = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
     comment = models.TextField(blank=True)
 
@@ -219,7 +221,7 @@ class CriterionScore(BaseModel):
 class Award(BaseModel):
     """A decision to award an applicant. A solicitation may have multiple awards."""
 
-    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="awards")
+    application = models.ForeignKey(SolicitationApplication, on_delete=models.CASCADE, related_name="awards")
     awarded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     # Set when an awarded applicant withdraws: the award's budget is freed and the PM may re-award.
     # Released awards are kept for audit and excluded from the budget cap.

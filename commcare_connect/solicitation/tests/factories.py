@@ -5,7 +5,7 @@ from factory import Faker, LazyFunction, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.program.tests.factories import _get_default_currency
-from commcare_connect.solicitation.models import Application, Solicitation, SolicitationInvitation
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
 from commcare_connect.users.tests.factories import OrganizationFactory
 
 
@@ -22,14 +22,14 @@ class SolicitationFactory(DjangoModelFactory):
         model = Solicitation
 
 
-class ApplicationFactory(DjangoModelFactory):
+class SolicitationApplicationFactory(DjangoModelFactory):
     solicitation = SubFactory(SolicitationFactory)
     organization = SubFactory(OrganizationFactory)
     submitter_name = Faker("name")
     submitter_email = Faker("email")
 
     class Meta:
-        model = Application
+        model = SolicitationApplication
 
 
 class SolicitationInvitationFactory(DjangoModelFactory):

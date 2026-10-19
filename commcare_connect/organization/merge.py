@@ -11,7 +11,7 @@ from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import ProgramApplication
 from commcare_connect.program.utils import clear_managed_opp_cache
-from commcare_connect.solicitation.models import Application, Solicitation
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ SIMPLE_REASSIGNMENTS: Sequence[OrganizationReassignment] = (
     OrganizationReassignment("solicitation", "Solicitation", "organization"),
     # Safe as a plain update only because _reject_conflicting_solicitation_applications refuses a merge
     # where both organizations applied to one solicitation.
-    OrganizationReassignment("solicitation", "Application", "organization"),
+    OrganizationReassignment("solicitation", "SolicitationApplication", "organization"),
 )
 
 # The relations the merge acts on. test_merge.py asserts these plus SKIPPED_RELATIONS cover every
@@ -72,7 +72,7 @@ HANDLED_RELATIONS = frozenset(
         "program.Program.watchers",
         "program.ProgramApplication.organization",
         "program.ProgramWatcher.organization",
-        "solicitation.Application.organization",
+        "solicitation.SolicitationApplication.organization",
         "solicitation.Solicitation.organization",
         "solicitation.SolicitationInvitation.organization",
     }
@@ -244,7 +244,7 @@ def _reject_conflicting_solicitation_applications(source: Organization, target: 
     duplicates = Solicitation.objects.filter(applications__organization=source).filter(
         applications__organization=target
     )
-    self_applications = Application.objects.filter(
+    self_applications = SolicitationApplication.objects.filter(
         organization__in=organizations, solicitation__organization__in=organizations
     ).exclude(solicitation__organization=F("organization"))
 

@@ -24,9 +24,9 @@ from commcare_connect.organization.models import Organization, OrganizationInvit
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import get_managed_opp
-from commcare_connect.solicitation.models import Application, SolicitationInvitation
+from commcare_connect.solicitation.models import SolicitationApplication, SolicitationInvitation
 from commcare_connect.solicitation.tests.factories import (
-    ApplicationFactory,
+    SolicitationApplicationFactory,
     SolicitationFactory,
     SolicitationInvitationFactory,
 )
@@ -213,7 +213,7 @@ class TestSimpleReassignments:
         owned_program = ProgramFactory(organization=source)
         funded_program = ProgramFactory(funder=source)
         solicitation = SolicitationFactory(organization=source)
-        application = ApplicationFactory(organization=source)
+        application = SolicitationApplicationFactory(organization=source)
 
         merge_organizations(source, funder_target)
 
@@ -337,13 +337,13 @@ class TestProgramApplications:
 class TestSolicitationApplications:
     def test_application_to_the_same_solicitation_is_rejected(self, source, target):
         solicitation = SolicitationFactory(title="Malaria RFP")
-        ApplicationFactory(solicitation=solicitation, organization=source)
-        ApplicationFactory(solicitation=solicitation, organization=target)
+        SolicitationApplicationFactory(solicitation=solicitation, organization=source)
+        SolicitationApplicationFactory(solicitation=solicitation, organization=target)
 
         with pytest.raises(MergeNotAllowed, match="Malaria RFP"):
             merge_organizations(source, target)
 
-        assert Application.objects.filter(solicitation=solicitation).count() == 2
+        assert SolicitationApplication.objects.filter(solicitation=solicitation).count() == 2
         assert Organization.objects.filter(pk=source.pk).exists()
 
     @pytest.mark.parametrize(
@@ -354,7 +354,7 @@ class TestSolicitationApplications:
     def test_application_to_a_solicitation_the_target_would_own_is_rejected(self, source, target, poster, applicant):
         organizations = {"source": source, "target": target}
         solicitation = SolicitationFactory(title="Malaria RFP", organization=organizations[poster])
-        ApplicationFactory(solicitation=solicitation, organization=organizations[applicant])
+        SolicitationApplicationFactory(solicitation=solicitation, organization=organizations[applicant])
 
         with pytest.raises(MergeNotAllowed, match="Malaria RFP"):
             merge_organizations(source, target)
@@ -640,7 +640,7 @@ class TestRelationCoverage:
         OrganizationInviteFactory(organization=source, email="pending@example.com")
         LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
         SolicitationFactory(organization=source)
-        ApplicationFactory(organization=source)
+        SolicitationApplicationFactory(organization=source)
         SolicitationInvitationFactory(organization=source)
 
         merge_organizations(source, funder_target)
