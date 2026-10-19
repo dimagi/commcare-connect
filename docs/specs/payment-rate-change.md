@@ -233,7 +233,8 @@ the pay rate change first.
 
 **Opportunity start date.** A unit with no `start_date` starts with its opportunity, so when the opportunity's start
 date changes, the Initial Rates of those units move with it in the same save. The opportunity form already only allows
-this before the opportunity starts.
+this before the opportunity starts. It also allows it on the start day itself, which is now locked too: moving the
+start date then would leave that day's approvals with no active pay rate.
 
 **Why these rules**
 
@@ -366,9 +367,9 @@ command (not a migration), run right after the deploy:
 
 1. For each existing invoice row, creates a record with the same deliveries, amounts and exchange rate, and links the
    row to it.
-2. For each piece of work with approved deliveries not covered yet, creates one record for the rest: remaining
-   deliveries × the current pay rate (what today's invoicing would bill), at the exchange rate on the work's approval
-   date (as today's USD totals).
+2. For each **approved** piece of work with approved deliveries not covered yet, creates one record for the rest:
+   remaining deliveries × the current pay rate (what today's invoicing would bill), at the exchange rate on the work's
+   approval date (as today's USD totals).
 3. Skips what it has already handled, so it is safe to run again.
 
 Backfilled records have no pay rate link. We don't guess dates: `earned_on` is the work's `status_modified_date` if it
