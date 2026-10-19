@@ -382,7 +382,10 @@ command (not a migration), run right after the deploy:
    approval date (as today's USD totals). The rest is the approved deliveries minus those in **all** its records so
    far, including any added by live approvals since the deploy. It locks the work as the updater does (section
    [7](#7-updating-earned-pay-the-key-change)), so a live approval can't add the same deliveries at the same time.
-3. Skips what it has already handled, so it is safe to run again.
+3. For each piece of work that **isn't approved**, sets `saved_approved_count` to the deliveries in its records (0 if
+   it has none). Today's code counts deliveries on work that isn't approved too; left as is, they would never be paid
+   once the work is approved, since pay is only added for deliveries above the count.
+4. Skips what it has already handled, so it is safe to run again.
 
 Backfilled records have no pay rate link. We don't guess dates: `earned_on` is the work's `status_modified_date` if it
 has one approved delivery, and empty otherwise.
