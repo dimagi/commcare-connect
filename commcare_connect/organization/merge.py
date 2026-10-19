@@ -5,12 +5,13 @@ from functools import cached_property
 
 from django.apps import apps
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import ProgramApplication
 from commcare_connect.program.utils import clear_managed_opp_cache
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,10 @@ SIMPLE_REASSIGNMENTS: Sequence[OrganizationReassignment] = (
     OrganizationReassignment("opportunity", "LabsRecord", "organization"),
     OrganizationReassignment("program", "Program", "organization"),
     OrganizationReassignment("program", "Program", "funder"),
+    OrganizationReassignment("solicitation", "Solicitation", "organization"),
+    # Safe as a plain update only because _reject_conflicting_solicitation_applications refuses a merge
+    # where both organizations applied to one solicitation.
+    OrganizationReassignment("solicitation", "SolicitationApplication", "organization"),
 )
 
 # The relations the merge acts on. test_merge.py asserts these plus SKIPPED_RELATIONS cover every
@@ -67,6 +72,9 @@ HANDLED_RELATIONS = frozenset(
         "program.Program.watchers",
         "program.ProgramApplication.organization",
         "program.ProgramWatcher.organization",
+        "solicitation.SolicitationApplication.organization",
+        "solicitation.Solicitation.organization",
+        "solicitation.SolicitationInvitation.organization",
     }
 )
 
@@ -96,6 +104,8 @@ class MergeSummary:
     memberships_discarded: int = 0
     invites_moved: int = 0
     invites_discarded: int = 0
+    solicitation_invitations_moved: int = 0
+    solicitation_invitations_deduped: int = 0
     flags_cleared: int = 0
 
 
@@ -119,6 +129,9 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         self_program_applications_removed = _remove_self_program_applications(target)
         members_moved, members_dropped = _merge_memberships(source, target)
         invites_moved, invites_dropped = _move_pending_invites(source, target)
+        solicitation_invitations_moved, solicitation_invitations_deduped = _merge_solicitation_invitations(
+            source, target
+        )
         flags_cleared = _clear_flag_memberships(source)
 
         transaction.on_commit(lambda: _clear_opportunity_caches(stale_opportunities))
@@ -135,6 +148,8 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             memberships_discarded=members_dropped,
             invites_moved=invites_moved,
             invites_discarded=invites_dropped,
+            solicitation_invitations_moved=solicitation_invitations_moved,
+            solicitation_invitations_deduped=solicitation_invitations_deduped,
             flags_cleared=flags_cleared,
         )
         source.delete()
@@ -152,6 +167,7 @@ def _reject_invalid_merge(source: Organization, target: Organization) -> None:
     _reject_unmatched_program_manager_status(source, target)
     _reject_funded_programs_a_non_funder_would_inherit(source, target)
     _reject_conflicting_program_applications(source, target)
+    _reject_conflicting_solicitation_applications(source, target)
 
 
 def _reject_shared_commcare_apps(source: Organization, target: Organization) -> None:
@@ -215,6 +231,30 @@ def _reject_conflicting_program_applications(source: Organization, target: Organ
             f"Both organizations have applied to the same program(s) with differing statuses: "
             f"{', '.join(sorted(conflicts))}. Only one application per program can survive a merge, and the "
             "statuses do not mean the same thing. Resolve the application that should not survive first."
+        )
+
+
+def _reject_conflicting_solicitation_applications(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would leave the target with two applications to one solicitation, or applying to its own.
+
+    Unlike program applications, two solicitation applications carry separate answers and reviews, so neither is
+    redundant and the merge cannot pick one.
+    """
+    organizations = (source, target)
+    duplicates = Solicitation.objects.filter(applications__organization=source).filter(
+        applications__organization=target
+    )
+    self_applications = SolicitationApplication.objects.filter(
+        organization__in=organizations, solicitation__organization__in=organizations
+    ).exclude(solicitation__organization=F("organization"))
+
+    conflicts = set(duplicates.values_list("title", flat=True))
+    conflicts |= set(self_applications.values_list("solicitation__title", flat=True))
+    if conflicts:
+        raise MergeNotAllowed(
+            f"Merging would leave {target.slug} with two applications to, or an application to its own, "
+            f"solicitation(s): {', '.join(sorted(conflicts))}. Withdraw or remove the application that should not "
+            "survive first."
         )
 
 
@@ -312,6 +352,17 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
 
     OrganizationInvite.objects.filter(pk__in=to_be_moved).update(organization=target)
     return len(to_be_moved), discarded
+
+
+def _merge_solicitation_invitations(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the source's solicitation invitations, dropping the ones the target already holds."""
+    target_solicitation_ids = set(target.solicitation_invitations.values_list("solicitation_id", flat=True))
+    source_invitations = source.solicitation_invitations.all()
+
+    deduped, _ = source_invitations.filter(solicitation_id__in=target_solicitation_ids).delete()
+    # Whatever survived the delete above is target-safe: (solicitation, organization) is unique.
+    moved = source_invitations.update(organization=target)
+    return moved, deduped
 
 
 def _clear_flag_memberships(source: Organization) -> int:

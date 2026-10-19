@@ -24,6 +24,12 @@ from commcare_connect.organization.models import Organization, OrganizationInvit
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import get_managed_opp
+from commcare_connect.solicitation.models import SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.tests.factories import (
+    SolicitationApplicationFactory,
+    SolicitationFactory,
+    SolicitationInvitationFactory,
+)
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -206,6 +212,8 @@ class TestSimpleReassignments:
         labs_record = LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
         owned_program = ProgramFactory(organization=source)
         funded_program = ProgramFactory(funder=source)
+        solicitation = SolicitationFactory(organization=source)
+        application = SolicitationApplicationFactory(organization=source)
 
         merge_organizations(source, funder_target)
 
@@ -217,6 +225,8 @@ class TestSimpleReassignments:
             (labs_record, "organization"),
             (owned_program, "organization"),
             (funded_program, "funder"),
+            (solicitation, "organization"),
+            (application, "organization"),
         ]:
             obj.refresh_from_db()
             assert getattr(obj, field_name) == funder_target, f"{type(obj).__name__}.{field_name} was not reassigned"
@@ -322,6 +332,56 @@ class TestProgramApplications:
         assert program.organization == target
         assert not ProgramApplication.objects.filter(program=program).exists()
         assert summary.self_program_applications_removed == 1
+
+
+class TestSolicitationApplications:
+    def test_application_to_the_same_solicitation_is_rejected(self, source, target):
+        solicitation = SolicitationFactory(title="Malaria RFP")
+        SolicitationApplicationFactory(solicitation=solicitation, organization=source)
+        SolicitationApplicationFactory(solicitation=solicitation, organization=target)
+
+        with pytest.raises(MergeNotAllowed, match="Malaria RFP"):
+            merge_organizations(source, target)
+
+        assert SolicitationApplication.objects.filter(solicitation=solicitation).count() == 2
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+    @pytest.mark.parametrize(
+        ("poster", "applicant"),
+        [("source", "target"), ("target", "source")],
+        ids=["source_posted", "target_posted"],
+    )
+    def test_application_to_a_solicitation_the_target_would_own_is_rejected(self, source, target, poster, applicant):
+        organizations = {"source": source, "target": target}
+        solicitation = SolicitationFactory(title="Malaria RFP", organization=organizations[poster])
+        SolicitationApplicationFactory(solicitation=solicitation, organization=organizations[applicant])
+
+        with pytest.raises(MergeNotAllowed, match="Malaria RFP"):
+            merge_organizations(source, target)
+
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+
+class TestSolicitationInvitations:
+    def test_source_only_invitation_moves(self, source, target):
+        invitation = SolicitationInvitationFactory(organization=source)
+
+        summary = merge_organizations(source, target)
+
+        invitation.refresh_from_db()
+        assert invitation.organization == target
+        assert summary.solicitation_invitations_moved == 1
+        assert summary.solicitation_invitations_deduped == 0
+
+    def test_invitation_to_the_same_solicitation_is_deduped(self, source, target):
+        solicitation = SolicitationFactory()
+        SolicitationInvitationFactory(solicitation=solicitation, organization=source)
+        target_invitation = SolicitationInvitationFactory(solicitation=solicitation, organization=target)
+
+        summary = merge_organizations(source, target)
+
+        assert list(SolicitationInvitation.objects.filter(solicitation=solicitation)) == [target_invitation]
+        assert summary.solicitation_invitations_deduped == 1
 
 
 class TestMemberships:
@@ -579,6 +639,9 @@ class TestRelationCoverage:
         MembershipFactory(organization=source, role="member")
         OrganizationInviteFactory(organization=source, email="pending@example.com")
         LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
+        SolicitationFactory(organization=source)
+        SolicitationApplicationFactory(organization=source)
+        SolicitationInvitationFactory(organization=source)
 
         merge_organizations(source, funder_target)
 
