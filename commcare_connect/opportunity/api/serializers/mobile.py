@@ -182,7 +182,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_daily_max_visits_per_user(self, obj):
         if _is_api_v2(self.context):
-            return obj.daily_max_visits_per_user_v2
+            return obj.daily_max_visits_per_user_v2 or -1
         return obj.daily_max_visits_per_user or -1
 
     def get_budget_per_visit(self, obj):

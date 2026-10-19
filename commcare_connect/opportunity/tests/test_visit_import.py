@@ -319,37 +319,47 @@ def test_get_status_by_visit_id(headers, rows, expected):
 
 
 @pytest.mark.django_db
-def test_bulk_update_payments(opportunity: Opportunity):
+# The export adds an Accrued column for information only; the import must ignore it whatever it holds.
+@pytest.mark.parametrize(
+    ("at_end", "accrued_value"),
+    [(False, "1000"), (True, "999999"), (True, "not a number"), (False, "")],
+    ids=["as exported", "moved to the end and edited", "non-numeric", "blank"],
+)
+def test_bulk_update_payments(opportunity: Opportunity, at_end, accrued_value):
     mobile_user_seen = MobileUserFactory.create_batch(5)
     access_objects = []
     for mobile_user in mobile_user_seen:
-        access_objects.append(OpportunityAccessFactory(opportunity=opportunity, user=mobile_user))
+        access_objects.append(
+            OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, payment_accrued=1000)
+        )
 
-    dataset = Dataset(
-        headers=[
-            "Username",
-            "Phone Number",
-            "Name",
-            "Payment Amount",
-            "Payment Date (YYYY-MM-DD)",
-            "Payment Method",
-            "Payment Operator",
-        ]
-    )
+    headers = [
+        "Username",
+        "Phone Number",
+        "Name",
+        "Payment Amount",
+        "Payment Date (YYYY-MM-DD)",
+        "Payment Method",
+        "Payment Operator",
+    ]
+    # The export writes Accrued between Name and Payment Amount.
+    accrued_index = len(headers) if at_end else 3
+    headers.insert(accrued_index, "Accrued (USD)")
+    dataset = Dataset(headers=headers)
 
     payment_date = "2025-01-15"
     for index, mobile_user in enumerate(mobile_user_seen):
-        dataset.append(
-            (
-                mobile_user.username,
-                mobile_user.phone_number,
-                mobile_user.name,
-                50,  # Payment Amount
-                payment_date if index != 4 else None,
-                f"method-{index}",
-                f"operator-{index}",
-            )
-        )
+        row = [
+            mobile_user.username,
+            mobile_user.phone_number,
+            mobile_user.name,
+            50,  # Payment Amount
+            payment_date if index != 4 else None,
+            f"method-{index}",
+            f"operator-{index}",
+        ]
+        row.insert(accrued_index, accrued_value)
+        dataset.append(row)
 
     payment_import_status = bulk_update_payments(opportunity.pk, dataset.headers, list(dataset))
 
@@ -366,6 +376,8 @@ def test_bulk_update_payments(opportunity: Opportunity):
             assert payment.date_paid.strftime("%Y-%m-%d") == payment_date
         assert payment.payment_method == f"method-{index}"
         assert payment.payment_operator == f"operator-{index}"
+        access.refresh_from_db()
+        assert access.payment_accrued == 1000
 
 
 @pytest.mark.django_db

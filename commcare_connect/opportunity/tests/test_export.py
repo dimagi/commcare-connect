@@ -8,6 +8,7 @@ from tablib import Dataset
 
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
+    export_empty_payment_table,
     export_user_status_table,
     export_user_visit_review_data,
 )
@@ -447,3 +448,31 @@ def test_user_visit_exporter_get_dataset_boundary_dates(opportunity, mobile_user
     dataset = exporter.get_dataset(from_date, to_date, [])
 
     assert len(dataset) == 2, f"Expected 2 visits (boundary dates), got {len(dataset)}"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("currency_code", "accrued_header"),
+    [("USD", "Accrued (USD)"), (None, "Accrued")],
+)
+def test_export_empty_payment_table_includes_accrued(opportunity: Opportunity, currency_code, accrued_header):
+    if currency_code is None:
+        opportunity.currency = None
+        opportunity.save()
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=1250)
+
+    dataset = export_empty_payment_table(opportunity)
+
+    assert dataset.headers == [
+        "Username",
+        "Phone Number",
+        "Name",
+        accrued_header,
+        "Payment Amount",
+        "Payment Date (YYYY-MM-DD)",
+        "Payment Method",
+        "Payment Operator",
+    ]
+    assert list(dataset) == [
+        (access.user.username, access.user.phone_number, access.user.name, 1250, "", "", "", ""),
+    ]

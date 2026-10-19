@@ -255,6 +255,17 @@ class PaymentInvoiceFactory(DjangoModelFactory):
         model = "opportunity.PaymentInvoice"
 
 
+class InvoiceFinanceRequestFactory(DjangoModelFactory):
+    invoice = SubFactory(PaymentInvoiceFactory)
+    contracted_entity = "1"
+    gl_account = "66"
+    project_name = "Connect Delivery 2026"
+    new_vendor = False
+
+    class Meta:
+        model = "opportunity.InvoiceFinanceRequest"
+
+
 class TaskTypeFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("slug")

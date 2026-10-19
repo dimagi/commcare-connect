@@ -19,6 +19,7 @@ from commcare_connect.organization.models import (
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.tables import DATE_TIME_FORMAT
+from commcare_connect.utils.test_utils import check_basic_permissions
 
 
 @pytest.mark.django_db
@@ -85,10 +86,10 @@ class TestRemoveMembersView:
 
 
 @pytest.fixture
-def profile_editor(db):
-    """A user with no memberships who holds ALL_ORG_PROFILE_EDIT_ACCESS."""
+def org_settings_manager(db):
+    """A user with no memberships who holds ORG_MANAGEMENT_SETTINGS_ACCESS."""
     user = UserFactory()
-    user.user_permissions.add(Permission.objects.get(codename="all_org_profile_edit_access"))
+    user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
     return User.objects.get(pk=user.pk)  # A fresh instance, so the permission cache sees the grant.
 
 
@@ -133,14 +134,16 @@ class TestOrganizationHomeView:
         organization.refresh_from_db()
         assert not organization.program_manager
 
-    def test_program_manager_updates_with_permission(self, client, org_user_admin, organization):
+    @pytest.mark.parametrize("editor", ["org_user_admin", "org_settings_manager"])
+    def test_program_manager_updates_with_permission(self, client, request, organization, editor):
+        """Holders of the permission set it whether or not they're members of the organization."""
         organization.program_manager = False
         organization.save(update_fields=["program_manager"])
-        permission = Permission.objects.get(codename="org_management_settings_access")
-        org_user_admin.user_permissions.add(permission)
-        org_user_admin.refresh_from_db()
+        user = request.getfixturevalue(editor)
+        user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
+        user = User.objects.get(pk=user.pk)  # A fresh instance, so the permission cache sees the grant.
 
-        client.force_login(org_user_admin)
+        client.force_login(user)
         response = client.post(
             self.url(org_slug=organization.slug),
             data={"name": organization.name, "program_manager": "on"},
@@ -150,15 +153,13 @@ class TestOrganizationHomeView:
         organization.refresh_from_db()
         assert organization.program_manager
 
-    def test_non_member_without_permission_is_refused(self, client, user, organization):
-        client.force_login(user)
+    def test_non_members_need_org_settings_permission(self, organization):
+        check_basic_permissions(
+            UserFactory(), self.url(org_slug=organization.slug), "org_management_settings_access", 404
+        )
 
-        response = client.get(self.url(org_slug=organization.slug))
-
-        assert response.status_code == 404
-
-    def test_profile_editor_saves_any_organization_profile(self, client, profile_editor, organization):
-        client.force_login(profile_editor)
+    def test_org_settings_manager_saves_any_organization_profile(self, client, org_settings_manager, organization):
+        client.force_login(org_settings_manager)
 
         response = client.post(
             self.url(org_slug=organization.slug),
@@ -170,19 +171,9 @@ class TestOrganizationHomeView:
         assert organization.short_name == "PE"
         assert organization.team_size == TeamSizeRange.S
 
-    def test_profile_editor_cannot_enable_program_manager(self, client, profile_editor, organization):
-        organization.program_manager = False
-        organization.save(update_fields=["program_manager"])
-        client.force_login(profile_editor)
-
-        client.post(self.url(org_slug=organization.slug), data={"name": organization.name, "program_manager": "on"})
-
-        organization.refresh_from_db()
-        assert not organization.program_manager
-
     @pytest.mark.parametrize(
         "viewer, can_manage_members",
-        [("org_user_admin", True), ("profile_editor", False)],
+        [("org_user_admin", True), ("org_settings_manager", False)],
     )
     def test_members_tab_only_shown_to_org_admins(self, client, request, organization, viewer, can_manage_members):
         client.force_login(request.getfixturevalue(viewer))
@@ -193,8 +184,8 @@ class TestOrganizationHomeView:
         member_table_url = reverse("organization:org_member_table", args=(organization.slug,))
         assert (member_table_url in response.content.decode()) is can_manage_members
 
-    def test_profile_editor_cannot_reach_member_endpoints(self, client, profile_editor, organization):
-        client.force_login(profile_editor)
+    def test_org_settings_manager_cannot_reach_member_endpoints(self, client, org_settings_manager, organization):
+        client.force_login(org_settings_manager)
 
         response = client.get(reverse("organization:org_member_table", args=(organization.slug,)))
 
@@ -261,8 +252,8 @@ class TestOrganizationCreateView:
     @pytest.mark.parametrize(
         "creator, skip_membership, becomes_admin",
         [
-            ("profile_editor", True, False),
-            ("profile_editor", False, True),
+            ("org_settings_manager", True, False),
+            ("org_settings_manager", False, True),
             # Without the permission the field isn't offered, so a forged value is ignored.
             ("user", True, True),
         ],
@@ -283,8 +274,8 @@ class TestOrganizationCreateView:
         expected_url = "opportunity:list" if becomes_admin else "organization:home"
         assert response.url == reverse(expected_url, args=(org.slug,))
 
-    @pytest.mark.parametrize("creator, offered", [("profile_editor", True), ("user", False)])
-    def test_skip_membership_only_offered_to_profile_editors(self, client, request, creator, offered):
+    @pytest.mark.parametrize("creator, offered", [("org_settings_manager", True), ("user", False)])
+    def test_skip_membership_only_offered_to_org_settings_managers(self, client, request, creator, offered):
         client.force_login(request.getfixturevalue(creator))
 
         response = client.get(self.url())

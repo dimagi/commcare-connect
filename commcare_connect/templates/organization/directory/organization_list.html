@@ -1,0 +1,28 @@
+{% extends "organization/directory/listing_base.html" %}
+{% load i18n %}
+{% block title %}
+  {% translate "Organizations" %}
+{% endblock title %}
+{% block heading %}
+  {% translate "Organizations" %}
+{% endblock heading %}
+{% block subheading %}
+  {% translate "All organizations in the Connect network." %}
+{% endblock subheading %}
+{% block header_actions %}
+  <button type="button"
+          class="button button-md primary-dark"
+          hx-get="{% url 'organization_directory:create' %}?next={{ request.get_full_path|urlencode }}"
+          hx-target="#directory-form">
+    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+    {% translate "Add Organization" %}
+  </button>
+{% endblock header_actions %}
+{% block filters %}
+  <div class="min-w-48">{{ filter.form.countries }}</div>
+  <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
+  <div class="min-w-48">{{ filter.form.status }}</div>
+{% endblock filters %}
+{% block result_count %}
+  {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}
+{% endblock result_count %}
