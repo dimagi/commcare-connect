@@ -211,7 +211,8 @@ The **pay rate backfill** creates one row for **every** existing payment unit, i
 its current `amount` and `org_amount`. `applied_on` is set, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `effective_from` is:
 
 - the payment unit's `start_date`, if set. Visits submitted before it are marked "trial" and never paid, so no
-  approval comes before it.
+  approval comes before it. If it is in the future but the unit already has visits (moved after it started, which
+  section [6.5](#65-changing-a-payment-units-start-date) now prevents), the backfill date instead.
 - otherwise, the opportunity's start date. All work happens after the opportunity starts.
 
 ### 6.5 Changing a payment unit's start date
@@ -286,6 +287,11 @@ New rule: **only add to earned pay for newly approved deliveries**, at the pay r
 
 ```python
 # Before this run, the updater locks its works when loading them and sets their status in memory
+if completed_work.status != CompletedWorkStatus.approved:
+    set_totals(completed_work, records=[])  # 0 while not approved, as today
+elif status_before_this_run != CompletedWorkStatus.approved:
+    set_totals(completed_work, completed_work.earned_pay_records.all())  # re-approved: back to its records
+
 new_deliveries = approved_count - completed_work.saved_approved_count
 if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
     pay_rate = completed_work.payment_unit.current_pay_rate
@@ -562,7 +568,8 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
     pay_rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
     scale_visit_limits(payment_unit, previous, pay_rate)
     if started and previous.flw_amount != pay_rate.flw_amount:  # no notification before the unit starts
-        transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk))
+        # effective_from stays the original start date, so the message shows today
+        transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk, date.today()))
     return pay_rate
 ```
 
@@ -651,7 +658,8 @@ def apply_pay_rate_change(pay_rate_id):
         pay_rate.applied_on = now()
         pay_rate.save(update_fields=["applied_on"])
         if previous.flw_amount != pay_rate.flw_amount:
-            transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk))
+            notify = partial(send_pay_rate_change_notification.delay, pay_rate.pk, pay_rate.effective_from)
+            transaction.on_commit(notify)
 ```
 
 **Changes made while the job runs**
