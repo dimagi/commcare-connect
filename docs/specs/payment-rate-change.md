@@ -740,7 +740,8 @@ the new pay rate, but only 360 is left: the extra 90 is the **shortfall** (secti
 **New workers**
 
 The payment unit's **max visits per worker** is scaled by the same ratio, rounded down: 100 × 4 ÷ 5 = **80**.
-80 × 5 = 100 × 4, so new workers get the same money as existing ones.
+80 × 5 = 100 × 4, so new workers get the same money as existing ones. It never goes below 1, or new workers
+couldn't join the unit at all; their limit is still capped by what the remaining budget can pay.
 
 **Code**
 
@@ -759,7 +760,7 @@ def scale_visit_limits(payment_unit, old_rate, new_rate):
         claim_limit.max_visits = max(completed, scaled)
         claim_limit.save(update_fields=["max_visits"])
     if payment_unit.max_total:
-        payment_unit.max_total = payment_unit.max_total * old_cost // new_cost
+        payment_unit.max_total = max(1, payment_unit.max_total * old_cost // new_cost)
         payment_unit.save(update_fields=["max_total"])
 ```
 
@@ -769,7 +770,7 @@ One message for the payment unit, with no per-worker numbers.
 
 **Increase**
 
-> "This increase will reduce workers' remaining visits for this payment unit by up to `<Percent>`% when it takes
+> "This increase will reduce workers' remaining visits for this payment unit by around `<Percent>`% when it takes
 > effect on `<Effective date>`. Add budget first if you want workers to keep their visits."
 
 `<Percent>` = 1 − old cost ÷ new cost (e.g. 20% for 4 → 5).
