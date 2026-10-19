@@ -122,7 +122,7 @@ class PaymentUnitRate(BaseModel):
     cancelled_by = models.CharField(max_length=255, blank=True)  # user's email, or "system"
     cancelled_on = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.TextField(blank=True)  # filled in when the system cancels a change
-    applied_on = models.DateTimeField(null=True, blank=True)  # when limits were scaled and workers notified
+    applied_on = models.DateTimeField(null=True, blank=True)  # when the change was applied (limits scaled)
 
     class Meta:
         constraints = [
@@ -138,7 +138,7 @@ class PaymentUnitRate(BaseModel):
 - **Who and when:** `BaseModel` gives `created_by` (who scheduled it), `modified_by` (who edited it last),
   `date_created` and `date_modified`.
 - **System cancellations** (section [11.4](#114-no-overspend-funding-check)): `cancelled_by` is `"system"` and `cancellation_reason` says why.
-- **`applied_on`** is when a change was applied (limits scaled, workers notified). `effective_from` is only the day it
+- **`applied_on`** is when a change was applied (limits scaled). `effective_from` is only the day it
   is due. It is set by:
   - the job on the 1st (section [10](#10-applying-a-scheduled-change))
   - an Initial Rate, when it is created (section [6.3](#63-first-pay-rate-of-a-payment-unit))
