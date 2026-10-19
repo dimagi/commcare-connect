@@ -438,7 +438,7 @@ multiplying by the current pay rate, so they always match earned pay and never l
 
 ## Part 2: Scheduling and applying pay rate changes
 
-What PMs, NMs and workers see, the daily job, and visit limits (tickets 5–9, releases 3 and 4). Depends on the
+What PMs, NMs and workers see, the daily job, and visit limits (tickets 5–9, release 3). Depends on the
 changes in Part 1.
 
 ## 9. Scheduling a change
@@ -530,9 +530,8 @@ pay rate still moves with the start date (section [6.5](#65-changing-a-payment-u
   and can't be cancelled, and that workers are notified now (if worker pay changes). The visit limit warning (section
   [11.3](#113-message-before-confirming)) is included if the cost goes up.
 - **On save:** if the cost goes up, joined workers' limits are scaled straight away (section [11.2](#112-what-a-pay-rate-increase-does)); with no visits there
-  is no shortfall. If worker pay changed, workers are notified. No NM banner.
-- A change scheduled for the unit before immediate changes shipped is the latest pay rate, so it is the one edited,
-  and it still takes effect on the 1st through the job.
+  is no shortfall. A raise from 0 isn't scaled, so it is refused if the remaining budget can't cover it (section
+  [11.7](#117-special-case-pay-rate-raised-from-zero)). If worker pay changed, workers are notified. No NM banner.
 
 **Avoiding race conditions:** lock first, then check again that the unit still hasn't started or still has no visits.
 Section [9.2](#92-payment-units-that-havent-started-yet) uses the same function.
@@ -545,20 +544,22 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
     #   that the scaling below misses
     # - form processing locks the claim limit rows before saving a visit; without this a visit could
     #   arrive and be auto-approved at the old pay rate, after the PM was told the change is immediate
-    Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
+    opportunity = Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
     list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
     payment_unit = PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
     started = not not_started(payment_unit)
     if started and has_visits(payment_unit):
         raise ValidationError("This payment unit now has visits. Schedule the change for the 1st instead.")
     previous = payment_unit.budget_pay_rate  # loaded before the edit, so it keeps the old amounts
+    if previous.flw_amount + previous.org_amount == 0 and flw_amount + org_amount > 0:
+        # Raised from zero: limits aren't scaled, so the budget must cover them at the new cost (section 11.7)
+        if needed_from_zero(payment_unit, flw_amount + org_amount) > opportunity.remaining_budget:
+            raise ValidationError("The remaining budget can't cover this pay rate. Add budget first.")
     pay_rate = payment_unit.pay_rates.select_for_update().filter(cancelled_on__isnull=True).latest("effective_from")
     pay_rate.flw_amount = flw_amount
     pay_rate.org_amount = org_amount
     pay_rate.modified_by = user.email
     pay_rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
-    if not pay_rate.applied_on:
-        return pay_rate  # scheduled before immediate changes shipped: the job on the 1st applies it
     scale_visit_limits(payment_unit, previous, pay_rate)
     if started and previous.flw_amount != pay_rate.flw_amount:  # no notification before the unit starts
         transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk))
@@ -984,7 +985,7 @@ apply."
 6. Schedule, edit and cancel
 7. Job on the 1st
 8. Upcoming pay rate changes: list column, banners and Add Budget note
-9. Immediate change for payment units with no visits (section [9.1](#91-payment-units-with-no-visits))
+9. Immediate change for payment units with no visits or not started yet (sections [9.1](#91-payment-units-with-no-visits) and [9.2](#92-payment-units-that-havent-started-yet))
 10. Drop `amount` and `org_amount` from `PaymentUnit`, and `invoiced_approved_count` from `CompletedWork`
 
 ### 14.1 Releases
@@ -995,9 +996,8 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Foundation | 1, 2, 3    | Nothing new for PMs except the start date rule. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
 | 2. Earned pay | 4          | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.1](#71-earned-pay-records)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
-| 3. Feature    | 5, 6, 7, 8 | Everything PMs see arrives together: Pay Rates card, scheduling, the job, the list column and banners.                                                                                                                                                                                                                              |
-| 4. Later      | 9          | Immediate changes for units with no visits. Until then, those units are scheduled for the 1st.                                                                                                                                                                                                                                      |
-| 5. Follow-up  | 10         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
+| 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
+| 4. Follow-up  | 10         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
 
 > **Note:** releases 1 and 2 can ship together if needed. The combined release is then not safe to roll back either.
 
