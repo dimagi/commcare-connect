@@ -872,9 +872,9 @@ def test_is_setup_complete_payment_unit_limits(opportunity, max_daily, max_total
     "limits, expected_v1, expected_v2",
     [
         pytest.param([(5, 20), (3, 10)], 8, 8, id="all_units_capped"),
-        pytest.param([(5, 20), (None, 1)], 6, 5, id="mixed_units"),
-        pytest.param([(None, 4), (None, 6)], 10, 0, id="no_units_capped"),
-        pytest.param([], 0, 0, id="no_payment_units"),
+        pytest.param([(5, 20), (None, 1)], 6, None, id="mixed_units"),
+        pytest.param([(None, 4), (None, 6)], 10, None, id="no_units_capped"),
+        pytest.param([], 0, None, id="no_payment_units"),
     ],
 )
 def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2):

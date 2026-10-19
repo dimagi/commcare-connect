@@ -24,6 +24,7 @@ from commcare_connect.opportunity.models import (
     InvoiceStatus,
     LearnModule,
     OpportunityAccess,
+    OpportunityStatus,
     PaymentInvoice,
     PaymentUnit,
     TaskType,
@@ -39,7 +40,6 @@ from commcare_connect.program.utils import AccessLevel, opportunity_access_level
 from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
-    TEXT_CENTER_ATTR,
     DMYTColumn,
     DurationColumn,
     GroupedTable,
@@ -508,6 +508,9 @@ def date_with_time_popup(table, date):
     )
 
 
+STAT_COLUMN_ATTRS = {"th": {"class": "col-stat"}, "td": {"class": "col-stat"}}
+
+
 class BaseOpportunityList(OrgContextTable):
     stats_style = "underline underline-offset-2 justify-center"
 
@@ -556,6 +559,9 @@ class BaseOpportunityList(OrgContextTable):
     status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
 
     program = tables.Column(accessor="program_name")
+    delivery_type = tables.Column(
+        verbose_name=gettext_lazy("Delivery Type"), accessor="delivery_type_name", empty_values=()
+    )
     start_date = DMYTColumn()
     end_date = DMYTColumn()
 
@@ -566,22 +572,23 @@ class BaseOpportunityList(OrgContextTable):
             "entity_type",
             "status",
             "program",
+            "delivery_type",
             "start_date",
             "end_date",
         )
         order_by = ("status", "-start_date", "end_date")
         empty_text = gettext_lazy("No Opportunities created yet.")
 
+    STATUS_BADGE_CLASSES = {
+        OpportunityStatus.ACTIVE: "badge badge-sm bg-green-600/20 text-green-600",
+        OpportunityStatus.ENDED: "badge badge-sm bg-orange-600/20 text-orange-600",
+        OpportunityStatus.INACTIVE: "badge badge-sm bg-slate-100 text-slate-400",
+    }
+
     def render_status(self, value):
-        if value == 0:
-            badge_class = "badge badge-sm bg-green-600/20 text-green-600"
-            text = "Active"
-        elif value == 1:
-            badge_class = "badge badge-sm bg-orange-600/20 text-orange-600"
-            text = "Ended"
-        else:
-            badge_class = "badge badge-sm bg-slate-100 text-slate-400"
-            text = "Inactive"
+        status = OpportunityStatus(value)
+        badge_class = self.STATUS_BADGE_CLASSES[status]
+        text = status.label
 
         return format_html(
             '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'  # noqa: E501
@@ -606,6 +613,8 @@ class BaseOpportunityList(OrgContextTable):
 
     def render_program(self, value):
         return self._render_div(value if value else "--", extra_classes="justify-start")
+
+    render_delivery_type = render_program
 
     def render_actions(self, record):
         actions = [
@@ -646,7 +655,7 @@ class BaseOpportunityList(OrgContextTable):
 
 
 class OpportunityTable(BaseOpportunityList):
-    col_attrs = merge_attrs(TEXT_CENTER_ATTR, STOP_CLICK_PROPAGATION_ATTR)
+    col_attrs = merge_attrs(STAT_COLUMN_ATTRS, STOP_CLICK_PROPAGATION_ATTR)
 
     pending_invites = tables.Column(
         verbose_name=header_with_tooltip(
@@ -711,23 +720,23 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         verbose_name=header_with_tooltip(
             "Active Connect Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
         ),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     total_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Total Deliveries", "Payment units completed"),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     verified_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Verified Deliveries", "Payment units fully approved by PM and NM"),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     worker_earnings = tables.Column(
         verbose_name=header_with_tooltip("Worker Earnings", "Total payment accrued to worker"),
         accessor="total_accrued",
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="")

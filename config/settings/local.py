@@ -41,6 +41,12 @@ CELERY_TASK_STORE_EAGER_RESULT = True
 
 # CommCareConnect
 # ------------------------------------------------------------------------------
+# Fake the Finance Jira service desk so invoices can be "sent" without raising real tickets.
+# "success" pretends every request is accepted; "reject", "timeout" and "unreachable" fail the
+# create call the way Jira would. The delay (seconds) keeps the "sending" state on screen when
+# tasks run on a worker.
+JIRA_SERVICE_DESK_DRY_RUN = env("JIRA_SERVICE_DESK_DRY_RUN", default="")
+JIRA_SERVICE_DESK_DRY_RUN_DELAY = env.int("JIRA_SERVICE_DESK_DRY_RUN_DELAY", default=0)
 
 # allow running the deid-scripts in development
 INSTALLED_APPS += ["commcare_connect.deid"]
