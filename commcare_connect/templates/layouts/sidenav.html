@@ -40,7 +40,7 @@
             {% url 'program:home' request.org.slug as program_home_url %}
             {% include "components/sidenav-items.html" with name="Programs" icon="table-columns" target=program_home_url namespace="program" %}
           {% endif %}
-          {% if request.org_access_level.has_admin or perms.users.all_org_profile_edit_access %}
+          {% if request.org_access_level.has_admin or perms.users.org_management_settings_access %}
             {% url 'organization:home' request.org.slug as organization_home_url %}
             {% trans "My Organization" as organization_name %}
             {% include "components/sidenav-items.html" with name=organization_name icon="building" target=organization_home_url namespace="organization" %}

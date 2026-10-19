@@ -705,8 +705,8 @@ class TestPendingInvitesTableView:
         ("admin", None, True, True),
         ("member", None, True, False),
         ("viewer", None, True, False),
-        ("member", "all_org_profile_edit_access", True, True),
-        ("viewer", "all_org_profile_edit_access", True, True),
+        ("member", "org_management_settings_access", True, True),
+        ("viewer", "org_management_settings_access", True, True),
         (None, "all_org_access", True, True),
     ],
 )
@@ -727,9 +727,9 @@ def test_sidenav_entries_visibility(client, organization, role, permission, sees
 
 
 @pytest.mark.django_db
-def test_sidenav_shows_my_organization_to_profile_editor_without_membership(client, organization):
+def test_sidenav_shows_my_organization_to_org_settings_manager_without_membership(client, organization):
     user = UserFactory()
-    user.user_permissions.add(Permission.objects.get(codename="all_org_profile_edit_access"))
+    user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
     client.force_login(user)
 
     content = client.get(reverse("organization:home", args=(organization.slug,))).content.decode()
