@@ -148,6 +148,11 @@ urlpatterns = [
         views.update_invoice_invoice_ticket_link,
         name="update_invoice_invoice_ticket_link",
     ),
+    path(
+        "<slug:opp_id>/invoice/<slug:invoice_id>/finance_request/",
+        views.InvoiceFinanceRequestView.as_view(),
+        name="invoice_finance_request",
+    ),
     path("<slug:opp_id>/invoice/<slug:invoice_id>/download/", views.download_invoice, name="download_invoice"),
     path("<slug:opp_id>/invoice/export/", views.export_invoices, name="export_invoices"),
     path("<slug:opp_id>/invoice/update_status/", views.invoice_update_status, name="invoice_update_status"),
