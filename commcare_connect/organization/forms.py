@@ -3,13 +3,17 @@ from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
+from commcare_connect.opportunity.tables import value_with_icon_tooltip
 from commcare_connect.organization.models import (
+    ORGANIZATION_STATUS_DEFINITIONS,
     Organization,
     OrganizationInvite,
+    OrganizationStatus,
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
@@ -61,7 +65,7 @@ class OrganizationProfileForm(forms.ModelForm):
         labels = {
             "name": gettext_lazy("Organization Name"),
             "short_name": gettext_lazy("Short Name"),
-            "has_used_connect": gettext_lazy("Has Used CommCare Connect Before?"),
+            "has_used_connect": gettext_lazy("Has Used Connect Before?"),
             "year_of_establishment": gettext_lazy("Year of Establishment"),
             "team_size": gettext_lazy("Team Size"),
             "flws_managed": gettext_lazy("Number of FLW's Managed"),
@@ -121,8 +125,13 @@ class OrganizationProfileForm(forms.ModelForm):
                 "contact_emails",
                 "eoi_links",
                 "notes",
+                *self._final_step_extras(),
             ),
         )
+
+    def _final_step_extras(self):
+        """Hook: layout items to show after the profile fields, beside the submit button."""
+        return ()
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
@@ -152,6 +161,33 @@ class OrganizationProfileForm(forms.ModelForm):
 
     def clean_year_of_establishment(self):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
+
+
+class OrganizationCreateForm(OrganizationProfileForm):
+    """Creates an organization from the create wizard.
+
+    Only ORG_MANAGEMENT_SETTINGS_ACCESS holders may skip joining it: that permission still lets them
+    edit its profile, whereas anyone else would be locked out of the organization they just made.
+    """
+
+    skip_membership = forms.BooleanField(
+        required=False,
+        label=gettext_lazy("Create without becoming a member"),
+        help_text=gettext_lazy("You can still edit its profile, but not its members or opportunities."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+
+    def _drop_unpermitted_fields(self):
+        if not self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
+            del self.fields["skip_membership"]
+
+    def _final_step_extras(self):
+        if "skip_membership" in self.fields:
+            return (_toggle("skip_membership"),)
+        return ()
 
 
 class OrganizationChangeForm(OrganizationProfileForm):
@@ -212,6 +248,92 @@ class OrganizationChangeForm(OrganizationProfileForm):
         return [_full_width(_toggle("has_used_connect"))]
 
 
+class OrganizationDirectoryForm(OrganizationProfileForm):
+    """Organization profile form requiring countries, regions and sectors, with status and agreement links."""
+
+    REQUIRED_FIELDS = ("name", "short_name", "countries", "regions", "primary_sectors")
+
+    class Meta(OrganizationProfileForm.Meta):
+        fields = (
+            "name",
+            "short_name",
+            "status",
+            "year_of_establishment",
+            "has_used_connect",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "latest_msa_link",
+            "latest_work_order_link",
+            "notes",
+        )
+        widgets = OrganizationProfileForm.Meta.widgets | {
+            "has_used_connect": forms.Select(choices=((True, gettext_lazy("Yes")), (False, gettext_lazy("No")))),
+            "regions": forms.TextInput(),
+            "office_address": forms.TextInput(),
+        }
+        labels = OrganizationProfileForm.Meta.labels | {
+            "has_used_connect": gettext_lazy("Has Used Connect"),
+            "team_size": gettext_lazy("Org Team Size"),
+            "flws_managed": gettext_lazy("No. of FLWs Managed"),
+            "countries": gettext_lazy("Countries of Operation"),
+            "regions": gettext_lazy("Regions / States of Operation"),
+            "primary_sectors": gettext_lazy("Primary Sector(s)"),
+            "contact_emails": gettext_lazy("Email Addresses"),
+            "latest_msa_link": gettext_lazy("Latest MSA Link"),
+            "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
+            "notes": gettext_lazy("Organization Notes"),
+        }
+        help_texts = {
+            "name": gettext_lazy("Renaming the organization does not change its URL."),
+            "contact_emails": gettext_lazy("One email address per line."),
+            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.REQUIRED_FIELDS:
+            self.fields[field].required = True
+        self.fields["status"].choices = [("", "—"), *OrganizationStatus.choices]
+        self.fields["status"].label = value_with_icon_tooltip(
+            self.fields["status"].label,
+            render_to_string(
+                "organization/directory/status_definitions.html",
+                {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+            ),
+        )
+
+    def _layout(self):
+        return layout.Layout(
+            layout.Div(
+                _full_width("name"),
+                "short_name",
+                "status",
+                "year_of_establishment",
+                "has_used_connect",
+                "team_size",
+                "flws_managed",
+                _full_width("countries"),
+                _full_width("regions"),
+                _full_width("primary_sectors"),
+                "website",
+                "office_address",
+                _full_width("contact_emails"),
+                _full_width("eoi_links"),
+                "latest_msa_link",
+                "latest_work_order_link",
+                _full_width("notes"),
+                css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
+            ),
+        )
+
+
 def _wizard_step(number, title, *fields):
     """Wraps a field group as one wizard step.
 
@@ -238,11 +360,17 @@ def _section(title, *fields):
 
 
 def _toggle(field):
-    """Renders a boolean as a labelled row rather than a bare checkbox beside its label."""
+    """Renders a boolean as a labelled row rather than a bare checkbox beside its label.
+
+    Help text wraps onto its own line beneath, so it doesn't push the switch off the row's edge.
+    """
     return layout.Field(
         field,
         css_class=CHECKBOX_CLASS,
-        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg [&>label]:mb-0",
+        wrapper_class=(
+            "bg-slate-100 flex flex-wrap items-center justify-between p-4 rounded-lg "
+            "[&>label]:mb-0 [&>small]:basis-full [&>small]:mt-1"
+        ),
     )
 
 

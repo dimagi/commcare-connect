@@ -20,12 +20,15 @@ DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=60)  # no
 
 # SECURITY
 # ------------------------------------------------------------------------------
+# Currently has no effect: Traefik overwrites the load balancer's X-Forwarded-Proto with "http", so
+# request.is_secure() is always False. HSTS is therefore sent by SecurityHeadersMiddleware, not SecurityMiddleware.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=False)
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
-# TODO: set this to 60 seconds first and then to 518400 once you prove the former works
-SECURE_HSTS_SECONDS = 60
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+LANGUAGE_COOKIE_SECURE = True
+# Raise in steps (60 -> 86400 -> 31536000): browsers cache the policy for max-age and it can't be withdrawn early
+SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=60)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True)
 SECURE_HSTS_PRELOAD = env.bool("DJANGO_SECURE_HSTS_PRELOAD", default=True)
 SECURE_CONTENT_TYPE_NOSNIFF = env.bool("DJANGO_SECURE_CONTENT_TYPE_NOSNIFF", default=True)

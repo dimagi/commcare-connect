@@ -711,6 +711,15 @@
     @apply whitespace-nowrap border-b-[1px] border-gray-100 p-4 text-left;
   }
 
+  /* Narrow numeric columns: the header wraps instead of setting the column's width. */
+  .base-table th.col-stat {
+    @apply w-28 whitespace-normal px-2 text-center align-bottom;
+  }
+
+  .base-table td.col-stat {
+    @apply px-2 text-center;
+  }
+
   .base-table th.col-action,
   .base-table td.col-action {
     @apply sticky right-0;
@@ -854,8 +863,10 @@
 }
 
 select:disabled,
-.textinput:disabled {
+.textinput:disabled,
+.numberinput:disabled {
   @apply pointer-events-none opacity-50;
+  @apply bg-gray-200;
 }
 
 /* Multi-line truncation helper (2 lines). */

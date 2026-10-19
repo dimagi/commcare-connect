@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -83,6 +84,14 @@ class Country(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class OpportunityStatus(models.IntegerChoices):
+    """Derived from `active` and `end_date` by the opportunity list; ordered so Active sorts first."""
+
+    ACTIVE = 0, gettext_lazy("Active")
+    ENDED = 1, gettext_lazy("Ended")
+    INACTIVE = 2, gettext_lazy("Inactive")
 
 
 # Tracked separately from the fields=["active"] tracker below rather than by adding
@@ -171,7 +180,7 @@ class Opportunity(BaseModel):
         if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
-            if not (pu.max_total and pu.max_daily):
+            if not pu.max_total:
                 return False
         return True
 
@@ -270,7 +279,20 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user(self):
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
+        # API 1.0: a unit without a daily limit can do at most max_total visits in a day
+        return (
+            self.paymentunit_set.aggregate(max_daily=Sum(Coalesce("max_daily", "max_total"))).get("max_daily", 0) or 0
+        )
+
+    @property
+    def daily_max_visits_per_user_v2(self):
+        # API 2.0: a unit without a daily limit leaves the opportunity without one
+        limits = self.paymentunit_set.aggregate(
+            daily_total=Sum("max_daily"), uncapped=Count("pk", filter=Q(max_daily__isnull=True))
+        )
+        if limits["uncapped"]:
+            return None
+        return limits["daily_total"]
 
     @property
     def budget_per_visit(self):
@@ -667,7 +689,8 @@ class PaymentUnit(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
-    max_daily = models.IntegerField(null=True)
+    # None means the payment unit has no daily limit
+    max_daily = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     parent_payment_unit = models.ForeignKey(
         "self",
         on_delete=models.DO_NOTHING,
@@ -829,6 +852,35 @@ class PaymentInvoice(models.Model):
         email = event.pgh_context.metadata.get("user_email")
         user = User.objects.filter(email=email).first()
         return f"{user.name} ({email})" if user and user.name else email
+
+
+class InvoiceFinanceRequestStatus(models.TextChoices):
+    PENDING = "pending", gettext_lazy("Submitting")
+    SUBMITTED = "submitted", gettext_lazy("Submitted")
+    FAILED = "failed", gettext_lazy("Failed")
+
+
+class InvoiceFinanceRequest(BaseModel):
+    """The payment request raised with Finance for one invoice: a ticket on the Project Finance service desk.
+
+    The answers are kept so a failed submission can be retried, and so the opportunity's next request can be
+    prefilled. `contracted_entity` and `gl_account` hold the Jira Form's choice IDs. Their labels live in
+    `utils/finance_request.py`, so a change to Finance's form needs no migration.
+    """
+
+    invoice = models.OneToOneField(PaymentInvoice, on_delete=models.CASCADE, related_name="finance_request")
+    status = models.CharField(
+        choices=InvoiceFinanceRequestStatus,
+        default=InvoiceFinanceRequestStatus.PENDING,
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+    )
+    submitted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    contracted_entity = models.CharField(max_length=10)
+    gl_account = models.CharField(max_length=10)
+    project_name = models.CharField(max_length=255, blank=True)
+    new_vendor = models.BooleanField()
+    issue_key = models.CharField(max_length=50, blank=True)
+    error = models.TextField(blank=True)
 
 
 class Payment(models.Model):

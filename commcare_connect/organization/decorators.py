@@ -15,7 +15,7 @@ from commcare_connect.program.utils import (
     program_access_level_from_request,
 )
 from commcare_connect.utils.db import get_object_by_uuid_or_int
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
 from .models import Organization, UserOrganizationMembership
 
@@ -31,6 +31,12 @@ def user_is_org_admin(user, organization):
     ).exists()
 
 
+def user_is_org_member(user, organization):
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
+
+
 def is_user_pm_org_admin(user, organization):
     if user.has_perm(ALL_ORG_ACCESS):
         return True
@@ -39,6 +45,15 @@ def is_user_pm_org_admin(user, organization):
 
 def org_is_program_manager(organization):
     return bool(organization and organization.program_manager)
+
+
+def can_edit_org_profile(request) -> bool:
+    """Org admins edit their own org's profile; ORG_MANAGEMENT_SETTINGS_ACCESS extends that to every org."""
+    if not request.org:
+        return False
+    return request.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS) or org_access_level_from_request(request) >= (
+        AccessLevel.ADMIN
+    )
 
 
 class IsProgramManagerOrgAdmin(BasePermission):
@@ -51,9 +66,9 @@ class IsProgramManagerOrgAdmin(BasePermission):
         return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
 
 
-def can_act_as_program_manager_admin(user, org) -> bool:
-    # Org that is program manager, funder or watcher can act as program manager
-    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_admin(
+def can_act_as_program_manager_user(user, org) -> bool:
+    # Any member of an org that is program manager, funder or watcher can act as program manager
+    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_member(
         user, org
     )
 
@@ -74,6 +89,10 @@ def org_pm_required(view_func, *args, **kwargs):
     return _get_decorated_function(
         view_func, lambda request, *args, **kwargs: is_user_pm_org_admin(request.user, request.org)
     )
+
+
+def org_profile_edit_access_required(view_func):
+    return _get_decorated_function(view_func, lambda request, *args, **kwargs: can_edit_org_profile(request))
 
 
 def _program_access_level_gate(minimum, program_id_kwarg="pk"):
