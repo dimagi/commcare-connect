@@ -232,9 +232,9 @@ When the date changes, the Initial Rate's `effective_from` moves with it in the 
 Otherwise the form shows an error: the unit has already started, or (if only the last rule fails) the PM must cancel
 the pay rate change first.
 
-**Opportunity start date.** A unit with no `start_date` starts with its opportunity, so when the opportunity's start
-date changes, the Initial Rates of those units move with it in the same save. The opportunity form already only allows
-this before the opportunity starts. It also allows it on the start day itself, which is now locked too: moving the
+**Opportunity start date.** When the opportunity's start date changes, each unit's Initial Rate `effective_from` is
+worked out again with the rule in section [6.3](#63-first-pay-rate-of-a-payment-unit), in the same save. The
+opportunity form already only allows this before the opportunity starts, so no unit has approved work yet. It also allows it on the start day itself, which is now locked too: moving the
 start date then would leave that day's approvals with no active pay rate.
 
 **Why these rules**
