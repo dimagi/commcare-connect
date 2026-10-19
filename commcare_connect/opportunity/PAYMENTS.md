@@ -15,14 +15,14 @@ flowchart LR
     ACC --> OA[OpportunityAccess.payment_accrued]
     ACC -->|bill_invoice| CWI[CompletedWorkInvoice<br/>frozen line items]
     CWI --> INV[PaymentInvoice]
-    INV -->|invoice_pay| PO[Payment to organization]
-    OA -.->|CSV upload| PW[Payment to worker]
+    INV -->|invoice_pay| PO[Record payment to organization]
+    OA -.->|CSV upload| PW[Record payment to worker]
 ```
 
-There are two payees:
+There are two payees. The money itself moves outside Connect; Connect only records that a payment was made:
 
-- **The worker (FLW)** earns `PaymentUnit.amount` per approved unit. They are paid by uploading a payment CSV, which creates `Payment` rows linked to an `OpportunityAccess`.
-- **The organization** earns `PaymentUnit.org_amount` per approved unit, billed together with the FLW pay on a `PaymentInvoice`. It is paid when a PM marks the invoice paid, which creates a `Payment` row linked to an `Organization` and the invoice.
+- **The worker (FLW)** earns `PaymentUnit.amount` per approved unit. Their payments are recorded by uploading a payment CSV, which creates `Payment` rows linked to an `OpportunityAccess`.
+- **The organization** earns `PaymentUnit.org_amount` per approved unit, billed together with the FLW pay on a `PaymentInvoice`. Its payment is recorded when a PM marks the invoice paid, which creates a `Payment` row linked to an `Organization` and the invoice.
 
 ## Model Relationships
 
@@ -60,7 +60,7 @@ erDiagram
 | `amount`                  | Worker pay per completed unit, in the opportunity's currency (integer)                   |
 | `org_amount`              | Organization pay per completed unit (default 0). Applies to every opportunity            |
 | `max_total`               | Maximum units per worker. Required for setup to be complete                              |
-| `max_daily`               | Maximum visits per worker per day. Required for setup to be complete                     |
+| `max_daily`               | Maximum visits per worker per day. Optional; blank means no daily limit                  |
 | `parent_payment_unit`     | Optional parent. A parent unit can only complete as many times as its children completed |
 | `start_date` / `end_date` | Optional window. Visits before`start_date` are `trial`; `end_date` caps the claim limit  |
 
@@ -240,6 +240,8 @@ flowchart LR
 | PM review                            | `views.user_visit_review` → `update_payment_accrued()`                       | All of the worker's works                                                       |
 | Visit, review or work status imports | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)              | All works except`rejected`                                                      |
 | Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)        | All works except`rejected`                                                      |
+
+**Incremental** skips works that are already processed (approved, or with `saved_approved_count > 0`), so only works still waiting on approval are recalculated. **Full** recalculates every one of the worker's works.
 
 All paths except the nightly task run under a Redis lock `update_payment_accrued_lock_<access_id>`. `update_payment_accrued` and `bulk_update_payment_accrued` skip suspended workers.
 
