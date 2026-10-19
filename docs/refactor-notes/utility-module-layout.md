@@ -62,15 +62,6 @@ Old migrations should keep working however the code changes. Some import product
 - `opportunity/0040` and `0045` import live enums from `opportunity/models.py`.
 - Three migrations import `batched` from `utils/itertools.py`. That's harmless: it's generic and has no model dependencies.
 
-### Some apparent duplicates aren't
-
-There are five percentage and ratio functions, but they behave differently, so they can't simply be merged:
-
-- `pct` and `ratio` (`microplanning/helpers.py`) run in Python and return `None` for a zero denominator. `ratio` doesn't multiply by 100.
-- `calculate_safe_percentage` (`program/helpers.py`) builds SQL and returns `0`.
-- `safe_percent` (`opportunity/views.py:3541`) returns `0` and caps at 100.
-- `_percent` (`audit/chc_indicators.py:50`) has no zero check; every caller checks for zero first.
-
 ## 3. Proposal
 
 ### One package per role
@@ -183,6 +174,6 @@ These are the issues this investigation found. Do each one when you are next wor
 
 - Remove migration dependencies on production code: inline the currency backfill into `opportunity/0092` and `program/0004`, inline a database-only rate lookup into `opportunity/0059` and `0067`, and replace the enum imports in `opportunity/0040` and `0045` with literal values.
 - Delete the functions in `program/helpers.py` that no production code reaches (`get_annotated_managed_opportunity` and `get_delivery_performance_report`, which only tests call, and `calculate_safe_percentage`, which only those two call) and their tests.
-- Move `pct` and `ratio` to `commcare_connect/utils/`, and check each caller before pointing `safe_percent` and `_percent` at them.
+- Move `pct` and `ratio` to `commcare_connect/utils/`, and check each caller before pointing `safe_percent` (`opportunity/views.py`) and `_percent` (`audit/chc_indicators.py`) at them. They handle a zero denominator differently.
 - Move `utils/flags.py`, `utils/commcarehq_api.py` and `utils/ocs_api.py` into their apps.
 - Split `opportunity/utils/` by role as described in section 4, including the exports and the finance request service.
