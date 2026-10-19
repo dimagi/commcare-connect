@@ -285,38 +285,42 @@ saved_payment_accrued = approved_count * payment_unit.amount
 New rule: **only add to earned pay for newly approved deliveries**, at the pay rate active today.
 
 ```python
-with transaction.atomic():
-    # Lock the work and read its count again: two recalculations running at once must not both add the
-    # same deliveries
-    completed_work = CompletedWork.objects.select_for_update().get(pk=completed_work.pk)
-    new_deliveries = approved_count - completed_work.saved_approved_count
-    if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
-        pay_rate = completed_work.payment_unit.current_pay_rate
-        new_flw_pay = new_deliveries * pay_rate.flw_amount
-        new_org_pay = new_deliveries * pay_rate.org_amount
-        exchange_rate = get_exchange_rate(currency, now())
+# Before this run, the updater locks its works when loading them and sets their status in memory
+new_deliveries = approved_count - completed_work.saved_approved_count
+if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
+    pay_rate = completed_work.payment_unit.current_pay_rate
+    new_flw_pay = new_deliveries * pay_rate.flw_amount
+    new_org_pay = new_deliveries * pay_rate.org_amount
+    exchange_rate = get_exchange_rate(currency, now())
 
-        EarnedPayRecord.objects.create(  # section 7.1
-            completed_work=completed_work,
-            deliveries=new_deliveries,
-            pay_rate=pay_rate,
-            flw_amount=new_flw_pay,
-            org_amount=new_org_pay,
-            exchange_rate=exchange_rate,
-            earned_on=now(),
-        )
-        completed_work.saved_payment_accrued += new_flw_pay
-        completed_work.saved_payment_accrued_usd += Decimal(new_flw_pay) / exchange_rate  # USD rate is int 1
-        completed_work.saved_org_payment_accrued += new_org_pay
-        completed_work.saved_org_payment_accrued_usd += Decimal(new_org_pay) / exchange_rate
-        completed_work.saved_approved_count = approved_count
-        completed_work.save(update_fields=[...])  # the fields above
+    EarnedPayRecord.objects.create(  # section 7.1
+        completed_work=completed_work,
+        deliveries=new_deliveries,
+        pay_rate=pay_rate,
+        flw_amount=new_flw_pay,
+        org_amount=new_org_pay,
+        exchange_rate=exchange_rate,
+        earned_on=now(),
+    )
+    completed_work.saved_payment_accrued += new_flw_pay
+    completed_work.saved_payment_accrued_usd += Decimal(new_flw_pay) / exchange_rate  # USD rate is int 1
+    completed_work.saved_org_payment_accrued += new_org_pay
+    completed_work.saved_org_payment_accrued_usd += Decimal(new_org_pay) / exchange_rate
+    completed_work.saved_approved_count = approved_count
+# saved by the updater's bulk_update at the end, as today
 ```
 
-**Running at the same time.** Recalculating twice at once is harmless today (the second run overwrites the first),
-but adding is not: both runs could pay the same new delivery. So the work row is locked first.
+**Running at the same time.** Two recalculations at once could both pay the same new delivery. So `update_status`
+locks the work rows, in its own transaction, before counting visits, for every caller (requests and tasks). A second
+run waits, then reads the updated count. Today's Redis lock per worker isn't enough: it is released before a request
+commits, and the nightly job doesn't take it.
 
 In managed opportunities `approved_count` only counts visits that are approved **and** agreed.
+
+**Work that stops being approved.** A visit rejected later, or the completed work status import, can move approved
+work out of "approved". As today, its pay stops counting: its totals are 0 and its unbilled records aren't invoiced
+(section [8](#8-invoices)). Its records are kept, so if it is approved again its totals come back, with nothing added
+twice. Amounts already invoiced aren't reversed.
 
 Effects:
 
@@ -357,7 +361,7 @@ class EarnedPayRecord(BaseModel):
 - Each record has one pay rate, so its amount ÷ deliveries is always a real pay rate.
 - USD amounts aren't stored; they come from the exchange rate.
 - The totals on the work (`saved_payment_accrued` and the others) stay. For new work they equal the sum of its
-  records. Old work whose pay was edited after it was invoiced can differ, because today's code repriced it.
+  records while it is approved, and 0 otherwise (section [7](#7-updating-earned-pay-the-key-change)). Old work whose pay was edited after it was invoiced can differ, because today's code repriced it.
 
 **Earned pay backfill**
 
@@ -369,7 +373,9 @@ command (not a migration), run right after the deploy:
    row to it.
 2. For each **approved** piece of work with approved deliveries not covered yet, creates one record for the rest:
    remaining deliveries × the current pay rate (what today's invoicing would bill), at the exchange rate on the work's
-   approval date (as today's USD totals).
+   approval date (as today's USD totals). The rest is the approved deliveries minus those in **all** its records so
+   far, including any added by live approvals since the deploy. It locks the work as the updater does (section
+   [7](#7-updating-earned-pay-the-key-change)), so a live approval can't add the same deliveries at the same time.
 3. Skips what it has already handled, so it is safe to run again.
 
 Backfilled records have no pay rate link. We don't guess dates: `earned_on` is the work's `status_modified_date` if it
@@ -401,7 +407,7 @@ multiplying by the current pay rate, so they always match earned pay and never l
   ```
 
 - **What is billed:**
-  - every unbilled record (no invoice row) earned on or before the invoice's end date
+  - every unbilled record (no invoice row) of approved work, earned on or before the invoice's end date
   - each row goes under the month its record was earned
   - a backfilled record with no date goes under the invoice's month, as additional deliveries do today
   - cancelling an invoice deletes its rows, so their records become unbilled again
@@ -541,7 +547,7 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
     #   arrive and be auto-approved at the old pay rate, after the PM was told the change is immediate
     Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
     list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
-    PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
+    payment_unit = PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
     started = not not_started(payment_unit)
     if started and has_visits(payment_unit):
         raise ValidationError("This payment unit now has visits. Schedule the change for the 1st instead.")
@@ -628,7 +634,7 @@ def apply_pay_rate_change(pay_rate_id):
         # Same locks in the same order as an immediate change (section 9.1), so the two can't deadlock
         opportunity = Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
         list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
-        PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
+        payment_unit = PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
         pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
         if pay_rate.applied_on or pay_rate.cancelled_on:
             return  # already applied, or cancelled in the meantime
@@ -1011,5 +1017,11 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 - **Email when a scheduled change stops fitting.** The funding warning banner only reaches people who open Connect
   Web. The daily job could email opportunity admins once when a scheduled change can no longer be funded, before the
   1st, instead of only when it is cancelled.
+- **Keep approved work approved.** Today a visit rejected after its work was approved, such as a duplicate, rejects
+  the whole work and removes its pay, and the completed work status import can do the same. Instead, the rejected
+  visit could leave the work approved, and the import could refuse approved → rejected. Once done, the "Work that
+  stops being approved" rules in section [7](#7-updating-earned-pay-the-key-change) are no longer needed.
+- **Credit billed work that is rejected later.** Today and with this change, rejecting work after it was invoiced
+  doesn't change the invoice. A credit on the next invoice could reverse it.
 - **Alert if the job doesn't run.** A Sentry cron monitor on the daily job, alerting if it hasn't started or finished
   within an hour. One monitor is free; extras cost about $0.78 a month.
