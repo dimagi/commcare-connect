@@ -1,0 +1,38 @@
+{% load i18n %}
+{% load crispy_forms_tags %}
+{# Loaded into modal.html for both Add and Edit; posting back swaps this fragment for itself with any errors. #}
+<div id="primary-sector-form-wrapper">
+  <div class="header">
+    <h2 id="primary-sector-modal-title" class="title">
+      {% if object %}
+        {% translate "Edit Primary Sector" %}
+      {% else %}
+        {% translate "Add Primary Sector" %}
+      {% endif %}
+    </h2>
+    <button type="button"
+            class="button-icon"
+            @click="sectorModalUrl = null"
+            aria-label="{% translate 'Close' %}">
+      <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+    </button>
+  </div>
+  <form hx-post="{{ request.path }}"
+        hx-target="#primary-sector-form-wrapper"
+        hx-swap="outerHTML">
+    <div class="content">
+      {% if object %}
+        <p class="hint">
+          {% blocktranslate with slug=object.slug %}Slug: <code>{{ slug }}</code> — kept when renaming, as data exports identify sectors by it.{% endblocktranslate %}
+        </p>
+      {% endif %}
+      {% crispy form %}
+    </div>
+    <div class="footer flex justify-end gap-3">
+      <button type="button"
+              class="button button-md outline-style"
+              @click="sectorModalUrl = null">{% translate "Cancel" %}</button>
+      <button type="submit" class="button button-md primary-dark">{% translate "Save" %}</button>
+    </div>
+  </form>
+</div>
