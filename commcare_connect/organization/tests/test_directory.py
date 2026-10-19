@@ -445,6 +445,17 @@ class TestExportContacts:
         assert rows[1].startswith("Grace Wanjiru,")
         assert ",Yes," in rows[1]
 
+    def test_text_cannot_become_a_spreadsheet_formula(self):
+        ContactFactory(name="=HYPERLINK(1)", phone="+254 722 118 340", email="grace@example.com")
+
+        with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+            saved_name = export_contacts("", user_id=1, export_format="csv")
+            with get_export_storage().open(saved_name) as saved:
+                row = saved.read().decode().splitlines()[1]
+
+        assert row.startswith("'=HYPERLINK(1),")
+        assert ",grace@example.com,'+254 722 118 340," in row
+
     def test_saves_names_with_special_characters_as_utf8(self):
         ContactFactory(name="José Ñúñez")
 

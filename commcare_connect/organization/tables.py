@@ -12,7 +12,7 @@ from commcare_connect.organization.models import (
     OrganizationInvite,
     UserOrganizationMembership,
 )
-from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
+from commcare_connect.utils.tables import DMYTColumn, IndexColumn, SpreadsheetSafeColumn, select_column
 
 ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
 ROLE_BADGE_TEMPLATE = "organization/role_badge.html"
@@ -129,13 +129,13 @@ class ContactDirectoryTable(tables.Table):
 
 
 class ContactExportTable(tables.Table):
-    name = columns.Column(verbose_name=_("Contact Name"))
-    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
-    title = columns.Column(verbose_name=_("Role / Title"))
+    name = SpreadsheetSafeColumn(verbose_name=_("Contact Name"))
+    organization = SpreadsheetSafeColumn(verbose_name=_("Organization"), accessor="organization__name")
+    title = SpreadsheetSafeColumn(verbose_name=_("Role / Title"))
     is_main_poc = columns.Column(verbose_name=_("Main POC"))
-    email = columns.Column(verbose_name=_("Email"))
-    phone = columns.Column(verbose_name=_("Phone"))
-    notes = columns.Column(verbose_name=_("Notes"))
+    email = SpreadsheetSafeColumn(verbose_name=_("Email"))
+    phone = SpreadsheetSafeColumn(verbose_name=_("Phone"))
+    notes = SpreadsheetSafeColumn(verbose_name=_("Notes"))
 
     def value_is_main_poc(self, value):
         return _("Yes") if value else _("No")
