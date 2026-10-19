@@ -7,6 +7,7 @@ from django.views.generic import TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
+from commcare_connect.organization.urls import directory_urlpatterns
 from commcare_connect.organization.views import no_organization, organization_create
 
 from . import views
@@ -40,6 +41,7 @@ urlpatterns = [
     # Your stuff: custom urls includes go here
     path("register/organization/", organization_create, name="organization_create"),
     path("no-organization/", no_organization, name="no_organization"),
+    path("organizations/", include((directory_urlpatterns, "organization_directory"))),
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
