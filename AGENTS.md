@@ -30,6 +30,9 @@ celery -A config.celery_app worker -B -l info
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
+# Duplicate code in lines this branch changed (also runs on PRs and comments the report)
+inv duplicates                      # --base <branch> to diff against, --json for JSON output
+
 # Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
 
