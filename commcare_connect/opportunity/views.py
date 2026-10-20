@@ -45,6 +45,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
+from django.utils.decorators import method_decorator
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
@@ -235,13 +236,13 @@ from commcare_connect.organization.decorators import (
     OppPMRequiredMixin,
     OppStandardAccessMixin,
     OppViewAccessMixin,
-    OrgViewAccessMixin,
-    ProgramAdminAccessMixin,
     opp_admin_access_required,
     opp_standard_access_required,
     opp_view_access_required,
     opportunity_pm_required,
     opportunity_required,
+    org_view_access_required,
+    program_admin_access_required,
 )
 from commcare_connect.program.utils import (
     AccessLevel,
@@ -330,7 +331,8 @@ class OrgContextSingleTableView(SingleTableView):
         return kwargs
 
 
-class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
+@method_decorator(org_view_access_required, name="dispatch")
+class OpportunityList(FilterMixin, SingleTableView):
     model = Opportunity
     table_class = ProgramManagerOpportunityTable
     template_name = "opportunity/opportunities_list.html"
@@ -392,7 +394,8 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return data.get_data()
 
 
-class OpportunityInit(ProgramAdminAccessMixin, CreateView):
+@method_decorator(program_admin_access_required, name="dispatch")
+class OpportunityInit(CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -417,7 +420,8 @@ class OpportunityInit(ProgramAdminAccessMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, ProgramAdminAccessMixin, UpdateView):
+@method_decorator(program_admin_access_required, name="dispatch")
+class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -444,7 +448,8 @@ class OpportunityInitUpdate(OpportunityObjectMixin, ProgramAdminAccessMixin, Upd
         return context
 
 
-class OpportunityEdit(OpportunityObjectMixin, OppStandardAccessMixin, UpdateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_edit.html"
     form_class = OpportunityChangeForm
@@ -486,7 +491,8 @@ class OpportunityEdit(OpportunityObjectMixin, OppStandardAccessMixin, UpdateView
         return form_kwargs
 
 
-class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView):
+@method_decorator(opportunity_pm_required, name="dispatch")
+class OpportunityFinalize(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -534,7 +540,8 @@ def amount_with_currency(amount, currency_code):
     return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
 
 
-class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class OpportunityDashboard(OpportunityObjectMixin, DetailView):
     model = Opportunity
     template_name = "opportunity/dashboard.html"
 
