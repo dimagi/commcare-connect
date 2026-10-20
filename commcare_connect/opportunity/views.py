@@ -233,7 +233,6 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
-    OppPMRequiredMixin,
     OppStandardAccessMixin,
     OppViewAccessMixin,
     opp_admin_access_required,
@@ -318,10 +317,6 @@ class OpportunityObjectMixin:
 
     def get_object(self, queryset=None):
         return self.get_opportunity()
-
-
-class OpportunityPMRequiredMixin(OppPMRequiredMixin, OpportunityObjectMixin):
-    pass
 
 
 class OrgContextSingleTableView(SingleTableView):
@@ -1612,7 +1607,8 @@ def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
     return HttpResponse(status=200)
 
 
-class OpportunityCompletedWorkTable(OppViewAccessMixin, OpportunityObjectMixin, SingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class OpportunityCompletedWorkTable(OpportunityObjectMixin, SingleTableView):
     model = CompletedWork
     paginate_by = 25
     table_class = CompletedWorkTable
@@ -1892,7 +1888,8 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class InvoiceCreateView(OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
     form_class = AutomatedPaymentInvoiceForm
@@ -1966,7 +1963,8 @@ class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateVi
         return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().opportunity_id))
 
 
-class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class InvoiceReviewView(OpportunityObjectMixin, DetailView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_detail.html"
 
@@ -2083,7 +2081,8 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
     return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
 
 
-class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
+@method_decorator(opportunity_pm_required, name="dispatch")
+class InvoiceFinanceRequestView(OpportunityObjectMixin, View):
     """Send an approved invoice to Finance as a Jira service desk request, and show how that is going.
 
     Both methods return the invoice page's Finance card, which htmx swaps in place.
