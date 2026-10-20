@@ -98,7 +98,14 @@ jobs:
         run: |
           PR_NUMBER="${{ inputs.pr_number || github.event.pull_request.number }}"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          REF=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefName --jq '.headRefName')
+          read -r AUTHOR REF < <(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+            --json author,headRefName --jq '"\(.author.login) \(.headRefName)"')
+          # workflow_dispatch skips the job-level author gate. The checked-out
+          # branch supplies the review skill, so only trust Dependabot's.
+          if [ "$AUTHOR" != "app/dependabot" ] && [ "$AUTHOR" != "dependabot[bot]" ]; then
+            echo "::error::Manual dispatch is restricted to Dependabot PRs (PR author: $AUTHOR)."
+            exit 1
+          fi
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
       - name: Checkout code
