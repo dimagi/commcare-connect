@@ -1,5 +1,6 @@
 import csv
 import io
+import itertools
 from unittest import mock
 
 import httpx
@@ -22,6 +23,7 @@ from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
+    square,
 )
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
@@ -227,12 +229,15 @@ class TestWorkAreaCSVImporter:
         expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
 
+    # Each built row gets its own square, so rows in one file never overlap each other.
+    _polygon_offsets = itertools.count()
+
     def build_row(self, slug, group_name=None):
         row = [
             slug,
             "ward",
             self.CENTROID,
-            self.POLYGON,
+            square(77 + 2 * next(self._polygon_offsets), 28).wkt,
             5,
             "6",
             "100",

@@ -17,6 +17,11 @@ from commcare_connect.microplanning.models import (
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
 
 
+def square(x, y, size=1.0):
+    """An axis-aligned square with its lower-left corner at (x, y), for exact overlap percentages."""
+    return Polygon(((x, y), (x + size, y), (x + size, y + size), (x, y + size), (x, y)), srid=SRID)
+
+
 class WorkAreaGroupFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     ward = Sequence(lambda n: f"ward-{n}")

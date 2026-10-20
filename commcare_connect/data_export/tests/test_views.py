@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import json
 from unittest import mock
 
@@ -19,6 +20,7 @@ from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
+    square,
 )
 from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
 from commcare_connect.opportunity.models import LabsRecord
@@ -900,12 +902,15 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
     def url(self, opp_id):
         return reverse("data_export:work_area_bulk_create", kwargs={"opp_id": opp_id})
 
+    # Each item gets its own square, so items in one payload never overlap each other.
+    _boundary_offsets = itertools.count()
+
     def _item(self, **overrides):
         item = {
             "slug": "area-1",
             "ward": "ward-a",
             "centroid": "36.8 -1.29",
-            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+            "boundary": square(36.8 + 0.05 * next(self._boundary_offsets), -1.3, 0.02).wkt,
             "building_count": 5,
             "expected_visit_count": 10,
             "target_population": 100,
