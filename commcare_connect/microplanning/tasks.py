@@ -363,6 +363,18 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             invalid = False
         return invalid
 
+    def _validate_boundary(self, row, line_num):
+        invalid = super()._validate_boundary(row, line_num)
+        # A ring that crosses itself still parses as a Polygon, but PostGIS can't measure it: its
+        # area reads as 0 and intersecting it raises, which would abort the import.
+        if not invalid and not self.get_boundary(row).valid:
+            self._add_error(
+                line_num,
+                _("Boundary is not a valid polygon, e.g. its edges cross. Fix the boundary, then upload again."),
+            )
+            invalid = True
+        return invalid
+
     def _validate_ward(self, row, line_num):
         invalid = True
         if self.get_ward(row):

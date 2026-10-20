@@ -5,13 +5,14 @@ from unittest import mock
 
 import httpx
 import pytest
+from django.contrib.gis.geos import Polygon
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import (
     OVERTURE_CATALOG_URL,
     ImplementationAreaCSVImporter,
@@ -234,12 +235,12 @@ class TestWorkAreaCSVImporter:
     # Each built row gets its own square, so rows in one file never overlap each other.
     _polygon_offsets = itertools.count()
 
-    def build_row(self, slug, group_name=None):
+    def build_row(self, slug, group_name=None, boundary=None):
         row = [
             slug,
             "ward",
             self.CENTROID,
-            square(77 + 2 * next(self._polygon_offsets), 28).wkt,
+            (boundary or square(77 + 2 * next(self._polygon_offsets), 28)).wkt,
             5,
             "6",
             "100",
@@ -302,6 +303,19 @@ class TestWorkAreaCSVImporter:
         assert result["created"] == 1
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
         assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
+
+    def test_self_crossing_boundary_is_a_row_error(self, opportunity):
+        bow_tie = Polygon(((0, 0), (1, 1), (1, 0), (0, 1), (0, 0)), srid=SRID)
+        rows = [self.build_row("area-1"), self.build_row("area-2", boundary=bow_tie)]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Boundary is not a valid polygon, e.g. its edges cross. Fix the boundary, then upload again.": [3]
+            }
+        }
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
 
     def test_import_locks_the_opportunity_before_reading_work_areas(self, opportunity):
         with CaptureQueriesContext(connection) as queries:
