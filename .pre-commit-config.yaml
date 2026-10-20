@@ -74,6 +74,8 @@ repos:
           - --ignore-identifiers
           - --min-tokens=30
           - --min-lines=4
+          # Also compare whole functions, to catch copies edited in several places. Skips test files.
+          - --similarity=0.9
           - commcare_connect
         pass_filenames: false
         files: ^commcare_connect/
