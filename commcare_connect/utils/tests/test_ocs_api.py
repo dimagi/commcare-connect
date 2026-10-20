@@ -167,6 +167,8 @@ def test_trigger_bot_forwards_provided_optionals(user, httpx_mock, optionals):
     for key, value in optionals.items():
         assert key in body
         assert body[key] == value
+        # == alone would accept 0/1 for False/True.
+        assert type(body[key]) is type(value)
 
 
 @pytest.mark.django_db

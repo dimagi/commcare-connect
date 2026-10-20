@@ -101,6 +101,7 @@ def test_run_checks_sample_size_and_bounds(value, sample_size, has_sufficient_da
     result = _run(value, sample_size=sample_size)
     assert result.has_sufficient_data is has_sufficient_data
     assert result.value == expected_value
+    assert type(result.value) is type(expected_value)
     assert result.in_range is in_range
 
 
