@@ -38,51 +38,43 @@ class TestRemoveMembersView:
     def test_admin_cannot_remove_self(self, client, org_user_admin, organization):
         membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [membership.id]},
+        messages = self._remove_members(
+            client=client, admin=org_user_admin, organization=organization, membership_ids=[membership.id]
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the organization."
-
+        assert messages == ["You cannot remove yourself from the organization."]
         assert UserOrganizationMembership.objects.filter(id=membership.id).exists()
 
     def test_admin_can_remove_others(self, client, org_user_admin, org_user_member, organization):
         other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [other_membership.id]},
+        messages = self._remove_members(
+            client=client, admin=org_user_admin, organization=organization, membership_ids=[other_membership.id]
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "Selected members have been removed from the organization."
-
+        assert messages == ["Selected members have been removed from the organization."]
         assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
     def test_request_fails_when_admin_in_list(self, client, org_user_admin, org_user_member, organization):
-        admin_memebership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
+        admin_membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
         other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [admin_memebership.id, other_membership.id]},
+        messages = self._remove_members(
+            client=client,
+            admin=org_user_admin,
+            organization=organization,
+            membership_ids=[admin_membership.id, other_membership.id],
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the organization."
-
+        assert messages == ["You cannot remove yourself from the organization."]
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
+
+    def _remove_members(self, client, admin, organization, membership_ids):
+        """Post a removal as `admin` and return the messages it produced."""
+        client.force_login(admin)
+        response = client.post(self.url(org_slug=organization.slug), data={"membership_ids": membership_ids})
+        assert response.status_code == 302
+        return [str(message) for message in get_messages(response.wsgi_request)]
 
 
 @pytest.fixture
