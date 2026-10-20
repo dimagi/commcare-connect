@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+import math
 from collections import defaultdict
 
 import httpx
@@ -18,8 +19,9 @@ from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
-from .const import DEFAULT_BUILDING_COUNT
+from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT
 from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
+from .overlap import find_overlapping_work_areas
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,13 @@ def get_cluster_area_cache_lock_key(opp_id: int):
     return f"work_area_clustering_cache_lock_key_{opp_id}"
 
 
+def _overlap_percent(ratio):
+    """The overlap as a percentage, rounded up to one decimal so a pair just over the limit never
+    reads as exactly at it (5.04% shows as 5.1%, not 5.0%). The small nudge stops floating-point
+    noise in an exact ratio (0.06000000000002) from rounding up a whole step."""
+    return f"{math.ceil(ratio * 1000 - 1e-9) / 10:.1f}"
+
+
 def parse_lon_lat_centroid(value):
     """Parse a "lon lat" string into a centroid Point."""
     lon, lat = value.strip().split()
@@ -60,6 +69,8 @@ class BaseAreaCSVImporter:
         self.csv_source = csv_source
         self.errors = defaultdict(list)
         self.created_count = 0
+        # pk -> (CSV line number, saved instance) for every row this import inserted.
+        self.inserted = {}
 
     def run(self):
         # Checks and inserts happen in one transaction, so a rejected file saves nothing. Under the
@@ -103,15 +114,20 @@ class BaseAreaCSVImporter:
         self._prepare_insert()
         batch = []
         batch_size = 5000
-        for row in reader:
-            batch.append(self.build_instance(row))
+        for line_num, row in enumerate(reader, start=2):
+            batch.append((line_num, self.build_instance(row)))
             if len(batch) >= batch_size:
-                self.model.objects.bulk_create(batch)
-                self.created_count += batch_size
+                self._insert_batch(batch)
                 batch = []
         if batch:
-            self.model.objects.bulk_create(batch)
-            self.created_count += len(batch)
+            self._insert_batch(batch)
+
+    def _insert_batch(self, batch):
+        line_nums, instances = zip(*batch)
+        # On PostgreSQL bulk_create sets the primary keys on the instances it returns.
+        created = self.model.objects.bulk_create(instances)
+        self.inserted.update((instance.pk, (line_num, instance)) for line_num, instance in zip(line_nums, created))
+        self.created_count += len(created)
 
     def _canonical_headers(self):
         return list(self.HEADERS.values())
@@ -275,6 +291,43 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             )
             group_cache.update({group.name: group for group in created})
         return group_cache
+
+    def _validate_inserted(self):
+        if not self.inserted:
+            return
+        overlaps = find_overlapping_work_areas(self.opp_id, list(self.inserted))
+        # One extra row tells whether there are more than the limit, without counting every pair.
+        listed = list(overlaps[: WORK_AREA_OVERLAP_ERROR_LIMIT + 1])
+        for overlap in listed[:WORK_AREA_OVERLAP_ERROR_LIMIT]:
+            self._add_overlap_error(overlap)
+        if len(listed) > WORK_AREA_OVERLAP_ERROR_LIMIT:
+            hidden = overlaps.count() - WORK_AREA_OVERLAP_ERROR_LIMIT
+            self._add_error(1, _("%(count)d more overlaps not shown.") % {"count": hidden})
+
+    def _add_overlap_error(self, overlap):
+        # Messages name work areas by slug: API callers get only the message, and their "rows" are
+        # lines of a CSV built from the JSON list. The upload page shows the rows beside it.
+        line_num, work_area = self.inserted[overlap["pk"]]
+        values = {
+            "slug": work_area.slug,
+            "other_slug": overlap["other_slug"],
+            "percent": _overlap_percent(overlap["ratio"]),
+        }
+        other = self.inserted.get(overlap["other_id"])
+        if other is None:
+            message = _(
+                "Work Area %(slug)s overlaps existing Work Area %(other_slug)s by %(percent)s%%. "
+                "Correct the boundary or remove the work area, then upload again."
+            )
+            line_nums = [line_num]
+        else:
+            message = _(
+                "Work Areas %(slug)s and %(other_slug)s overlap each other by %(percent)s%%. "
+                "Correct one boundary or remove one work area, then upload again."
+            )
+            line_nums = [line_num, other[0]]
+        for line in line_nums:
+            self._add_error(line, message % values)
 
     def _after_insert(self):
         if not self.group_cache:

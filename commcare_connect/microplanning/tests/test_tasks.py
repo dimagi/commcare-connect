@@ -17,6 +17,7 @@ from commcare_connect.microplanning.tasks import (
     OVERTURE_CATALOG_URL,
     ImplementationAreaCSVImporter,
     WorkAreaCSVImporter,
+    _overlap_percent,
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
@@ -304,6 +305,67 @@ class TestWorkAreaCSVImporter:
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
         assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
 
+    def test_import_next_to_existing_work_area(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0))
+        rows = [self.build_row("area-1", boundary=square(1, 0))]  # shares an edge
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {"created": 1}
+
+    def test_overlap_with_existing_work_area_is_rejected(self, opportunity):
+        existing = WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0))
+        rows = [
+            self.build_row("area-1"),
+            self.build_row("area-2", boundary=square(0.75, 0)),
+        ]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Work Area area-2 overlaps existing Work Area existing by 25.0%. "
+                "Correct the boundary or remove the work area, then upload again.": [3]
+            }
+        }
+        assert list(WorkArea.objects.filter(opportunity=opportunity)) == [existing]
+
+    def test_overlap_within_the_file_is_rejected_once_naming_both_rows(self, opportunity):
+        rows = [
+            self.build_row("area-1", boundary=square(0, 0)),
+            self.build_row("area-2"),
+            self.build_row("area-3", boundary=square(0.5, 0)),
+        ]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Work Areas area-1 and area-3 overlap each other by 50.0%. "
+                "Correct one boundary or remove one work area, then upload again.": [2, 4]
+            }
+        }
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_overlap_over_the_limit_is_summed_up(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0, 100))
+        rows = [self.build_row(f"area-{n}", boundary=square(n, 1)) for n in range(52)]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert len(result["errors"]) == 51
+        assert list(result["errors"].items())[-1] == ("2 more overlaps not shown.", [1])
+
+    def test_rejected_import_leaves_no_new_groups(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0))
+        rows = [self.build_row("area-1", "new-group", boundary=square(0, 0))]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert "errors" in result
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        assert WorkArea.objects.filter(opportunity=opportunity).count() == 1
+
     def test_self_crossing_boundary_is_a_row_error(self, opportunity):
         bow_tie = Polygon(((0, 0), (1, 1), (1, 0), (0, 1), (0, 0)), srid=SRID)
         rows = [self.build_row("area-1"), self.build_row("area-2", boundary=bow_tie)]
@@ -331,6 +393,19 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
 
         assert result == {"created": 0}
+
+
+@pytest.mark.parametrize(
+    "ratio, expected",
+    [
+        (0.0504, "5.1"),
+        (0.06000000000002, "6.0"),
+        (0.25, "25.0"),
+        (1.0, "100.0"),
+    ],
+)
+def test_overlap_percent_never_rounds_down_to_the_limit(ratio, expected):
+    assert _overlap_percent(ratio) == expected
 
 
 @pytest.mark.django_db

@@ -36,6 +36,8 @@ MAX_AUTOZOOM_ZOOM = 18
 
 # Two work areas overlap when they share more than this fraction of the smaller one's area.
 WORK_AREA_MAX_OVERLAP_RATIO = 0.05
+# Overlap errors listed for a rejected upload; the rest are summed up in one line.
+WORK_AREA_OVERLAP_ERROR_LIMIT = 50
 
 MAX_EXCLUDE_WORK_AREAS = 200
 MAX_UNASSIGN_WORK_AREAS = 200
