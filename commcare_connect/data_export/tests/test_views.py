@@ -921,7 +921,7 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         assert area.case_properties == {"lga": "lga-1", "state": "state-1"}
 
     def test_resolves_existing_work_area_group_by_name(self, v2_write_client, opportunity):
-        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="original-ward")
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
         payload = [self._item(work_area_group_name="group-a")]
         response = _post_json(v2_write_client, self.url(opportunity.id), payload)
         assert response.status_code == 201

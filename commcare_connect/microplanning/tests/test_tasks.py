@@ -236,10 +236,10 @@ class TestWorkAreaCSVImporter:
     # Each built row gets its own square, so rows in one file never overlap each other.
     _polygon_offsets = itertools.count()
 
-    def build_row(self, slug, group_name=None, boundary=None):
+    def build_row(self, slug, group_name=None, ward="ward", boundary=None):
         row = [
             slug,
-            "ward",
+            ward,
             self.CENTROID,
             (boundary or square(77 + 2 * next(self._polygon_offsets), 28)).wkt,
             5,
@@ -297,7 +297,7 @@ class TestWorkAreaCSVImporter:
         assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
     def test_import_reuses_existing_work_area_group_with_same_name(self, opportunity):
-        existing_group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="other-ward")
+        existing_group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward")
         rows = [self.build_row("area-1", "group-a")]
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
 
