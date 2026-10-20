@@ -1,0 +1,59 @@
+"""
+Overlap check for work areas.
+
+Two work areas overlap when the area they share is more than WORK_AREA_MAX_OVERLAP_RATIO of the
+smaller one's area. Measuring against the smaller one catches a small work area drawn inside a large
+one (100%), and the tolerance lets through the slivers that boundaries from GIS tools often share.
+PostGIS's ST_Overlaps can't be used instead: it is false when one shape contains the other, and it
+has no tolerance. Work areas that only share an edge or a corner share no area, so they pass.
+
+Excluded work areas are left out, so a replacement can be drawn over the same ground. Inaccessible
+ones are checked, so ground that was ruled out isn't added again.
+"""
+
+from django.contrib.gis.db.models.functions import Area, Intersection, MakeValid
+from django.db.models import F, FilteredRelation, FloatField, Q, Value
+from django.db.models.functions import Cast, Least, NullIf
+
+from .const import WORK_AREA_MAX_OVERLAP_RATIO
+from .models import WorkArea, WorkAreaStatus
+
+
+def find_overlapping_work_areas(opp_id, new_ids):
+    """Pairs of a new work area and another non-excluded work area in the opportunity that overlap.
+
+    Rows have ``pk`` (the new work area), ``other_id``, ``other_slug`` and ``ratio``. A pair of two
+    new work areas is returned once, with the lower ``pk`` first.
+
+    The new work areas' boundaries must be valid; the importer rejects invalid ones. Other boundaries
+    are repaired before measuring, though matching them via the spatial index uses the saved shape.
+    """
+    return (
+        WorkArea.objects.filter(opportunity_id=opp_id, pk__in=new_ids)
+        .annotate(
+            other=FilteredRelation(
+                "opportunity__workarea",
+                condition=Q(opportunity__workarea__boundary__intersects=F("boundary"))
+                & ~Q(opportunity__workarea__pk=F("pk"))
+                & ~Q(opportunity__workarea__status=WorkAreaStatus.EXCLUDED)
+                & ~Q(opportunity__workarea__pk__in=new_ids, opportunity__workarea__pk__lt=F("pk")),
+            )
+        )
+        .filter(other__isnull=False)
+        .annotate(
+            other_id=F("other__pk"),
+            other_slug=F("other__slug"),
+            other_boundary=MakeValid("other__boundary"),
+        )
+        .annotate(
+            ratio=_area(Intersection("boundary", "other_boundary"))
+            / NullIf(Least(_area("boundary"), _area("other_boundary")), Value(0.0)),
+        )
+        .filter(ratio__gt=WORK_AREA_MAX_OVERLAP_RATIO)
+        .order_by("pk", "other_id")
+        .values("pk", "other_id", "other_slug", "ratio")
+    )
+
+
+def _area(expression):
+    return Cast(Area(expression), FloatField())
