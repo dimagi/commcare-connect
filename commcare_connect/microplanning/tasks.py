@@ -14,7 +14,7 @@ from django.utils.translation import gettext as _
 
 from commcare_connect.connect_id_client import send_message
 from commcare_connect.connect_id_client.models import Message
-from commcare_connect.opportunity.models import OpportunityAccess
+from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
@@ -47,6 +47,10 @@ def parse_lon_lat_centroid(value):
     return GEOSGeometry(f"POINT({lon} {lat})", srid=SRID)
 
 
+class ImportRejected(Exception):
+    """Raised inside run()'s transaction to undo everything saved so far."""
+
+
 class BaseAreaCSVImporter:
     model = None
     HEADERS = {}
@@ -58,11 +62,20 @@ class BaseAreaCSVImporter:
         self.created_count = 0
 
     def run(self):
-        if not self._validate_all_rows(self.csv_source):
-            return self._result()
-        with transaction.atomic():
-            self._stream_and_insert(self.csv_source)
-            self._after_insert()
+        # Checks and inserts happen in one transaction, so a rejected file saves nothing. Under the
+        # API's ATOMIC_REQUESTS this is a savepoint, and only the importer's work is undone.
+        try:
+            with transaction.atomic():
+                self._lock()
+                if not self._validate_all_rows(self.csv_source):
+                    raise ImportRejected
+                self._stream_and_insert(self.csv_source)
+                self._validate_inserted()
+                if self.errors:
+                    raise ImportRejected
+                self._after_insert()
+        except ImportRejected:
+            pass
         return self._result()
 
     def _result(self):
@@ -120,6 +133,9 @@ class BaseAreaCSVImporter:
             processor(row, line_num)
 
     # --- hooks for subclasses ---
+    def _lock(self):
+        pass
+
     def _load_existing(self):
         pass
 
@@ -130,6 +146,10 @@ class BaseAreaCSVImporter:
         pass
 
     def _prepare_insert(self):
+        pass
+
+    def _validate_inserted(self):
+        """Checks that need the rows saved. Errors added here undo the insert."""
         pass
 
     def _after_insert(self):
@@ -211,6 +231,9 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
 
     def _canonical_headers(self):
         return [*super()._canonical_headers(), self.GROUP_NAME_HEADER]
+
+    def _lock(self):
+        Opportunity.objects.select_for_update(no_key=True).get(pk=self.opp_id)
 
     def _load_existing(self):
         self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))

@@ -7,6 +7,8 @@ import httpx
 import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
@@ -300,6 +302,21 @@ class TestWorkAreaCSVImporter:
         assert result["created"] == 1
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
         assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
+
+    def test_import_locks_the_opportunity_before_reading_work_areas(self, opportunity):
+        with CaptureQueriesContext(connection) as queries:
+            WorkAreaCSVImporter(opportunity.id, self.build_csv([self.build_row("area-1")])).run()
+
+        sqls = [query["sql"] for query in queries]
+        lock = next(i for i, sql in enumerate(sqls) if "FOR NO KEY UPDATE" in sql)
+        first_work_area_query = next(i for i, sql in enumerate(sqls) if '"microplanning_workarea"' in sql)
+        assert '"opportunity_opportunity"' in sqls[lock]
+        assert lock < first_work_area_query
+
+    def test_import_with_no_rows(self, opportunity):
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
+
+        assert result == {"created": 0}
 
 
 @pytest.mark.django_db
