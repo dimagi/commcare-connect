@@ -9,7 +9,8 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
@@ -32,11 +33,22 @@ from waffle.models import Switch
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_otp
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
+from commcare_connect.opportunity.forms import DeliveryTypeForm
+from commcare_connect.opportunity.models import (
+    DeliveryType,
+    HQApiKey,
+    Opportunity,
+    OpportunityAccess,
+    UserInvite,
+    UserInviteStatus,
+)
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.organization.forms import PrimarySectorForm
 from commcare_connect.organization.models import PrimarySector
+from commcare_connect.program.models import Program
+from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.users.models import UserCredential
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
@@ -400,6 +412,12 @@ def internal_features(request):
             "description": "Manage the primary sector options for organization profiles.",
             "url": reverse("users:primary_sector_list"),
         },
+        {
+            "perm": ORG_MANAGEMENT_SETTINGS_ACCESS,
+            "name": "Delivery Types",
+            "description": "Manage the delivery type options for programs and opportunities.",
+            "url": reverse("users:delivery_type_list"),
+        },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
@@ -464,6 +482,93 @@ class PrimarySectorDeleteView(PrimarySectorPermissionMixin, View):
             sector.delete()
             messages.success(request, _("Primary sector '%(name)s' deleted.") % {"name": sector.name})
         return redirect("users:primary_sector_list")
+
+
+class DeliveryTypePermissionMixin(LoginRequiredMixin, PermissionRequiredMixin):
+    permission_required = ORG_MANAGEMENT_SETTINGS_ACCESS
+    raise_exception = True
+
+
+class DeliveryTypeListView(DeliveryTypePermissionMixin, ListView):
+    template_name = "users/delivery_types/list.html"
+    context_object_name = "delivery_types"
+
+    def get_queryset(self):
+        # Subqueries rather than Count joins: two Counts would multiply each other's rows.
+        return DeliveryType.objects.annotate(
+            opportunity_count=_count_referencing(Opportunity),
+            program_count=_count_referencing(Program),
+            # Mirrors DeliveryType.is_in_use, so the list can disable Delete without a query per row.
+            in_use=Exists(Opportunity.objects.filter(delivery_type=OuterRef("pk")))
+            | Exists(Program.objects.filter(delivery_type=OuterRef("pk")))
+            | Exists(Solicitation.objects.filter(delivery_type=OuterRef("pk")))
+            | Exists(UserCredential.objects.filter(delivery_type=OuterRef("pk"))),
+        ).order_by("name")
+
+
+def _count_referencing(model):
+    return Coalesce(
+        Subquery(
+            model.objects.filter(delivery_type=OuterRef("pk"))
+            .order_by()
+            .values("delivery_type")
+            .annotate(count=Count("pk"))
+            .values("count")
+        ),
+        0,
+    )
+
+
+class DeliveryTypeFormMixin(DeliveryTypePermissionMixin, SuccessMessageMixin):
+    """Serves the list page's Add/Edit modal: errors swap the form back in, success reloads the list."""
+
+    model = DeliveryType
+    form_class = DeliveryTypeForm
+    template_name = "users/delivery_types/form.html"
+    success_message = _("Delivery type '%(name)s' saved.")
+
+    def get(self, request, *args, **kwargs):
+        # The form is only a modal fragment; a direct visit gets the list page that hosts it.
+        if not request.htmx:
+            return redirect(self.get_success_url())
+        return super().get(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        if self.request.htmx:
+            return HttpResponse(headers={"HX-Redirect": self.get_success_url()})
+        return response
+
+    def get_success_url(self):
+        return reverse("users:delivery_type_list")
+
+
+class DeliveryTypeCreateView(DeliveryTypeFormMixin, CreateView):
+    pass
+
+
+class DeliveryTypeUpdateView(DeliveryTypeFormMixin, UpdateView):
+    pass
+
+
+class DeliveryTypeDeleteView(DeliveryTypePermissionMixin, View):
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        delivery_type = get_object_or_404(DeliveryType, pk=pk)
+        if delivery_type.is_in_use():
+            messages.error(
+                request,
+                _(
+                    "'%(name)s' is used by opportunities, programs, solicitations or worker credentials "
+                    "and cannot be deleted."
+                )
+                % {"name": delivery_type.name},
+            )
+        else:
+            delivery_type.delete()
+            messages.success(request, _("Delivery type '%(name)s' deleted.") % {"name": delivery_type.name})
+        return redirect("users:delivery_type_list")
 
 
 _DEFAULT_MODEL_PERMS = {"add_user", "change_user", "delete_user", "view_user"}
