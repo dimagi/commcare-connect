@@ -15,7 +15,6 @@ from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
@@ -233,8 +232,6 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
-    OppStandardAccessMixin,
-    OppViewAccessMixin,
     opp_admin_access_required,
     opp_standard_access_required,
     opp_view_access_required,
@@ -2456,7 +2453,8 @@ def sync_deliver_units(request, org_slug, opp_id):
     return HttpResponse(content=message, status=status)
 
 
-class WorkerPageView(OppViewAccessMixin, OpportunityObjectMixin, TemplateView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class WorkerPageView(OpportunityObjectMixin, TemplateView):
     page_title = None
 
     def dispatch(self, request, *args, **kwargs):
@@ -2620,7 +2618,8 @@ class UserTasksView(WorkerPageView, FilterMixin):
         return context
 
 
-class WorkerTableView(OppViewAccessMixin, OpportunityObjectMixin, SingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class WorkerTableView(OpportunityObjectMixin, SingleTableView):
     redirect_url_name = None  # subclasses must set this to the parent page URL name
 
     def get_paginate_by(self, table_data):
@@ -3010,7 +3009,8 @@ def user_task_details(request, org_slug, opp_id, pk):
     )
 
 
-class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
+@method_decorator(opp_view_access_required, name="dispatch")
+class BaseWorkerListView(OpportunityObjectMixin, View):
     template_name = "opportunity/opportunity_worker.html"
     hx_template_name = "opportunity/workers.html"
     active_tab = "workers"
@@ -3464,7 +3464,8 @@ def deliver_unit_table(request, org_slug=None, opp_id=None):
     )
 
 
-class OpportunityPaymentUnitTableView(OppViewAccessMixin, OpportunityObjectMixin, OrgContextSingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class OpportunityPaymentUnitTableView(OpportunityObjectMixin, OrgContextSingleTableView):
     model = PaymentUnit
     table_class = PaymentUnitTable
     template_name = "tables/single_table.html"
@@ -3956,7 +3957,8 @@ def visit_export_count(request, org_slug, opp_id):
     return HttpResponse(html)
 
 
-class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMixin, OrgContextSingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class AssignedTaskListView(OpportunityObjectMixin, FilterMixin, OrgContextSingleTableView):
     template_name = "opportunity/assigned_task_list.html"
     table_class = AssignedTaskListTable
     paginate_by = DEFAULT_PAGE_SIZE
@@ -4024,7 +4026,8 @@ class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMix
         return context
 
 
-class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OppStandardAccessMixin, UpdateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class EditAssignedTask(OpportunityObjectMixin, UpdateView):
     template_name = "opportunity/edit_assigned_task_form.html"
     form_class = EditAssignedTaskForm
     model = AssignedTask
