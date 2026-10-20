@@ -63,26 +63,6 @@ jobs:
       # `gh pr checks` / `gh run view` / `gh api .../jobs/<id>/logs`.
       actions: read
 
-    # Mirrors the repo's own pytest job (.github/workflows/ci.yml) so the review
-    # can actually run the suite against the PR's dependencies rather than only
-    # reasoning about them. Reading changelogs finds far less than running tests.
-    services:
-      redis:
-        image: redis:6
-        ports:
-          - 6379:6379
-      postgres:
-        image: postgis/postgis:15-3.5
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_PASSWORD: postgres
-
-    env:
-      CELERY_BROKER_URL: 'redis://localhost:6379/0'
-      REDIS_URL: 'redis://localhost:6379/0'
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
-
     steps:
       # Audit only: records egress without blocking. Flip to `block` plus an
       # `allowed-endpoints` list once the recorded traffic looks stable.
@@ -112,8 +92,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.pr.outputs.ref }}
-          # This job executes third-party dependency code (installs and tests),
-          # so don't leave a credential behind in .git/config for it to read.
+          # Don't leave a credential behind in .git/config.
           # The repo is public, so the unauthenticated fetches lockdiff.py makes
           # still work.
           persist-credentials: false
@@ -133,48 +112,11 @@ jobs:
           fi
           echo "Found $SKILL ($(wc -l < "$SKILL") lines)"
 
-      # PostGIS bindings are needed throughout this repo, tests included.
-      - name: Install geo dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y binutils gdal-bin libproj-dev
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          # The bundled scripts need 3.11+ for tomllib.
-          python-version: '3.13'
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      # Installs the PR's *new* versions, so the review can run the suite or
-      # diff an installed package rather than only reading changelogs.
-      - name: Install Python dependencies
-        run: |
-          uv venv
-          uv sync --locked --dev
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-
-      - name: Set up Node.js
-        if: hashFiles('package-lock.json') != ''
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24.x
-          cache: 'npm'
-
-      # This repo uses npm (package-lock.json). Guarded so the step is a no-op
-      # if that ever changes, rather than failing every run the way the old
-      # unconditional `pnpm install --frozen-lockfile` did.
-      # --ignore-scripts: a Dependabot PR's whole content is new dependency
-      # versions, and lifecycle scripts would run that code before anyone has
-      # reviewed it. Nothing here needs a build step from a transitive package.
-      - name: Install Node dependencies
-        if: hashFiles('package-lock.json') != ''
-        run: npm ci --ignore-scripts
-
+      # Deliberately no dependency install and no test run in this job. It holds
+      # ANTHROPIC_API_KEY and a write-scoped GITHUB_TOKEN, and installed or
+      # tested PR dependencies would execute their code next to both. The repo's
+      # own CI (ci.yml) already runs the suite on the PR with no secrets; the
+      # review reads those results through the github_ci tools.
       - name: Run Claude Dependabot Analysis
         id: claude_review
         env:
@@ -204,7 +146,7 @@ jobs:
           # than the CLI, which is narrower and more reliable than parsing
           # `gh run view` output.
           claude_args: |
-            --allowedTools "mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(git:*),Bash(python:*),Bash(python3:*),Bash(uv:*),Bash(npm:*),Bash(node:*),Bash(pytest:*),Bash(curl:*),Bash(diff:*),Bash(base64:*),Bash(unzip:*),Bash(tar:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(sort:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Glob,Grep,WebFetch,WebSearch"
+            --allowedTools "mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(git:*),Bash(python .claude/skills/dependabot-pr-review/scripts/lockdiff.py:*),Bash(diff:*),Bash(base64:*),Bash(unzip:*),Bash(tar:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(sort:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Glob,Grep,WebFetch,WebSearch"
           prompt: |
             Review pull request #${{ steps.pr.outputs.pr_number }} on ${{ github.repository }}.
 
@@ -252,13 +194,8 @@ jobs:
                and do not push, merge, or close anything. The only write to GitHub you may
                make is the single PR comment above.
 
-            8. `uv sync --locked --dev` has already run against this PR's lockfile, so the
-               PR's new versions are installed in .venv — use that for artifact diffing
-               and for running the suite, rather than reinstalling. Node deps are
-               installed too when the repo has a package-lock.json.
-
-            9. Postgres (PostGIS) and Redis are running as service containers, and
-               DATABASE_URL / REDIS_URL are already set, so `uv run pytest` works. Running
-               the suite is usually the fastest way to turn a suspected breakage into a
-               confirmed one — prefer it over reasoning about changelogs. If it is too
-               slow for the whole suite, run the modules your impact analysis implicates.
+            8. Dependencies are NOT installed in this job and you cannot run the test
+               suite, build, or install anything. Ignore the skill's instructions to
+               diff downloaded artifacts or run tests locally. For test and build
+               results, use the PR's CI checks via the github_ci tools (point 3) and
+               say in the review that they are the only test evidence.
