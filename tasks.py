@@ -2,9 +2,6 @@
 
 This uses the `Invoke` library."""
 
-import shlex
-import shutil
-import sys
 from pathlib import Path
 
 from invoke import Context, Exit, call, task
@@ -53,27 +50,6 @@ def build_js(c: Context, watch=False, prod=False):
     else:
         extra = "-watch" if watch else ""
         c.run(f"npm run dev{extra}")
-
-
-@task(
-    help={
-        "base": "Branch to diff against (default: origin/$GITHUB_BASE_REF if set, else origin/main)",
-        "similarity": "Minimum percent similarity (default: 90)",
-        "min_lines": "Minimum lines in a duplicated region (default: 5)",
-        "json": "Print JSON instead of markdown",
-        "path": "Directory to scan (default: commcare_connect)",
-    }
-)
-def duplicates(c: Context, base=None, similarity=90, min_lines=5, json=False, path="commcare_connect"):
-    """Report duplicate code that overlaps lines changed on this branch."""
-    if not shutil.which("treepeat"):
-        raise Exit("treepeat is not installed. Run `uv sync` to install it.", code=1)
-    args = ["python", "-m", "scripts.duplicates.find_touched_duplicates"]
-    if base:
-        args += ["--base", base]
-    args += ["--similarity", str(similarity), "--min-lines", str(min_lines)]
-    args += ["--format", "json" if json else "markdown", path]
-    c.run(shlex.join(args), pty=sys.stdout.isatty())
 
 
 @task

@@ -30,10 +30,10 @@ celery -A config.celery_app worker -B -l info
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
-# Duplicate code in lines this branch changed (also runs on PRs and comments the report)
-inv duplicates                      # --base <branch> to diff against, --json for JSON output
+# Duplicate code
+jscpd --changed commcare_connect    # clones in your uncommitted files, [NEW] = not in HEAD (pre-commit hook)
 
-# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, jscpd)
 prek run -a
 
 # Requirements (uv)
