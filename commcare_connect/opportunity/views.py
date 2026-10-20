@@ -1340,7 +1340,8 @@ def fetch_audio_attachment(request, org_slug, opp_id, pk):
     return FileResponse(attachment, filename=audio.name, content_type=audio.content_type)
 
 
-class AudioAttachmentTranscribe(SuccessMessageMixin, OppStandardAccessMixin, OpportunityObjectMixin, UpdateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class AudioAttachmentTranscribe(SuccessMessageMixin, OpportunityObjectMixin, UpdateView):
     model = AudioAttachment
     form_class = AudioAttachmentTranscribeForm
     template_name = "opportunity/audio_attachment_transcribe.html"
@@ -1474,7 +1475,9 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     )
 
 
-class TaskTypesConfig(OpportunityPMRequiredMixin, OppStandardAccessMixin, TemplateView):
+@method_decorator(opportunity_pm_required, name="dispatch")
+@method_decorator(opp_standard_access_required, name="dispatch")
+class TaskTypesConfig(OpportunityObjectMixin, TemplateView):
     template_name = "opportunity/task_types_config.html"
 
     def get_context_data(self, **kwargs):
@@ -1555,14 +1558,18 @@ def _hx_current_path(request):
     return urlunsplit(("", "", parsed.path, parsed.query, ""))
 
 
-class TaskTypeOcsSection(OpportunityPMRequiredMixin, OppStandardAccessMixin, View):
+@method_decorator(opportunity_pm_required, name="dispatch")
+@method_decorator(opp_standard_access_required, name="dispatch")
+class TaskTypeOcsSection(OpportunityObjectMixin, View):
     def get(self, request, org_slug, opp_id):
         context = get_ocs_task_section_context(request)
         context["ocs_section_url"] = request.get_full_path()
         return render(request, "opportunity/_ocs_task_section.html", context)
 
 
-class EditTaskType(OpportunityPMRequiredMixin, OppStandardAccessMixin, UpdateView):
+@method_decorator(opportunity_pm_required, name="dispatch")
+@method_decorator(opp_standard_access_required, name="dispatch")
+class EditTaskType(OpportunityObjectMixin, UpdateView):
     template_name = "opportunity/edit_task_type_form.html"
     form_class = EditTaskTypeForm
     model = TaskType
