@@ -68,6 +68,14 @@ class DeliveryType(models.Model):
     def __str__(self):
         return self.name
 
+    def is_in_use(self):
+        """Deleting a referenced type would break opportunities, be refused for programs and solicitations, and
+        cascade-delete worker credentials."""
+        return any(
+            related.exists()
+            for related in (self.opportunity_set, self.program_set, self.solicitation_set, self.usercredential_set)
+        )
+
 
 class Currency(models.Model):
     code = models.CharField(max_length=3, primary_key=True)  # ISO 4217
