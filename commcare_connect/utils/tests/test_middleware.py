@@ -15,34 +15,27 @@ def _request_with_messages(rf, **extra):
 
 
 @pytest.mark.django_db
-def test_missing_ocs_token_redirects_to_root_without_referer(rf):
-    request = _request_with_messages(rf)
+@pytest.mark.parametrize(
+    "referer,expected_url",
+    [
+        pytest.param(None, "/", id="no_referer_redirects_to_root"),
+        pytest.param("https://evil.example.com/phish", "/", id="offsite_referer_is_rejected"),
+        pytest.param(
+            "http://testserver/a/org/opportunity/",
+            "http://testserver/a/org/opportunity/",
+            id="same_host_absolute_referer_is_honored",
+        ),
+    ],
+)
+def test_missing_ocs_token_redirect(rf, referer, expected_url):
+    extra = {"HTTP_REFERER": referer} if referer else {}
+    request = _request_with_messages(rf, **extra)
     middleware = CustomErrorHandlingMiddleware(lambda r: None)
 
     response = middleware.process_exception(request, SocialTokenMissingError("no token"))
 
     assert isinstance(response, HttpResponseRedirect)
-    assert response.url == "/"
-
-
-@pytest.mark.django_db
-def test_offsite_referer_is_rejected(rf):
-    request = _request_with_messages(rf, HTTP_REFERER="https://evil.example.com/phish")
-    middleware = CustomErrorHandlingMiddleware(lambda r: None)
-
-    response = middleware.process_exception(request, SocialTokenMissingError("no token"))
-
-    assert response.url == "/"
-
-
-@pytest.mark.django_db
-def test_same_host_absolute_referer_is_honored(rf):
-    request = _request_with_messages(rf, HTTP_REFERER="http://testserver/a/org/opportunity/")
-    middleware = CustomErrorHandlingMiddleware(lambda r: None)
-
-    response = middleware.process_exception(request, SocialTokenMissingError("no token"))
-
-    assert response.url == "http://testserver/a/org/opportunity/"
+    assert response.url == expected_url
 
 
 @pytest.mark.django_db
