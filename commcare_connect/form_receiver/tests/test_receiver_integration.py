@@ -13,7 +13,6 @@ from django.utils.timezone import now
 from rest_framework.test import APIClient
 
 from commcare_connect.form_receiver.processor import update_completed_learn_date
-from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
     FORM_META,
     AssessmentStubFactory,
@@ -60,6 +59,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.tests.helpers import validate_saved_fields
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
+from commcare_connect.utils.tests.api import add_token_credentials
 
 
 @pytest.mark.django_db
@@ -253,6 +253,37 @@ def test_receiver_deliver_form_daily_visits_reached(
     assert visit.status == VisitValidationStatus.over_limit
     assert visit.over_limit_reasons == [OverLimitReasonChoices.max_daily]
     assert visit.status_modified_date >= before_request
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_visits_per_user, expected_over_limit",
+    [
+        pytest.param(100, [False, False, False], id="no_daily_cap"),
+        pytest.param(2, [False, False, True], id="total_limit_still_applies"),
+    ],
+)
+def test_receiver_deliver_form_without_daily_limit(
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    max_visits_per_user,
+    expected_over_limit,
+):
+    # Budget large enough that the claim limit is the payment unit's max_total
+    opportunity.total_budget = 10**7
+    opportunity.save(update_fields=["total_budget"])
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(
+        opportunity, user=user_with_connectid_link, max_visits_per_user=max_visits_per_user, daily_max_per_user=None
+    )
+    for _ in range(3):
+        visit_json = deepcopy(form_json)
+        visit_json["form"]["deliver"]["entity_id"] = str(uuid4())
+        make_request(api_client, visit_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visits = UserVisit.objects.filter(user=user_with_connectid_link).order_by("id")
+    assert [visit.status == VisitValidationStatus.over_limit for visit in visits] == expected_over_limit
 
 
 @pytest.mark.django_db
@@ -834,12 +865,23 @@ def test_receiver_verification_flags_check_attachments(
     assert ["attachment_missing", "Form was submitted without attachements."] in visit.flag_reason.get("flags", [])
 
 
+@pytest.mark.parametrize(
+    "submitted_value, expect_flagged",
+    [
+        pytest.param("123", False, id="matches_rule"),
+        pytest.param("456", True, id="violates_rule"),
+    ],
+)
 def test_receiver_verification_flags_form_json_rule(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+    submitted_value,
+    expect_flagged,
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     deliver_unit = opportunity.deliver_app.deliver_units.first()
-    form_json["form"]["value"] = "123"
+    form_json["form"]["value"] = submitted_value
     form_json_rule = FormJsonValidationRulesFactory(
         opportunity=opportunity,
         question_path="$.form.value",
@@ -849,29 +891,12 @@ def test_receiver_verification_flags_form_json_rule(
     oauth_application = opportunity.hq_server.oauth_application
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert not visit.flagged
-
-
-def test_receiver_verification_flags_form_json_rule_flagged(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    deliver_unit = opportunity.deliver_app.deliver_units.first()
-    form_json["form"]["value"] = "456"
-    form_json_rule = FormJsonValidationRulesFactory(
-        opportunity=opportunity,
-        question_path="$.form.value",
-        question_value="123",
-    )
-    form_json_rule.deliver_unit.add(deliver_unit)
-    oauth_application = opportunity.hq_server.oauth_application
-    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.flagged
-    assert [
-        "form_value_not_found",
-        f"Form does not satisfy {form_json_rule.name} validation rule.",
-    ] in visit.flag_reason.get("flags", [])
+    assert visit.flagged == expect_flagged
+    if expect_flagged:
+        assert [
+            "form_value_not_found",
+            f"Form does not satisfy {form_json_rule.name} validation rule.",
+        ] in visit.flag_reason.get("flags", [])
 
 
 @pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
@@ -989,7 +1014,7 @@ def _get_form_json(learn_app, module_id, form_block=None):
 
 
 def make_request(api_client, form_json, user, expected_status_code=200, oauth_application=None):
-    add_credentials(api_client, user, oauth_application)
+    add_token_credentials(api_client=api_client, user=user, application=oauth_application)
     response = api_client.post("/api/receiver/", data=form_json, format="json")
     assert response.status_code == expected_status_code, response.data
 
@@ -1532,17 +1557,18 @@ def test_work_area_update_attachment_download_queued(mobile_user_with_connect_li
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("field", ["reason", "photo_evidence"])
 @pytest.mark.parametrize(
-    "reason_value, stub_kwargs",
+    "value",
     [
-        pytest.param("missing", {}, id="missing"),
-        pytest.param("empty_string", {"reason": ""}, id="empty_string"),
-        pytest.param("whitespace_only", {"reason": "   "}, id="whitespace_only"),
+        pytest.param(None, id="missing"),
+        pytest.param("", id="empty_string"),
+        pytest.param("   ", id="whitespace_only"),
     ],
 )
-def test_work_area_update_invalid_reason(
-    reason_value,
-    stub_kwargs,
+def test_work_area_update_invalid_required_field(
+    field,
+    value,
     mobile_user_with_connect_link,
     api_client,
     opportunity,
@@ -1556,53 +1582,10 @@ def test_work_area_update_invalid_reason(
         status=WorkAreaStatus.NOT_VISITED,
     )
     oauth_application = opportunity.hq_server.oauth_application
+    stub_kwargs = {} if value is None else {field: value}
     stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", **stub_kwargs)
-    if reason_value == "missing":
-        del stub.json["work_area_update"]["reason"]
-    form_json = get_form_json(
-        form_block={**stub.json},
-        domain=opportunity.deliver_app.cc_domain,
-        app_id=opportunity.deliver_app.cc_app_id,
-    )
-
-    make_request(
-        api_client,
-        form_json,
-        mobile_user_with_connect_link,
-        expected_status_code=400,
-        oauth_application=oauth_application,
-    )
-    assert WorkAreaInaccessibilityRequest.objects.count() == 0
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "photo_value, stub_kwargs",
-    [
-        pytest.param("missing", {}, id="missing"),
-        pytest.param("empty_string", {"photo_evidence": ""}, id="empty_string"),
-        pytest.param("whitespace_only", {"photo_evidence": "   "}, id="whitespace_only"),
-    ],
-)
-def test_work_area_update_invalid_photo_evidence(
-    photo_value,
-    stub_kwargs,
-    mobile_user_with_connect_link,
-    api_client,
-    opportunity,
-):
-    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
-    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
-    work_area = WorkAreaFactory(
-        opportunity=opportunity,
-        work_area_group=work_area_group,
-        opportunity_access=access,
-        status=WorkAreaStatus.NOT_VISITED,
-    )
-    oauth_application = opportunity.hq_server.oauth_application
-    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", **stub_kwargs)
-    if photo_value == "missing":
-        del stub.json["work_area_update"]["photo_evidence"]
+    if value is None:
+        del stub.json["work_area_update"][field]
     form_json = get_form_json(
         form_block={**stub.json},
         domain=opportunity.deliver_app.cc_domain,

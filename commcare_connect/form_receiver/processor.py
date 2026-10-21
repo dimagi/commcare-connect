@@ -587,7 +587,7 @@ def check_visit_over_limit(
         reasons.append(OverLimitReasonChoices.claim_limit_ended)
     if counts["total"] >= claim_limit.max_visits:
         reasons.append(OverLimitReasonChoices.max_visits)
-    if counts["daily"] >= payment_unit.max_daily:
+    if payment_unit.max_daily is not None and counts["daily"] >= payment_unit.max_daily:
         reasons.append(OverLimitReasonChoices.max_daily)
     return bool(reasons), reasons
 

@@ -441,10 +441,19 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         # The notification still fires, or the invoices that did get billed go unannounced.
         mock_notify.assert_called_once_with([invoice.id])
 
-    def test_no_invoice_for_inactive_opportunities(self):
-        inactive_opportunity = OpportunityFactory(active=False, is_test=False, start_date=datetime.date(2026, 1, 1))
-        payment_unit = PaymentUnitFactory(opportunity=inactive_opportunity)
-        access = OpportunityAccessFactory(opportunity=inactive_opportunity)
+    @pytest.mark.parametrize(
+        "active, is_test, start_date",
+        [
+            (False, False, datetime.date(2026, 1, 1)),
+            (True, True, datetime.date(2026, 1, 1)),
+            (True, False, datetime.date(2025, 12, 31)),
+        ],
+        ids=["inactive", "test_opportunity", "starts_before_the_cutoff"],
+    )
+    def test_no_invoice_for_ineligible_opportunity(self, active, is_test, start_date):
+        opportunity = OpportunityFactory(active=active, is_test=is_test, start_date=start_date)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=opportunity)
         completed_work = CompletedWorkFactory(
             opportunity_access=access,
             payment_unit=payment_unit,
@@ -454,7 +463,9 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             invoiced_approved_count=0,
         )
 
-        generate_automated_service_delivery_invoice()
+        cutoff = datetime.date(2026, 1, 1)
+        with mock.patch("commcare_connect.opportunity.tasks.OPPORTUNITY_AUTO_INVOICE_START_DATE", cutoff):
+            generate_automated_service_delivery_invoice()
 
         completed_work.refresh_from_db()
 
@@ -469,47 +480,6 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
         invoice = PaymentInvoice.objects.filter(opportunity=opportunity)
         assert len(invoice) == 0
-
-    def test_no_invoice_for_test_opportunity(self):
-        test_opportunity = OpportunityFactory(active=True, is_test=True, start_date=datetime.date(2026, 1, 1))
-        payment_unit = PaymentUnitFactory(opportunity=test_opportunity, amount=Decimal("100.00"))
-        access = OpportunityAccessFactory(opportunity=test_opportunity)
-        completed_work = CompletedWorkFactory(
-            opportunity_access=access,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            status_modified_date=datetime.date(2024, 1, 5),
-            saved_approved_count=1,
-            invoiced_approved_count=0,
-        )
-
-        generate_automated_service_delivery_invoice()
-
-        completed_work.refresh_from_db()
-
-        assert PaymentInvoice.objects.count() == 0
-        assert completed_work.invoiced_approved_count == 0
-        assert not CompletedWorkInvoice.objects.exists()
-
-    def test_no_invoice_for_opportunity_starting_before_the_cutoff(self):
-        cutoff = datetime.date(2026, 1, 1)
-        opportunity = OpportunityFactory(active=True, is_test=False, start_date=cutoff - datetime.timedelta(days=1))
-        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        CompletedWorkFactory(
-            opportunity_access=access,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            status_modified_date=datetime.date(2024, 1, 5),
-            saved_approved_count=1,
-            invoiced_approved_count=0,
-        )
-
-        with mock.patch("commcare_connect.opportunity.tasks.OPPORTUNITY_AUTO_INVOICE_START_DATE", cutoff):
-            generate_automated_service_delivery_invoice()
-
-        assert PaymentInvoice.objects.count() == 0
-        assert not CompletedWorkInvoice.objects.exists()
 
     def test_late_delta_bills_on_the_next_automated_invoice(self):
         opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2023, 1, 1))
@@ -680,93 +650,54 @@ class TestExportTasksCreateExportFile:
         assert args[1].endswith("_visit_export.csv")
         assert args[2] == "csv"
 
-    @mock.patch("commcare_connect.opportunity.tasks.save_export")
-    @mock.patch("commcare_connect.opportunity.tasks.export_user_visit_review_data")
-    def test_generate_review_visit_export(self, mock_export_fn, mock_save, opportunity):
-        mock_export_fn.return_value = Dataset()
-        generate_review_visit_export(opportunity.id, None, None, [], "csv")
-        mock_save.assert_called_once()
-        args = mock_save.call_args[0]
-        assert args[1].endswith("_review_visit_export.csv")
-        assert args[2] == "csv"
-
-    @mock.patch("commcare_connect.opportunity.tasks.save_export")
-    @mock.patch("commcare_connect.opportunity.tasks.export_empty_payment_table")
-    def test_generate_payment_export(self, mock_export_fn, mock_save, opportunity):
-        mock_export_fn.return_value = Dataset()
-        generate_payment_export(opportunity.id, "csv")
-        mock_save.assert_called_once()
-        args = mock_save.call_args[0]
-        assert args[1].endswith("_payment_export.csv")
-        assert args[2] == "csv"
-
-    @mock.patch("commcare_connect.opportunity.tasks.save_export")
-    @mock.patch("commcare_connect.opportunity.tasks.export_user_status_table")
-    def test_generate_user_status_export(self, mock_export_fn, mock_save, opportunity):
-        mock_export_fn.return_value = Dataset()
-        generate_user_status_export(opportunity.id, "csv")
-        mock_save.assert_called_once()
-        args = mock_save.call_args[0]
-        assert args[1].endswith("_user_status.csv")
-        assert args[2] == "csv"
-
-    @mock.patch("commcare_connect.opportunity.tasks.save_export")
-    @mock.patch("commcare_connect.opportunity.tasks.export_deliver_status_table")
-    def test_generate_deliver_status_export(self, mock_export_fn, mock_save, opportunity):
-        mock_export_fn.return_value = Dataset()
-        generate_deliver_status_export(opportunity.id, "csv")
-        mock_save.assert_called_once()
-        args = mock_save.call_args[0]
-        assert args[1].endswith("_deliver_status.csv")
-        assert args[2] == "csv"
-
-    @mock.patch("commcare_connect.opportunity.tasks.save_export")
-    @mock.patch("commcare_connect.opportunity.tasks.export_work_status_table")
-    def test_generate_work_status_export(self, mock_export_fn, mock_save, opportunity):
-        mock_export_fn.return_value = Dataset()
-        generate_work_status_export(opportunity.id, "csv")
-        mock_save.assert_called_once()
-        args = mock_save.call_args[0]
-        assert args[1].endswith("_work_status.csv")
-        assert args[2] == "csv"
-
-
-@pytest.mark.django_db
-@mock.patch("commcare_connect.opportunity.tasks.send_message")
-def test_send_task_assignment_notification(send_message_patch):
-    opportunity = OpportunityFactory()
-    access = OpportunityAccessFactory(opportunity=opportunity)
-    task_type = TaskTypeFactory(app=opportunity.deliver_app)
-    assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
-
-    send_task_assignment_notification(assigned_task.pk)
-
-    assert send_message_patch.call_count == 1
-    send_message_patch.assert_called_with(
-        Message(
-            usernames=[access.user.username],
-            data={
-                "action": "ccc_generic_opportunity",
-                "title": "New Task Assigned",
-                "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
-                "opportunity_uuid": str(opportunity.opportunity_id),
-                "opportunity_status": "delivery",
-                "key": "task_assignment",
-                "session_endpoint_id": "cc_app_home",
-            },
-        )
+    @pytest.mark.parametrize(
+        "export_task, builder, extra_args, filename_suffix",
+        [
+            (generate_review_visit_export, "export_user_visit_review_data", (None, None, []), "_review_visit_export"),
+            (generate_payment_export, "export_empty_payment_table", (), "_payment_export"),
+            (generate_user_status_export, "export_user_status_table", (), "_user_status"),
+            (generate_deliver_status_export, "export_deliver_status_table", (), "_deliver_status"),
+            (generate_work_status_export, "export_work_status_table", (), "_work_status"),
+        ],
+        ids=["review_visit", "payment", "user_status", "deliver_status", "work_status"],
     )
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    def test_generate_table_export(self, mock_save, opportunity, export_task, builder, extra_args, filename_suffix):
+        with mock.patch(f"commcare_connect.opportunity.tasks.{builder}", return_value=Dataset()):
+            export_task(opportunity.id, *extra_args, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].endswith(f"{filename_suffix}.csv")
+        assert args[2] == "csv"
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "send_notification, title, body, key",
+    [
+        (
+            send_task_assignment_notification,
+            "New Task Assigned",
+            "A task has been assigned to you. You must complete it before continuing Delivery activities.",
+            "task_assignment",
+        ),
+        (
+            send_task_completion_notification,
+            "Task Completed",
+            "You have completed the task '{task_name}'.",
+            "task_completion",
+        ),
+    ],
+    ids=["assignment", "completion"],
+)
 @mock.patch("commcare_connect.opportunity.tasks.send_message")
-def test_send_task_completion_notification(send_message_patch):
+def test_send_task_notification(send_message_patch, send_notification, title, body, key):
     opportunity = OpportunityFactory()
     access = OpportunityAccessFactory(opportunity=opportunity)
     task_type = TaskTypeFactory(app=opportunity.deliver_app)
     assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
 
-    send_task_completion_notification(assigned_task.pk)
+    send_notification(assigned_task.pk)
 
     assert send_message_patch.call_count == 1
     send_message_patch.assert_called_with(
@@ -774,11 +705,11 @@ def test_send_task_completion_notification(send_message_patch):
             usernames=[access.user.username],
             data={
                 "action": "ccc_generic_opportunity",
-                "title": "Task Completed",
-                "body": f"You have completed the task '{task_type.name}'.",
+                "title": title,
+                "body": body.format(task_name=task_type.name),
                 "opportunity_uuid": str(opportunity.opportunity_id),
                 "opportunity_status": "delivery",
-                "key": "task_completion",
+                "key": key,
                 "session_endpoint_id": "cc_app_home",
             },
         )

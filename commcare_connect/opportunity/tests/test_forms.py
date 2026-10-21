@@ -15,6 +15,7 @@ from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
     OPPORTUNITY_CREDENTIALS,
+    OPTIONAL_DAILY_LIMIT,
 )
 from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
@@ -1399,13 +1400,21 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert not saved.case_property
 
-    @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
-    def test_case_property_disabled_when_task_assigned(self, opportunity, status):
+    @pytest.mark.parametrize(
+        "status, disabled",
+        [
+            pytest.param(AssignedTaskStatus.ASSIGNED, True, id="assigned"),
+            pytest.param(AssignedTaskStatus.COMPLETED, True, id="completed"),
+            pytest.param(None, False, id="no_assigned_tasks"),
+        ],
+    )
+    def test_case_property_disabled_only_when_task_assigned(self, opportunity, status, disabled):
         task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
-        AssignedTaskFactory(task_type=task_type, status=status)
+        if status:
+            AssignedTaskFactory(task_type=task_type, status=status)
         form = EditTaskTypeForm(instance=task_type)
-        assert form.fields["case_property"].disabled is True
-        assert form.fields["case_property"].help_text
+        assert form.fields["case_property"].disabled is disabled
+        assert bool(form.fields["case_property"].help_text) is disabled
 
     @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
     def test_case_property_change_ignored_when_task_assigned(self, opportunity, status):
@@ -1419,12 +1428,6 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert saved.case_property == "original_prop"
         assert saved.name == "New Name"
-
-    def test_case_property_editable_without_assigned_tasks(self, opportunity):
-        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
-        form = EditTaskTypeForm(instance=task_type)
-        assert form.fields["case_property"].disabled is False
-        assert not form.fields["case_property"].help_text
 
     def test_case_property_editable_when_other_task_type_assigned(self, opportunity):
         task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
@@ -1507,6 +1510,80 @@ class TestPaymentUnitFormBudgetValidation:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
 
 
+@pytest.mark.django_db
+class TestPaymentUnitFormDailyLimit:
+    def _form(self, opportunity, data=None, instance=None):
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        if data is not None:
+            data = {
+                "name": "Bonus",
+                "description": "Bonus payment unit",
+                "amount": 5,
+                "org_amount": 0,
+                "max_total": 10,
+                "required_deliver_units": [str(deliver_unit.id)],
+                **data,
+            }
+        return PaymentUnitForm(
+            data=data,
+            deliver_units=[deliver_unit],
+            payment_units=[],
+            org_slug=opportunity.organization.slug,
+            opportunity=opportunity,
+            instance=instance,
+        )
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=False)
+    def test_daily_limit_required_when_switch_off(self, opportunity):
+        form = self._form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
+
+        assert "no_daily_limit" not in form.fields
+        assert not form.is_valid()
+        assert form.errors["max_daily"] == ["This field is required."]
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=True)
+    @pytest.mark.parametrize(
+        "data, expected_max_daily",
+        [
+            pytest.param({"max_daily": 5}, 5, id="daily_limit"),
+            pytest.param({"max_daily": "", "no_daily_limit": "on"}, None, id="no_daily_limit"),
+            pytest.param({"max_daily": 5, "no_daily_limit": "on"}, None, id="checkbox_overrides_value"),
+        ],
+    )
+    def test_valid_daily_limit_when_switch_on(self, opportunity, data, expected_max_daily):
+        form = self._form(opportunity, data)
+
+        assert form.is_valid(), form.errors
+        assert form.instance.max_daily == expected_max_daily
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=True)
+    @pytest.mark.parametrize(
+        "data, expected_error",
+        [
+            pytest.param(
+                {"max_daily": ""},
+                "Enter a daily limit or mark this payment unit as having no daily limit.",
+                id="blank_and_unchecked",
+            ),
+            pytest.param({"max_daily": 0}, "Ensure this value is greater than or equal to 1.", id="below_one"),
+        ],
+    )
+    def test_invalid_daily_limit_when_switch_on(self, opportunity, data, expected_error):
+        form = self._form(opportunity, data)
+
+        assert not form.is_valid()
+        assert form.errors["max_daily"] == [expected_error]
+
+    @override_switch(OPTIONAL_DAILY_LIMIT, active=True)
+    @pytest.mark.parametrize("max_daily, expected_initial", [(None, True), (5, False)])
+    def test_no_daily_limit_initial_for_existing_unit(self, opportunity, max_daily, expected_initial):
+        unit = PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=10)
+
+        form = self._form(opportunity, instance=unit)
+
+        assert form.fields["no_daily_limit"].initial is expected_initial
+
+
 @pytest.fixture
 def switch_enable_program_access_redesign_enabled():
     cache.clear()
@@ -1527,28 +1604,21 @@ class TestSupervisingOrganizations:
 
         assert funder_org in eligible_supervising_organizations(program)
 
-    def test_includes_accepted_applicant(self, opportunity):
-        applicant = OrganizationFactory()
-        ProgramApplicationFactory(
-            organization=applicant, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
-        )
-
-        assert applicant in eligible_supervising_organizations(opportunity.program)
-
     @pytest.mark.parametrize(
-        "status",
+        "status, eligible",
         [
-            ProgramApplicationStatus.INVITED,
-            ProgramApplicationStatus.APPLIED,
-            ProgramApplicationStatus.REJECTED,
-            ProgramApplicationStatus.DECLINED,
+            (ProgramApplicationStatus.ACCEPTED, True),
+            (ProgramApplicationStatus.INVITED, False),
+            (ProgramApplicationStatus.APPLIED, False),
+            (ProgramApplicationStatus.REJECTED, False),
+            (ProgramApplicationStatus.DECLINED, False),
         ],
     )
-    def test_excludes_applicant_without_accepted_status(self, opportunity, status):
+    def test_applicant_is_eligible_only_when_accepted(self, opportunity, status, eligible):
         applicant = OrganizationFactory()
         ProgramApplicationFactory(organization=applicant, program=opportunity.program, status=status)
 
-        assert applicant not in eligible_supervising_organizations(opportunity.program)
+        assert (applicant in eligible_supervising_organizations(opportunity.program)) is eligible
 
     def test_excludes_unrelated_organization(self, opportunity):
         assert OrganizationFactory() not in eligible_supervising_organizations(opportunity.program)
