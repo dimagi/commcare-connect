@@ -648,7 +648,7 @@ def _area_modal_context(org_slug, opp_id, area_type):
             _(
                 "Work Area Group Name (optional): Enter a group name for every row to assign work areas directly "
                 "and skip automatic clustering. Leave this column blank for every row to use automatic clustering. "
-                "Do not mix blank and filled values."
+                "Do not mix blank and filled values. All rows with the same group name must have the same Ward."
             ),
         ],
     }
