@@ -22,7 +22,7 @@ from .clustering import WorkAreaGrouper
 from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT
 from .exceptions import ImportRejected
 from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
-from .overlap import find_overlapping_work_areas
+from .overlap import Overlap, find_overlapping_work_areas
 
 logger = logging.getLogger(__name__)
 
@@ -302,7 +302,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             hidden = overlaps.count() - WORK_AREA_OVERLAP_ERROR_LIMIT
             self._add_error(1, _("%(count)d more overlaps not shown.") % {"count": hidden})
 
-    def _add_overlap_error(self, overlap):
+    def _add_overlap_error(self, overlap: Overlap):
         # Messages name work areas by slug: API callers get only the message, and their "rows" are
         # lines of a CSV built from the JSON list. The upload page shows the rows beside it.
         line_num, work_area = self.inserted[overlap["pk"]]

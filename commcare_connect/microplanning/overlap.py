@@ -11,6 +11,8 @@ Excluded work areas are left out, so a replacement can be drawn over the same gr
 ones are checked, so ground that was ruled out isn't added again.
 """
 
+from typing import TypedDict
+
 from django.contrib.gis.db.models.functions import Area, Intersection, MakeValid
 from django.db.models import F, FilteredRelation, FloatField, Q, Value
 from django.db.models.functions import Cast, Least, NullIf
@@ -19,11 +21,20 @@ from .const import WORK_AREA_MAX_OVERLAP_RATIO
 from .models import WorkArea, WorkAreaStatus
 
 
-def find_overlapping_work_areas(opp_id, new_ids):
+class Overlap(TypedDict):
+    """One overlapping pair, as a row of ``find_overlapping_work_areas``."""
+
+    pk: int  # the new work area
+    other_id: int
+    other_slug: str
+    ratio: float  # shared area / the smaller work area's area
+
+
+def find_overlapping_work_areas(opp_id: int, new_ids: list[int]):
     """Pairs of a new work area and another non-excluded work area in the opportunity that overlap.
 
-    Rows have ``pk`` (the new work area), ``other_id``, ``other_slug`` and ``ratio``. A pair of two
-    new work areas is returned once, with the lower ``pk`` first.
+    Each row is an ``Overlap``. A pair of two new work areas is returned once, with the lower ``pk``
+    first.
 
     The new work areas' boundaries must be valid; the importer rejects invalid ones. Other boundaries
     are repaired before measuring, though matching them via the spatial index uses the saved shape.
