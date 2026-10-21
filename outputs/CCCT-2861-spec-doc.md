@@ -16,7 +16,7 @@
 | **Author**                 | Pawan Verma                                                                           |
 | **Feature Release Path**   | Path 2: New features with stability                                                   |
 | **Release Switch**         | Not required                                                                          |
-| **Implementation Tickets** | 11 tickets, listed in order under Implementation Tickets                              |
+| **Implementation Tickets** | 8 tickets, listed in order under Implementation Tickets                               |
 
 ### Relevant Codebases
 
@@ -36,7 +36,7 @@ This change lets an opportunity run without a CommCare Deliver app and adds exte
 
 **Proposed Solution:**
 
-External units are modelled as a new kind of `DeliverUnit`, so they reuse payment units, `UserVisit`, `CompletedWork`, claim limits and invoicing. A per-opportunity scheduler triggers them one at a time. The scheduler, session state machine, claim handling and visit and payment path are generic; each step names a **provider** (a registry key such as `ocs`) that owns the service-specific parts: the step's config form and validation, the credentials, the trigger call and what the mobile app opens. The first step triggers once the FLW has a claim: on opportunities with no Deliver app, Connect claims the opportunity for them when they finish the Learn app; on opportunities with a Deliver app, the FLW claims in the app as today. No external unit is ever paid without a claim. The service posts each completion to one shared endpoint, `/api/external_unit_completed/`, keyed by `connectSessionId`, using an OAuth application that Connect links to the provider through an `IntegrationClient` record.
+External units are modelled as a new kind of `DeliverUnit`, so they reuse payment units, `UserVisit`, `CompletedWork`, claim limits and invoicing. A per-opportunity scheduler triggers them one at a time. The scheduler, session state machine, claim handling and visit and payment path are generic; each step names a **provider** (a registry key such as `ocs`) that owns the service-specific parts: the step's config forms and their validation, the credentials, the trigger call and what the mobile app opens. The first step triggers once the FLW has a claim: on opportunities with no Deliver app, Connect claims the opportunity for them when they finish the Learn app; on opportunities with a Deliver app, the FLW claims in the app as today. No external unit is ever paid without a claim. The service posts each completion to one shared endpoint, `/api/external_unit_completed/`, keyed by `unitId`, using an OAuth application that Connect links to the provider through an `ExternalServer` record (the repurposed `HQServer`).
 
 **Flow (OCS provider):**
 
@@ -57,11 +57,11 @@ sequenceDiagram
     C->>C: schedule_next_step: first session due at max(now, start dates)
     loop Each step, in order
         Note over C: Beat task claims the due session (triggering)
-        C->>OCS: provider.trigger → trigger_bot (chatbot, prompt, merged session data incl. connectSessionId)
+        C->>OCS: provider.trigger → trigger_bot (chatbot, prompt, merged session data incl. unitId)
         OCS-->>C: external_ref (OCS session ID) and provider_data (channel ID)
         C-->>FLW: Push notification
         FLW->>OCS: Interview chat in Connect messaging (launch: connect_channel)
-        OCS->>C: POST /api/external_unit_completed/ (connectSessionId)
+        OCS->>C: POST /api/external_unit_completed/ (unitId)
         C->>C: Approved UserVisit, CompletedWork, payment accrues
         C->>C: schedule_next_step: due at completed_at + next_trigger_days
     end
@@ -74,28 +74,25 @@ sequenceDiagram
 5. The service posts the completion to `/api/external_unit_completed/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next step is scheduled for `completed_at + next_trigger_days`.
 6. Steps 3–5 repeat until the last step is complete.
 
-The work splits into 11 tickets:
+The work splits into 8 tickets:
 
-| #                                                                                      | Ticket                                                                  | Repo             | Depends on |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------- | ---------- |
-| [1](#ticket-1--make-the-deliver-app-optional)                                          | Make the Deliver app optional                                           | commcare-connect | —          |
-| [2](#ticket-2--android-skip-the-deliver-app-after-learn)                               | Android: skip the Deliver app after Learn                               | commcare-android | 1          |
-| [3](#ticket-3--extract-the-claim_opportunity-service)                                  | Extract the `claim_opportunity` service                                 | commcare-connect | 1          |
-| [4](#ticket-4--external-unit-data-model)                                               | External unit data model                                                | commcare-connect | 1          |
-| [5](#ticket-5--provider-layer-and-the-ocs-provider)                                    | Provider layer and the OCS provider                                     | commcare-connect | 4          |
-| [6](#ticket-6--external-schedule-page-and-payment-unit-linking)                        | External schedule page and payment unit linking                         | commcare-connect | 5          |
-| [7](#ticket-7--trigger-external-sessions-auto-claim-on-learn-completion-and-beat-task) | Trigger external sessions: auto-claim on Learn completion and beat task | commcare-connect | 3, 6       |
-| [8](#ticket-8--external-unit-completion-endpoint)                                      | External unit completion endpoint                                       | commcare-connect | 6, 7       |
-| [9](#ticket-9--mobile-api-activities)                                                  | Mobile API: activities                                                  | commcare-connect | 5, 8       |
-| [10](#ticket-10--android-show-activities-and-auto-claimed-opportunities)               | Android: show activities and auto-claimed opportunities                 | commcare-android | 9          |
-| [11](#ticket-11--edit-a-running-schedule)                                              | Edit a running schedule                                                 | commcare-connect | 7, 8       |
+| #                                                                                               | Ticket                                                                              | Repo             | Depends on |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------- | ---------- |
+| [1](#ticket-1--make-the-deliver-app-optional)                                                   | Make the Deliver app optional                                                       | commcare-connect | —          |
+| [2](#ticket-2--android-skip-the-deliver-app-after-learn)                                        | Android: skip the Deliver app after Learn                                           | commcare-android | 1          |
+| [3](#ticket-3--external-unit-model-provider-layer-and-schedule-page)                            | External unit model, provider layer and schedule page                               | commcare-connect | 1          |
+| [4](#ticket-4--schedule-and-trigger-external-sessions)                                          | Schedule and trigger external sessions                                              | commcare-connect | 3          |
+| [5](#ticket-5--claims-and-completions-claim_opportunity-auto-claim-and-the-completion-endpoint) | Claims and completions: `claim_opportunity`, auto-claim and the completion endpoint | commcare-connect | 1, 4       |
+| [6](#ticket-6--mobile-api-activities)                                                           | Mobile API: activities                                                              | commcare-connect | 3, 5       |
+| [7](#ticket-7--android-show-activities-and-auto-claimed-opportunities)                          | Android: show activities and auto-claimed opportunities                             | commcare-android | 6          |
+| [8](#ticket-8--edit-a-running-schedule)                                                         | Edit a running schedule                                                             | commcare-connect | 4, 5       |
 
 - **External components:** OCS (trigger API, which already exists, and a completion post to Connect's new endpoint that is configured in an OCS pipeline with no code changes). Mobile app changes in commcare-android.
-- **Provider interface:** the one new abstraction. Each provider is a small class in a registry, keyed by `ExternalStep.provider`. The scheduler, the trigger task's retry and attempts cap, the completion endpoint and the mobile API are generic and call it. Only the OCS provider ships in v1 (Ticket 5).
+- **Provider interface:** the one new abstraction. Each provider is a small class in a registry, keyed by `ExternalStep.provider`. The scheduler, the trigger task's retry and attempts cap, the completion endpoint and the mobile API are generic and call it. Only the OCS provider ships in v1 (Ticket 3).
 - **Auto-claim:** `claim_opportunity(access)` is extracted from `ClaimOpportunityView` (opportunity row lock, budget and end-date checks, `OpportunityClaim` and `create_claim_limits`, and `create_hq_user_and_link` on the Deliver app's domain only when the opportunity has a Deliver app). The view and the Learn-completion task both call it, so manual and automatic claims follow the same budget rules. Learn processing never claims inline: it dispatches `auto_claim_and_start_schedule(access_id)` on commit, so a claim failure can't fail or slow the Learn form. Only opportunities with no Deliver app are auto-claimed, so auto-claim never makes the HQ call; on opportunities with a Deliver app, the FLW claims manually as today and their schedule starts at that point.
 - **Security:**
-  - `/api/external_unit_completed/` only accepts tokens whose OAuth application has an `IntegrationClient` record, with read/write scope, and that client's `provider` must equal the session's step provider. Otherwise one integration's token could complete another provider's sessions. Any other token gets `403`. `/api/receiver/` does not change.
-  - Each payload must reference an existing `ExternalSession` by `connectSessionId`. The session fixes the FLW, opportunity and external unit, so a service cannot create visits for arbitrary users or units.
+  - `/api/external_unit_completed/` only accepts tokens whose OAuth application belongs to an `ExternalServer` with a provider `service` (not `commcare_hq`), with read/write scope, and that `service` must equal the session's step provider. Otherwise one integration's token could complete another provider's sessions. Any other token gets `403`. `/api/receiver/` only accepts `service=commcare_hq` servers, so an integration's token can't post HQ forms either.
+  - Each payload must reference an existing `ExternalSession` by `unitId`. The session fixes the FLW, opportunity and external unit, so a service cannot create visits for arbitrary users or units.
   - External units have no `app`. Every `DeliverUnit` query that filters by `app=opportunity.deliver_app` is patched, because `filter(app=None)` matches `app IS NULL` and would return every opportunity's external units.
   - Credentials are resolved by the provider. The OCS provider uses the OCS OAuth token of the Program Manager who owns the schedule's connection (`ExternalSchedule.configured_by`), as OCS tasks do today.
 - **Scaling:** the beat task selects due sessions with `select_for_update(skip_locked=True)` and an index on (`status`, `scheduled_for`), moves each to `triggering` with a fresh `trigger_token` in the same transaction and dispatches `trigger_external_session` on commit. The worker only proceeds while the session is still `triggering` with its token, and records the result with a conditional update, so a session is never triggered twice and a completion that arrives mid-trigger is never overwritten. At most one open session exists per FLW per opportunity (a partial unique constraint, with `schedule_next_step` locking the `OpportunityAccess` row), so volume is bounded by active FLWs.
@@ -109,7 +106,7 @@ The work splits into 11 tickets:
   - Opportunities with no Deliver app have no tasks (neither relearn nor OCS).
   - One provider at launch, and callback only: Connect triggers, then the service posts back. Polling (`check_status`), work started by the external service with no trigger, and other credential models are later additions to the interface.
 - **API changes:** new `POST /api/external_unit_completed/` for integrations; `/api/receiver/` is unchanged. The mobile opportunity serializer emits `deliver_app: null`, `unit_type` on payment units and visits, and a new `activities` list with a `launch` descriptor.
-- **Error logging:** the provider raises `ProviderNotConfigured` for missing configuration (for OCS: no OCS account for `configured_by`, unset `OCS_BASE_URL`), which is logged and marks the session `failed` without retrying, and `ProviderTransientError` for transient errors, which retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (the service may have started the work), so it is never retried past the cap; the Program Manager re-triggers it. Completion posts with an unknown `connectSessionId` return `404`, and posts for an FLW with no claim raise `ProcessingError`; both are logged.
+- **Error logging:** the provider raises `ProviderNotConfigured` for missing configuration (for OCS: no OCS account for `configured_by`, unset `OCS_BASE_URL`), which is logged and marks the session `failed` without retrying, and `ProviderTransientError` for transient errors, which retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (the service may have started the work), so it is never retried past the cap; the Program Manager re-triggers it. Completion posts with an unknown `unitId` return `404`, and posts for an FLW with no claim raise `ProcessingError`; both are logged.
 
 **Monitoring and Alerting Plan:**
 
@@ -121,9 +118,9 @@ The work splits into 11 tickets:
 
 **Deployment and Release:**
 
-- Migrations are additive and run with `migrate_multi`; the beat task is registered by data migration.
+- Migrations are additive apart from renaming `HQServer` to `ExternalServer` (a `RenameModel`, so no data moves); they run with `migrate_multi`, and the beat task is registered by data migration. Code that imports `HQServer` ships in the same deploy as the rename.
 - Mobile: opportunities with no deliver app are hidden from clients below the new mobile API version (_Add version_), so older apps never see `deliver_app: null`.
-- OCS must be configured with the Connect OAuth client and the `/api/external_unit_completed/` URL, and an `IntegrationClient` record (`provider=ocs`) created for that OAuth application, before the feature is used.
+- OCS must be configured with the Connect OAuth client and the `/api/external_unit_completed/` URL, and an `ExternalServer` record (`service=ocs`, `url` = the OCS base URL) created for that OAuth application, before the feature is used.
 - Rollback: revert the deploy. Already-recorded external unit visits stay as ordinary approved visits.
 
 **Alternative Solutions:**
@@ -132,7 +129,7 @@ The work splits into 11 tickets:
 - **One completion endpoint per provider.** Rejected: one shared endpoint with a provider check keeps the payload contract the same for every provider.
 - **Posting completions to `/api/receiver/` in the HQ form shape**, with `FormReceiver` branching on the OAuth application. Rejected because the service would have to fabricate an HQ form (`domain`, `app_id`, `xmlns`, a deliver block) that means nothing for its work, the HQ receiver would carry integration branching, and an external ID used as `xform_id` changes on re-trigger. A dedicated endpoint gives integrations a small, explicit payload and reuses the same helpers extracted from `process_deliver_unit`.
 - **A separate unit model with its own accrual path.** Rejected because it would need parallel versions of `calculate_completed`, visit listings, exports, invoicing and the mobile payment views, and the two paths would drift.
-- **Sending `connectSessionId` to OCS in `participant_data`** (as OCS tasks send `connectTaskId`). Rejected because OCS participant data belongs to the participant, not the session: two open sessions on the same chatbot for one FLW would overwrite each other's ID.
+- **Sending `unitId` to OCS in `participant_data`** (as OCS tasks send `connectTaskId`). Rejected because OCS participant data belongs to the participant, not the session: two open sessions on the same chatbot for one FLW would overwrite each other's ID.
 
 ---
 
@@ -185,28 +182,13 @@ The work splits into 11 tickets:
 - An FLW on an opportunity with no Deliver app finishes Learn and is not prompted to install or open a Deliver app.
 - Opportunities with a Deliver app behave as today.
 
-#### Ticket 3 – Extract the `claim_opportunity` service
+#### Ticket 3 – External unit model, provider layer and schedule page
 
 **Repo:** commcare-connect · **Depends on:** 1
 
 **Changes:**
 
-- Move the body of `ClaimOpportunityView` into `claim_opportunity(access)`: the opportunity row lock, budget and end-date checks, `OpportunityClaim` and `OpportunityClaimLimit.create_claim_limits`, and the HQ user link.
-- The Deliver app check is optional: when `has_deliver_app` is true, call `create_hq_user_and_link` on the Deliver app's domain as today; when it is false, skip the call. FLWs already get an HQ user on the Learn domain from `start_learn_app`.
-- The HQ link is idempotent and also runs when the opportunity is already claimed. Today the claim is saved before the HQ call, so when the HQ call fails the claim persists and every retry returns "already claimed" without linking the user. Ensuring the link on the already-claimed path fixes retries and repairs FLWs who are stuck in that state.
-- It returns a result the view maps to its existing responses and error codes.
-
-**Acceptance criteria:**
-
-- `ClaimOpportunityView` responses and error codes are unchanged.
-- The service can be called outside a request (from a Celery task).
-- When the HQ call fails on the first claim, a retry creates the HQ user link.
-
-#### Ticket 4 – External unit data model
-
-**Repo:** commcare-connect · **Depends on:** 1
-
-**Changes:**
+Data model:
 
 - `DeliverUnit`:
   - Add `unit_type` (choices `form` / `external`, default `form`). The service that runs an external unit comes from its step's `provider`.
@@ -218,17 +200,17 @@ The work splits into 11 tickets:
   - `opportunity` (OneToOne)
   - `configured_by` (FK User, `SET_NULL`): the Program Manager whose connection the provider uses for credentials (for OCS, their OCS token).
   - `active`
-  - `config` (JSONField, default `dict`): schedule-level provider config, keyed by provider (`{"ocs": {"session_data": {...}}}`), validated by each provider. For OCS it holds the session data sent with every interview on this opportunity, such as the FLW cohort (`cohortId`).
+  - `config` (JSONField, default `dict`): schedule-level provider config, keyed by provider (`{"ocs": {"session_data": {...}}}`), validated by each provider's `schedule_config_form`. For OCS it holds the session data sent with every interview on this opportunity, such as the FLW cohort (`cohortId`).
 - New `ExternalStep` (one row per step in the schedule; the scheduler's columns):
   - `schedule` (FK `ExternalSchedule`, `CASCADE`)
   - `deliver_unit` (OneToOne external `DeliverUnit`, `PROTECT`): the step's unit; its `name` is the step's display name.
   - `provider` (CharField, a registry key such as `ocs`, validated against the registry)
-  - `config` (JSONField, default `dict`): provider-owned step config, validated by the provider's `validate_config`. For OCS: `chatbot_id`, `prompt_text` and `session_data`.
+  - `config` (JSONField, default `dict`): provider-owned step config, validated by the provider's `config_form`. For OCS: `chatbot_id`, `prompt_text` and `session_data`.
   - `order` (PositiveInteger): unique per schedule.
   - `next_trigger_days` (PositiveInteger): the Next Trigger column; days after this step is completed before the next one triggers; unused on the last row.
-  - `active` (default `True`): false once the step is retired from a running schedule (Ticket 11). Retired steps are never picked for new sessions.
+  - `active` (default `True`): false once the step is retired from a running schedule (Ticket 8). Retired steps are never picked for new sessions.
 - New `ExternalSession`:
-  - `external_session_id` (UUID): sent to the service as `connectSessionId` and posted back on completion.
+  - `external_id` (UUID): sent to the service as `unitId` and posted back on completion.
   - `opportunity_access` (FK)
   - `step` (FK `ExternalStep`); the unit is `step.deliver_unit`
   - `status` (`scheduled`, `triggering`, `triggered`, `completed`, `failed`, `skipped`, `cancelled`). `skipped` is a Program Manager decision and is final; `cancelled` (FLW suspended, opportunity ended, payment window closed) can be reopened.
@@ -244,19 +226,12 @@ The work splits into 11 tickets:
   - `user_visit` (OneToOne, nullable)
   - Unique on (`opportunity_access`, `step`); index on (`status`, `scheduled_for`).
   - Partial unique constraint `one_open_external_session` on (`opportunity_access`) where `status` is `scheduled`, `triggering`, `triggered` or `failed`, so an FLW can never have two open sessions on an opportunity.
-- New `IntegrationClient`: `provider` (registry key) and `oauth_application` (OneToOne to the OAuth application the service uses to post completions).
+- Repurpose `HQServer` as `ExternalServer` (a `RenameModel` migration, so existing rows and the `hq_server` foreign keys on `Opportunity`, `CommCareApp`, `HQApiKey` and `ConnectIDUserLink` are kept):
+  - Add `service` (choices `commcare_hq` and the provider keys, e.g. `ocs`; default `commcare_hq`, so existing rows backfill as HQ servers).
+  - `name`, `url` and `oauth_application` stay. For a provider, `oauth_application` is the OAuth application the service uses to post completions.
+  - Every place that lists or looks up HQ servers filters on `service=commcare_hq`: `FormReceiver.post`, the program API's `hq_server_url` field, the HQ server choices on `OpportunityInitForm`, `OpportunityInitUpdateForm` and `HQApiKeyCreateForm`, the admin and the `generate_microplanning_data` command.
 
-**Acceptance criteria:**
-
-- Migrations are additive, run with `migrate_multi`, and existing `DeliverUnit` rows backfill to `unit_type=form`.
-- The `DeliverUnit` check constraint rejects invalid combinations.
-- Constraints enforce one schedule per opportunity, unique step order per schedule, one session per FLW per step and at most one open session per FLW per opportunity.
-
-#### Ticket 5 – Provider layer and the OCS provider
-
-**Repo:** commcare-connect · **Depends on:** 4
-
-**Changes:**
+Provider layer and the OCS provider:
 
 - A provider registry and protocol. Each provider is a small class registered under its `key`:
 
@@ -267,37 +242,24 @@ class ExternalProvider(Protocol):
     def is_configured(self) -> bool                # e.g. OCS_BASE_URL set
     def config_form(self) -> type[Form]            # step fields: chatbot, prompt, session data
     def schedule_config_form(self) -> type[Form]   # schedule-level fields: session data
-    def validate_config(self, config) -> None      # step config; raises ValidationError
     def check_connection(self, user) -> bool       # "Use my connection" takeover
     def trigger(self, session) -> TriggerResult    # -> external_ref, provider_data
     def launch_descriptor(self, session) -> dict   # what the mobile app opens
 ```
 
-- `trigger` raises `ProviderTransientError` for errors worth retrying and `ProviderNotConfigured` for missing configuration or credentials. The retry and attempts cap in Ticket 7 wrap it; providers never retry themselves.
-- `ExternalStep.config` and `ExternalSchedule.config` are JSON with no column constraints, so the provider's `validate_config` and forms do that job, and every save goes through them.
+- `trigger` raises `ProviderTransientError` for errors worth retrying and `ProviderNotConfigured` for missing configuration or credentials. The retry and attempts cap in Ticket 4 wrap it; providers never retry themselves.
+- Validation lives only in the provider's forms. `ExternalStep.config` and `ExternalSchedule.config` are JSON with no column constraints, so `config_form` and `schedule_config_form` do that job through their field validation and `clean()`. The schedule page is the only write path for this config, so every save goes through the forms.
 - `launch_descriptor` returns data, not a screen: `{"type": "connect_channel", "channel_id": ...}` for OCS; a later provider could return `{"type": "url", "url": ...}`. Android renders one screen per launch type, not per provider.
 - The OCS provider (`key="ocs"`, `display_noun="Interview"`) wraps today's OCS integration:
   - `is_configured`: `OCS_BASE_URL` is set.
   - Step config: `chatbot_id` (a tom-select, `data-tomselect="1"`, loaded from `ocs_api.list_chatbots`), `prompt_text` (sent to start the conversation, not shown to the FLW) and `session_data` (a JSON object). Schedule config: `session_data`.
-  - `validate_config`: `chatbot_id` is required; session data must be a JSON object; the key Connect sets (`connectSessionId`) is reserved and rejected. The reserved key belongs to the OCS provider because it is an OCS session-data detail.
+  - Form validation: `chatbot_id` is required; session data must be a JSON object; the key Connect sets (`unitId`) is reserved and rejected. The reserved key belongs to the OCS provider because it is an OCS session-data detail.
   - Credentials: the OCS OAuth token of `schedule.configured_by`. `check_connection(user)` calls `ocs_api.list_chatbots` with the user's token.
-  - `trigger`: `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=config["chatbot_id"], prompt_text=config["prompt_text"], session_data={**schedule.config["ocs"]["session_data"], **step.config["session_data"], "connectSessionId": <external_session_id>})`. Merge order: the schedule's session data first, then the step's (a step key overrides the same schedule key), then `connectSessionId`. Returns `external_ref` = the OCS session ID and `provider_data` = `{"connect_channel_id": ...}`.
+  - `trigger`: `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=config["chatbot_id"], prompt_text=config["prompt_text"], session_data={**schedule.config["ocs"]["session_data"], **step.config["session_data"], "unitId": <external_id>})`. Merge order: the schedule's session data first, then the step's (a step key overrides the same schedule key), then `unitId`. Returns `external_ref` = the OCS session ID and `provider_data` = `{"connect_channel_id": ...}`.
   - `ocs_api.trigger_bot` gains a `prompt_text` parameter; the current hard-coded training prompt becomes the default, so OCS tasks are unchanged. A blank step prompt is sent as `None` and gets that default.
   - `launch_descriptor`: `{"type": "connect_channel", "channel_id": provider_data["connect_channel_id"]}`.
 
-**Acceptance criteria:**
-
-- The registry rejects an unknown provider key on `ExternalStep`.
-- OCS step config without a chatbot, session data that isn't an object, or session data using `connectSessionId` fails validation with a clear error.
-- The OCS trigger call carries the step's prompt and the schedule's session data merged with the step's (step keys win), plus `connectSessionId`.
-- OCS tasks still get the default training prompt.
-- The provider and the registry are unit tested without the database or OCS (`pytest-httpx` for the OCS calls).
-
-#### Ticket 6 – External schedule page and payment unit linking
-
-**Repo:** commcare-connect · **Depends on:** 5
-
-**Changes:**
+Schedule page and payment unit linking:
 
 - New class-based view `ExternalScheduleView` (`opportunity:external_schedule`): Program Manager CRUD for external units and schedule steps. Adding a step creates its external `DeliverUnit` (`unit_type=external`, `opportunity` set) together with the `ExternalStep` row.
 - Opportunity creation: the stepper (`opportunity/steps.html`) becomes Create Opportunity → **Schedule** → Payment Unit → Budget, so steps exist before payment units are built from them. The Schedule step has a "Skip" button only when the opportunity has a Deliver app; without one, at least one step is required to continue. Once the opportunity exists, the page opens from a "Configure Schedule" item in the opportunity menu (`is_opportunity_pm`) with breadcrumbs instead of the stepper. The resources modal gets a Schedule tab and the dashboard a Schedule chip.
@@ -306,10 +268,10 @@ class ExternalProvider(Protocol):
   - The **steps table**: a drag handle and ↑/↓ buttons, order, the step's name with its provider's `display_noun` badge ("Interview"), the provider's summary of its config (the chatbot for OCS), "Next step after" (Next Trigger days; "last step" on the last row), the payment unit (a "None yet" warning when it has none) and session counts (done · open). A Provider column is shown only when more than one provider is configured.
   - Adding and editing a step happens in a modal (the `tasks/new_task_modal.html` pattern, re-rendered by htmx on errors). The modal holds the step's name, the provider, the provider's `config_form` and Next Trigger days.
 - Reordering follows open-chat-studio's annotation fields form (`human_annotations/queue_form.html`): native HTML5 drag on the handle plus ↑/↓ buttons, in an Alpine component in its own JS file, with no new dependency. Moves happen client-side; a "Save order / Discard" bar appears once the order changes, and "Save order" posts the ordered step IDs in one request.
-- Session data (the schedule's and each step's) is edited as key/value rows with add and remove, stored as a JSON object of strings. The reserved `connectSessionId` key is rejected on its row.
-- Each step's config is edited through its provider's `config_form`; the schedule's provider config through `schedule_config_form`. Saving runs `validate_config`.
+- Session data (the schedule's and each step's) is edited as key/value rows with add and remove, stored as a JSON object of strings. The reserved `unitId` key is rejected on its row.
+- Each step's config is edited and validated through its provider's `config_form`; the schedule's provider config through `schedule_config_form`.
 - Only providers whose `is_configured()` is true are offered. If none is, hide the page and nav item.
-- Until Ticket 11 ships, the schedule is read-only once its first session exists: steps, order, provider config (the schedule's and each step's) and Next Trigger days. An info banner says why, the add, reorder and edit controls are disabled, and Edit becomes View. Taking over the connection stays available.
+- Until Ticket 8 ships, the schedule is read-only once its first session exists: steps, order, provider config (the schedule's and each step's) and Next Trigger days. An info banner says why, the add, reorder and edit controls are disabled, and Edit becomes View. Taking over the connection stays available.
 - Connection takeover: saving the schedule does not change `configured_by`. A "Use my connection" action sets `configured_by` to the current Program Manager after `provider.check_connection(user)` succeeds. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup. For OCS, if the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`. "Use my connection" asks for confirmation first.
 - The schedule can only be activated when every step's unit belongs to a payment unit.
 - `add_payment_unit` / `edit_payment_unit` / `PaymentUnitForm`: choices come from `available_deliver_units()`. The existing checkbox lists for required and optional units are split into a group per unit type, "Form deliver units" and the external units labelled with their provider's noun ("Interviews (OCS)"); the form-units group is hidden when there is no Deliver app.
@@ -318,10 +280,18 @@ class ExternalProvider(Protocol):
 
 **Acceptance criteria:**
 
+- Migrations run with `migrate_multi`; existing `DeliverUnit` rows backfill to `unit_type=form` and existing `HQServer` rows become `ExternalServer` rows with `service=commcare_hq`.
+- The `DeliverUnit` check constraint rejects invalid combinations.
+- Constraints enforce one schedule per opportunity, unique step order per schedule, one session per FLW per step and at most one open session per FLW per opportunity.
+- The registry rejects an unknown provider key on `ExternalStep`.
+- OCS step config without a chatbot, session data that isn't an object, or session data using `unitId` fails validation with a clear error.
+- The OCS trigger call carries the step's prompt and the schedule's session data merged with the step's (step keys win), plus `unitId`.
+- OCS tasks still get the default training prompt.
+- The provider and the registry are unit tested without the database or OCS (`pytest-httpx` for the OCS calls).
 - A Program Manager can add, reorder and remove steps and set Next Trigger days until the first session exists.
 - The creation stepper includes the Schedule step; it can be skipped only when the opportunity has a Deliver app.
 - Reordering by drag and by the arrow buttons both work, and the order is saved only on "Save order".
-- Once a session exists, every edit except the connection takeover is rejected, in the UI and on the server, until Ticket 11 lifts the lock.
+- Once a session exists, every edit except the connection takeover is rejected, in the UI and on the server, until Ticket 8 lifts the lock.
 - Saving the schedule never changes `configured_by`; the takeover action does, and fails with a clear error when the provider's connection check fails.
 - Invalid provider config fails validation with the provider's error.
 - The schedule can't be activated while a step has no payment unit.
@@ -329,16 +299,12 @@ class ExternalProvider(Protocol):
 - A Program Manager can create payment units from external units, individually or as a set.
 - Mixed-type payment units fail validation with a clear error.
 
-#### Ticket 7 – Trigger external sessions: auto-claim on Learn completion and beat task
+#### Ticket 4 – Schedule and trigger external sessions
 
-**Repo:** commcare-connect · **Depends on:** 3, 6
+**Repo:** commcare-connect · **Depends on:** 3
 
 **Changes:**
 
-- Learn processing (`update_completed_learn_date` and `process_assessments` in `form_receiver/processor.py`): when an FLW first finishes Learn (`completed_learn_date` set and assessment passed) on an opportunity with an active schedule and no Deliver app, dispatch `auto_claim_and_start_schedule.delay(access.pk)` with `transaction.on_commit`. Learn processing itself never claims.
-- `auto_claim_and_start_schedule(access_id)` is idempotent: it re-checks the preconditions, calls `claim_opportunity`, then `schedule_next_step(access)`. Both Learn-completion paths (modules and assessment) can dispatch it safely.
-- If the claim fails (budget full, opportunity ended), no steps start and the failure is logged.
-- Opportunities with a Deliver app are never auto-claimed. `ClaimOpportunityView` calls `schedule_next_step(access)` on commit after a successful claim when the opportunity has an active schedule.
 - `schedule_next_step(access)` is the only place sessions are created or reopened, and it is idempotent:
   - It first locks the `OpportunityAccess` row (`select_for_update`), so concurrent callers (claim, completion, skip, replan) check and create one at a time. If the `one_open_external_session` constraint still fires, it treats the FLW as already scheduled and does nothing.
   - It does nothing if the FLW already has an open session (`scheduled`, `triggering`, `triggered`, `failed`).
@@ -360,9 +326,6 @@ class ExternalProvider(Protocol):
 
 **Acceptance criteria:**
 
-- On an opportunity with no Deliver app, finishing Learn creates a claim and triggers the first step within one beat interval.
-- On an opportunity with a Deliver app, finishing Learn creates no claim; claiming in the app triggers the first step within one beat interval.
-- A Learn form is processed normally when the auto-claim fails.
 - No step triggers before the opportunity or payment unit start date.
 - No step triggers for an FLW without a claim.
 - No session is created for a step whose payment unit has no funded claim limit for the FLW, or whose payment window ends before `scheduled_for`; the worker page shows why.
@@ -376,17 +339,34 @@ class ExternalProvider(Protocol):
 - A failed trigger is visible on the worker page and can be re-triggered.
 - A suspended and then un-suspended FLW resumes at the step they were on.
 - The trigger task is tested with a fake provider registered in the test, so it does not depend on OCS.
+- Until Ticket 5 ships, sessions are started by calling `schedule_next_step` directly (tests, shell); claims and Learn completion start them from Ticket 5.
 
-#### Ticket 8 – External unit completion endpoint
+#### Ticket 5 – Claims and completions: `claim_opportunity`, auto-claim and the completion endpoint
 
-**Repo:** commcare-connect · **Depends on:** 6, 7
+**Repo:** commcare-connect · **Depends on:** 1, 4
 
 **Changes:**
 
-- Each integration has a dedicated OAuth application in Connect, used only for posting completions, linked from an `IntegrationClient` record with its `provider`. For v1, one for OCS.
-- New class-based view `ExternalUnitCompletedView` at `POST /api/external_unit_completed/` (`api:external_unit_completed`), next to `TaskCompletedView`. It uses `OAuth2Authentication` and `TokenHasReadWriteScope`, plus a permission class that requires `request.auth.application` to have an `IntegrationClient`. `FormReceiver` is not changed.
-- `ExternalUnitCompletionSerializer` validates the payload. The view hands the validated data and the client's provider to a service function, `complete_external_session(connect_session_id, provider, external_ref, started_at, completed_at, data)`, which holds all the logic and is tested directly.
-- `complete_external_session` locks the `ExternalSession` found by `connectSessionId` (`404` if none) and checks that its step's `provider` equals the client's (`403` if not). It then branches on the session's status:
+The `claim_opportunity` service:
+
+- Move the body of `ClaimOpportunityView` into `claim_opportunity(access)`: the opportunity row lock, budget and end-date checks, `OpportunityClaim` and `OpportunityClaimLimit.create_claim_limits`, and the HQ user link.
+- The Deliver app check is optional: when `has_deliver_app` is true, call `create_hq_user_and_link` on the Deliver app's domain as today; when it is false, skip the call. FLWs already get an HQ user on the Learn domain from `start_learn_app`.
+- The HQ link is idempotent and also runs when the opportunity is already claimed. Today the claim is saved before the HQ call, so when the HQ call fails the claim persists and every retry returns "already claimed" without linking the user. Ensuring the link on the already-claimed path fixes retries and repairs FLWs who are stuck in that state.
+- It returns a result the view maps to its existing responses and error codes.
+
+Auto-claim on Learn completion:
+
+- Learn processing (`update_completed_learn_date` and `process_assessments` in `form_receiver/processor.py`): when an FLW first finishes Learn (`completed_learn_date` set and assessment passed) on an opportunity with an active schedule and no Deliver app, dispatch `auto_claim_and_start_schedule.delay(access.pk)` with `transaction.on_commit`. Learn processing itself never claims.
+- `auto_claim_and_start_schedule(access_id)` is idempotent: it re-checks the preconditions, calls `claim_opportunity`, then `schedule_next_step(access)`. Both Learn-completion paths (modules and assessment) can dispatch it safely.
+- If the claim fails (budget full, opportunity ended), no steps start and the failure is logged.
+- Opportunities with a Deliver app are never auto-claimed. `ClaimOpportunityView` calls `schedule_next_step(access)` on commit after a successful claim when the opportunity has an active schedule.
+
+The completion endpoint:
+
+- Each integration has a dedicated OAuth application in Connect, used only for posting completions, linked from an `ExternalServer` with its provider as `service`. For v1, one for OCS.
+- New class-based view `ExternalUnitCompletedView` at `POST /api/external_unit_completed/` (`api:external_unit_completed`), next to `TaskCompletedView`. It uses `OAuth2Authentication` and `TokenHasReadWriteScope`, plus a permission class that requires `request.auth.application` to belong to an `ExternalServer` whose `service` is a provider key. `FormReceiver` is not changed.
+- `ExternalUnitCompletionSerializer` validates the payload. The view hands the validated data and the server's `service` to a service function, `complete_external_session(unit_id, provider, external_ref, started_at, completed_at, data)`, which holds all the logic and is tested directly.
+- `complete_external_session` locks the `ExternalSession` found by `unitId` (`404` if none) and checks that its step's `provider` equals the server's `service` (`403` if not). It then branches on the session's status:
   - `completed`: return and do nothing.
   - `cancelled` or `skipped`: log it and record nothing.
   - `triggering`, `triggered` or `failed`: record the visit, mark the session completed (`completed_at`, and `external_ref` from the payload) and call `schedule_next_step`, all in one atomic block. `failed` is accepted because the service may have started the work even though Connect's trigger call timed out.
@@ -395,7 +375,7 @@ class ExternalProvider(Protocol):
 - The `UserVisit` for an external unit:
   - `user`, `opportunity`, `opportunity_access` and `deliver_unit` come from the session, not the payload.
   - `entity_id` = the FLW's `User.user_id`; `entity_name` = the FLW's name.
-  - `xform_id` = the session's `external_session_id`. It is stable across re-triggers, so `unique_xform_entity_deliver_unit` also blocks a second visit for the same session.
+  - `xform_id` = the session's `external_id`. It is stable across re-triggers, so `unique_xform_entity_deliver_unit` also blocks a second visit for the same session.
   - `visit_date` = `completed_at`.
   - `form_json` = `{"metadata": {"timeStart": started_at, "timeEnd": completed_at, "location": null}, "provider": ..., "external_ref": ..., "data": data}`. The `metadata` block keeps `UserVisit.duration` and other `form_json` readers working.
   - Status is always `approved` + `review_status=agree` unless over limit or the FLW is suspended.
@@ -404,12 +384,12 @@ class ExternalProvider(Protocol):
 
 `POST /api/external_unit_completed/` (new endpoint):
 
-- Auth: OAuth2 bearer token from an integration's OAuth application (an `IntegrationClient`), scope read/write.
+- Auth: OAuth2 bearer token from an integration's OAuth application (an `ExternalServer` with a provider `service`), scope read/write.
 - Request body:
 
 ```json
 {
-  "connectSessionId": "<ExternalSession.external_session_id>",
+  "unitId": "<ExternalSession.external_id>",
   "external_ref": "<the service's ID, e.g. the OCS session ID>",
   "started_at": "2026-10-09T09:50:00Z",
   "completed_at": "2026-10-09T10:14:30Z",
@@ -417,29 +397,36 @@ class ExternalProvider(Protocol):
 }
 ```
 
-- `connectSessionId` (UUID) and `external_ref` are required. `completed_at` defaults to the time of receipt, as on `/api/task_completed/`. `started_at` is optional. `data` is an optional JSON object stored on the visit. The payload is the same for every provider.
-- Response: `200` on success, on a duplicate, and on a completion for a `cancelled` or `skipped` session. `400` on validation errors or a missing claim. `403` when the token's application has no `IntegrationClient`, or its provider doesn't match the session's. `404` when no session matches `connectSessionId`.
+- `unitId` (UUID) and `external_ref` are required. `completed_at` defaults to the time of receipt, as on `/api/task_completed/`. `started_at` is optional. `data` is an optional JSON object stored on the visit. The payload is the same for every provider.
+- Response: `200` on success, on a duplicate, and on a completion for a `cancelled` or `skipped` session. `400` on validation errors or a missing claim. `403` when the token's application has no provider `ExternalServer`, or its `service` doesn't match the session's provider. `404` when no session matches `unitId`.
 
 **Acceptance criteria:**
 
+- `ClaimOpportunityView` responses and error codes are unchanged.
+- The service can be called outside a request (from a Celery task).
+- When the HQ call fails on the first claim, a retry creates the HQ user link.
+- On an opportunity with no Deliver app, finishing Learn creates a claim and triggers the first step within one beat interval.
+- On an opportunity with a Deliver app, finishing Learn creates no claim; claiming in the app triggers the first step within one beat interval.
+- A Learn form is processed normally when the auto-claim fails.
 - A completion creates exactly one approved `UserVisit` and updates `CompletedWork` and accrued payment.
 - Posting the same completion twice creates one visit and schedules one next step.
 - A late completion from an earlier external session, after a re-trigger, creates no second paid visit and no second next step.
 - A completion for a `cancelled` or `skipped` session records nothing.
 - A completion for a `failed` session is recorded.
 - A set payment unit pays only after its last required external unit.
-- A token from an application with no `IntegrationClient` is rejected with `403`, including an HQ server's.
-- A token whose `IntegrationClient.provider` differs from the session's step provider is rejected with `403`.
+- A token from an application with no provider `ExternalServer` is rejected with `403`, including an HQ server's (`service=commcare_hq`).
+- A token whose `ExternalServer.service` differs from the session's step provider is rejected with `403`.
+- An integration's token posting to `/api/receiver/` is rejected, and HQ servers keep working after the rename.
 - `UserVisit.duration` works for external unit visits.
 - `/api/receiver/` and HQ form processing are unchanged.
 
-#### Ticket 9 – Mobile API: activities
+#### Ticket 6 – Mobile API: activities
 
-**Repo:** commcare-connect · **Depends on:** 5, 8
+**Repo:** commcare-connect · **Depends on:** 3, 5
 
 **Changes:**
 
-- `OpportunitySerializer`: `payment_units[].unit_type` (`form` | `external`) and `activities[]` for the requesting FLW: `external_session_id`, `provider`, `label` (the step's name), `noun` (the provider's `display_noun`, e.g. "Interview"), `status`, `scheduled_for`, `completed_at`, `order` and `launch` (the provider's `launch_descriptor`, e.g. `{"type": "connect_channel", "channel_id": ...}`; `null` until triggered).
+- `OpportunitySerializer`: `payment_units[].unit_type` (`form` | `external`) and `activities[]` for the requesting FLW: `external_id`, `provider`, `label` (the step's name), `noun` (the provider's `display_noun`, e.g. "Interview"), `status`, `scheduled_for`, `completed_at`, `order` and `launch` (the provider's `launch_descriptor`, e.g. `{"type": "connect_channel", "channel_id": ...}`; `null` until triggered).
 - Load activities with a `Prefetch` on the requesting FLW's accesses: `ExternalSession.objects.select_related("step__deliver_unit").order_by("step__order")`, into a `to_attr`, so the query count doesn't depend on the number of opportunities.
 - `UserVisitViewSet`: visits gain `unit_type`.
 
@@ -449,9 +436,9 @@ class ExternalProvider(Protocol):
 - A `django_assert_num_queries` test shows the query count is the same for one and several opportunities.
 - Existing fields are unchanged.
 
-#### Ticket 10 – Android: show activities and auto-claimed opportunities
+#### Ticket 7 – Android: show activities and auto-claimed opportunities
 
-**Repo:** commcare-android · **Depends on:** 9
+**Repo:** commcare-android · **Depends on:** 6
 
 **Changes:**
 
@@ -465,11 +452,11 @@ class ExternalProvider(Protocol):
 - An activity with an unknown launch type is listed but not openable, and the app doesn't crash.
 - Earnings from external units show alongside other payment units.
 
-#### Ticket 11 – Edit a running schedule
+#### Ticket 8 – Edit a running schedule
 
-**Repo:** commcare-connect · **Depends on:** 7, 8
+**Repo:** commcare-connect · **Depends on:** 4, 5
 
-Lifts the Ticket 6 lock, so a Program Manager can change the schedule after steps have started. The rule throughout: a session that has been triggered (`triggering`, `triggered`) keeps going as it was triggered; everything not yet triggered follows the new schedule.
+Lifts the Ticket 3 lock, so a Program Manager can change the schedule after steps have started. The rule throughout: a session that has been triggered (`triggering`, `triggered`) keeps going as it was triggered; everything not yet triggered follows the new schedule.
 
 **Changes:**
 
@@ -487,7 +474,7 @@ Lifts the Ticket 6 lock, so a Program Manager can change the schedule after step
 - `replan_external_sessions(schedule_id)` (Celery, idempotent, on commit):
   - For each `scheduled` session, locked with `select_for_update(skip_locked=True)` (a session the beat task is claiming is skipped and triggers with the version it read): re-run the selection rule from `schedule_next_step`. If it picks the same step, update `scheduled_for`; otherwise cancel this session and create or reopen the picked one.
   - For each claimed, unsuspended FLW on a running opportunity with no open session, call `schedule_next_step(access)`. This also starts schedules for FLWs who claimed before the schedule existed.
-  - It reuses the pure selection function from Ticket 7, so the outcome of an edit can be unit tested without the database.
+  - It reuses the pure selection function from Ticket 4, so the outcome of an edit can be unit tested without the database.
 - Edits that change what comes next ask for confirmation in a dialog with the number of workers and `scheduled` sessions they re-plan, e.g. "The new order applies to 7 workers whose next interview hasn't started". Provider config edits don't confirm.
 - Retired steps are listed in a collapsed "Retired steps" section below the steps table, with how many sessions are done and how many are still finishing.
 - In the step modal, "Remove step" becomes "Retire step" once the step has sessions, with a confirmation that says what is cancelled and what is still paid. When retiring is rejected (a required unit of a set), a dialog explains why and links to the payment unit. The provider field explains that it can't be changed once workers have sessions.
@@ -519,9 +506,9 @@ Lifts the Ticket 6 lock, so a Program Manager can change the schedule after step
 - **Mixed payment units:** disallowed in v1, because form visits use a beneficiary `entity_id` and external units use the FLW. Confirm no program needs "form + external" sets.
 - **Credentials:** decided to keep per-Program-Manager tokens for OCS. If that Program Manager leaves or disconnects, every OCS trigger fails until another Program Manager takes over the connection. An org-level connection remains an option, as a provider credential change.
 - **Stalled steps:** with one-at-a-time triggering, an abandoned step blocks the rest. v1 flags it after 7 days and lets a Program Manager re-trigger or skip it; skipped steps are never paid.
-- **Editing a running schedule:** edits apply only to sessions not yet triggered (Ticket 11). Confirm with programs that a mid-run reorder sending some FLWs to an inserted step before their next planned one is acceptable, and whether a retired step's `triggered` sessions should still be paid (v1 pays them).
+- **Editing a running schedule:** edits apply only to sessions not yet triggered (Ticket 8). Confirm with programs that a mid-run reorder sending some FLWs to an inserted step before their next planned one is acceptable, and whether a retired step's `triggered` sessions should still be paid (v1 pays them).
 - **OCS trigger idempotency:** the token stops two Connect workers calling OCS for one session, but a call that times out after OCS created the session is retried, which can leave two OCS sessions. Ask OCS whether the trigger API can accept an idempotency key; the `trigger_token` fits, because it is shared by Celery retries and replaced on recovery and re-trigger.
-- **Session data from OCS:** confirm that the OCS pipeline that posts completions can read `connectSessionId` from session data and make an authenticated HTTP call to Connect.
+- **Session data from OCS:** confirm that the OCS pipeline that posts completions can read `unitId` from session data and make an authenticated HTTP call to Connect.
 - **Payload contract with OCS:** agree the exact `data` fields OCS sends with a completion.
 - **Mobile compatibility:** agree the minimum mobile API version for opportunities with no Deliver app.
 - **QA:** test opportunities with a Deliver app only, external units only, and both. Cover Learn finishing through module completion and through the assessment, auto-claim when the budget is full or the opportunity has ended, an FLW who had already claimed manually, duplicate posts, late posts after a re-trigger, a post from the wrong integration, suspended FLWs, FLWs who finish Learn before the start date, and over-limit.
