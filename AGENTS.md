@@ -31,7 +31,7 @@ pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
-jscpd --changed commcare_connect    # clones in your uncommitted files, [NEW] = not in HEAD (pre-commit hook)
+jscpd --changed commcare_connect    # clones in your uncommitted files, [NEW] = not in HEAD (pre-commit hook; settings in .jscpd.json)
 
 # Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, jscpd)
 prek run -a
