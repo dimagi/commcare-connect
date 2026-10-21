@@ -709,7 +709,7 @@ stays within budget. This also applies when only org pay goes up.
 
 ```
 scaled limit = deliveries approved + floor((limit − deliveries approved) × old cost ÷ new cost)
-new limit    = the higher of: scaled limit, deliveries completed
+new limit    = the higher of: scaled limit, deliveries completed; never above the current limit
 ```
 
 - **Deliveries approved:** approved (agreed) before the change; their pay is already recorded at the old pay rate.
@@ -769,7 +769,7 @@ def scale_visit_limits(payment_unit, old_rate, new_rate):
     for claim_limit in payment_unit.opportunityclaimlimit_set.all():
         approved, completed = counts.get(claim_limit.id, (0, 0))
         scaled = approved + (claim_limit.max_visits - approved) * old_cost // new_cost
-        claim_limit.max_visits = max(completed, scaled)
+        claim_limit.max_visits = min(claim_limit.max_visits, max(completed, scaled))
         claim_limit.save(update_fields=["max_visits"])
     if payment_unit.max_total:
         payment_unit.max_total = max(1, payment_unit.max_total * old_cost // new_cost)
