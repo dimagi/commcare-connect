@@ -121,6 +121,7 @@ The work splits into 8 tickets:
 - Migrations are additive apart from renaming `HQServer` to `ExternalServer` (a `RenameModel`, so no data moves); they run with `migrate_multi`, and the beat task is registered by data migration. Code that imports `HQServer` ships in the same deploy as the rename.
 - Mobile: opportunities with no deliver app are hidden from clients below the new mobile API version (_Add version_), so older apps never see `deliver_app: null`.
 - OCS must be configured with the Connect OAuth client and the `/api/external_unit_completed/` URL, and an `ExternalServer` record (`service=ocs`, `url` = the OCS base URL) created for that OAuth application, before the feature is used.
+- All tickets are released together, so there is no interim state to support (for example no locked schedule before editing exists).
 - Rollback: revert the deploy. Already-recorded external unit visits stay as ordinary approved visits.
 
 **Alternative Solutions:**
@@ -271,7 +272,6 @@ Schedule page and payment unit linking:
 - Session data (the schedule's and each step's) is edited as key/value rows with add and remove, stored as a JSON object of strings. The reserved `unitId` key is rejected on its row.
 - Each step's config is edited and validated through its provider's `config_form`; the schedule's provider config through `schedule_config_form`.
 - Only providers whose `is_configured()` is true are offered. If none is, hide the page and nav item.
-- Until Ticket 8 ships, the schedule is read-only once its first session exists: steps, order, provider config (the schedule's and each step's) and Next Trigger days. An info banner says why, the add, reorder and edit controls are disabled, and Edit becomes View. Taking over the connection stays available.
 - Connection takeover: saving the schedule does not change `configured_by`. A "Use my connection" action sets `configured_by` to the current Program Manager after `provider.check_connection(user)` succeeds. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup. For OCS, if the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`. "Use my connection" asks for confirmation first.
 - The schedule can only be activated when every step's unit belongs to a payment unit.
 - `add_payment_unit` / `edit_payment_unit` / `PaymentUnitForm`: choices come from `available_deliver_units()`. The existing checkbox lists for required and optional units are split into a group per unit type, "Form deliver units" and the external units labelled with their provider's noun ("Interviews (OCS)"); the form-units group is hidden when there is no Deliver app.
@@ -288,10 +288,9 @@ Schedule page and payment unit linking:
 - The OCS trigger call carries the step's prompt and the schedule's session data merged with the step's (step keys win), plus `unitId`.
 - OCS tasks still get the default training prompt.
 - The provider and the registry are unit tested without the database or OCS (`pytest-httpx` for the OCS calls).
-- A Program Manager can add, reorder and remove steps and set Next Trigger days until the first session exists.
+- A Program Manager can add, reorder and remove steps and set Next Trigger days at any time; once sessions exist, the rules in Ticket 8 apply.
 - The creation stepper includes the Schedule step; it can be skipped only when the opportunity has a Deliver app.
 - Reordering by drag and by the arrow buttons both work, and the order is saved only on "Save order".
-- Once a session exists, every edit except the connection takeover is rejected, in the UI and on the server, until Ticket 8 lifts the lock.
 - Saving the schedule never changes `configured_by`; the takeover action does, and fails with a clear error when the provider's connection check fails.
 - Invalid provider config fails validation with the provider's error.
 - The schedule can't be activated while a step has no payment unit.
@@ -456,7 +455,7 @@ The completion endpoint:
 
 **Repo:** commcare-connect · **Depends on:** 4, 5
 
-Lifts the Ticket 3 lock, so a Program Manager can change the schedule after steps have started. The rule throughout: a session that has been triggered (`triggering`, `triggered`) keeps going as it was triggered; everything not yet triggered follows the new schedule.
+There is no locked phase: the schedule stays editable from setup onwards. This ticket adds what editing needs once workers have sessions, so a Program Manager can change the schedule after steps have started. The rule throughout: a session that has been triggered (`triggering`, `triggered`) keeps going as it was triggered; everything not yet triggered follows the new schedule.
 
 **Changes:**
 
@@ -466,7 +465,7 @@ Lifts the Ticket 3 lock, so a Program Manager can change the schedule after step
   - **Next Trigger days:** recomputes `scheduled_for` of `scheduled` sessions. The delay is always the Next Trigger days of the step the FLW most recently completed, not its neighbour in the new order.
   - **Order:** the next step is the lowest-order active step the FLW hasn't completed or skipped, so after a reorder an FLW may get an earlier-placed step next. Completed steps are never repeated.
   - **Adding a step:** saved only with a payment unit for its unit, as on activation. FLWs who had already finished every step get it scheduled from their last completion.
-  - **Removing a step:** a step with no sessions is deleted with its `DeliverUnit`, as before the lock. One with sessions is retired (`active=False`) instead, because its unit can have paid visits. Its `scheduled` and `failed` sessions are cancelled and the FLW moves on to their next step; its `triggering` and `triggered` sessions can still complete and are paid.
+  - **Removing a step:** a step with no sessions is deleted with its `DeliverUnit`. One with sessions is retired (`active=False`) instead, because its unit can have paid visits. Its `scheduled` and `failed` sessions are cancelled and the FLW moves on to their next step; its `triggering` and `triggered` sessions can still complete and are paid.
   - **Retiring a required unit of a set:** rejected while the step is a required unit of a payment unit with other required units, because FLWs could then never complete the set. The page says to change the payment unit first.
   - **Changing an external unit's payment unit** (`edit_payment_unit`, or moving it to another payment unit): rejected while any session for that step is `triggering`, `triggered` or `failed`, because completion pays through `deliver_unit.payment_unit` and the in-flight session must be paid against the unit it was started under (`failed` sessions can still receive a late completion). Sessions not yet triggered follow the new mapping, and the change runs a replan.
   - **Pausing (`active` off):** the beat task stops triggering the schedule's sessions; triggered sessions can still complete and are paid. Reactivating runs the replan.
