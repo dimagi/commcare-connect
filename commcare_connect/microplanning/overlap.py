@@ -14,6 +14,7 @@ ones are checked, so ground that was ruled out isn't added again.
 from typing import TypedDict
 
 from django.contrib.gis.db.models.functions import Area, Intersection, MakeValid
+from django.db import connection
 from django.db.models import F, FilteredRelation, FloatField, Q, Value
 from django.db.models.functions import Cast, Least, NullIf
 
@@ -30,8 +31,8 @@ class Overlap(TypedDict):
     ratio: float  # shared area / the smaller work area's area
 
 
-def find_overlapping_work_areas(opp_id: int, new_ids: list[int]):
-    """Pairs of a new work area and another non-excluded work area in the opportunity that overlap.
+def find_overlapping_work_areas(new_ids: list[int]):
+    """Pairs of a new work area and another non-excluded work area in its opportunity that overlap.
 
     Each row is an ``Overlap``. A pair of two new work areas is returned once, with the lower ``pk``
     first.
@@ -39,8 +40,13 @@ def find_overlapping_work_areas(opp_id: int, new_ids: list[int]):
     The new work areas' boundaries must be valid; the importer rejects invalid ones. Other boundaries
     are repaired before measuring, though matching them via the spatial index uses the saved shape.
     """
+    # Count the new rows in the opportunity's statistics, or Postgres may skip the spatial index.
+    table = WorkArea._meta.db_table
+    column = WorkArea._meta.get_field("opportunity").column
+    with connection.cursor() as cursor:
+        cursor.execute(f"ANALYZE {connection.ops.quote_name(table)} ({connection.ops.quote_name(column)})")
     return (
-        WorkArea.objects.filter(opportunity_id=opp_id, pk__in=new_ids)
+        WorkArea.objects.filter(pk__in=new_ids)
         .annotate(
             other=FilteredRelation(
                 "opportunity__workarea",

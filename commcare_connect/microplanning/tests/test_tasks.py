@@ -389,6 +389,17 @@ class TestWorkAreaCSVImporter:
         assert '"opportunity_opportunity"' in sqls[lock]
         assert lock < first_work_area_query
 
+    def test_import_refreshes_statistics_between_insert_and_overlap_check(self, opportunity):
+        with CaptureQueriesContext(connection) as queries:
+            WorkAreaCSVImporter(opportunity.id, self.build_csv([self.build_row("area-1")])).run()
+
+        sqls = [query["sql"] for query in queries]
+        insert = next(i for i, sql in enumerate(sqls) if sql.startswith('INSERT INTO "microplanning_workarea"'))
+        analyze = next(i for i, sql in enumerate(sqls) if sql.startswith("ANALYZE"))
+        overlap_check = next(i for i, sql in enumerate(sqls) if "ST_Intersection" in sql)
+        assert sqls[analyze] == 'ANALYZE "microplanning_workarea" ("opportunity_id")'
+        assert insert < analyze < overlap_check
+
     def test_import_with_no_rows(self, opportunity):
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
 

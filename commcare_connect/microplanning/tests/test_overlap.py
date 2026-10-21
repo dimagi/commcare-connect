@@ -6,8 +6,8 @@ from commcare_connect.microplanning.overlap import find_overlapping_work_areas
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, square
 
 
-def find_pairs(opportunity, new_work_areas):
-    rows = find_overlapping_work_areas(opportunity.id, [wa.pk for wa in new_work_areas])
+def find_pairs(new_work_areas):
+    rows = find_overlapping_work_areas([wa.pk for wa in new_work_areas])
     return {(row["pk"], row["other_id"]): round(row["ratio"], 3) for row in rows}
 
 
@@ -26,21 +26,21 @@ class TestFindOverlappingWorkAreas:
         existing = WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
         new = WorkAreaFactory(opportunity=opportunity, boundary=square(offset, 0))
 
-        assert bool(find_pairs(opportunity, [new])) == overlaps
+        assert bool(find_pairs([new])) == overlaps
         if overlaps:
-            assert find_pairs(opportunity, [new]) == {(new.pk, existing.pk): 0.06}
+            assert find_pairs([new]) == {(new.pk, existing.pk): 0.06}
 
     def test_shared_corner_passes(self, opportunity):
         WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
         new = WorkAreaFactory(opportunity=opportunity, boundary=square(1, 1))
 
-        assert find_pairs(opportunity, [new]) == {}
+        assert find_pairs([new]) == {}
 
     def test_ratio_is_measured_against_the_smaller_work_area(self, opportunity):
         large = WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0, 10))
         small_inside = WorkAreaFactory(opportunity=opportunity, boundary=square(1, 1))
 
-        assert find_pairs(opportunity, [small_inside]) == {(small_inside.pk, large.pk): 1.0}
+        assert find_pairs([small_inside]) == {(small_inside.pk, large.pk): 1.0}
 
     @pytest.mark.parametrize(
         "status, overlaps",
@@ -54,20 +54,20 @@ class TestFindOverlappingWorkAreas:
         WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0), status=status)
         new = WorkAreaFactory(opportunity=opportunity, boundary=square(0.5, 0))
 
-        assert bool(find_pairs(opportunity, [new])) == overlaps
+        assert bool(find_pairs([new])) == overlaps
 
     def test_pair_of_new_work_areas_is_reported_once(self, opportunity):
         first = WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
         second = WorkAreaFactory(opportunity=opportunity, boundary=square(0.5, 0))
 
-        assert find_pairs(opportunity, [first, second]) == {(first.pk, second.pk): 0.5}
+        assert find_pairs([first, second]) == {(first.pk, second.pk): 0.5}
 
     def test_new_work_area_overlapping_new_and_existing_ones(self, opportunity):
         existing = WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
         first = WorkAreaFactory(opportunity=opportunity, boundary=square(0.5, 0))
         second = WorkAreaFactory(opportunity=opportunity, boundary=square(0.75, 0))
 
-        assert find_pairs(opportunity, [first, second]) == {
+        assert find_pairs([first, second]) == {
             (first.pk, existing.pk): 0.5,
             (first.pk, second.pk): 0.75,
             (second.pk, existing.pk): 0.25,
@@ -77,12 +77,12 @@ class TestFindOverlappingWorkAreas:
         WorkAreaFactory(boundary=square(0, 0))
         new = WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
 
-        assert find_pairs(opportunity, [new]) == {}
+        assert find_pairs([new]) == {}
 
     def test_no_new_work_areas(self, opportunity):
         WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
 
-        assert find_pairs(opportunity, []) == {}
+        assert find_pairs([]) == {}
 
     def test_invalid_existing_boundary_is_measured_as_repaired(self, opportunity):
         # A bow-tie inside the unit square. Unrepaired, ST_Intersection raises on it and ST_Area reads 0.
@@ -92,4 +92,4 @@ class TestFindOverlappingWorkAreas:
         )
         covering = WorkAreaFactory(opportunity=opportunity, boundary=square(-1, -1, 3))
 
-        assert find_pairs(opportunity, [covering]) == {(covering.pk, bow_tie.pk): 1.0}
+        assert find_pairs([covering]) == {(covering.pk, bow_tie.pk): 1.0}

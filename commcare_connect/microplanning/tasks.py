@@ -293,7 +293,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
     def _validate_inserted(self):
         if not self.inserted:
             return
-        overlaps = find_overlapping_work_areas(self.opp_id, list(self.inserted))
+        overlaps = find_overlapping_work_areas(list(self.inserted))
         # One extra row tells whether there are more than the limit, without counting every pair.
         listed = list(overlaps[: WORK_AREA_OVERLAP_ERROR_LIMIT + 1])
         for overlap in listed[:WORK_AREA_OVERLAP_ERROR_LIMIT]:
