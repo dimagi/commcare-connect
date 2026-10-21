@@ -11,6 +11,7 @@ from commcare_connect.opportunity.api.serializers.mobile import (
     OpportunityClaimSerializer,
     OpportunitySerializer,
     PaymentSerializer,
+    PaymentUnitSerializer,
 )
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
@@ -19,6 +20,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    PaymentUnit,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -104,16 +106,6 @@ def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: A
     assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
 
 
-def test_claim_endpoint_end_date_exceeded(mobile_user: User, api_client: APIClient):
-    opportunity, opportunity_access = _setup_opportunity_and_access(
-        mobile_user, total_budget=1000, end_date=datetime.date.today() - datetime.timedelta(days=100)
-    )
-    api_client.force_authenticate(mobile_user)
-    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_ENDED
-
-
 def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_client: APIClient):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user, total_budget=1000, end_date=datetime.date.today() + datetime.timedelta(days=100)
@@ -129,31 +121,30 @@ def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_clien
     assert response.data == "Opportunity is already claimed"
 
 
-def test_claim_endpoint_less_budget_than_visit(mobile_user: User, api_client: APIClient):
+@pytest.mark.parametrize(
+    "total_budget, days_until_end, budget_per_visit, error_code",
+    [
+        (1000, -100, 10, ErrorCodes.OPPORTUNITY_ENDED),
+        # The budget doesn't cover a single visit.
+        (1, 100, 2, ErrorCodes.OPPORTUNITY_FULL),
+        # The budget covers one visit, but not the worker's full limit of 100 visits.
+        (3, 100, 2, ErrorCodes.OPPORTUNITY_FULL),
+    ],
+    ids=["end_date_exceeded", "less_budget_than_visit", "budget_for_partial_limit"],
+)
+def test_claim_endpoint_rejects_claim(
+    mobile_user: User, api_client: APIClient, total_budget, days_until_end, budget_per_visit, error_code
+):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user,
-        total_budget=1,
-        end_date=datetime.date.today() + datetime.timedelta(days=100),
-        budget_per_visit=2,
+        total_budget=total_budget,
+        end_date=datetime.date.today() + datetime.timedelta(days=days_until_end),
+        budget_per_visit=budget_per_visit,
     )
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
-
-
-def test_claim_endpoint_rejects_budget_for_partial_limit(mobile_user: User, api_client: APIClient):
-    # The budget covers one visit, but not the worker's full limit of 100 visits.
-    opportunity, opportunity_access = _setup_opportunity_and_access(
-        mobile_user,
-        total_budget=3,
-        end_date=datetime.date.today() + datetime.timedelta(days=100),
-        budget_per_visit=2,
-    )
-    api_client.force_authenticate(mobile_user)
-    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
+    assert response.json()["error_code"] == error_code
     assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
 
 
@@ -285,6 +276,72 @@ def test_opportunity_list_endpoint(
 
     payment_unit_fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
     assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "headers, expected_max_daily, expected_daily_max_visits_per_user",
+    [
+        pytest.param({}, [5, 1], 6, id="default_version"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=1.0"}, [5, 1], 6, id="v1"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=2.0"}, [5, None], -1, id="v2"),
+    ],
+)
+def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    headers,
+    expected_max_daily,
+    expected_daily_max_visits_per_user,
+):
+    capped, uncapped = opportunity.paymentunit_set.order_by("pk")
+    PaymentUnit.objects.filter(pk=capped.pk).update(max_daily=5, max_total=20)
+    PaymentUnit.objects.filter(pk=uncapped.pk).update(max_daily=None, max_total=1)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    response = api_client.get("/api/opportunity/", **headers)
+
+    assert response.status_code == 200
+    assert [unit["max_daily"] for unit in response.data[0]["payment_units"]] == expected_max_daily
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_dailies, expected_daily_max_visits_per_user",
+    [
+        pytest.param([5, 3], 8, id="all_units_capped"),
+        pytest.param([None, None], -1, id="no_units_capped"),
+        pytest.param([], -1, id="no_payment_units"),
+    ],
+)
+def test_opportunity_list_endpoint_v2_daily_max(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    max_dailies,
+    expected_daily_max_visits_per_user,
+):
+    units = opportunity.paymentunit_set.order_by("pk")
+    if not max_dailies:
+        units.delete()
+    for unit, max_daily in zip(units, max_dailies):
+        PaymentUnit.objects.filter(pk=unit.pk).update(max_daily=max_daily)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    response = api_client.get("/api/opportunity/", HTTP_ACCEPT="application/json; version=2.0")
+
+    assert response.status_code == 200
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
+
+
+@pytest.mark.django_db
+def test_payment_unit_serializer_keeps_null_daily_limit(opportunity):
+    # The data export reuses this serializer and must not imply a daily limit that doesn't exist
+    unit = PaymentUnitFactory(opportunity=opportunity, max_daily=None, max_total=1)
+
+    assert PaymentUnitSerializer(unit).data["max_daily"] is None
 
 
 @pytest.mark.django_db
