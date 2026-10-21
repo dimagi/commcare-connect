@@ -39,8 +39,7 @@ Worker-facing text and the "visit limit" name keep saying visits, since that is 
 
 - Fixing past invoices that went out at a wrong pay rate.
 - Changing the opportunity's total budget automatically.
-- Custom effective dates. A change always takes effect on the 1st of the month, except for a payment unit with no
-  visits, where it takes effect immediately (section [9.1](#91-payment-units-with-no-visits)).
+- Custom effective dates: the PM doesn't choose the date.
 - Different pay rates for different workers in the same period.
 
 ## 4. The problem today
@@ -153,13 +152,10 @@ A pay rate's **status** is worked out, not stored:
 | Ended     | an older non-cancelled, applied pay rate when a newer active pay rate exists |
 | Cancelled | `cancelled_on` is set                                                        |
 
-**Active Pay Rate** is the pay rate workers are paid at today: the one whose `effective_from` has come **and** that is
-applied (section [6.2](#62-looking-up-a-pay-rate)).
+**Active Pay Rate:** the pay rate workers are paid at today (the Active status above; section
+[6.2](#62-looking-up-a-pay-rate)).
 
-**Initial Rate:** a payment unit's first pay rate (its earliest non-cancelled row, `is_initial_rate`).
-
-- It is Scheduled until the unit starts (section [9.2](#92-payment-units-that-havent-started-yet)), then Active, then Ended.
-- It can't be cancelled.
+**Initial Rate:** a payment unit's first pay rate (its earliest non-cancelled row).
 
 ### 6.2 Looking up a pay rate
 
@@ -211,8 +207,9 @@ The **pay rate backfill** creates one row for **every** existing payment unit, i
 its current `amount` and `org_amount`. `applied_on` is set, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `effective_from` is:
 
 - the payment unit's `start_date`, if set. Visits submitted before it are marked "trial" and never paid, so no
-  approval comes before it. If it is in the future but the unit already has visits (moved after it started, which
-  section [6.5](#65-changing-a-payment-units-start-date) now prevents), the backfill date instead.
+  approval comes before it. If `start_date` is in the future but the unit already has visits (its start was moved
+  after it started, which section [6.5](#65-changing-a-payment-units-start-date) now prevents), the day the backfill
+  runs instead, so the unit has an active pay rate for new approvals.
 - otherwise, the opportunity's start date. All work happens after the opportunity starts.
 
 ### 6.5 Changing a payment unit's start date
@@ -225,7 +222,7 @@ approval must fall on or after it. Today a PM can edit `start_date` at any time,
 - the payment unit **hasn't started yet**: its current `start_date` is in the future, or it has no visits at all, and
 - the new date is **after today**, or **today** if the unit has no visits at all, and
 - the new date is **before any pay rate change** that isn't cancelled. Otherwise the Initial Rate would move after
-  that change, and the old pay rate would come back from the new start date. The PM cancels a scheduled change first.
+  that change, and the old pay rate would come back from the new start date.
 
 When the date changes, the Initial Rate's `effective_from` moves with it in the same save.
 
@@ -363,14 +360,13 @@ class EarnedPayRecord(BaseModel):
     earned_on = models.DateTimeField(null=True)  # empty only for old records whose date isn't known
 ```
 
-- Records are only added, never changed or deleted (like pay rate rows, section [6.7](#67-protecting-pay-rate-history)). `delete_opportunity` and
-  `generate_sample_data` delete invoice rows, then records, then the work.
+- Records are only added, never changed or deleted (like pay rate rows, section [6.7](#67-protecting-pay-rate-history)).
 - Each record has one pay rate, so its amount ÷ deliveries is always a real pay rate.
 - USD amounts aren't stored; they come from the exchange rate.
 - The totals on the work (`saved_payment_accrued` and the others) stay. For new work they equal the sum of its
   records while it is approved, and 0 otherwise (section [7](#7-updating-earned-pay-the-key-change)). Old work whose pay was edited after it was invoiced can differ, because today's code repriced it.
 
-**Earned pay backfill**
+### 7.2 Earned pay backfill
 
 We don't need to know when old deliveries were approved: today's code prices deliveries at one pay rate each time it
 invoices them, so the amounts can come from existing invoice rows and the current pay rate. A re-runnable management
@@ -378,11 +374,13 @@ command (not a migration), run right after the deploy:
 
 1. For each existing invoice row, creates a record with the same deliveries, amounts and exchange rate, and links the
    row to it.
-2. For each **approved** piece of work with approved deliveries not covered yet, creates one record for the rest:
-   remaining deliveries × the current pay rate (what today's invoicing would bill), at the exchange rate on the work's
-   approval date (as today's USD totals). The rest is the approved deliveries minus those in **all** its records so
-   far, including any added by live approvals since the deploy. It locks the work as the updater does (section
-   [7](#7-updating-earned-pay-the-key-change)), so a live approval can't add the same deliveries at the same time.
+2. For each **approved** piece of work, creates one record for the deliveries no record covers yet:
+   - **Deliveries:** approved deliveries minus those already in its records (from step 1, or from approvals since
+     the deploy).
+   - **Pay:** the current pay rate, which is what today's invoicing would bill.
+   - **Exchange rate:** the one on the work's approval date.
+   - It locks the work like the updater (section [7](#7-updating-earned-pay-the-key-change)), so a live approval
+     can't add the same deliveries at the same time.
 3. For each piece of work that **isn't approved**, sets `saved_approved_count` to the deliveries in its records (0 if
    it has none). Today's code counts deliveries on work that isn't approved too; left as is, they would never be paid
    once the work is approved, since pay is only added for deliveries above the count.
@@ -393,11 +391,12 @@ has one approved delivery, and empty otherwise.
 
 **When to run it**
 
-- **After the invoice run on the 2nd and before the month ends.** Records with no date go on the next invoice, under
-  that invoice's month. They were approved after the last invoice, so that is the current month. Run on the 1st, work
-  approved that morning would be billed under the previous month.
-- **On the same day as the deploy.** An invoice created between the two would miss old deliveries that aren't
-  invoiced yet.
+- **Immediately after the deploy.** Until it runs, old deliveries that aren't invoiced yet have no records, so an
+  invoice created in between would leave them out until a later invoice.
+- **Deploy after the invoice run on the 2nd and before the month ends.** Records with no `earned_on` (step 2, when the
+  approval date isn't known) are billed under the month of the next invoice. After the 2nd, everything still unbilled
+  was approved this month, so that month is right. Run on the 1st, work approved that morning would be billed under
+  the previous month.
 
 ## 8. Invoices
 
@@ -422,10 +421,8 @@ multiplying by the current pay rate, so they always match earned pay and never l
   - a backfilled record with no date goes under the invoice's month, as additional deliveries do today
   - cancelling an invoice deletes its rows, so their records become unbilled again
 - `invoiced_approved_count` is no longer needed (dropped in ticket 10).
-- The invoice on October 2 for September bills what was earned in September, at the pay rate it was earned at, even
-  though October's pay rate is already active.
 - **Lines** are grouped by month, payment unit and pay rate (amount ÷ deliveries, so backfilled records group the same
-  way): "N verified visits x `<currency>` `<rate>`". A month with two pay rates (for example, the job ran late) has two
+  way): "N verified visits x `<currency>` `<rate>`". A month with two pay rates has two
   lines. Additional deliveries are part of these lines, under the month they were approved; the existing "Additional
   Deliveries" count on the invoice form stays.
 - **Export:** one row per invoice row, as today, plus a pay rate column (and an org pay rate column when org pay is
@@ -472,8 +469,6 @@ order, change the pay rate in place instead:
 
 - Editing updates the same row; the last edit wins and `modified_by` records who.
 - Cancelling sets `cancelled_by` and `cancelled_on`; the row stays in the history as "Cancelled".
-- Refusals are enforced in the backend, not only by hiding buttons, so a PM saving from an old page can't change a
-  pay rate already in use.
 
 **When a change is blocked** (checked on schedule and on edit)
 
@@ -485,63 +480,21 @@ order, change the pay rate in place instead:
 The modal shows the visit limit warning when the cost per delivery goes up and the decrease message when it goes down
 (section [11.3](#113-message-before-confirming)).
 
-```python
-@transaction.atomic
-def schedule_pay_rate_change(payment_unit, flw_amount, org_amount, user):
-    if not_started(payment_unit) or not has_visits(payment_unit):
-        return change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user)  # sections 9.1 and 9.2
-    # Lock the payment unit so two PMs scheduling at once can't both pass the check below
-    PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)
-    scheduled = payment_unit.pay_rates.filter(cancelled_on__isnull=True, applied_on__isnull=True).first()
-    if scheduled:
-        raise ValidationError(f"A change is already scheduled for {scheduled.effective_from}. Edit or cancel it instead.")
-    return PaymentUnitRate.objects.create(
-        payment_unit=payment_unit,
-        effective_from=first_day_of_next_month(date.today()),
-        flw_amount=flw_amount,
-        org_amount=org_amount,
-        created_by=user.email,
-        modified_by=user.email,
-    )
-
-
-@transaction.atomic
-def edit_pay_rate_change(pay_rate_id, flw_amount, org_amount, user):
-    # Same lock and check as cancelling: an edit that waited for the job must not change an applied pay rate
-    pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
-    if pay_rate.cancelled_on or pay_rate.applied_on or pay_rate.effective_from <= date.today():
-        raise ValidationError("This pay rate change has already taken effect or was cancelled.")
-    pay_rate.flw_amount = flw_amount
-    pay_rate.org_amount = org_amount
-    pay_rate.modified_by = user.email
-    pay_rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
-    return pay_rate
-
-
-@transaction.atomic
-def cancel_pay_rate_change(pay_rate_id, user):
-    # Lock the row: the job on the 1st locks it too, so a cancel and the job can't both act on it
-    pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
-    if pay_rate.is_initial_rate or pay_rate.applied_on or pay_rate.effective_from <= date.today():
-        raise ValidationError("Only a scheduled pay rate change can be cancelled.")
-    pay_rate.cancelled_by = user.email
-    pay_rate.cancelled_on = now()
-    pay_rate.save(update_fields=["cancelled_by", "cancelled_on"])
-```
+**Locking:** scheduling locks the payment unit, so two PMs can't both schedule a change. Edit and cancel lock the pay
+rate row, which the job also locks, so a change can't be edited or cancelled while the job applies it.
 
 ### 9.1 Payment units with no visits
 
 If a payment unit has **no visits** (Trial and Over Limit visits don't count), a change takes effect **immediately**.
 Nobody has earned anything at the old pay rate, so it **edits the active pay rate in place**, usually the Initial
-Rate. `modified_by` and `date_modified` show who and when. `effective_from` and `applied_on` don't change, so the
+Rate. `effective_from` and `applied_on` don't change, so the
 pay rate still moves with the start date (section [6.5](#65-changing-a-payment-units-start-date)).
 
 - **Modal:** the effective date shows today. Before saving, the PM confirms that the change takes effect immediately
   and can't be cancelled, and that workers are notified now (if worker pay changes). The visit limit warning (section
   [11.3](#113-message-before-confirming)) is included if the cost goes up.
 - **On save:** if the cost goes up, joined workers' limits are scaled straight away (section [11.2](#112-what-a-pay-rate-increase-does)); with no visits there
-  is no shortfall. A raise from 0 isn't scaled, so it is refused if the remaining budget can't cover it (section
-  [11.7](#117-special-case-pay-rate-raised-from-zero)). If worker pay changed, workers are notified. No NM banner.
+  is no shortfall. If worker pay changed, workers are notified. No NM banner.
 
 **Avoiding race conditions:** lock first, then check again that the unit still hasn't started or still has no visits.
 Section [9.2](#92-payment-units-that-havent-started-yet) uses the same function.
@@ -593,8 +546,7 @@ started and no pay rate is active.
 **When it runs**
 
 A new Celery beat task, **the daily job**, runs **every day at 00:00 UTC**. It applies every pay rate change whose
-date has come but isn't applied yet. In-place changes (sections [9.1](#91-payment-units-with-no-visits) and [9.2](#92-payment-units-that-havent-started-yet)) are applied on save instead.
-
+date has come but isn't applied yet.
 - **00:00** so the new pay rate starts as close to the 1st as possible. Until the job runs, everything keeps the old
   pay rate (section [6.2](#62-looking-up-a-pay-rate)). Traffic is low then, so its brief locks don't hold up visits.
 - **Daily**, not only on the 1st, so a failed run is picked up the next day instead of leaving a change stuck (its
@@ -730,8 +682,7 @@ new limit    = the higher of: scaled limit, deliveries completed; never above th
 
 **When**
 
-Limits are scaled on the 1st, by the daily job. In-place changes (sections [9.1](#91-payment-units-with-no-visits) and [9.2](#92-payment-units-that-havent-started-yet)) scale them on save. So a
-change cancelled before the 1st leaves nothing to undo.
+Limits are scaled on the 1st, by the daily job. So a change cancelled before the 1st leaves nothing to undo.
 
 **Example**
 
@@ -833,17 +784,9 @@ ahead.
 
 ### 11.5 Adding or reducing visits from the Add Budget form
 
-Both parts of the Add Budget form keep working as today; only the cost per delivery they use changes. Example: pay
-rate goes from 4 to 5 on October 1, max visits per worker is 100.
-
-- **Existing workers, between scheduling and the 1st:** "+10 visits" adds 10 × 4 = 40 of budget. Visits
-  approved before the 1st earn the old pay rate; the rest is scaled on the 1st with the worker's other money, so if
-  none are approved by then, the worker ends up with 8 extra visits, not 10.
-- **Existing workers, after the 1st:** "+10 visits" adds 50 and gives 10 extra visits. Decreases work the same
-  way, and a limit still can't go below the visits already done.
-- **New workers:** "+10 workers" adds 10 × (100 × 4) = 4,000 before the 1st, or 10 × (80 × 5) = 4,000
-  after. Workers who join before the 1st get 100 visits, scaled to 80 on the 1st; later joiners get 80. Either way
-  each worker's share is 400.
+The Add Budget form works as today, at the cost per delivery active at the time. Visits added before the 1st are
+scaled on the 1st with the rest of the worker's money. Example: pay rate 4 → 5, a PM adds 10 visits (40) in September;
+if none are approved by the 1st, the worker ends up with 8 extra visits, not 10.
 
 **Note on the form.** While a change is scheduled, the Add Budget form notes that visits not approved by the effective
 date, including any added now, will be adjusted to the new pay rate.
@@ -1008,7 +951,7 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 | Release       | Tickets    | Notes                                                                                                                                                                                                                                                                                                                               |
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Foundation | 1, 2, 3    | Nothing new for PMs except the start date rule. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
-| 2. Earned pay | 4          | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.1](#71-earned-pay-records)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
+| 2. Earned pay | 4          | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.2](#72-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
 | 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
 | 4. Follow-up  | 10         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
 
