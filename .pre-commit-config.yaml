@@ -62,6 +62,8 @@ repos:
     hooks:
       # Fails when the files you are committing add a clone that HEAD did not have.
       # Existing duplication does not fail it. Bypass with SKIP=jscpd.
+      # Detection settings live in .jscpd.json, so a manual `jscpd --changed commcare_connect` matches this hook.
+      # Its format and ignore lists decide what jscpd scans; the top-level exclude here only decides whether the hook runs.
       - id: jscpd
         name: jscpd (new duplicate code)
         entry: jscpd
@@ -70,17 +72,9 @@ repos:
         args:
           - --changed
           - --fail-on-new-clones
-          - --reporters=console
-          - --ignore-identifiers
-          - --min-tokens=30
-          - --min-lines=4
-          # Also compare whole functions, to catch copies edited in several places. Skips test files.
-          - --similarity=0.9
-          # The top-level exclude only decides whether the hook runs; jscpd still scans the whole directory.
-          - --ignore=**/migrations/**
           - commcare_connect
         pass_filenames: false
-        files: ^commcare_connect/
+        files: ^commcare_connect/.*\.(py|js)$
 
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
