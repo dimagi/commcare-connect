@@ -47,3 +47,25 @@ class TestSolicitationListAccess:
             response = client.get(reverse("solicitation:list", args=(membership.organization.slug,)))
 
         assert response.status_code == expected
+
+
+@pytest.mark.django_db
+class TestSolicitationNavItem:
+    @pytest.mark.parametrize(
+        "switch_active, program_manager, role, shown",
+        [
+            (True, True, "admin", True),
+            (False, True, "admin", False),
+            (True, True, "member", False),
+            (True, False, "admin", False),
+        ],
+    )
+    def test_nav_item(self, client, switch_active, program_manager, role, shown):
+        membership = MembershipFactory(organization__program_manager=program_manager, role=role)
+        org = membership.organization
+        client.force_login(membership.user)
+
+        with override_switch(SOLICITATIONS, active=switch_active):
+            response = client.get(reverse("opportunity:list", args=(org.slug,)))
+
+        assert (reverse("solicitation:list", args=(org.slug,)) in response.content.decode()) is shown
