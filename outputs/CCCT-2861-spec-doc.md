@@ -329,6 +329,7 @@ Schedule page and payment unit linking:
 - Worker views, both labelled with the provider's noun ("Interviews"):
   - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the schedule toggle is on and the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and flags (in progress for more than 7 days, couldn't start, or the waiting reason). Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
   - The single-worker page gets a tab next to Visits (`components/worker_page/visit_task_tabs.html`): a card per step with its status, dates and, when it failed, the last error and attempts. Re-trigger (in progress or failed) and Skip (any open session) both ask for confirmation: Re-trigger warns that the worker may see two chats, Skip that the step won't be paid and can't be undone.
+  - The single-worker tab has filters, following `opportunity/user_tasks.html`: a filter icon button on the tab bar, with a count badge when filters are applied, opens a Filters modal rendering a `UserExternalSessionsFilterSet` (django-filter, through `FilterMixin`) with Status, Step (retired steps included and marked) and "Needs attention only" (failed, or in progress for more than 7 days). Filters are GET parameters next to `?user=`, so a filtered view can be linked, and the table is loaded by htmx with them. An empty result shows "No interviews match these filters" with a Clear action.
   - Statuses as Program Managers see them: Scheduled (with the due date), Starting (`triggering`), In progress (`triggered`), Completed, Failed, Skipped, Cancelled, and Waiting when nothing could be scheduled.
 - Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0`, clears `last_error` and `trigger_token`. Skip marks it `skipped` (unpaid) and calls `schedule_next_step`.
 - The opportunity page shows a banner when sessions fail because of provider credentials, linking to the connection card on the schedule page.
@@ -346,6 +347,7 @@ Schedule page and payment unit linking:
 - A trigger that keeps failing makes exactly `MAX_TRIGGER_ATTEMPTS` provider calls (Celery retries included), then ends `failed` with `last_error` set.
 - Re-triggering a `failed` session resets `attempts` to `0` and allows a fresh set of attempts.
 - A failed trigger is visible on the worker page and can be re-triggered.
+- On the single-worker Interviews tab, each filter (status, step, needs attention) narrows the rows, filters combine, and the badge shows how many are applied.
 - A suspended and then un-suspended FLW resumes at the step they were on.
 - The trigger task is tested with a fake provider registered in the test, so it does not depend on OCS.
 - Until Ticket 5 ships, sessions are started by calling `schedule_next_step` directly (tests, shell); claims and Learn completion start them from Ticket 5.
