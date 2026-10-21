@@ -550,7 +550,8 @@ date has come but isn't applied yet.
 - **00:00** so the new pay rate starts as close to the 1st as possible. Until the job runs, everything keeps the old
   pay rate (section [6.2](#62-looking-up-a-pay-rate)). Traffic is low then, so its brief locks don't hold up visits.
 - **Daily**, not only on the 1st, so a failed run is picked up the next day instead of leaving a change stuck (its
-  date has passed, so it can't be cancelled). On other days it is one query that finds nothing.
+  date has passed, so it can't be cancelled). It also checks scheduled changes for funding every day (section
+  [11.4](#114-no-overspend-funding-check)).
 
 **What it does**
 
@@ -762,7 +763,8 @@ ahead.
    - Other payment units' scheduled changes share the same remaining budget, so the check adds up the shortfalls of
      all the opportunity's scheduled changes, including this one.
 2. **Between scheduling and the 1st**: PMs and NMs see a warning banner as soon as the total can no longer be funded
-   (section [12.4](#124-banners)).
+   (section [12.4](#124-banners)). The daily job also emails the PM and NM admins once, so they can act as soon as
+   possible, since the banner only reaches people who open Connect Web.
 3. **On the 1st at 00:00**, before limits are scaled. By then the change may no longer fit: workers may have submitted
    more visits, new workers may have joined, limits may have been raised (Add Budget or max visits per worker), or
    over-limit visits may have been approved. If there isn't enough budget, the change is **cancelled automatically**:
@@ -970,9 +972,6 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 - **Let the PM choose what a raise does.** In the change modal, either scale visit limits down (as now) or add the
   budget needed to keep them. Today the PM does the second with Add Budget, before or after the change (section
   [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)).
-- **Email when a scheduled change stops fitting.** The funding warning banner only reaches people who open Connect
-  Web. The daily job could email opportunity admins once when a scheduled change can no longer be funded, before the
-  1st, instead of only when it is cancelled.
 - **Keep approved work approved.** Today a visit rejected after its work was approved, such as a duplicate, rejects
   the whole work and removes its pay, and the completed work status import can do the same. Instead, the rejected
   visit could leave the work approved, and the import could refuse approved → rejected. Once done, the "Work that
