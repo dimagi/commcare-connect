@@ -400,6 +400,41 @@ class TestWorkAreaCSVImporter:
         assert sqls[analyze] == 'ANALYZE "microplanning_workarea" ("opportunity_id")'
         assert insert < analyze < overlap_check
 
+    def test_import_validates_rows_before_locking_the_opportunity(self, opportunity):
+        importer = WorkAreaCSVImporter(opportunity.id, self.build_csv([self.build_row("")]))
+        errors_when_locked = []
+        lock = importer._lock
+
+        def record_errors_then_lock():
+            errors_when_locked.append(dict(importer.errors))
+            lock()
+
+        importer._lock = record_errors_then_lock
+        importer.run()
+
+        assert errors_when_locked == [{"Area slug is required and it should be unique.": [2]}]
+
+    def test_import_with_missing_columns_does_not_lock_the_opportunity(self, opportunity):
+        with CaptureQueriesContext(connection) as queries:
+            result = WorkAreaCSVImporter(opportunity.id, self.build_csv([["area-1"]], headers=["Area Slug"])).run()
+
+        assert any(message.startswith("Missing columns") for message in result["errors"])
+        assert not any("FOR NO KEY UPDATE" in query["sql"] for query in queries)
+
+    def test_import_reports_existing_slugs_with_other_row_errors(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="area-2")
+        rows = [self.build_row("area-1"), self.build_row("area-2"), self.build_row("")]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Area slug is required and it should be unique.": [4],
+                "Area slug already exists for this opportunity": [3],
+            }
+        }
+        assert WorkArea.objects.filter(opportunity=opportunity).count() == 1
+
     def test_import_with_no_rows(self, opportunity):
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
 
@@ -539,6 +574,15 @@ def test_implementation_area_duplicate_name_in_file(opportunity):
     content = io.StringIO(f'{IA_HEADER}\nWard,77.1 28.6,"{IA_POLY}"\nWard,77.2 28.7,"{IA_POLY}"\n')
     result = ImplementationAreaCSVImporter(opportunity.id, content).run()
     assert "Duplicate Implementation Area Name in file" in result["errors"]
+
+
+@pytest.mark.django_db
+def test_implementation_area_name_that_already_exists(opportunity):
+    ImplementationAreaFactory(opportunity=opportunity, name="Ward")
+    content = io.StringIO(f'{IA_HEADER}\nWard,77.1 28.6,"{IA_POLY}"\nOther,77.2 28.7,"{IA_POLY}"\n')
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"errors": {"Implementation Area Name already exists for this opportunity": [2]}}
+    assert ImplementationArea.objects.filter(opportunity=opportunity).count() == 1
 
 
 @pytest.mark.django_db

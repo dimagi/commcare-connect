@@ -70,12 +70,15 @@ class BaseAreaCSVImporter:
         self.inserted = {}
 
     def run(self):
-        # Checks and inserts happen in one transaction, so a rejected file saves nothing. Under the
-        # API's ATOMIC_REQUESTS this is a savepoint, and only the importer's work is undone.
+        # Inserts happen in one transaction, so a rejected file saves nothing. Under the API's
+        # ATOMIC_REQUESTS this is a savepoint, and only the importer's work is undone.
         try:
+            self._validate_all_rows(self.csv_source)
             with transaction.atomic():
                 self._lock()
-                self._validate_all_rows(self.csv_source)
+                self._validate_against_existing()
+                if self.errors:
+                    raise ImportRejected
                 self._stream_and_insert(self.csv_source)
                 self._validate_inserted()
                 if self.errors:
@@ -91,19 +94,15 @@ class BaseAreaCSVImporter:
         return {"created": self.created_count}
 
     def _validate_all_rows(self, f):
-        """Raises ImportRejected if the headers or any row have errors."""
+        """Raises ImportRejected if the headers have errors."""
         f.seek(0)
         reader = csv.DictReader(f)
         self._normalize_headers(reader)
         if not self._validate_headers(reader):
             raise ImportRejected
-        self._load_existing()
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
         self._after_rows()
-        self._clear_existing()
-        if self.errors:
-            raise ImportRejected
 
     def _stream_and_insert(self, f):
         f.seek(0)
@@ -150,13 +149,11 @@ class BaseAreaCSVImporter:
     def _lock(self):
         pass
 
-    def _load_existing(self):
-        pass
-
     def _after_rows(self):
         pass
 
-    def _clear_existing(self):
+    def _validate_against_existing(self):
+        """Checks against saved rows, run under the lock so they can't change before the insert."""
         pass
 
     def _prepare_insert(self):
@@ -233,8 +230,8 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
 
     def __init__(self, opp_id, csv_source):
         super().__init__(opp_id, csv_source)
-        self.seen_slugs = set()
-        self.existing_slugs = set()
+        # Slug -> line number of every row with a valid slug.
+        self.seen_slugs = {}
         self.implementation_area_map = {}
         self.has_group_names = False
         # Ward to use if a given group name doesn't exist yet: the ward of its first-seen row.
@@ -249,8 +246,10 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
     def _lock(self):
         Opportunity.objects.select_for_update(no_key=True).get(pk=self.opp_id)
 
-    def _load_existing(self):
-        self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
+    def _validate_against_existing(self):
+        existing = WorkArea.objects.filter(opportunity_id=self.opp_id, slug__in=self.seen_slugs)
+        for line_num in sorted(self.seen_slugs[slug] for slug in existing.values_list("slug", flat=True)):
+            self._add_error(line_num, _("Area slug already exists for this opportunity"))
 
     def _process_row(self, line_num, row):
         super()._process_row(line_num, row)
@@ -267,9 +266,6 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
                 1,
                 _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
             )
-
-    def _clear_existing(self):
-        self.existing_slugs.clear()
 
     def _prepare_insert(self):
         self.implementation_area_map = dict(
@@ -407,10 +403,8 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             self._add_error(line_num, _("Area slug is required and it should be unique."))
         elif slug in self.seen_slugs:
             self._add_error(line_num, _("Duplicate Area slug in file"))
-        elif slug in self.existing_slugs:
-            self._add_error(line_num, _("Area slug already exists for this opportunity"))
         else:
-            self.seen_slugs.add(slug)
+            self.seen_slugs[slug] = line_num
             invalid = False
         return invalid
 
@@ -484,16 +478,13 @@ class ImplementationAreaCSVImporter(BaseAreaCSVImporter):
 
     def __init__(self, opp_id, csv_source):
         super().__init__(opp_id, csv_source)
-        self.seen_names = set()
-        self.existing_names = set()
+        # Name -> line number of every row with a valid name.
+        self.seen_names = {}
 
-    def _load_existing(self):
-        self.existing_names.update(
-            ImplementationArea.objects.filter(opportunity_id=self.opp_id).values_list("name", flat=True)
-        )
-
-    def _clear_existing(self):
-        self.existing_names.clear()
+    def _validate_against_existing(self):
+        existing = ImplementationArea.objects.filter(opportunity_id=self.opp_id, name__in=self.seen_names)
+        for line_num in sorted(self.seen_names[name] for name in existing.values_list("name", flat=True)):
+            self._add_error(line_num, _("Implementation Area Name already exists for this opportunity"))
 
     def get_processors(self):
         return [self._validate_name, self._validate_centroid, self._validate_boundary]
@@ -508,10 +499,8 @@ class ImplementationAreaCSVImporter(BaseAreaCSVImporter):
             self._add_error(line_num, _("Implementation Area Name is required and should be unique."))
         elif name in self.seen_names:
             self._add_error(line_num, _("Duplicate Implementation Area Name in file"))
-        elif name in self.existing_names:
-            self._add_error(line_num, _("Implementation Area Name already exists for this opportunity"))
         else:
-            self.seen_names.add(name)
+            self.seen_names[name] = line_num
             invalid = False
         return invalid
 
