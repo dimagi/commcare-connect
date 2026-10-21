@@ -75,8 +75,7 @@ class BaseAreaCSVImporter:
         try:
             with transaction.atomic():
                 self._lock()
-                if not self._validate_all_rows(self.csv_source):
-                    raise ImportRejected
+                self._validate_all_rows(self.csv_source)
                 self._stream_and_insert(self.csv_source)
                 self._validate_inserted()
                 if self.errors:
@@ -92,17 +91,19 @@ class BaseAreaCSVImporter:
         return {"created": self.created_count}
 
     def _validate_all_rows(self, f):
+        """Raises ImportRejected if the headers or any row have errors."""
         f.seek(0)
         reader = csv.DictReader(f)
         self._normalize_headers(reader)
         if not self._validate_headers(reader):
-            return False
+            raise ImportRejected
         self._load_existing()
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
         self._after_rows()
         self._clear_existing()
-        return len(self.errors) == 0
+        if self.errors:
+            raise ImportRejected
 
     def _stream_and_insert(self, f):
         f.seek(0)
