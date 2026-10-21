@@ -555,7 +555,9 @@ class DeliveryTypeDeleteView(DeliveryTypePermissionMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, pk):
-        delivery_type = get_object_or_404(DeliveryType, pk=pk)
+        # Locked until the request commits. A concurrent save referencing this delivery type needs a key-share lock on
+        # the row for its foreign-key check, so it can't commit between the in-use check and the delete.
+        delivery_type = get_object_or_404(DeliveryType.objects.select_for_update(), pk=pk)
         if delivery_type.is_in_use():
             messages.error(
                 request,

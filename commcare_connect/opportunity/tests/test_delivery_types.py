@@ -1,4 +1,6 @@
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from commcare_connect.opportunity.forms import DeliveryTypeForm
@@ -216,6 +218,15 @@ class TestDeliveryTypeViews:
         client.force_login(settings_admin)
         client.post(reverse("users:delivery_type_delete", args=[delivery_type.pk]))
         assert not DeliveryType.objects.filter(pk=delivery_type.pk).exists()
+
+    def test_delete_locks_delivery_type_before_checking_use(self, client, settings_admin, delivery_type):
+        client.force_login(settings_admin)
+        with CaptureQueriesContext(connection) as queries:
+            client.post(reverse("users:delivery_type_delete", args=[delivery_type.pk]))
+        assert any(
+            'FROM "opportunity_deliverytype"' in q["sql"] and q["sql"].endswith("FOR UPDATE")
+            for q in queries.captured_queries
+        )
 
     @pytest.mark.parametrize("factory", REFERENCING_FACTORIES)
     def test_delete_in_use_is_refused(self, client, settings_admin, delivery_type, factory):
