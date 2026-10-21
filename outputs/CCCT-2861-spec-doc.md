@@ -255,10 +255,12 @@ class ExternalProvider(Protocol):
     def check_connection(self, user) -> bool       # "Use my connection" takeover
     def trigger(self, session) -> TriggerResult    # -> external_ref, provider_data
     def launch_descriptor(self, session) -> dict   # what the mobile app opens
+    def external_links(self, session) -> list[ExternalLink]  # labelled links into the service, for Program Managers
 ```
 
 - `trigger` raises `ProviderTransientError` for errors worth retrying and `ProviderNotConfigured` for missing configuration or credentials. The retry and attempts cap in Ticket 4 wrap it; providers never retry themselves.
 - Validation lives only in the provider's forms. `ExternalStep.config` and `ExternalSchedule.config` are JSON with no column constraints, so `config_form` and `schedule_config_form` do that job through their field validation and `clean()`. The schedule page is the only write path for this config, so every save goes through the forms.
+- `external_links` returns `ExternalLink(label, url)` items for Program Managers to open the work in the service. They are rendered as outline buttons that open in a new tab (`target="_blank" rel="noopener"`), with a tooltip saying the viewer needs access to the service. Connect only links; it never fetches or shows the service's data.
 - `launch_descriptor` returns data, not a screen: `{"type": "connect_channel", "channel_id": ...}` for OCS; a later provider could return `{"type": "url", "url": ...}`. Android renders one screen per launch type, not per provider.
 - The OCS provider (`key="ocs"`, `display_noun="Interview"`) wraps today's OCS integration:
   - `is_configured`: `OCS_BASE_URL` is set.
@@ -268,6 +270,7 @@ class ExternalProvider(Protocol):
   - `trigger`: `ocs_api.trigger_bot(configured_by, identifier=<username>, experiment=config["chatbot_id"], prompt_text=config["prompt_text"], session_data={**schedule.config["ocs"]["session_data"], **step.config["session_data"], "unitId": <external_id>})`. Merge order: the schedule's session data first, then the step's (a step key overrides the same schedule key), then `unitId`. Returns `external_ref` = the OCS session ID and `provider_data` = `{"connect_channel_id": ...}`.
   - `ocs_api.trigger_bot` gains a `prompt_text` parameter; the current hard-coded training prompt becomes the default, so OCS tasks are unchanged. A blank step prompt is sent as `None` and gets that default.
   - `launch_descriptor`: `{"type": "connect_channel", "channel_id": provider_data["connect_channel_id"]}`.
+  - `external_links`: "OCS trace" (the session's trace, from `external_ref`) and "Participant data" (the FLW's participant, the username sent as `identifier`, on the step's chatbot), as absolute URLs on `OCS_BASE_URL`. If the URLs need IDs Connect doesn't have (for example the OCS team slug), the provider stores them in `provider_data` from the trigger response. A link whose IDs are missing is left out, and there are none before the session is triggered or when `OCS_BASE_URL` is unset.
 
 Schedule page and payment unit linking:
 
@@ -328,7 +331,7 @@ Schedule page and payment unit linking:
 - Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_step` when the FLW is un-suspended or the end date is extended.
 - Worker views, both labelled with the provider's noun ("Interviews"):
   - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the schedule toggle is on and the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and flags (in progress for more than 7 days, couldn't start, or the waiting reason). Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
-  - The single-worker page gets a tab next to Visits (`components/worker_page/visit_task_tabs.html`): a card per step with its status, dates and, when it failed, the last error and attempts. Re-trigger (in progress or failed) and Skip (any open session) both ask for confirmation: Re-trigger warns that the worker may see two chats, Skip that the step won't be paid and can't be undone.
+  - The single-worker page gets a tab next to Visits (`components/worker_page/visit_task_tabs.html`): a card per step with its status, dates and, when it failed, the last error and attempts. Once a step has been triggered, its details also show the provider's `external_links` (for OCS, OCS trace and Participant data). Re-trigger (in progress or failed) and Skip (any open session) both ask for confirmation: Re-trigger warns that the worker may see two chats, Skip that the step won't be paid and can't be undone.
   - The single-worker tab has filters, following `opportunity/user_tasks.html`: a filter icon button on the tab bar, with a count badge when filters are applied, opens a Filters modal rendering a `UserExternalSessionsFilterSet` (django-filter, through `FilterMixin`) with Status, Step (retired steps included and marked) and "Needs attention only" (failed, or in progress for more than 7 days). Filters are GET parameters next to `?user=`, so a filtered view can be linked, and the table is loaded by htmx with them. An empty result shows "No interviews match these filters" with a Clear action.
   - Statuses as Program Managers see them: Scheduled (with the due date), Starting (`triggering`), In progress (`triggered`), Completed, Failed, Skipped, Cancelled, and Waiting when nothing could be scheduled.
 - Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0`, clears `last_error` and `trigger_token`. Skip marks it `skipped` (unpaid) and calls `schedule_next_step`.
@@ -391,6 +394,7 @@ The completion endpoint:
   - `form_json` = `{"metadata": {"timeStart": started_at, "timeEnd": completed_at, "location": null}, "provider": ..., "external_ref": ..., "data": data}`. The `metadata` block keeps `UserVisit.duration` and other `form_json` readers working.
   - Status is always `approved` + `review_status=agree` unless over limit or the FLW is suspended.
   - No `clean_form_submission`, blocking-task check, attachment downloads, location or flags.
+- Visit details on the worker's Visits tab (`user_visit_details` and `user_visit_details.html`): for an external unit visit, found through its `ExternalSession` (`user_visit.externalsession`), the panel shows Information (payment unit, entity name, duration), a section named after the provider with the step's config summary, the `external_ref` and the provider's `external_links`, and `data.summary` when present. The map, form JSON, media and HQ link are not rendered, because external unit visits have none.
 - A missing claim raises `ProcessingError` (`400`), as for forms.
 
 `POST /api/external_unit_completed/` (new endpoint):
@@ -429,6 +433,7 @@ The completion endpoint:
 - A token whose `ExternalServer.service` differs from the session's step provider is rejected with `403`.
 - An integration's token posting to `/api/receiver/` is rejected, and HQ servers keep working after the rename.
 - `UserVisit.duration` works for external unit visits.
+- The visit details panel for an external unit visit shows the OCS trace and Participant data links and renders without a map or form; with `OCS_BASE_URL` unset it renders without the links.
 - `/api/receiver/` and HQ form processing are unchanged.
 
 #### Ticket 6 – Mobile API: activities
@@ -524,5 +529,6 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
 - **OCS trigger idempotency:** the token stops two Connect workers calling OCS for one session, but a call that times out after OCS created the session is retried, which can leave two OCS sessions. Ask OCS whether the trigger API can accept an idempotency key; the `trigger_token` fits, because it is shared by Celery retries and replaced on recovery and re-trigger.
 - **Session data from OCS:** confirm that the OCS pipeline that posts completions can read `unitId` from session data and make an authenticated HTTP call to Connect.
 - **Payload contract with OCS:** agree the exact `data` fields OCS sends with a completion.
+- **OCS links:** confirm the URL formats for a session trace and a participant's data, whether they need the OCS team slug (and whether `trigger_bot` can return it, or the full URLs), and that Program Managers have OCS access to that team. Without access, the links open OCS's login or permission page.
 - **Mobile compatibility:** agree the minimum mobile API version for opportunities with no Deliver app.
 - **QA:** test opportunities with a Deliver app only, external units only, and both. Cover Learn finishing through module completion and through the assessment, auto-claim when the budget is full or the opportunity has ended, an FLW who had already claimed manually, duplicate posts, late posts after a re-trigger, a post from the wrong integration, suspended FLWs, FLWs who finish Learn before the start date, and over-limit.
