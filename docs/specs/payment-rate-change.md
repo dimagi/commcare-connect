@@ -739,6 +739,9 @@ One message for the payment unit, with no per-worker numbers.
 
 `<Percent>` = 1 − old cost ÷ new cost (e.g. 20% for 4 → 5).
 
+The message also shows the budget needed to keep workers' visits: Σ over workers of (limit − deliveries approved) ×
+(new cost − old cost).
+
 **Decrease**
 
 > "This change does not change the number of visits assigned to each worker."
@@ -759,7 +762,8 @@ ahead.
 **When it is checked**
 
 1. **When scheduling**, with today's numbers. If there isn't enough budget, the change is blocked, asking the PM to
-   agree pending visits or add budget first.
+   agree pending visits or add budget first. The message shows how much is missing (total shortfall − remaining
+   budget).
    - Other payment units' scheduled changes share the same remaining budget, so the check adds up the shortfalls of
      all the opportunity's scheduled changes, including this one.
 2. **Between scheduling and the 1st**: PMs and NMs see a warning banner as soon as the total can no longer be funded
