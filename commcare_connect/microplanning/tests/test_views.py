@@ -4,7 +4,7 @@ import csv as csv_mod
 import io
 import json
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, Mock, patch
@@ -379,13 +379,13 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
                 opportunity=opportunity,
                 user=access.user,
                 work_area=in_range,
-                visit_date=datetime(2025, 6, 1, tzinfo=timezone.utc),
+                visit_date=datetime(2025, 6, 1, tzinfo=UTC),
             )
         UserVisitFactory(
             opportunity=opportunity,
             user=access.user,
             work_area=out_of_range,
-            visit_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 1, 1, tzinfo=UTC),
         )
 
         bounds = self.get_bounds(
@@ -430,79 +430,65 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
     def url(self, org_slug: str, opp_id: str):
         return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
 
-    def test_success(self, client: Client, settings, organization, org_user_admin, opportunity):
+    @pytest.fixture
+    def get_home(self, client: Client, settings, organization, org_user_admin, opportunity):
+        """Return a function that fetches the home page as an org admin."""
         settings.MAPBOX_TOKEN = "test-mapbox-token"
         client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        return lambda: client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+
+    def test_success(self, get_home):
+        response = get_home()
 
         assert response.status_code == 200
         assert any(t.name == "microplanning/home.html" for t in response.templates)
 
+    def test_the_buildings_tooltip_names_the_release_on_screen(self, get_home, overture_release):
+        response = get_home()
+
+        # Read literally by x-tooltip.raw, so the release has to appear as itself rather than as
+        # escape sequences a reader would see verbatim.
+        assert f"Overture Maps Foundation, release {overture_release}." in response.content.decode()
+
+    def test_no_buildings_control_without_a_release(self, get_home, release):
+        """With no release there is no archive to point the browser at, so the toggle goes away."""
+        release(None)
+        response = get_home()
+
+        body = response.content.decode()
+        assert response.status_code == 200
+        assert "show-buildings-toggle" not in body
+
     @pytest.mark.parametrize(
-        "create_deliver_units, expected_quoted",
+        "expected_snippets",
         [
-            pytest.param(False, '"services_delivery_unit", "no-children-wa"', id="both-missing"),
-            pytest.param(True, "", id="both-present"),
+            # The "Select Work Area" sidebar detail panel labels the selected area's Implementation Area.
+            pytest.param(
+                [b"Implementation Area", b"selectedFeature.implementation_area_name"],
+                id="sidebar_shows_implementation_area_label",
+            ),
+            # The map registers a hover handler on the Implementation Area outline layer
+            # (highlight + name tooltip).
+            pytest.param(
+                [b"'mousemove', 'implementation-areas-outline'", b"implementationAreaPopup"],
+                id="map_wires_implementation_area_hover",
+            ),
+            # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
+            pytest.param(
+                [b"Failed to load Implementation Areas."],
+                id="map_shows_toast_on_implementation_area_fetch_error",
+            ),
+            # The filter sidebar exposes a switch to show/hide the Implementation Area layer.
+            pytest.param(
+                [b"Show Implementation Areas", b"showImplementationAreas"],
+                id="map_has_implementation_area_layer_toggle",
+            ),
         ],
     )
-    def test_missing_deliver_units_banner(
-        self,
-        client: Client,
-        settings,
-        organization,
-        org_user_admin,
-        opportunity,
-        create_deliver_units,
-        expected_quoted,
-    ):
-        if create_deliver_units:
-            DeliverUnitFactory(app=opportunity.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
-            DeliverUnitFactory(app=opportunity.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert response.context["quoted_missing_deliver_units"] == expected_quoted
-        assert (SERVICE_DELIVERY_UNIT_SLUG.encode() in response.content) == (not create_deliver_units)
-
-    def test_sidebar_shows_implementation_area_label(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # The "Select Work Area" sidebar detail panel labels the selected area's Implementation Area.
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"Implementation Area" in response.content
-        assert b"selectedFeature.implementation_area_name" in response.content
-
-    def test_map_wires_implementation_area_hover(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # The map registers a hover handler on the Implementation Area outline layer
-        # (highlight + name tooltip).
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"'mousemove', 'implementation-areas-outline'" in response.content
-        assert b"implementationAreaPopup" in response.content
-
-    def test_map_shows_toast_on_implementation_area_fetch_error(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"Failed to load Implementation Areas." in response.content
-
-    def test_map_has_implementation_area_layer_toggle(
-        self, client: Client, settings, organization, org_user_admin, opportunity
-    ):
-        # The filter sidebar exposes a switch to show/hide the Implementation Area layer.
-        settings.MAPBOX_TOKEN = "test-mapbox-token"
-        client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
-        assert b"Show Implementation Areas" in response.content
-        assert b"showImplementationAreas" in response.content
+    def test_page_includes_implementation_area_ui(self, get_home, expected_snippets):
+        response = get_home()
+        for snippet in expected_snippets:
+            assert snippet in response.content
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_flag_disabled(self, client: Client, organization, org_user_admin, opportunity):
@@ -642,6 +628,37 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
+class TestMissingDeliverUnitsBanner(BaseMicroplanningFlagTest):
+    @pytest.mark.parametrize("view_name", ["microplanning:microplanning_home", "microplanning:coverage_progress"])
+    @pytest.mark.parametrize(
+        "create_deliver_units, expected_quoted",
+        [
+            pytest.param(False, '"services_delivery_unit", "no-children-wa"', id="both-missing"),
+            pytest.param(True, "", id="both-present"),
+        ],
+    )
+    def test_missing_deliver_units_banner(
+        self,
+        client: Client,
+        settings,
+        organization,
+        org_user_admin,
+        opportunity,
+        view_name,
+        create_deliver_units,
+        expected_quoted,
+    ):
+        if create_deliver_units:
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(reverse(view_name, args=(organization.slug, str(opportunity.opportunity_id))))
+        assert response.context["quoted_missing_deliver_units"] == expected_quoted
+        assert (SERVICE_DELIVERY_UNIT_SLUG.encode() in response.content) == (not create_deliver_units)
+
+
+@pytest.mark.django_db
 class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     template_name = "microplanning/work_area_form.html"
 
@@ -677,34 +694,15 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
             work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
         )
         assert work_area.work_area_group is None
-        new_expected_visit_count = 25
         client.force_login(org_user_admin)
-        response = client.post(
-            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
-            {
-                "expected_visit_count": new_expected_visit_count,
-                "work_area_group": group.id,
-                "reason": "Boundary adjusted",
-            },
+        self._assert_update_applied(
+            client=client,
+            opportunity=opportunity,
+            work_area=work_area,
+            group=group,
+            initial_event_count=initial_event_count,
         )
-        assert response.status_code == 204
-        trigger = json.loads(response["HX-Trigger"])
-        assert "workAreaUpdated" in trigger
-        assert trigger["workAreaUpdated"]["expected_visit_count"] == new_expected_visit_count
-        assert trigger["workAreaUpdated"]["group_id"] == group.id
-        assert trigger["workAreaUpdated"]["group_name"] == group.name
         assert mock_sync.call_count == 1
-
-        work_area.refresh_from_db()
-        assert work_area.expected_visit_count == new_expected_visit_count
-        assert work_area.work_area_group == group
-
-        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
-        assert events.count() == initial_event_count + 1
-        event = events.last()
-        assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
-        assert event.expected_visit_count == new_expected_visit_count
-        assert event.work_area_group == group
         assert group.centroid is None
         group.refresh_from_db()
         assert group.centroid.x == 77.5
@@ -848,34 +846,15 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
 
         group_2 = WorkAreaGroupFactory(opportunity=opportunity, name="group_2")
 
-        new_expected_visit_count = 25
         client.force_login(org_user_admin)
-        response = client.post(
-            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
-            {
-                "expected_visit_count": new_expected_visit_count,
-                "work_area_group": group_2.id,
-                "reason": "Boundary adjusted",
-            },
+        self._assert_update_applied(
+            client=client,
+            opportunity=opportunity,
+            work_area=work_area,
+            group=group_2,
+            initial_event_count=initial_event_count,
         )
-        assert response.status_code == 204
-        trigger = json.loads(response["HX-Trigger"])
-        assert "workAreaUpdated" in trigger
-        assert trigger["workAreaUpdated"]["expected_visit_count"] == new_expected_visit_count
-        assert trigger["workAreaUpdated"]["group_id"] == group_2.id
-        assert trigger["workAreaUpdated"]["group_name"] == group_2.name
         assert mock_sync.call_count == 1
-
-        work_area.refresh_from_db()
-        assert work_area.expected_visit_count == new_expected_visit_count
-        assert work_area.work_area_group == group_2
-
-        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
-        assert events.count() == initial_event_count + 1
-        event = events.last()
-        assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
-        assert event.expected_visit_count == new_expected_visit_count
-        assert event.work_area_group == group_2
 
         assert group_1.centroid.x == 77.5
         assert group_1.centroid.y == 28.5
@@ -886,6 +865,35 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         group_2.refresh_from_db()
         assert group_2.centroid.x == 77.5
         assert group_2.centroid.y == 28.5
+
+    def _assert_update_applied(self, *, client, opportunity, work_area, group, initial_event_count):
+        """Post a visit count and group change, then check the response, the work area and its history."""
+        new_expected_visit_count = 25
+        response = client.post(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
+            {
+                "expected_visit_count": new_expected_visit_count,
+                "work_area_group": group.id,
+                "reason": "Boundary adjusted",
+            },
+        )
+        assert response.status_code == 204
+        trigger = json.loads(response["HX-Trigger"])
+        assert "workAreaUpdated" in trigger
+        assert trigger["workAreaUpdated"]["expected_visit_count"] == new_expected_visit_count
+        assert trigger["workAreaUpdated"]["group_id"] == group.id
+        assert trigger["workAreaUpdated"]["group_name"] == group.name
+
+        work_area.refresh_from_db()
+        assert work_area.expected_visit_count == new_expected_visit_count
+        assert work_area.work_area_group == group
+
+        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
+        assert events.count() == initial_event_count + 1
+        event = events.last()
+        assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
+        assert event.expected_visit_count == new_expected_visit_count
+        assert event.work_area_group == group
 
 
 @pytest.mark.django_db
@@ -1401,12 +1409,12 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         UserVisitFactory(
             opportunity=opportunity,
             work_area=wa_with_visit,
-            visit_date=datetime(2025, 6, 15, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 6, 15, tzinfo=UTC),
         )
         UserVisitFactory(
             opportunity=opportunity,
             work_area=wa_without_visit,
-            visit_date=datetime(2025, 3, 1, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 3, 1, tzinfo=UTC),
         )
         client.force_login(org_user_admin)
 
@@ -1512,7 +1520,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
-class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
+class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
     def get_url(self, org_slug, opp_id, work_area_id):
         return reverse(
             "microplanning:review_inaccessibility_request",
@@ -1542,13 +1550,13 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         )
         return work_area, inacc_request
 
-    def test_get_modal_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
+    def test_get_panel_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
         work_area, _ = pending_wa
         client.force_login(org_user_admin)
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
 
     @pytest.mark.parametrize(
         "status",
@@ -1559,7 +1567,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         ],
         ids=["not_visited", "visited", "inaccessible"],
     )
-    def test_get_modal_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
+    def test_get_panel_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
@@ -1580,7 +1588,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
         photo = response.context["photo"]
         assert photo is not None
         assert photo.name == "photo.jpg"
@@ -1670,13 +1678,31 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.INACCESSIBLE],
         ids=["not_visited", "already_inaccessible"],
     )
-    def test_action_404_when_wa_not_pending(self, status, client, org_user_admin, opportunity, organization):
+    def test_action_on_unreviewable_work_area_answers_in_plain_text(
+        self, status, client, org_user_admin, opportunity, organization
+    ):
+        """The review panel renders the body as its error text, so an error page would land in the
+        sidebar as raw markup."""
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
+
         response = client.post(url, {"action": "approve"})
+
+        assert response.status_code == 409
+        assert response["Content-Type"].startswith("text/plain")
+
+    def test_action_404_for_a_work_area_outside_the_opportunity(
+        self, client, org_user_admin, opportunity, organization
+    ):
+        other_work_area = WorkAreaFactory(status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, opportunity.opportunity_id, other_work_area.id)
+
+        response = client.post(url, {"action": "approve"})
+
         assert response.status_code == 404
 
     def test_review_modal_returns_pending_not_historical_request(
@@ -1749,6 +1775,49 @@ class TestAssignmentModeContext:
 
         assert form.is_valid()
         assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
+
+
+@pytest.mark.django_db
+class TestInaccessibleModeContext:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity, opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity, opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    @pytest.mark.parametrize(
+        "org_fixture, user_fixture, opportunity_fixture",
+        [
+            pytest.param(
+                "program_manager_org",
+                "program_manager_org_user_admin",
+                "managed_opportunity",
+                id="program_manager",
+            ),
+            pytest.param("organization", "org_user_admin", "opportunity", id="opportunity_admin"),
+        ],
+    )
+    def test_can_enter_the_mode(self, request, client, settings, org_fixture, user_fixture, opportunity_fixture):
+        org = request.getfixturevalue(org_fixture)
+        user = request.getfixturevalue(user_fixture)
+        opportunity = request.getfixturevalue(opportunity_fixture)
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area)
+        client.force_login(user)
+
+        response = client.get(
+            self.url(org.slug, str(opportunity.opportunity_id)),
+            {"inaccessible_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        assert response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 1
+        assert response.context["inaccessibility_requests"][0]["work_area_id"] == work_area.id
 
 
 class TestGetWorkAreasForAssignment:
@@ -2353,7 +2422,8 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 50  # round(2/4 * 100)
 
     def test_inaccessible_count_and_percentage(self, opp):
-        """Inaccessible = INACCESSIBLE or REQUEST_FOR_INACCESSIBLE, among in-scope areas."""
+        """Inaccessible = in-scope areas whose inaccessibility request was accepted. One still
+        awaiting review is not inaccessible yet — the reviewer may well deny it."""
         self._make_work_areas(
             opp,
             [
@@ -2365,9 +2435,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
         )
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Inaccessible Work Areas")
-        # in scope = 3; inaccessible = 2
-        assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        # in scope = 3; inaccessible = 1, the requested one not having been accepted yet
+        assert m["value"] == 1
+        assert m["percentage"] == 33  # round(1/3 * 100)
 
     def test_excluded_is_a_plain_count(self, opp):
         self._make_work_areas(
@@ -2539,24 +2609,6 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         ward_table = resp.context["ward_table"]
         assert any(row.get_cell_value("ward") == "w1" for row in ward_table.rows)
         assert "wag_table" in resp.context
-
-    @pytest.mark.parametrize(
-        "create_deliver_units, expected_quoted",
-        [
-            pytest.param(False, '"services_delivery_unit", "no-children-wa"', id="both-missing"),
-            pytest.param(True, "", id="both-present"),
-        ],
-    )
-    def test_missing_deliver_units_banner(
-        self, client, org_user_admin, opportunity, create_deliver_units, expected_quoted
-    ):
-        if create_deliver_units:
-            DeliverUnitFactory(app=opportunity.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
-            DeliverUnitFactory(app=opportunity.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
-        client.force_login(org_user_admin)
-        resp = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
-        assert resp.context["quoted_missing_deliver_units"] == expected_quoted
-        assert (SERVICE_DELIVERY_UNIT_SLUG.encode() in resp.content) == (not create_deliver_units)
 
     def test_context_exposes_date_filter(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)

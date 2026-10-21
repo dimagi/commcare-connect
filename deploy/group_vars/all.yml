@@ -1,0 +1,7 @@
+# The inventories address hosts by EC2 instance ID, which only resolves through an SSM session.
+# Same proxy as Kamal's (deploy/config/deploy.yml), plus the host's region, because production
+# spans two. aws_region is set per group in the inventories; it can't get its default here, since
+# this file would then override them. Needs the AWS CLI, the Session Manager plugin and an active
+# AWS SSO login.
+ansible_ssh_common_args: >-
+  -o ProxyCommand="aws ssm start-session --region {{ aws_region | default('us-east-1') }} --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p"

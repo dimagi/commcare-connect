@@ -111,7 +111,7 @@ def get_table_data_for_year_month(
     """Return KPI report rows aggregated by month or quarter.
 
     Args:
-        organization: Rollups are per-workspace until the duplicate workspaces that used
+        organization: Rollups are per-organization until the duplicate organizations that used
                       to share an LLO entity are merged.
         period: "monthly" (default) or "quarterly". In quarterly mode all DB queries
                 use TruncQuarter so averages are true weighted averages, not

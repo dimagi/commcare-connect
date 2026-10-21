@@ -47,7 +47,9 @@ from waffle.decorators import waffle_flag
 
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.microplanning.buildings import buildings_overlay_config
 from commcare_connect.microplanning.const import (
+    INACCESSIBILITY_LEGEND,
     MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
@@ -70,9 +72,11 @@ from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWork
 from commcare_connect.microplanning.helpers import (
     MAP_WORK_AREA_FIELDS,
     assign_work_areas_and_sync_to_hq,
+    denied_inaccessibility_work_area_ids,
     exclude_work_areas_for_opportunity,
     map_work_areas,
     pct,
+    pending_inaccessibility_requests,
     unassign_work_areas_for_opportunity,
     work_area_detail,
     work_area_search_options,
@@ -207,6 +211,12 @@ def microplanning_home(request, *args, **kwargs):
         args=[request.org.slug, opportunity.opportunity_id, 0],
     ).replace("/0/", "/")
 
+    # The review sidebar builds photo thumbnail URLs by appending a blob id to this.
+    attachment_url_base = reverse(
+        "opportunity:fetch_attachment",
+        args=[request.org.slug, opportunity.opportunity_id, "BLOB_ID"],
+    ).replace("BLOB_ID", "")
+
     status_meta = {
         status.value: {
             "label": status.label,
@@ -230,6 +240,10 @@ def microplanning_home(request, *args, **kwargs):
 
     is_program_manager = is_opportunity_pm(request, opportunity)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
+    inaccessible_mode = bool(request.GET.get("inaccessible_mode"))
+    # Drives both the entry button's count and the list Inaccessible Mode renders, so the two
+    # can never disagree.
+    inaccessibility_requests = pending_inaccessibility_requests(opportunity)
 
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
@@ -246,6 +260,7 @@ def microplanning_home(request, *args, **kwargs):
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
+        "buildings_config": buildings_overlay_config(),
         "task_id": request.GET.get("task_id"),
         "import_status_url": import_status_url,
         "opportunity": opportunity,
@@ -277,6 +292,14 @@ def microplanning_home(request, *args, **kwargs):
         "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
+        "inaccessible_mode": inaccessible_mode,
+        "inaccessibility_requests": inaccessibility_requests,
+        "inaccessible_request_count": len(inaccessibility_requests),
+        "attachment_url_base": attachment_url_base,
+        "inaccessibility_legend": INACCESSIBILITY_LEGEND,
+        "denied_inaccessibility_work_area_ids": (
+            denied_inaccessibility_work_area_ids(opportunity) if inaccessible_mode else []
+        ),
         "quoted_missing_deliver_units": _quoted_missing_deliver_units(opportunity),
         "bounds_url": bounds_url,
         "search_options_url": search_options_url,
@@ -345,9 +368,10 @@ def _get_work_areas_blocked_message(work_area_count, areas_assigned):
 def get_metrics_for_microplanning(opportunity):
     qs = annotate_approved_visit_counts(WorkArea.objects.filter(opportunity=opportunity), opportunity, ncwa=True)
 
-    # REQUEST_FOR_INACCESSIBLE counts as inaccessible too for metrics pupose,
-    #  even though it isn't a final status.
-    inaccessible_status = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
+    # Work Areas Done counts an area still awaiting review, since raising the request is as far
+    # as the worker can take it. The Inaccessible Work Areas tile counts only the areas whose
+    # inaccessibility request was accepted.
+    inaccessible_or_requested = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
     has_evc_target = Q(expected_visit_count__gt=0)
     visited_children_found = Q(hsd_count__gte=1)
     visited_no_children_found = Q(ncwa_count__gte=1)
@@ -360,7 +384,8 @@ def get_metrics_for_microplanning(opportunity):
             "id",
             # An OR filter, so an area meeting several conditions (e.g. inaccessible with an
             # approved visit already on file) is still counted once.
-            filter=IN_SCOPE_WORK_AREA & (visited_children_found | visited_no_children_found | inaccessible_status),
+            filter=IN_SCOPE_WORK_AREA
+            & (visited_children_found | visited_no_children_found | inaccessible_or_requested),
         ),
         unvisited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.NOT_VISITED)),
         visited_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_children_found),
@@ -370,7 +395,7 @@ def get_metrics_for_microplanning(opportunity):
             # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
             filter=IN_SCOPE_WORK_AREA & has_evc_target & Q(hsd_count__gte=F("expected_visit_count")),
         ),
-        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & inaccessible_status),
+        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.INACCESSIBLE)),
         total_expected_visits=Sum("expected_visit_count", filter=IN_SCOPE_WORK_AREA),
         total_hsd_visits=Sum("hsd_count", filter=IN_SCOPE_WORK_AREA),
     )
@@ -1288,7 +1313,9 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
     inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest, work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
+        work_area=work_area,
+        status=InaccessibilityRequestStatus.PENDING,
     )
     try:
         photo = BlobMeta.objects.get(parent_id=inacc_request.xform_id)
@@ -1296,16 +1323,11 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         photo = None
     return render(
         request,
-        "microplanning/review_inaccessibility_modal.html",
+        "microplanning/review_inaccessibility_panel.html",
         context={
             "work_area": work_area,
             "inaccessibility_request": inacc_request,
             "photo": photo,
-            "boundary_geojson": json.loads(work_area.boundary.geojson),
-            "request_location_geojson": (
-                json.loads(inacc_request.location.geojson) if inacc_request.location else None
-            ),
-            "mapbox_api_key": settings.MAPBOX_TOKEN,
         },
     )
 
@@ -1334,7 +1356,7 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     try:
         action = InaccessibilityReviewAction(request.POST.get("action", ""))
     except ValueError:
-        return HttpResponseBadRequest("Invalid action")
+        return HttpResponseBadRequest("Invalid action", content_type="text/plain")
 
     new_status = _ACTION_TO_NEW_STATUS[action]
 
@@ -1342,13 +1364,21 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         WorkArea.objects.select_for_update(),
         id=work_area_id,
         opportunity=request.opportunity,
-        status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
-    inacc_request = get_object_or_404(
-        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
-        work_area=work_area,
-        status=InaccessibilityRequestStatus.PENDING,
+    inacc_request = (
+        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user")
+        .filter(work_area=work_area, status=InaccessibilityRequestStatus.PENDING)
+        .first()
     )
+    if inacc_request is None or work_area.status != WorkAreaStatus.REQUEST_FOR_INACCESSIBLE:
+        # The work area is not in a state this action can act on, for any number of reasons, so
+        # the panel is working from stale data either way. Its error box shows the body as text,
+        # so this has to be a message rather than an error page.
+        return HttpResponse(
+            status=409,
+            content=_("Invalid request. Please reload the page and try again."),
+            content_type="text/plain",
+        )
 
     work_area.status = new_status
     inacc_request.status = _ACTION_TO_REQUEST_STATUS[action]
@@ -1364,7 +1394,11 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
 
     except CommCareHQAPIException as e:
         logger.info(f"Failed to sync work area {work_area.id} to HQ after review action. Error: {e}")
-        return HttpResponse(status=500, content=_("Failed to sync work area status. Please try again."))
+        return HttpResponse(
+            status=500,
+            content=_("Failed to sync work area status. Please try again."),
+            content_type="text/plain",
+        )
 
     if action == InaccessibilityReviewAction.DENY:
         transaction.on_commit(

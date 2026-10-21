@@ -10,13 +10,12 @@ from commcare_connect.program.models import Program
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
-    opportunity_access_level_from_request,
     opportunity_by_id,
     org_access_level_from_request,
     program_access_level_from_request,
 )
 from commcare_connect.utils.db import get_object_by_uuid_or_int
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
 from .models import Organization, UserOrganizationMembership
 
@@ -32,6 +31,12 @@ def user_is_org_admin(user, organization):
     ).exists()
 
 
+def user_is_org_member(user, organization):
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
+
+
 def is_user_pm_org_admin(user, organization):
     if user.has_perm(ALL_ORG_ACCESS):
         return True
@@ -42,6 +47,15 @@ def org_is_program_manager(organization):
     return bool(organization and organization.program_manager)
 
 
+def can_edit_org_profile(request) -> bool:
+    """Org admins edit their own org's profile; ORG_MANAGEMENT_SETTINGS_ACCESS extends that to every org."""
+    if not request.org:
+        return False
+    return request.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS) or org_access_level_from_request(request) >= (
+        AccessLevel.ADMIN
+    )
+
+
 class IsProgramManagerOrgAdmin(BasePermission):
     """DRF twin of org_pm_required. There is no request.org here, so the acting org comes from the slug."""
 
@@ -50,6 +64,13 @@ class IsProgramManagerOrgAdmin(BasePermission):
         if not org_slug:
             return False
         return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
+
+
+def can_act_as_program_manager_user(user, org) -> bool:
+    # Any member of an org that is program manager, funder or watcher can act as program manager
+    return (org_is_program_manager(org) or org.funder or org.watched_programs.exists()) and user_is_org_member(
+        user, org
+    )
 
 
 def opp_view_access_required(view_func):
@@ -70,6 +91,10 @@ def org_pm_required(view_func, *args, **kwargs):
     )
 
 
+def org_profile_edit_access_required(view_func):
+    return _get_decorated_function(view_func, lambda request, *args, **kwargs: can_edit_org_profile(request))
+
+
 def _program_access_level_gate(minimum, program_id_kwarg="pk"):
     def decorator(view_func):
         def has_required_access(request, *args, **kwargs):
@@ -84,12 +109,12 @@ def _program_access_level_gate(minimum, program_id_kwarg="pk"):
     return decorator
 
 
-def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
+def _opportunity_gate(has_required_access):
     def decorator(view_func):
         def permission_check(request, *args, **kwargs):
             opportunity = getattr(request, "opportunity", None)
             if opportunity is None:
-                opp_id = kwargs.get(opp_id_kwarg)
+                opp_id = kwargs.get("opp_id")
                 opportunity = opportunity_by_id(opp_id) if opp_id else None
                 if opportunity:
                     request.opportunity = opportunity
@@ -100,11 +125,9 @@ def _opportunity_gate(has_required_access, opp_id_kwarg="opp_id"):
     return decorator
 
 
-def _opportunity_access_level_gate(minimum, opp_id_kwarg="opp_id"):
-    return _opportunity_gate(
-        lambda request, opportunity: opportunity_access_level_from_request(request, opportunity) >= minimum,
-        opp_id_kwarg,
-    )
+def _opportunity_access_level_gate(minimum):
+    # AccessLevel() is used to resolve the lazy proxy before comparing; it doesn't support >= directly.
+    return _opportunity_gate(lambda request, _opportunity: AccessLevel(request.opp_access_level) >= minimum)
 
 
 def _org_access_level_gate(minimum):

@@ -18,13 +18,13 @@ from django_tables2 import columns
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
-    CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
     InvoiceStatus,
     LearnModule,
     OpportunityAccess,
+    OpportunityStatus,
     PaymentInvoice,
     PaymentUnit,
     TaskType,
@@ -35,10 +35,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.utils.invoice import with_invoice_month
+from commcare_connect.program.utils import AccessLevel, opportunity_access_level_from_request
 from commcare_connect.utils.datetime import get_month_start_date
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
-    TEXT_CENTER_ATTR,
     DMYTColumn,
     DurationColumn,
     GroupedTable,
@@ -318,47 +319,6 @@ class SuspendedUsersTable(tables.Table):
         )
 
 
-class CatchmentAreaTable(tables.Table):
-    username = columns.Column(accessor="opportunity_access__user__username", verbose_name="Username")
-    name_of_user = columns.Column(accessor="opportunity_access__user__name", verbose_name="Name")
-    phone_number = columns.Column(accessor="opportunity_access__user__phone_number", verbose_name="Phone Number")
-    name = columns.Column(verbose_name="Area name")
-    active = columns.Column(verbose_name="Active")
-    latitude = columns.Column(verbose_name="Latitude")
-    longitude = columns.Column(verbose_name="Longitude")
-    radius = columns.Column(verbose_name="Radius")
-    site_code = columns.Column(verbose_name="Site code")
-
-    def render_active(self, value):
-        return "Yes" if value else "No"
-
-    class Meta:
-        model = CatchmentArea
-        fields = (
-            "username",
-            "site_code",
-            "name",
-            "name_of_user",
-            "phone_number",
-            "active",
-            "latitude",
-            "longitude",
-            "radius",
-        )
-        orderable = False
-        sequence = (
-            "username",
-            "name_of_user",
-            "phone_number",
-            "name",
-            "site_code",
-            "active",
-            "latitude",
-            "longitude",
-            "radius",
-        )
-
-
 class UserVisitReviewTable(OrgContextTable):
     pk = columns.CheckBoxColumn(
         accessor="pk",
@@ -417,6 +377,15 @@ class PaymentReportTable(tables.Table):
 
 
 class PaymentInvoiceTable(OpportunityContextTable):
+    select = select_column(
+        td_extra={
+            "@change": "updateSelectAll()",
+            # Read by the selection bar to total up what the export will cover. Empty rather than
+            # zero when an invoice has no USD amount, so the bar can say so instead of quietly
+            # understating the total.
+            "data-amount-usd": lambda record: "" if record.amount_usd is None else record.amount_usd,
+        }
+    )
     amount = tables.Column(verbose_name="Amount")
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
@@ -441,6 +410,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         orderable = False
         fields = ("amount", "date", "invoice_number")
         sequence = (
+            "select",
             "amount",
             "amount_usd",
             "exchange_rate",
@@ -464,6 +434,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.opportunity = kwargs.pop("opportunity")
         self.highlight_invoice_number = kwargs.pop("highlight_invoice_number", None)
         self.is_pm = kwargs.pop("is_pm", False)
+        self.month_param = kwargs.pop("month_param", None)
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
 
@@ -484,9 +455,12 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return record.get_status_display()
 
     def render_actions(self, record):
-        invoice_review_url = reverse(
-            "opportunity:invoice_review",
-            args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+        invoice_review_url = with_invoice_month(
+            reverse(
+                "opportunity:invoice_review",
+                args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+            ),
+            self.month_param,
         )
         review_button = (
             f'<a href="{invoice_review_url}" '
@@ -496,8 +470,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
         pay_button = ""
         if self.is_pm:
             if record.status == InvoiceStatus.READY_TO_PAY:
-                invoice_pay_url = reverse(
-                    "opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]
+                invoice_pay_url = with_invoice_month(
+                    reverse("opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]),
+                    self.month_param,
                 )
                 disabled = "disabled" if getattr(record, "payment", None) else ""
                 pay_button = f"""
@@ -509,7 +484,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                         {disabled}>
                         {_("Pay")}
                     </button>
-                """  # noqa: E501
+                """
         return mark_safe(f'<div class="flex gap-2">{review_button}{pay_button}</div>')
 
 
@@ -531,6 +506,9 @@ def date_with_time_popup(table, date):
         date.strftime("%d %b, %Y"),
         date.strftime("%d %b %Y, %I:%M%p"),
     )
+
+
+STAT_COLUMN_ATTRS = {"th": {"class": "col-stat"}, "td": {"class": "col-stat"}}
 
 
 class BaseOpportunityList(OrgContextTable):
@@ -581,6 +559,9 @@ class BaseOpportunityList(OrgContextTable):
     status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
 
     program = tables.Column(accessor="program_name")
+    delivery_type = tables.Column(
+        verbose_name=gettext_lazy("Delivery Type"), accessor="delivery_type_name", empty_values=()
+    )
     start_date = DMYTColumn()
     end_date = DMYTColumn()
 
@@ -591,22 +572,23 @@ class BaseOpportunityList(OrgContextTable):
             "entity_type",
             "status",
             "program",
+            "delivery_type",
             "start_date",
             "end_date",
         )
         order_by = ("status", "-start_date", "end_date")
         empty_text = gettext_lazy("No Opportunities created yet.")
 
+    STATUS_BADGE_CLASSES = {
+        OpportunityStatus.ACTIVE: "badge badge-sm bg-green-600/20 text-green-600",
+        OpportunityStatus.ENDED: "badge badge-sm bg-orange-600/20 text-orange-600",
+        OpportunityStatus.INACTIVE: "badge badge-sm bg-slate-100 text-slate-400",
+    }
+
     def render_status(self, value):
-        if value == 0:
-            badge_class = "badge badge-sm bg-green-600/20 text-green-600"
-            text = "Active"
-        elif value == 1:
-            badge_class = "badge badge-sm bg-orange-600/20 text-orange-600"
-            text = "Ended"
-        else:
-            badge_class = "badge badge-sm bg-slate-100 text-slate-400"
-            text = "Inactive"
+        status = OpportunityStatus(value)
+        badge_class = self.STATUS_BADGE_CLASSES[status]
+        text = status.label
 
         return format_html(
             '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'  # noqa: E501
@@ -632,6 +614,37 @@ class BaseOpportunityList(OrgContextTable):
     def render_program(self, value):
         return self._render_div(value if value else "--", extra_classes="justify-start")
 
+    render_delivery_type = render_program
+
+    def render_actions(self, record):
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
+            },
+            {
+                "title": "View Connect Workers",
+                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
+            },
+        ]
+        if opportunity_access_level_from_request(self.request, record) >= AccessLevel.STANDARD:
+            actions.append(
+                {
+                    "title": "View Invoices",
+                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
+                }
+            )
+
+        html = render_to_string(
+            "components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            },
+        )
+        return mark_safe(html)
+
     def render_worker_list_url_column(self, value, opp_id, url_slug="worker_list", sort=None):
         url = reverse(f"opportunity:{url_slug}", args=(self.org_slug, opp_id))
 
@@ -642,7 +655,7 @@ class BaseOpportunityList(OrgContextTable):
 
 
 class OpportunityTable(BaseOpportunityList):
-    col_attrs = merge_attrs(TEXT_CENTER_ATTR, STOP_CLICK_PROPAGATION_ATTR)
+    col_attrs = merge_attrs(STAT_COLUMN_ATTRS, STOP_CLICK_PROPAGATION_ATTR)
 
     pending_invites = tables.Column(
         verbose_name=header_with_tooltip(
@@ -701,55 +714,29 @@ class OpportunityTable(BaseOpportunityList):
             value=value, opp_id=record.opportunity_id, url_slug="worker_payments", sort="sort=-total_paid"
         )
 
-    def render_actions(self, record):
-        actions = [
-            {
-                "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
-            },
-            {
-                "title": "View Connect Workers",
-                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
-            },
-            {
-                "title": "View Invoices",
-                "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
-            },
-        ]
-
-        html = render_to_string(
-            "components/dropdowns/text_button_dropdown.html",
-            context={
-                "text": "...",
-                "list": actions,
-                "styles": "text-sm",
-            },
-        )
-        return mark_safe(html)
-
 
 class ProgramManagerOpportunityTable(BaseOpportunityList):
     active_workers = tables.Column(
         verbose_name=header_with_tooltip(
             "Active Connect Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
         ),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     total_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Total Deliveries", "Payment units completed"),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     verified_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Verified Deliveries", "Payment units fully approved by PM and NM"),
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     worker_earnings = tables.Column(
         verbose_name=header_with_tooltip("Worker Earnings", "Total payment accrued to worker"),
         accessor="total_accrued",
-        attrs=TEXT_CENTER_ATTR,
+        attrs=STAT_COLUMN_ATTRS,
         orderable=False,
     )
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
@@ -797,34 +784,6 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             record.organization.name,
         )
         return html
-
-    def render_actions(self, record):
-        actions = [
-            {
-                "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
-            },
-            {
-                "title": "View Connect Workers",
-                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
-            },
-        ]
-        actions.append(
-            {
-                "title": "View Invoices",
-                "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
-            }
-        )
-
-        html = render_to_string(
-            "components/dropdowns/text_button_dropdown.html",
-            context={
-                "text": "...",
-                "list": actions,
-                "styles": "text-sm",
-            },
-        )
-        return mark_safe(html)
 
 
 class WorkerVisitTable(tables.Table):
@@ -1405,7 +1364,7 @@ class WorkerLearnTable(OrgContextTable):
         accessor="modules_completed_percentage",
         template_code="""
             {% include "components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
-        """,  # noqa: E501
+        """,
     )
     completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="assessment_status_rank")
@@ -1716,6 +1675,7 @@ class PaymentUnitTable(OrgContextTable):
     index = IndexColumn()
     name = tables.Column(verbose_name="Payment Unit Name")
     max_total = tables.Column(verbose_name="Total Deliveries")
+    max_daily = tables.Column(default=gettext_lazy("No limit"))
     deliver_units = tables.Column(verbose_name="Delivery Units")
     amount = tables.Column(verbose_name="Worker pay per delivery")
     org_amount = tables.Column(verbose_name="Org pay per delivery")

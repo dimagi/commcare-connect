@@ -17,6 +17,7 @@ from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
+from django_htmx.middleware import HtmxDetails
 from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
@@ -39,6 +40,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     OpportunityClaimLimit,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     TaskType,
     UserInvite,
@@ -46,7 +48,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tables import TaskTable
+from commcare_connect.opportunity.tables import (
+    OpportunityTable,
+    ProgramManagerOpportunityTable,
+    TaskTable,
+)
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -55,6 +61,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     CompletedWorkInvoiceFactory,
     DeliverUnitFactory,
+    DeliveryTypeFactory,
     FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -69,9 +76,15 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import WorkerPaymentsView
+from commcare_connect.opportunity.views import (
+    OpportunityList,
+    WorkerPaymentsView,
+    get_export_task_id,
+    invoice_pdf_filename,
+)
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.program.utils import AccessLevel
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
@@ -134,19 +147,14 @@ def test_add_budget_existing_users_for_managed_opportunity(
     budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
     initial_total_budget = budget_per_user * 2
 
-    program = ProgramFactory(organization=program_manager_org, budget=200)
-    opportunity = OpportunityFactory(
-        program=program,
+    opportunity, claim, claim_limit = _create_managed_opportunity_with_claim(
+        program_manager_org=program_manager_org,
         organization=organization,
+        mobile_user=mobile_user,
         total_budget=initial_total_budget,
-    )
-    payment_unit = PaymentUnitFactory(
-        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
-    )
-    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
-    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
-    claim_limit = OpportunityClaimLimitFactory(
-        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+        payment_per_visit=payment_per_visit,
+        org_pay_per_visit=org_pay_per_visit,
+        max_visits_per_user=max_visits_per_user,
     )
 
     assert opportunity.total_budget == initial_total_budget
@@ -311,19 +319,14 @@ def test_decrease_budget_existing_users_for_managed_opportunity(
     budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
     initial_total_budget = budget_per_user * 2
 
-    program = ProgramFactory(organization=program_manager_org, budget=200)
-    opportunity = OpportunityFactory(
-        program=program,
+    opportunity, claim, claim_limit = _create_managed_opportunity_with_claim(
+        program_manager_org=program_manager_org,
         organization=organization,
+        mobile_user=mobile_user,
         total_budget=initial_total_budget,
-    )
-    payment_unit = PaymentUnitFactory(
-        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
-    )
-    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
-    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
-    claim_limit = OpportunityClaimLimitFactory(
-        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+        payment_per_visit=payment_per_visit,
+        org_pay_per_visit=org_pay_per_visit,
+        max_visits_per_user=max_visits_per_user,
     )
 
     assert opportunity.total_budget == initial_total_budget
@@ -355,6 +358,30 @@ def test_decrease_budget_existing_users_for_managed_opportunity(
     assert opportunity.total_budget == initial_total_budget
     assert opportunity.claimed_budget == expected_claimed_budget
     assert claim_limit.max_visits == max_visits_per_user - decrease_visits
+
+
+def _create_managed_opportunity_with_claim(
+    *,
+    program_manager_org,
+    organization,
+    mobile_user,
+    total_budget,
+    payment_per_visit,
+    org_pay_per_visit,
+    max_visits_per_user,
+):
+    """Create a managed opportunity with one payment unit and a claim for ``mobile_user``."""
+    program = ProgramFactory(organization=program_manager_org, budget=200)
+    opportunity = OpportunityFactory(program=program, organization=organization, total_budget=total_budget)
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    claim_limit = OpportunityClaimLimitFactory(
+        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+    )
+    return opportunity, claim, claim_limit
 
 
 @pytest.mark.django_db
@@ -485,6 +512,40 @@ def test_approve_visits(
         assert v.status_modified_date >= before_update
         if opportunity.managed:
             assert v.justification == justification
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("role", ["admin", "member", "viewer"])
+@pytest.mark.parametrize("actor", ["nm", "pm", "funder", "watcher", "supervisor"])
+def test_only_nm_org_can_create_invoices(client: Client, managed_opportunity, actor, role):
+    program = managed_opportunity.program
+    program.funder = OrganizationFactory(funder=True)
+    program.save()
+    watcher_org = OrganizationFactory()
+    program.watchers.add(watcher_org)
+    managed_opportunity.supervising_organization = OrganizationFactory()
+    managed_opportunity.save()
+    org = {
+        "nm": managed_opportunity.organization,
+        "pm": program.organization,
+        "funder": program.funder,
+        "watcher": watcher_org,
+        "supervisor": managed_opportunity.supervising_organization,
+    }[actor]
+    client.force_login(MembershipFactory(organization=org, role=role).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    list_response = client.get(reverse("opportunity:invoice_list", args=args))
+    create_response = client.get(reverse("opportunity:invoice_create", args=args))
+
+    # The invoice list needs standard access: watchers and viewers can't open it at all.
+    has_standard_access = actor != "watcher" and role != "viewer"
+    can_create = actor == "nm" and has_standard_access
+    if has_standard_access:
+        assert list_response.context["can_create_invoice"] is can_create
+    else:
+        assert list_response.status_code == HTTPStatus.NOT_FOUND
+    assert create_response.status_code == (HTTPStatus.OK if can_create else HTTPStatus.NOT_FOUND)
 
 
 @pytest.mark.django_db
@@ -777,6 +838,303 @@ def test_opportunity_list_excludes_archived(organization):
 
     queryset = OpportunityData(organization, False, {}).get_data()
     assert queryset.count() == 1
+
+
+def _listed_names(organization, filters, search_term=None):
+    return {opp.name for opp in OpportunityData(organization, False, filters, search_term).get_data()}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters, expected",
+    [
+        ({}, {"jan", "feb", "mar", "open_ended"}),
+        ({"start_date": slice(date(2026, 2, 1), None)}, {"feb", "mar", "open_ended"}),
+        ({"start_date": slice(None, date(2026, 2, 1))}, {"jan", "feb"}),
+        ({"start_date": slice(date(2026, 2, 1), date(2026, 2, 1))}, {"feb"}),
+        ({"end_date": slice(date(2026, 2, 28), None)}, {"feb", "mar"}),
+        ({"end_date": slice(None, date(2026, 2, 28))}, {"jan", "feb"}),
+        ({"end_date": slice(date(2026, 1, 1), date(2026, 12, 31))}, {"jan", "feb", "mar"}),
+    ],
+)
+def test_opportunity_list_filters_by_date_ranges(organization, filters, expected):
+    """Bounds are inclusive, and an opportunity without an end date drops out once an end bound is set."""
+    for name, start, end in [
+        ("jan", date(2026, 1, 1), date(2026, 1, 31)),
+        ("feb", date(2026, 2, 1), date(2026, 2, 28)),
+        ("mar", date(2026, 3, 1), date(2026, 3, 31)),
+        ("open_ended", date(2026, 4, 1), None),
+    ]:
+        OpportunityFactory(organization=organization, name=name, start_date=start, end_date=end)
+
+    assert _listed_names(organization, filters) == expected
+
+
+@pytest.mark.django_db
+def test_opportunity_list_filters_by_delivery_type(organization):
+    chc, nutrition, other = DeliveryTypeFactory.create_batch(3)
+    OpportunityFactory(organization=organization, name="chc", delivery_type=chc)
+    OpportunityFactory(organization=organization, name="nutrition", delivery_type=nutrition)
+    OpportunityFactory(organization=organization, name="other", delivery_type=other)
+
+    assert _listed_names(organization, {"delivery_type": [str(chc.pk), str(nutrition.pk)]}) == {"chc", "nutrition"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "search_term, expected",
+    [
+        (None, {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
+        ("", {"Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"}),
+        ("malaria", {"Malaria Kenya", "Malaria Uganda"}),
+        ("mal", {"Malaria Kenya", "Malaria Uganda"}),
+        ("KENYA", {"Malaria Kenya", "Nutrition Kenya"}),
+        ("tb", set()),
+    ],
+)
+def test_opportunity_list_searches_by_name(organization, search_term, expected):
+    for name in ("Malaria Kenya", "Malaria Uganda", "Nutrition Kenya"):
+        OpportunityFactory(organization=organization, name=name)
+
+    assert _listed_names(organization, {}, search_term) == expected
+
+
+@pytest.mark.django_db
+def test_opportunity_list_search_does_not_match_organization_name(organization):
+    OpportunityFactory(organization=organization, name="Malaria")
+
+    assert _listed_names(organization, {}, organization.name) == set()
+
+
+@pytest.mark.django_db
+def test_opportunity_list_search_combines_with_filters(organization):
+    today = now().date()
+    OpportunityFactory(organization=organization, name="Malaria active", end_date=today + timedelta(days=1))
+    OpportunityFactory(organization=organization, name="Malaria ended", end_date=today - timedelta(days=1))
+    OpportunityFactory(organization=organization, name="Nutrition active", end_date=today + timedelta(days=1))
+
+    assert _listed_names(organization, {"status": ["0"]}, "malaria") == {"Malaria active"}
+
+
+@pytest.mark.parametrize(
+    "headers, template",
+    [
+        ({}, "opportunity/opportunities_list.html"),
+        ({"HX-Request": "true"}, "opportunity/partials/opportunities_table.html"),
+        # Going back to a searched URL whose snapshot htmx no longer has needs the whole page.
+        ({"HX-Request": "true", "HX-History-Restore-Request": "true"}, "opportunity/opportunities_list.html"),
+    ],
+)
+def test_opportunity_list_renders_only_the_table_for_htmx_searches(rf, headers, template):
+    view = OpportunityList()
+    view.request = rf.get("/", headers=headers)
+    view.request.htmx = HtmxDetails(view.request)
+    view.object_list = Opportunity.objects.none()
+
+    assert view.get_template_names()[0] == template
+
+
+@pytest.mark.django_db
+def test_opportunity_list_response_varies_on_htmx(org_user_admin, organization, client):
+    client.force_login(org_user_admin)
+
+    response = client.get(reverse("opportunity:list", args=(organization.slug,)))
+
+    assert "HX-Request" in response["Vary"]
+    assert "HX-History-Restore-Request" in response["Vary"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("can_act_as_program_manager", [True, False])
+@pytest.mark.parametrize(
+    "order, expected", [("delivery_type_name", ["a", "b", "none"]), ("-delivery_type_name", ["none", "b", "a"])]
+)
+def test_opportunity_list_sorts_by_delivery_type(organization, can_act_as_program_manager, order, expected):
+    OpportunityFactory(organization=organization, name="b", delivery_type=DeliveryTypeFactory(name="Beta"))
+    OpportunityFactory(organization=organization, name="none", delivery_type=None)
+    OpportunityFactory(organization=organization, name="a", delivery_type=DeliveryTypeFactory(name="Alpha"))
+
+    data = OpportunityData(organization, can_act_as_program_manager, {}).get_data().order_by(order)
+
+    assert [opp.name for opp in data] == expected
+
+
+def _opportunity_list_view(rf, organization, url):
+    view = OpportunityList()
+    view.request = rf.get(url)
+    view.request.org = organization
+    return view
+
+
+@pytest.mark.django_db
+def test_opportunity_list_opens_on_active_non_test(organization, rf):
+    today = now().date()
+    tomorrow, yesterday = today + timedelta(days=1), today - timedelta(days=1)
+    OpportunityFactory(organization=organization, name="active", end_date=tomorrow, is_test=False)
+    OpportunityFactory(organization=organization, name="test", end_date=tomorrow, is_test=True)
+    OpportunityFactory(organization=organization, name="ended", end_date=yesterday, is_test=False)
+    OpportunityFactory(organization=organization, name="inactive", end_date=tomorrow, active=False, is_test=False)
+
+    view = _opportunity_list_view(rf, organization, reverse("opportunity:list", args=(organization.slug,)))
+
+    assert view.filters_applied_count() == 2
+    assert _listed_names(organization, view.get_filter_values()) == {"active"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("filtered=1&start_date_range=last_3_months", ["start_date"]),
+        ("filtered=1&start_date_range=custom&start_date_from=2026-01-01&start_date_to=2026-02-01", ["start_date"]),
+        ("filtered=1&start_date_range=last_30_days&end_date_range=next_30_days", ["start_date", "end_date"]),
+    ],
+)
+def test_a_date_range_counts_as_one_filter(organization, rf, query, expected):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+
+    assert sorted(view.get_applied_filters()) == sorted(expected)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, status, is_test",
+    [
+        ("", ["0"], False),
+        # A param in the URL wins over its default; the other defaults still apply.
+        ("status=1", ["1"], False),
+        # Once the user has submitted the filters, the defaults are gone, even when they cleared everything.
+        ("filtered=1", None, None),
+        ("filtered=1&status=1", ["1"], None),
+    ],
+)
+def test_opportunity_list_defaults_apply_until_filters_are_submitted(organization, rf, query, status, is_test):
+    filter_values = _opportunity_list_view(rf, organization, f"/?{query}").get_filter_values()
+
+    assert (filter_values["status"] or None, filter_values["is_test"]) == (status, is_test)
+
+
+_BACKWARDS_START_DATE = "start_date_range=custom&start_date_from=2026-02-01&start_date_to=2026-01-01"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, status, is_test",
+    [
+        (_BACKWARDS_START_DATE, ["0"], False),
+        (f"filtered=1&status=1&{_BACKWARDS_START_DATE}", ["1"], None),
+    ],
+)
+def test_opportunity_list_keeps_the_valid_filters_when_a_date_range_is_invalid(
+    organization, rf, query, status, is_test
+):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+    filter_values = view.get_filter_values()
+
+    assert "start_date" in view.get_filter_form().errors
+    assert (filter_values["status"], filter_values["is_test"], filter_values["start_date"]) == (status, is_test, None)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query, tracked", [("", False), ("status=1", False), ("filtered=1&status=0", True)])
+def test_opportunity_list_tracks_filter_usage_only_once_submitted(organization, rf, query, tracked):
+    view = _opportunity_list_view(rf, organization, f"/?{query}")
+
+    assert (view.get_filter_usage_data() is not None) is tracked
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("", []),
+        ("q=malaria&page=3", []),
+        (
+            "status=0&status=1&is_test=False&q=malaria&page=2&sort=name",
+            [("status", "0"), ("status", "1"), ("is_test", "False"), ("sort", "name")],
+        ),
+    ],
+)
+def test_opportunity_list_search_carries_everything_but_query_and_page(rf, query, expected):
+    view = OpportunityList()
+    view.request = rf.get(f"/?{query}")
+
+    assert view._search_carried_params() == expected
+
+
+RELATIONSHIPS_ON_THE_LIST = [
+    ("delivery", True),
+    ("program_org", True),
+    ("funder", True),
+    ("watcher", True),
+    ("supervisor", True),
+    ("unrelated", False),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("relationship,listed", RELATIONSHIPS_ON_THE_LIST)
+def test_opportunity_list_data_covers_every_accessible_relationship(
+    relationship, listed, opp_orgs, managed_opportunity
+):
+    queryset = OpportunityData(opp_orgs[relationship], False, {}).get_data()
+
+    assert [opp.id for opp in queryset] == ([managed_opportunity.id] if listed else [])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,manages",
+    [("delivery", False), ("supervisor", False), ("program_org", True), ("funder", True), ("watcher", True)],
+)
+def test_opportunity_list_table_follows_the_relationship(relationship, manages, opp_orgs, rf):
+    view = OpportunityList()
+    view.request = rf.get("/")
+    view.request.org = opp_orgs[relationship]
+
+    expected = ProgramManagerOpportunityTable if manages else OpportunityTable
+    assert view.get_table_class() is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_worker_tab_actions_follow_opportunity_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Inviting, exporting and importing all need standard access, so a watcher must not be offered them."""
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    # the tab partials, where the actions live, are what an htmx request renders
+    tabs = {
+        name: client.get(reverse(f"opportunity:{name}", args=args), headers={"hx-request": "true"})
+        for name in ("worker_list", "worker_payments", "worker_deliver")
+    }
+
+    for response in tabs.values():
+        assert response.wsgi_request.opp_access_level.has_standard is offered
+    assert (reverse("opportunity:user_invite", args=args) in tabs["worker_list"].content.decode()) is offered
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "relationship,offered",
+    [("delivery", True), ("supervisor", True), ("funder", True), ("watcher", False)],
+)
+def test_opportunity_detail_menu_needs_standard_access(relationship, offered, opp_orgs, managed_opportunity, client):
+    """Every menu entry needs standard access at least, so a watcher must not be offered the menu."""
+    PaymentUnitFactory(opportunity=managed_opportunity, max_total=100, max_daily=5)
+    org = opp_orgs[relationship]
+    client.force_login(MembershipFactory(organization=org, role=UserOrganizationMembership.Role.ADMIN).user)
+    args = (org.slug, managed_opportunity.opportunity_id)
+
+    response = client.get(reverse("opportunity:detail", args=args))
+    content = response.content.decode()
+
+    assert response.wsgi_request.opp_access_level.has_standard is offered
+    for entry in ("invoice_list", "add_budget_existing_users", "user_invite", "send_message_mobile_users"):
+        assert (reverse(f"opportunity:{entry}", args=args) in content) is offered
 
 
 @pytest.mark.django_db
@@ -1497,6 +1855,21 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert isinstance(form, AutomatedPaymentInvoiceForm)
 
 
+@pytest.mark.parametrize(
+    "invoice_number, expected",
+    [
+        ("ABC123", "invoice_ABC123.pdf"),
+        ("INV-2026.01", "invoice_INV-2026.01.pdf"),
+        # A hand-entered number would otherwise close the quoted Content-Disposition filename.
+        ('A"B', "invoice_AB.pdf"),
+        ("../../etc/passwd", "invoice_....etcpasswd.pdf"),
+        ("INV 42", "invoice_INV_42.pdf"),
+    ],
+)
+def test_invoice_pdf_filename(invoice_number, expected):
+    assert invoice_pdf_filename(PaymentInvoice(invoice_number=invoice_number)) == expected
+
+
 @pytest.mark.django_db
 class TestDownloadInvoiceView(BaseTestInvoiceView):
     @staticmethod
@@ -1520,9 +1893,8 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
         assert response.status_code == 200
         assert response.headers["Content-Type"] == "application/pdf"
-        assert response.headers["Content-Disposition"] == 'attachment;filename="invoice_{}.pdf"'.format(
-            invoice.payment_invoice_id
-        )
+        expected_disposition = f'attachment;filename="invoice_{invoice.invoice_number}.pdf"'
+        assert response.headers["Content-Disposition"] == expected_disposition
 
     def test_missing_invoice(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
@@ -1726,6 +2098,32 @@ def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org)
     messages = list(get_messages(response.wsgi_request))
     assert len(messages) == 1
     assert str(messages[0]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "existing_link, expected_message, expected_link",
+    [
+        (None, "Enter a ticket link.", None),
+        ("https://www.home.com", "Invoice ticket link removed!", ""),
+    ],
+)
+def test_update_invoice_invoice_ticket_link_empty(
+    existing_link, expected_message, expected_link, client, program_manager_org
+):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    invoice.invoice_ticket_link = existing_link
+    invoice.save()
+    _act_as_admin_of(client, program_manager_org)
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    response = client.post(url, data={"invoice_ticket_link": ""})
+    assert response.status_code == HTTPStatus.FOUND
+    messages = list(get_messages(response.wsgi_request))
+    assert [str(m) for m in messages] == [expected_message]
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link == expected_link
 
 
 def _setup_data_for_invoice_ticket_link_update(pm_org):
@@ -3262,23 +3660,18 @@ class TestUserVisitsListVisitIdParam:
             for i in range(25)
         ]
 
-    def test_visit_id_jumps_to_containing_page(self, client, organization, org_user_member, opportunity, mobile_user):
-        visits = self._make_visits(opportunity, mobile_user)
-        target = visits[20]  # 21st visit in date order -> page 2 at the default page size of 20
-
-        client.force_login(org_user_member)
-        url = reverse(
-            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
-        )
-        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}")
-
-        assert response.status_code == HTTPStatus.OK
-        table = response.context["table"]
-        assert table.page.number == 2
-        assert any(row.record.pk == target.pk for row in table.page.object_list)
-
-    def test_explicit_page_param_is_not_overridden(
-        self, client, organization, org_user_member, opportunity, mobile_user
+    @pytest.mark.parametrize(
+        "extra_query, expected_page",
+        [
+            # The 21st visit in date order is on page 2 at the default page size of 20.
+            ("", 2),
+            # An explicit page param is not overridden.
+            ("&page=1", 1),
+        ],
+        ids=["jumps_to_containing_page", "explicit_page_not_overridden"],
+    )
+    def test_visit_id_param(
+        self, client, organization, org_user_member, opportunity, mobile_user, extra_query, expected_page
     ):
         visits = self._make_visits(opportunity, mobile_user)
         target = visits[20]
@@ -3287,11 +3680,12 @@ class TestUserVisitsListVisitIdParam:
         url = reverse(
             "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
         )
-        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}&page=1")
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}{extra_query}")
 
         assert response.status_code == HTTPStatus.OK
         table = response.context["table"]
-        assert table.page.number == 1
+        assert table.page.number == expected_page
+        assert any(row.record.pk == target.pk for row in table.page.object_list) == (expected_page == 2)
 
 
 @pytest.mark.django_db
@@ -3308,9 +3702,16 @@ class TestOpportunityDeliveryStatsTiles:
         assert b"Audit Opportunity" not in response.content
         assert b"Tasks Assigned to Connect Workers" not in response.content
 
+    @pytest.mark.parametrize(
+        "flag_name, tile_text",
+        [(MICROPLANNING, b"View Progress Map"), (WEEKLY_PERFORMANCE_REPORT, b"Audit Opportunity")],
+        ids=["progress_map", "audit"],
+    )
     @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
-    def test_progress_map_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
-        flag = Flag.objects.create(name=MICROPLANNING)
+    def test_tile_shown_when_flag_enabled(
+        self, client, organization, org_user_member, opportunity, scope, flag_name, tile_text
+    ):
+        flag = Flag.objects.create(name=flag_name)
         if scope == "opportunity":
             flag.opportunities.add(opportunity)
         elif scope == "program":
@@ -3324,25 +3725,7 @@ class TestOpportunityDeliveryStatsTiles:
         client.force_login(org_user_member)
         response = client.get(self._url(organization, opportunity))
 
-        assert b"View Progress Map" in response.content
-
-    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
-    def test_audit_tile_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
-        flag = Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT)
-        if scope == "opportunity":
-            flag.opportunities.add(opportunity)
-        elif scope == "program":
-            program = ProgramFactory(organization=organization)
-            opportunity.program = program
-            opportunity.save(update_fields=["program"])
-            flag.programs.add(program)
-        elif scope == "organization":
-            flag.organizations.add(organization)
-
-        client.force_login(org_user_member)
-        response = client.get(self._url(organization, opportunity))
-
-        assert b"Audit Opportunity" in response.content
+        assert tile_text in response.content
 
     def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
         self, client, organization, org_user_member, opportunity
@@ -3486,9 +3869,10 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     ("is_error", "expected_class"),
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
+@pytest.mark.parametrize("is_watcher", [False, True])
 @mock.patch("commcare_connect.opportunity.views.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
-    mock_async_result, is_error, expected_class, client, organization, opportunity, org_user_member
+    mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
     message = "Payment status uploaded successfully for 3 users." if not is_error else "No payments were uploaded."
     task = mock_async_result.return_value
@@ -3496,13 +3880,23 @@ def test_worker_payments_shows_import_banner_on_reload(
     task.status = "SUCCESS"
     task.result = {"message": message, "is_error": is_error}
     task.info = {"message": message}
-    client.force_login(org_user_member)
-    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    acting_org, user = organization, org_user_member
+    if is_watcher:
+        # A watcher can view the payments page but not the import, which needs standard access.
+        acting_org = OrganizationFactory()
+        user = MembershipFactory(organization=acting_org, role=UserOrganizationMembership.Role.MEMBER).user
+        opportunity.program.watchers.add(acting_org)
+    client.force_login(user)
+    url = reverse("opportunity:worker_payments", args=(acting_org.slug, opportunity.id))
 
     response = client.get(url, {"payment_import_task_id": "task-xyz"})
 
     content = response.content.decode()
     assert response.status_code == 200
+    if is_watcher:
+        assert message not in content
+        assert response.context["payment_import_task_id"] is None
+        return
     assert message in content
     assert expected_class in content  # success -> green banner, error -> red banner
 
@@ -3632,3 +4026,20 @@ def test_worker_payments_reports_a_crashed_import_task(
     assert "The payment import failed. Please try again." in content
     # Nothing left to poll for, so the modal is not opened again.
     assert response.context["payment_import_task_id"] is None
+
+
+@pytest.mark.parametrize(
+    "access_level, expected",
+    [
+        (AccessLevel.NONE, None),
+        (AccessLevel.VIEW, None),
+        (AccessLevel.STANDARD, "task-123"),
+        (AccessLevel.ADMIN, "task-123"),
+    ],
+)
+def test_get_export_task_id_requires_standard_access(rf, opportunity, access_level, expected):
+    request = rf.get("/", {"export_task_id": "task-123"})
+    with mock.patch(
+        "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
+    ):
+        assert get_export_task_id(request, opportunity) == expected

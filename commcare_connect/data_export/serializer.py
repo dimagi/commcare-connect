@@ -89,6 +89,7 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "supervising_organization",
             "end_date",
             "is_active",
+            "is_test",
             "program",
             "visit_count",
         ]
@@ -318,6 +319,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     deliver_app = CommCareAppSerializer()
     payment_units = PaymentUnitSerializer(source="paymentunit_set", many=True)
     verification_flags = OpportunityVerificationFlagsSerializer(source="opportunityverificationflags", read_only=True)
+    budget_per_user = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -343,6 +345,9 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "payment_units",
             "verification_flags",
         ]
+
+    def get_budget_per_user(self, obj) -> int:
+        return obj.budget_per_user(include_org_pay=False)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -414,6 +419,7 @@ class GeoCentroidBoundarySerializer(serializers.ModelSerializer):
 
 class WorkAreaDataSerializer(GeoCentroidBoundarySerializer):
     work_area_group_name = serializers.SerializerMethodField()
+    username = serializers.CharField(source="opportunity_access.user.username", read_only=True, default=None)
 
     class Meta:
         model = WorkArea
@@ -428,6 +434,7 @@ class WorkAreaDataSerializer(GeoCentroidBoundarySerializer):
             "case_properties",
             "work_area_group",
             "work_area_group_name",
+            "username",
             "centroid",
             "boundary",
         ]

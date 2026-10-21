@@ -13,11 +13,13 @@ from django.utils.timezone import localtime
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
+    TeamSizeRange,
     UserOrganizationMembership,
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.tables import DATE_TIME_FORMAT
+from commcare_connect.utils.test_utils import check_basic_permissions
 
 
 @pytest.mark.django_db
@@ -36,57 +38,79 @@ class TestRemoveMembersView:
     def test_admin_cannot_remove_self(self, client, org_user_admin, organization):
         membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [membership.id]},
+        messages = self._remove_members(
+            client=client, admin=org_user_admin, organization=organization, membership_ids=[membership.id]
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the workspace."
-
+        assert messages == ["You cannot remove yourself from the organization."]
         assert UserOrganizationMembership.objects.filter(id=membership.id).exists()
 
     def test_admin_can_remove_others(self, client, org_user_admin, org_user_member, organization):
         other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [other_membership.id]},
+        messages = self._remove_members(
+            client=client, admin=org_user_admin, organization=organization, membership_ids=[other_membership.id]
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "Selected members have been removed from the workspace."
-
+        assert messages == ["Selected members have been removed from the organization."]
         assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
     def test_request_fails_when_admin_in_list(self, client, org_user_admin, org_user_member, organization):
-        admin_memebership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
+        admin_membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
         other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [admin_memebership.id, other_membership.id]},
+        messages = self._remove_members(
+            client=client,
+            admin=org_user_admin,
+            organization=organization,
+            membership_ids=[admin_membership.id, other_membership.id],
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the workspace."
-
+        assert messages == ["You cannot remove yourself from the organization."]
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
+
+    def _remove_members(self, client, admin, organization, membership_ids):
+        """Post a removal as `admin` and return the messages it produced."""
+        client.force_login(admin)
+        response = client.post(self.url(org_slug=organization.slug), data={"membership_ids": membership_ids})
+        assert response.status_code == 302
+        return [str(message) for message in get_messages(response.wsgi_request)]
+
+
+@pytest.fixture
+def org_settings_manager(db):
+    """A user with no memberships who holds ORG_MANAGEMENT_SETTINGS_ACCESS."""
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
+    return User.objects.get(pk=user.pk)  # A fresh instance, so the permission cache sees the grant.
 
 
 @pytest.mark.django_db
 class TestOrganizationHomeView:
     def url(self, org_slug):
         return reverse("organization:home", args=(org_slug,))
+
+    def test_profile_fields_render_on_the_details_tab(self, client, org_user_admin, organization):
+        """The crispy layout names every field, so a rename breaks rendering rather than a save."""
+        client.force_login(org_user_admin)
+
+        content = client.get(self.url(org_slug=organization.slug)).content.decode()
+
+        for field in ["short_name", "team_size", "countries", "contact_emails", "eoi_links"]:
+            assert f'name="{field}"' in content
+
+    def test_profile_fields_are_saved(self, client, org_user_admin, organization):
+        client.force_login(org_user_admin)
+
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "short_name": "PO", "team_size": TeamSizeRange.S},
+        )
+
+        assert response.status_code == 302
+        organization.refresh_from_db()
+        assert organization.short_name == "PO"
+        assert organization.team_size == TeamSizeRange.S
 
     def test_program_manager_requires_permission(self, client, org_user_admin, organization):
         organization.program_manager = False
@@ -102,14 +126,16 @@ class TestOrganizationHomeView:
         organization.refresh_from_db()
         assert not organization.program_manager
 
-    def test_program_manager_updates_with_permission(self, client, org_user_admin, organization):
+    @pytest.mark.parametrize("editor", ["org_user_admin", "org_settings_manager"])
+    def test_program_manager_updates_with_permission(self, client, request, organization, editor):
+        """Holders of the permission set it whether or not they're members of the organization."""
         organization.program_manager = False
         organization.save(update_fields=["program_manager"])
-        permission = Permission.objects.get(codename="org_management_settings_access")
-        org_user_admin.user_permissions.add(permission)
-        org_user_admin.refresh_from_db()
+        user = request.getfixturevalue(editor)
+        user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
+        user = User.objects.get(pk=user.pk)  # A fresh instance, so the permission cache sees the grant.
 
-        client.force_login(org_user_admin)
+        client.force_login(user)
         response = client.post(
             self.url(org_slug=organization.slug),
             data={"name": organization.name, "program_manager": "on"},
@@ -119,6 +145,44 @@ class TestOrganizationHomeView:
         organization.refresh_from_db()
         assert organization.program_manager
 
+    def test_non_members_need_org_settings_permission(self, organization):
+        check_basic_permissions(
+            UserFactory(), self.url(org_slug=organization.slug), "org_management_settings_access", 404
+        )
+
+    def test_org_settings_manager_saves_any_organization_profile(self, client, org_settings_manager, organization):
+        client.force_login(org_settings_manager)
+
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "short_name": "PE", "team_size": TeamSizeRange.S},
+        )
+
+        assert response.status_code == 302
+        organization.refresh_from_db()
+        assert organization.short_name == "PE"
+        assert organization.team_size == TeamSizeRange.S
+
+    @pytest.mark.parametrize(
+        "viewer, can_manage_members",
+        [("org_user_admin", True), ("org_settings_manager", False)],
+    )
+    def test_members_tab_only_shown_to_org_admins(self, client, request, organization, viewer, can_manage_members):
+        client.force_login(request.getfixturevalue(viewer))
+
+        response = client.get(self.url(org_slug=organization.slug))
+
+        assert response.context["can_manage_members"] is can_manage_members
+        member_table_url = reverse("organization:org_member_table", args=(organization.slug,))
+        assert (member_table_url in response.content.decode()) is can_manage_members
+
+    def test_org_settings_manager_cannot_reach_member_endpoints(self, client, org_settings_manager, organization):
+        client.force_login(org_settings_manager)
+
+        response = client.get(reverse("organization:org_member_table", args=(organization.slug,)))
+
+        assert response.status_code == 404
+
 
 @pytest.mark.django_db
 class TestOrganizationCreateView:
@@ -126,7 +190,7 @@ class TestOrganizationCreateView:
         return reverse("organization_create")
 
     def test_new_org_creates_admin_membership(self, client, user):
-        org_name = f"New Workspace {user.pk}"
+        org_name = f"New Organization {user.pk}"
         client.force_login(user)
         response = client.post(self.url(), data={"name": org_name})
 
@@ -140,7 +204,7 @@ class TestOrganizationCreateView:
     def test_profile_fields_are_saved(self, client, user):
         client.force_login(user)
 
-        org_name = f"Profiled Workspace {user.pk}"
+        org_name = f"Profiled Organization {user.pk}"
         response = client.post(
             self.url(),
             data={
@@ -169,6 +233,47 @@ class TestOrganizationCreateView:
         assert Organization.objects.filter(name=organization.name).count() == 1
         assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
 
+    def test_creator_is_recorded(self, client, user):
+        org_name = f"Recorded Organization {user.pk}"
+        client.force_login(user)
+
+        client.post(self.url(), data={"name": org_name})
+
+        assert Organization.objects.get(name=org_name).created_by == user.email
+
+    @pytest.mark.parametrize(
+        "creator, skip_membership, becomes_admin",
+        [
+            ("org_settings_manager", True, False),
+            ("org_settings_manager", False, True),
+            # Without the permission the field isn't offered, so a forged value is ignored.
+            ("user", True, True),
+        ],
+    )
+    def test_skip_membership(self, client, request, creator, skip_membership, becomes_admin):
+        creator = request.getfixturevalue(creator)
+        org_name = f"Skip Membership Organization {creator.pk}"
+        client.force_login(creator)
+        data = {"name": org_name, "skip_membership": "on"} if skip_membership else {"name": org_name}
+
+        response = client.post(self.url(), data=data)
+
+        org = Organization.objects.get(name=org_name)
+        is_admin = UserOrganizationMembership.objects.filter(
+            user=creator, organization=org, role=UserOrganizationMembership.Role.ADMIN
+        ).exists()
+        assert is_admin is becomes_admin
+        expected_url = "opportunity:list" if becomes_admin else "organization:home"
+        assert response.url == reverse(expected_url, args=(org.slug,))
+
+    @pytest.mark.parametrize("creator, offered", [("org_settings_manager", True), ("user", False)])
+    def test_skip_membership_only_offered_to_org_settings_managers(self, client, request, creator, offered):
+        client.force_login(request.getfixturevalue(creator))
+
+        response = client.get(self.url())
+
+        assert ('name="skip_membership"' in response.content.decode()) is offered
+
 
 @pytest.mark.django_db
 class TestNoOrganizationView:
@@ -182,7 +287,7 @@ class TestNoOrganizationView:
         assert response.status_code == 200
         assert reverse("organization_create") in response.content.decode()
 
-    def test_member_is_redirected_to_their_workspace(self, client, org_user_member):
+    def test_member_is_redirected_to_their_organization(self, client, org_user_member):
         client.force_login(org_user_member)
         response = client.get(self.url())
 
@@ -282,6 +387,44 @@ class TestAcceptInviteView:
         ).exists()
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
+
+    def test_authenticated_accept_notifies_admins_on_commit(
+        self, client, organization, django_capture_on_commit_callbacks
+    ):
+        user = UserFactory(email="invitee@example.com")
+        invite = OrganizationInviteFactory(organization=organization, email=user.email, role="member")
+        client.force_login(user)
+
+        with (
+            patch("commcare_connect.organization.tasks.send_invite_accepted_notification") as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            client.get(self._url(organization.slug, invite.token))
+            mock_notify.assert_not_called()
+
+        membership = UserOrganizationMembership.objects.get(user=user, organization=organization)
+        mock_notify.assert_called_once_with(membership.pk)
+
+    def test_new_user_accept_notifies_admins_on_commit(self, client, organization, django_capture_on_commit_callbacks):
+        invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com", role="member")
+
+        with (
+            patch("commcare_connect.organization.tasks.send_invite_accepted_notification") as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            client.post(
+                self._url(organization.slug, invite.token),
+                data={
+                    "password1": "a-very-strong-password-1",
+                    "password2": "a-very-strong-password-1",
+                    "agree": "on",
+                },
+            )
+            mock_notify.assert_not_called()
+
+        new_user = User.objects.get(email="brand-new@example.com")
+        membership = UserOrganizationMembership.objects.get(user=new_user, organization=organization)
+        mock_notify.assert_called_once_with(membership.pk)
 
     def test_unauthenticated_new_user_join_requires_matching_passwords(self, client, organization):
         invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com")
@@ -481,10 +624,10 @@ class TestPendingInvitesTableView:
         response = client.get(self._url(organization.slug))
         assert response.status_code == 404
 
-    def test_sort_links_point_at_the_workspace_page_not_the_partial(self, client, org_user_admin, organization):
+    def test_sort_links_point_at_the_organization_page_not_the_partial(self, client, org_user_admin, organization):
         """Headers must link to the page that hosts the table, not to the fragment endpoint.
 
-        The workspace page pulls this table in over htmx, so a header linking to
+        The organization page pulls this table in over htmx, so a header linking to
         ``request.path`` navigates the browser to the bare fragment: the pending invites
         render on their own and the members list disappears.
         """
@@ -500,7 +643,7 @@ class TestPendingInvitesTableView:
         assert sort_links, "no sortable column headers were rendered"
         for link in sort_links:
             assert not link.startswith(self._url(organization.slug)), f"header links to the fragment: {link}"
-            assert link.startswith(home_url), f"header does not link back to the workspace page: {link}"
+            assert link.startswith(home_url), f"header does not link back to the organization page: {link}"
 
     @pytest.mark.parametrize(
         "sort,expected_order",
@@ -524,7 +667,7 @@ class TestPendingInvitesTableView:
         assert sorted(expected_order, key=content.index) == expected_order
 
     def test_members_table_sort_does_not_reorder_pending_invites(self, client, org_user_admin, organization):
-        """Both tables are loaded from the workspace page's single query string.
+        """Both tables are loaded from the organization page's single query string.
 
         The members table sorts on the unprefixed ``sort`` param and ``role`` is a column on
         both tables, so without a prefix here sorting one table would reorder the other.
@@ -545,3 +688,55 @@ class TestPendingInvitesTableView:
         assert content.index(newest.email) < content.index(oldest.email), (
             "the members table's sort param leaked into the pending invites table"
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role,permission,sees_programs,sees_my_organization",
+    [
+        ("admin", None, True, True),
+        ("member", None, True, False),
+        ("viewer", None, True, False),
+        ("member", "org_management_settings_access", True, True),
+        ("viewer", "org_management_settings_access", True, True),
+        (None, "all_org_access", True, True),
+    ],
+)
+def test_sidenav_entries_visibility(client, organization, role, permission, sees_programs, sees_my_organization):
+    user = UserFactory()
+    if role:
+        UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
+    if permission:
+        user.user_permissions.add(Permission.objects.get(codename=permission))
+        user = User.objects.get(pk=user.pk)  # a fresh instance, so the permission cache sees the grant
+    client.force_login(user)
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert (reverse("program:home", args=(organization.slug,)) in content) is sees_programs
+    assert (reverse("organization:home", args=(organization.slug,)) in content) is sees_my_organization
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_my_organization_to_org_settings_manager_without_membership(client, organization):
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
+    client.force_login(user)
+
+    content = client.get(reverse("organization:home", args=(organization.slug,))).content.decode()
+
+    assert reverse("organization:home", args=(organization.slug,)) in content
+    assert reverse("opportunity:list", args=(organization.slug,)) not in content
+    assert reverse("program:home", args=(organization.slug,)) not in content
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_all_entries_to_superuser_without_membership(client, organization):
+    client.force_login(UserFactory(is_superuser=True))
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert reverse("program:home", args=(organization.slug,)) in content
+    assert reverse("organization:home", args=(organization.slug,)) in content

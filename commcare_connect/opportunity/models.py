@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import datetime
-from collections import Counter, defaultdict
+from collections import Counter
 from decimal import Decimal
 from uuid import uuid4
 
 import pghistory
+from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -84,6 +86,33 @@ class Country(models.Model):
         return self.name
 
 
+class OpportunityStatus(models.IntegerChoices):
+    """Derived from `active` and `end_date` by the opportunity list; ordered so Active sorts first."""
+
+    ACTIVE = 0, gettext_lazy("Active")
+    ENDED = 1, gettext_lazy("Ended")
+    INACTIVE = 2, gettext_lazy("Inactive")
+
+
+# Tracked separately from the fields=["active"] tracker below rather than by adding
+# supervising_organization to its field list: pghistory derives the event model name from
+# the fields, so extending it would rename OpportunityActiveEvent, which is referred to by
+# name in code.
+#
+# Both labels, "supervising_organization_insert" and "supervising_organization_update", are
+# given explicitly. A label must be unique among a model's trackers, and the
+# fields=["active"] tracker below already holds the default "update", so leaving this
+# tracker's UpdateEvent to default raises ValueError. Only that update label is strictly
+# required; "supervising_organization_insert" is named to match rather than left as the
+# default "insert", because the label is stored as pgh_label on every event row and a bare
+# "insert" beside "supervising_organization_update" would read inconsistently. It also
+# keeps the default "insert" free, which would otherwise collide if another field on this
+# model is tracked on insert later.
+@pghistory.track(
+    pghistory.InsertEvent("supervising_organization_insert"),
+    pghistory.UpdateEvent("supervising_organization_update"),
+    fields=["supervising_organization"],
+)
 @pghistory.track(pghistory.UpdateEvent(), fields=["active"])
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
@@ -130,8 +159,8 @@ class Opportunity(BaseModel):
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def save(self, *args, **kwargs):
-        # Until the UI allows setting a supervising organization, default it to the program's
-        # owning organization.
+        # Form-driven creation sets this explicitly; the fallback covers programmatic
+        # creation paths (API, factories, data migrations) for this non-null column.
         if not self.supervising_organization_id:
             self.supervising_organization_id = self.program.organization_id
         super().save(*args, **kwargs)
@@ -151,13 +180,9 @@ class Opportunity(BaseModel):
         if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
-            if not (pu.max_total and pu.max_daily):
+            if not pu.max_total:
                 return False
         return True
-
-    @property
-    def minimum_budget_per_visit(self):
-        return min(self.paymentunit_set.all().values_list("amount", flat=True))
 
     @property
     def remaining_budget(self) -> int:
@@ -202,9 +227,12 @@ class Opportunity(BaseModel):
         ).count()
 
     @staticmethod
-    def budget_per_user_for_units(payment_units):
-        """Total budget consumed per user (worker + org pay) across the given payment units."""
-        return sum(pu.max_total * (pu.amount + pu.org_amount) for pu in payment_units)
+    def budget_per_user_for_units(payment_units, include_org_pay=True):
+        """
+        Budget consumed per user across the given payment units; includes org pay unless
+        include_org_pay is False.
+        """
+        return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
 
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
@@ -238,7 +266,7 @@ class Opportunity(BaseModel):
     def number_of_users(self):
         if not self.total_budget:
             return 0
-        return self.total_budget / self.budget_per_user_for_units(self.paymentunit_set.all())
+        return self.total_budget / self.budget_per_user()
 
     @property
     def allotted_visits(self):
@@ -251,19 +279,30 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user(self):
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
+        # API 1.0: a unit without a daily limit can do at most max_total visits in a day
+        return (
+            self.paymentunit_set.aggregate(max_daily=Sum(Coalesce("max_daily", "max_total"))).get("max_daily", 0) or 0
+        )
+
+    @property
+    def daily_max_visits_per_user_v2(self):
+        # API 2.0: a unit without a daily limit leaves the opportunity without one
+        limits = self.paymentunit_set.aggregate(
+            daily_total=Sum("max_daily"), uncapped=Count("pk", filter=Q(max_daily__isnull=True))
+        )
+        if limits["uncapped"]:
+            return None
+        return limits["daily_total"]
 
     @property
     def budget_per_visit(self):
         return self.paymentunit_set.aggregate(amount=Sum("amount")).get("amount", 0) or 0
 
-    @property
-    def budget_per_user(self):
-        payment_units = self.paymentunit_set.all()
-        budget = 0
-        for pu in payment_units:
-            budget += pu.max_total * pu.amount
-        return budget
+    def budget_per_user(self, include_org_pay=True):
+        return self.budget_per_user_for_units(
+            self.paymentunit_set.all(),
+            include_org_pay=include_org_pay,
+        )
 
     @property
     def is_active(self):
@@ -282,7 +321,6 @@ class OpportunityVerificationFlags(models.Model):
     location = models.PositiveIntegerField(default=0)
     form_submission_start = models.TimeField(null=True, blank=True)
     form_submission_end = models.TimeField(null=True, blank=True)
-    catchment_areas = models.BooleanField(default=False)
 
 
 class LearnModule(models.Model):
@@ -318,7 +356,7 @@ class TaskType(models.Model):
     is_active = models.BooleanField(default=True)
     duration = models.IntegerField(null=True, blank=True)
     mode = models.CharField(
-        choices=TaskTypeModeChoices.choices,
+        choices=TaskTypeModeChoices,
         default=TaskTypeModeChoices.RELEARN,
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
@@ -476,7 +514,7 @@ class AssignedTask(XFormBaseModel):
     duration = models.DurationField(null=True)
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
-        choices=AssignedTaskStatus.choices,
+        choices=AssignedTaskStatus,
         default=AssignedTaskStatus.ASSIGNED,
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
@@ -651,7 +689,8 @@ class PaymentUnit(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
-    max_daily = models.IntegerField(null=True)
+    # None means the payment unit has no daily limit
+    max_daily = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     parent_payment_unit = models.ForeignKey(
         "self",
         on_delete=models.DO_NOTHING,
@@ -694,6 +733,15 @@ class VisitValidationStatus(models.TextChoices):
     over_limit = "over_limit", gettext("Over Limit")
     duplicate = "duplicate", gettext("Duplicate")
     trial = "trial", gettext("Trial")
+
+
+class OverLimitReasonChoices(models.TextChoices):
+    """Which limits barred a visit that was given VisitValidationStatus.over_limit."""
+
+    claim_ended = "claim_ended", gettext("Worker's claim period for the opportunity has ended")
+    claim_limit_ended = "claim_limit_ended", gettext("Worker's claim period for the payment unit has ended")
+    max_visits = "max_visits", gettext("Worker's total visit limit reached")
+    max_daily = "max_daily", gettext("Payment unit's daily visit limit reached")
 
 
 class ExchangeRate(models.Model):
@@ -757,7 +805,7 @@ class PaymentInvoice(models.Model):
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
     status = models.CharField(
-        choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
+        choices=InvoiceStatus, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=CHOICE_FIELD_MAX_LENGTH
     )
     archived_date = models.DateTimeField(null=True, blank=True)
     invoice_ticket_link = models.URLField(null=True, blank=True)
@@ -806,6 +854,35 @@ class PaymentInvoice(models.Model):
         return f"{user.name} ({email})" if user and user.name else email
 
 
+class InvoiceFinanceRequestStatus(models.TextChoices):
+    PENDING = "pending", gettext_lazy("Submitting")
+    SUBMITTED = "submitted", gettext_lazy("Submitted")
+    FAILED = "failed", gettext_lazy("Failed")
+
+
+class InvoiceFinanceRequest(BaseModel):
+    """The payment request raised with Finance for one invoice: a ticket on the Project Finance service desk.
+
+    The answers are kept so a failed submission can be retried, and so the opportunity's next request can be
+    prefilled. `contracted_entity` and `gl_account` hold the Jira Form's choice IDs. Their labels live in
+    `utils/finance_request.py`, so a change to Finance's form needs no migration.
+    """
+
+    invoice = models.OneToOneField(PaymentInvoice, on_delete=models.CASCADE, related_name="finance_request")
+    status = models.CharField(
+        choices=InvoiceFinanceRequestStatus,
+        default=InvoiceFinanceRequestStatus.PENDING,
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+    )
+    submitted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    contracted_entity = models.CharField(max_length=10)
+    gl_account = models.CharField(max_length=10)
+    project_name = models.CharField(max_length=255, blank=True)
+    new_vendor = models.BooleanField()
+    issue_key = models.CharField(max_length=50, blank=True)
+    error = models.TextField(blank=True)
+
+
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -842,7 +919,7 @@ class CompletedWork(models.Model):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
     status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=CompletedWorkStatus, default=CompletedWorkStatus.incomplete
     )
     last_modified = models.DateTimeField(auto_now=True)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
@@ -863,16 +940,18 @@ class CompletedWork(models.Model):
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
     saved_org_payment_accrued = models.IntegerField(
-        default=0, help_text=gettext_lazy("Payment accrued for the workspace")
+        default=0, help_text=gettext_lazy("Payment accrued for the organization")
     )
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text=gettext_lazy("Payment accrued for the organization in USD."),
     )
     invoiced_approved_count = models.IntegerField(
         default=0,
         help_text=gettext_lazy("Approved units already billed on a live invoice."),
     )
-    invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity_access", "entity_id", "payment_unit")
@@ -974,7 +1053,7 @@ class CompletedWorkInvoice(BaseModel):
 
     One row per (invoice, completed_work). Snapshotted at invoice creation (and backfilled for legacy
     invoices) so invoice line items are read from frozen rows instead of recomputed from
-    CompletedWork.saved_* on every view. Stores both FLW pay and org (workspace) pay.
+    CompletedWork.saved_* on every view. Stores both FLW pay and org pay.
     """
 
     invoice = models.ForeignKey(
@@ -1035,11 +1114,18 @@ class UserVisit(XFormBaseModel):
     visit_date = models.DateTimeField()
     status = models.CharField(
         max_length=CHOICE_FIELD_MAX_LENGTH,
-        choices=VisitValidationStatus.choices,
+        choices=VisitValidationStatus,
         default=VisitValidationStatus.pending,
     )
     form_json = models.JSONField()
+    # Free text written by org staff when they reject a visit
     reason = models.CharField(max_length=300, null=True, blank=True)
+    over_limit_reasons = ArrayField(
+        models.CharField(max_length=CHOICE_FIELD_MAX_LENGTH, choices=OverLimitReasonChoices),
+        default=list,
+        blank=True,
+        help_text=gettext_lazy("Every limit that barred this visit, set only when status is over_limit."),
+    )
     location = models.CharField(null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
@@ -1052,7 +1138,7 @@ class UserVisit(XFormBaseModel):
     )
     status_modified_date = models.DateTimeField(null=True, default=now)
     review_status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=VisitReviewStatus, default=VisitReviewStatus.pending
     )
     review_status_modified_date = models.DateTimeField(blank=True, null=True, default=now)
     review_created_on = models.DateTimeField(blank=True, null=True)
@@ -1136,37 +1222,50 @@ class OpportunityClaimLimit(models.Model):
 
     @classmethod
     def create_claim_limits(cls, opportunity: Opportunity, claim: OpportunityClaim):
-        """Allocate visit limits for a new claim based on remaining budget.
+        """Allocate visit limits for a new claim out of the opportunity's remaining budget.
 
-        For each payment unit, calculates how many visits are still available
-        (total capacity minus already-claimed visits) and creates a claim limit
-        with the lesser of the remaining visits or the per-user max.
+        Each payment unit is allocated up to its per-user ``max_total``, capped by what the
+        budget left over from existing claims can pay for. The budget is drawn down as units
+        are allocated, so the total committed across all claims can never exceed
+        ``total_budget``.
         """
-        claim_limits_by_payment_unit = defaultdict(list)
-        claim_limits = OpportunityClaimLimit.objects.filter(
-            opportunity_claim__opportunity_access__opportunity=opportunity
-        )
-        for claim_limit in claim_limits:
-            claim_limits_by_payment_unit[claim_limit.payment_unit].append(claim_limit)
+        with transaction.atomic():
+            opportunity = Opportunity.objects.select_for_update().get(pk=opportunity.pk)
+            remaining_budget = opportunity.remaining_budget
+            # Units are funded in creation order, so when the budget runs out mid-claim it is
+            # always the most recently added units that go short.
+            for payment_unit in opportunity.paymentunit_set.order_by("pk"):
+                max_visits = cls._max_funded_visits_for_worker(payment_unit, remaining_budget)
+                if max_visits < 1:
+                    # budget cannot pay for another visit of this payment unit
+                    continue
+                _, created = OpportunityClaimLimit.objects.get_or_create(
+                    opportunity_claim=claim,
+                    payment_unit=payment_unit,
+                    defaults={
+                        "max_visits": max_visits,
+                        "end_date": payment_unit.end_date,
+                    },
+                )
+                if created:
+                    remaining_budget -= max_visits * cls._budgeted_cost_per_visit(payment_unit)
 
-        for payment_unit in opportunity.paymentunit_set.all():
-            claim_limits = claim_limits_by_payment_unit.get(payment_unit, [])
-            total_claimed_visits = 0
-            for claim_limit in claim_limits:
-                total_claimed_visits += claim_limit.max_visits
+    @classmethod
+    def _max_funded_visits_for_worker(cls, payment_unit, remaining_budget):
+        """
+        Calculates the maximum number of visits a worker can claim for the payment_unit, taking
+        the opportunity's remaining budget into account.
+        """
+        if not payment_unit.max_total:
+            return 0
+        cost_per_visit = cls._budgeted_cost_per_visit(payment_unit)
+        if not cost_per_visit:
+            return payment_unit.max_total
+        return min(payment_unit.max_total, remaining_budget // cost_per_visit)
 
-            remaining = (payment_unit.max_total) * opportunity.number_of_users - total_claimed_visits
-            if remaining < 1:
-                # claimed limit exceeded for this paymentunit
-                continue
-            OpportunityClaimLimit.objects.get_or_create(
-                opportunity_claim=claim,
-                payment_unit=payment_unit,
-                defaults={
-                    "max_visits": min(remaining, payment_unit.max_total),
-                    "end_date": payment_unit.end_date,
-                },
-            )
+    @staticmethod
+    def _budgeted_cost_per_visit(payment_unit):
+        return payment_unit.amount + payment_unit.org_amount
 
 
 class BlobMeta(models.Model):
@@ -1220,7 +1319,7 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(
-        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus.choices, default=UserInviteStatus.invited
+        max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus, default=UserInviteStatus.invited
     )
     notification_date = models.DateTimeField(null=True)
 
@@ -1248,20 +1347,6 @@ class DeliverUnitFlagRules(models.Model):
 
     class Meta:
         unique_together = ("deliver_unit", "opportunity")
-
-
-class CatchmentArea(models.Model):
-    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
-    latitude = models.DecimalField(max_digits=11, decimal_places=8)
-    longitude = models.DecimalField(max_digits=11, decimal_places=8)
-    radius = models.IntegerField(default=1000)
-    opportunity_access = models.ForeignKey(OpportunityAccess, null=True, on_delete=models.DO_NOTHING)
-    active = models.BooleanField(default=True)
-    name = models.CharField(max_length=255)
-    site_code = models.SlugField(max_length=255)
-
-    class Meta:
-        unique_together = ("site_code", "opportunity")
 
 
 class CredentialConfiguration(models.Model):

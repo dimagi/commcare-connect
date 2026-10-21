@@ -87,11 +87,9 @@
       </div>
       <div class="section">
         <p>
-          <strong>{{ request.opportunity.organization.name|default:"" }}</strong>
+          <strong>{{ opportunity.organization.name|default:"" }}</strong>
         </p>
-        {% if request.opportunity.organization.office_address %}
-          <p>{{ request.opportunity.organization.office_address }}</p>
-        {% endif %}
+        {% if opportunity.organization.office_address %}<p>{{ opportunity.organization.office_address }}</p>{% endif %}
       </div>
       <div class="section">
         <p>{% trans "Invoice number" %}: {{ invoice.invoice_number }}</p>
@@ -106,16 +104,16 @@
         <p>{{ dimagi_address|linebreaksbr }}</p>
       </div>
       <div class="section">
-        <p>{% trans "Opportunity" %}: {{ request.opportunity.name }}</p>
+        <p>{% trans "Opportunity" %}: {{ opportunity.name }}</p>
         <p>{% trans "Invoice type" %}: {{ invoice.invoice_type.label }}</p>
-        <p>{% trans "Opportunity ID" %}: {{ request.opportunity.opportunity_id }}</p>
+        <p>{% trans "Opportunity ID" %}: {{ opportunity.opportunity_id }}</p>
       </div>
       <div class="table-container">
         <table class="service-table">
           <thead>
             <tr>
               <th>{% trans "Description of services" %}</th>
-              <th>{% blocktrans with currency=request.opportunity.currency_code %}Amount ({{ currency }}){% endblocktrans %}</th>
+              <th>{% blocktrans with currency=opportunity.currency_code %}Amount ({{ currency }}){% endblocktrans %}</th>
             </tr>
           </thead>
           <tbody>
@@ -127,7 +125,7 @@
             {% endfor %}
             <tr class="total-row">
               <td>{% trans "Total due" %}</td>
-              <td>{{ request.opportunity.currency_code }} {{ invoice.amount|default:0|floatformat:2|intcomma }}</td>
+              <td>{{ opportunity.currency_code }} {{ invoice.amount|default:0|floatformat:2|intcomma }}</td>
             </tr>
             <tr>
               <td>

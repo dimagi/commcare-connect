@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db.models import F
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -81,7 +82,9 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
     report = get_object_or_404(AuditReport, audit_report_id=audit_report_id, opportunity=opportunity)
 
     all_entries = list(
-        report.entries.select_related("opportunity_access__user").order_by("opportunity_access__user__name")
+        report.entries.select_related("opportunity_access__user")
+        .annotate(status=F("opportunity_access__userinvite__status"))
+        .order_by("opportunity_access__user__name")
     )
     columns_spec = column_specs(all_entries)
 

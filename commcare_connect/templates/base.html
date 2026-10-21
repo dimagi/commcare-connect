@@ -22,6 +22,7 @@
         <script src="{% static 'js/livesession.js' %}" defer></script>
       {% endif %}
     {% endblock javascript %}
+    {% include 'components/forget_form_submission.html' %}
   </head>
   <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' x-data="{ sidebarOpen: $persist(false).as('sidebarOpen'), hasSidebar:
     {% block has_sidebar %}true{% endblock %}

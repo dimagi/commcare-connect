@@ -22,13 +22,15 @@ inv build-js --prod                 # production build
 npm run build                       # production build (what CI runs)
 
 # Celery (local dev)
+# Tasks run eagerly inside the request by default, so no worker is needed -- but that blocks the
+# request and hides progress UIs. Set CELERY_TASK_ALWAYS_EAGER=False in .env and run a worker:
 celery -A config.celery_app worker -B -l info
 
 # Tests
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
-# Linting (ruff, ruff-format, pyupgrade, django-upgrade, prettier, djlint, eslint)
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
 
 # Requirements (uv)
@@ -65,7 +67,7 @@ commcare_connect/
   commcarehq_provider/ # OAuth provider: HQ as an identity provider
   ocs_provider/    # Open Chat Studio integration
   data_export/     # CSV/streaming exports over OAuth token scopes
-  microplanning/   # Maps, catchment areas (Mapbox)
+  microplanning/   # Work areas, coverage tracking, maps (Mapbox)
   reports/         # KPI and admin reports
   flags/           # Waffle feature flag/switch name constants
   multidb/         # Secondary DB support + logical replication
@@ -88,7 +90,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 
 - **Waffle flags**: per-request/per-user feature toggles. Names in `flags/flag_names.py`, checked with `flag_is_active(request, NAME)`, backed by the custom `Flag` model in `flags/models.py`.
 - **Waffle switches**: global on/off toggles. Names in `flags/switch_names.py`, checked with `switch_is_active(NAME)`.
-- **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, `catchment`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
+- **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
 - **Verification flag config**: which validation flags an opportunity applies — `OpportunityVerificationFlags` and `DeliverUnitFlagRules` in `opportunity/models.py`.
 
 **"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView`, the `Worker*Table` classes and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
@@ -98,7 +100,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
 - **JS/CSS**: prettier (tab-width 2, single-quote)
 - **Templates**: djlint owns them, not prettier — `djlint-reformat-django` will rewrite your formatting on commit. `templates/prelogin/home.html` is excluded from both djlint hooks
-- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus), django-upgrade (--target-version 4.1), djlint (templates) and eslint (`commcare_connect/static/**/*.js`)
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus django-upgrade (--target-version 5.2), djlint (templates) and eslint (`commcare_connect/static/**/*.js`); ruff's UP rules cover what pyupgrade used to
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
@@ -108,7 +110,10 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
 - **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
 - **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
+- **Searchable selects are opt-in**: nothing enhances a `<select>` by default. Add `data-tomselect="1"` to the widget's attrs (or the tag) to have `static/js/tomselect.js` turn it into a tom-select, and add `data-tomselect:no-remove-button` on single selects or the chosen value renders as a removable chip. Extra TomSelect options go through `data-tomselect:settings` as JSON; anything needing render _functions_ gets its own module and must **not** carry `data-tomselect`, or the generic initializer claims it first (see `static/js/work_area_search.js`). Use it for long or searchable lists, not short fixed choices. The page must also load `bundles/js/tomselect-bundle.js` and `bundles/css/tomselect.css` or a marked field silently stays native — check they are there, and that they don't arrive by accident: `opportunity/user_tasks.html` gets them only from its permission-gated Create Task modal include, so its filters are searchable for some users and plain for others
 - **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists all 76 of them. Plenty of templates still use raw utilities; that's legacy
+- **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
+- **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md` and `flags/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
 
 ## Robustness
 
@@ -139,6 +144,8 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **`--reuse-db` + Currency/Country data**: These models get flushed between tests. The `ensure_currency_country_data` autouse fixture handles this — don't remove it
 - **Secondary DB is opt-in**: `DATABASE_ROUTERS` is only installed when `SECONDARY_DATABASE_URL` is set (`config/settings/base.py:52-56`). Without it `SECONDARY_DB_ALIAS` is `None`, routing is off and `migrate_multi` just migrates `default` — so multidb routing behaviour can't be reproduced locally by default
 - **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups.
+- **htmx settles attributes onto swapped-in content**: when a response replaces content that held an element with the same tag and `id`, htmx copies the old element's attributes onto the incoming one and restores the server-rendered values during the settle step. Anything JS applies to swapped-in elements at insertion time is therefore undone from the second swap onwards — enhance on `htmx:afterSettle`, not inside the fragment (this is why `static/js/tomselect.js` listens for it)
+- **Alpine `<template x-if>`/`x-for` content is inert**: it is parsed into a separate fragment and is not in the document until Alpine mounts it, so page-load scans never see it and mounting fires no htmx event. Anything that enhances elements has to be handed the subtree on mount — `x-init="htmx.process($el); initTomSelectElements()"` (see `tasks/new_task_modal.html`, which uses `x-if` deliberately so the form resets on close). Options rendered into a select by `x-for` are a separate trap: tom-select snapshots the option list when it initializes, so later additions only reach it through the instance
 - **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
@@ -148,3 +155,4 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
+- `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, form_receiver, flags)

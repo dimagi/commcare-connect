@@ -12,7 +12,7 @@ from commcare_connect.users.models import ConnectIDUserLink
 
 
 class UserFactory(DjangoModelFactory):
-    username = Sequence(lambda n: "user_%d" % n)
+    username = Sequence(lambda n: f"user_{n}")
     email = Faker("email")
     name = Faker("name")
     password = Password(
@@ -33,7 +33,7 @@ class UserFactory(DjangoModelFactory):
 
 class ConnectIdUserLinkFactory(DjangoModelFactory):
     user = SubFactory(UserFactory)
-    commcare_username = Sequence(lambda n: "commcare_user_%d" % n)
+    commcare_username = Sequence(lambda n: f"commcare_user_{n}")
     hq_server = SubFactory(HQServerFactory)
 
     class Meta:
@@ -42,7 +42,7 @@ class ConnectIdUserLinkFactory(DjangoModelFactory):
 
 
 class MobileUserFactory(DjangoModelFactory):
-    username = Sequence(lambda n: "mobile_user_%d" % n)
+    username = Sequence(lambda n: f"mobile_user_{n}")
     name = Faker("name")
 
     class Meta:
@@ -92,9 +92,5 @@ class ProgramManagerOrganisationFactory(DjangoModelFactory):
         model = Organization
 
 
-class ProgramManagerOrgWithUsersFactory(ProgramManagerOrganisationFactory):
-    admin = RelatedFactory(MembershipFactory, "organization", role="admin")
-    member = RelatedFactory(MembershipFactory, "organization", role="member")
-
-    class Meta:
-        skip_postgeneration_save = True
+class ProgramManagerOrgWithUsersFactory(OrgWithUsersFactory):
+    program_manager = True

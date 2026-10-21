@@ -21,7 +21,7 @@ MONDAY_2AM_UTC = datetime.datetime(2026, 4, 20, 2, 0, tzinfo=datetime.UTC)
 def test_task_generates_reports_only_for_flagged_opportunities(mock_now):
     flagged_opp = OpportunityFactory(is_test=False)
     OpportunityAccessFactory(opportunity=flagged_opp, accepted=True)
-    unflagged_opp = OpportunityFactory(is_test=False)  # noqa: F841
+    unflagged_opp = OpportunityFactory(is_test=False)
 
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
     flag.opportunities.add(flagged_opp)

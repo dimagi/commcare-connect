@@ -1,4 +1,7 @@
+import mimetypes
+
 from celery.result import AsyncResult
+from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 from django.shortcuts import render
 from django_tables2.export import TableExport
@@ -89,10 +92,9 @@ def download_export_file(
         raise Http404("Export file not found")
 
     export_format = saved_filename.split(".")[-1]
-    from commcare_connect.utils.storages import ExportS3Boto3Storage
 
     try:
-        export_file = ExportS3Boto3Storage().open(saved_filename)
+        export_file = get_export_storage().open(saved_filename)
     except FileNotFoundError as e:
         raise Http404("Export file no longer available") from e
 
@@ -100,5 +102,29 @@ def download_export_file(
         export_file,
         as_attachment=True,
         filename=f"{filename_without_ext}.{export_format}",
-        content_type=TableExport.FORMATS.get(export_format),
+        content_type=export_content_type(saved_filename),
     )
+
+
+def get_export_storage():
+    """Where generated export files are written and read back from.
+
+    The S3 backend comes from django-storages, which is a production-only dependency, so local
+    and CI environments fall back to the default storage instead of failing on import. Saving and
+    downloading both go through here so they always agree on where a file lives. The import stays
+    inside the function for the same reason: at module level it would break importing this module
+    wherever the package is absent.
+    """
+    try:
+        from commcare_connect.utils.storages import ExportS3Boto3Storage
+    except ModuleNotFoundError:
+        # Only a missing package falls back. An ImportError from inside the module is a real
+        # breakage, and silently writing exports elsewhere would defeat the S3 lifecycle rule
+        # that cleans this prefix up.
+        return default_storage
+    return ExportS3Boto3Storage()
+
+
+def export_content_type(filename):
+    export_format = filename.rsplit(".", 1)[-1]
+    return TableExport.FORMATS.get(export_format) or mimetypes.guess_type(filename)[0] or "application/octet-stream"

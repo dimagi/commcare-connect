@@ -51,7 +51,7 @@ class UserSocialSignupForm(SocialSignupForm):
     """
 
 
-class OrganizationCreationForm(forms.ModelForm):
+class AdminOrganizationForm(forms.ModelForm):
     class Meta:
         model = Organization
         fields = [
@@ -73,6 +73,9 @@ class OrganizationCreationForm(forms.ModelForm):
             "contact_emails",
             "eoi_links",
             "notes",
+            "status",
+            "latest_msa_link",
+            "latest_work_order_link",
         ]
 
     def clean_year_of_establishment(self):

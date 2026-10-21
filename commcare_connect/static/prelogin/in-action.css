@@ -1,0 +1,2017 @@
+/* Connect in action: the Nigeria cholera-response story.
+   Standalone page, not an SPA section. Everything is scoped to .cia and the
+   cia- class prefix, so this file cannot reach the rest of the marketing site
+   and styles.css cannot reach in. */
+.cia {
+  /* Connect design tokens, taken from the marketing site's styles.css */
+  --ink: #0a0620;
+  --ink-2: #14103a;
+  --ink-3: #4a5468;
+  --paper: #fafbff;
+  --paper-2: #ffffff;
+  --paper-warm: #eef0fa;
+  --ground: #f1f3fc;
+  --line: #e6e7f0;
+  --rule: #c9cce0;
+  --indigo: #3843d0;
+  --indigo-deep: #2832a0;
+  --indigo-soft: #e7e9fb;
+  --sky: #8ea1ff;
+  --sky-deep: #5c6fe8;
+  --muted: #6b7388;
+  --on-dark-primary: rgba(255, 255, 255, 0.95);
+  --on-dark-secondary: rgba(255, 255, 255, 0.78);
+  --on-dark-muted: rgba(255, 255, 255, 0.55);
+  --grad-text: linear-gradient(90deg, #1a1f3a 0%, #2a368a 55%, #3a4fa0 100%);
+  --grad-text-on-dark: linear-gradient(90deg, #ffffff 0%, #c0ceee 100%);
+  --sans: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
+    Arial, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --radius: 14px;
+  --radius-lg: 22px;
+  --fs-h2: clamp(32px, 4.4vw, 62px);
+  --fs-lede: clamp(17px, 1.25vw, 20px);
+  --hdr-h: 64px;
+  --gutter: clamp(44px, 7vw, 136px);
+
+  /* One hue per side of the marketplace. The thread carries each as it crosses. */
+  --c-fund: #0b8a82;
+  --c-conn: #3843d0;
+  --c-front: #c0381a;
+  --c-note: #5a6172;
+}
+.cia {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+.cia img {
+  max-width: 100%;
+  display: block;
+}
+.cia a {
+  color: var(--indigo);
+}
+.cia h1,
+.cia h2 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+  font-weight: 300;
+  text-wrap: balance;
+}
+.cia h3 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  line-height: 1.16;
+  font-weight: 400;
+  text-wrap: balance;
+}
+.cia h1 em,
+.cia h2 em {
+  font-style: normal;
+  font-weight: 600;
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cia .on-dark h1 em,
+.cia .on-dark h2 em {
+  background: var(--grad-text-on-dark);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cia-wrap {
+  max-width: 1460px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 40px);
+}
+.cia :where(a[href], button):focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.cia .on-dark :where(a[href], button):focus-visible {
+  outline-color: var(--sky);
+}
+
+.cia .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 24px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition:
+    transform 0.15s,
+    box-shadow 0.2s,
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+/* Each variant is qualified with .btn so it outranks the base rule on
+   specificity rather than on source order, which the generated stylesheet
+   cannot rely on once every selector is scoped. */
+.btn.cia-btn-ghost-on-dark {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.btn.cia-btn-ghost-on-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.btn.cia-btn-white {
+  background: #fff;
+  color: var(--indigo);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.btn.cia-btn-white:hover {
+  color: var(--indigo-deep);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(10, 6, 32, 0.18);
+}
+
+/* &#9472;&#9472; Header &#9472;&#9472; */
+.cia-site-header {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  height: var(--hdr-h);
+  display: flex;
+  align-items: center;
+  background: rgba(10, 6, 32, 0.86);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.cia-site-header .cia-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+.cia-logo {
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  transition: color 0.18s;
+}
+.cia-logo:hover {
+  color: var(--sky);
+}
+.cia-logo svg {
+  height: 26px;
+  width: auto;
+  display: block;
+}
+.cia-hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.cia-hdr-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--on-dark-muted);
+}
+#cia-progress-rail {
+  position: fixed;
+  top: var(--hdr-h);
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 59;
+  pointer-events: none;
+}
+#cia-progress-bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(
+    90deg,
+    var(--c-fund),
+    var(--c-conn) 55%,
+    var(--c-front)
+  );
+}
+
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; HERO &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+.cia-hero {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background: var(--ink);
+  padding: clamp(48px, 5.8vw, 92px) 0 clamp(56px, 6.8vw, 96px);
+}
+.cia-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+      rgba(142, 161, 255, 0.06) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(142, 161, 255, 0.06) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+.cia-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    70% 60% at 88% 4%,
+    rgba(56, 67, 208, 0.5),
+    transparent 62%
+  );
+}
+.cia-hero > * {
+  position: relative;
+}
+.cia-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.14fr;
+  gap: clamp(30px, 4.4vw, 68px);
+  align-items: center;
+}
+.cia-stamp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+  margin: 0 0 24px;
+}
+.cia-stamp i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2ee08a;
+  display: block;
+  box-shadow: 0 0 0 5px rgba(46, 224, 138, 0.22);
+  animation: pulse-live 2s ease-in-out infinite;
+}
+@keyframes pulse-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(46, 224, 138, 0.3);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(46, 224, 138, 0);
+    opacity: 0.62;
+  }
+}
+.cia-hero h1 {
+  font-size: clamp(38px, 5.1vw, 72px);
+  color: #fff;
+  line-height: 0.99;
+  letter-spacing: -0.042em;
+  font-weight: 200;
+  max-width: 13ch;
+}
+.cia-hero h1 em {
+  background: linear-gradient(90deg, #ffffff 0%, #bcd0ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+}
+.cia-hero-lede {
+  font-size: clamp(18px, 1.5vw, 23px);
+  color: rgba(255, 255, 255, 0.84);
+  max-width: 40ch;
+  margin: 28px 0 0;
+  line-height: 1.5;
+  font-weight: 300;
+}
+.cia-hero-photo {
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 40px 80px -44px rgba(4, 2, 26, 0.85),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.cia-hero-photo img,
+.cia-hero-photo video {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: var(--ink-2);
+}
+.cia-hero-credit {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+}
+.cia-facts {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 22px 0;
+  margin: clamp(38px, 4.6vw, 62px) 0 0;
+  padding-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.24);
+}
+/* Items are spaced by justify-content (space-between), not a fixed right
+   margin, so the CTA rides at the far edge and the whole row divides evenly.
+   flex 0 1 auto + min-width:0 lets columns give a little on mid widths instead
+   of wrapping the CTA onto a second line. */
+.cia-facts div {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-right: clamp(22px, 2.8vw, 44px);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+.cia-facts div:last-child {
+  border-right: 0;
+  margin-right: 0;
+  padding-right: 0;
+}
+/* An early ask for readers who leave before the closing CTA. It rides as the
+   final item of the space-between row (so the row divides evenly, no odd gap),
+   dropped onto the numbers line past the label row so it reads as a peer of the
+   figures. Kept compact; .btn qualifier so it outranks the base .cia .btn size. */
+.cia-facts-cta {
+  margin: 0;
+  padding-top: 22px;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+.btn.cia-facts-btn {
+  padding: 9px 20px;
+  font-size: 13px;
+}
+/* Subline under the hero CTA, echoing the closing CTA's note. */
+.cia-facts-cta-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 210px;
+}
+.cia-facts dt {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+  margin-bottom: 8px;
+}
+.cia-facts dd {
+  margin: 0;
+  font-size: clamp(18px, 1.6vw, 24px);
+  font-weight: 500;
+  color: #fff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* A qualifier that belongs to the figure, kept subordinate to it. */
+.cia-facts dd small {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.66);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+/* Staged on load, not on an observer, so the opener is never parked invisible. */
+.js .cia-hero-grid > * {
+  animation: rise 0.9s cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+.js .cia-hero-grid > :nth-child(2) {
+  animation-delay: 0.18s;
+}
+.js .cia-facts {
+  animation: rise 0.9s cubic-bezier(0.2, 0.75, 0.25, 1) 0.3s both;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; LOCATOR, INSET, DESKTOP MOCK &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+/* Coverage map: Nigeria overview + enlarged Borno LGA panel. */
+.cia-map {
+  position: relative;
+}
+.cia-map svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  max-width: 460px;
+  margin: 0 auto;
+}
+.cia-map-ng {
+  fill: var(--paper-warm);
+  stroke: var(--rule);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+.cia-map-box {
+  fill: none;
+  stroke: #202a5e;
+  stroke-width: 2.4;
+}
+.cia-map-link {
+  stroke: #a9b3ec;
+  stroke-width: 1.8;
+  stroke-dasharray: 7 6;
+  opacity: 0.9;
+}
+.cia-lga {
+  fill: var(--paper-warm);
+  stroke: var(--rule);
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+}
+.cia-lga--served {
+  fill: var(--indigo);
+  stroke: var(--indigo-deep);
+  stroke-width: 0.7;
+}
+.cia-lga--mmc {
+  fill: #6f79e6;
+  stroke: var(--indigo);
+  stroke-width: 0.7;
+}
+.cia-map-marker {
+  fill: var(--indigo);
+}
+.cia-map-outline {
+  fill: none;
+  stroke: #202a5e;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.cia-map-label {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  fill: #8b93ad;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.cia-map-label--borno {
+  font-size: 19px;
+  fill: #8b93ad;
+  stroke-width: 4px;
+}
+.cia-map-legend {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.cia-map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 0;
+}
+.cia-map-legend i {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex: none;
+}
+.cia-sw-served {
+  background: var(--indigo);
+}
+.cia-sw-other {
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+}
+
+.cia-locator {
+  position: relative;
+}
+.cia-locator svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: hidden;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.cia-ng-land {
+  fill: #eef0fa;
+  stroke: #c9cce0;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.cia-ng-outline {
+  fill: none;
+  stroke: var(--sky-deep);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.cia-ng-borno {
+  fill: rgba(192, 56, 26, 0.16);
+  stroke: var(--c-front);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.cia-lens-ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.cia-lens-bg {
+  fill: #fff;
+}
+.cia-lens-handle {
+  stroke: var(--ink);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.cia-pin {
+  fill: var(--c-front);
+}
+.cia-ripple {
+  fill: none;
+  stroke: var(--c-front);
+  stroke-width: 2;
+}
+.cia-locator text {
+  font-family: var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.cia-loc-country {
+  fill: var(--muted);
+  font-size: 15px;
+}
+.cia-loc-state {
+  fill: var(--c-front);
+  font-size: 13px;
+}
+.cia-loc-city {
+  fill: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+.js .cia-locator .cia-ng-outline,
+.js .cia-locator .cia-ng-borno {
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+}
+.js .cia-locator.cia-in .cia-ng-outline {
+  animation: trace 2.1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.js .cia-locator.cia-in .cia-ng-borno {
+  animation: trace 1.5s cubic-bezier(0.4, 0, 0.2, 1) 0.7s forwards;
+}
+@keyframes trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.js .cia-locator .cia-lens {
+  opacity: 0;
+  transform: scale(0.86);
+  transform-origin: 497px 132px;
+}
+.js .cia-locator.cia-in .cia-lens {
+  animation: lens-in 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) 1.5s forwards;
+}
+@keyframes lens-in {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.cia-locator.cia-in .cia-ripple {
+  animation: ripple 3s ease-out infinite 2.2s;
+}
+@keyframes ripple {
+  0% {
+    r: 5;
+    opacity: 0.85;
+  }
+  100% {
+    r: 34;
+    opacity: 0;
+  }
+}
+
+/* The locator sits beside the opening card: where this happened, and who. */
+.cia-locator-card {
+  position: relative;
+  z-index: 2;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 28px 30px 30px;
+  box-shadow: 0 20px 44px -38px rgba(10, 6, 32, 0.55);
+}
+.cia-locator-org {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 18px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.cia-locator-org img {
+  width: 96px;
+  height: auto;
+  flex: 0 0 auto;
+}
+.cia-locator-org > span {
+  min-width: 0;
+}
+.cia-locator-org b {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.cia-locator-org span span,
+.cia-locator-org > span > span {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-top: 3px;
+}
+
+/* An inset aside inside a card: the thing that happened last time. */
+.cia-before {
+  margin: 24px 0 0;
+  padding: 19px 21px;
+  background: var(--paper-warm);
+  border-left: 2px solid var(--rule);
+  border-radius: 0 8px 8px 0;
+}
+.cia-before p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+.cia-before .cia-lb {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* Connect as people actually meet it: on a desktop machine. A real bezel with a
+   chin and brand notch, a tapered neck, a weighted foot, and a glare across the
+   glass, so it reads as a monitor rather than a rounded rectangle. */
+.cia-desk {
+  position: relative;
+  z-index: 2;
+}
+.cia-desk-screen {
+  position: relative;
+  /* Three bands rather than two: a lit top edge, the body, and a chin that
+     catches a little less light, which is what makes an enclosure read as
+     moulded rather than as a filled rectangle. */
+  background: linear-gradient(#3c3d59 0, #23243c 6%, #15162b 82%, #1d1e35 100%);
+  border-radius: 14px;
+  padding: 8px 8px 26px;
+  box-shadow:
+    0 38px 70px -38px rgba(4, 2, 26, 0.82),
+    0 4px 12px -6px rgba(4, 2, 26, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset -1px 0 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+}
+/* The brand notch on the chin. */
+.cia-desk-screen::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.06)
+  );
+}
+/* The glass is recessed into the bezel, so its edge sits in shadow. */
+.cia-desk-screen > .cia-inner {
+  position: relative;
+  background: var(--paper-2);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+.cia-desk-screen > .cia-inner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    112deg,
+    rgba(255, 255, 255, 0.16) 0,
+    rgba(255, 255, 255, 0.05) 26%,
+    rgba(255, 255, 255, 0) 46%
+  );
+}
+.cia-desk-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 13px;
+  background: var(--paper-warm);
+  border-bottom: 1px solid var(--line);
+}
+.cia-desk-bar i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rule);
+  flex: 0 0 auto;
+}
+.cia-desk-bar span {
+  margin-left: 8px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cia-desk-view {
+  overflow: hidden;
+}
+.cia-desk-view img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+/* The platform's own screen: brand mark on Connect indigo, nothing else. */
+.cia-desk-brand {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  height: clamp(206px, 23vw, 296px);
+  /* A soft light behind the mark, over the brand gradient, so the screen has
+     some depth rather than reading as a flat swatch. */
+  background: radial-gradient(
+      58% 62% at 50% 46%,
+      rgba(255, 255, 255, 0.16) 0,
+      rgba(255, 255, 255, 0) 68%
+    ),
+    linear-gradient(
+      148deg,
+      var(--indigo-deep) 0%,
+      var(--indigo) 58%,
+      #5a65e8 100%
+    );
+}
+.cia-desk-brand svg {
+  position: relative;
+  height: clamp(44px, 5.6vw, 82px);
+  width: auto;
+  color: #fff;
+}
+/* Without this the caption falls back to the browser default and outsizes
+   every other caption on the page. */
+.cia-desk figcaption {
+  padding: 15px 2px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 62ch;
+  margin-inline: auto;
+  text-align: center;
+}
+/* The screen settles into its full size as it comes up the page: it arrives a
+   little small and is at its true size by the time it is read. The maximum is
+   its own laid-out box, so it can never reach over what is beside or below it,
+   and the 1600px capture is legible at rest without any hovering. */
+.cia-desk--grow {
+  transform: scale(var(--g, 1));
+  transform-origin: center top;
+  will-change: transform;
+}
+.cia-desk-neck {
+  height: 24px;
+  width: 14%;
+  margin: 0 auto;
+  background: linear-gradient(
+    90deg,
+    #b6bad3 0,
+    #e9eaf4 38%,
+    #f6f7fc 46%,
+    #c3c7dd 100%
+  );
+  clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%);
+}
+.cia-desk-foot {
+  position: relative;
+  height: 11px;
+  width: 31%;
+  margin: 0 auto;
+  background: linear-gradient(#d6d9e8, #f2f3fa 55%, #c9cde1);
+  border-radius: 3px 3px 8px 8px;
+}
+/* A contact shadow, so the machine is standing on something. */
+.cia-desk-foot::after {
+  content: '';
+  position: absolute;
+  left: -24%;
+  right: -24%;
+  top: 100%;
+  height: 22px;
+  background: radial-gradient(
+    50% 100% at 50% 0,
+    rgba(10, 6, 32, 0.34) 0,
+    rgba(10, 6, 32, 0) 72%
+  );
+}
+
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; TIMELINE &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+.cia-timeline {
+  background: var(--ground);
+  padding: clamp(58px, 7vw, 104px) 0 clamp(46px, 5vw, 76px);
+}
+.cia-tl-layout {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: clamp(20px, 2.6vw, 40px);
+  align-items: start;
+}
+.cia-date-rail {
+  position: sticky;
+  top: calc(var(--hdr-h) + 78px);
+  display: grid;
+  gap: 0;
+  padding-top: 2px;
+}
+.cia-date-rail b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 400;
+  margin-bottom: 12px;
+}
+.cia-date-rail span {
+  position: relative;
+  display: block;
+  padding: 11px 0 11px 18px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--rule);
+  border-left: 2px solid var(--line);
+  transition:
+    color 0.35s ease,
+    border-color 0.35s ease;
+}
+.cia-date-rail span::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  margin-top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+  transition:
+    background 0.35s ease,
+    transform 0.35s ease;
+}
+.cia-date-rail span.cia-done {
+  color: var(--muted);
+  border-color: var(--rule);
+}
+.cia-date-rail span.cia-done::before {
+  background: var(--rule);
+}
+.cia-date-rail span.cia-on {
+  color: var(--ink);
+  font-weight: 500;
+}
+.cia-date-rail span.cia-on::before {
+  transform: scale(1.7);
+}
+.cia-date-rail span.cia-on[data-role='fund'] {
+  border-color: var(--c-fund);
+}
+.cia-date-rail span.cia-on[data-role='fund']::before {
+  background: var(--c-fund);
+}
+.cia-date-rail span.cia-on[data-role='conn'] {
+  border-color: var(--c-conn);
+}
+.cia-date-rail span.cia-on[data-role='conn']::before {
+  background: var(--c-conn);
+}
+.cia-date-rail span.cia-on[data-role='front'] {
+  border-color: var(--c-front);
+}
+.cia-date-rail span.cia-on[data-role='front']::before {
+  background: var(--c-front);
+}
+.cia-date-rail span.cia-on[data-role='note'] {
+  border-color: var(--c-note);
+}
+.cia-date-rail span.cia-on[data-role='note']::before {
+  background: var(--c-note);
+}
+
+.cia-tl-body {
+  position: relative;
+  margin-top: 0;
+  min-width: 0;
+}
+#cia-ribbon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+#cia-ribbon-halo {
+  fill: none;
+  stroke: var(--ground);
+  stroke-width: 11;
+  stroke-linecap: round;
+}
+#cia-ribbon-track {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 2;
+  opacity: 0.5;
+}
+#cia-ribbon-path {
+  fill: none;
+  stroke: url(#cia-ribbon-grad);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+/* The rail between the three badges: a row of dots rather than a stroke, so it
+   links them without competing with the thread that arrives at Connect. It
+   carries each party's colour at its own end, so the rail itself says who is
+   being connected. The halo underneath keeps the thread from showing through. */
+.cia-tie-halo {
+  fill: none;
+  stroke: var(--ground);
+  stroke-width: 9;
+  stroke-linecap: round;
+  transition: opacity 0.7s ease;
+}
+.cia-tie {
+  fill: none;
+  stroke: var(--c-conn);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 0 10;
+  transition: opacity 0.7s ease;
+}
+#cia-ribbon-head {
+  opacity: 0;
+}
+#cia-ribbon-end {
+  transition: opacity 0.5s ease;
+}
+/* Each phase carries its party on the thread itself: the badge sits where the
+   line meets the card, so the hand-off is legible without a separate legend. */
+.cia-node {
+  position: absolute;
+  z-index: 4;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: var(--paper-2);
+  border: 2px solid var(--rule);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: 0 6px 18px -8px rgba(10, 6, 32, 0.4);
+  transform: translate(-50%, -100%) scale(0.74);
+  transform-origin: 50% 100%;
+  opacity: 0.5;
+  transition:
+    transform 0.5s cubic-bezier(0.2, 0.8, 0.3, 1),
+    opacity 0.5s ease,
+    border-color 0.5s ease,
+    box-shadow 0.5s ease;
+}
+.cia-node img {
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+  filter: grayscale(1);
+  transition: filter 0.5s ease;
+}
+.cia-node svg {
+  width: 74%;
+  height: auto;
+  color: var(--rule);
+  transition: color 0.5s ease;
+}
+.cia-node.cia-plain {
+  width: 16px;
+  height: 16px;
+  border-width: 3px;
+  box-shadow: none;
+  transform: translate(-50%, -50%) scale(0.74);
+}
+.cia-node.cia-plain.cia-on {
+  transform: translate(-50%, -50%) scale(1);
+}
+/* The party's name sits in the gap above its badge, so the hand-off is
+   readable without a legend anywhere on the page. */
+.cia-node-cap {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--rule);
+  /* The thread often arrives right where the label sits; a chip in the ground
+     colour keeps the words legible without hiding the line. */
+  background: var(--ground);
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+/* Same lane as the block above, so the line comes straight down through the
+   label's usual spot: sit beside the badge instead. */
+.cia-node-cap.cia-aside {
+  transform: translate(42px, -50%);
+  opacity: 0;
+  transition:
+    opacity 0.5s ease,
+    color 0.5s ease;
+}
+.cia-node-cap.cia-on {
+  opacity: 1;
+}
+.cia-node-cap.cia-on[data-role='fund'] {
+  color: var(--c-fund);
+}
+.cia-node-cap.cia-on[data-role='conn'] {
+  color: var(--c-conn);
+}
+.cia-node-cap.cia-on[data-role='front'] {
+  color: var(--c-front);
+}
+.cia-node.cia-on {
+  transform: translate(-50%, -100%) scale(1);
+  opacity: 1;
+}
+.cia-node.cia-on img {
+  filter: none;
+}
+.cia-node.cia-on[data-role='fund'] {
+  border-color: var(--c-fund);
+  box-shadow:
+    0 0 0 5px rgba(11, 138, 130, 0.13),
+    0 8px 22px -10px rgba(11, 138, 130, 0.5);
+}
+.cia-node.cia-on[data-role='conn'] {
+  border-color: var(--c-conn);
+  box-shadow:
+    0 0 0 5px rgba(56, 67, 208, 0.13),
+    0 8px 22px -10px rgba(56, 67, 208, 0.5);
+}
+.cia-node.cia-on[data-role='conn'] svg {
+  color: var(--c-conn);
+}
+.cia-node.cia-on[data-role='front'] {
+  border-color: var(--c-front);
+  box-shadow:
+    0 0 0 5px rgba(192, 56, 26, 0.13),
+    0 8px 22px -10px rgba(192, 56, 26, 0.5);
+}
+.cia-node.cia-on[data-role='note'] {
+  border-color: var(--c-note);
+}
+
+.cia-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--gutter);
+  align-items: start;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}
+.cia-rows > * {
+  min-width: 0;
+}
+
+.cia-beat,
+.cia-pair,
+.cia-shot {
+  margin-bottom: clamp(74px, 8vw, 148px);
+}
+/* Nothing follows the last block, so the full beat-to-beat gap would just be
+   dead space before the closing band. Leave room for the thread's end mark. */
+.cia-rows > *:last-child {
+  margin-bottom: clamp(34px, 4vw, 64px);
+}
+/* One elevation, used once. The lane reads off the coloured edge rather than a
+   badge, so a row is identifiable before any of it is read. */
+.cia-beat {
+  position: relative;
+  z-index: 2;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 34px 34px 38px;
+  box-shadow: 0 20px 44px -38px rgba(10, 6, 32, 0.55);
+  overflow: hidden;
+}
+.cia-beat::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--rule);
+}
+.cia-beat[data-role='fund']::before {
+  background: var(--c-fund);
+}
+.cia-beat[data-role='front']::before {
+  background: var(--c-front);
+}
+.cia-beat[data-role='conn']::before,
+.cia-beat--conn::before {
+  background: var(--c-conn);
+}
+.cia-beat[data-col='l'] {
+  grid-column: 1;
+}
+.cia-beat[data-col='r'] {
+  grid-column: 2;
+}
+/* Connect sits on the line, never in a side lane: tinted, and centred when it
+   has the row to itself. */
+.cia-beat--conn {
+  background: linear-gradient(180deg, #fff, #f7f8ff);
+  border-color: rgba(56, 67, 208, 0.28);
+  box-shadow: 0 24px 60px -40px rgba(56, 67, 208, 0.7);
+}
+.cia-beat[data-col='c'] {
+  grid-column: 1/-1;
+  max-width: 520px;
+  margin-inline: auto;
+}
+.cia-conn-mark {
+  height: 19px;
+  width: auto;
+  color: var(--c-conn);
+  margin-bottom: 18px;
+}
+/* The badge above each dot now names the party, so showing the in-card chip too
+   would stutter. It is hidden visually but kept in the accessibility tree, since
+   the badge caption is absolutely positioned and would read out of order. */
+.cia-beat:not(.cia-quote) > .cia-beat-role {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.cia-beat-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.cia-beat-role::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cia-beat[data-role='fund'] .cia-beat-role {
+  color: var(--c-fund);
+}
+.cia-beat[data-role='front'] .cia-beat-role {
+  color: var(--c-front);
+}
+.cia-beat .cia-when {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 13px;
+}
+.cia-beat h3 {
+  font-size: clamp(24px, 2.3vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.032em;
+  line-height: 1.14;
+}
+.cia-beat p {
+  font-size: 16.5px;
+  color: var(--ink-3);
+  line-height: 1.68;
+  margin: 17px 0 0;
+}
+
+/* Photographs and screens: shown whole, never cropped, captions underneath */
+/* A photograph wearing a card's border, radius and shadow reads as a portfolio
+   tile. Chrome is reserved for screenshots, which need a frame to read as UI. */
+.cia-shot {
+  grid-column: 1/-1;
+  position: relative;
+  z-index: 2;
+}
+.cia-shot--ui {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 24px 54px -44px rgba(10, 6, 32, 0.6);
+}
+.cia-shot img {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.cia-shot--ui img {
+  border-radius: 0;
+}
+/* The captured strip stops mid-sentence, which reads as a broken image. Fade
+   its foot into the frame so it reads as a page continuing past the crop. */
+.cia-shot--thumb {
+  position: relative;
+}
+.cia-shot--thumb::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: 58px;
+  pointer-events: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: linear-gradient(rgba(247, 248, 252, 0), var(--paper-2));
+}
+.cia-shot--thumb figcaption {
+  padding: 11px 14px 13px;
+  font-size: 12px;
+}
+.cia-shot--thumb .cia-shot-bar {
+  padding: 8px 12px;
+}
+.cia-shot--thumb .cia-shot-bar i {
+  width: 7px;
+  height: 7px;
+}
+.cia-shot--thumb .cia-shot-bar span {
+  font-size: 10px;
+}
+.cia-shot figcaption {
+  padding: 15px 2px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 62ch;
+  margin-inline: auto;
+  text-align: center;
+}
+.cia-shot:not(.cia-shot--ui) figcaption {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  padding: 15px 10px 2px;
+  background: var(--ground);
+  border-radius: 8px;
+}
+.cia-shot--ui figcaption {
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--line);
+  max-width: none;
+}
+.cia-shot figcaption a {
+  font-weight: 500;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.cia-shot figcaption a:hover {
+  color: var(--indigo-deep);
+}
+.cia-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 16px;
+  background: var(--paper-warm);
+  border-bottom: 1px solid var(--line);
+}
+.cia-shot-bar i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--rule);
+  flex: 0 0 auto;
+}
+.cia-shot-bar span {
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A row holding two things side by side; the thread runs down between them */
+.cia-pair {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gutter);
+  align-items: center;
+  position: relative;
+}
+.cia-pair > * {
+  margin-bottom: 0;
+  min-width: 0;
+}
+/* Top-aligned row: let the photograph take the card's height exactly, so both
+   edges line up however long the card's copy runs. */
+/* The screen carries a dense capture and the card beside it carries the
+   longest copy on the page, so this row gives the screen the larger share and
+   starts both at the same line rather than centring one against the other. */
+/* Three badges and two arcs stand above a hub row, so it needs clear air over
+   it rather than the standard beat-to-beat gap. */
+.cia-rows > [data-bridge] {
+  margin-top: clamp(40px, 5vw, 86px);
+}
+/* The "meanwhile" aside comments on the block above it rather than following
+   it, so it sits closer than a full beat-to-beat gap. */
+.cia-rows > [data-role='note'] {
+  margin-top: calc(-1 * clamp(28px, 4vw, 60px));
+}
+/* .cia-shot spans the full grid at row level; inside a pair it must take just its
+   own half, or it drops onto a line of its own below the card. */
+.cia-pair > .cia-shot,
+.cia-pair > .cia-desk,
+.cia-pair > .cia-locator-card {
+  grid-column: auto;
+  max-width: none;
+}
+
+/* Context note */
+.cia-note {
+  position: relative;
+  z-index: 2;
+  background: var(--paper-warm);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--c-note);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 28px 30px 30px;
+}
+.cia-note .cia-when {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--c-note);
+  margin: 0 0 9px;
+}
+.cia-note p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--ink-3);
+}
+
+/* Figures inside cards */
+.cia-fig-money {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding-left: clamp(0px, 2vw, 26px);
+}
+.cia-fig-money .cia-amt i {
+  font-style: normal;
+  font-size: 0.3em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  vertical-align: 0.9em;
+  margin-left: 0.12em;
+  color: var(--teal-deep, #0b8a82);
+}
+.cia-fig-money .cia-amt {
+  font-size: clamp(46px, 5.6vw, 86px);
+  font-weight: 600;
+  color: var(--c-fund);
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cia-fig-money .cia-for {
+  font-size: 15px;
+  color: var(--c-fund);
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+/* The one full-width block on the page: the money, followed left to right from
+   what went in to what came out. It gets the whole measure because both sides
+   of the story arrive at it. */
+.cia-beat--wide {
+  grid-column: 1/-1;
+}
+/* Both sides of the story arrive here, so the card's edge carries all three
+   colours rather than picking one. */
+.cia-beat.cia-beat--wide::before {
+  background: linear-gradient(
+    180deg,
+    var(--c-fund),
+    var(--c-conn) 52%,
+    var(--c-front)
+  );
+}
+/* The only full-width block on the page, over a symmetric row of stages: the
+   head sits centred above it rather than pinned to a long empty line. */
+.cia-wide-head {
+  max-width: 640px;
+  margin-inline: auto;
+  text-align: center;
+}
+/* The money narrowing into an outcome: the stages run across, and each one
+   closes in a little from the top and bottom, so the shape carries the
+   argument even though the last stage is the loudest. */
+.cia-funnel {
+  list-style: none;
+  margin: 30px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1.28fr 1.76fr 1.14fr 1.12fr;
+  gap: 0 28px;
+  align-items: stretch;
+}
+.cia-fstage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  min-width: 0;
+  background: var(--paper-warm);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 18px 20px;
+}
+.cia-fstage:nth-child(3) {
+  margin-block: 19px;
+}
+.cia-fstage:nth-child(4) {
+  margin-block: 38px;
+}
+/* A chevron in the gap, pointing at the next stage. */
+.cia-fstage + .cia-fstage::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-right: 2px solid var(--muted);
+  border-top: 2px solid var(--muted);
+  transform: translateY(-50%) rotate(45deg);
+}
+.cia-fstage .cia-n {
+  display: block;
+  font-size: clamp(26px, 2.5vw, 34px);
+  font-weight: 600;
+  color: var(--indigo-deep);
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cia-fstage .cia-lb {
+  display: block;
+  margin-top: 9px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  line-height: 1.45;
+}
+.cia-fstage .cia-sub {
+  display: block;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.cia-fstage .cia-sub b {
+  font-weight: 600;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* The two ends of the funnel carry the weight: what went in, and what came of
+   it. Both are set larger than the working figures between them. */
+.cia-fstage--in {
+  background: var(--paper-2);
+  border-color: var(--c-fund);
+}
+.cia-fstage--in .cia-n {
+  color: var(--c-fund);
+  font-size: clamp(30px, 3vw, 41px);
+}
+/* How the money split, sitting where the funnel opens: two facts stacked, so
+   neither can wrap into the other. */
+.cia-fstage .cia-split {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.cia-fstage .cia-split b {
+  font-weight: 600;
+  color: var(--c-fund);
+  font-variant-numeric: tabular-nums;
+}
+/* The stage that carries the photograph: the packet beside the number it
+   belongs to. */
+.cia-fstage--shot {
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+  padding: 16px 18px 16px 16px;
+}
+.cia-fshot {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.cia-fshot img {
+  width: clamp(100px, 8.5vw, 120px);
+  aspect-ratio: 1;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.cia-fshot figcaption {
+  margin-top: 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-align: center;
+}
+.cia-fbody {
+  min-width: 0;
+}
+.cia-fstage--out {
+  background: var(--indigo-deep);
+  border-color: transparent;
+  box-shadow: 0 20px 44px -26px rgba(40, 50, 160, 0.62);
+}
+.cia-fstage--out .cia-n {
+  color: #fff;
+  font-size: clamp(34px, 3.4vw, 46px);
+}
+.cia-fstage--out .cia-lb {
+  color: rgba(255, 255, 255, 0.84);
+  font-weight: 500;
+  font-size: 13.5px;
+}
+
+/* Quotes are their own visual: a dark panel against the white timeline */
+.cia-beat.cia-quote {
+  background: var(--ink);
+  border-color: transparent;
+  box-shadow: 0 28px 64px -40px rgba(10, 6, 32, 0.85);
+}
+.cia-beat.cia-quote[data-role='front'] .cia-beat-role {
+  color: #ff9a7d;
+  background: rgba(252, 95, 54, 0.14);
+  border-color: rgba(252, 95, 54, 0.42);
+}
+.cia-beat.cia-quote .cia blockquote {
+  margin: 0;
+}
+.cia-beat.cia-quote .cia-mark {
+  font-size: 56px;
+  line-height: 0.55;
+  color: var(--sky);
+  opacity: 0.65;
+  font-weight: 600;
+  display: block;
+  margin: 16px 0 12px;
+}
+.cia-beat.cia-quote blockquote p {
+  font-size: clamp(16px, 1.25vw, 18px);
+  line-height: 1.62;
+  color: #fff;
+  font-weight: 300;
+  margin: 0;
+}
+.cia-beat.cia-quote cite {
+  display: block;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  font-style: normal;
+  font-size: 13px;
+  color: var(--on-dark-muted);
+  line-height: 1.5;
+}
+.cia-beat.cia-quote cite b {
+  display: block;
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+}
+/* An attributed quote with the speaker's photograph, on the citation line. */
+.cia-beat.cia-quote cite.cia-cite-person {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.cia-beat.cia-quote cite.cia-cite-person img {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+}
+/* The interventions a single visit covered. */
+.cia-ivs {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+}
+.cia-ivs li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 15px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+.cia-ivs li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-front);
+}
+
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; CLOSING &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+.cia-close {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  padding: clamp(76px, 9.5vw, 128px) 0;
+  background: linear-gradient(
+    150deg,
+    #1b1f6e 0%,
+    var(--indigo-deep) 38%,
+    var(--indigo) 78%,
+    #4a56e0 100%
+  );
+}
+.cia-close::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+      80% 70% at 92% 6%,
+      rgba(142, 161, 255, 0.4),
+      transparent 62%
+    ),
+    radial-gradient(70% 60% at 4% 100%, rgba(11, 10, 50, 0.5), transparent 60%);
+}
+.cia-close > * {
+  position: relative;
+}
+.cia-close-grid {
+  display: grid;
+  grid-template-columns: 1.06fr 0.94fr;
+  gap: var(--gutter);
+  align-items: center;
+}
+.cia-close h2 {
+  font-size: var(--fs-h2);
+  color: #fff;
+}
+.cia-close p {
+  font-size: var(--fs-lede);
+  color: rgba(255, 255, 255, 0.84);
+  margin: 24px 0 0;
+  line-height: 1.62;
+}
+.cia-close .cia-cta {
+  margin-top: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+  align-items: center;
+}
+.cia-close .cia-cta-note {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.cia-close-photo {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow:
+    0 34px 74px -34px rgba(4, 2, 26, 0.75),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.cia-close-photo img {
+  width: 100%;
+  height: clamp(280px, 34vw, 440px);
+  object-fit: cover;
+  object-position: 52% 52%;
+  will-change: transform;
+}
+.cia-foot {
+  padding: 32px 0 46px;
+  background: var(--ink);
+  color: var(--on-dark-muted);
+  font-size: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.cia-foot .cia-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+}
+.cia-foot a {
+  color: var(--sky);
+  text-decoration: none;
+}
+.cia-foot a:hover {
+  text-decoration: underline;
+}
+
+/* &#9472;&#9472; Reveal (opt-in, so the page never rests invisible) &#9472;&#9472; */
+.js .cia-rv {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.75s ease,
+    transform 0.75s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.js .cia-rv.cia-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* &#9472;&#9472; Responsive &#9472;&#9472; */
+@media (max-width: 1180px) {
+  .cia-tl-layout {
+    grid-template-columns: 1fr;
+  }
+  .cia-date-rail {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  /* Stack the opener so the clip gets the full column width on a phone. */
+  .cia-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+@media (max-width: 860px) {
+  .cia {
+    --hdr-h: 58px;
+    --gutter: 26px;
+  }
+  .cia-facts div {
+    border-right: 0;
+    padding-right: 0;
+    margin-right: 0;
+    flex: 1 0 44%;
+  }
+  .cia-facts {
+    flex-wrap: wrap;
+    gap: 18px 24px;
+  }
+  /* Outrank the `.cia-facts div` grid rule above so the CTA drops to its own
+     full-width line on a phone instead of squeezing beside a stat. */
+  .cia-facts .cia-facts-cta {
+    flex: 1 0 100%;
+    margin: 2px 0 0;
+    padding-top: 0;
+  }
+  /* One column, with the thread redrawn as a rail down the left margin. */
+  .cia-rows {
+    grid-template-columns: 1fr;
+    padding-left: 56px;
+  }
+  .cia-node {
+    width: 40px;
+    height: 40px;
+    border-width: 2px;
+  }
+  .cia-node-cap {
+    transform: translate(-50%, -100%);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+  }
+  .cia-node-cap.cia-aside {
+    transform: translate(30px, -50%);
+  }
+  .cia-node.cia-plain {
+    width: 13px;
+    height: 13px;
+    border-width: 3px;
+  }
+  .cia-beat[data-col='l'],
+  .cia-beat[data-col='r'],
+  .cia-beat[data-col='c'],
+  .cia-shot,
+  .cia-pair {
+    grid-column: 1;
+  }
+  .cia-beat[data-col='c'] {
+    max-width: none;
+  }
+  .cia-pair {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .cia-pair > * {
+    margin-bottom: clamp(32px, 7vw, 54px);
+  }
+  .cia-pair > *:last-child {
+    margin-bottom: 0;
+  }
+  .cia-beat,
+  .cia-shot,
+  .cia-pair {
+    margin-bottom: clamp(38px, 8vw, 66px);
+  }
+  .cia-rows > [data-role='note'] {
+    margin-top: calc(-1 * clamp(10px, 3vw, 22px));
+  }
+  /* No arcs to make room for when there is only one lane. */
+  .cia-rows > [data-bridge] {
+    margin-top: 0;
+  }
+  /* Nothing follows the last block, so its gap is dead space. */
+  .cia-rows > *:last-child {
+    margin-bottom: clamp(18px, 4vw, 34px);
+  }
+  .cia-beat--wide {
+    grid-column: 1;
+  }
+  /* Centred copy over eight lines of a phone column is hard to read. */
+  .cia-wide-head {
+    text-align: left;
+  }
+  /* One column, so the funnel goes back to running down the page and the
+     chevrons turn to point at the stage below. */
+  .cia-funnel {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .cia-fstage:nth-child(2),
+  .cia-fstage:nth-child(3),
+  .cia-fstage:nth-child(4) {
+    margin-block: 0;
+  }
+  .cia-fstage + .cia-fstage {
+    margin-top: 26px;
+  }
+  .cia-fstage + .cia-fstage::before {
+    left: 50%;
+    top: -19px;
+    border-top: 0;
+    border-bottom: 2px solid var(--rule);
+    transform: translateX(-50%) rotate(45deg);
+  }
+  .cia-fstage--shot {
+    flex-direction: column;
+    text-align: center;
+    padding: 18px 18px 20px;
+    gap: 14px;
+  }
+  .cia-beat {
+    padding: 26px 22px 28px;
+  }
+  .cia-shot img[data-wide] {
+    min-width: 560px;
+  }
+  .cia-shot:has(img[data-wide]) {
+    overflow-x: auto;
+  }
+}
+@media (max-width: 560px) {
+  .cia-hdr-label {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .cia *,
+  .cia *::before,
+  .cia *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .js .cia-rv {
+    opacity: 1;
+    transform: none;
+  }
+  .js .cia-locator .cia-ng-outline,
+  .js .cia-locator .cia-ng-borno {
+    stroke-dashoffset: 0;
+  }
+  .js .cia-locator .cia-lens {
+    opacity: 1;
+    transform: none;
+  }
+}

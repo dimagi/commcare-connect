@@ -2,8 +2,12 @@ from pathlib import Path
 
 from django.contrib.staticfiles import finders
 from django.http import HttpResponse
+from django.templatetags.static import static
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
+
+from .external_coverage import get_entries as get_news_entries
+from .route_meta import meta_for, routes_for_client
 
 # dimagi.com fetches the blog manifest cross-origin from this exact host.
 DIMAGI_ORIGIN = "https://dimagi.com"
@@ -12,13 +16,39 @@ DIMAGI_ORIGIN = "https://dimagi.com"
 class HomeView(TemplateView):
     template_name = "prelogin/home.html"
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        # Every marketing URL renders this same template, so the head has to be
+        # built per request. Link unfurlers and non-rendering crawlers never run
+        # app.js, and until this was here they all saw the home page's title,
+        # description, and image no matter which page was shared.
+        ctx["page_meta"] = meta_for(self.request.path, static)
+        ctx["route_meta"] = routes_for_client(static)
+        # External "In the news" coverage entries -- see external_coverage.py.
+        # Every route renders this same template, so this is cheap to always
+        # compute; prelogin/includes/news_section.html decides per-page
+        # whether/which of them to show.
+        ctx["news_entries"] = get_news_entries()
+        return ctx
+
 
 class ContactView(HomeView):
     template_name = "prelogin/contact.html"
 
 
+class InActionView(HomeView):
+    """ "Connect in action" story pages.
+
+    Standalone templates rather than SPA sections: each one carries its own
+    stylesheet and scroll script, and none of it belongs in home.html's bundle.
+    """
+
+    template_name = "prelogin/in-action.html"
+
+
 home = HomeView.as_view()
 contact = ContactView.as_view()
+in_action_nigeria_cholera = InActionView.as_view()
 
 
 @require_GET

@@ -12,7 +12,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
 )
 from commcare_connect.opportunity.models import (
-    CatchmentArea,
     CompletedWork,
     Opportunity,
     OpportunityAccess,
@@ -21,7 +20,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    CatchmentAreaTable,
     CompletedWorkTable,
     DeliverStatusTable,
     UserStatusTable,
@@ -125,10 +123,13 @@ def export_user_visit_review_data(
 
 
 def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
+    # Accrued is informational only: the payment import reads columns by header and ignores it.
+    accrued_header = f"Accrued ({opportunity.currency_code})" if opportunity.currency_code else "Accrued"
     headers = [
         "Username",
         "Phone Number",
         "Name",
+        accrued_header,
         "Payment Amount",
         "Payment Date (YYYY-MM-DD)",
         "Payment Method",
@@ -147,6 +148,7 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
             access.user.username,
             access.user.phone_number,
             access.user.name,
+            access.payment_accrued,
             "",
             "",
             "",
@@ -180,12 +182,6 @@ def export_work_status_table(opportunity: Opportunity) -> Dataset:
             completed_works.append(completed_work)
     table = CompletedWorkTable(completed_works, exclude=("date_popup"))
     return get_dataset(table, export_title="Payment Verification export")
-
-
-def export_catchment_area_table(opportunity):
-    catchment_areas = CatchmentArea.objects.filter(opportunity=opportunity)
-    table = CatchmentAreaTable(catchment_areas)
-    return get_dataset(table, export_title="Catchment Area Export")
 
 
 def get_dataset(table, export_title):

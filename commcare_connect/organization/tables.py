@@ -1,8 +1,16 @@
 import django_tables2 as tables
+from django.template.loader import render_to_string
+from django.utils.functional import lazy
+from django.utils.safestring import SafeString
 from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
-from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    ORGANIZATION_STATUS_DEFINITIONS,
+    Organization,
+    OrganizationInvite,
+    UserOrganizationMembership,
+)
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
 
 ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
@@ -17,11 +25,12 @@ class OrgMemberTable(tables.Table):
     index = IndexColumn()
     user = columns.Column(verbose_name=_("Member"), accessor="user__email")
     role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
+    accepted_at = DMYTColumn(verbose_name=_("Accepted On"))
 
     class Meta:
         model = UserOrganizationMembership
-        fields = ("role", "user")
-        sequence = ("select", "index", "user", "role")
+        fields = ("role", "user", "accepted_at")
+        sequence = ("select", "index", "user", "role", "accepted_at")
 
 
 class PendingInviteTable(tables.Table):
@@ -45,7 +54,45 @@ class PendingInviteTable(tables.Table):
         fields = ("email", "role", "date_modified")
         sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
         empty_text = _("No pending invites.")
-        # The workspace page hosts this table alongside OrgMemberTable and feeds both
+        # The organization page hosts this table alongside OrgMemberTable and feeds both
         # from one query string, so prefix these params to keep sorting and paging
         # on the two tables independent.
         prefix = "invites-"
+
+
+def _status_column_header():
+    definitions_html = render_to_string(
+        "organization/directory/status_definitions.html",
+        {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+    )
+    return render_to_string("organization/directory/status_header.html", {"definitions_html": definitions_html})
+
+
+class OrganizationDirectoryTable(tables.Table):
+    # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
+    # instead of the referer's.
+    use_view_url = False
+    name = columns.Column(verbose_name=_("Name"))
+    status = columns.TemplateColumn(
+        # Lazy so the template isn't rendered at import time.
+        verbose_name=lazy(_status_column_header, SafeString)(),
+        template_name="organization/directory/status_badge.html",
+    )
+    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"))
+    # Team size is stored as a bracket ("11-50"), which doesn't sort meaningfully as text.
+    team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
+    flws_managed = columns.Column(verbose_name=_("FLWs Managed"))
+    date_created = columns.DateTimeColumn(verbose_name=_("Added"), format="d-M-Y")
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
+
+    class Meta:
+        model = Organization
+        fields = ("name", "status", "primary_sectors", "team_size", "flws_managed", "date_created")
+        sequence = (*fields, "actions")
+        default = "—"
+        empty_text = _("No organizations found.")

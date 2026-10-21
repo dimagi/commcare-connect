@@ -96,11 +96,14 @@ class ClaimOpportunityView(APIView):
             uuid_field="opportunity__opportunity_id",
             int_field="opportunity_id",
         )
-        opportunity = opportunity_access.opportunity
 
         if OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists():
             return Response(status=200, data="Opportunity is already claimed")
-        if opportunity.remaining_budget < opportunity.minimum_budget_per_visit:
+
+        # Lock the opportunity so concurrent claims can't both pass the budget check before either
+        # has saved its claim limits.
+        opportunity = Opportunity.objects.select_for_update().get(pk=opportunity_access.opportunity_id)
+        if opportunity.remaining_budget < opportunity.budget_per_user():
             return Response({"error_code": ErrorCodes.OPPORTUNITY_FULL}, status=400)
         if opportunity.end_date < datetime.date.today():
             return Response({"error_code": ErrorCodes.OPPORTUNITY_ENDED}, status=400)

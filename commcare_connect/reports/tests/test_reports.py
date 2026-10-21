@@ -66,7 +66,6 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
             saved_payment_accrued_usd=i * 100,
             saved_org_payment_accrued_usd=100,
             payment_date=timestamp + timedelta(minutes=30),
-            invoice=inv,
         )
         UserVisitFactory(
             date_created=timestamp - timedelta(i * 10),
@@ -85,7 +84,6 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
             saved_payment_accrued_usd=0,
             saved_org_payment_accrued_usd=100,
             payment_date=timestamp + timedelta(minutes=30),
-            invoice=other_inv,
         )
         PaymentFactory(invoice=other_inv, date_paid=timestamp, amount_usd=100)
 
@@ -221,7 +219,6 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 saved_payment_accrued_usd=i * 100,
                 saved_org_payment_accrued_usd=100,
                 payment_date=now + timedelta(minutes=1),
-                invoice=inv,
             )
             UserVisitFactory(
                 date_created=now - timedelta(i * 10),

@@ -7,19 +7,23 @@ from urllib.parse import urlencode
 import httpx
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
-from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
 
-from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import (
+    AUTOMATIC_VISIT_VERIFICATION,
+    ENABLE_PROGRAM_ACCESS_REDESIGN,
+    OPPORTUNITY_CREDENTIALS,
+    OPTIONAL_DAILY_LIMIT,
+)
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -34,6 +38,7 @@ from commcare_connect.opportunity.models import (
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
+    InvoiceFinanceRequest,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -49,16 +54,24 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import header_with_tooltip, value_with_icon_tooltip
+from commcare_connect.opportunity.utils import finance_request as finance_request_utils
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
     get_start_date_for_invoice,
 )
-from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
+from commcare_connect.opportunity.utils.invoice_export import get_exportable_invoices
+from commcare_connect.opportunity.utils.invoice_line_items import (
+    bill_invoice,
+    get_billable_line_items,
+)
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
+from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.datetime import parse_year_month
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -160,8 +173,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.latest_active_history_event = kwargs.pop("latest_active_history_event", None)
+        self.request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
         self.opportunity = self.instance
+        if self._can_edit_supervising_organization():
+            self._add_supervising_organization_field()
 
         self.fields["users"].required = False
         layout_fields = [
@@ -178,6 +194,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                     Field("name", wrapper_class="w-full"),
                     Field("short_description", wrapper_class="w-full"),
                     Field("description", wrapper_class="w-full"),
+                    *(
+                        [Field("supervising_organization", wrapper_class="w-full")]
+                        if "supervising_organization" in self.fields
+                        else []
+                    ),
                 ),
                 Column(
                     Field("delivery_type"),
@@ -329,6 +350,29 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
         return self._validate_and_parse_users(user_data)
 
+    def _can_edit_supervising_organization(self):
+        """Only an org with PM-level oversight may reassign it.
+
+        This form is reachable by any member of the opportunity's own organization, so
+        without this check the delivering Network Manager could reassign oversight of its
+        own opportunity and remove the program manager. `is_opportunity_pm` excludes that
+        organization by definition, which is exactly the distinction needed here.
+        """
+        if self.request is None or not switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
+            return False
+        if not self.instance.pk or not self.instance.managed:
+            return False
+        return is_opportunity_pm(self.request, self.instance)
+
+    def _add_supervising_organization_field(self):
+        self.fields["supervising_organization"] = forms.ModelChoiceField(
+            queryset=eligible_supervising_organizations(self.instance.program),
+            required=True,
+            initial=self.instance.supervising_organization,
+            widget=forms.Select(attrs={"data-tomselect": "1"}),
+            label=_("Supervising Organization"),
+        )
+
     def clean_active(self):
         active = self.cleaned_data["active"]
         if active and not self.currently_active:
@@ -342,6 +386,9 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         return active
 
     def save(self, commit=True):
+        # Attached at runtime, so absent from Meta.fields and skipped by construct_instance.
+        if "supervising_organization" in self.cleaned_data:
+            self.instance.supervising_organization = self.cleaned_data["supervising_organization"]
         instance = super().save(commit=commit)
         if not switch_is_active(OPPORTUNITY_CREDENTIALS):
             return instance
@@ -403,6 +450,9 @@ class OpportunityInitForm(forms.ModelForm):
             ),
         )
 
+        if switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
+            self._add_supervising_organization_field()
+
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
@@ -416,6 +466,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("name"),
                     Field("short_description"),
                     Field("description"),
+                    *([Field("supervising_organization")] if "supervising_organization" in self.fields else []),
                 ),
                 Column(
                     Field("currency"),
@@ -536,10 +587,22 @@ class OpportunityInitForm(forms.ModelForm):
             queryset=program_members,
             required=True,
             widget=forms.Select(attrs={"class": "form-control"}),
-            label=_("Network Manager Workspace"),
+            label=_("Network Manager Organization"),
         )
         opportunity_details_row = self.helper.layout[0]
         opportunity_details_row.fields.insert(1, Column(Field("organization"), css_class="col-span-2"))
+
+    def _add_supervising_organization_field(self):
+        """The supervising organization oversees the work; it does not replace the
+        delivering organization chosen in `organization`. Both roles can coexist on the
+        same organization."""
+        self.fields["supervising_organization"] = forms.ModelChoiceField(
+            queryset=eligible_supervising_organizations(self.program),
+            required=True,
+            initial=self.program.organization,
+            widget=forms.Select(attrs={"data-tomselect": "1"}),
+            label=_("Supervising Organization"),
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -617,6 +680,10 @@ class OpportunityInitForm(forms.ModelForm):
         opportunity.modified_by = self.user.email
 
         opportunity.organization = self.cleaned_data.get("organization")
+        # Absent from cleaned_data when the access redesign switch is off, in which case
+        # Opportunity.save() falls back to the program's organization.
+        if "supervising_organization" in self.cleaned_data:
+            opportunity.supervising_organization = self.cleaned_data["supervising_organization"]
         opportunity.program = self.program
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
@@ -678,6 +745,8 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         self._set_initial_app("deliver", getattr(opportunity, "deliver_app", None))
 
         self.fields["organization"].initial = opportunity.organization
+        if "supervising_organization" in self.fields:
+            self.fields["supervising_organization"].initial = opportunity.supervising_organization
 
         if self._has_existing_accesses:
             self._disabled_fields = (
@@ -740,6 +809,10 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
     def save(self, commit=True):
         opportunity = self.instance
         opportunity.organization = self.cleaned_data.get("organization")
+        # Absent from cleaned_data when the access redesign switch is off, leaving the
+        # opportunity's existing supervising organization untouched.
+        if "supervising_organization" in self.cleaned_data:
+            opportunity.supervising_organization = self.cleaned_data["supervising_organization"]
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
 
@@ -789,16 +862,13 @@ class OpportunityFinalizeForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        self.budget_per_user = kwargs.pop("budget_per_user")
-        self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
-        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
-            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
+            f"id_total_budget.value = ({self.opportunity.budget_per_user()} * parseInt(this.value || 0))"
         )
 
         self.helper = FormHelper(self)
@@ -856,27 +926,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 self.add_error("total_budget", "Budget exceeds the program budget.")
 
             return cleaned_data
-
-
-class DateRanges(TextChoices):
-    LAST_7_DAYS = "last_7_days", "Last 7 days"
-    LAST_30_DAYS = "last_30_days", "Last 30 days"
-    LAST_90_DAYS = "last_90_days", "Last 90 days"
-    LAST_YEAR = "last_year", "Last year"
-    ALL = "all", "All"
-
-    def get_cutoff_date(self):
-        match self:
-            case DateRanges.LAST_7_DAYS:
-                return now() - relativedelta(days=7)
-            case DateRanges.LAST_30_DAYS:
-                return now() - relativedelta(days=30)
-            case DateRanges.LAST_90_DAYS:
-                return now() - relativedelta(days=90)
-            case DateRanges.LAST_YEAR:
-                return now() - relativedelta(years=1)
-            case DateRanges.ALL:
-                return None
 
 
 class VisitExportForm(forms.Form):
@@ -1127,7 +1176,10 @@ class AddBudgetExistingUsersForm(forms.Form):
         return end_date
 
     def _validate_budget_increase(self):
-        if self.budget_change > self.opportunity.remaining_budget:
+        # Lock the opportunity for the rest of the request so a concurrent claim or increase
+        # cannot spend the same budget between this check and save().
+        opportunity = Opportunity.objects.select_for_update().get(pk=self.opportunity.pk)
+        if self.budget_change > opportunity.remaining_budget:
             raise forms.ValidationError(
                 {"number_of_visits": gettext("The number of visits being increased exceeds the opportunity budget.")}
             )
@@ -1163,7 +1215,7 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
-        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total", "org_amount"))
+        self.budget_per_user = self.opportunity.budget_per_user()
 
         super().__init__(*args, **kwargs)
 
@@ -1183,11 +1235,7 @@ class AddBudgetNewUsersForm(forms.Form):
                 "oninput": f"""
                 id_total_budget.value =
                 {self.opportunity.total_budget} +
-                {json.dumps(self.payments_units)}.reduce(
-                    (sum, u) => sum + (u.amount + u.org_amount)
-                    * u.max_total * parseInt(this.value || 0),
-                    0
-                );
+                {self.budget_per_user} * parseInt(this.value || 0);
             """
             }
         )
@@ -1208,7 +1256,6 @@ class AddBudgetNewUsersForm(forms.Form):
         return cleaned_data
 
     def _validate_budget(self, add_users, total_budget):
-        increased_budget = 0
         program = self.opportunity.program
         total_program_budget = program.budget
         claimed_program_budget = (
@@ -1219,10 +1266,7 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         if add_users:
-            for payment_unit in self.payments_units:
-                increased_budget += (
-                    (payment_unit["amount"] + payment_unit["org_amount"]) * payment_unit["max_total"] * add_users
-                )
+            increased_budget = self.budget_per_user * add_users
 
             # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
             if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
@@ -1249,6 +1293,8 @@ class AddBudgetNewUsersForm(forms.Form):
 
 
 class PaymentUnitForm(forms.ModelForm):
+    no_daily_limit = forms.BooleanField(required=False, label=_("No daily limit"))
+
     class Meta:
         model = PaymentUnit
         fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
@@ -1257,6 +1303,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
         widgets = {
+            "max_daily": forms.NumberInput(attrs={"min": 1}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
@@ -1277,6 +1324,11 @@ class PaymentUnitForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields["org_amount"].required = bool(self.opportunity)
+        if not switch_is_active(OPTIONAL_DAILY_LIMIT):
+            del self.fields["no_daily_limit"]
+            self.fields["max_daily"].required = True
+        elif self.instance.pk:
+            self.fields["no_daily_limit"].initial = self.instance.max_daily is None
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1286,7 +1338,7 @@ class PaymentUnitForm(forms.ModelForm):
                     Column(Field("name"), Field("description")),
                     Column(
                         self.get_amounts_div(),
-                        Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
+                        self.get_limits_div(),
                         Field("start_date"),
                         Field("end_date"),
                     ),
@@ -1367,12 +1419,39 @@ class PaymentUnitForm(forms.ModelForm):
             css_class="grid grid-cols-2 gap-4",
         )
 
+    def get_limits_div(self):
+        if "no_daily_limit" not in self.fields:
+            return Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4")
+
+        no_daily_limit = json.dumps(bool(self["no_daily_limit"].value()))
+        return Row(
+            Field("max_total"),
+            Div(
+                Field(
+                    "max_daily",
+                    **{"x-bind:disabled": "noDailyLimit", "x-effect": "if (noDailyLimit) $el.value = ''"},
+                ),
+                Field(
+                    "no_daily_limit",
+                    wrapper_class="flex flex-row-reverse items-center justify-end gap-2 [&>label]:mb-0",
+                    **{"x-model": "noDailyLimit"},
+                ),
+                **{"x-data": f"{{ noDailyLimit: {no_daily_limit} }}"},
+            ),
+            css_class="grid grid-cols-2 gap-4",
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         start_date = cleaned_data.get("start_date")
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        if cleaned_data.get("no_daily_limit"):
+            cleaned_data["max_daily"] = None
+        elif cleaned_data.get("max_daily") is None and "max_daily" not in self.errors:
+            self.add_error("max_daily", _("Enter a daily limit or mark this payment unit as having no daily limit."))
 
         self._validate_budget_covers_claimants(cleaned_data)
 
@@ -1419,7 +1498,7 @@ class SendMessageMobileUsersForm(forms.Form):
 class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
     class Meta:
         model = OpportunityVerificationFlags
-        fields = ("duplicate", "gps", "location", "form_submission_start", "form_submission_end", "catchment_areas")
+        fields = ("duplicate", "gps", "location", "form_submission_start", "form_submission_end")
         widgets = {
             "form_submission_start": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
@@ -1430,13 +1509,11 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_start": _("Start Time"),
             "form_submission_end": _("End Time"),
             "location": _("Location Distance"),
-            "catchment_areas": _("Catchment Area"),
         }
         help_texts = {
             "location": _("Minimum distance between form locations (metres)"),
             "duplicate": _("Flag duplicate form submissions for an entity."),
             "gps": _("Flag forms with no location information."),
-            "catchment_areas": _("Flag forms outside a users's assigned catchment area"),
         }
 
     def __init__(self, *args, **kwargs):
@@ -1460,7 +1537,7 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         )
 
         if self.auto_verify:
-            for field_name in ("duplicate", "gps", "catchment_areas", "location"):
+            for field_name in ("duplicate", "gps", "location"):
                 self.fields.pop(field_name, None)
             self.helper.layout = Layout(form_submission_hour_fields)
         else:
@@ -1468,15 +1545,13 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
                 Row(
                     Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
                     Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
-                    Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
-                    css_class="grid grid-cols-3 gap-2",
+                    css_class="grid grid-cols-2 gap-2",
                 ),
                 Row(Field("location")),
                 form_submission_hour_fields,
             )
             self.fields["duplicate"].required = False
             self.fields["gps"].required = False
-            self.fields["catchment_areas"].required = False
         if self.instance:
             self.fields["form_submission_start"].initial = self.instance.form_submission_start
             self.fields["form_submission_end"].initial = self.instance.form_submission_end
@@ -1486,7 +1561,6 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         if self.auto_verify:
             instance.duplicate = False
             instance.gps = False
-            instance.catchment_areas = False
             instance.location = 0
         if commit:
             instance.save()
@@ -1581,6 +1655,83 @@ class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
     invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
 
 
+class InvoiceFinanceRequestForm(forms.ModelForm):
+    """The answers a Program Manager gives when sending an approved invoice to Finance."""
+
+    contracted_entity = forms.ChoiceField(
+        label=_("Contracted entity"),
+        choices=[("", "---------"), *finance_request_utils.CONTRACTED_ENTITY_CHOICES],
+        help_text=_("The Dimagi entity contracted to pay this invoice."),
+    )
+    gl_account = forms.ChoiceField(
+        label=_("GL account (expense category)"),
+        choices=[("", "---------"), *finance_request_utils.GL_ACCOUNT_CHOICES],
+        help_text=_("Direct accounts are for project expenses; Overhead accounts for costs Dimagi bears."),
+        widget=forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"}),
+    )
+    project_name = forms.CharField(
+        label=_("Project name"),
+        required=False,
+        max_length=255,
+        help_text=_("As it appears on the Salesforce contract. Required for Direct accounts."),
+    )
+    new_vendor = forms.TypedChoiceField(
+        label=_("Is this the first payment to this organization?"),
+        choices=[(True, _("Yes")), (False, _("No"))],
+        coerce=lambda value: value in (True, "True"),
+        widget=forms.RadioSelect,
+    )
+
+    class Meta:
+        model = InvoiceFinanceRequest
+        fields = ["contracted_entity", "gl_account", "project_name", "new_vendor"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        gl_account = cleaned_data.get("gl_account")
+        if gl_account and finance_request_utils.requires_project_name(gl_account):
+            if not cleaned_data.get("project_name", "").strip():
+                self.add_error("project_name", _("A project name is required for Direct accounts."))
+        else:
+            cleaned_data["project_name"] = ""
+        return cleaned_data
+
+
+class InvoiceExportForm(forms.Form):
+    """Which invoices a bulk export covers, and in what shape.
+
+    Selected invoices win; with nothing selected the export covers the whole month, or every
+    exportable invoice when the list is showing all months.
+    """
+
+    PDF_ZIP = "pdf_zip"
+    CSV_SUMMARY = "csv_summary"
+
+    export_type = forms.ChoiceField(
+        choices=[(PDF_ZIP, _("Invoice PDFs (.zip)")), (CSV_SUMMARY, _("Amounts due (.csv)"))]
+    )
+    month = forms.CharField(required=False)
+    invoice_ids = forms.ModelMultipleChoiceField(queryset=PaymentInvoice.objects.none(), required=False)
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+        # Scoping the queryset to the opportunity is what stops another workspace's invoice ids
+        # being exported through this form.
+        self.fields["invoice_ids"].queryset = PaymentInvoice.objects.filter(opportunity=self.opportunity)
+
+    def get_invoices(self):
+        selected = self.cleaned_data["invoice_ids"]
+        if selected:
+            return selected
+        return get_exportable_invoices(self.opportunity, parse_year_month(self.cleaned_data["month"]))
+
+
 class AutomatedPaymentInvoiceForm(forms.ModelForm):
     """
     Form used for creating new invoices or to show details by passing read_only=True.
@@ -1660,6 +1811,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
         super().__init__(*args, **kwargs)
+        self.fields["end_date"].widget.attrs["max"] = localdate() - datetime.timedelta(days=1)
 
         self.prepare_fields()
 
@@ -1753,7 +1905,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.read_only:
             invoice_form_fields.append(
                 Div(
-                    Submit("submit", gettext("Submit"), css_class="button button-md primary-dark"),
+                    Submit(
+                        "submit",
+                        gettext("Submit"),
+                        css_class="button button-md primary-dark",
+                        # Disable when there is an error while fetching the line items
+                        **{":disabled": "isServiceDelivery && lineItemsError"},
+                    ),
                     css_class="flex justify-end mt-4",
                 )
             )
@@ -1926,7 +2084,31 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+            if end_date >= localdate():
+                raise ValidationError({"end_date": _("End date must be before today.")})
+
+            self._reject_stale_total(amount, start_date, end_date)
+
         return cleaned_data
+
+    def _reject_stale_total(self, amount, start_date, end_date):
+        """Reject a submit if the posted total no longer matches the current billable total.
+
+        This provides a user-facing error when the preview has gone stale. `save()` still
+        recomputes the total under a lock and never trusts the posted amount.
+        """
+
+        # Use the same calculation as the preview, so a mismatch reflects a real state change.
+        billable_total = sum(
+            item.total_pay.local for item in get_billable_line_items(self.opportunity, start_date, end_date)
+        )
+        if amount != billable_total:
+            raise ValidationError(
+                _(
+                    "The billable total for this period has changed since this page was loaded. "
+                    "Please refresh the page to see the latest line items and total, then submit again."
+                )
+            )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -1962,39 +2144,17 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
     @property
     def line_items(self):
-        if self.line_items_table:
-            table = HTML(
-                """
-                {% load django_tables2 %}
-                <div class="overflow-x-auto mb-4">
-                    {% render_table form.line_items_table %}
-                </div>
-                """
-            )
-        else:
-            table = HTML(
-                """
-                <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
-            """
-            )
-
         return Fieldset(
             "Line Items",
-            table,
-            HTML(
-                """
-                <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
-                    <a type="button"
-                    class="button button-md outline-style"
-                    :href="downloadLineItemsUrl()"
-                    target="_blank"
-                    >
-                        <i class="fa-solid fa-download mr-2"></i>
-                        {% load i18n %}{% translate "Download All Items" %}
-                    </a>
-                </div>
-                """
-            ),
+            HTML('{% include "opportunity/partials/invoice_line_items_fieldset.html" %}'),
+        )
+
+    @property
+    def line_items_released(self):
+        """True when line items were released due to cancellation or rejection."""
+        return self.instance.pk is not None and self.instance.status in (
+            InvoiceStatus.CANCELLED_BY_NM,
+            InvoiceStatus.REJECTED_BY_PM,
         )
 
 

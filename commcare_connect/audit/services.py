@@ -57,7 +57,10 @@ def _export_cell_value(results, calc_name):
     result = results.get(calc_name, {})
     if not result.get("has_sufficient_data"):
         return gettext("N/A")
-    return result.get("value")
+    value = result.get("value")
+    if isinstance(value, bool):
+        return gettext("Yes") if value else gettext("No")
+    return value
 
 
 def column_specs(entries):

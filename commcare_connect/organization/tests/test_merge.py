@@ -14,6 +14,7 @@ from commcare_connect.opportunity.tests.factories import CommCareAppFactory, Opp
 from commcare_connect.organization.merge import (
     HANDLED_RELATIONS,
     SIMPLE_REASSIGNMENTS,
+    SKIPPED_RELATIONS,
     MergeNotAllowed,
     _move_program_watchers,
     merge_organizations,
@@ -23,6 +24,12 @@ from commcare_connect.organization.models import Organization, OrganizationInvit
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import get_managed_opp
+from commcare_connect.solicitation.models import SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.tests.factories import (
+    SolicitationApplicationFactory,
+    SolicitationFactory,
+    SolicitationInvitationFactory,
+)
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -37,18 +44,18 @@ Status = ProgramApplicationStatus
 
 @pytest.fixture
 def source():
-    return OrganizationFactory(name="Source Workspace")
+    return OrganizationFactory(name="Source Organization")
 
 
 @pytest.fixture
 def target():
-    return OrganizationFactory(name="Target Workspace")
+    return OrganizationFactory(name="Target Organization")
 
 
 @pytest.fixture
 def funder_target():
     """A target allowed to inherit the source's ``Program.funder`` rows."""
-    return OrganizationFactory(name="Target Workspace", funder=True)
+    return OrganizationFactory(name="Target Organization", funder=True)
 
 
 @pytest.fixture
@@ -73,7 +80,7 @@ class TestMergeGuards:
             merge_organizations(Organization(name="Never Saved"), target)
 
     @pytest.mark.parametrize("with_hq_server", [True, False], ids=["hq_server", "no_hq_server"])
-    def test_a_commcare_app_both_workspaces_hold_is_refused(self, source, target, with_hq_server):
+    def test_a_commcare_app_both_organizations_hold_is_refused(self, source, target, with_hq_server):
         """Merging would break the survivor's next get_or_create on that app. ``hq_server`` is nullable."""
         shared = dict(
             cc_app_id="shared-app",
@@ -98,7 +105,7 @@ class TestMergeGuards:
         assert Organization.objects.filter(pk=source.pk).exists()
 
     def test_a_funder_target_inherits_the_funded_programs(self, source):
-        target = OrganizationFactory(name="Target Workspace", funder=True)
+        target = OrganizationFactory(name="Target Organization", funder=True)
         program = ProgramFactory(funder=source, name="Zinc Supplementation")
 
         merge_organizations(source, target)
@@ -107,7 +114,7 @@ class TestMergeGuards:
         assert program.funder == target
 
     def test_a_source_marked_as_a_funder_but_funding_nothing_is_allowed(self, target):
-        source = OrganizationFactory(name="Source Workspace", funder=True)
+        source = OrganizationFactory(name="Source Organization", funder=True)
 
         merge_organizations(source, target)
 
@@ -115,8 +122,8 @@ class TestMergeGuards:
         assert target.funder is False
 
     def test_a_program_manager_target_inherits_the_owned_programs(self):
-        source = OrganizationFactory(name="Source Workspace", program_manager=True)
-        target = OrganizationFactory(name="Target Workspace", program_manager=True)
+        source = OrganizationFactory(name="Source Organization", program_manager=True)
+        target = OrganizationFactory(name="Target Organization", program_manager=True)
         program = ProgramFactory(organization=source, name="Zinc Supplementation")
 
         merge_organizations(source, target)
@@ -126,7 +133,7 @@ class TestMergeGuards:
 
     def test_a_program_manager_source_is_refused_when_the_target_is_not_one(self, target):
         """The operator has to decide whether the role is carried over or retired with the source."""
-        source = OrganizationFactory(name="Source Workspace", program_manager=True)
+        source = OrganizationFactory(name="Source Organization", program_manager=True)
 
         with pytest.raises(MergeNotAllowed, match="marked as a program manager"):
             merge_organizations(source, target)
@@ -182,8 +189,8 @@ class TestProfileFields:
 
     def test_no_profile_field_is_taken_from_the_source(self):
         """A sweep, so a profile field added to Organization later is covered without touching this test."""
-        source = OrganizationFactory(name="Source Workspace", program_manager=True, funder=True)
-        target = OrganizationFactory(name="Target Workspace", program_manager=True, funder=True)
+        source = OrganizationFactory(name="Source Organization", program_manager=True, funder=True)
+        target = OrganizationFactory(name="Target Organization", program_manager=True, funder=True)
         before = _profile_snapshot(target)
 
         merge_organizations(source, target)
@@ -205,6 +212,8 @@ class TestSimpleReassignments:
         labs_record = LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
         owned_program = ProgramFactory(organization=source)
         funded_program = ProgramFactory(funder=source)
+        solicitation = SolicitationFactory(organization=source)
+        application = SolicitationApplicationFactory(organization=source)
 
         merge_organizations(source, funder_target)
 
@@ -216,6 +225,8 @@ class TestSimpleReassignments:
             (labs_record, "organization"),
             (owned_program, "organization"),
             (funded_program, "funder"),
+            (solicitation, "organization"),
+            (application, "organization"),
         ]:
             obj.refresh_from_db()
             assert getattr(obj, field_name) == funder_target, f"{type(obj).__name__}.{field_name} was not reassigned"
@@ -323,6 +334,56 @@ class TestProgramApplications:
         assert summary.self_program_applications_removed == 1
 
 
+class TestSolicitationApplications:
+    def test_application_to_the_same_solicitation_is_rejected(self, source, target):
+        solicitation = SolicitationFactory(title="Malaria RFP")
+        SolicitationApplicationFactory(solicitation=solicitation, organization=source)
+        SolicitationApplicationFactory(solicitation=solicitation, organization=target)
+
+        with pytest.raises(MergeNotAllowed, match="Malaria RFP"):
+            merge_organizations(source, target)
+
+        assert SolicitationApplication.objects.filter(solicitation=solicitation).count() == 2
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+    @pytest.mark.parametrize(
+        ("poster", "applicant"),
+        [("source", "target"), ("target", "source")],
+        ids=["source_posted", "target_posted"],
+    )
+    def test_application_to_a_solicitation_the_target_would_own_is_rejected(self, source, target, poster, applicant):
+        organizations = {"source": source, "target": target}
+        solicitation = SolicitationFactory(title="Malaria RFP", organization=organizations[poster])
+        SolicitationApplicationFactory(solicitation=solicitation, organization=organizations[applicant])
+
+        with pytest.raises(MergeNotAllowed, match="Malaria RFP"):
+            merge_organizations(source, target)
+
+        assert Organization.objects.filter(pk=source.pk).exists()
+
+
+class TestSolicitationInvitations:
+    def test_source_only_invitation_moves(self, source, target):
+        invitation = SolicitationInvitationFactory(organization=source)
+
+        summary = merge_organizations(source, target)
+
+        invitation.refresh_from_db()
+        assert invitation.organization == target
+        assert summary.solicitation_invitations_moved == 1
+        assert summary.solicitation_invitations_deduped == 0
+
+    def test_invitation_to_the_same_solicitation_is_deduped(self, source, target):
+        solicitation = SolicitationFactory()
+        SolicitationInvitationFactory(solicitation=solicitation, organization=source)
+        target_invitation = SolicitationInvitationFactory(solicitation=solicitation, organization=target)
+
+        summary = merge_organizations(source, target)
+
+        assert list(SolicitationInvitation.objects.filter(solicitation=solicitation)) == [target_invitation]
+        assert summary.solicitation_invitations_deduped == 1
+
+
 class TestMemberships:
     def test_source_only_membership_moves(self, source, target):
         membership = MembershipFactory(organization=source, role="member")
@@ -428,13 +489,13 @@ class TestFeatureFlags:
         ],
     )
     def test_a_flag_keeps_only_its_target_membership(self, source, target, held_by, survivors, flags_cleared):
-        workspaces = {"source": source, "target": target}
+        organizations = {"source": source, "target": target}
         flag = FlagFactory()
-        flag.organizations.add(*[workspaces[name] for name in held_by])
+        flag.organizations.add(*[organizations[name] for name in held_by])
 
         summary = merge_organizations(source, target)
 
-        assert list(flag.organizations.all()) == [workspaces[name] for name in survivors]
+        assert list(flag.organizations.all()) == [organizations[name] for name in survivors]
         assert summary.flags_cleared == flags_cleared
 
     def test_flag_organization_cache_is_flushed(self, source, target):
@@ -560,9 +621,10 @@ def _incoming_relation_labels():
 
 class TestRelationCoverage:
     def test_every_relation_to_organization_is_accounted_for(self):
-        assert _incoming_relation_labels() == set(HANDLED_RELATIONS), (
+        assert _incoming_relation_labels() == HANDLED_RELATIONS | SKIPPED_RELATIONS, (
             "The set of relations to Organization has changed. Handle any new relation in "
-            "merge_organizations, then add it to HANDLED_RELATIONS — or drop the stale entry."
+            "merge_organizations and add it to HANDLED_RELATIONS, or add it to SKIPPED_RELATIONS "
+            "if the merge should deliberately leave it pointing at the source — or drop the stale entry."
         )
 
     def test_nothing_still_references_the_source_afterwards(self, source, funder_target):
@@ -577,6 +639,9 @@ class TestRelationCoverage:
         MembershipFactory(organization=source, role="member")
         OrganizationInviteFactory(organization=source, email="pending@example.com")
         LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
+        SolicitationFactory(organization=source)
+        SolicitationApplicationFactory(organization=source)
+        SolicitationInvitationFactory(organization=source)
 
         merge_organizations(source, funder_target)
 
@@ -587,9 +652,12 @@ class TestRelationCoverage:
             related_field = relation.field
             if related_field.model._meta.auto_created:
                 continue
+            label = f"{related_field.model._meta.label}.{related_field.name}"
+            if label in SKIPPED_RELATIONS:
+                continue
             remaining = related_field.model._default_manager.filter(**{related_field.name: source_pk}).count()
             if remaining:
-                dangling.append(f"{related_field.model._meta.label}.{related_field.name}={remaining}")
+                dangling.append(f"{label}={remaining}")
 
         assert dangling == []
 

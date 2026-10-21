@@ -254,13 +254,16 @@ def _get_opportunity_or_404(user, opp_id):
         raise NotFound()
 
 
-def _get_scoped_blob_meta(request):
-    """Resolve the ``blob_id`` query param to its BlobMeta, enforcing that the requesting
-    user has access to the opportunity that owns the blob."""
+def _get_scoped_blob_meta(request, opportunity):
+    """Resolve the ``blob_id`` query param to its BlobMeta, requiring the blob to belong to a
+    form in ``opportunity``."""
     blob_id = request.query_params["blob_id"]
-    blob_meta = BlobMeta.objects.get(blob_id=blob_id)
-    form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
-    _get_opportunity_or_404(request.user, form.opportunity_id)
+    blob_meta = BlobMeta.objects.filter(blob_id=blob_id).first()
+    if blob_meta is None:
+        raise NotFound()
+    # A form with several deliver units creates one UserVisit per unit, all sharing the xform_id.
+    if not UserVisit.objects.filter(xform_id=blob_meta.parent_id, opportunity=opportunity).exists():
+        raise NotFound()
     return blob_meta
 
 
@@ -573,7 +576,7 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
 
 class ImageView(OpportunityDataExportView):
     def get(self, request, *args, **kwargs):
-        blob_meta = _get_scoped_blob_meta(request)
+        blob_meta = _get_scoped_blob_meta(request, self.opportunity)
         attachment = storages["default"].open(blob_meta.blob_id)
         return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
 
@@ -609,7 +612,7 @@ def _get_attachment_signed_url(blob_id, expire=ATTACHMENT_SIGNED_URL_EXPIRY):
 
 class AttachmentSignedUrlView(OpportunityDataExportView):
     def get(self, request, *args, **kwargs):
-        blob_meta = _get_scoped_blob_meta(request)
+        blob_meta = _get_scoped_blob_meta(request, self.opportunity)
         if not _default_storage_supports_signed_urls():
             return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
         return Response({"attachment_signed_url": _get_attachment_signed_url(blob_meta.blob_id)})

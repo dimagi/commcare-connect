@@ -22,8 +22,8 @@ class Flag(AbstractUserFlag):
     organizations = models.ManyToManyField(
         Organization,
         blank=True,
-        verbose_name=gettext_lazy("Workspaces"),
-        help_text=gettext_lazy("Activate this flag for these workspaces."),
+        verbose_name=gettext_lazy("Organizations"),
+        help_text=gettext_lazy("Activate this flag for these organizations."),
     )
     opportunities = models.ManyToManyField(
         Opportunity,

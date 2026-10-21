@@ -5,12 +5,13 @@ from functools import cached_property
 
 from django.apps import apps
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import ProgramApplication
 from commcare_connect.program.utils import clear_managed_opp_cache
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,15 @@ SIMPLE_REASSIGNMENTS: Sequence[OrganizationReassignment] = (
     OrganizationReassignment("opportunity", "LabsRecord", "organization"),
     OrganizationReassignment("program", "Program", "organization"),
     OrganizationReassignment("program", "Program", "funder"),
+    OrganizationReassignment("solicitation", "Solicitation", "organization"),
+    # Safe as a plain update only because _reject_conflicting_solicitation_applications refuses a merge
+    # where both organizations applied to one solicitation.
+    OrganizationReassignment("solicitation", "SolicitationApplication", "organization"),
 )
 
-# Every relation pointing at Organization. test_merge.py asserts this matches the models, so adding a new foreign
-# key to Organization without handling it here fails CI.
+# The relations the merge acts on. test_merge.py asserts these plus SKIPPED_RELATIONS cover every
+# relation to Organization, so adding a new foreign key to Organization without handling it here
+# fails CI.
 HANDLED_RELATIONS = frozenset(
     {
         "flags.Flag.organizations",
@@ -65,6 +71,22 @@ HANDLED_RELATIONS = frozenset(
         "program.Program.organization",
         "program.Program.watchers",
         "program.ProgramApplication.organization",
+        "program.ProgramWatcher.organization",
+        "solicitation.SolicitationApplication.organization",
+        "solicitation.Solicitation.organization",
+        "solicitation.SolicitationInvitation.organization",
+    }
+)
+
+# Audit rows record what was true when they were written, so a merge must not rewrite them: "this
+# organization became the funder" stays a fact about the merged-away organization. The pghistory
+# foreign keys are declared db_constraint=False for exactly this reason, and the audit admin renders
+# a dash once the organization is gone, so these keep pointing at the source after it is deleted.
+SKIPPED_RELATIONS = frozenset(
+    {
+        "opportunity.OpportunitySupervisingOrganizationEvent.supervising_organization",
+        "program.ProgramFunderEvent.funder",
+        "program.ProgramWatcherEvent.organization",
     }
 )
 
@@ -82,6 +104,8 @@ class MergeSummary:
     memberships_discarded: int = 0
     invites_moved: int = 0
     invites_discarded: int = 0
+    solicitation_invitations_moved: int = 0
+    solicitation_invitations_deduped: int = 0
     flags_cleared: int = 0
 
 
@@ -105,6 +129,9 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
         self_program_applications_removed = _remove_self_program_applications(target)
         members_moved, members_dropped = _merge_memberships(source, target)
         invites_moved, invites_dropped = _move_pending_invites(source, target)
+        solicitation_invitations_moved, solicitation_invitations_deduped = _merge_solicitation_invitations(
+            source, target
+        )
         flags_cleared = _clear_flag_memberships(source)
 
         transaction.on_commit(lambda: _clear_opportunity_caches(stale_opportunities))
@@ -121,11 +148,13 @@ def merge_organizations(source: Organization, target: Organization) -> MergeSumm
             memberships_discarded=members_dropped,
             invites_moved=invites_moved,
             invites_discarded=invites_dropped,
+            solicitation_invitations_moved=solicitation_invitations_moved,
+            solicitation_invitations_deduped=solicitation_invitations_deduped,
             flags_cleared=flags_cleared,
         )
         source.delete()
 
-    logger.info("Merged workspace %s into %s: %s", summary.source_slug, summary.target_slug, summary)
+    logger.info("Merged organization %s into %s: %s", summary.source_slug, summary.target_slug, summary)
     return summary
 
 
@@ -138,6 +167,7 @@ def _reject_invalid_merge(source: Organization, target: Organization) -> None:
     _reject_unmatched_program_manager_status(source, target)
     _reject_funded_programs_a_non_funder_would_inherit(source, target)
     _reject_conflicting_program_applications(source, target)
+    _reject_conflicting_solicitation_applications(source, target)
 
 
 def _reject_shared_commcare_apps(source: Organization, target: Organization) -> None:
@@ -147,9 +177,9 @@ def _reject_shared_commcare_apps(source: Organization, target: Organization) -> 
     if shared:
         conflicts = sorted({f"{cc_domain}/{cc_app_id}" for cc_app_id, cc_domain, _ in shared})
         raise MergeNotAllowed(
-            f"Both workspaces are connected to the same CommCare app(s): {', '.join(conflicts)}. "
-            "Merging would leave the surviving workspace with duplicates that break "
-            "opportunity creation. Remove the redundant app from one workspace first."
+            f"Both organizations are connected to the same CommCare app(s): {', '.join(conflicts)}. "
+            "Merging would leave the surviving organization with duplicates that break "
+            "opportunity creation. Remove the redundant app from one organization first."
         )
 
 
@@ -160,13 +190,13 @@ def _reject_unmatched_program_manager_status(source: Organization, target: Organ
     if source.program_manager and not target.program_manager:
         raise MergeNotAllowed(
             f"{source.slug} is marked as a program manager but {target.slug} is not, and a merge does not carry "
-            f"the status over. Mark the surviving workspace as a program manager first, or unmark {source.slug} "
+            f"the status over. Mark the surviving organization as a program manager first, or unmark {source.slug} "
             "to confirm the role is being retired with it."
         )
 
 
 def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, target: Organization) -> None:
-    """Refuse a merge that would make a workspace fund programs without being designated a funder.
+    """Refuse a merge that would make an organization fund programs without being designated a funder.
 
     ``Program.funder`` is repointed like any other relation, but ``Organization.funder`` is a profile field the
     target keeps as its own. Ticking "Funder" on the survivor first is a deliberate decision, not something the
@@ -178,14 +208,14 @@ def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, tar
     if funded_programs:
         raise MergeNotAllowed(
             f"{source.slug} funds the program(s): {', '.join(funded_programs)}, but {target.slug} is not marked "
-            "as a funder. A merge does not carry funder status over. Mark the surviving workspace as a funder "
+            "as a funder. A merge does not carry funder status over. Mark the surviving organization as a funder "
             "first if it should take these programs on."
         )
 
 
 def _reject_conflicting_program_applications(source: Organization, target: Organization) -> None:
     """
-    Refuse a merge where both workspaces applied to one program and the applications disagree.
+    Refuse a merge where both organizations applied to one program and the applications disagree.
     """
     target_statuses = dict(target.programapplication_set.values_list("program_id", "status"))
     conflicts = []
@@ -198,9 +228,33 @@ def _reject_conflicting_program_applications(source: Organization, target: Organ
 
     if conflicts:
         raise MergeNotAllowed(
-            f"Both workspaces have applied to the same program(s) with differing statuses: "
+            f"Both organizations have applied to the same program(s) with differing statuses: "
             f"{', '.join(sorted(conflicts))}. Only one application per program can survive a merge, and the "
             "statuses do not mean the same thing. Resolve the application that should not survive first."
+        )
+
+
+def _reject_conflicting_solicitation_applications(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would leave the target with two applications to one solicitation, or applying to its own.
+
+    Unlike program applications, two solicitation applications carry separate answers and reviews, so neither is
+    redundant and the merge cannot pick one.
+    """
+    organizations = (source, target)
+    duplicates = Solicitation.objects.filter(applications__organization=source).filter(
+        applications__organization=target
+    )
+    self_applications = SolicitationApplication.objects.filter(
+        organization__in=organizations, solicitation__organization__in=organizations
+    ).exclude(solicitation__organization=F("organization"))
+
+    conflicts = set(duplicates.values_list("title", flat=True))
+    conflicts |= set(self_applications.values_list("solicitation__title", flat=True))
+    if conflicts:
+        raise MergeNotAllowed(
+            f"Merging would leave {target.slug} with two applications to, or an application to its own, "
+            f"solicitation(s): {', '.join(sorted(conflicts))}. Withdraw or remove the application that should not "
+            "survive first."
         )
 
 
@@ -243,7 +297,7 @@ def _move_program_watchers(source: Organization, target: Organization) -> int:
 def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
     """Move the source's program applications, dropping the ones the target already holds.
 
-    A program both workspaces applied to is only reached here when the two statuses match — a disagreement is
+    A program both organizations applied to is only reached here when the two statuses match — a disagreement is
     refused by ``_reject_conflicting_program_applications`` before the merge starts — so the source's row is
     redundant and the target's is kept as-is.
     """
@@ -269,7 +323,7 @@ def _remove_self_program_applications(target: Organization) -> int:
 def _merge_memberships(source: Organization, target: Organization) -> tuple[int, int]:
     """Move the source's memberships, dropping the ones for users the target already has.
 
-    A user in both workspaces keeps the target's role, even where the source gave them a stronger one.
+    A user in both organizations keeps the target's role, even where the source gave them a stronger one.
     """
     target_user_ids = set(target.memberships.values_list("user_id", flat=True))
     source_memberships = source.memberships.all()
@@ -298,6 +352,17 @@ def _move_pending_invites(source: Organization, target: Organization) -> tuple[i
 
     OrganizationInvite.objects.filter(pk__in=to_be_moved).update(organization=target)
     return len(to_be_moved), discarded
+
+
+def _merge_solicitation_invitations(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the source's solicitation invitations, dropping the ones the target already holds."""
+    target_solicitation_ids = set(target.solicitation_invitations.values_list("solicitation_id", flat=True))
+    source_invitations = source.solicitation_invitations.all()
+
+    deduped, _ = source_invitations.filter(solicitation_id__in=target_solicitation_ids).delete()
+    # Whatever survived the delete above is target-safe: (solicitation, organization) is unique.
+    moved = source_invitations.update(organization=target)
+    return moved, deduped
 
 
 def _clear_flag_memberships(source: Organization) -> int:

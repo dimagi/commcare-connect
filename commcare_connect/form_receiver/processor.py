@@ -40,6 +40,8 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
+    OverLimitReasonChoices,
+    PaymentUnit,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -332,10 +334,10 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             work_area.save(update_fields=["status"])
 
 
-def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
     """Validate a form submission against the opportunity's verification flags.
 
-    Checks GPS presence, location proximity, catchment areas, submission time window,
+    Checks GPS presence, location proximity, submission time window,
     duplicate entities, attachments, form duration, and custom JSON validation rules.
     Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
     side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
@@ -364,19 +366,6 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
             if dist.m <= opportunity_flags.location:
                 flags.append(["location", f"Visit location is {dist.m}m from another visit"])
                 break
-    if opportunity_flags.catchment_areas:
-        areas = access.catchmentarea_set.filter(active=True)
-        if areas:
-            within_catchment = False
-            if xform.metadata.location is not None:
-                cur_lat, cur_lon, *_ = xform.metadata.location.split(" ")
-                for area in areas:
-                    dist = distance((area.latitude, area.longitude), (cur_lat, cur_lon))
-                    if dist.meters < area.radius:
-                        within_catchment = True
-                        break
-            if not within_catchment:
-                flags.append(["catchment", "Visit outside worker catchment areas"])
     if (
         opportunity_flags.form_submission_start
         and opportunity_flags.form_submission_start > xform.metadata.timeStart.time()
@@ -443,7 +432,10 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
-    claim = OpportunityClaim.objects.get(opportunity_access=access)
+    try:
+        claim = OpportunityClaim.objects.get(opportunity_access=access)
+    except OpportunityClaim.DoesNotExist:
+        raise ProcessingError(f"User has not claimed opportunity {opportunity.name}")
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
 
@@ -453,9 +445,14 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         # daily/total counts before either commits and both pass the limit check,
         # letting visits slip past the daily limit. The lock also serializes the
         # duplicate-entity check below.
-        claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
-            opportunity_claim=claim, payment_unit=payment_unit
-        )
+        try:
+            claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
+                opportunity_claim=claim, payment_unit=payment_unit
+            )
+        except OpportunityClaimLimit.DoesNotExist:
+            raise ProcessingError(
+                f"User has no claim limit for payment unit {payment_unit.name} in opportunity {opportunity.name}"
+            )
         counts = (
             UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
             .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
@@ -481,6 +478,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         )
         completed_work_needs_save = False
         today = datetime.date.today()
+        over_limit_reasons = []
         paymentunit_startdate = payment_unit.start_date if payment_unit else None
         if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
             completed_work = None
@@ -493,11 +491,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 defaults={"entity_name": entity_name},
             )
             user_visit.completed_work = completed_work
-            if (
-                counts["daily"] >= payment_unit.max_daily
-                or counts["total"] >= claim_limit.max_visits
-                or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
-            ):
+            is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
+            if is_over_limit:
                 user_visit.status = VisitValidationStatus.over_limit
                 if not completed_work.status == CompletedWorkStatus.over_limit:
                     completed_work.status = CompletedWorkStatus.over_limit
@@ -505,7 +500,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        flags = clean_form_submission(access, user_visit, xform)
+        flags = clean_form_submission(user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
@@ -547,6 +542,11 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             except WorkArea.DoesNotExist:
                 raise ProcessingError("Work area not found")
 
+        # Suspension and blocking tasks above can move the visit off over_limit, so the
+        # reasons are only recorded once the status has settled.
+        if user_visit.status == VisitValidationStatus.over_limit:
+            user_visit.over_limit_reasons = over_limit_reasons
+
         user_visit.save()
 
         if work_area:
@@ -565,6 +565,31 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     completed_work_id = completed_work.id if completed_work is not None else None
     update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+
+
+def check_visit_over_limit(
+    today: datetime.date,
+    claim: OpportunityClaim,
+    claim_limit: OpportunityClaimLimit,
+    payment_unit: PaymentUnit,
+    counts: dict,
+) -> tuple[bool, list[OverLimitReasonChoices]]:
+    """Return whether this visit is over limit and every limit that barred it.
+
+    A visit can breach more than one limit at once, so all of them are collected rather
+    than just the first. They are listed widest limit first. `counts` holds the worker's
+    existing visit counts for this deliver unit, as aggregated in process_deliver_unit().
+    """
+    reasons = []
+    if today > claim.end_date:
+        reasons.append(OverLimitReasonChoices.claim_ended)
+    if claim_limit.end_date and today > claim_limit.end_date:
+        reasons.append(OverLimitReasonChoices.claim_limit_ended)
+    if counts["total"] >= claim_limit.max_visits:
+        reasons.append(OverLimitReasonChoices.max_visits)
+    if payment_unit.max_daily is not None and counts["daily"] >= payment_unit.max_daily:
+        reasons.append(OverLimitReasonChoices.max_daily)
+    return bool(reasons), reasons
 
 
 def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:

@@ -24,12 +24,12 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def source():
-    return OrganizationFactory(name="Source Workspace")
+    return OrganizationFactory(name="Source Organization")
 
 
 @pytest.fixture
 def target():
-    return OrganizationFactory(name="Target Workspace")
+    return OrganizationFactory(name="Target Organization")
 
 
 def _selected(*organizations):
@@ -45,7 +45,7 @@ class TestOrganizationMergeForm:
 
     def test_target_outside_the_selection_is_rejected(self, source, target):
         """A forged POST must not retarget an organization the admin never reviewed."""
-        unreviewed = OrganizationFactory(name="Unreviewed Workspace")
+        unreviewed = OrganizationFactory(name="Unreviewed Organization")
 
         form = OrganizationMergeForm(data={"target": unreviewed.pk}, selected=_selected(source, target))
 
@@ -54,12 +54,12 @@ class TestOrganizationMergeForm:
 
 
 class TestMergePreview:
-    def test_profile_rows_pair_each_field_across_both_workspaces(self, source, target):
+    def test_profile_rows_pair_each_field_across_both_organizations(self, source, target):
         preview = merge_preview(source, target)
 
         assert ("Name", [source.name, target.name]) in preview["profile_rows"]
 
-    def test_count_rows_pair_each_relation_across_both_workspaces(self, source, target):
+    def test_count_rows_pair_each_relation_across_both_organizations(self, source, target):
         OpportunityFactory(organization=source)
 
         preview = merge_preview(source, target)
@@ -87,7 +87,7 @@ def _run_action(client, organizations, **extra):
 
 
 class TestMergeActionConfirmation:
-    def test_confirmation_page_shows_both_workspaces_and_merges_nothing_yet(self, admin_client, source, target):
+    def test_confirmation_page_shows_both_organizations_and_merges_nothing_yet(self, admin_client, source, target):
         response = _run_action(admin_client, [source, target])
 
         content = response.content.decode()

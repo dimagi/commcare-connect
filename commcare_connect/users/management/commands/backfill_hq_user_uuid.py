@@ -164,7 +164,7 @@ class Command(BaseCommand):
 
         total = len(to_be_updated)
         for start in range(0, total, batch_size):
-            batch = to_be_updated[start : start + batch_size]  # noqa: E203
+            batch = to_be_updated[start : start + batch_size]
             self._bulk_update_with_retry(batch)
             self.stdout.write(self.style.SUCCESS(f"Updated {min(start + batch_size, total)}/{total} records."))
         return path

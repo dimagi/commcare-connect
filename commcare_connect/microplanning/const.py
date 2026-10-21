@@ -1,3 +1,5 @@
+from django.utils.translation import gettext_lazy as _
+
 from commcare_connect.microplanning.models import WorkAreaStatus
 
 WORK_AREA_STATUS_COLORS = {
@@ -10,6 +12,15 @@ WORK_AREA_STATUS_COLORS = {
     WorkAreaStatus.EXCLUDED: "bg-gray-500 text-white",
 }
 WORK_AREA_CASE_TYPE = "work-area"
+
+# Fill colours for the Inaccessibility Review map and its key. Keyed rather than positional so the
+# map paint expression and the key's swatches cannot drift apart.
+INACCESSIBILITY_LEGEND = [
+    {"key": "requested", "color": "#f59e0b", "label": _("Request for Inaccessible")},
+    {"key": "approved", "color": "#bbf7d0", "label": _("Approved as Inaccessible")},
+    {"key": "denied", "color": "#fecaca", "label": _("Denied")},
+    {"key": "other", "color": "#e5e7eb", "label": _("All other work areas")},
+]
 
 # Deliver units the coverage metrics are defined on.
 SERVICE_DELIVERY_UNIT_SLUG = "services_delivery_unit"

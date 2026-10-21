@@ -1,5 +1,5 @@
 name: Deploy
-run-name: Deploy to ${{ inputs.environment }} (${{ inputs.deploy_type }})
+run-name: Deploy to ${{ inputs.environment || 'staging' }} (${{ inputs.deploy_type || 'push' }})
 
 env:
   SENTRY_ORG: 'dimagi'
@@ -10,6 +10,8 @@ permissions:
   contents: write
 
 on:
+  push:
+    branches: [autostaging]
   #  workflow_run:
   #    workflows: [CI]
   #    types: [completed]
@@ -32,18 +34,33 @@ on:
           - scheduled
           - adhoc
 
+# One deploy per environment at a time; later runs wait rather than cancel a deploy in progress
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ENV: ${{ inputs.environment || 'staging' }}
+      # Staging always deploys autostaging and production always deploys main, whichever branch triggered the run
+      DEPLOY_BRANCH: ${{ (inputs.environment || 'staging') == 'production' && 'main' || 'autostaging' }}
+    outputs:
+      slack_ts: ${{ steps.slack.outputs.ts }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_BRANCH }}
 
       - name: Set release identifier
         run: |
           # Sentry release versions cannot contain slashes, so sanitize the ref name
-          SAFE_REF_NAME="${GITHUB_REF_NAME//\//-}"
-          echo "APP_RELEASE=${SAFE_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
+          SAFE_REF_NAME="${DEPLOY_BRANCH//\//-}"
+          DEPLOY_SHA="$(git rev-parse HEAD)"
+          echo "DEPLOY_SHA=${DEPLOY_SHA}" >> "$GITHUB_ENV"
+          echo "APP_RELEASE=${SAFE_REF_NAME}.${DEPLOY_SHA}" >> "$GITHUB_ENV"
 
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
@@ -66,13 +83,13 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::037129986032:role/github_deploy
           role-session-name: GithubDeploy
-          aws-region: ${{ inputs.environment == 'production' && 'eu-west-1' || 'us-east-1' }}
+          aws-region: ${{ env.DEPLOY_ENV == 'production' && 'eu-west-1' || 'us-east-1' }}
 
       - id: slack
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           payload: |
             {
               "blocks": [
@@ -80,7 +97,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ inputs.environment }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
                   }
                 },
                 {
@@ -109,7 +126,7 @@ jobs:
 
       - id: deploy
         working-directory: ./deploy
-        run: 'kamal deploy -d ${{ inputs.environment }}'
+        run: 'kamal deploy -d ${{ env.DEPLOY_ENV }}'
 
       - name: Create Sentry release
         if: ${{ success() }}
@@ -117,31 +134,31 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         with:
-          environment: ${{ inputs.environment }}
+          environment: ${{ env.DEPLOY_ENV }}
           release: ${{ env.APP_RELEASE }}
           projects: ${{ env.SENTRY_PROJECT }}
           set_commits: manual
           repo: dimagi/commcare-connect
-          commit: ${{ github.sha }}
+          commit: ${{ env.DEPLOY_SHA }}
 
       - name: Set release tag
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() && env.DEPLOY_ENV == 'production' }}
         run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() && env.DEPLOY_ENV == 'production' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ env.DEPLOY_SHA }}
           generate_release_notes: true
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: ${{ inputs.environment == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {
@@ -150,7 +167,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ inputs.environment }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
                   }
                 },
                 {
@@ -173,6 +190,44 @@ jobs:
                   ]
                 }
               ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
+  running-qa-test:
+    name: Trigger QA Playwright suite
+    needs: deploy
+    if: ${{ success() && inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Wait for the deploy to be serving
+        run: |
+          url=https://connect.dimagi.com
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "$url" && exit 0
+            sleep 10
+          done
+          echo "site not responding after 5m" >&2; exit 1
+
+      - name: Dispatch playwright_web.yaml
+        env:
+          GH_TOKEN: ${{ secrets.QA_SUITE_DISPATCH_TOKEN }}
+        run: |
+          gh workflow run playwright_web.yaml \
+            --repo dimagi/dimagi-qa-ccc \
+            --ref main \
+            -f environment=prod
+
+      - name: Notify QA trigger failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
+              "text": ":warning: Deploy succeeded, but triggering the QA Playwright suite failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}

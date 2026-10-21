@@ -1,0 +1,4 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi,
+
+{{ member_name }} has accepted the invitation and joined {{ membership.organization.name }} on Connect as {{ membership.get_role_display }}.{% endblock %}

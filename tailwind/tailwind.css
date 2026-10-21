@@ -98,6 +98,12 @@
   @apply rounded-lg bg-white p-6 shadow-sm;
 }
 
+/* The card is the wrapper rather than the fieldset itself: a legend is laid out over
+   its fieldset's top border, which on a bordered card leaves the title hanging outside. */
+.form_section legend {
+  @apply text-brand-deep-purple mb-4 text-lg font-medium;
+}
+
 /* ------ Typography------ */
 
 .card_title {
@@ -340,6 +346,19 @@
 
 .chip-md {
   @apply px-4 py-1;
+}
+
+.chip-group {
+  @apply inline-flex flex-wrap gap-1 rounded-full bg-gray-100 p-1;
+}
+
+.chip-group .chip {
+  @apply border-transparent text-gray-600;
+}
+
+/* The active chip is the current state, not an action: clicking it would only reload the page. */
+.chip-group .chip-active {
+  @apply text-brand-deep-purple pointer-events-none border-gray-200 bg-white shadow-sm;
 }
 
 /*-- tooltips ---------------------------------------*/
@@ -692,6 +711,15 @@
     @apply whitespace-nowrap border-b-[1px] border-gray-100 p-4 text-left;
   }
 
+  /* Narrow numeric columns: the header wraps instead of setting the column's width. */
+  .base-table th.col-stat {
+    @apply w-28 whitespace-normal px-2 text-center align-bottom;
+  }
+
+  .base-table td.col-stat {
+    @apply px-2 text-center;
+  }
+
   .base-table th.col-action,
   .base-table td.col-action {
     @apply sticky right-0;
@@ -835,8 +863,10 @@
 }
 
 select:disabled,
-.textinput:disabled {
+.textinput:disabled,
+.numberinput:disabled {
   @apply pointer-events-none opacity-50;
+  @apply bg-gray-200;
 }
 
 /* Multi-line truncation helper (2 lines). */
@@ -894,5 +924,41 @@ select:disabled,
     .dropdown-item:disabled .dropdown-item-icon {
       @apply text-gray-400;
     }
+  }
+}
+
+/*--- floating map control panel ------------------- */
+@layer components {
+  /* The map's top-right corner. Everything in here is laid out in one column so a message can
+     never land on top of the controls */
+  .map-control-stack {
+    @apply pointer-events-none absolute right-4 top-4 z-30 flex flex-col items-end gap-2;
+  }
+
+  .map-control-panel {
+    @apply pointer-events-auto flex flex-col gap-2 rounded-lg bg-white px-3 py-2 shadow-md;
+  }
+
+  .map-control-row {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  /* Progress note under a control, e.g. footprint tiles still loading. */
+  .map-control-status {
+    @apply flex items-center gap-2 text-xs text-gray-500;
+  }
+
+  /* Positioned by `.map-control-stack`. Hover-driven and passive: x-show drops it out of the
+     column entirely when hidden, so the toast below it does not move on its account. */
+  .map-hint {
+    @apply pointer-events-none rounded-md border border-white/10 bg-black/50 px-2 py-2 text-sm text-white shadow-lg;
+  }
+
+  /* Positioned by `.map-control-stack`, and in the DOM even when hidden, so it must never take the
+     pointer -- an invisible toast would otherwise eat clicks on the map beneath it. Callers toggle
+     `opacity-0`/`opacity-100` and the background colour on the element itself, so those stay out
+     of here. */
+  .map-toast {
+    @apply pointer-events-none flex items-center gap-3 rounded-lg px-4 py-3 text-sm text-white shadow-lg transition-opacity duration-300;
   }
 }

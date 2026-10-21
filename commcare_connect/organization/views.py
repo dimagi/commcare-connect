@@ -5,33 +5,44 @@ from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.translation import gettext
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django_tables2 import RequestConfig
+from django.views.generic import CreateView, UpdateView
+from django_filters.views import FilterView
+from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
-from commcare_connect.organization.decorators import org_admin_access_required
+from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
+from commcare_connect.organization.filters import OrganizationFilterSet
 from commcare_connect.organization.forms import (
     InviteAcceptForm,
     OrganizationChangeForm,
+    OrganizationCreateForm,
+    OrganizationDirectoryForm,
     OrganizationInviteForm,
-    OrganizationProfileForm,
 )
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
+from commcare_connect.organization.tables import OrganizationDirectoryTable, OrgMemberTable, PendingInviteTable
 from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
 from commcare_connect.users.models import User
 from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
 def organization_create(request):
-    form = OrganizationProfileForm(data=request.POST or None)
+    form = OrganizationCreateForm(data=request.POST or None, user=request.user)
 
     if form.is_valid():
+        form.instance.created_by = request.user.email
         org = form.save()
+        if form.cleaned_data.get("skip_membership"):
+            return redirect("organization:home", org.slug)
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
@@ -40,14 +51,14 @@ def organization_create(request):
 
 @login_required
 def no_organization(request):
-    """Landing page for users who don't belong to any workspace yet."""
+    """Landing page for users who don't belong to any organization yet."""
     if request.user.memberships.exists():
         return redirect("users:redirect")
 
     return render(request, "organization/no_organization.html")
 
 
-@org_admin_access_required
+@org_profile_edit_access_required
 def organization_home(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
 
@@ -56,7 +67,7 @@ def organization_home(request, org_slug):
     if request.method == "POST":
         form = OrganizationChangeForm(request.POST, instance=org, user=request.user)
         if form.is_valid():
-            messages.success(request, gettext("Workspace details saved!"))
+            messages.success(request, gettext("Organization details saved!"))
             form.save()
             return redirect("organization:home", org_slug)
 
@@ -71,6 +82,8 @@ def organization_home(request, org_slug):
             "form": form,
             "invite_form": invite_form,
             "member_count": org.memberships.count(),
+            # Org settings managers reach this page without admin access to the member endpoints.
+            "can_manage_members": org_access_level_from_request(request) >= AccessLevel.ADMIN,
         },
     )
 
@@ -114,12 +127,12 @@ def remove_members(request, org_slug):
     redirect_url = f"{base_url}?{query_params}"
 
     if str(request.org_membership.id) in membership_ids:
-        messages.error(request, message=gettext("You cannot remove yourself from the workspace."))
+        messages.error(request, message=gettext("You cannot remove yourself from the organization."))
         return redirect(redirect_url)
 
     if membership_ids:
         UserOrganizationMembership.objects.filter(pk__in=membership_ids, organization__slug=org_slug).delete()
-        messages.success(request, message=gettext("Selected members have been removed from the workspace."))
+        messages.success(request, message=gettext("Selected members have been removed from the organization."))
 
     return redirect(redirect_url)
 
@@ -145,7 +158,9 @@ def _reject_invalid_invite(request, invite):
             request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
         )
     elif invite.status == OrganizationInvite.Status.ACCEPTED:
-        messages.error(request, gettext("This invitation has already been accepted. Log in to access the workspace."))
+        messages.error(
+            request, gettext("This invitation has already been accepted. Log in to access the organization.")
+        )
     else:
         messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
     return redirect("account_login")
@@ -257,3 +272,90 @@ def _render_pending_invites(request):
     table = PendingInviteTable(invites)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "organization/pending_invites_table.html", {"table": table})
+
+
+class LLODirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
+    raise_exception = True
+
+    def test_func(self):
+        return self.request.user.can_access_organization_directory
+
+
+class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView):
+    """A filtered, paginated directory table under the directory's tab bar."""
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "organizations_count": Organization.objects.count(),
+                "result_count": context["table"].paginator.count,
+            }
+        )
+        return context
+
+
+class OrganizationListView(LLODirectoryListView):
+    table_class = OrganizationDirectoryTable
+    filterset_class = OrganizationFilterSet
+    template_name = "organization/directory/organization_list.html"
+
+    def get_queryset(self):
+        return Organization.objects.prefetch_related("primary_sectors").order_by("-date_created")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+        ]
+        return context
+
+
+class LLODirectoryFormMixin(LLODirectoryAccessMixin):
+    """Serves an add/edit form as a modal fragment to htmx; other requests are sent to `list_url_name`."""
+
+    list_url_name = None
+    success_message = None
+
+    def get(self, request, *args, **kwargs):
+        if not request.htmx:
+            return redirect(self.get_return_url())
+        return super().get(request, *args, **kwargs)
+
+    def get_return_url(self):
+        """The `next` URL when it is a directory URL on this host, otherwise the `list_url_name` listing."""
+        next_url = self.request.GET.get("next", "")
+        if next_url.startswith(reverse("organization_directory:list")) and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={self.request.get_host()}
+        ):
+            return next_url
+        return reverse(self.list_url_name)
+
+    def form_valid(self, form):
+        if not form.instance.pk:
+            form.instance.created_by = self.request.user.email
+        form.instance.modified_by = self.request.user.email
+        self.object = form.save()
+        messages.success(self.request, self.success_message.format(name=self.object.name))
+        return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
+
+
+class OrganizationDirectoryFormMixin(LLODirectoryFormMixin):
+    model = Organization
+    form_class = OrganizationDirectoryForm
+    template_name = "organization/directory/organization_form.html"
+    slug_field = "slug"
+    list_url_name = "organization_directory:list"
+
+
+class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
+    # Does not make the requesting user a member of the new organization.
+    success_message = gettext_lazy("Organization {name} added.")
+
+
+class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
+    success_message = gettext_lazy("Organization {name} updated.")
