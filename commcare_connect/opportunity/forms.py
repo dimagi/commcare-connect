@@ -2485,34 +2485,40 @@ class AudioAttachmentTranscribeForm(forms.ModelForm):
 class DeliveryTypeForm(forms.ModelForm):
     """Adds or edits a delivery type from Internal Features.
 
-    The slug is set once, on create: reports, data exports and the Program API identify delivery types by it, so a
-    rename must not change it.
+    On create the slug is filled in from the name as you type (see slugAutofill in alpine_data.js) and, if left
+    blank, generated from it on save. It stays editable, but reports, data exports and the Program API identify
+    delivery types by it, so changing it later breaks anything that stored the old one.
     """
 
     class Meta:
         model = DeliveryType
-        fields = ("name", "description")
+        fields = ("name", "slug", "description")
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+        help_texts = {"slug": _("Lowercase letters, numbers, hyphens and underscores.")}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["description"].required = False
+        if not self.instance.pk:
+            self.fields["slug"].required = False
+            self.fields["name"].widget.attrs.update({"x-ref": "name", "x-on:input": "nameChanged()"})
+            self.fields["slug"].widget.attrs.update({"x-ref": "slug", "x-on:input": "slugChanged()"})
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.disable_csrf = True
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
-        others = DeliveryType.objects.exclude(pk=self.instance.pk)
-        if others.filter(name__iexact=name).exists():
+        if DeliveryType.objects.exclude(pk=self.instance.pk).filter(name__iexact=name).exists():
             raise ValidationError(gettext("A delivery type with this name already exists."))
-        if not self.instance.pk and not slugify(name):
-            raise ValidationError(gettext("Name must contain at least one letter or number."))
-        if not self.instance.pk and others.filter(slug=slugify(name)).exists():
-            raise ValidationError(gettext("A delivery type with a similar name already exists."))
         return name
 
-    def save(self, commit=True):
-        if not self.instance.pk:
-            self.instance.slug = slugify(self.instance.name)
-        return super().save(commit=commit)
+    def clean_slug(self):
+        slug = self.cleaned_data["slug"].strip() or slugify(self.cleaned_data.get("name", ""))
+        if not slug:
+            raise ValidationError(gettext("Enter a slug, or a name containing at least one letter or number."))
+        if slug != slugify(slug):
+            raise ValidationError(gettext("Use only lowercase letters, numbers, hyphens and underscores."))
+        if DeliveryType.objects.exclude(pk=self.instance.pk).filter(slug=slug).exists():
+            raise ValidationError(gettext("A delivery type with this slug already exists."))
+        return slug

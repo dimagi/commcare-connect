@@ -28,40 +28,69 @@ REFERENCING_FACTORIES = [OpportunityFactory, ProgramFactory, SolicitationFactory
 
 @pytest.mark.django_db
 class TestDeliveryTypeForm:
-    def test_create_generates_slug(self):
-        form = DeliveryTypeForm({"name": "Maternal Health", "description": ""})
+    def test_create_with_blank_slug_generates_it_from_name(self):
+        form = DeliveryTypeForm({"name": "Maternal Health", "slug": "", "description": ""})
         assert form.is_valid(), form.errors
         assert form.save().slug == "maternal-health"
 
+    def test_create_with_custom_slug(self):
+        form = DeliveryTypeForm({"name": "Maternal Health", "slug": "mch", "description": ""})
+        assert form.is_valid(), form.errors
+        assert form.save().slug == "mch"
+
     @pytest.mark.parametrize("name", ["Nutrition", "nutrition", "  NUTRITION  "])
     def test_rejects_duplicate_name(self, delivery_type, name):
-        form = DeliveryTypeForm({"name": name, "description": ""})
+        form = DeliveryTypeForm({"name": name, "slug": "other", "description": ""})
         assert not form.is_valid()
         assert "name" in form.errors
 
-    def test_rejects_name_whose_slug_is_taken(self, delivery_type):
+    @pytest.mark.parametrize("slug", ["nutrition", ""])
+    def test_rejects_duplicate_slug(self, delivery_type, slug):
         delivery_type.name = "Renamed"
         delivery_type.save()
-        form = DeliveryTypeForm({"name": "Nutrition", "description": ""})
+        form = DeliveryTypeForm({"name": "Nutrition", "slug": slug, "description": ""})
         assert not form.is_valid()
-        assert "name" in form.errors
+        assert "slug" in form.errors
 
-    def test_rejects_name_without_slug(self):
-        form = DeliveryTypeForm({"name": "!!!", "description": ""})
+    @pytest.mark.parametrize("slug", ["Upper", "has space", "dot.ted", "-leading"])
+    def test_rejects_invalid_slug(self, slug):
+        form = DeliveryTypeForm({"name": "Immunization", "slug": slug, "description": ""})
         assert not form.is_valid()
-        assert "name" in form.errors
+        assert "slug" in form.errors
+
+    def test_rejects_blank_slug_when_name_has_no_slug(self):
+        form = DeliveryTypeForm({"name": "!!!", "slug": "", "description": ""})
+        assert not form.is_valid()
+        assert "slug" in form.errors
+
+    def test_create_wires_slug_autofill(self):
+        form = DeliveryTypeForm()
+        assert form.fields["name"].widget.attrs["x-on:input"] == "nameChanged()"
+        assert form.fields["slug"].widget.attrs["x-on:input"] == "slugChanged()"
+
+    def test_edit_requires_slug_and_has_no_autofill(self, delivery_type):
+        form = DeliveryTypeForm({"name": "Nutrition", "slug": "", "description": ""}, instance=delivery_type)
+        assert not form.is_valid()
+        assert "slug" in form.errors
+        assert "x-on:input" not in form.fields["name"].widget.attrs
 
     def test_rename_keeps_slug(self, delivery_type):
-        form = DeliveryTypeForm({"name": "Child Nutrition", "description": "x"}, instance=delivery_type)
+        form = DeliveryTypeForm(
+            {"name": "Child Nutrition", "slug": "nutrition", "description": "x"}, instance=delivery_type
+        )
         assert form.is_valid(), form.errors
         form.save()
         delivery_type.refresh_from_db()
-        assert delivery_type.name == "Child Nutrition"
-        assert delivery_type.slug == "nutrition"
+        assert (delivery_type.name, delivery_type.slug) == ("Child Nutrition", "nutrition")
 
-    def test_resaving_unchanged_name_is_valid(self, delivery_type):
-        form = DeliveryTypeForm({"name": "Nutrition", "description": "Updated"}, instance=delivery_type)
+    def test_edit_changes_slug(self, delivery_type):
+        form = DeliveryTypeForm(
+            {"name": "Nutrition", "slug": "child-nutrition", "description": ""}, instance=delivery_type
+        )
         assert form.is_valid(), form.errors
+        form.save()
+        delivery_type.refresh_from_db()
+        assert delivery_type.slug == "child-nutrition"
 
 
 @pytest.mark.django_db
@@ -154,7 +183,7 @@ class TestDeliveryTypeViews:
         client.force_login(settings_admin)
         response = client.post(
             reverse("users:delivery_type_create"),
-            {"name": "Immunization", "description": ""},
+            {"name": "Immunization", "slug": "", "description": ""},
             HTTP_HX_REQUEST="true",
         )
         assert response.headers["HX-Redirect"] == reverse("users:delivery_type_list")
@@ -164,7 +193,7 @@ class TestDeliveryTypeViews:
         client.force_login(settings_admin)
         response = client.post(
             reverse("users:delivery_type_create"),
-            {"name": "Nutrition", "description": ""},
+            {"name": "Nutrition", "slug": "", "description": ""},
             HTTP_HX_REQUEST="true",
         )
         assert response.status_code == 200
@@ -176,7 +205,7 @@ class TestDeliveryTypeViews:
         client.force_login(settings_admin)
         response = client.post(
             reverse("users:delivery_type_update", args=[delivery_type.pk]),
-            {"name": "Child Nutrition", "description": ""},
+            {"name": "Child Nutrition", "slug": "nutrition", "description": ""},
             HTTP_HX_REQUEST="true",
         )
         assert response.headers["HX-Redirect"] == reverse("users:delivery_type_list")
