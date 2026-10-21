@@ -117,17 +117,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 
 ## Commits
 
-Write commit messages as semantic commits: `<type>: <summary>`, with the summary in present tense (`feat: add CSV export for visits`). An optional scope names the affected area: `fix(opportunity): handle missing payment unit`. The types are:
-
-- `feat`: a new feature for the user
-- `fix`: a bug fix for the user
-- `docs`: documentation only
-- `style`: formatting with no change in behaviour (whitespace, ruff format)
-- `refactor`: a code change that neither fixes a bug nor adds a feature
-- `test`: adding or changing tests only
-- `chore`: build, tooling, dependency or config changes that do not touch app code
-
-When the summary line cannot explain the change on its own, add a body after a blank line that says why the change was made and anything a reviewer would not see from the diff. Do not mix change types in one commit; split them into separate commits instead.
+Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunity): handle missing payment unit`). Don't mix change types in one commit; split them instead.
 
 ## Robustness
 
