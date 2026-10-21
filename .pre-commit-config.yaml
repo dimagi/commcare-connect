@@ -76,6 +76,8 @@ repos:
           - --min-lines=4
           # Also compare whole functions, to catch copies edited in several places. Skips test files.
           - --similarity=0.9
+          # The top-level exclude only decides whether the hook runs; jscpd still scans the whole directory.
+          - --ignore=**/migrations/**
           - commcare_connect
         pass_filenames: false
         files: ^commcare_connect/
