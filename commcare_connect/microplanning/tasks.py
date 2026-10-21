@@ -20,6 +20,7 @@ from config import celery_app
 
 from .clustering import WorkAreaGrouper
 from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT
+from .exceptions import ImportRejected
 from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from .overlap import find_overlapping_work_areas
 
@@ -54,10 +55,6 @@ def parse_lon_lat_centroid(value):
     """Parse a "lon lat" string into a centroid Point."""
     lon, lat = value.strip().split()
     return GEOSGeometry(f"POINT({lon} {lat})", srid=SRID)
-
-
-class ImportRejected(Exception):
-    """Raised inside run()'s transaction to undo everything saved so far."""
 
 
 class BaseAreaCSVImporter:
