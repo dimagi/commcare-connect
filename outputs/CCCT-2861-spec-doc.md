@@ -479,6 +479,7 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
   - **Retiring a required unit of a set:** rejected while the step is a required unit of a payment unit with other required units, because FLWs could then never complete the set. The page says to change the payment unit first.
   - **Changing an external unit's payment unit** (`edit_payment_unit`, or moving it to another payment unit): rejected while any session for that step is `triggering`, `triggered` or `failed`, because completion pays through `deliver_unit.payment_unit` and the in-flight session must be paid against the unit it was started under (`failed` sessions can still receive a late completion). Sessions not yet triggered follow the new mapping, and the change runs a replan.
   - **Pausing (`active` off):** the beat task stops triggering the schedule's sessions; triggered sessions can still complete and are paid. Reactivating runs the replan.
+- Turning the Active toggle off asks for confirmation with the number of workers it affects, split into those with a `scheduled` session (it won't trigger while paused) and those with a `triggering` or `triggered` session (they can still finish and are paid). While the schedule is paused, a warning in the schedule card shows the same counts. Turning it back on doesn't confirm, and neither does turning it off when no worker has an open session. The counts come from one aggregate query over the schedule's open sessions.
 - `add_payment_unit` and `edit_payment_unit` dispatch `replan_external_sessions` on commit, after `create_claim_limits` backfills existing claims, when the payment unit contains external units, so FLWs waiting on a funded claim limit are scheduled once one exists.
 - `replan_external_sessions(schedule_id)` (Celery, idempotent, on commit):
   - For each `scheduled` session, locked with `select_for_update(skip_locked=True)` (a session the beat task is claiming is skipped and triggers with the version it read): re-run the selection rule from `schedule_next_step`. If it picks the same step, update `scheduled_for`; otherwise cancel this session and create or reopen the picked one.
@@ -499,6 +500,7 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
 - Retiring a step that is a required unit of a multi-unit payment unit is rejected with a clear error.
 - Changing the provider of a step with sessions is rejected.
 - Pausing stops new triggers; reactivating replans and resumes.
+- Turning Active off shows the number of affected workers before it takes effect, and the paused schedule card keeps showing it; with no open sessions it turns off without a confirmation.
 - Running `replan_external_sessions` twice gives the same result as running it once.
 - Changing an external unit's payment unit is rejected while a session for that step is `triggering`, `triggered` or `failed`.
 - An FLW waiting for a funded claim limit is scheduled after a payment unit change creates one.
