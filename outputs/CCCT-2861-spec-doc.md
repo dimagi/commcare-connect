@@ -15,7 +15,7 @@
 | **Mockups / Wireframes**   | [Web mockups](https://claude.ai/artifact/VQnbjnfkok9XrDw2orZubu) (Android not mocked) |
 | **Author**                 | Pawan Verma                                                                           |
 | **Feature Release Path**   | Path 2: New features with stability                                                   |
-| **Release Switch**         | Not required                                                                          |
+| **Release Switch**         | `external_schedule` waffle flag, per opportunity (Ticket 1)                           |
 | **Implementation Tickets** | 8 tickets, listed in order under Implementation Tickets                               |
 
 ### Relevant Codebases
@@ -118,7 +118,7 @@ The work splits into 8 tickets:
 
 **Deployment and Release:**
 
-- Migrations are additive apart from renaming `HQServer` to `ExternalServer` (a `RenameModel`, so no data moves); they run with `migrate_multi`, and the beat task is registered by data migration. Code that imports `HQServer` ships in the same deploy as the rename.
+- Migrations are additive apart from renaming `HQServer` to `ExternalServer` (a `RenameModel`, so no data moves); they run with `migrate_multi`. Data migrations register the beat task and create the `external_schedule` flag and the `interviews` delivery type. Code that imports `HQServer` ships in the same deploy as the rename.
 - Mobile: opportunities with no deliver app are hidden from clients below the new mobile API version (_Add version_), so older apps never see `deliver_app: null`.
 - OCS must be configured with the Connect OAuth client and the `/api/external_unit_completed/` URL, and an `ExternalServer` record (`service=ocs`, `url` = the OCS base URL) created for that OAuth application, before the feature is used.
 - All tickets are released together, so there is no interim state to support (for example no locked schedule before editing exists).
@@ -143,6 +143,11 @@ The work splits into 8 tickets:
 **Changes:**
 
 - Add `Opportunity.has_deliver_app` (`deliver_app_id is not None`).
+- Schedule toggle: a waffle flag `EXTERNAL_SCHEDULE = "external_schedule"` (`flags/flag_names.py`), created by data migration with a note describing it, decides whether an opportunity can have a schedule. `schedule_enabled(opportunity)` is true when the flag is active for the opportunity, its program or its organization (`Flag.is_active_for`).
+  - It is turned on for interview opportunities: when an opportunity is created with the `interviews` delivery type (a `DeliveryType` with slug `interviews`, added by the same data migration if it doesn't exist), `OpportunityInitForm.save` and the program API's create both add it to the flag's `opportunities` through one helper. The delivery type can't be changed after creation, so this runs only on create.
+  - Any other opportunity, or its program or organization, can be added to the flag by hand on Internal Features → Toggles & Switches or in the admin, so test opportunities can be set up without the delivery type.
+  - It gates the UI only: the "This opportunity uses a Deliver app" checkbox (below), the Schedule step, the Configure Schedule menu item, the Schedule resources tab and dashboard chip, the external units group on the payment unit form (Ticket 3) and the Interviews worker tabs (Ticket 4). Turning it off on an opportunity with a running schedule hides these but doesn't stop the schedule; pause the schedule first.
+  - A missing flag row or `interviews` delivery type means the toggle is off; nothing errors.
 - Guard with it: `get_application` (`commcarehq/views.py`), `OpportunityChangeForm.clean_active`, `sync_learn_modules_and_deliver_units` and its callers, `verification_flags_config`, `UserVisit.hq_link` (returns `None` for external unit visits), the HQ link in `user_task_details`, and `ClaimOpportunityView`, which skips `create_hq_user_and_link` when the opportunity has no Deliver app.
 - Patch every query that filters `DeliverUnit` or `TaskType` by `app=opportunity.deliver_app`, because once external units exist `filter(app=None)` returns every opportunity's external units:
   - `opportunity/views.py`: `OpportunityDashboard`, `verification_flags_config`, `TaskTypesConfig`, `deliver_unit_table`
@@ -152,7 +157,7 @@ The work splits into 8 tickets:
 - The other callers of the Deliver app's domain (work-area case sync, attachment downloads, usercase updates for relearn tasks) only run when a Deliver app exists, so they are unchanged.
 - Hide, not grey out, everything that needs the Deliver app when there is none: the Deliver app link and resource chip, the Deliver units tab of `opportunity_resource_modal.html`, "sync deliver units", Verification Rules in the opportunity menu, microplanning, and the Deliver worker tab.
 - Tasks are disabled when there is no Deliver app: hide Configure Task Types in the opportunity menu, the Tasks worker tab and the Tasks tab on the single-worker page, and reject task type creation and task assignment. `TaskType.app` stays required.
-- `OpportunityInitForm` and `OpportunityInitUpdateForm`: the Apps card gets a "This opportunity uses a Deliver app" checkbox, on by default. Unticking it hides the deliver domain and app fields, clears them and skips their validation, and shows a note that the Schedule step becomes required and Deliver-only features aren't available. The checkbox is disabled once Connect Workers have joined, like the app fields today. Skip `_build_commcare_app("deliver")` when there is no Deliver app; compare learn and deliver apps only when both are set.
+- `OpportunityInitForm` and `OpportunityInitUpdateForm`: when the schedule toggle is on, the Apps card gets a "This opportunity uses a Deliver app" checkbox, on by default. The create form has no opportunity yet, so it checks the program's delivery type and the flag for the program and organization; the update form uses `schedule_enabled(opportunity)`. With the toggle off there is no checkbox and a Deliver app is required, as today. Unticking it hides the deliver domain and app fields, clears them and skips their validation, and shows a note that the Schedule step becomes required and Deliver-only features aren't available. The checkbox is disabled once Connect Workers have joined, like the app fields today. Skip `_build_commcare_app("deliver")` when there is no Deliver app; compare learn and deliver apps only when both are set.
 - Program API serializer (`program/api/serializers.py`): `deliver_app` becomes `required=False, allow_null=True`; `get_deliver_app` returns `null` when absent.
 - `OpportunitySerializer` (mobile) and the data export serializer emit `deliver_app: null` when absent.
 - Opportunities with no Deliver app are left out of the opportunity list for clients below the new mobile API version (`AcceptHeaderVersioning`; _Add version_).
@@ -166,6 +171,10 @@ The work splits into 8 tickets:
 - A Program Manager can create, edit and activate an opportunity with no Deliver app, through the web and the program API.
 - An opportunity with no Deliver app shows no Tasks UI, and task types can't be created on it.
 - Unticking "This opportunity uses a Deliver app" saves the opportunity with no Deliver app; the checkbox can't be changed once workers have joined.
+- An opportunity created with the `interviews` delivery type, through the web or the program API, is added to the `external_schedule` flag; one with any other delivery type is not.
+- Adding an opportunity, its program or its organization to the flag by hand shows the schedule UI; removing it hides that UI with no 500s.
+- With the flag off, the create and edit forms have no Deliver app checkbox and require a Deliver app.
+- With the flag row or the `interviews` delivery type missing, opportunity creation works and the toggle reads as off.
 - Deliver-only menu items, tabs and links are not rendered (rather than shown disabled) when there is no Deliver app.
 - Older clients never receive an opportunity with `deliver_app: null`; new clients receive it, and can claim it (no HQ user is created).
 
@@ -271,6 +280,7 @@ Schedule page and payment unit linking:
 - Reordering follows open-chat-studio's annotation fields form (`human_annotations/queue_form.html`): native HTML5 drag on the handle plus ↑/↓ buttons, in an Alpine component in its own JS file, with no new dependency. Moves happen client-side; a "Save order / Discard" bar appears once the order changes, and "Save order" posts the ordered step IDs in one request.
 - Session data (the schedule's and each step's) is edited as key/value rows with add and remove, stored as a JSON object of strings. The reserved `unitId` key is rejected on its row.
 - Each step's config is edited and validated through its provider's `config_form`; the schedule's provider config through `schedule_config_form`.
+- The page, the Schedule stepper step, the menu item, the resources tab and the dashboard chip are shown only when `schedule_enabled(opportunity)` (Ticket 1). With the toggle off the stepper is Create Opportunity → Payment Unit → Budget, as today.
 - Only providers whose `is_configured()` is true are offered. If none is, hide the page and nav item.
 - Connection takeover: saving the schedule does not change `configured_by`. A "Use my connection" action sets `configured_by` to the current Program Manager after `provider.check_connection(user)` succeeds. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup. For OCS, if the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`. "Use my connection" asks for confirmation first.
 - The schedule can only be activated when every step's unit belongs to a payment unit.
@@ -289,7 +299,7 @@ Schedule page and payment unit linking:
 - OCS tasks still get the default training prompt.
 - The provider and the registry are unit tested without the database or OCS (`pytest-httpx` for the OCS calls).
 - A Program Manager can add, reorder and remove steps and set Next Trigger days at any time; once sessions exist, the rules in Ticket 8 apply.
-- The creation stepper includes the Schedule step; it can be skipped only when the opportunity has a Deliver app.
+- The creation stepper includes the Schedule step when the schedule toggle is on, and only then; it can be skipped only when the opportunity has a Deliver app.
 - Reordering by drag and by the arrow buttons both work, and the order is saved only on "Save order".
 - Saving the schedule never changes `configured_by`; the takeover action does, and fails with a clear error when the provider's connection check fails.
 - Invalid provider config fails validation with the provider's error.
@@ -317,7 +327,7 @@ Schedule page and payment unit linking:
 - `ProviderTransientError` retries with `autoretry_for` + `retry_backoff`. Every retry is another provider call and increments `attempts`, so `attempts` is the single cap: at `MAX_TRIGGER_ATTEMPTS` (a module constant, initially 3) the session is marked `failed` with `last_error`. Each failed call overwrites `last_error`. `ProviderNotConfigured` marks the session `failed` without retrying.
 - Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_step` when the FLW is un-suspended or the end date is extended.
 - Worker views, both labelled with the provider's noun ("Interviews"):
-  - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and flags (in progress for more than 7 days, couldn't start, or the waiting reason). Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
+  - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the schedule toggle is on and the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and flags (in progress for more than 7 days, couldn't start, or the waiting reason). Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
   - The single-worker page gets a tab next to Visits (`components/worker_page/visit_task_tabs.html`): a card per step with its status, dates and, when it failed, the last error and attempts. Re-trigger (in progress or failed) and Skip (any open session) both ask for confirmation: Re-trigger warns that the worker may see two chats, Skip that the step won't be paid and can't be undone.
   - Statuses as Program Managers see them: Scheduled (with the due date), Starting (`triggering`), In progress (`triggered`), Completed, Failed, Skipped, Cancelled, and Waiting when nothing could be scheduled.
 - Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0`, clears `last_error` and `trigger_token`. Skip marks it `skipped` (unpaid) and calls `schedule_next_step`.
@@ -499,6 +509,7 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
 ### Further Considerations
 
 - **Provider scope:** the interface is designed against one provider. With no second concrete use case today (a survey tool or an IVR call, for example), the `launch` descriptor and the credential model are only checked against OCS. Expect to extend the protocol (`check_status` polling, work started by the service, org-level credentials) when the second provider arrives, rather than designing for those now.
+- **Schedule toggle lifetime:** `flags/README.md` expects flags to be short-lived, but `external_schedule` is a lasting per-opportunity gate. Confirm whether it stays, or is replaced by a plain delivery-type check plus a staff-only override once the feature is established.
 - **Auto-claim scope:** only opportunities with no Deliver app are auto-claimed. On opportunities with a Deliver app, auto-claiming would either skip HQ user creation on the Deliver domain (breaking Deliver forms) or make that HQ call in the form receiver, and would reserve the full per-user budget for FLWs who may never deliver.
 - **Auto-claim failures:** if the budget is full when an FLW finishes Learn, they get no claim and no steps. Confirm whether they should be told in the app, and whether a later budget increase should retry the claim.
 - **Unpayable steps:** when an FLW's next step has no funded claim limit or its payment window has closed, v1 holds them at that step. The alternative is to skip ahead to the next payable step, which keeps the FLW earning but breaks the order. Confirm with programs.
