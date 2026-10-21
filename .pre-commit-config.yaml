@@ -70,9 +70,10 @@ repos:
         language: python
         additional_dependencies: ['jscpd==5.4.1']
         args:
+          # The path goes first: --fail-on-new-clones takes an optional count and would read it as one.
+          - commcare_connect
           - --changed
           - --fail-on-new-clones
-          - commcare_connect
         pass_filenames: false
         files: ^commcare_connect/.*\.(py|js)$
 
