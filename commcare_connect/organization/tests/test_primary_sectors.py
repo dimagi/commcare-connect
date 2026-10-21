@@ -1,4 +1,6 @@
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from commcare_connect.organization.forms import PrimarySectorForm
@@ -186,6 +188,15 @@ class TestPrimarySectorViews:
         client.force_login(settings_admin)
         client.post(reverse("users:primary_sector_delete", args=[sector.pk]))
         assert not PrimarySector.objects.filter(pk=sector.pk).exists()
+
+    def test_delete_locks_sector_before_checking_use(self, client, settings_admin, sector):
+        client.force_login(settings_admin)
+        with CaptureQueriesContext(connection) as queries:
+            client.post(reverse("users:primary_sector_delete", args=[sector.pk]))
+        assert any(
+            'FROM "organization_primarysector"' in q["sql"] and q["sql"].endswith("FOR UPDATE")
+            for q in queries.captured_queries
+        )
 
     def test_delete_in_use_is_refused(self, client, settings_admin, sector):
         OrganizationFactory().primary_sectors.add(sector)
