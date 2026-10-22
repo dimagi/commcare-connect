@@ -3608,7 +3608,9 @@ def opportunity_worker_progress(request, org_slug, opp_id):
 EarnedSummary = namedtuple("EarnedSummary", ["total", "percentage", "percentage_tooltip"])
 
 
-def get_earned_summary(worker_accrued, org_accrued, total_budget, currency_code):
+def get_earned_summary(
+    worker_accrued: int, org_accrued: int, total_budget: int, currency_code: str | None
+) -> EarnedSummary:
     """Earned figures for the Payments to Connect Workers card.
 
     The budget covers org pay as well as worker pay, so the percentage counts both. The worker
@@ -3618,16 +3620,17 @@ def get_earned_summary(worker_accrued, org_accrued, total_budget, currency_code)
     total = amount_with_currency(worker_accrued, currency_code)
     if not org_accrued:
         return EarnedSummary(
-            total, percentage, "Percentage Earned by all workers out of Max Budget in the Opportunity"
+            total, percentage, _("Percentage Earned by all workers out of Max Budget in the Opportunity")
         )
     return EarnedSummary(
-        f"{total} workers · {amount_with_currency(org_accrued, currency_code)} org",
+        _("%(worker_amount)s workers · %(org_amount)s org")
+        % {"worker_amount": total, "org_amount": amount_with_currency(org_accrued, currency_code)},
         percentage,
-        "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
+        _("Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity"),
     )
 
 
-def safe_percent(numerator, denominator):
+def safe_percent(numerator: float, denominator: float) -> float:
     percent = (numerator / denominator) * 100 if denominator else 0
     return 100 if percent > 100 else percent
 
