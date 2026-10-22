@@ -1,4 +1,3 @@
-import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
@@ -1263,62 +1262,6 @@ class WorkerWorkAreaTable(OrgContextTable):
             "visits_done",
         )
         order_by = ("-last_active",)
-
-
-class GroupedByWorkerMixin:
-    """Mixin for tables that show multiple rows per worker, hiding worker-level
-    columns on sub-rows. Subclasses must call `run_after_every_row(record)`
-    in their last rendered column."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._seen_users = set()
-
-    def _is_seen(self, record):
-        return record.pk in self._seen_users
-
-    def run_after_every_row(self, record):
-        self._seen_users.add(record.pk)
-
-    def _get_user_url(self, record):
-        base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        return f"{base_url}?{urlencode({'user': record.user.user_id})}"
-
-    def render_user(self, value, record):
-        if self._is_seen(record):
-            return ""
-        return format_html(
-            '<a href="{}" class="w-40">'
-            '<p class="text-sm text-slate-900">{}</p>'
-            '<p class="text-xs text-slate-400">{}</p>'
-            "</a>",
-            self._get_user_url(record),
-            value.name,
-            value.username,
-        )
-
-    def render_index(self, value, record):
-        page = getattr(self, "page", None)
-
-        if not hasattr(self, "_row_counter"):
-            unique_before_page = 0
-
-            if page:
-                per_page = page.paginator.per_page
-                page_start_index = (page.number - 1) * per_page
-                seen_ids = set()
-
-                for d in self.data[:page_start_index]:
-                    if d.pk not in seen_ids:
-                        seen_ids.add(d.pk)
-                        unique_before_page += 1
-
-            self._row_counter = itertools.count(start=unique_before_page + 1)
-
-        if self._is_seen(record):
-            return ""
-
-        return next(self._row_counter)
 
 
 class WorkerTasksTable(GroupedTable, OrgContextTable):
