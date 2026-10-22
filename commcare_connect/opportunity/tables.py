@@ -204,7 +204,7 @@ class DeliverStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name of the User", footer="Total")
     username = columns.Column(accessor="user__username", visible=False)
     payment_unit = columns.Column("Name of Payment Unit")
-    completed = SumColumn("Delivered")
+    delivered = SumColumn("Delivered")
     pending = SumColumn("Pending")
     approved = SumColumn("Approved")
     rejected = SumColumn("Rejected")
@@ -220,7 +220,7 @@ class DeliverStatusTable(OrgContextTable):
             "display_name",
             "username",
             "payment_unit",
-            "completed",
+            "delivered",
             "pending",
             "approved",
             "rejected",
@@ -1468,19 +1468,19 @@ class TotalFlagCountsColumn(tables.Column):
 
 class TotalDeliveredColumn(tables.Column):
     def render_footer(self, bound_column, table):
-        completed = sum(row.completed for row in table.data)
+        delivered = sum(row.delivered for row in table.data)
         incomplete = sum(row.incomplete for row in table.data)
         over_limit = sum(row.over_limit for row in table.data)
 
         rows = [
-            {"label": "Completed", "value": completed},
+            {"label": "Completed", "value": delivered},
             {"label": "Incomplete", "value": incomplete},
             {"label": "Over limit", "value": over_limit},
         ]
         return render_to_string(
             "components/worker_page/deliver_column.html",
             {
-                "value": completed,
+                "value": delivered,
                 "rows": rows,
             },
         )
@@ -1503,7 +1503,7 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
     )
     delivered = TotalDeliveredColumn(
         verbose_name=header_with_tooltip("Delivered", "Delivered number of payment units"),
-        accessor="completed",
+        accessor="delivered",
         order_by="total_completed",
     )
     pending = TotalFlagCountsColumn(
@@ -1593,7 +1593,7 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
 
     def render_delivered(self, record, value):
         rows = [
-            {"label": "Completed", "value": record.completed},
+            {"label": "Completed", "value": record.delivered},
             {"label": "Incomplete", "value": record.incomplete},
             {"label": "Over limit", "value": record.over_limit},
         ]

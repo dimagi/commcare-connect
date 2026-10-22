@@ -58,7 +58,7 @@ def test_deliver_status_query_no_visits(opportunity: Opportunity, visits_elsewhe
         assert access.approved == 0
         assert access.rejected == 0
         assert access.pending == 0
-        assert access.completed == 0
+        assert access.delivered == 0
 
 
 @pytest.mark.django_db
@@ -69,11 +69,11 @@ def test_deliver_status_query(opportunity: Opportunity):
     for mobile_user in mobile_users:
         access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
         for pu in payment_units:
-            count_by_status = dict(approved=0, pending=0, rejected=0, completed=0, over_limit=0, incomplete=0)
+            count_by_status = dict(approved=0, pending=0, rejected=0, delivered=0, over_limit=0, incomplete=0)
             completed_works = CompletedWorkFactory.create_batch(20, opportunity_access=access, payment_unit=pu)
             for cw in completed_works:
                 count_by_status[cw.status.value] += 1
-            count_by_status["completed"] = len(completed_works) - count_by_status["incomplete"]
+            count_by_status["delivered"] = len(completed_works) - count_by_status["incomplete"]
             completed_work_counts[(mobile_user.username, pu.name)] = count_by_status
 
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
@@ -83,7 +83,7 @@ def test_deliver_status_query(opportunity: Opportunity):
         assert completed_work_counts[(username, access.payment_unit)]["approved"] == access.approved
         assert completed_work_counts[(username, access.payment_unit)]["rejected"] == access.rejected
         assert completed_work_counts[(username, access.payment_unit)]["pending"] == access.pending
-        assert completed_work_counts[(username, access.payment_unit)]["completed"] == access.completed
+        assert completed_work_counts[(username, access.payment_unit)]["delivered"] == access.delivered
         assert completed_work_counts[(username, access.payment_unit)]["over_limit"] == access.over_limit
         assert completed_work_counts[(username, access.payment_unit)]["incomplete"] == access.incomplete
 

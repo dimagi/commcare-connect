@@ -217,7 +217,7 @@ def _rendered_context(render):
 
 def test_worker_delivery_table_counts():
     record = SimpleNamespace(
-        pending=1, approved=1, rejected=4, over_limit=1, completed=7, incomplete=1, total_visits=5
+        pending=1, approved=1, rejected=4, over_limit=1, delivered=7, incomplete=1, total_visits=5
     )
     table = WorkerDeliveryTable([], org_slug="org", opp_id="opp")
 

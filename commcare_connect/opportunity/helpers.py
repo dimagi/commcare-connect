@@ -310,7 +310,7 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
 
         queryset = (
             queryset.annotate(
-                completed=(F("pending") + F("approved") + F("rejected") + F("over_limit")),
+                delivered=(F("pending") + F("approved") + F("rejected") + F("over_limit")),
                 total_completed=(
                     F("total_pending") + F("total_approved") + F("total_rejected") + F("total_over_limit")
                 ),
