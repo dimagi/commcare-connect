@@ -178,14 +178,18 @@ stays available — but worth agreeing in advance.
 
 **Step 2:** Activate the deploy freeze.
 
-**Step 3:** Dump Superset's metadata — the only irreplaceable data on the instance, and the rollback
+**Step 3:** Stop Superset. It stays down until Task 14. This means nothing writes to `superset_meta`
+after the Step 4 dump (such writes would be lost if the dump were restored), and users see a clean
+outage rather than errors or the empty tables of a re-copy.
+
+**Step 4:** Dump Superset's metadata — the only irreplaceable data on the instance, and the rollback
 artifact if Superset breaks after the upgrade:
 
 ```bash
 pg_dump -h <endpoint> -U postgres -d superset_meta -Fc -f superset_meta_window_start.dump
 ```
 
-**Step 4:** Record timestamps.
+**Step 5:** Record timestamps.
 
 ### Task 6: Disable the subscription and snapshot
 
@@ -446,7 +450,7 @@ sample cannot distinguish frozen from current, which is exactly how this failure
 delete it and confirm the delete replicates too — the plan's one write to the primary, so log both
 statements. **Step 5:** Slot on the primary is `active`, retained bytes small and falling.
 
-**Task 14: Superset** — dashboards load, logins work, a saved chart still queries the analytics
+**Task 14: Superset** — start Superset only once Tasks 12–13 pass. Then check that dashboards load, logins work, a saved chart still queries the analytics
 database, and geometry-backed content renders.
 
 **Task 15: Close out** — summarise the measured upgrade duration, the probe answer, and whether the
@@ -483,7 +487,7 @@ Task 8 instead. The full rollback below stays available either way.
 
 **Restoring the metadata dump.** `superset_meta` still exists at this point, so a plain
 `pg_restore` will not replace what is in it — it errors on every existing object and leaves a
-half-old, half-new database. Stop Superset first, then:
+half-old, half-new database. Stop Superset first (if it is running), then:
 
 ```bash
 pg_restore -h <endpoint> -U postgres -d superset_meta \
@@ -548,9 +552,9 @@ scratch instance, time how long it takes to become `available`, confirm `postgre
 `pg_subscription`, and try the R4 rename on it. Then delete it, and the scratch parameter group.
 This is the only rehearsal of R3 and R4.
 
-#### R1: Stop Superset and detach the upgraded instance from the slot
+#### R1: Keep Superset stopped and detach the upgraded instance from the slot
 
-Stop Superset so nobody uses a half-working instance. Then, if the upgraded instance is reachable:
+Make sure Superset is stopped, so nobody uses a half-working instance. Then, if the upgraded instance is reachable:
 
 ```python
 conn = secondary(user="postgres")
@@ -623,8 +627,8 @@ aws rds modify-db-instance --db-instance-identifier <instance-id>-rollback \
 # poll until <instance-id> is 'available' and its Endpoint.Address matches the R0 record
 ```
 
-DNS can take a few minutes to follow. Restart Superset and the Connect containers afterwards, so
-no pooled connection still points at the old address.
+DNS can take a few minutes to follow. Restart the Connect containers afterwards, so no pooled
+connection still points at the old address. Superset stays stopped until Task 14 in R6.
 
 **Fallback — repoint the config.** Use the R0 Step 2 locations. Update `secondary_db_url` and run
 `inv django-settings`; it takes effect at the R7 deploy. Update Superset's `SQLALCHEMY_DATABASE_URI`
