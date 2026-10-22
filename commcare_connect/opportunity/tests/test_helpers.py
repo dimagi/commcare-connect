@@ -11,6 +11,7 @@ from commcare_connect.opportunity.helpers import (
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
+    get_worker_deliveries,
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
@@ -86,6 +87,36 @@ def test_deliver_status_query(opportunity: Opportunity):
         assert completed_work_counts[(username, access.payment_unit)]["delivered"] == access.delivered
         assert completed_work_counts[(username, access.payment_unit)]["over_limit"] == access.over_limit
         assert completed_work_counts[(username, access.payment_unit)]["incomplete"] == access.incomplete
+
+
+@pytest.mark.django_db
+def test_get_worker_deliveries(opportunity: Opportunity):
+    payment_units = PaymentUnitFactory.create_batch(3, opportunity=opportunity)
+    no_work_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    one_unit_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    CompletedWorkFactory(
+        opportunity_access=one_unit_access, payment_unit=payment_units[0], status=CompletedWorkStatus.pending
+    )
+    two_unit_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    for payment_unit in payment_units[:2]:
+        CompletedWorkFactory(
+            opportunity_access=two_unit_access, payment_unit=payment_unit, status=CompletedWorkStatus.over_limit
+        )
+
+    deliveries = {delivery.access.pk: delivery for delivery in get_worker_deliveries(opportunity, {})}
+
+    assert len(deliveries) == 3
+    assert deliveries[no_work_access.pk].payment_unit_label == "3 payment units"
+    one_unit = deliveries[one_unit_access.pk]
+    assert one_unit.payment_unit_label == payment_units[0].name
+    assert one_unit.payment_unit_id == payment_units[0].payment_unit_id
+    assert one_unit.sub_rows == []
+    two_units = deliveries[two_unit_access.pk]
+    assert two_units.payment_unit_label == "2 payment units"
+    assert two_units.payment_unit_id is None
+    assert [row.payment_unit_label for row in two_units.sub_rows] == [unit.name for unit in payment_units[:2]]
+    assert two_units.over_limit == 2
+    assert two_units.delivered == 2
 
 
 @pytest.mark.django_db
