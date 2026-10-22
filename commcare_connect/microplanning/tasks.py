@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils.html import strip_tags
+from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from commcare_connect.connect_id_client import send_message
@@ -51,6 +52,12 @@ def _overlap_percent(ratio):
     (0.06000000000002) is ignored with the same tolerance as the limit, so it doesn't round up a
     whole step, and every rejected pair reads as more than the limit."""
     return f"{math.ceil((ratio - WORK_AREA_OVERLAP_RATIO_TOLERANCE) * 1000) / 10:.1f}"
+
+
+def ward_key(ward):
+    """Wards that differ only in case, spacing or punctuation are the same ward ("Tudu Kwaya" and
+    "tudu-kwaya"). Groups created through the API can only store a slug as their ward."""
+    return slugify(ward, allow_unicode=True)
 
 
 class GroupRow(NamedTuple):
@@ -243,6 +250,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.has_group_names = False
         # Group name -> (line number, ward) of each of its rows.
         self.group_rows = defaultdict(list)
+        self.existing_groups = {}
         self.group_cache = {}
         self.total_rows = 0
         self.rows_with_group = 0
@@ -257,6 +265,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         existing = WorkArea.objects.filter(opportunity_id=self.opp_id, slug__in=self.seen_slugs)
         for line_num in sorted(self.seen_slugs[slug] for slug in existing.values_list("slug", flat=True)):
             self._add_error(line_num, _("Area slug already exists for this opportunity"))
+        self._validate_group_wards()
 
     def _process_row(self, line_num, row):
         super()._process_row(line_num, row)
@@ -277,6 +286,26 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
                 _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
             )
 
+    def _validate_group_wards(self):
+        """Every row of a group must give the group's ward: its saved ward, or for a new group the
+        ward of its first row. Wards are compared by ward_key."""
+        if not self.group_rows:
+            return
+        self.existing_groups = {
+            group.name: group
+            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_rows)
+        }
+        for group_name, rows in self.group_rows.items():
+            group = self.existing_groups.get(group_name)
+            group_ward = group.ward if group else rows[0].ward
+            for line_num, ward in rows:
+                if ward_key(ward) != ward_key(group_ward):
+                    message = _(
+                        "Work Area Group %(group)s is in ward %(group_ward)s, but these rows give ward %(ward)s. "
+                        "Correct the ward, or use a different group name."
+                    ) % {"group": group_name, "group_ward": group_ward, "ward": ward}
+                    self._add_error(line_num, message)
+
     def _prepare_insert(self):
         self.implementation_area_map = dict(
             ImplementationArea.objects.filter(opportunity_id=self.opp_id).values_list("name", "id")
@@ -284,13 +313,10 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.group_cache = self._resolve_work_area_groups() if self.has_group_names else {}
 
     def _resolve_work_area_groups(self):
-        group_cache = {
-            group.name: group
-            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_rows)
-        }
+        group_cache = dict(self.existing_groups)
         missing = [name for name in self.group_rows if name not in group_cache]
         if missing:
-            # A new group takes the ward of its first row.
+            # A new group takes the ward of its first row, as that row spelled it.
             created = WorkAreaGroup.objects.bulk_create(
                 [
                     WorkAreaGroup(opportunity_id=self.opp_id, name=name, ward=self.group_rows[name][0].ward)
