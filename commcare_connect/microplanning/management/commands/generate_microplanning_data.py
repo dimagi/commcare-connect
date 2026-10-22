@@ -229,12 +229,11 @@ class Command(BaseCommand):
         random.seed(options["seed"])
 
         with transaction.atomic():
-            opportunity, owns_organization = self.resolve_opportunity(options)
+            opportunity = self.resolve_opportunity(options)
             if opportunity.deliver_app_id is None:
                 raise CommandError(
                     f"Opportunity {opportunity.name!r} has no deliver app, so no deliver units can be seeded."
                 )
-            assignment_mode = self.ensure_program_manager(opportunity.organization, owns_organization)
             if not options["no_admin"]:
                 self.ensure_admin(opportunity.organization)
             self.ensure_flag(opportunity)
@@ -252,14 +251,10 @@ class Command(BaseCommand):
             )
             visit_count = self.create_visits(opportunity, work_areas, payment_units)
 
-        self.report(opportunity, work_areas, visit_count, len(inaccessibility_requests), assignment_mode)
+        self.report(opportunity, work_areas, visit_count, len(inaccessibility_requests))
 
     def resolve_opportunity(self, options):
-        """The caller's existing opportunity, or the demo one (created on first run).
-
-        Returns the opportunity and whether its organization is one this command owns — an organization
-        the caller supplied is only ever read, never reconfigured, on this run or a later one.
-        """
+        """The caller's existing opportunity, or the demo one (created on first run)."""
         if options["opp_id"]:
             try:
                 opportunity = get_object_by_uuid_or_int(
@@ -268,18 +263,18 @@ class Command(BaseCommand):
             except Http404:
                 raise CommandError(f"No opportunity matches --opp-id {options['opp_id']!r}") from None
             self.stdout.write(f"Using existing opportunity: {opportunity.name}")
-            return opportunity, False
+            return opportunity
         return self.ensure_demo_opportunity(options["org_slug"])
 
     def ensure_demo_opportunity(self, org_slug):
-        """The demo opportunity, and whether its organization is one this command owns."""
-        org, owns_organization = self.ensure_demo_org(org_slug)
+        """The demo opportunity, created in the demo organization on first run."""
+        org = self.ensure_demo_org(org_slug)
         hq_server = self.ensure_hq_server()
         opportunity = org.opportunities.filter(name=DEMO_OPP_NAME).first()
         if opportunity:
             self.backfill_hq_server(opportunity, hq_server)
             self.stdout.write(f"Using existing demo opportunity in {org.slug}")
-            return opportunity, owns_organization
+            return opportunity
 
         currency = Currency.objects.filter(code="USD").first()
         country = Country.objects.filter(code="USA").first()
@@ -323,7 +318,7 @@ class Command(BaseCommand):
             end_date=today + timedelta(days=120),
         )
         self.stdout.write(f"Created demo opportunity in {org.slug}")
-        return opportunity, owns_organization
+        return opportunity
 
     def ensure_demo_org(self, org_slug):
         """Reuse whichever organization already holds the demo opportunity, else make one.
@@ -332,11 +327,6 @@ class Command(BaseCommand):
         Organization.save() replaces any slug passed in with slugify_uniquely(name), so the slug
         is not a usable lookup key and matching on name alone breaks once a run has left a
         duplicate behind.
-
-        Also returns whether the organization is this command's own, which is a question about the
-        organization rather than about this run's arguments: once a --org-slug run has put the demo
-        opportunity in the caller's organization, a later run without the flag finds it there again,
-        and must still not reconfigure it.
         """
         if org_slug:
             org = Organization.objects.filter(slug=org_slug).first()
@@ -345,31 +335,7 @@ class Command(BaseCommand):
         else:
             existing = Opportunity.objects.filter(name=DEMO_OPP_NAME).select_related("organization").first()
             org = existing.organization if existing else Organization.objects.create(name=DEMO_ORG_NAME)
-        return org, org.name == DEMO_ORG_NAME
-
-    def ensure_program_manager(self, org, owns_organization):
-        """Assignment Mode needs an admin membership in a *program manager* organization.
-
-        Only set on the organization this command created. program_manager changes what the whole
-        app shows for an organization, well beyond microplanning, so flipping it on one the caller
-        pointed us at would be a side effect nobody asked for — that case is reported instead.
-
-        Returns whether Assignment Mode will actually work.
-        """
-        if org.program_manager:
-            return True
-        if not owns_organization:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"{org.slug} is not a program manager organization, so Assignment Mode will render the "
-                    "ordinary progress map. Set program_manager on it yourself to use Assignment Mode."
-                )
-            )
-            return False
-        org.program_manager = True
-        org.save(update_fields=["program_manager"])
-        self.stdout.write(f"Marked {org.slug} as a program manager organization")
-        return True
+        return org
 
     def ensure_hq_server(self):
         """Reuse any HQServer; build one, with the OAuth application it requires, if there is none."""
@@ -770,7 +736,7 @@ class Command(BaseCommand):
         # Visited but short of the target.
         return (*service_delivery, max(1, work_area.expected_visit_count - 1))
 
-    def report(self, opportunity, work_areas, visit_count, inaccessibility_request_count, assignment_mode):
+    def report(self, opportunity, work_areas, visit_count, inaccessibility_request_count):
         base = f"/a/{opportunity.organization.slug}/microplanning/{opportunity.opportunity_id}/"
         self.stdout.write(
             self.style.SUCCESS(
@@ -779,10 +745,9 @@ class Command(BaseCommand):
             )
         )
         self.stdout.write(f"Progress Map:   {base}")
-        if assignment_mode:
-            self.stdout.write(f"Assignment Mode: {base}?assignment_mode=1")
-            if inaccessibility_request_count:
-                self.stdout.write(f"Inaccessible Mode: {base}?inaccessible_mode=1")
+        self.stdout.write(f"Assignment Mode: {base}?assignment_mode=1")
+        if inaccessibility_request_count:
+            self.stdout.write(f"Inaccessible Mode: {base}?inaccessible_mode=1")
 
 
 def cluster_name(index):
