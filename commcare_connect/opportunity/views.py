@@ -599,7 +599,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
             {
                 "name": "Max Service Deliveries",
                 "count": header_with_tooltip(
-                    safe_display(int(object.allotted_visits)),
+                    safe_display(object.allotted_visits),
                     "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
                 ),
                 "icon": "fa-gears",
