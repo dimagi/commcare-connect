@@ -222,6 +222,10 @@ def test_worker_delivery_table_counts():
     table = WorkerDeliveryTable([], org_slug="org", opp_id="opp")
 
     progress = _rendered_context(lambda: table.render_delivery_progress(record))
+    delivered = _rendered_context(lambda: table.render_delivered(record))
 
     # Only pending and approved work counts towards the allocation.
     assert (progress["current"], progress["percentage"]) == (2, 40.0)
+    # Over-limit work is listed on its own, not inside Completed.
+    assert delivered["value"] == 7
+    assert [row["value"] for row in delivered["rows"]] == [6, 1, 1]

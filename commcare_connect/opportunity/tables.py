@@ -1471,19 +1471,22 @@ class TotalDeliveredColumn(tables.Column):
         delivered = sum(row.delivered for row in table.data)
         incomplete = sum(row.incomplete for row in table.data)
         over_limit = sum(row.over_limit for row in table.data)
+        return _render_delivered_breakdown(delivered, incomplete, over_limit)
 
-        rows = [
-            {"label": "Completed", "value": delivered},
-            {"label": "Incomplete", "value": incomplete},
-            {"label": "Over limit", "value": over_limit},
-        ]
-        return render_to_string(
-            "components/worker_page/deliver_column.html",
-            {
-                "value": delivered,
-                "rows": rows,
-            },
-        )
+
+def _render_delivered_breakdown(delivered, incomplete, over_limit):
+    rows = [
+        {"label": _("Completed"), "value": delivered - over_limit},
+        {"label": _("Incomplete"), "value": incomplete},
+        {"label": _("Over limit"), "value": over_limit},
+    ]
+    return render_to_string(
+        "components/worker_page/deliver_column.html",
+        {
+            "value": delivered,
+            "rows": rows,
+        },
+    )
 
 
 class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
@@ -1591,19 +1594,8 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         self.run_after_every_row(record)
         return format_html(template, url)
 
-    def render_delivered(self, record, value):
-        rows = [
-            {"label": "Completed", "value": record.delivered},
-            {"label": "Incomplete", "value": record.incomplete},
-            {"label": "Over limit", "value": record.over_limit},
-        ]
-        return render_to_string(
-            "components/worker_page/deliver_column.html",
-            {
-                "value": value,
-                "rows": rows,
-            },
-        )
+    def render_delivered(self, record):
+        return _render_delivered_breakdown(record.delivered, record.incomplete, record.over_limit)
 
     def _render_flag_counts(self, record, value, status):
         url = reverse("opportunity:worker_flag_counts", args=[self.org_slug, self.opp_id])
