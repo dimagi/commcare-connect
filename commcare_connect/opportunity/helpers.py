@@ -776,8 +776,7 @@ def get_worker_tasks_base_queryset(opportunity):
     """Return the annotated queryset for the worker tasks table.
 
     One row per (worker, active task) pair. Only workers with active tasks
-    are included. Ordered by user name then task creation date, as required
-    by `GroupedByWorkerMixin` for correct row grouping.
+    are included. Ordered by user name then task creation date.
     """
     return (
         OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
