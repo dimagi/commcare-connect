@@ -1,0 +1,14 @@
+{% load i18n %}
+<div>
+  {% if next_step %}
+    <button type="button"
+            data-test-submission-form
+            class="button button-sm outline-style"
+            hx-post="{% url 'opportunity:test_submissions_worker_step' request.org.slug opportunity.opportunity_id %}"
+            hx-vals='{"access": "{{ access.pk }}"}'
+            hx-target="#submission-log"
+            hx-swap="afterbegin">{{ next_step.label }}</button>
+  {% else %}
+    <span class="hint">{% translate "Ready to deliver" %}</span>
+  {% endif %}
+</div>

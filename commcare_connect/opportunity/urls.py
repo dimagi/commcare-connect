@@ -12,6 +12,8 @@ from commcare_connect.opportunity.views import (
     OpportunityFinalize,
     OpportunityList,
     OpportunityPaymentUnitTableView,
+    SubmissionSimulatorView,
+    SubmissionSimulatorWorkerStepView,
     TaskTypeOcsSection,
     TaskTypesConfig,
     WorkerDeliverView,
@@ -57,6 +59,7 @@ from commcare_connect.opportunity.views import (
     user_visit_review,
     verification_flags_config,
 )
+from commcare_connect.utils.local_testing import simulator_enabled
 
 app_name = "opportunity"
 urlpatterns = [
@@ -205,3 +208,14 @@ urlpatterns = [
     path("<slug:opp_id>/assigned_tasks/<int:pk>/edit/", EditAssignedTask.as_view(), name="edit_assigned_task"),
     path("", include("commcare_connect.audit.urls", namespace="audit")),
 ]
+
+if simulator_enabled():
+    # Local development only: the route does not exist unless ENABLE_TEST_SUBMISSIONS and DEBUG are on
+    urlpatterns += [
+        path("<slug:opp_id>/test_submissions/", SubmissionSimulatorView.as_view(), name="test_submissions"),
+        path(
+            "<slug:opp_id>/test_submissions/worker_step/",
+            SubmissionSimulatorWorkerStepView.as_view(),
+            name="test_submissions_worker_step",
+        ),
+    ]

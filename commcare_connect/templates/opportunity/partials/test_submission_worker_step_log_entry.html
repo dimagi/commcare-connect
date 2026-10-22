@@ -1,0 +1,40 @@
+{% load i18n %}
+<div class="rounded-lg border border-gray-200 p-3 text-sm flex flex-col gap-1">
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="hint">{{ submitted_at|time:"H:i:s" }}</span>
+    <span class="title-sm">{{ access.user.name }}</span>
+    {% if step %}<span class="badge badge-sm badge-teal">{{ step.label }}</span>{% endif %}
+  </div>
+  {% if step_error %}
+    <p class="text-red-600">{{ step.label }} {% translate "failed:" %} {{ step_error }}</p>
+  {% elif step == "accept" %}
+    <p>{% translate "Accepted the invite." %}</p>
+  {% elif step == "learn" %}
+    <p>{% translate "Started learning, and linked the worker to the learn app's domain." %}</p>
+  {% elif not step %}
+    <p>{% translate "Nothing to do: the worker is ready to deliver." %}</p>
+  {% elif outcome.error %}
+    <p class="text-red-600">{% translate "Claim refused:" %} {{ outcome.error }}</p>
+  {% else %}
+    <ul class="flex flex-col gap-1">
+      {% if outcome.claim_created %}
+        <li>{% translate "Claimed the opportunity." %}</li>
+      {% endif %}
+      {% for limit in outcome.created_limits %}
+        <li>
+          {% translate "Claim limit for" %} {{ limit.payment_unit.name }}: {{ limit.max_visits }} {% translate "visits" %}
+        </li>
+      {% empty %}
+        <li>{% translate "No new claim limits." %}</li>
+      {% endfor %}
+      {% for payment_unit in outcome.skipped_payment_units %}
+        <li class="text-brand-marigold">
+          {% translate "No claim limit for" %} {{ payment_unit.name }}: {% translate "the remaining budget can't fund it." %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+<template>
+  {% include "opportunity/partials/test_submission_worker_row.html" with oob=True %}
+</template>

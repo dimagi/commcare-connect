@@ -65,6 +65,20 @@ from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.form_receiver.serializers import XFormSerializer
+from commcare_connect.form_receiver.submission_simulator import (
+    accept_invite_for_worker,
+    build_assessment_form,
+    build_deliver_form,
+    build_learn_form,
+    claim_for_worker,
+    get_commcare_username,
+    get_next_worker_step,
+    get_worker_row,
+    get_worker_rows,
+    start_learning_for_worker,
+    submit_test_form,
+)
+from commcare_connect.form_receiver.submission_simulator_types import FormType, WorkerStep
 from commcare_connect.jira_service_desk import is_configured as is_jira_service_desk_configured
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
@@ -103,6 +117,7 @@ from commcare_connect.opportunity.forms import (
     PaymentInvoiceInvoiceTicketLinkForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
+    SimulatedSubmissionForm,
     VisitExportForm,
 )
 from commcare_connect.opportunity.helpers import (
@@ -264,6 +279,7 @@ from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
+from commcare_connect.utils.local_testing import SimulatorEnabledMixin
 from commcare_connect.utils.oauth_tokens import TokenRefreshError
 from commcare_connect.utils.ocs_api import OcsApiError, list_chatbots, user_has_connected_ocs
 from commcare_connect.utils.tables import (
@@ -4122,3 +4138,77 @@ def delete_tasks(request, org_slug, opp_id):
         if deleted_count:
             messages.success(request, _("Successfully deleted %(count)d task(s).") % {"count": deleted_count})
     return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+
+def worker_row_context(opportunity):
+    """What the Test submissions page's worker rows render with, besides the row itself."""
+    form = SimulatedSubmissionForm(opportunity=opportunity)
+    return {
+        "opportunity": opportunity,
+        "deliver_units": form.fields["deliver_unit"].queryset,
+        "learn_modules": form.fields["learn_modules"].queryset,
+        "passing_score": opportunity.learn_app.passing_score if opportunity.learn_app else None,
+        "form_types": FormType.choices,
+    }
+
+
+class SubmissionSimulatorView(SimulatorEnabledMixin, OpportunityObjectMixin, OppViewAccessMixin, View):
+    """Local-only page that fires fake CommCare HQ forms for an opportunity's workers.
+
+    Each POST runs one form through the real form processor and returns a log entry for the page.
+    """
+
+    PAYLOAD_BUILDERS = {
+        FormType.DELIVER: build_deliver_form,
+        FormType.LEARN: build_learn_form,
+        FormType.ASSESSMENT: build_assessment_form,
+    }
+
+    def get(self, request, org_slug, opp_id):
+        opportunity = self.get_opportunity()
+        context = {"rows": get_worker_rows(opportunity), **worker_row_context(opportunity)}
+        return render(request, "opportunity/test_submissions.html", context)
+
+    def post(self, request, org_slug, opp_id):
+        opportunity = self.get_opportunity()
+        form = SimulatedSubmissionForm(request.POST, opportunity=opportunity)
+        context = {"opportunity": opportunity, "form": form, "submitted_at": now()}
+        if form.is_valid():
+            context.update(self._submit(opportunity, form))
+        return render(request, "opportunity/partials/test_submission_log_entry.html", context)
+
+    def _submit(self, opportunity, form):
+        data = form.cleaned_data
+        form_type = data["form_type"]
+        access = data["access"]
+        app = opportunity.deliver_app if form_type == FormType.DELIVER else opportunity.learn_app
+        if not app:
+            return {"error": _("This opportunity has no app for this form type.")}
+        username = get_commcare_username(access.user, app)
+        if not username:
+            return {"error": _("No CommCare username for %(domain)s") % {"domain": app.cc_domain}}
+        # Each builder takes the field its form type requires, e.g. the deliver unit
+        build = self.PAYLOAD_BUILDERS[form_type]
+        payload = build(app, username, data[form.REQUIRED_FIELD[form_type]], form.get_overrides())
+        return {"outcome": submit_test_form(payload, app, access), "payload_json": json.dumps(payload, indent=2)}
+
+
+class SubmissionSimulatorWorkerStepView(SimulatorEnabledMixin, OpportunityObjectMixin, OppViewAccessMixin, View):
+    """Local-only: take a worker's next step before delivering: accept, start learning, claim, or add limits."""
+
+    def post(self, request, org_slug, opp_id):
+        opportunity = self.get_opportunity()
+        access = get_object_or_404(
+            OpportunityAccess.objects.select_related("user"), pk=request.POST.get("access"), opportunity=opportunity
+        )
+        step = get_next_worker_step(access)
+        context = {"opportunity": opportunity, "access": access, "step": step, "submitted_at": now()}
+        if step == WorkerStep.ACCEPT:
+            context["step_error"] = accept_invite_for_worker(access)
+        elif step == WorkerStep.LEARN:
+            context["step_error"] = start_learning_for_worker(access)
+        elif step in (WorkerStep.CLAIM, WorkerStep.LIMITS):
+            context["outcome"] = claim_for_worker(access)
+        # The worker's row is re-rendered out of band, as the step may have linked them or changed their next step
+        context.update(row=get_worker_row(access), **worker_row_context(opportunity))
+        return render(request, "opportunity/partials/test_submission_worker_step_log_entry.html", context)
