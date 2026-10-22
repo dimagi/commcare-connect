@@ -118,6 +118,10 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
 - **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md` and `flags/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
 
+## Commits
+
+Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunity): handle missing payment unit`). Don't mix change types in one commit; split them instead.
+
 ## Robustness
 
 - **Guard against missing environmental dependencies**: Code must not hard-fail because the environment isn't fully set up. This covers settings/env values (`settings.MAPBOX_TOKEN`, Twilio creds, API keys), DB records that act as configuration (`SocialApp`, `Site`, `Currency`/`Country`, waffle `Flag`s), and unreachable external services (HQ, ConnectID, OCS)
