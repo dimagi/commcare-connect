@@ -19,7 +19,7 @@ So before merging duplicates, I looked at what these modules actually contain.
 Reading every function, I sorted them into four roles:
 
 - **service**: writes to the database, changes state in an external system, or enforces a business rule
-- **selector**: read-only; builds querysets, table data or report data
+- **query**: read-only; builds querysets, table data or report data
 - **permission**: works out access levels or visibility
 - **util**: pure function with no domain knowledge
 
@@ -27,13 +27,13 @@ Most modules mix several roles, whatever their name:
 
 | Module | Mostly | Also contains |
 |---|---|---|
-| `opportunity/helpers.py` | selectors | a generic util (`TieredQueryset`) |
-| `program/helpers.py` | selectors | two functions only tests call |
-| `microplanning/helpers.py` | selectors | services (exclude, assign and unassign work areas, with HQ sync), utils (`pct`, `ratio`) |
-| `reports/helpers.py` | selectors | date utils |
+| `opportunity/helpers.py` | queries | a generic util (`TieredQueryset`) |
+| `program/helpers.py` | queries | two functions only tests call |
+| `microplanning/helpers.py` | queries | services (exclude, assign and unassign work areas, with HQ sync), utils (`pct`, `ratio`) |
+| `reports/helpers.py` | queries | date utils |
 | `users/helpers.py` | HQ API client and service | a request-to-org resolver used by middleware |
 | `program/utils.py` | permissions | lookups, cache invalidation, a migration-only backfill |
-| `opportunity/utils/` | services (billing, completed work) and selectors | utils, PDF and Jira payload builders |
+| `opportunity/utils/` | services (billing, completed work) and queries | utils, PDF and Jira payload builders |
 
 Most write logic isn't in any of these. It's in views, forms and tasks; for example, visit approval is in `opportunity/views.py:1218`.
 
@@ -71,18 +71,24 @@ Each app splits its non-view, non-model code by role, with topic modules inside 
 | Package | Holds | Test |
 |---|---|---|
 | `services/` | Operations that change state or enforce business rules: billing, approvals, HQ sync, Jira submissions | Does it write (to the database or an external system), or enforce a rule? |
-| `selectors/` | Read-only builders that combine queries into table or report data | Does it only read and shape data? |
+| `queries/` | Read-only builders that combine queries into table or report data | Does it only read and shape data? |
 | `exports/` | Files people download: CSV/XLSX, PDFs, and the template context those documents need | Does it turn data it was given into a file? |
 | `utils/` | Pure functions with no domain knowledge | Would it work in another project? |
 | `dataclasses.py` | Domain data types, e.g. `Money`, `LineItem` | Is it a plain data container? |
 
-`helpers.py` goes away. "Services" and "selectors" come from the [HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide). I chose `exports/` over a broad `services/` so that "service" keeps meaning "changes state", and because the codebase already uses the word (`opportunity/export.py`, the `data_export` app).
+`helpers.py` goes away. "Services" comes from the [HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide), which calls the read-only builders "selectors"; `queries/` is the plainer name for the same thing. I chose `exports/` over a broad `services/` so that "service" keeps meaning "changes state", and because the codebase already uses the word (`opportunity/export.py`, the `data_export` app).
 
 A service is defined by what it does, not by who calls it. Most services are only used inside their own app.
 
+### Caller count decides where utilities go, not other code
+
+Services, queries and exports go in their packages even when only one module calls them. They are named units with a domain purpose, so a reader can guess where one lives from what it does. If their location depended on how many callers they had, they would move whenever someone added a caller, and nobody could predict where to find them. For example, `rollback_invoice_line_items` is only called from the `invoice_update_status` view (`opportunity/views.py:2243`), but it reverses an invoice's billing, so it goes in `opportunity/services/`.
+
+A utility with one caller stays as a private function in that caller's module. It is usually a fragment of its caller rather than a standalone tool, so moving it to `utils/` makes the caller harder to read and gains nothing. When a second module needs it, move it to `utils/`.
+
 ### Queryset filters and annotations go on the model
 
-Reusable filters and annotations become methods on a custom `QuerySet`, exposed with `QuerySet.as_manager()` or `Manager.from_queryset()`, e.g. `Opportunity.objects.accessible_to(org)`. They go on the `QuerySet`, not only the `Manager`, so they can be chained after `.filter()`. `selectors/` keeps the larger, view-specific builders that call them, such as `get_payment_report_data`.
+Reusable filters and annotations become methods on a custom `QuerySet`, exposed with `QuerySet.as_manager()` or `Manager.from_queryset()`, e.g. `Opportunity.objects.accessible_to(org)`. They go on the `QuerySet`, not only the `Manager`, so they can be chained after `.filter()`. `queries/` keeps the larger, view-specific builders that call them, such as `get_payment_report_data`.
 
 ### Shared code goes where its dependencies point
 
@@ -97,7 +103,7 @@ This matches what the codebase already does. Moving domain code into `commcare_c
 
 ### Exports and context builders receive their data
 
-Exports don't query or write. A task or view calls a selector and passes the result to the export. A context builder may call a selector, but doesn't write its own queries.
+Exports don't query or write. A task or view calls a function in `queries/` and passes the result to the export. A context builder may call one too, but doesn't write its own queries.
 
 Template context goes where its users are:
 
@@ -108,7 +114,7 @@ Template context goes where its users are:
 
 ### Tasks only handle Celery concerns
 
-Tasks handle retries, progress reporting, file storage and failures. The work itself lives in services, selectors and exports, so it can be tested without Celery and reused by views. For example, the finance request submission moves out of the `submit_invoice_finance_request` task (`opportunity/tasks.py:280`) into `opportunity/services/finance_request.py`, together with its Jira payload builders.
+Tasks handle retries, progress reporting, file storage and failures. The work itself lives in services, queries and exports, so it can be tested without Celery and reused by views. For example, the finance request submission moves out of the `submit_invoice_finance_request` task (`opportunity/tasks.py:280`) into `opportunity/services/finance_request.py`, together with its Jira payload builders.
 
 ### Migrations don't import production code
 
@@ -120,7 +126,7 @@ A data migration keeps its own logic and uses `apps.get_model`. The only excepti
 
 - **QuerySet methods:** `get_billable_completed_works_qs`, `billable_works_qs`, `filter_invoices_by_month`
 - **`services/`:** `bill_invoice`, `rollback_invoice_line_items`, `CompletedWorkUpdater`, `update_status`, `update_work_payment_date`, `InvoiceWorkflow`, `finance_request.py` (the Jira submission and its payload builders)
-- **`selectors/`:** `get_billable_line_items`, `get_invoice_line_items`, `get_invoice_service_summary`, `get_invoice_delivery_rows_for_export`, `get_billable_delivery_rows_for_export`, `get_exportable_invoices`, `get_start_date_for_invoice`, `get_invoice_month_options`, `get_previous_finance_request`, `suggest_new_vendor`, `group_line_items`
+- **`queries/`:** `get_billable_line_items`, `get_invoice_line_items`, `get_invoice_service_summary`, `get_invoice_delivery_rows_for_export`, `get_billable_delivery_rows_for_export`, `get_exportable_invoices`, `get_start_date_for_invoice`, `get_invoice_month_options`, `get_previous_finance_request`, `suggest_new_vendor`, `group_line_items`
 - **`exports/invoices.py`:** `render_invoice_pdf`, `get_invoice_pdf_context`, `invoice_pdf_filename`, `build_invoice_pdf_zip`, `build_invoice_summary_dataset`
 - **`utils/`:** `split_month_options`, `with_invoice_month`, `generate_invoice_number`, `get_end_date_for_invoice`
 - **`commcare_connect/utils/`:** `_neutralize_formula`
@@ -140,7 +146,7 @@ opportunity/exports/
 audit/exports.py stream_audit_report_csv and its formatting helpers      (from audit/services.py)
 ```
 
-The queries inside these functions move to selectors.
+The queries inside these functions move to `queries/`.
 
 ## 5. First application: the Treepeat duplicates
 
