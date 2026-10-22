@@ -1,8 +1,10 @@
 import datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from django.test import RequestFactory
+from django.test.signals import template_rendered
 from django_tables2 import RequestConfig
 
 from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
@@ -20,6 +22,7 @@ from commcare_connect.opportunity.tables import (
     OpportunityTable,
     PaymentInvoiceTable,
     ProgramManagerOpportunityTable,
+    WorkerDeliveryTable,
     WorkerTasksTable,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -195,3 +198,30 @@ def test_payment_invoice_table_carries_the_usd_amount_for_selection(opportunity,
         csrf_token="token",
     )
     assert expected in table.as_html(RequestFactory().get("/"))
+
+
+def _rendered_context(render):
+    """The context `render` drew its template with, captured from Django's test-mode template_rendered signal."""
+    contexts = []
+
+    def capture(sender, context, **kwargs):
+        contexts.append(context)
+
+    template_rendered.connect(capture)
+    try:
+        render()
+    finally:
+        template_rendered.disconnect(capture)
+    return contexts[0]
+
+
+def test_worker_delivery_table_counts():
+    record = SimpleNamespace(
+        pending=1, approved=1, rejected=4, over_limit=1, completed=7, incomplete=1, total_visits=5
+    )
+    table = WorkerDeliveryTable([], org_slug="org", opp_id="opp")
+
+    progress = _rendered_context(lambda: table.render_delivery_progress(record))
+
+    # Only pending and approved work counts towards the allocation.
+    assert (progress["current"], progress["percentage"]) == (2, 40.0)

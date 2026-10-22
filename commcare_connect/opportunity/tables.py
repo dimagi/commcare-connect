@@ -1493,7 +1493,14 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
     status = StatusIndicatorColumn(orderable=False)
     last_active = DMYTColumn(empty_values=())
     payment_unit = tables.Column(orderable=False)
-    delivery_progress = tables.Column(accessor="total_visits", empty_values=(), orderable=False)
+    delivery_progress = tables.Column(
+        verbose_name=header_with_tooltip(
+            "Delivery Progress", "Pending and approved payment units against the worker's allocation"
+        ),
+        accessor="total_visits",
+        empty_values=(),
+        orderable=False,
+    )
     delivered = TotalDeliveredColumn(
         verbose_name=header_with_tooltip("Delivered", "Delivered number of payment units"),
         accessor="completed",
@@ -1556,13 +1563,13 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         return StatusIndicatorColumn.render(self.columns["status"].column, record)
 
     def render_delivery_progress(self, record):
-        current = record.completed
+        current = record.pending + record.approved
         total = record.total_visits
 
         if not total:
             return "-"
 
-        percentage = round((current / total) * 100, 2)
+        percentage = min(round((current / total) * 100, 2), 100)
 
         context = {
             "current": current,
