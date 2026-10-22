@@ -422,6 +422,21 @@ recorded in the facts table above, and unchanged by the upgrade. Any *other* own
 An empty `pg_subscription_rel`, or anything at `d`, means replication is dead regardless of what
 anything printed.
 
+**Superset can read every replicated table** — expect `[]`:
+
+```python
+print(q(conn, """SELECT c.relname FROM pg_subscription_rel sr
+                 JOIN pg_class c ON c.oid = sr.srrelid
+                 WHERE NOT has_table_privilege('superset_readonly', c.oid, 'SELECT');"""))
+```
+
+If any are listed, re-grant (not a rollback trigger, and don't re-run `setup_logical_replication` for it):
+
+```python
+q(conn, "SET ROLE connect_superset; GRANT SELECT ON ALL TABLES IN SCHEMA public TO superset_readonly;")
+q(conn, "RESET ROLE;")
+```
+
 **Task 13: Data — movement, not just counts**
 
 **Step 1:** `./manage.py logical_replication_status`, compare to the Task 2 baseline.
