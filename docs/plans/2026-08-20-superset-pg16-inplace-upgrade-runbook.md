@@ -341,6 +341,17 @@ Check `len(REPLICATION_ALLOWED_MODELS) == 29`.
       host on the **Connect New** connection before users get access. Keep `SECRET_KEY` unchanged.
 - [ ] Restart the Connect containers. (Superset stays stopped until Task 14 in R6.)
 
+**R5 — Reconnect first.** The R1 `conn` still points at the failed instance, even after R4.
+
+- [ ] Open a fresh `./manage.py shell` in a restarted Connect container, reload the helpers, and run `conn = secondary()`.
+- [ ] Confirm it is the restored instance before going on. Expect 15.17, `subenabled = False`, and `[('r', 29)]`:
+  ```python
+  q(conn, "SELECT version();")
+  q(conn, "SELECT subname, subenabled FROM pg_subscription;")
+  q(conn, "SELECT srsubstate, count(*) FROM pg_subscription_rel GROUP BY 1;")
+  ```
+  If it shows 16.13, you are still on the failed instance. Stop.
+
 **R5a — Resume (slot untouched)**
 
 - [ ] `q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub ENABLE;")`

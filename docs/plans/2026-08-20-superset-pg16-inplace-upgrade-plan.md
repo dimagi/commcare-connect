@@ -533,10 +533,15 @@ settings. Record its name and do not delete or modify it until the upgrade is cl
   *Connect Tech*), rendered into `SECONDARY_DATABASE_URL` by
   [connect.docker.env.j2](../../deploy/roles/connect/templates/connect.docker.env.j2) via
   `inv django-settings`, and picked up on the next deploy.
-- **Superset** — `SQLALCHEMY_DATABASE_URI` (points at `superset_meta`) in Superset's own deployment
-  config, which lives outside this repo. Record where it lives and who can change it. Also the stored
-  analytics connection to `superset` (*Settings → Database Connections*); because that is stored
-  in `superset_meta`, the restored copy still holds the old host.
+- **Superset** (confirmed 2026-10-22) — `SQLALCHEMY_DATABASE_URI` (points at `superset_meta` on this
+  instance) in `/home/ccc_superset/www/superset/superset_config.py` on the Superset host. Edit it by
+  hand; the `dimagi/ansible_superset` repo is out of date (its prod inventory still targets local
+  Postgres), so running its playbook would overwrite the live config. Superset runs under supervisor:
+  `sudo supervisorctl restart superset`.
+- **Superset stored connections** (*Settings → Database Connections*, Admin role) — three exist, and
+  only **Connect New** points at this instance. *Connect Database* points at
+  `connect-production-read-replica` and *Extended Database* at `superset-extended`; neither is
+  affected. Connect New is stored in `superset_meta`, so the restored copy still holds the old host.
 
 **Step 3: Name the rollback owner and the cutoff** — the latest time a full rollback can start and
 still finish inside the window. Allow for the restore time (unmeasured; Step 4 measures it) plus up
@@ -631,11 +636,19 @@ DNS can take a few minutes to follow. Restart the Connect containers afterwards,
 connection still points at the old address. Superset stays stopped until Task 14 in R6.
 
 **Fallback — repoint the config.** Use the R0 Step 2 locations. Update `secondary_db_url` and run
-`inv django-settings`; it takes effect at the R7 deploy. Update Superset's `SQLALCHEMY_DATABASE_URI`
-and its stored analytics connection. **Keep Superset's `SECRET_KEY` unchanged**, or the stored
+`inv django-settings`; it takes effect at the R7 deploy. Update Superset's `SQLALCHEMY_DATABASE_URI`,
+then start Superset and update the host on the **Connect New** connection before users get access. **Keep Superset's `SECRET_KEY` unchanged**, or the stored
 connection passwords will not decrypt.
 
 #### R5: Reconnect replication on the restored instance
+
+**First, reconnect.** The `conn` from R1 is still open to the failed instance. The R4 rename only
+changes where the endpoint name resolves, not existing connections. On the fallback route, the
+shell's settings also predate the config change. Running R5 on that `conn` would enable, drop or
+truncate on the wrong instance. Worst of all, R5b would leave the restored tables full, and the
+re-copy would then stall without any error. So open a fresh `./manage.py shell` in a restarted
+Connect container, run `conn = secondary()`, and confirm it shows `version()` 15.17, the
+subscription disabled, and `pg_subscription_rel` at `('r', 29)` before going on.
 
 **R5a — resume (slot untouched).** The restored subscriber's position matches the slot, so enabling
 replays the outage backlog with no gap. This is safe here, unlike on the upgraded instance, because
