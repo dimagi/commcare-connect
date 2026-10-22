@@ -93,8 +93,10 @@ Check `len(REPLICATION_ALLOWED_MODELS) == 29`.
 
 - [ ] Outage window agreed.
 - [ ] Deploy freeze agreed for the window.
-- [ ] Re-copy fallback signed off: Superset may show **empty** dashboards during a re-copy, and the
-      Connect primary takes sustained read load.
+- [ ] Window has ~1 hour of headroom for the slow path: if Task 8 sends you to Task 10, Superset
+      stays down until `opportunity_uservisit` (14 GB of the 16 GB) finishes copying — estimated
+      10–25 min, allow up to an hour. Prefer low Connect traffic, and say in the downtime notice it
+      may run long.
 
 ### R0 — Rollback pre-stage
 
@@ -107,7 +109,6 @@ Check `len(REPLICATION_ALLOWED_MODELS) == 29`.
              Endpoint:Endpoint.Address}'
   ```
 - [ ] Confirm who can change Superset's `SQLALCHEMY_DATABASE_URI` and its stored analytics connection.
-- [ ] Rollback owner and cutoff time named.
 - [ ] *(Recommended)* Dry-run restore of the latest automated snapshot to a scratch instance, using a
       copy of the `postgres15` parameter group with **`max_logical_replication_workers = 0`**. Time it,
       try the R4 rename, then delete the scratch instance and parameter group.

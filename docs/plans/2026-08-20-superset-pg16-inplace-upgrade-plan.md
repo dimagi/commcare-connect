@@ -157,16 +157,16 @@ it before proceeding. The manual snapshot is taken in the window, at Task 6 Step
 
 **Step 2:** Ensure no deploys happen during outage window.
 
-**Step 3: Agree on the re-copy fallback** so the upgrade path is not blocked mid-window. If the
-probe (Task 8) sends you to Task 10, all 29 tables are truncated and re-copied from the primary.
-Agree *now* that this is acceptable, and record it. What the approver is signing off:
+**Step 3: Size the window for the slow path.** If the probe (Task 8) sends you to Task 10, all 29
+tables are truncated and re-copied from the primary, and Superset stays down until the copy
+finishes. No sign-off is needed, because there is no real alternative: rolling back leaves the same
+probe result waiting for the next attempt. Just allow the time:
 
-- **Superset serves empty tables until the copy finishes** — blank dashboards, not stale ones.
-- **Sustained read load on the Connect primary** for the duration; `opportunity_uservisit` is the
-  largest of the 29.
-
-Unlikely to be needed — `max_slot_wal_keep_size = -1` means the slot survives, so the fast path
-stays available — but worth agreeing in advance.
+- **~1 hour of headroom.** 15.9 GB in total, of which `opportunity_uservisit` is 14 GB (measured
+  2026-10-22). One sync worker copies that table alone, so it sets the duration: an estimated
+  10–25 min at 10–30 MB/s. Allow up to an hour, since the rate is unmeasured.
+- **Read load on the Connect primary** for that period — a single 14 GB sequential read. Prefer a
+  low-traffic time, and say in the downtime notice that the outage may run long.
 
 ---
 
@@ -395,8 +395,8 @@ It takes the REFRESH branch (the subscription exists), sets autocommit itself, a
 `superset_readonly` its SELECTs. Its `ALTER PUBLICATION ... SET TABLE` against the primary is a
 no-op — Task 2 Step 2 confirmed the published set matches. **Never `--recreate`.**
 
-**Step 4: Watch the copy.** States progress `i` → `d` → `r`; errors stay `0|0`. Superset serves
-**empty** tables until this completes. **Do not trust the command's output** — it reports success
+**Step 4: Watch the copy.** States progress `i` → `d` → `r`; errors stay `0|0`. Superset stays
+stopped until this completes (~1 hour at most, see Task 4 Step 3). **Do not trust the command's output** — it reports success
 regardless. A table parked at `d` means the truncate missed it; truncate it now and it self-heals.
 
 ### Task 11: Lift the deploy freeze
@@ -472,7 +472,7 @@ they were the open unknowns.
 |---|---|
 | Precheck fails when the upgrade is initiated | Safe — it aborts and nothing changes. Retrieve `pg_upgrade_precheck.log` from the RDS console, fix the flagged extension, retry. Cost is a wasted window, not damage. |
 | Task 7 — PostGIS not at 3.4.3 after the upgrade | **Not a rollback trigger.** Wrong minor applied; 3.4.3 is supported on PG16. Verify geometry (Step 5) and carry the update as a follow-up. |
-| Task 8 probe returns `False` | Proceed to Task 10 — pre-authorised in Task 4 Step 3. No in-window approval needed. |
+| Task 8 probe returns `False` | Proceed to Task 10. The window already allows for it (Task 4 Step 3). No in-window approval needed. |
 | Task 10 — tables stuck at `d` | Truncate them again; the sync self-heals. Verified. |
 | Primary free space falling during the window | **Do not re-enable the subscription to relieve it** — the `ENABLE` prohibition holds regardless of storage pressure, and enabling before the Task 8 probe is what produces the silent permanent freeze. **Prefer pressing on to Task 8** and taking the re-copy branch, which releases the slot and keeps the subscription. If the window itself has to be abandoned, that is the full rollback — R1 detaches the subscription safely. Do not drop it outside that procedure (see below). |
 | Superset broken after the upgrade | Restore the Task 5 window-start metadata dump (procedure below); if that fails, full rollback. |
@@ -539,8 +539,8 @@ settings. Record its name and do not delete or modify it until the upgrade is cl
   in `superset_meta`, the restored copy still holds the old host.
 
 **Step 3: Name the rollback owner and the cutoff** — the latest time a full rollback can start and
-still finish inside the window. Restore time plus a possible full re-copy (R5b) is unmeasured; Step 4
-measures it.
+still finish inside the window. Allow for the restore time (unmeasured; Step 4 measures it) plus up
+to ~1 hour for a possible full re-copy (R5b).
 
 **Step 4 (recommended): Dry-run the restore.** Restore the latest automated snapshot to a scratch
 identifier with the Step 1 settings, except for the parameter group. **Use a copy of the
@@ -676,7 +676,7 @@ q(conn, "RESET ROLE;")
 ./manage.py setup_logical_replication
 ```
 
-Superset serves empty tables until the copy finishes — the same cost agreed in Task 4 Step 3. Watch
+Superset stays stopped until the copy finishes — up to ~1 hour, as in Task 4 Step 3. Watch
 the states move `i` → `d` → `r`, as in Task 10 Step 4.
 
 #### R6: Verify
