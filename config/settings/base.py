@@ -132,6 +132,10 @@ AUTHENTICATION_BACKENDS = [
 AUTH_USER_MODEL = "users.User"
 LOGIN_REDIRECT_URL = "users:redirect"
 LOGIN_URL = "account_login"
+# The marketing site (connect-marketing repo) serves /public/* and /blog/* behind the load
+# balancer, which only production has. Elsewhere the old marketing URLs and /public/* send
+# visitors to the login page instead of redirecting to a page that doesn't exist.
+MARKETING_SITE_AVAILABLE = env.bool("MARKETING_SITE_AVAILABLE", False)
 
 # PASSWORDS
 # ------------------------------------------------------------------------------

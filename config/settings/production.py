@@ -132,3 +132,7 @@ SPECTACULAR_SETTINGS["SERVERS"] = [  # noqa: F405
 # ------------------------------------------------------------------------------
 
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
+
+# Marketing site
+# ------------------------------------------------------------------------------
+MARKETING_SITE_AVAILABLE = env.bool("MARKETING_SITE_AVAILABLE", True)

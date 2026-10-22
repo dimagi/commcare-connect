@@ -1,7 +1,6 @@
 import re
 
 from django.urls import path, re_path
-from django.views.generic import RedirectView
 
 from . import views
 
@@ -11,6 +10,8 @@ app_name = "prelogin"
 # load balancer routes only /public/* and /blog/* to it. Every other path on
 # connect.dimagi.com lands here, so the old marketing URLs (live, indexed,
 # bookmarked) are permanently redirected to their new /public/ locations.
+# Where the marketing site isn't deployed (MARKETING_SITE_AVAILABLE, on only in
+# production), these and /public/* go to the login page instead.
 #
 # Matched with an optional trailing slash; query strings (e.g. the
 # /insights?program=kmc filters) are carried through to the new URL.
@@ -41,17 +42,21 @@ MARKETING_REDIRECTS = {
 urlpatterns = [
     re_path(
         rf"^{re.escape(route)}/?$" if route else r"^$",
-        RedirectView.as_view(url=target, permanent=True, query_string=True),
+        views.MarketingRedirectView.as_view(url=target),
         name=f"redirect-{route or 'home'}",
     )
     for route, target in MARKETING_REDIRECTS.items()
+]
+
+urlpatterns += [
+    re_path(r"^public(?:/.*)?$", views.MissingMarketingSiteView.as_view(), name="missing-marketing-site"),
 ]
 
 # Program detail pages: /portfolio/<slug>, plus the legacy /programs/<slug>.
 urlpatterns += [
     re_path(
         r"^(?:portfolio|programs)/(?P<slug>[\w-]+)/?$",
-        RedirectView.as_view(url="/public/portfolio/%(slug)s", permanent=True, query_string=True),
+        views.MarketingRedirectView.as_view(url="/public/portfolio/%(slug)s"),
         name="redirect-portfolio-detail",
     ),
 ]

@@ -1,5 +1,6 @@
 import pytest
 from django.contrib.staticfiles import finders
+from django.urls import reverse
 
 from commcare_connect.prelogin import route_meta
 
@@ -11,6 +12,10 @@ pytestmark = pytest.mark.django_db
 class TestMarketingRedirects:
     """The marketing site moved under /public/ (served by the connect-marketing
     repo); every old URL here permanently redirects to its new home."""
+
+    @pytest.fixture(autouse=True)
+    def marketing_site_available(self, settings):
+        settings.MARKETING_SITE_AVAILABLE = True
 
     @pytest.mark.parametrize(
         "old, new",
@@ -36,6 +41,16 @@ class TestMarketingRedirects:
     def test_query_string_is_preserved(self, client):
         resp = client.get("/insights?program=kmc")
         assert resp["Location"] == "/public/insights?program=kmc"
+
+    def test_public_is_not_served_here(self, client):
+        assert client.get("/public").status_code == 404
+
+    @pytest.mark.parametrize("path", ["/", "/platform", "/programs/reading-glasses", "/public", "/public/contact"])
+    def test_redirects_to_login_without_marketing_site(self, client, settings, path):
+        settings.MARKETING_SITE_AVAILABLE = False
+        resp = client.get(path)
+        assert resp.status_code == 302
+        assert resp["Location"] == reverse("account_login")
 
     def test_in_action_page_still_renders(self, client):
         resp = client.get("/in-action/nigeria-cholera-response")

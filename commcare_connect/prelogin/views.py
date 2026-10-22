@@ -1,16 +1,42 @@
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.staticfiles import finders
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.templatetags.static import static
+from django.urls import reverse
 from django.views.decorators.http import require_GET
-from django.views.generic import TemplateView
+from django.views.generic import RedirectView, TemplateView
 
 from .external_coverage import get_entries as get_news_entries
 from .route_meta import meta_for, routes_for_client
 
 # dimagi.com fetches the blog manifest cross-origin from this exact host.
 DIMAGI_ORIGIN = "https://dimagi.com"
+
+
+class MarketingRedirectView(RedirectView):
+    """Permanently redirect an old marketing URL to its /public/ home, or to the login
+    page when the marketing site isn't deployed (``MARKETING_SITE_AVAILABLE``)."""
+
+    permanent = True
+    query_string = True
+
+    def get_redirect_url(self, *args, **kwargs):
+        if settings.MARKETING_SITE_AVAILABLE:
+            return super().get_redirect_url(*args, **kwargs)
+        # Temporary, so browsers don't cache it past the marketing site being switched on
+        self.permanent = False
+        return reverse(settings.LOGIN_URL)
+
+
+class MissingMarketingSiteView(RedirectView):
+    """/public/* only reaches this app when the marketing site isn't deployed."""
+
+    def get_redirect_url(self, *args, **kwargs):
+        if settings.MARKETING_SITE_AVAILABLE:
+            raise Http404
+        return reverse(settings.LOGIN_URL)
 
 
 class HomeView(TemplateView):
