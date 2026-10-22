@@ -215,11 +215,18 @@ def _rendered_context(render):
     return contexts[0]
 
 
-def test_worker_delivery_table_counts():
+@pytest.mark.parametrize("over_limit", [0, 2], ids=["within_limit", "over_limit"])
+def test_worker_delivery_table_counts(over_limit):
     record = SimpleNamespace(
-        pending=1, approved=1, rejected=4, over_limit=1, delivered=7, incomplete=1, total_visits=5
+        pending=1,
+        approved=1,
+        rejected=4,
+        over_limit=over_limit,
+        delivered=6 + over_limit,
+        incomplete=1,
+        total_visits=5,
     )
-    table = WorkerDeliveryTable([], org_slug="org", opp_id="opp")
+    table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
 
     progress = _rendered_context(lambda: table.render_delivery_progress(record))
     delivered = _rendered_context(lambda: table.render_delivered(record))
@@ -227,5 +234,8 @@ def test_worker_delivery_table_counts():
     # Only pending and approved work counts towards the allocation.
     assert (progress["current"], progress["percentage"]) == (2, 40.0)
     # Over-limit work is listed on its own, not inside Completed.
-    assert delivered["value"] == 7
-    assert [row["value"] for row in delivered["rows"]] == [6, 1, 1]
+    assert delivered["value"] == 6 + over_limit
+    assert [row["value"] for row in delivered["rows"]] == [6, 1, over_limit]
+    assert progress["warning"] == bool(over_limit)
+    assert delivered["over_limit"] == bool(over_limit)
+    assert table.has_over_limit == bool(over_limit)
