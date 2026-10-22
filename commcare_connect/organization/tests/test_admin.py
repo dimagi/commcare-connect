@@ -175,3 +175,19 @@ class TestOrganizationChangeForm:
         response = admin_client.get(reverse("admin:organization_organization_change", args=(source.pk,)))
 
         assert {"countries", "primary_sectors"} <= set(response.context["adminform"].form.fields)
+
+
+@pytest.mark.parametrize(
+    "event_admin",
+    ["organizationevent", "contactevent", "organizationcountryevent", "organizationprimarysectorevent"],
+)
+def test_history_of_a_deleted_organization_is_still_listed(admin_client, source, event_admin):
+    source.contacts.create(name="Grace Wanjiru", email="grace@example.com")
+    source.countries.add("KEN")
+    source.primary_sectors.create(name="Health", slug="health", description="")
+    source.delete()
+
+    response = admin_client.get(reverse(f"admin:organization_{event_admin}_changelist"))
+
+    assert response.status_code == 200
+    assert "delete" in [event.pgh_label for event in response.context["cl"].result_list]

@@ -192,52 +192,53 @@ class OrganizationAdmin(admin.ModelAdmin):
         return TemplateResponse(request, "admin/organization/merge_confirmation.html", context)
 
 
+class OrganizationAuditEventAdmin(AuditEventAdmin):
+    """Read-only history of this app's records, listing events whose record has since been deleted."""
+
+    readonly_fields = ("changed_by", "changed_by_email")
+    prefetched_relations = ()
+
+    def get_queryset(self, request):
+        # Prefetched rather than joined with select_related: these foreign keys aren't nullable, so Django
+        # would use an INNER JOIN, and they have no database constraint, so the row they point at can be
+        # deleted. The join would then silently drop that row's events from the list.
+        return super().get_queryset(request).prefetch_related(*self.prefetched_relations)
+
+
 @admin.register(OrganizationEvent)
-class OrganizationEventAdmin(AuditEventAdmin):
+class OrganizationEventAdmin(OrganizationAuditEventAdmin):
     list_display = ("pgh_created_at", "organization", "pgh_label", "changed_by")
     list_filter = ("pgh_label", ("pgh_obj", admin.RelatedOnlyFieldListFilter))
     search_fields = ("name", "short_name")
-    readonly_fields = ("changed_by", "changed_by_email")
+    prefetched_relations = ("pgh_obj",)
 
     organization = audited_object("pgh_obj", _("Organization"))
 
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("pgh_obj")
-
 
 @admin.register(ContactEvent)
-class ContactEventAdmin(AuditEventAdmin):
+class ContactEventAdmin(OrganizationAuditEventAdmin):
     # `organization` is snapshotted on the event, so it still resolves after the contact is deleted.
     list_display = ("pgh_created_at", "contact", "organization", "pgh_label", "changed_by")
     list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
     search_fields = ("name", "email", "organization__name")
-    readonly_fields = ("changed_by", "changed_by_email")
+    prefetched_relations = ("pgh_obj", "organization")
 
     contact = audited_object("pgh_obj", _("Contact"))
 
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("pgh_obj", "organization")
 
-
+# `organization` and the country or sector are snapshotted on these events, so unlike pgh_obj they
+# still resolve for a delete, when the through row they described is gone.
 @admin.register(OrganizationCountryEvent)
-class OrganizationCountryEventAdmin(AuditEventAdmin):
-    # `organization` and `country` are snapshotted on the event itself, so unlike pgh_obj they still
-    # resolve for a delete, when the through row they described is gone.
+class OrganizationCountryEventAdmin(OrganizationAuditEventAdmin):
     list_display = ("pgh_created_at", "organization", "country", "pgh_label", "changed_by")
     list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
     search_fields = ("organization__name", "country__name")
-    readonly_fields = ("changed_by", "changed_by_email")
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("organization", "country")
+    prefetched_relations = ("organization", "country")
 
 
 @admin.register(OrganizationPrimarySectorEvent)
-class OrganizationPrimarySectorEventAdmin(AuditEventAdmin):
+class OrganizationPrimarySectorEventAdmin(OrganizationAuditEventAdmin):
     list_display = ("pgh_created_at", "organization", "primary_sector", "pgh_label", "changed_by")
     list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
     search_fields = ("organization__name", "primary_sector__name")
-    readonly_fields = ("changed_by", "changed_by_email")
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("organization", "primary_sector")
+    prefetched_relations = ("organization", "primary_sector")
