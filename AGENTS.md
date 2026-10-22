@@ -30,7 +30,10 @@ celery -A config.celery_app worker -B -l info
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
-# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
+# Duplicate code
+jscpd --changed commcare_connect    # clones in your uncommitted files, [NEW] = not in HEAD (pre-commit hook; settings in .jscpd.json)
+
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, jscpd)
 prek run -a
 
 # Requirements (uv)
