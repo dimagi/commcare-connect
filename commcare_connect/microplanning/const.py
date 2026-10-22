@@ -35,6 +35,9 @@ WORKAREA_MIN_ZOOM = 6
 MAX_AUTOZOOM_ZOOM = 18
 
 # Two work areas overlap when they share more than this fraction of the smaller one's area.
+# Not 0%: boundaries from GIS tools rarely line up exactly, so neighbours often share thin slivers
+# along their edges, and a 0% rule would reject correctly drawn files. 5% tolerates those slivers
+# while still catching real problems such as duplicates or one work area drawn inside another.
 WORK_AREA_MAX_OVERLAP_RATIO = 0.05
 # Overlap errors listed for a rejected upload; the rest are summed up in one line.
 WORK_AREA_OVERLAP_ERROR_LIMIT = 50
