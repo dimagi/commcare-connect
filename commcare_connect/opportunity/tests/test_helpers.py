@@ -455,8 +455,13 @@ def test_opportunity_worker_progress_stats(opportunity):
     PaymentFactory(opportunity_access=access, date_paid=today, amount=100)
 
     # Total deliveries = 4
+    # Org pay on non-approved work is excluded from total_org_accrued
     CompletedWorkFactory.create_batch(
-        2, opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1
+        2,
+        opportunity_access=access,
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+        saved_org_payment_accrued=40,
     )
     CompletedWorkFactory.create_batch(
         1,
@@ -464,6 +469,7 @@ def test_opportunity_worker_progress_stats(opportunity):
         status=CompletedWorkStatus.approved,
         saved_completed_count=1,
         saved_approved_count=1,
+        saved_org_payment_accrued=30,
     )
     CompletedWorkFactory.create_batch(
         1, opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1
@@ -492,6 +498,7 @@ def test_opportunity_worker_progress_stats(opportunity):
         status=CompletedWorkStatus.approved,
         saved_completed_count=2,
         saved_approved_count=2,
+        saved_org_payment_accrued=60,
     )
 
     result = get_opportunity_worker_progress(opportunity.id)
@@ -501,6 +508,7 @@ def test_opportunity_worker_progress_stats(opportunity):
     assert result.approved_deliveries == 3
     assert result.rejected_deliveries == 1
     assert result.total_accrued == 300
+    assert result.total_org_accrued == 90
     assert result.total_paid == 100
     assert result.visits_since_yesterday == 2
 
