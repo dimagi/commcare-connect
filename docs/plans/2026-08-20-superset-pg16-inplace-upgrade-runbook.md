@@ -210,7 +210,13 @@ Check `len(REPLICATION_ALLOWED_MODELS) == 29`.
   primary("SELECT pg_drop_replication_slot('tables_for_superset_sub');")
   ```
 - [ ] Truncate: `q(conn, TRUNCATE); q(conn, "RESET ROLE;")`
-- [ ] Re-create with the same statement, using `WITH (copy_data = true, enabled = false)`.
+- [ ] Re-create **without** `slot_name` / `create_slot`, so a fresh slot is created (the old one is gone):
+  ```python
+  q(conn, """CREATE SUBSCRIPTION tables_for_superset_sub
+               CONNECTION 'host=<primary> port=5432 dbname=<db> user=postgres_repl password=<pw> sslmode=require'
+               PUBLICATION tables_for_superset_pub
+               WITH (copy_data = true, enabled = false);""")
+  ```
 - [ ] `q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub ENABLE;")` → watch the copy, as in Task 10.
 
 ### Task 10 — Rebuild (probe `False`)
