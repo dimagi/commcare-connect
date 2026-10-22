@@ -107,11 +107,11 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
-    get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
     get_payment_report_data,
+    get_worker_deliveries,
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
@@ -3197,7 +3197,7 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
         return kwargs
 
     def get_table(self, opportunity, org_slug):
-        data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values())
+        data = get_worker_deliveries(opportunity, self.get_filter_values())
         table_kwargs = {"org_slug": org_slug, "opp_id": opportunity.opportunity_id}
         if opportunity.automatic_visit_verification:
             table_kwargs["exclude"] = ("pending",)
