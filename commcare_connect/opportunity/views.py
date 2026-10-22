@@ -107,6 +107,7 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    amount_with_currency,
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
@@ -528,10 +529,6 @@ class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView
 
         response = super().form_valid(form)
         return response
-
-
-def amount_with_currency(amount, currency_code):
-    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
 
 
 class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailView):
