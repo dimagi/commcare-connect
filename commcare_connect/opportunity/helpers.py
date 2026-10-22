@@ -65,15 +65,11 @@ def inactive_workers_subquery(days_ago):
     return Coalesce(Subquery(subquery, output_field=IntegerField()), Value(0))
 
 
-def get_deliveries_count_subquery(status=None, sum_field=None):
+def get_deliveries_count_subquery(sum_field=None):
     agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
-    filters = {"opportunity_access__opportunity_id": OuterRef("pk")}
-    if status is not None:
-        filters["status"] = status
-
     return Coalesce(
         Subquery(
-            CompletedWork.objects.filter(**filters)
+            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
             .values("opportunity_access__opportunity_id")
             .annotate(count=agg)
             .values("count")[:1],
@@ -772,23 +768,6 @@ def get_opportunity_delivery_progress(opp_id):
     )
 
     return annotated_opportunity.first()
-
-
-def get_opportunity_worker_progress(opp_id):
-    return (
-        Opportunity.objects.filter(id=opp_id)
-        .annotate(
-            total_deliveries=get_deliveries_count_subquery(sum_field="saved_completed_count"),
-            approved_deliveries=get_deliveries_count_subquery(
-                CompletedWorkStatus.approved, sum_field="saved_approved_count"
-            ),
-            rejected_deliveries=get_deliveries_count_subquery(CompletedWorkStatus.rejected),
-            total_accrued=total_accrued_sq(),
-            total_paid=total_paid_sq(),
-            visits_since_yesterday=deliveries_from_yesterday_sq(),
-        )
-        .first()
-    )
 
 
 def get_opportunity_funnel_progress(opp_id):
