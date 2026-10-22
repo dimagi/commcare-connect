@@ -1,6 +1,8 @@
 import httpx
+from django.db import transaction
+from django.utils.timezone import now
 
-from commcare_connect.opportunity.models import HQApiKey
+from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -24,20 +26,49 @@ def get_organization_for_request(request, view_kwargs):
 def create_hq_user_and_link(user, domain, opportunity):
     hq_server = opportunity.hq_server
     api_key = opportunity.api_key
-    if not ConnectIDUserLink.objects.filter(user=user, domain=domain, hq_server=hq_server).exists():
+    if not has_hq_user_link(user, domain, hq_server):
         response = _create_hq_user(user, domain, api_key)
         if response is None:
             return False
         hq_user_uuid = response.json().get("id") if response.status_code == 201 else None
-        cc_username = f"{user.username.lower()}@{domain}.commcarehq.org"
-        ConnectIDUserLink.objects.create(
-            commcare_username=cc_username,
-            user=user,
-            domain=domain,
-            hq_server=hq_server,
-            hq_user_uuid=hq_user_uuid,
-        )
+        save_hq_user_link(user, domain, hq_server, hq_user_uuid)
     return True
+
+
+def has_hq_user_link(user, domain, hq_server) -> bool:
+    return ConnectIDUserLink.objects.filter(user=user, domain=domain, hq_server=hq_server).exists()
+
+
+def save_hq_user_link(user, domain, hq_server, hq_user_uuid=None) -> ConnectIDUserLink:
+    """Link a Connect user to their CommCare user on an HQ domain, once HQ has that user."""
+    return ConnectIDUserLink.objects.create(
+        commcare_username=f"{user.username.lower()}@{domain}.commcarehq.org",
+        user=user,
+        domain=domain,
+        hq_server=hq_server,
+        hq_user_uuid=hq_user_uuid,
+    )
+
+
+def accept_opportunity_invite(access: OpportunityAccess) -> None:
+    """Mark the worker's access and invite accepted. Raises UserInvite.DoesNotExist when there is no invite."""
+    access.accepted = True
+    access.save()
+    user_invite = UserInvite.objects.get(opportunity_access=access)
+    user_invite.status = UserInviteStatus.accepted
+    user_invite.save()
+
+
+def mark_learning_started(access: OpportunityAccess) -> None:
+    """Record that the worker started the learn app, which also accepts their invite."""
+    with transaction.atomic():
+        if access.date_learn_started is None:
+            access.date_learn_started = now()
+
+            if not access.last_active or access.last_active < access.date_learn_started:
+                access.last_active = access.date_learn_started
+
+        accept_opportunity_invite(access)
 
 
 def fetch_hq_user_uuid(link: ConnectIDUserLink, api_key: HQApiKey) -> str | None:
