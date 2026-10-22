@@ -8,7 +8,6 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
-from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
@@ -45,7 +44,7 @@ from commcare_connect.utils.permission_const import (
     PRODUCT_FEATURES_ACCESS,
 )
 
-from .helpers import create_hq_user_and_link
+from .helpers import accept_opportunity_invite, create_hq_user_and_link, mark_learning_started
 from .models import ConnectIDUserLink
 
 User = get_user_model()
@@ -125,18 +124,7 @@ def start_learn_app(request):
         access_object = OpportunityAccess.objects.get(user=request.user, opportunity=opportunity)
     except OpportunityAccess.DoesNotExist:
         return Response({"error_code": ErrorCodes.NO_OPPORTUNITY_ACCESS}, status=400)
-    with transaction.atomic():
-        if access_object.date_learn_started is None:
-            access_object.date_learn_started = now()
-
-            if not access_object.last_active or access_object.last_active < access_object.date_learn_started:
-                access_object.last_active = access_object.date_learn_started
-
-        access_object.accepted = True
-        access_object.save()
-        user_invite = UserInvite.objects.get(opportunity_access=access_object)
-        user_invite.status = UserInviteStatus.accepted
-        user_invite.save()
+    mark_learning_started(access_object)
     return Response()
 
 
@@ -191,11 +179,7 @@ class AcceptInviteView(View):
                 )
             )
 
-        o.accepted = True
-        o.save()
-        user_invite = UserInvite.objects.get(opportunity_access=o)
-        user_invite.status = UserInviteStatus.accepted
-        user_invite.save()
+        accept_opportunity_invite(o)
         return HttpResponse(
             _(
                 "Thank you for accepting the invitation. Open your Connect App to "

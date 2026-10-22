@@ -1,0 +1,111 @@
+{% load i18n %}
+<tr id="worker-row-{{ row.access.pk }}"
+    {% if oob %}hx-swap-oob="true"{% endif %}>
+  <td>
+    <div class="flex flex-col gap-1">
+      <span>{{ row.access.user.name }}</span>
+      {% include "opportunity/partials/test_submission_worker_step_button.html" with access=row.access next_step=row.next_step %}
+    </div>
+  </td>
+  <td class="whitespace-normal break-all text-xs">
+    <div>{% translate "Deliver:" %} {{ row.deliver_username|default:_("no ConnectID link") }}</div>
+    <div>{% translate "Learn:" %} {{ row.learn_username|default:_("no ConnectID link") }}</div>
+  </td>
+  <td class="whitespace-normal">
+    <form data-test-submission-form
+          hx-post="{% url 'opportunity:test_submissions' request.org.slug opportunity.opportunity_id %}"
+          hx-target="#submission-log"
+          hx-swap="afterbegin"
+          x-data="{ formType: 'deliver', customise: false, entityName: '', hasDeliver: {{ row.deliver_username|yesno:'true,false' }}, hasLearn: {{ row.learn_username|yesno:'true,false' }}, get noUsername() { return this.formType === 'deliver' ? !this.hasDeliver : !this.hasLearn } }"
+          class="flex flex-col gap-2">
+      <input type="hidden" name="access" value="{{ row.access.pk }}">
+      <div class="flex flex-wrap items-center gap-2">
+        <select name="form_type" x-model="formType" class="base-dropdown w-40">
+          {% for value, label in form_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <select name="deliver_unit"
+                x-show="formType === 'deliver'"
+                :disabled="formType !== 'deliver'"
+                class="base-dropdown w-56">
+          {% for deliver_unit in deliver_units %}
+            <option value="{{ deliver_unit.pk }}">{{ deliver_unit.name }}</option>
+          {% empty %}
+            <option value="">{% translate "No deliver units" %}</option>
+          {% endfor %}
+        </select>
+        <select name="learn_modules"
+                multiple
+                x-show="formType === 'learn'"
+                x-cloak
+                :disabled="formType !== 'learn'"
+                class="base-dropdown w-56 h-auto">
+          {% for module in learn_modules %}<option value="{{ module.pk }}">{{ module.name }}</option>{% endfor %}
+        </select>
+        <input type="number"
+               name="score"
+               value="{{ passing_score|default_if_none:'' }}"
+               x-show="formType === 'assessment'"
+               x-cloak
+               :disabled="formType !== 'assessment'"
+               class="base-input w-24"
+               aria-label="{% translate 'Score' %}">
+        <button type="submit"
+                class="button button-sm primary-dark"
+                :disabled="noUsername">{% translate "Submit" %}</button>
+        <button type="button"
+                class="button-icon"
+                @click="customise = !customise"
+                :aria-expanded="customise"
+                aria-label="{% translate 'Customise' %}">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+      </div>
+      <p class="hint" x-show="noUsername" x-cloak>
+        {% translate "This worker has no ConnectID link for this app's domain, so no form can be built. Start learning links the learn domain; claiming links the deliver domain." %}
+      </p>
+      <div x-show="customise"
+           x-cloak
+           class="grid grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+        <label x-show="formType === 'deliver'">
+          {% translate "Entity" %}
+          <select name="entity_id"
+                  class="base-dropdown"
+                  @change="entityName = $event.target.selectedOptions[0].dataset.name || ''">
+            <option value="">{% translate "New entity" %}</option>
+            {% for entity_id, entity_name in row.recent_entities %}
+              <option value="{{ entity_id }}" data-name="{{ entity_name|default:'' }}">{{ entity_name|default:entity_id }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label x-show="formType === 'deliver'">
+          {% translate "Entity name" %}
+          <input type="text"
+                 name="entity_name"
+                 x-model="entityName"
+                 class="base-input">
+        </label>
+        <label>
+          {% translate "Visit time (UTC, defaults to now)" %}
+          <input type="datetime-local" name="visit_time" class="base-input">
+        </label>
+        <label>
+          {% translate "Latitude" %}
+          <input type="number" step="any" name="latitude" class="base-input">
+        </label>
+        <label>
+          {% translate "Longitude" %}
+          <input type="number" step="any" name="longitude" class="base-input">
+        </label>
+        <label x-show="formType === 'deliver'">
+          {% translate "Deliver blocks in the form" %}
+          <input type="number"
+                 name="deliver_block_count"
+                 value="1"
+                 min="1"
+                 max="10"
+                 class="base-input">
+        </label>
+      </div>
+    </form>
+  </td>
+</tr>

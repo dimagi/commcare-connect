@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n submission_simulator %}
 <div x-show="isOpen"
      x-cloak
      @click.away="isOpen = false"
@@ -50,6 +50,14 @@
       <li>
         <a href="{% url 'opportunity:task_types_config' request.org.slug opportunity.opportunity_id %}"
            class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "Configure Task Types" %}</a>
+      </li>
+    {% endif %}
+    {% submission_simulator_enabled as test_submissions_on %}
+    {% if test_submissions_on %}
+      {# The route only exists while the gate is on, so the url tag must stay inside this if #}
+      <li class="border-t border-gray-200 mt-1 pt-1">
+        <a href="{% url 'opportunity:test_submissions' request.org.slug opportunity.opportunity_id %}"
+           class="block px-4 py-2.5 text-sm text-brand-deep-purple">{% translate "Test submissions (local)" %}</a>
       </li>
     {% endif %}
   </ul>

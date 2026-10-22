@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% load i18n static %}
+{% block title %}
+  {{ request.org }} - {{ opportunity.name }} - {% translate "Test submissions" %}
+{% endblock %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/test_submissions-bundle.js' %}"></script>
+{% endblock javascript %}
+{% block content %}
+  <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
+    <div class="card_bg flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <h1 class="title">{% translate "Test submissions" %} — {{ opportunity.name }}</h1>
+        <a href="{% url 'opportunity:detail' request.org.slug opportunity.opportunity_id %}"
+           class="button button-sm outline-style">{% translate "Back to opportunity" %}</a>
+      </div>
+      <p class="hint">
+        {% blocktranslate %}Local development only. Each submission is a fake CommCare HQ form run through the real form processor, so it records exactly what a forwarded form would.{% endblocktranslate %}
+      </p>
+      <dl class="text-sm grid grid-cols-[auto_1fr] gap-x-4">
+        <dt class="title-sm">{% translate "Deliver app" %}</dt>
+        <dd>
+          {{ opportunity.deliver_app.name }} ({{ opportunity.deliver_app.cc_domain }} / {{ opportunity.deliver_app.cc_app_id }})
+        </dd>
+        <dt class="title-sm">{% translate "Learn app" %}</dt>
+        <dd>
+          {{ opportunity.learn_app.name }} ({{ opportunity.learn_app.cc_domain }} / {{ opportunity.learn_app.cc_app_id }})
+        </dd>
+        <dt class="title-sm">{% translate "HQ server" %}</dt>
+        <dd>
+          {{ opportunity.deliver_app.hq_server|default:_("None") }}
+        </dd>
+      </dl>
+    </div>
+    <div class="card_bg">
+      <table class="base-table">
+        <thead>
+          <tr>
+            <th>{% translate "Worker" %}</th>
+            <th class="whitespace-normal">{% translate "CommCare username" %}</th>
+            <th>{% translate "Submission" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% include "opportunity/partials/test_submission_worker_row.html" %}
+          {% empty %}
+            <tr>
+              <td colspan="3">{% translate "This opportunity has no workers yet." %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card_bg flex flex-col gap-2" x-data="{ logOpen: true }">
+      <button type="button"
+              class="flex items-center gap-2 text-left"
+              @click="logOpen = !logOpen"
+              :aria-expanded="logOpen"
+              aria-controls="submission-log-body">
+        <i class="fa-solid fa-chevron-down transition-transform"
+           :class="{ '-rotate-90': !logOpen }"></i>
+        <h2 class="title">{% translate "Submission log" %}</h2>
+      </button>
+      {# x-show, not x-if: htmx keeps adding entries while the log is collapsed #}
+      <div id="submission-log-body" x-show="logOpen" class="flex flex-col gap-2">
+        {# The hint shows only while the log is empty, so nothing has to remove it #}
+        <div id="submission-log" class="peer flex flex-col gap-2"></div>
+        <p class="hint hidden peer-empty:block">
+          {% translate "Submissions you make appear here. The log clears when you reload." %}
+        </p>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
