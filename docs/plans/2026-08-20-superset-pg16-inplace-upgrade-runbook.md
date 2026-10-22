@@ -108,7 +108,10 @@ Check `len(REPLICATION_ALLOWED_MODELS) == 29`.
              OptionGroups:OptionGroupMemberships[].OptionGroupName,MultiAZ:MultiAZ,Public:PubliclyAccessible,
              Endpoint:Endpoint.Address}'
   ```
-- [ ] Confirm who can change Superset's `SQLALCHEMY_DATABASE_URI` and its stored analytics connection.
+- [ ] Superset endpoint locations (for the R4 fallback):
+  - Metadata URI: `SQLALCHEMY_DATABASE_URI` in `/home/ccc_superset/www/superset/superset_config.py`.
+    Edit by hand; the ansible_superset repo is out of date, so don't run the playbook.
+  - Restart: `sudo supervisorctl restart superset`.
 - [ ] *(Recommended)* Dry-run restore of the latest automated snapshot to a scratch instance, using a
       copy of the `postgres15` parameter group with **`max_logical_replication_workers = 0`**. Time it,
       try the R4 rename, then delete the scratch instance and parameter group.
@@ -333,7 +336,9 @@ Check `len(REPLICATION_ALLOWED_MODELS) == 29`.
   # wait until available and the endpoint matches the R0 record
   ```
 - [ ] *Or, as the fallback:* update `secondary_db_url` (1Password *Ansible Secrets - Production*) →
-      `inv django-settings`, then update Superset's URI and stored connection. Keep `SECRET_KEY` unchanged.
+      `inv django-settings`. Then edit `SQLALCHEMY_DATABASE_URI` in
+      `/home/ccc_superset/www/superset/superset_config.py`, and once Superset is started, update the
+      host on the **Connect New** connection before users get access. Keep `SECRET_KEY` unchanged.
 - [ ] Restart the Connect containers. (Superset stays stopped until Task 14 in R6.)
 
 **R5a — Resume (slot untouched)**
