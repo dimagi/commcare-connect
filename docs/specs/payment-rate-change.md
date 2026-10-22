@@ -117,7 +117,7 @@ class PaymentUnitRate(BaseModel):
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.PROTECT, related_name="pay_rates")
     flw_amount = models.PositiveIntegerField()  # worker pay
     org_amount = models.PositiveIntegerField(default=0)  # org pay
-    effective_from = models.DateField()  # the 1st of a month; first pay rate: section 6.3
+    planned_for = models.DateField()  # the 1st of a month; first pay rate: section 6.3
     cancelled_by = models.CharField(max_length=255, blank=True)  # user's email, or "system"
     cancelled_on = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.TextField(blank=True)  # filled in when the system cancels a change
@@ -127,7 +127,7 @@ class PaymentUnitRate(BaseModel):
         constraints = [
             # At most one live (not cancelled) pay rate per payment unit per date
             models.UniqueConstraint(
-                fields=["payment_unit", "effective_from"],
+                fields=["payment_unit", "planned_for"],
                 condition=Q(cancelled_on__isnull=True),
                 name="unique_live_pay_rate_per_date",
             ),
@@ -137,7 +137,7 @@ class PaymentUnitRate(BaseModel):
 - **Who and when:** `BaseModel` gives `created_by` (who scheduled it), `modified_by` (who edited it last),
   `date_created` and `date_modified`.
 - **System cancellations** (section [11.4](#114-no-overspend-funding-check)): `cancelled_by` is `"system"` and `cancellation_reason` says why.
-- **`applied_on`** is when a change was applied (limits scaled). `effective_from` is only the day it
+- **`applied_on`** is when a change was applied (limits scaled). `planned_for` is only the day it
   is due. It is set by:
   - the job on the 1st (section [10](#10-applying-a-scheduled-change))
   - an Initial Rate, when it is created (section [6.3](#63-first-pay-rate-of-a-payment-unit))
@@ -147,8 +147,8 @@ A pay rate's **status** is worked out, not stored:
 
 | Status    | Rule                                                                         |
 | --------- | ---------------------------------------------------------------------------- |
-| Scheduled | not cancelled, and `effective_from` is in the future or it isn't applied yet |
-| Active    | the latest non-cancelled, applied pay rate with `effective_from` ≤ today     |
+| Scheduled | not cancelled, and `planned_for` is in the future or it isn't applied yet    |
+| Active    | the latest non-cancelled, applied pay rate with `planned_for` ≤ today        |
 | Ended     | an older non-cancelled, applied pay rate when a newer active pay rate exists |
 | Cancelled | `cancelled_on` is set                                                        |
 
@@ -163,8 +163,8 @@ A pay rate's **status** is worked out, not stored:
 class PaymentUnit(models.Model):
     def pay_rate_on(self, day):
         return (
-            self.pay_rates.filter(cancelled_on__isnull=True, applied_on__isnull=False, effective_from__lte=day)
-            .order_by("-effective_from")
+            self.pay_rates.filter(cancelled_on__isnull=True, applied_on__isnull=False, planned_for__lte=day)
+            .order_by("-planned_for")
             .first()
         )
 
@@ -175,7 +175,7 @@ class PaymentUnit(models.Model):
     @property
     def budget_pay_rate(self):
         # Before the unit starts there is no active pay rate yet, so budgets use the Initial Rate
-        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("effective_from")
+        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
 ```
 
 **A pay rate counts only once it is applied** (`applied_on` set), not when its date comes.
@@ -191,8 +191,8 @@ Earned pay uses `current_pay_rate`, since nothing can be approved before the uni
 
 ### 6.3 First pay rate of a payment unit
 
-Every payment unit needs an Initial Rate row, with `effective_from` on or before the first approval it covers. New
-payment units get it when created. `effective_from` is:
+Every payment unit needs an Initial Rate row, with `planned_for` on or before the first approval it covers. New
+payment units get it when created. `planned_for` is:
 
 - the unit's `start_date`, if set and in the future
 - otherwise, the opportunity's start date, if in the future
@@ -204,7 +204,7 @@ it as a change.
 ### 6.4 Data migration for existing payment units
 
 The **pay rate backfill** creates one row for **every** existing payment unit, in all opportunities (active, ended and not started yet), from
-its current `amount` and `org_amount`. `applied_on` is set, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `effective_from` is:
+its current `amount` and `org_amount`. `applied_on` is set, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `planned_for` is:
 
 - the payment unit's `start_date`, if set. Visits submitted before it are marked "trial" and never paid, so no
   approval comes before it. If `start_date` is in the future but the unit already has visits (its start was moved
@@ -214,7 +214,7 @@ its current `amount` and `org_amount`. `applied_on` is set, for the same reason 
 
 ### 6.5 Changing a payment unit's start date
 
-The Initial Rate starts on its `effective_from` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), and every
+The Initial Rate starts on its `planned_for` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), and every
 approval must fall on or after it. Today a PM can edit `start_date` at any time, which could break this.
 
 **Rule.** A PM can change `start_date` only if:
@@ -224,12 +224,12 @@ approval must fall on or after it. Today a PM can edit `start_date` at any time,
 - the new date is **before any pay rate change** that isn't cancelled. Otherwise the Initial Rate would move after
   that change, and the old pay rate would come back from the new start date.
 
-When the date changes, the Initial Rate's `effective_from` moves with it in the same save.
+When the date changes, the Initial Rate's `planned_for` moves with it in the same save.
 
 Otherwise the form shows an error: the unit has already started, or (if only the last rule fails) the PM must cancel
 the pay rate change first.
 
-**Opportunity start date.** When the opportunity's start date changes, each unit's Initial Rate `effective_from` is
+**Opportunity start date.** When the opportunity's start date changes, each unit's Initial Rate `planned_for` is
 worked out again with the rule in section [6.3](#63-first-pay-rate-of-a-payment-unit), in the same save. The
 opportunity form already only allows this before the opportunity starts, so no unit has approved work yet. It also allows it on the start day itself, which is now locked too: moving the
 start date then would leave that day's approvals with no active pay rate.
@@ -487,7 +487,7 @@ rate row, which the job also locks, so a change can't be edited or cancelled whi
 
 If a payment unit has **no visits** (Trial and Over Limit visits don't count), a change takes effect **immediately**.
 Nobody has earned anything at the old pay rate, so it **edits the active pay rate in place**, usually the Initial
-Rate. `effective_from` and `applied_on` don't change, so the
+Rate. `planned_for` and `applied_on` don't change, so the
 pay rate still moves with the start date (section [6.5](#65-changing-a-payment-units-start-date)).
 
 - **Modal:** the effective date shows today. Before saving, the PM confirms that the change takes effect immediately
@@ -518,25 +518,25 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
         # Raised from zero: limits aren't scaled, so the budget must cover them at the new cost (section 11.7)
         if needed_from_zero(payment_unit, flw_amount + org_amount) > opportunity.remaining_budget:
             raise ValidationError("The remaining budget can't cover this pay rate. Add budget first.")
-    pay_rate = payment_unit.pay_rates.select_for_update().filter(cancelled_on__isnull=True).latest("effective_from")
+    pay_rate = payment_unit.pay_rates.select_for_update().filter(cancelled_on__isnull=True).latest("planned_for")
     pay_rate.flw_amount = flw_amount
     pay_rate.org_amount = org_amount
     pay_rate.modified_by = user.email
     pay_rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
     scale_visit_limits(payment_unit, previous, pay_rate)
     if started and previous.flw_amount != pay_rate.flw_amount:  # no notification before the unit starts
-        # effective_from stays the original start date, so the message shows today
+        # planned_for stays the original start date, so the message shows today
         transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk, date.today()))
     return pay_rate
 ```
 
 ### 9.2 Payment units that haven't started yet
 
-Until the Initial Rate's `effective_from` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), the unit hasn't
+Until the Initial Rate's `planned_for` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), the unit hasn't
 started and no pay rate is active.
 
-- The Initial Rate shows as **Scheduled** ("Takes effect `<effective_from>`"), with Edit but no Cancel (cancelling
-  would leave the unit with no pay rate). The modal shows `effective_from` as the effective date.
+- The Initial Rate shows as **Scheduled** ("Takes effect `<planned_for>`"), with Edit but no Cancel (cancelling
+  would leave the unit with no pay rate). The modal shows `planned_for` as the effective date.
 - A change **edits the Initial Rate in place** through `change_pay_rate_in_place` (section [9.1](#91-payment-units-with-no-visits)), so if the cost goes up,
   joined workers' limits are scaled on save under the same locks. There are no approved deliveries, so no shortfall.
 - Workers are not notified and there is no NM banner.
@@ -581,7 +581,7 @@ def apply_pay_rate_changes():
     to_apply = PaymentUnitRate.objects.filter(
         cancelled_on__isnull=True,
         applied_on__isnull=True,
-        effective_from__lte=date.today(),
+        planned_for__lte=date.today(),
     )
     for pay_rate_id in to_apply.values_list("pk", flat=True):
         apply_pay_rate_change.delay(pay_rate_id)
@@ -603,7 +603,7 @@ def apply_pay_rate_change(pay_rate_id):
         pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
         if pay_rate.applied_on or pay_rate.cancelled_on:
             return  # already applied, or cancelled in the meantime
-        previous = payment_unit.pay_rate_on(pay_rate.effective_from - timedelta(days=1))
+        previous = payment_unit.pay_rate_on(pay_rate.planned_for - timedelta(days=1))
         if not opportunity.active or opportunity.has_ended:
             cancel_automatically(pay_rate, reason="The opportunity has ended")
             return
@@ -615,7 +615,7 @@ def apply_pay_rate_change(pay_rate_id):
         pay_rate.applied_on = now()
         pay_rate.save(update_fields=["applied_on"])
         if previous.flw_amount != pay_rate.flw_amount:
-            notify = partial(send_pay_rate_change_notification.delay, pay_rate.pk, pay_rate.effective_from)
+            notify = partial(send_pay_rate_change_notification.delay, pay_rate.pk, pay_rate.planned_for)
             transaction.on_commit(notify)
 ```
 
@@ -852,7 +852,7 @@ Screenshots from the Claude design are included below. This section only lists w
 
 - The same modal, pre-filled, is used for **Edit**.
 - Setting worker pay or org pay to 0 asks the PM to confirm before saving.
-- **Effective date** is shown, not editable: the 1st of next month, today (section [9.1](#91-payment-units-with-no-visits)), or the Initial Rate's `effective_from` (section [9.2](#92-payment-units-that-havent-started-yet)).
+- **Effective date** is shown, not editable: the 1st of next month, today (section [9.1](#91-payment-units-with-no-visits)), or the Initial Rate's `planned_for` (section [9.2](#92-payment-units-that-havent-started-yet)).
 - Messages: section [11.3](#113-message-before-confirming); funding error, which stops the save: section [11.4](#114-no-overspend-funding-check).
 
 ### 12.3 Payment units list
