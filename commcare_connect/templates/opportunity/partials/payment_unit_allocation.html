@@ -1,0 +1,49 @@
+{% load i18n humanize %}
+<div class="flex flex-col gap-2">
+  <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+    <span class="text-sm font-medium text-brand-deep-purple">{{ unit.name }}</span>
+    <div class="flex items-baseline gap-3">
+      {% include "opportunity/partials/limit_status.html" with usage=unit %}
+      <span class="text-sm font-semibold text-brand-indigo">{{ unit.completed_label }}</span>
+    </div>
+  </div>
+  {% include "opportunity/partials/status_split_bar.html" with usage=unit %}
+  {% if unit.today %}
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-1.5">
+        <span class="hint">{% translate "Today (all workers):" %}</span>
+        {% if unit.today.is_reached %}
+          {% include "opportunity/partials/limit_note.html" with text=unit.today.label warning=True %}
+        {% else %}
+          <span class="text-xs font-semibold text-brand-indigo">{{ unit.today.label }}</span>
+        {% endif %}
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill {% if unit.today.is_reached %}bg-brand-marigold{% else %}bg-brand-indigo{% endif %}"
+             style="width: {{ unit.today.width|stringformat:'.2f' }}%"></div>
+      </div>
+    </div>
+  {% endif %}
+  <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+    <span class="text-message-success-text">
+      <i class="fa-solid fa-thumbs-up mr-1" aria-hidden="true"></i>
+      {% blocktranslate trimmed with count=unit.counts.approved|intcomma %}
+        {{ count }} approved
+      {% endblocktranslate %}
+    </span>
+    {% if not hide_pending %}
+      <span class="text-brand-cornflower-blue">
+        <i class="fa-regular fa-clock mr-1" aria-hidden="true"></i>
+        {% blocktranslate trimmed with count=unit.counts.pending|intcomma %}
+          {{ count }} pending
+        {% endblocktranslate %}
+      </span>
+    {% endif %}
+    <span class="text-brand-mango">
+      <i class="fa-solid fa-thumbs-down mr-1" aria-hidden="true"></i>
+      {% blocktranslate trimmed with count=unit.counts.rejected|intcomma %}
+        {{ count }} rejected
+      {% endblocktranslate %}
+    </span>
+  </div>
+</div>

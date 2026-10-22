@@ -1,8 +1,10 @@
 from datetime import timedelta
 
 import pytest
+from django.template.loader import render_to_string
 from django.utils.timezone import localdate, now
 
+from commcare_connect.opportunity.helpers import amount_with_currency
 from commcare_connect.opportunity.models import CompletedWorkStatus, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
@@ -16,7 +18,13 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.opportunity.worker_progress import get_delivery_allocation, get_worker_payments
-from commcare_connect.opportunity.worker_progress_types import DailyUsage, LimitUsage, StatusCounts, WorkerPayments
+from commcare_connect.opportunity.worker_progress_types import (
+    DailyUsage,
+    DeliveryAllocation,
+    LimitUsage,
+    StatusCounts,
+    WorkerPayments,
+)
 
 
 def _usage(completed, limit):
@@ -390,3 +398,41 @@ def test_get_worker_payments(opportunity, unit_org_amount, org_amount, has_org_p
     assert payments.paid == 100
     assert payments.has_org_pay is has_org_pay
     assert payments.budget == opportunity.total_budget
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("total_budget", [1000, None])
+def test_worker_progress_template_renders(opportunity, total_budget):
+    opportunity.total_budget = total_budget
+    opportunity.save()
+    PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=5, org_amount=5)
+
+    html = render_to_string(
+        "opportunity/opportunity_worker_progress.html",
+        {"allocation": get_delivery_allocation(opportunity), "payments": get_worker_payments(opportunity)},
+    )
+
+    assert "Delivery Allocation" in html
+    assert "Show Payment Units" in html
+    budget = "1,000" if total_budget else "--"
+    assert f"<strong>{amount_with_currency(0, opportunity.currency_code)}</strong> workers · " in html
+    assert f"org / {budget}" in html
+    if total_budget is None:
+        assert "0/--" in html
+
+
+@pytest.mark.parametrize(
+    "completed, warning",
+    [(578, False), (900, True), (1000, True), (1050, True)],
+)
+def test_completed_bar_turns_warning_colour_from_nearing(completed, warning):
+    allocation = DeliveryAllocation(
+        total=_usage(completed, 1000), payment_units=[], active_workers=0, synced_workers=0
+    )
+    payments = WorkerPayments(currency="", budget=None, worker_earned=0, org_earned=0, paid=0, has_org_pay=False)
+
+    html = render_to_string(
+        "opportunity/opportunity_worker_progress.html", {"allocation": allocation, "payments": payments}
+    )
+
+    assert ('class="progress-fill bg-brand-marigold"' in html) is warning
