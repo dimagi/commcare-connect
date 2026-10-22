@@ -1474,7 +1474,7 @@ class TotalDeliveredColumn(tables.Column):
         return _render_delivered_breakdown(delivered, incomplete, over_limit)
 
 
-def _render_delivered_breakdown(delivered, incomplete, over_limit):
+def _render_delivered_breakdown(delivered, incomplete, over_limit, show_over_limit_warning=False):
     rows = [
         {"label": _("Completed"), "value": delivered - over_limit},
         {"label": _("Incomplete"), "value": incomplete},
@@ -1485,6 +1485,7 @@ def _render_delivered_breakdown(delivered, incomplete, over_limit):
         {
             "value": delivered,
             "rows": rows,
+            "over_limit": show_over_limit_warning and over_limit > 0,
         },
     )
 
@@ -1554,11 +1555,16 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         )
         order_by = ("user__name", "-last_active")
         row_attrs = {"class": "group"}
+        template_name = "tables/worker_delivery_table.html"
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
         self.use_view_url = False
         super().__init__(*args, **kwargs)
+
+    @property
+    def has_over_limit(self):
+        return any(record.over_limit for record in self.data)
 
     def render_status(self, record, value):
         if self._is_seen(record):
@@ -1595,7 +1601,9 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         return format_html(template, url)
 
     def render_delivered(self, record):
-        return _render_delivered_breakdown(record.delivered, record.incomplete, record.over_limit)
+        return _render_delivered_breakdown(
+            record.delivered, record.incomplete, record.over_limit, show_over_limit_warning=True
+        )
 
     def _render_flag_counts(self, record, value, status):
         url = reverse("opportunity:worker_flag_counts", args=[self.org_slug, self.opp_id])

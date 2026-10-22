@@ -1,0 +1,12 @@
+{% extends "base_table.html" %}
+{% load i18n %}
+{% block pagination %}
+  {% if table.has_over_limit %}
+    <p class="flex items-center gap-2 text-xs text-slate-500">
+      <i class="fa-solid fa-triangle-exclamation text-brand-marigold"
+         aria-hidden="true"></i>
+      {% translate "Delivery limit exceeded" %}
+    </p>
+  {% endif %}
+  {{ block.super }}
+{% endblock pagination %}
