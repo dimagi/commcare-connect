@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     PaymentInvoice,
     UserInvite,
+    UserInviteStatus,
 )
 from commcare_connect.opportunity.tasks import (
     OPPORTUNITY_AUTO_ARCHIVE_DAYS,
@@ -39,6 +40,7 @@ from commcare_connect.opportunity.tasks import (
     generate_user_status_export,
     generate_visit_export,
     generate_work_status_export,
+    invite_user,
     notify_user_for_scored_assessment,
     save_export,
     send_task_assignment_notification,
@@ -57,6 +59,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
+    UserInviteFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
@@ -100,6 +103,67 @@ class TestConnectUserCreation:
         assert User.objects.filter(username="test").count() == 0
         assert OpportunityAccess.objects.filter(opportunity=opportunity).count() == 0
         assert UserInvite.objects.filter(opportunity=opportunity).count() == 0
+
+    @pytest.mark.django_db
+    def test_add_connect_users_in_test_mode_skips_connectid(self, settings):
+        settings.DEBUG = True
+        settings.ENABLE_TEST_SUBMISSIONS = True
+        opportunity = OpportunityFactory()
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.fetch_users") as fetch_users,
+            mock.patch("commcare_connect.opportunity.tasks.send_sms") as send_sms,
+            mock.patch("commcare_connect.opportunity.tasks.send_message") as send_message,
+        ):
+            add_connect_users(["+15555555555"], opportunity.id)
+            # adding the same number again finds the same made-up user
+            add_connect_users(["+15555555555"], opportunity.id)
+
+        fetch_users.assert_not_called()
+        send_sms.assert_not_called()
+        send_message.assert_not_called()
+        user = User.objects.get(phone_number="+15555555555")
+        assert user.username == "test_15555555555"
+        assert user.name == "Test worker 5555"
+        access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
+        assert UserInvite.objects.get(opportunity_access=access).status == UserInviteStatus.invited
+
+    @pytest.mark.django_db
+    def test_add_connect_users_in_test_mode_reuses_existing_user(self, settings, mobile_user):
+        settings.DEBUG = True
+        settings.ENABLE_TEST_SUBMISSIONS = True
+        mobile_user.phone_number = "+27821234567"
+        mobile_user.save()
+        opportunity = OpportunityFactory()
+        with mock.patch("commcare_connect.opportunity.tasks.invite_user"):
+            add_connect_users(["+27821234567"], opportunity.id)
+
+        # no made-up user stole the number, so the real worker gets the access and invite
+        assert list(User.objects.filter(phone_number="+27821234567")) == [mobile_user]
+        access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+        assert (
+            UserInvite.objects.get(opportunity=opportunity, phone_number="+27821234567").opportunity_access == access
+        )
+
+    @pytest.mark.django_db
+    def test_invite_user_in_test_mode_sends_nothing(self, settings, mobile_user, opportunity):
+        settings.DEBUG = True
+        settings.ENABLE_TEST_SUBMISSIONS = True
+        mobile_user.phone_number = "+15555555555"
+        mobile_user.save()
+        access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+        # update_user_and_send_invite creates the invite before queueing this task
+        UserInviteFactory(opportunity=opportunity, opportunity_access=access, message_sid=None)
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_sms") as send_sms,
+            mock.patch("commcare_connect.opportunity.tasks.send_message") as send_message,
+        ):
+            invite_user(mobile_user.pk, access.pk)
+
+        send_sms.assert_not_called()
+        send_message.assert_not_called()
+        invite = UserInvite.objects.get(opportunity_access=access)
+        assert invite.status == UserInviteStatus.invited
+        assert invite.message_sid is None
 
 
 def test_send_inactive_notification_learn_inactive_message(mobile_user: User, opportunity: Opportunity):
