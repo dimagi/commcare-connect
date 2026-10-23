@@ -1,4 +1,6 @@
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from commcare_connect.organization.forms import PrimarySectorForm
@@ -23,41 +25,65 @@ def settings_admin(user):
 
 @pytest.mark.django_db
 class TestPrimarySectorForm:
-    def test_create_generates_slug(self):
-        form = PrimarySectorForm({"name": "Maternal Health", "description": ""})
+    def test_create_with_blank_slug_generates_it_from_name(self):
+        form = PrimarySectorForm({"name": "Maternal Health", "slug": "", "description": ""})
         assert form.is_valid(), form.errors
-        sector = form.save()
-        assert sector.slug == "maternal-health"
+        assert form.save().slug == "maternal-health"
+
+    def test_create_with_custom_slug(self):
+        form = PrimarySectorForm({"name": "Maternal Health", "slug": "mch", "description": ""})
+        assert form.is_valid(), form.errors
+        assert form.save().slug == "mch"
 
     @pytest.mark.parametrize("name", ["Health", "health", "  HEALTH  "])
     def test_rejects_duplicate_name(self, sector, name):
-        form = PrimarySectorForm({"name": name, "description": ""})
+        form = PrimarySectorForm({"name": name, "slug": "other", "description": ""})
         assert not form.is_valid()
         assert "name" in form.errors
 
-    def test_rejects_name_whose_slug_is_taken(self, sector):
+    @pytest.mark.parametrize("slug", ["health", ""])
+    def test_rejects_duplicate_slug(self, sector, slug):
         sector.name = "Renamed"
         sector.save()
-        form = PrimarySectorForm({"name": "Health", "description": ""})
+        form = PrimarySectorForm({"name": "Health", "slug": slug, "description": ""})
         assert not form.is_valid()
-        assert "name" in form.errors
+        assert "slug" in form.errors
 
-    def test_rejects_name_without_slug(self):
-        form = PrimarySectorForm({"name": "!!!", "description": ""})
+    @pytest.mark.parametrize("slug", ["Upper", "has space", "dot.ted", "-leading"])
+    def test_rejects_invalid_slug(self, slug):
+        form = PrimarySectorForm({"name": "Education", "slug": slug, "description": ""})
         assert not form.is_valid()
-        assert "name" in form.errors
+        assert "slug" in form.errors
+
+    def test_rejects_blank_slug_when_name_has_no_slug(self):
+        form = PrimarySectorForm({"name": "!!!", "slug": "", "description": ""})
+        assert not form.is_valid()
+        assert "slug" in form.errors
+
+    def test_create_wires_slug_autofill(self):
+        form = PrimarySectorForm()
+        assert form.fields["name"].widget.attrs["x-on:input"] == "nameChanged()"
+        assert form.fields["slug"].widget.attrs["x-on:input"] == "slugChanged()"
+
+    def test_edit_requires_slug_and_has_no_autofill(self, sector):
+        form = PrimarySectorForm({"name": "Health", "slug": "", "description": ""}, instance=sector)
+        assert not form.is_valid()
+        assert "slug" in form.errors
+        assert "x-on:input" not in form.fields["name"].widget.attrs
 
     def test_rename_keeps_slug(self, sector):
-        form = PrimarySectorForm({"name": "Global Health", "description": "x"}, instance=sector)
+        form = PrimarySectorForm({"name": "Global Health", "slug": "health", "description": "x"}, instance=sector)
         assert form.is_valid(), form.errors
         form.save()
         sector.refresh_from_db()
-        assert sector.name == "Global Health"
-        assert sector.slug == "health"
+        assert (sector.name, sector.slug) == ("Global Health", "health")
 
-    def test_resaving_unchanged_name_is_valid(self, sector):
-        form = PrimarySectorForm({"name": "Health", "description": "Updated"}, instance=sector)
+    def test_edit_changes_slug(self, sector):
+        form = PrimarySectorForm({"name": "Health", "slug": "global-health", "description": ""}, instance=sector)
         assert form.is_valid(), form.errors
+        form.save()
+        sector.refresh_from_db()
+        assert sector.slug == "global-health"
 
 
 @pytest.mark.django_db
@@ -129,7 +155,7 @@ class TestPrimarySectorViews:
         client.force_login(settings_admin)
         response = client.post(
             reverse("users:primary_sector_create"),
-            {"name": "Nutrition", "description": ""},
+            {"name": "Nutrition", "slug": "", "description": ""},
             HTTP_HX_REQUEST="true",
         )
         assert response.headers["HX-Redirect"] == reverse("users:primary_sector_list")
@@ -139,7 +165,7 @@ class TestPrimarySectorViews:
         client.force_login(settings_admin)
         response = client.post(
             reverse("users:primary_sector_create"),
-            {"name": "Health", "description": ""},
+            {"name": "Health", "slug": "", "description": ""},
             HTTP_HX_REQUEST="true",
         )
         assert response.status_code == 200
@@ -151,7 +177,7 @@ class TestPrimarySectorViews:
         client.force_login(settings_admin)
         response = client.post(
             reverse("users:primary_sector_update", args=[sector.pk]),
-            {"name": "Global Health", "description": ""},
+            {"name": "Global Health", "slug": "health", "description": ""},
             HTTP_HX_REQUEST="true",
         )
         assert response.headers["HX-Redirect"] == reverse("users:primary_sector_list")
@@ -162,6 +188,15 @@ class TestPrimarySectorViews:
         client.force_login(settings_admin)
         client.post(reverse("users:primary_sector_delete", args=[sector.pk]))
         assert not PrimarySector.objects.filter(pk=sector.pk).exists()
+
+    def test_delete_locks_sector_before_checking_use(self, client, settings_admin, sector):
+        client.force_login(settings_admin)
+        with CaptureQueriesContext(connection) as queries:
+            client.post(reverse("users:primary_sector_delete", args=[sector.pk]))
+        assert any(
+            'FROM "organization_primarysector"' in q["sql"] and q["sql"].endswith("FOR UPDATE")
+            for q in queries.captured_queries
+        )
 
     def test_delete_in_use_is_refused(self, client, settings_admin, sector):
         OrganizationFactory().primary_sectors.add(sector)

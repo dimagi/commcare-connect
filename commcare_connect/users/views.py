@@ -472,7 +472,9 @@ class PrimarySectorDeleteView(PrimarySectorPermissionMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, pk):
-        sector = get_object_or_404(PrimarySector, pk=pk)
+        # Locked until the request commits. A concurrent save assigning this sector needs a key-share lock on the row
+        # for its foreign-key check, so it can't commit between the in-use check and the delete and be dropped by it.
+        sector = get_object_or_404(PrimarySector.objects.select_for_update(), pk=pk)
         if sector.is_in_use():
             messages.error(
                 request,
