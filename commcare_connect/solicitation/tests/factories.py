@@ -10,6 +10,7 @@ from commcare_connect.solicitation.models import (
     SolicitationApplication,
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
+    SolicitationQuestion,
 )
 from commcare_connect.users.tests.factories import OrganizationFactory
 
@@ -52,3 +53,12 @@ class SolicitationEvaluationCriterionFactory(DjangoModelFactory):
 
     class Meta:
         model = SolicitationEvaluationCriterion
+
+
+class SolicitationQuestionFactory(DjangoModelFactory):
+    solicitation = SubFactory(SolicitationFactory)
+    text = Faker("sentence")
+    question_type = SolicitationQuestion.QuestionType.TEXT
+
+    class Meta:
+        model = SolicitationQuestion

@@ -1,8 +1,8 @@
 import pytest
 
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.forms import CriterionForm, SolicitationForm
-from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.forms import CriterionForm, QuestionForm, SolicitationForm
+from commcare_connect.solicitation.models import Solicitation, SolicitationQuestion
 from commcare_connect.solicitation.tests.conftest import deadline
 from commcare_connect.solicitation.tests.factories import SolicitationFactory
 
@@ -69,6 +69,24 @@ class TestSolicitationForm:
         assert form.is_valid(), form.errors
         form.save()
         assert Solicitation.objects.get(pk=form.instance.pk).hide_scores_until_submit is hide_scores
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "question_type, options, valid, saved_options",
+    [
+        (SolicitationQuestion.QuestionType.CHOICE, "Yes\r\nNo", True, ["Yes", "No"]),
+        (SolicitationQuestion.QuestionType.CHOICE, "", False, None),
+        (SolicitationQuestion.QuestionType.TEXT, "Yes", True, None),
+    ],
+)
+def test_question_choice_options(question_type, options, valid, saved_options):
+    data = {"text": "Pick one", "question_type": question_type, "choice_options": options, "required": "on"}
+    form = QuestionForm(data, criteria=SolicitationFactory().criteria.all())
+
+    assert form.is_valid() is valid
+    if valid:
+        assert form.cleaned_data["choice_options"] == saved_options
 
 
 @pytest.mark.django_db

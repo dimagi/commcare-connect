@@ -7,7 +7,12 @@ from waffle.testutils import override_switch
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.program.tests.factories import _get_default_country
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
-from commcare_connect.solicitation.tests.factories import SolicitationApplicationFactory, SolicitationFactory
+from commcare_connect.solicitation.tests.factories import (
+    SolicitationApplicationFactory,
+    SolicitationEvaluationCriterionFactory,
+    SolicitationFactory,
+    SolicitationQuestionFactory,
+)
 from commcare_connect.solicitation.views import org_solicitations
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
 
@@ -105,13 +110,46 @@ class TestSolicitationSteps:
 
         response = pm_client.post(step_url("criteria", draft), data)
 
-        assert response.url == reverse("solicitation:list", args=(draft.organization.slug,))
+        assert response.url == step_url("questions", draft)
         criterion = draft.criteria.get()
         assert (criterion.label, criterion.weight, criterion.created_by) == (
             "Technical expertise",
             100,
             program_manager_org_user_admin.email,
         )
+
+    def test_questions_step_links_saved_criterion(self, pm_client, draft):
+        criterion = SolicitationEvaluationCriterionFactory(solicitation=draft)
+        data = {
+            "questions-TOTAL_FORMS": 1,
+            "questions-INITIAL_FORMS": 0,
+            "questions-0-text": "Describe your team",
+            "questions-0-question_type": "text",
+            "questions-0-criterion": criterion.pk,
+        }
+
+        response = pm_client.post(step_url("questions", draft), data)
+
+        assert response.url == reverse("solicitation:list", args=(draft.organization.slug,))
+        assert draft.questions.get().criterion == criterion
+
+    @pytest.mark.parametrize("step", ["criteria", "questions"])
+    def test_active_solicitation_locks_criteria_and_questions(self, pm_client, program_manager_org, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE)
+        criterion = SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=100)
+        question = SolicitationQuestionFactory(solicitation=solicitation, text="Original")
+        data = {
+            f"{step}-TOTAL_FORMS": 1,
+            f"{step}-INITIAL_FORMS": 1,
+            f"{step}-0-id": criterion.pk if step == "criteria" else question.pk,
+            f"{step}-0-DELETE": "on",
+        }
+
+        response = pm_client.post(step_url(step, solicitation), data)
+
+        assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+        assert list(solicitation.criteria.all()) == [criterion]
+        assert list(solicitation.questions.all()) == [question]
 
     @pytest.mark.parametrize(
         "status, linked",

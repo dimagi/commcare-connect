@@ -3,6 +3,7 @@ from operator import attrgetter
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Field, Layout, Row
 from django import forms
+from django.contrib.postgres.forms import SimpleArrayField
 from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
@@ -10,7 +11,7 @@ from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, Currency
 from commcare_connect.program.forms import DATE_INPUT
 from commcare_connect.program.models import Program
-from commcare_connect.solicitation.models import Solicitation, SolicitationEvaluationCriterion
+from commcare_connect.solicitation.models import Solicitation, SolicitationEvaluationCriterion, SolicitationQuestion
 
 DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
 TOGGLE_WRAPPER_CLASS = "bg-slate-100 flex items-center justify-between p-4 rounded-lg"
@@ -23,6 +24,11 @@ PUBLISH_REQUIRED_FIELDS = ("description", "contact_email", "country")
 class HiddenDeleteInlineFormSet(BaseInlineFormSet):
     # A row's remove button sets Alpine's `removed`, which marks the row for deletion here.
     deletion_widget = forms.HiddenInput(attrs={":value": "removed ? 'on' : ''"})
+
+
+class BaseQuestionInlineFormSet(HiddenDeleteInlineFormSet):
+    def get_form_kwargs(self, index):
+        return {"criteria": self.instance.criteria.all()}
 
 
 class SolicitationForm(forms.ModelForm):
@@ -175,6 +181,50 @@ class CriterionForm(FormsetRowForm):
         self.helper["description"].wrap(Field, wrapper_class="col-span-2")
 
 
+class QuestionForm(FormsetRowForm):
+    choice_options = SimpleArrayField(
+        forms.CharField(),
+        label=_("Choice options"),
+        delimiter="\n",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text=_("One option per line. Only used by choice questions."),
+    )
+
+    class Meta:
+        model = SolicitationQuestion
+        fields = ["text", "help_text", "question_type", "choice_options", "required", "criterion"]
+        labels = {
+            "text": _("Text"),
+            "help_text": _("Help text"),
+            "question_type": _("Question type"),
+            "required": _("Required"),
+            "criterion": _("Criterion"),
+        }
+        widgets = {
+            "text": forms.Textarea(attrs={"rows": 2}),
+            "help_text": forms.Textarea(attrs={"rows": 2}),
+            "criterion": SEARCHABLE_SELECT,
+        }
+
+    def __init__(self, *args, criteria, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["criterion"].queryset = criteria
+        self.helper["required"].wrap(Field, css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("question_type") == SolicitationQuestion.QuestionType.CHOICE:
+            if not cleaned_data.get("choice_options"):
+                self.add_error("choice_options", _("Choice questions need at least one option."))
+        else:
+            cleaned_data["choice_options"] = None
+        return cleaned_data
+
+
 CriterionInlineFormSet = inlineformset_factory(
     Solicitation, SolicitationEvaluationCriterion, form=CriterionForm, formset=HiddenDeleteInlineFormSet, extra=0
+)
+QuestionInlineFormSet = inlineformset_factory(
+    Solicitation, SolicitationQuestion, form=QuestionForm, formset=BaseQuestionInlineFormSet, extra=0
 )

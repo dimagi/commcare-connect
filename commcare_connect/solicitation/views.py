@@ -10,7 +10,11 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import OrgPMRequiredMixin
-from commcare_connect.solicitation.forms import CriterionInlineFormSet, SolicitationForm
+from commcare_connect.solicitation.forms import (
+    CriterionInlineFormSet,
+    QuestionInlineFormSet,
+    SolicitationForm,
+)
 from commcare_connect.solicitation.models import EDITABLE_STATUSES, Solicitation, SolicitationApplication
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.utils.tables import get_validated_page_size
@@ -20,6 +24,7 @@ NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationAppli
 STEP_LABELS = {
     "details": _("Details"),
     "criteria": _("Evaluation criteria"),
+    "questions": _("Questions"),
 }
 
 
@@ -116,4 +121,10 @@ class SolicitationFormSetStepView(SolicitationStepMixin, UpdateView):
 
 class SolicitationCriteriaView(SolicitationFormSetStepView):
     step = "criteria"
+    next_step = "questions"
     form_class = CriterionInlineFormSet
+
+
+class SolicitationQuestionsView(SolicitationFormSetStepView):
+    step = "questions"
+    form_class = QuestionInlineFormSet
