@@ -62,12 +62,10 @@ def sortable_header(context, field, label, use_view_url=True, order_by_field="so
         parsed_url = urlparse(referer)
         query_params = parse_qs(parsed_url.query)
         path = parsed_url.path
-        current_sort = query_params.get(order_by_field, [""])[0]
-
     else:
         path = request.path
-        query_params = request.GET.copy()
-        current_sort = query_params.get(order_by_field, "")
+        query_params = dict(request.GET.lists())
+    current_sort = query_params.get(order_by_field, [""])[0]
 
     if current_sort == field:
         next_sort = f"-{field}"
@@ -80,7 +78,7 @@ def sortable_header(context, field, label, use_view_url=True, order_by_field="so
         icon_element = icon_element.format("fa-sort text-gray-400")
 
     if next_sort:
-        query_params[order_by_field] = next_sort
+        query_params[order_by_field] = [next_sort]
     else:
         query_params.pop(order_by_field, None)
 

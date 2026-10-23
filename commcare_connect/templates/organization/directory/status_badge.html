@@ -1,7 +1,8 @@
-{% if value == "active" %}
-  <span class="badge badge-sm positive-light">{{ record.get_status_display }}</span>
-{% elif value == "inactive" %}
-  <span class="badge badge-sm label">{{ record.get_status_display }}</span>
-{% elif value == "prospective" %}
-  <span class="badge badge-sm badge-indigo">{{ record.get_status_display }}</span>
+{# The column's value is the status's display label, so this compares the stored status instead. #}
+{% if record.status == "active" %}
+  <span class="badge badge-sm positive-light">{{ value }}</span>
+{% elif record.status == "inactive" %}
+  <span class="badge badge-sm label">{{ value }}</span>
+{% elif record.status == "prospective" %}
+  <span class="badge badge-sm badge-indigo">{{ value }}</span>
 {% endif %}

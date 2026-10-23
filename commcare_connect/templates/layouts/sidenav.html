@@ -33,21 +33,19 @@
     <!-- Navigation Items -->
     {% if request.user.is_authenticated %}
       {% if request.org %}
-        {% if request.org_access_level.has_view %}
-          <div class="mt-5">
+        <div class="mt-5">
+          {% if request.org_access_level.has_view %}
             {% url 'opportunity:list' request.org.slug as opportunity_url %}
             {% include "components/sidenav-items.html" with name="Opportunities" icon="table-cells-large" target=opportunity_url namespace="opportunity" %}
-            {% if request.org_access_level.has_standard %}
-              {% url 'program:home' request.org.slug as program_home_url %}
-              {% include "components/sidenav-items.html" with name="Programs" icon="table-columns" target=program_home_url namespace="program" %}
-            {% endif %}
-            {% if request.org_access_level.has_admin or perms.users.all_org_profile_edit_access %}
-              {% url 'organization:home' request.org.slug as organization_home_url %}
-              {% trans "My Organization" as organization_name %}
-              {% include "components/sidenav-items.html" with name=organization_name icon="building" target=organization_home_url namespace="organization" %}
-            {% endif %}
-          </div>
-        {% endif %}
+            {% url 'program:home' request.org.slug as program_home_url %}
+            {% include "components/sidenav-items.html" with name="Programs" icon="table-columns" target=program_home_url namespace="program" %}
+          {% endif %}
+          {% if request.org_access_level.has_admin or perms.users.org_management_settings_access %}
+            {% url 'organization:home' request.org.slug as organization_home_url %}
+            {% trans "My Organization" as organization_name %}
+            {% include "components/sidenav-items.html" with name=organization_name icon="building" target=organization_home_url namespace="organization" %}
+          {% endif %}
+        </div>
       {% endif %}
       {% if request.user.show_admin_sidenav %}
         {% url 'users:internal_features' as internal_features_url %}
@@ -59,7 +57,10 @@
             false
           {% endif %}
           }">
+          {# Hidden in the collapsed sidebar, where its icon would read as one more link. #}
           <button type="button"
+                  x-show="sidebarOpen"
+                  x-cloak
                   class="flex w-full rounded-lg items-center p-2 hover:bg-brand-sunset-light transition-all duration-300"
                   @click="adminOpen = !adminOpen"
                   :aria-expanded="adminOpen.toString()">
@@ -74,7 +75,7 @@
                  aria-hidden="true"></i>
             </div>
           </button>
-          {# The collapsed sidebar has no room for the header's label, so its items always show there. #}
+          {# The collapsed sidebar has no group header, so its items always show there. #}
           <div x-show="adminOpen || !sidebarOpen"
                :class="sidebarOpen && 'ml-3 border-l border-white/30'">
             {% if request.user.show_internal_features %}

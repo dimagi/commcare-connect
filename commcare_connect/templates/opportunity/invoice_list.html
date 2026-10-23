@@ -65,7 +65,7 @@
       </div>
     </div>
   {% endif %}
-  {% if not request.is_opportunity_pm %}
+  {% if can_create_invoice %}
     <div x-data="{ open: false }" @click.away="open = false" class="relative">
       <button @click="open = !open"
               class="button button-md primary-dark flex flex-row items-center space-x-2">

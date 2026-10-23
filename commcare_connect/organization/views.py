@@ -95,7 +95,7 @@ def organization_home(request, org_slug):
             "form": form,
             "invite_form": invite_form,
             "member_count": org.memberships.count(),
-            # Profile-edit permission holders reach this page without admin access to the member endpoints.
+            # Org settings managers reach this page without admin access to the member endpoints.
             "can_manage_members": org_access_level_from_request(request) >= AccessLevel.ADMIN,
         },
     )

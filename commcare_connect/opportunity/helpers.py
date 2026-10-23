@@ -1,6 +1,7 @@
 from collections import namedtuple
 from datetime import timedelta
 
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import (
     Case,
     CharField,
@@ -38,6 +39,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityStatus,
     Payment,
     UserInvite,
     UserInviteStatus,
@@ -63,15 +65,11 @@ def inactive_workers_subquery(days_ago):
     return Coalesce(Subquery(subquery, output_field=IntegerField()), Value(0))
 
 
-def get_deliveries_count_subquery(status=None, sum_field=None):
+def get_deliveries_count_subquery(sum_field=None):
     agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
-    filters = {"opportunity_access__opportunity_id": OuterRef("pk")}
-    if status is not None:
-        filters["status"] = status
-
     return Coalesce(
         Subquery(
-            CompletedWork.objects.filter(**filters)
+            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
             .values("opportunity_access__opportunity_id")
             .annotate(count=agg)
             .values("count")[:1],
@@ -79,6 +77,10 @@ def get_deliveries_count_subquery(status=None, sum_field=None):
         ),
         0,
     )
+
+
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
 
 
 def total_accrued_sq():
@@ -426,13 +428,14 @@ class TieredQueryset:
 
 
 class OpportunityData:
-    def __init__(self, org, can_act_as_program_manager, filters):
+    def __init__(self, org, can_act_as_program_manager, filters, search_term=None):
         self.org = org
         self.can_act_as_program_manager = can_act_as_program_manager
         self.filters = filters
+        self.search_term = search_term
 
     def get_data(self):
-        base_qs = self.get_base_qs(self.org, self.filters)
+        base_qs = self.get_base_qs(self.org, self.filters, self.search_term)
 
         def data_qs(ids):
             return self.get_data_qs(self.org, ids, self.can_act_as_program_manager)
@@ -440,7 +443,7 @@ class OpportunityData:
         return TieredQueryset(base_qs, data_qs)
 
     @staticmethod
-    def get_base_qs(organization, filters):
+    def get_base_qs(organization, filters, search_term=None):
         today = now().date()
         base_filter = Q(archived=False)
         is_test = filters.get("is_test", None)
@@ -449,17 +452,20 @@ class OpportunityData:
         programs = filters.get("program", [])
         if programs:
             base_filter &= Q(program__slug__in=programs)
+        delivery_types = filters.get("delivery_type", [])
+        if delivery_types:
+            base_filter &= Q(delivery_type_id__in=delivery_types)
+        base_filter &= _date_range_filter("start_date", filters.get("start_date"))
+        base_filter &= _date_range_filter("end_date", filters.get("end_date"))
+        if search_term:
+            base_filter &= Q(name__icontains=search_term)
         queryset = (
             opportunities_accessible_to_org(organization)
             .filter(base_filter)
             .annotate(
                 program_name=F("program__name"),
-                status=Case(
-                    When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                    When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                    default=Value(2),  # Inactive
-                    output_field=IntegerField(),
-                ),
+                delivery_type_name=F("delivery_type__name"),
+                status=_opportunity_status(today),
             )
         )
         status = filters.get("status", [])
@@ -496,6 +502,7 @@ class OpportunityData:
             .prefetch_related("program__watchers")
             .annotate(
                 program_name=F("program__name"),
+                delivery_type_name=F("delivery_type__name"),
                 pending_invites=pending_invites_subquery(),
                 pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
                 total_accrued=total_accrued_sq(),
@@ -505,12 +512,7 @@ class OpportunityData:
                     output_field=DecimalField(),
                 ),
                 inactive_workers=inactive_workers_subquery(three_days_ago),
-                status=Case(
-                    When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                    When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                    default=Value(2),  # Inactive
-                    output_field=IntegerField(),
-                ),
+                status=_opportunity_status(today),
             )
         )
 
@@ -562,6 +564,26 @@ class OpportunityData:
         # preserve the order of opp_ids argument
         qs_by_id = {opp.id: opp for opp in queryset}
         return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
+
+
+def _opportunity_status(today):
+    return Case(
+        When(Q(active=True) & Q(end_date__gte=today), then=Value(OpportunityStatus.ACTIVE)),
+        When(Q(active=True) & Q(end_date__lt=today), then=Value(OpportunityStatus.ENDED)),
+        default=Value(OpportunityStatus.INACTIVE),
+        output_field=IntegerField(),
+    )
+
+
+def _date_range_filter(field, date_range):
+    q = Q()
+    if not date_range:
+        return q
+    if date_range.start:
+        q &= Q(**{f"{field}__gte": date_range.start})
+    if date_range.stop:
+        q &= Q(**{f"{field}__lte": date_range.stop})
+    return q
 
 
 def get_worker_table_data(opportunity, search_term=None):
@@ -746,23 +768,6 @@ def get_opportunity_delivery_progress(opp_id):
     )
 
     return annotated_opportunity.first()
-
-
-def get_opportunity_worker_progress(opp_id):
-    return (
-        Opportunity.objects.filter(id=opp_id)
-        .annotate(
-            total_deliveries=get_deliveries_count_subquery(sum_field="saved_completed_count"),
-            approved_deliveries=get_deliveries_count_subquery(
-                CompletedWorkStatus.approved, sum_field="saved_approved_count"
-            ),
-            rejected_deliveries=get_deliveries_count_subquery(CompletedWorkStatus.rejected),
-            total_accrued=total_accrued_sq(),
-            total_paid=total_paid_sq(),
-            visits_since_yesterday=deliveries_from_yesterday_sq(),
-        )
-        .first()
-    )
 
 
 def get_opportunity_funnel_progress(opp_id):

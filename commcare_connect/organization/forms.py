@@ -19,7 +19,7 @@ from commcare_connect.organization.models import (
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import ALL_ORG_PROFILE_EDIT_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 EARLIEST_ESTABLISHMENT_YEAR = 1800
 
@@ -168,7 +168,7 @@ class OrganizationProfileForm(forms.ModelForm):
 class OrganizationCreateForm(OrganizationProfileForm):
     """Creates an organization from the create wizard.
 
-    Only ALL_ORG_PROFILE_EDIT_ACCESS holders may skip joining it: that permission still lets them
+    Only ORG_MANAGEMENT_SETTINGS_ACCESS holders may skip joining it: that permission still lets them
     edit its profile, whereas anyone else would be locked out of the organization they just made.
     """
 
@@ -183,7 +183,7 @@ class OrganizationCreateForm(OrganizationProfileForm):
         super().__init__(*args, **kwargs)
 
     def _drop_unpermitted_fields(self):
-        if not self.user.has_perm(ALL_ORG_PROFILE_EDIT_ACCESS):
+        if not self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
             del self.fields["skip_membership"]
 
     def _final_step_extras(self):

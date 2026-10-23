@@ -31,6 +31,7 @@ They can be managed by users with required access
 
 - switch names are added in the file `switch_names.py`
 - use `switch_is_active` to check if switch is enabled
+- to gate a whole view behind a switch, use waffle's `waffle_switch(NAME)` decorator (function views) or `WaffleSwitchMixin` with `waffle_switch = NAME` (class views); both 404 while the switch is off. List the mixin first among the view's bases so the 404 happens before any login or permission mixin redirects
 - for new switches, they can be created prior to deploy via Django Admin or added via migration with the release. However, `WAFFLE_CREATE_MISSING_SWITCHES` is set to automatically add new switches to database when they are encountered in the codebase. Description should be added as a followup if created automatically.
 
 ### Flags

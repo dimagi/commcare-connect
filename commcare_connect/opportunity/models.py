@@ -86,6 +86,14 @@ class Country(models.Model):
         return self.name
 
 
+class OpportunityStatus(models.IntegerChoices):
+    """Derived from `active` and `end_date` by the opportunity list; ordered so Active sorts first."""
+
+    ACTIVE = 0, gettext_lazy("Active")
+    ENDED = 1, gettext_lazy("Ended")
+    INACTIVE = 2, gettext_lazy("Inactive")
+
+
 # Tracked separately from the fields=["active"] tracker below rather than by adding
 # supervising_organization to its field list: pghistory derives the event model name from
 # the fields, so extending it would rename OpportunityActiveEvent, which is referred to by
@@ -262,7 +270,44 @@ class Opportunity(BaseModel):
 
     @property
     def allotted_visits(self):
-        return self.max_visits_per_user * self.number_of_users
+        """Deliveries the budget funds across all workers, as a whole number."""
+        return sum(self.allotted_visits_by_unit().values())
+
+    def allotted_visits_by_unit(self, payment_units=None):
+        """Deliveries the budget funds for each payment unit across all workers.
+
+        Workers who have claimed count with the limits in their ``OpportunityClaimLimit`` rows, so
+        manual adjustments and limits set before a payment-unit change are kept. The unclaimed budget
+        is projected at today's config: a worker can only claim while the remaining budget covers a
+        full allocation (see ``ClaimOpportunityView``), so it funds whole workers, each getting every
+        unit's full ``max_total``; a leftover too small for one more worker funds nothing.
+
+        Units with neither a claim limit nor a ``max_total`` are left out. Empty when there is no
+        budget, or when the limited units cost nothing and so have no budget limit.
+        """
+        if payment_units is None:
+            payment_units = self.paymentunit_set.all()
+        limited_units = [pu for pu in payment_units if pu.max_total]
+        budget_per_worker = self.budget_per_user_for_units(limited_units)
+        if not self.total_budget or (limited_units and not budget_per_worker):
+            return {}
+
+        claimed = self._claimed_visits_by_unit()
+        unclaimed_workers = max(self.remaining_budget, 0) // budget_per_worker if budget_per_worker else 0
+        return {
+            pu.pk: claimed.get(pu.pk, 0) + (pu.max_total or 0) * unclaimed_workers
+            for pu in payment_units
+            if pu.max_total or pu.pk in claimed
+        }
+
+    def _claimed_visits_by_unit(self):
+        rows = (
+            OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=self)
+            .values("payment_unit_id")
+            .annotate(visits=Sum("max_visits"))
+            .order_by()
+        )
+        return {row["payment_unit_id"]: row["visits"] for row in rows}
 
     @property
     def max_visits_per_user(self):
@@ -278,8 +323,13 @@ class Opportunity(BaseModel):
 
     @property
     def daily_max_visits_per_user_v2(self):
-        # API 2.0: a unit without a daily limit adds 0
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
+        # API 2.0: a unit without a daily limit leaves the opportunity without one
+        limits = self.paymentunit_set.aggregate(
+            daily_total=Sum("max_daily"), uncapped=Count("pk", filter=Q(max_daily__isnull=True))
+        )
+        if limits["uncapped"]:
+            return None
+        return limits["daily_total"]
 
     @property
     def budget_per_visit(self):
@@ -839,6 +889,35 @@ class PaymentInvoice(models.Model):
         email = event.pgh_context.metadata.get("user_email")
         user = User.objects.filter(email=email).first()
         return f"{user.name} ({email})" if user and user.name else email
+
+
+class InvoiceFinanceRequestStatus(models.TextChoices):
+    PENDING = "pending", gettext_lazy("Submitting")
+    SUBMITTED = "submitted", gettext_lazy("Submitted")
+    FAILED = "failed", gettext_lazy("Failed")
+
+
+class InvoiceFinanceRequest(BaseModel):
+    """The payment request raised with Finance for one invoice: a ticket on the Project Finance service desk.
+
+    The answers are kept so a failed submission can be retried, and so the opportunity's next request can be
+    prefilled. `contracted_entity` and `gl_account` hold the Jira Form's choice IDs. Their labels live in
+    `utils/finance_request.py`, so a change to Finance's form needs no migration.
+    """
+
+    invoice = models.OneToOneField(PaymentInvoice, on_delete=models.CASCADE, related_name="finance_request")
+    status = models.CharField(
+        choices=InvoiceFinanceRequestStatus,
+        default=InvoiceFinanceRequestStatus.PENDING,
+        max_length=CHOICE_FIELD_MAX_LENGTH,
+    )
+    submitted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    contracted_entity = models.CharField(max_length=10)
+    gl_account = models.CharField(max_length=10)
+    project_name = models.CharField(max_length=255, blank=True)
+    new_vendor = models.BooleanField()
+    issue_key = models.CharField(max_length=50, blank=True)
+    error = models.TextField(blank=True)
 
 
 class Payment(models.Model):
