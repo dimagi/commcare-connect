@@ -4,7 +4,10 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Field, Layout, Row
 from django import forms
 from django.contrib.postgres.forms import SimpleArrayField
+from django.db.models import Sum
 from django.forms import BaseInlineFormSet, inlineformset_factory
+from django.utils.text import capfirst
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
@@ -228,3 +231,21 @@ CriterionInlineFormSet = inlineformset_factory(
 QuestionInlineFormSet = inlineformset_factory(
     Solicitation, SolicitationQuestion, form=QuestionForm, formset=BaseQuestionInlineFormSet, extra=0
 )
+
+
+def publish_errors(solicitation):
+    """What stops the solicitation from being published, keyed by the step that fixes it."""
+    errors = {}
+    details = [
+        _("%(field)s is required.") % {"field": capfirst(SolicitationForm.base_fields[name].label)}
+        for name in PUBLISH_REQUIRED_FIELDS
+        if not solicitation.serializable_value(name)
+    ]
+    if solicitation.application_deadline <= now():
+        details.append(_("The application deadline must be in the future."))
+    if details:
+        errors["details"] = details
+    total = solicitation.criteria.aggregate(total=Sum("weight"))["total"] or 0
+    if total != 100:
+        errors["criteria"] = [_("Criteria weights must total 100%% (currently %(total)s%%).") % {"total": total}]
+    return errors

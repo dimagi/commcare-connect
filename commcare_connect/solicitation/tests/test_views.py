@@ -77,6 +77,9 @@ class TestSolicitationNavItem:
         assert (reverse("solicitation:list", args=(org.slug,)) in response.content.decode()) is shown
 
 
+STEPS = ("details", "criteria", "questions", "publish")
+
+
 def step_url(step, solicitation):
     return reverse(f"solicitation:{step}", args=(solicitation.organization.slug, solicitation.solicitation_id))
 
@@ -130,8 +133,18 @@ class TestSolicitationSteps:
 
         response = pm_client.post(step_url("questions", draft), data)
 
-        assert response.url == reverse("solicitation:list", args=(draft.organization.slug,))
+        assert response.url == step_url("publish", draft)
         assert draft.questions.get().criterion == criterion
+
+    @pytest.mark.parametrize("weight, published", [(100, True), (90, False)])
+    def test_publish(self, pm_client, draft, weight, published):
+        SolicitationEvaluationCriterionFactory(solicitation=draft, weight=weight)
+
+        response = pm_client.post(step_url("publish", draft))
+
+        draft.refresh_from_db()
+        assert (draft.status == Solicitation.Status.ACTIVE) is published
+        assert response.status_code == (HTTPStatus.FOUND if published else HTTPStatus.OK)
 
     @pytest.mark.parametrize("step", ["criteria", "questions"])
     def test_active_solicitation_locks_criteria_and_questions(self, pm_client, program_manager_org, step):
@@ -150,6 +163,21 @@ class TestSolicitationSteps:
         assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
         assert list(solicitation.criteria.all()) == [criterion]
         assert list(solicitation.questions.all()) == [question]
+
+    @pytest.mark.parametrize("step", STEPS)
+    @pytest.mark.parametrize("status", [Solicitation.Status.CLOSED, Solicitation.Status.CANCELLED])
+    def test_finished_solicitations_are_not_editable(self, pm_client, program_manager_org, status, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+
+        assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.NOT_FOUND
+
+    @pytest.mark.parametrize("step", STEPS)
+    @pytest.mark.parametrize("status", [Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE])
+    def test_steps_render(self, pm_client, program_manager_org, status, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+        SolicitationQuestionFactory(solicitation=solicitation)
+
+        assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.OK
 
     @pytest.mark.parametrize(
         "status, linked",

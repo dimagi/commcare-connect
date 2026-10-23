@@ -1,0 +1,176 @@
+{% extends "solicitation/solicitation_step_base.html" %}
+{% load i18n %}
+{% load humanize %}
+{% block step_content %}
+  {% if solicitation.status == "draft" and errors %}
+    <div class="rounded-lg negative-light p-4 flex flex-col gap-2"
+         role="alert">
+      <p class="font-medium flex items-center gap-2">
+        <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+        {% translate "Fix these before publishing" %}
+      </p>
+      <ul class="list-disc ps-6 text-sm">
+        {% for step_name, step_errors in errors.items %}
+          {% with "solicitation:"|add:step_name as step_url %}
+            {% for message in step_errors %}
+              <li>
+                {{ message }}
+                <a class="underline"
+                   href="{% url step_url request.org.slug solicitation.solicitation_id %}">{% translate "Fix" %}</a>
+              </li>
+            {% endfor %}
+          {% endwith %}
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  <section class="card_bg flex flex-col gap-4">
+    <h2 class="title-sm">{% translate "Details" %}</h2>
+    <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
+      <div>
+        <dt class="hint">{% translate "Type" %}</dt>
+        <dd>
+          {{ solicitation.get_type_display }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Visibility" %}</dt>
+        <dd>
+          {% if solicitation.public %}
+            {% translate "Public (anyone can see and apply)" %}
+          {% else %}
+            {% translate "Private (invited organizations only)" %}
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Program" %}</dt>
+        <dd>
+          {{ solicitation.program.name|default:"–" }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Budget" %}</dt>
+        <dd>
+          {{ solicitation.budget_min|default:"–"|intcomma }} – {{ solicitation.budget_max|default:"–"|intcomma }} {{ solicitation.currency.code }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Country" %}</dt>
+        <dd>
+          {{ solicitation.country.name|default:"–" }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Delivery type" %}</dt>
+        <dd>
+          {{ solicitation.delivery_type.name|default:"–" }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Application deadline" %}</dt>
+        <dd>
+          {{ solicitation.application_deadline|date:"d M Y, H:i" }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Expected dates" %}</dt>
+        <dd>
+          {% if solicitation.expected_start_date or solicitation.expected_end_date %}
+            {{ solicitation.expected_start_date|date:"d M Y"|default:"–" }} – {{ solicitation.expected_end_date|date:"d M Y"|default:"–" }}
+          {% else %}
+            –
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Estimated scale" %}</dt>
+        <dd>
+          {{ solicitation.estimated_scale|default:"–" }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Contact email" %}</dt>
+        <dd>
+          {{ solicitation.contact_email|default:"–" }}
+        </dd>
+      </div>
+      <div>
+        <dt class="hint">{% translate "Hide scores until submit" %}</dt>
+        <dd>
+          {% if solicitation.hide_scores_until_submit %}
+            {% translate "Yes" %}
+          {% else %}
+            {% translate "No" %}
+          {% endif %}
+        </dd>
+      </div>
+    </dl>
+    <dl class="text-sm">
+      <dt class="hint">{% translate "Scope of work" %}</dt>
+      <dd>
+        {{ solicitation.description|linebreaksbr|default:"–" }}
+      </dd>
+    </dl>
+  </section>
+  <section class="card_bg flex flex-col gap-4">
+    <h2 class="title-sm">{% translate "Evaluation criteria" %}</h2>
+    <p class="hint">
+      {% translate "Internal only. Reviewers score each application against these; applicants never see them." %}
+    </p>
+    {% for criterion in solicitation.criteria.all %}
+      <div class="flex justify-between items-center gap-4 border-t border-gray-200 pt-3 text-sm">
+        <div class="flex flex-col gap-1">
+          <span class="font-medium">{{ criterion.label }}</span>
+          {% if criterion.description %}<span class="hint">{{ criterion.description|linebreaksbr }}</span>{% endif %}
+        </div>
+        <span class="badge badge-sm primary-light shrink-0">{{ criterion.weight|floatformat:"-2" }}%</span>
+      </div>
+    {% empty %}
+      <p class="hint">{% translate "No criteria yet." %}</p>
+    {% endfor %}
+  </section>
+  <section class="card_bg flex flex-col gap-4">
+    <h2 class="title-sm">{% translate "Application questions" %}</h2>
+    <p class="hint">{% translate "What applicants answer, in this order." %}</p>
+    {% for question in solicitation.questions.all %}
+      <div class="flex gap-3 border-t border-gray-200 pt-3 text-sm">
+        <span class="hint shrink-0">{{ forloop.counter }}.</span>
+        <div class="flex flex-col gap-2">
+          <span class="font-medium">{{ question.text }}</span>
+          {% if question.help_text %}<span class="hint">{{ question.help_text }}</span>{% endif %}
+          <div class="flex flex-wrap gap-2">
+            <span class="badge badge-sm label">{{ question.get_question_type_display }}</span>
+            {% if question.required %}
+              <span class="badge badge-sm warning-light">{% translate "Required" %}</span>
+            {% else %}
+              <span class="badge badge-sm label">{% translate "Optional" %}</span>
+            {% endif %}
+            {% if question.criterion %}
+              <span class="badge badge-sm primary-light">{% blocktranslate with label=question.criterion.label %}Scored under: {{ label }}{% endblocktranslate %}</span>
+            {% endif %}
+          </div>
+          {% if question.choice_options %}
+            <ul class="list-disc ps-6 text-sm">
+              {% for option in question.choice_options %}<li>{{ option }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      </div>
+    {% empty %}
+      <p class="hint">{% translate "No questions yet." %}</p>
+    {% endfor %}
+  </section>
+  {% if solicitation.status == "draft" %}
+    <form method="post" class="flex flex-col gap-4">
+      {% csrf_token %}
+      <div class="flex gap-3 justify-end">
+        <a class="button button-md outline-style"
+           href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
+        <button type="submit"
+                class="button button-md primary-dark"
+                {% if errors %}disabled{% endif %}>{% translate "Publish" %}</button>
+      </div>
+    </form>
+  {% endif %}
+{% endblock step_content %}

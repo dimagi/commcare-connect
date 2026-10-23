@@ -1,10 +1,10 @@
 from django.contrib import messages
 from django.contrib.messages.views import SuccessMessageMixin
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.generic import UpdateView
+from django.views.generic import DetailView, UpdateView
 from django_tables2 import SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
@@ -14,8 +14,14 @@ from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
     SolicitationForm,
+    publish_errors,
 )
-from commcare_connect.solicitation.models import EDITABLE_STATUSES, Solicitation, SolicitationApplication
+from commcare_connect.solicitation.models import (
+    EDITABLE_STATUSES,
+    Solicitation,
+    SolicitationApplication,
+    SolicitationQuestion,
+)
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.utils.tables import get_validated_page_size
 
@@ -25,6 +31,7 @@ STEP_LABELS = {
     "details": _("Details"),
     "criteria": _("Evaluation criteria"),
     "questions": _("Questions"),
+    "publish": _("Review & publish"),
 }
 
 
@@ -70,7 +77,7 @@ class SolicitationStepMixin(WaffleSwitchMixin, OrgPMRequiredMixin):
         )
 
     def get_success_url(self):
-        if self.object.structure_locked or self.next_step is None:
+        if self.object.structure_locked:
             return reverse("solicitation:list", args=[self.request.org.slug])
         return reverse(f"solicitation:{self.next_step}", args=[self.request.org.slug, self.object.solicitation_id])
 
@@ -127,4 +134,35 @@ class SolicitationCriteriaView(SolicitationFormSetStepView):
 
 class SolicitationQuestionsView(SolicitationFormSetStepView):
     step = "questions"
+    next_step = "publish"
     form_class = QuestionInlineFormSet
+
+
+class SolicitationPublishView(SolicitationStepMixin, DetailView):
+    """Reviews the solicitation and publishes it once nothing blocks it."""
+
+    step = "publish"
+    template_name = "solicitation/solicitation_publish.html"
+
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .select_related("currency", "country", "delivery_type", "program")
+            .prefetch_related(
+                "criteria", Prefetch("questions", queryset=SolicitationQuestion.objects.select_related("criterion"))
+            )
+        )
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(errors=publish_errors(self.object), **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.structure_locked or publish_errors(self.object):
+            return self.render_to_response(self.get_context_data())
+        self.object.status = Solicitation.Status.ACTIVE
+        self.object.modified_by = request.user.email
+        self.object.save(update_fields=["status", "modified_by", "date_modified"])
+        messages.success(request, _("Solicitation published."))
+        return redirect(self.get_success_url())

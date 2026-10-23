@@ -4,6 +4,7 @@ from commcare_connect.solicitation.views import (
     SolicitationCriteriaView,
     SolicitationDetailsView,
     SolicitationListView,
+    SolicitationPublishView,
     SolicitationQuestionsView,
 )
 
@@ -14,4 +15,5 @@ urlpatterns = [
     path("<uuid:solicitation_id>/details/", view=SolicitationDetailsView.as_view(), name="details"),
     path("<uuid:solicitation_id>/criteria/", view=SolicitationCriteriaView.as_view(), name="criteria"),
     path("<uuid:solicitation_id>/questions/", view=SolicitationQuestionsView.as_view(), name="questions"),
+    path("<uuid:solicitation_id>/publish/", view=SolicitationPublishView.as_view(), name="publish"),
 ]

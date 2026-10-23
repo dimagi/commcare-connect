@@ -1,10 +1,13 @@
+from datetime import timedelta
+
 import pytest
+from django.utils.timezone import now
 
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.forms import CriterionForm, QuestionForm, SolicitationForm
+from commcare_connect.solicitation.forms import CriterionForm, QuestionForm, SolicitationForm, publish_errors
 from commcare_connect.solicitation.models import Solicitation, SolicitationQuestion
 from commcare_connect.solicitation.tests.conftest import deadline
-from commcare_connect.solicitation.tests.factories import SolicitationFactory
+from commcare_connect.solicitation.tests.factories import SolicitationEvaluationCriterionFactory, SolicitationFactory
 
 PUBLISH_ONLY_DATA = {"description": "Scope", "contact_email": "pm@example.com"}
 
@@ -69,6 +72,28 @@ class TestSolicitationForm:
         assert form.is_valid(), form.errors
         form.save()
         assert Solicitation.objects.get(pk=form.instance.pk).hide_scores_until_submit is hide_scores
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "overrides, weights, blocked_steps",
+    [
+        ({}, [60, 40], set()),
+        ({"description": ""}, [60, 40], {"details"}),
+        ({"contact_email": ""}, [60, 40], {"details"}),
+        ({"country": None}, [60, 40], {"details"}),
+        ({"application_deadline": now() - timedelta(days=1)}, [60, 40], {"details"}),
+        ({}, [60, 30], {"criteria"}),
+        ({}, [], {"criteria"}),
+        ({"description": ""}, [], {"details", "criteria"}),
+    ],
+)
+def test_publish_errors(overrides, weights, blocked_steps):
+    solicitation = SolicitationFactory(**{"country": _get_default_country()} | overrides)
+    for weight in weights:
+        SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=weight)
+
+    assert set(publish_errors(solicitation)) == blocked_steps
 
 
 @pytest.mark.django_db
