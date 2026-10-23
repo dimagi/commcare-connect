@@ -52,6 +52,7 @@ from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
     REQUIRED_DELIVER_UNIT_SLUGS,
+    WORK_AREA_MAX_OVERLAP_RATIO,
     WORK_AREA_STATUS_COLORS,
     WORKAREA_MIN_ZOOM,
 )
@@ -631,15 +632,19 @@ def _area_modal_context(org_slug, opp_id, area_type):
             _("Ward – name of the ward"),
             _("Centroid – longitude and latitude separated by space (e.g. 77.123 28.456)"),
             _("Boundary – Polygon in WKT format"),
+            _(
+                "Boundaries must not overlap each other or existing work areas by more than %(percent)d%% "
+                "of the smaller work area"
+            )
+            % {"percent": round(WORK_AREA_MAX_OVERLAP_RATIO * 100)},
             _("Building Count – positive integer"),
             _("Expected Visit Count – positive integer"),
             _("LGA – name of the LGA the work area is in"),
             _("State – name of the state the work area is in"),
             _("Implementation Area – (optional) name of the matching Implementation Area"),
             _(
-                "Work Area Group Name (optional): Enter a group name for every row to assign work areas directly "
-                "and skip automatic clustering. Leave this column blank for every row to use automatic clustering. "
-                "Do not mix blank and filled values."
+                "Work Area Group Name – (optional) leave all rows blank to use automatic clustering, or "
+                "fill group name in all rows to skip it. Rows sharing a group name must share a Ward."
             ),
         ],
     }
