@@ -65,10 +65,9 @@ class TestPrimarySectorForm:
         assert form.fields["name"].widget.attrs["x-on:input"] == "nameChanged()"
         assert form.fields["slug"].widget.attrs["x-on:input"] == "slugChanged()"
 
-    def test_edit_requires_slug_and_has_no_autofill(self, sector):
-        form = PrimarySectorForm({"name": "Health", "slug": "", "description": ""}, instance=sector)
-        assert not form.is_valid()
-        assert "slug" in form.errors
+    def test_edit_locks_slug_and_has_no_autofill(self, sector):
+        form = PrimarySectorForm(instance=sector)
+        assert form.fields["slug"].disabled
         assert "x-on:input" not in form.fields["name"].widget.attrs
 
     def test_rename_keeps_slug(self, sector):
@@ -78,12 +77,13 @@ class TestPrimarySectorForm:
         sector.refresh_from_db()
         assert (sector.name, sector.slug) == ("Global Health", "health")
 
-    def test_edit_changes_slug(self, sector):
-        form = PrimarySectorForm({"name": "Health", "slug": "global-health", "description": ""}, instance=sector)
+    @pytest.mark.parametrize("slug", ["global-health", "", "Not Valid"])
+    def test_edit_ignores_posted_slug(self, sector, slug):
+        form = PrimarySectorForm({"name": "Health", "slug": slug, "description": ""}, instance=sector)
         assert form.is_valid(), form.errors
         form.save()
         sector.refresh_from_db()
-        assert sector.slug == "global-health"
+        assert sector.slug == "health"
 
 
 @pytest.mark.django_db
