@@ -68,6 +68,7 @@ class DeliveryType(models.Model):
     def __str__(self):
         return self.name
 
+    @cached_property
     def is_in_use(self):
         """Deleting a referenced type would break opportunities, be refused for programs and solicitations, and
         cascade-delete worker credentials."""

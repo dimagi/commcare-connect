@@ -98,12 +98,12 @@ class TestDeliveryTypeForm:
 @pytest.mark.django_db
 class TestDeliveryTypeInUse:
     def test_unused(self, delivery_type):
-        assert not delivery_type.is_in_use()
+        assert not delivery_type.is_in_use
 
     @pytest.mark.parametrize("factory", REFERENCING_FACTORIES)
     def test_used(self, delivery_type, factory):
         factory(delivery_type=delivery_type)
-        assert delivery_type.is_in_use()
+        assert delivery_type.is_in_use
 
 
 @pytest.mark.django_db
