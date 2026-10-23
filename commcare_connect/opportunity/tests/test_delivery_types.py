@@ -70,10 +70,9 @@ class TestDeliveryTypeForm:
         assert form.fields["name"].widget.attrs["x-on:input"] == "nameChanged()"
         assert form.fields["slug"].widget.attrs["x-on:input"] == "slugChanged()"
 
-    def test_edit_requires_slug_and_has_no_autofill(self, delivery_type):
-        form = DeliveryTypeForm({"name": "Nutrition", "slug": "", "description": ""}, instance=delivery_type)
-        assert not form.is_valid()
-        assert "slug" in form.errors
+    def test_edit_locks_slug_and_has_no_autofill(self, delivery_type):
+        form = DeliveryTypeForm(instance=delivery_type)
+        assert form.fields["slug"].disabled
         assert "x-on:input" not in form.fields["name"].widget.attrs
 
     def test_rename_keeps_slug(self, delivery_type):
@@ -85,14 +84,13 @@ class TestDeliveryTypeForm:
         delivery_type.refresh_from_db()
         assert (delivery_type.name, delivery_type.slug) == ("Child Nutrition", "nutrition")
 
-    def test_edit_changes_slug(self, delivery_type):
-        form = DeliveryTypeForm(
-            {"name": "Nutrition", "slug": "child-nutrition", "description": ""}, instance=delivery_type
-        )
+    @pytest.mark.parametrize("slug", ["child-nutrition", "", "Not Valid"])
+    def test_edit_ignores_posted_slug(self, delivery_type, slug):
+        form = DeliveryTypeForm({"name": "Nutrition", "slug": slug, "description": ""}, instance=delivery_type)
         assert form.is_valid(), form.errors
         form.save()
         delivery_type.refresh_from_db()
-        assert delivery_type.slug == "child-nutrition"
+        assert delivery_type.slug == "nutrition"
 
 
 @pytest.mark.django_db

@@ -2486,8 +2486,8 @@ class DeliveryTypeForm(forms.ModelForm):
     """Adds or edits a delivery type from Internal Features.
 
     On create the slug is filled in from the name as you type (see slugAutofill in alpine_data.js) and, if left
-    blank, generated from it on save. It stays editable, but reports, data exports and the Program API identify
-    delivery types by it, so changing it later breaks anything that stored the old one.
+    blank, generated from it on save. After that it is read-only: reports, data exports and the Program API
+    identify delivery types by it, so changing it would break anything that stored the old one.
     """
 
     class Meta:
@@ -2499,7 +2499,12 @@ class DeliveryTypeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["description"].required = False
-        if not self.instance.pk:
+        if self.instance.pk:
+            self.fields["slug"].disabled = True
+            self.fields["slug"].help_text = _(
+                "Reports, data exports and the Program API identify delivery types by it, so it can't change."
+            )
+        else:
             self.fields["slug"].required = False
             self.fields["name"].widget.attrs.update({"x-ref": "name", "x-on:input": "nameChanged()"})
             self.fields["slug"].widget.attrs.update({"x-ref": "slug", "x-on:input": "slugChanged()"})
@@ -2514,6 +2519,8 @@ class DeliveryTypeForm(forms.ModelForm):
         return name
 
     def clean_slug(self):
+        if self.instance.pk:
+            return self.instance.slug
         slug = self.cleaned_data["slug"].strip() or slugify(self.cleaned_data.get("name", ""))
         if not slug:
             raise ValidationError(gettext("Enter a slug, or a name containing at least one letter or number."))

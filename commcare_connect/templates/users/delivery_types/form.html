@@ -22,14 +22,7 @@
         hx-target="#delivery-type-form-wrapper"
         hx-swap="outerHTML"
         {% if not object %}x-data="slugAutofill()"{% endif %}>
-    <div class="content">
-      {% if object %}
-        <p class="hint">
-          {% translate "Reports, data exports and the Program API identify delivery types by their slug. Changing it breaks anything that stored the old one." %}
-        </p>
-      {% endif %}
-      {% crispy form %}
-    </div>
+    <div class="content">{% crispy form %}</div>
     <div class="footer flex justify-end gap-3">
       <button type="button"
               class="button button-md outline-style"
