@@ -5,6 +5,7 @@ from django.urls import reverse
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
+from commcare_connect.program.tests.factories import _get_default_country
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 from commcare_connect.solicitation.tests.factories import SolicitationApplicationFactory, SolicitationFactory
 from commcare_connect.solicitation.views import org_solicitations
@@ -82,6 +83,35 @@ class TestSolicitationSteps:
         client.force_login(program_manager_org_user_admin)
         with override_switch(SOLICITATIONS, active=True):
             yield client
+
+    @pytest.fixture
+    def draft(self, program_manager_org):
+        return SolicitationFactory(organization=program_manager_org, country=_get_default_country())
+
+    def test_create_saves_draft_then_goes_to_criteria(self, pm_client, program_manager_org, draft_data):
+        response = pm_client.post(reverse("solicitation:create", args=(program_manager_org.slug,)), draft_data)
+
+        solicitation = Solicitation.objects.get(organization=program_manager_org)
+        assert solicitation.status == Solicitation.Status.DRAFT
+        assert response.url == step_url("criteria", solicitation)
+
+    def test_criteria_step_saves_rows(self, pm_client, draft, program_manager_org_user_admin):
+        data = {
+            "criteria-TOTAL_FORMS": 1,
+            "criteria-INITIAL_FORMS": 0,
+            "criteria-0-label": "Technical expertise",
+            "criteria-0-weight": 100,
+        }
+
+        response = pm_client.post(step_url("criteria", draft), data)
+
+        assert response.url == reverse("solicitation:list", args=(draft.organization.slug,))
+        criterion = draft.criteria.get()
+        assert (criterion.label, criterion.weight, criterion.created_by) == (
+            "Technical expertise",
+            100,
+            program_manager_org_user_admin.email,
+        )
 
     @pytest.mark.parametrize(
         "status, linked",

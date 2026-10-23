@@ -3,13 +3,14 @@ from operator import attrgetter
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Field, Layout, Row
 from django import forms
+from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, Currency
 from commcare_connect.program.forms import DATE_INPUT
 from commcare_connect.program.models import Program
-from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.models import Solicitation, SolicitationEvaluationCriterion
 
 DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
 TOGGLE_WRAPPER_CLASS = "bg-slate-100 flex items-center justify-between p-4 rounded-lg"
@@ -17,6 +18,11 @@ SEARCHABLE_SELECT = forms.Select(attrs={"data-tomselect": "1", "data-tomselect:n
 
 # A draft may leave these empty; publishing needs them, so an active solicitation keeps them required.
 PUBLISH_REQUIRED_FIELDS = ("description", "contact_email", "country")
+
+
+class HiddenDeleteInlineFormSet(BaseInlineFormSet):
+    # A row's remove button sets Alpine's `removed`, which marks the row for deletion here.
+    deletion_widget = forms.HiddenInput(attrs={":value": "removed ? 'on' : ''"})
 
 
 class SolicitationForm(forms.ModelForm):
@@ -139,3 +145,36 @@ class SolicitationForm(forms.ModelForm):
             self.instance.created_by = self.user.email
         self.instance.modified_by = self.user.email
         return super().save(commit=commit)
+
+
+class FormsetRowForm(forms.ModelForm):
+    """A formset row rendered with {% crispy %} inside the page's form.
+
+    The formset adds the id and DELETE fields after __init__, so they're kept as unmentioned hidden fields.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.render_hidden_fields = True
+
+
+class CriterionForm(FormsetRowForm):
+    # Bounded so out-of-range weights can't offset each other into a 100% total.
+    weight = forms.DecimalField(label=_("Weight (%)"), max_digits=5, decimal_places=2, min_value=0, max_value=100)
+
+    class Meta:
+        model = SolicitationEvaluationCriterion
+        fields = ["label", "weight", "description"]
+        labels = {"label": _("Label"), "description": _("Reviewer guidance")}
+        widgets = {"description": forms.Textarea(attrs={"rows": 4})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper["description"].wrap(Field, wrapper_class="col-span-2")
+
+
+CriterionInlineFormSet = inlineformset_factory(
+    Solicitation, SolicitationEvaluationCriterion, form=CriterionForm, formset=HiddenDeleteInlineFormSet, extra=0
+)

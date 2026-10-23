@@ -1,5 +1,7 @@
+from django.contrib import messages
 from django.contrib.messages.views import SuccessMessageMixin
 from django.db.models import Count, Q
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import UpdateView
@@ -8,7 +10,7 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import OrgPMRequiredMixin
-from commcare_connect.solicitation.forms import SolicitationForm
+from commcare_connect.solicitation.forms import CriterionInlineFormSet, SolicitationForm
 from commcare_connect.solicitation.models import EDITABLE_STATUSES, Solicitation, SolicitationApplication
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.utils.tables import get_validated_page_size
@@ -17,6 +19,7 @@ from commcare_connect.utils.tables import get_validated_page_size
 NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
 STEP_LABELS = {
     "details": _("Details"),
+    "criteria": _("Evaluation criteria"),
 }
 
 
@@ -69,6 +72,7 @@ class SolicitationStepMixin(WaffleSwitchMixin, OrgPMRequiredMixin):
 
 class SolicitationDetailsView(SuccessMessageMixin, SolicitationStepMixin, UpdateView):
     step = "details"
+    next_step = "criteria"
     success_message = _("Solicitation saved.")
     form_class = SolicitationForm
     template_name = "solicitation/solicitation_step_form.html"
@@ -80,3 +84,36 @@ class SolicitationDetailsView(SuccessMessageMixin, SolicitationStepMixin, Update
 
     def get_form_kwargs(self):
         return super().get_form_kwargs() | {"organization": self.request.org, "user": self.request.user}
+
+
+class SolicitationFormSetStepView(SolicitationStepMixin, UpdateView):
+    """Edits the solicitation's criteria or questions as a formset; read-only once locked."""
+
+    template_name = "solicitation/solicitation_step_form.html"
+
+    def post(self, request, *args, **kwargs):
+        if self.get_object().structure_locked:
+            return self.http_method_not_allowed(request, *args, **kwargs)
+        return super().post(request, *args, **kwargs)
+
+    def get_form(self, form_class=None):
+        formset = super().get_form(form_class)
+        if self.object.structure_locked:
+            for form in formset:
+                for field in form.fields.values():
+                    field.disabled = True
+        return formset
+
+    def form_valid(self, formset):
+        # Not super(): ModelFormMixin would replace self.object with the list formset.save() returns.
+        for form in formset:
+            form.instance.created_by = form.instance.created_by or self.request.user.email
+            form.instance.modified_by = self.request.user.email
+        formset.save()
+        messages.success(self.request, _("Solicitation saved."))
+        return redirect(self.get_success_url())
+
+
+class SolicitationCriteriaView(SolicitationFormSetStepView):
+    step = "criteria"
+    form_class = CriterionInlineFormSet

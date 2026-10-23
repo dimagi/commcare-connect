@@ -1,7 +1,7 @@
 import pytest
 
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.forms import SolicitationForm
+from commcare_connect.solicitation.forms import CriterionForm, SolicitationForm
 from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.solicitation.tests.conftest import deadline
 from commcare_connect.solicitation.tests.factories import SolicitationFactory
@@ -76,3 +76,10 @@ def test_program_choices_show_names(program, user):
     form = SolicitationForm(organization=program.organization, user=user)
 
     assert (str(program.pk), program.name) in [(str(value), label) for value, label in form.fields["program"].choices]
+
+
+@pytest.mark.parametrize("weight, valid", [(0, True), (100, True), (-50, False), (150, False)])
+def test_criterion_weight_bounds(weight, valid):
+    form = CriterionForm({"label": "Technical expertise", "weight": weight})
+
+    assert form.is_valid() is valid

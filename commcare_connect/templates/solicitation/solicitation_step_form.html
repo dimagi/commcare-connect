@@ -1,16 +1,67 @@
 {% extends "solicitation/solicitation_step_base.html" %}
 {% load i18n %}
 {% load crispy_forms_tags %}
+{% block javascript %}
+  {{ block.super }}
+  {# Inline, so formset() exists before Alpine (deferred) evaluates x-data. #}
+  <script>
+    // Adds a row to a Django formset by cloning its empty form, numbered by the current TOTAL_FORMS.
+    function formset() {
+      return {
+        addRow() {
+          const total = this.$root.querySelector('input[name$="-TOTAL_FORMS"]');
+          const row = this.$refs.emptyRow.innerHTML.replaceAll('__prefix__', total.value);
+          this.$refs.rows.insertAdjacentHTML('beforeend', row);
+          total.value = Number(total.value) + 1;
+          window.initTomSelectElements();
+        },
+      };
+    }
+  </script>
+{% endblock javascript %}
 {% block step_content %}
   <form method="post" class="flex flex-col gap-6">
     {% csrf_token %}
-    {% if not solicitation.structure_locked %}
-      <p class="hint flex items-center gap-2">
-        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        {% translate "Each step is saved as a draft. Nothing is visible to applicants until you publish it." %}
-      </p>
+    {% if step == "details" %}
+      {% if not solicitation.structure_locked %}
+        <p class="hint flex items-center gap-2">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          {% translate "Each step is saved as a draft. Nothing is visible to applicants until you publish it." %}
+        </p>
+      {% endif %}
+      <div class="card_bg">{% crispy form %}</div>
+    {% else %}
+      {% with formset=form %}
+        <div x-data="formset()" class="flex flex-col gap-4">
+          <div class="flex justify-between items-center">
+            <h2 class="title-sm">{{ step_label }}</h2>
+            {% if not solicitation.structure_locked %}
+              <button type="button"
+                      class="button-icon primary-dark"
+                      aria-label="{% translate "Add" %}"
+                      @click="addRow()">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+            {% endif %}
+          </div>
+          {% if solicitation.structure_locked %}
+            <p class="hint">{% translate "Criteria and questions can't change once a solicitation is published." %}</p>
+          {% endif %}
+          {{ formset.management_form }}
+          {{ formset|as_crispy_errors }}
+          {% if not solicitation.structure_locked %}
+            <template x-ref="emptyRow">
+              {% include "solicitation/partials/formset_row.html" with form=formset.empty_form %}
+            </template>
+          {% endif %}
+          <div x-ref="rows" class="flex flex-col gap-4">
+            {% for row in formset %}
+              {% include "solicitation/partials/formset_row.html" with form=row %}
+            {% endfor %}
+          </div>
+        </div>
+      {% endwith %}
     {% endif %}
-    <div class="card_bg">{% crispy form %}</div>
     <div class="flex gap-3 justify-end">
       {# Leaves without saving this step; earlier steps are already saved. #}
       <a class="button button-md outline-style"
