@@ -9,6 +9,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
 from django.db import transaction
+from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
@@ -19,7 +20,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from django.views.generic import FormView, RedirectView, UpdateView, View
+from django.views.generic import CreateView, FormView, ListView, RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -33,6 +34,8 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
+from commcare_connect.organization.forms import PrimarySectorForm
+from commcare_connect.organization.models import PrimarySector
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
@@ -41,6 +44,7 @@ from commcare_connect.utils.permission_const import (
     INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
+    ORG_MANAGEMENT_SETTINGS_ACCESS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
 )
@@ -390,9 +394,78 @@ def internal_features(request):
             "description": "Manage internal permissions for users.",
             "url": reverse("users:permission_management"),
         },
+        {
+            "perm": ORG_MANAGEMENT_SETTINGS_ACCESS,
+            "name": "Primary Sectors",
+            "description": "Manage the primary sector options for organization profiles.",
+            "url": reverse("users:primary_sector_list"),
+        },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
+
+
+class PrimarySectorPermissionMixin(LoginRequiredMixin, PermissionRequiredMixin):
+    permission_required = ORG_MANAGEMENT_SETTINGS_ACCESS
+    raise_exception = True
+
+
+class PrimarySectorListView(PrimarySectorPermissionMixin, ListView):
+    template_name = "users/primary_sectors/list.html"
+    context_object_name = "sectors"
+
+    def get_queryset(self):
+        return PrimarySector.objects.annotate(organization_count=Count("organization")).order_by("name")
+
+
+class PrimarySectorFormMixin(PrimarySectorPermissionMixin, SuccessMessageMixin):
+    """Serves the list page's Add/Edit modal: errors swap the form back in, success reloads the list."""
+
+    model = PrimarySector
+    form_class = PrimarySectorForm
+    template_name = "users/primary_sectors/form.html"
+    success_message = _("Primary sector '%(name)s' saved.")
+
+    def get(self, request, *args, **kwargs):
+        # The form is only a modal fragment; a direct visit gets the list page that hosts it.
+        if not request.htmx:
+            return redirect(self.get_success_url())
+        return super().get(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        if self.request.htmx:
+            return HttpResponse(headers={"HX-Redirect": self.get_success_url()})
+        return response
+
+    def get_success_url(self):
+        return reverse("users:primary_sector_list")
+
+
+class PrimarySectorCreateView(PrimarySectorFormMixin, CreateView):
+    pass
+
+
+class PrimarySectorUpdateView(PrimarySectorFormMixin, UpdateView):
+    pass
+
+
+class PrimarySectorDeleteView(PrimarySectorPermissionMixin, View):
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        # Locked until the request commits. A concurrent save assigning this sector needs a key-share lock on the row
+        # for its foreign-key check, so it can't commit between the in-use check and the delete and be dropped by it.
+        sector = get_object_or_404(PrimarySector.objects.select_for_update(), pk=pk)
+        if sector.is_in_use():
+            messages.error(
+                request,
+                _("'%(name)s' is used by one or more organizations and cannot be deleted.") % {"name": sector.name},
+            )
+        else:
+            sector.delete()
+            messages.success(request, _("Primary sector '%(name)s' deleted.") % {"name": sector.name})
+        return redirect("users:primary_sector_list")
 
 
 _DEFAULT_MODEL_PERMS = {"add_user", "change_user", "delete_user", "view_user"}

@@ -40,3 +40,35 @@ function clearFilterForm(formId) {
   });
 }
 window.clearFilterForm = clearFilterForm;
+
+// Fills a slug field from a name field as the user types, until they edit the slug themselves;
+// clearing the slug hands it back to the name. Expects x-ref="name" and x-ref="slug" on the inputs.
+function slugAutofill() {
+  return {
+    slugEdited: false,
+    init() {
+      // A form re-rendered with errors keeps a slug the user typed, so don't overwrite it.
+      const slug = this.$refs.slug.value;
+      this.slugEdited = slug !== '' && slug !== slugify(this.$refs.name.value);
+    },
+    nameChanged() {
+      if (!this.slugEdited)
+        this.$refs.slug.value = slugify(this.$refs.name.value);
+    },
+    slugChanged() {
+      this.slugEdited = this.$refs.slug.value !== '';
+    },
+  };
+}
+window.slugAutofill = slugAutofill;
+
+// Mirrors django.utils.text.slugify, so the suggested slug is the one the server would generate.
+function slugify(value) {
+  return value
+    .normalize('NFKD')
+    .replace(/[^\p{ASCII}]/gu, '')
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[-\s]+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '');
+}
