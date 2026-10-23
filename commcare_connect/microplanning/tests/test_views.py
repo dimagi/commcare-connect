@@ -1767,6 +1767,114 @@ class TestAssignmentModeContext:
         assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
 
 
+ASSIGNMENT_ROLES = [
+    pytest.param("program_manager_org", "program_manager_org_user_admin", True, id="pm_admin"),
+    pytest.param("organization", "org_user_admin", True, id="nm_admin"),
+    pytest.param("program_manager_org", "program_manager_org_user_member", False, id="pm_member"),
+    pytest.param("organization", "org_user_member", False, id="nm_member"),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("org_fixture, user_fixture, allowed", ASSIGNMENT_ROLES)
+class TestAssignmentAccess:
+    """Assignment is open to admins of both the program manager and the network manager org."""
+
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, managed_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity)
+        flag.flush()
+
+    @pytest.fixture
+    def login_as(self, request, client):
+        def _login(org_fixture, user_fixture):
+            client.force_login(request.getfixturevalue(user_fixture))
+            return request.getfixturevalue(org_fixture)
+
+        return _login
+
+    def test_assignment_mode_button(
+        self, client, settings, login_as, managed_opportunity, org_fixture, user_fixture, allowed
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        org = login_as(org_fixture, user_fixture)
+        url = reverse("microplanning:microplanning_home", args=(org.slug, managed_opportunity.opportunity_id))
+
+        map_response = client.get(url)
+        assignment_response = client.get(url, {"assignment_mode": "1"})
+
+        if allowed:
+            assert map_response.status_code == 200
+            assert 'href="?assignment_mode=1"' in map_response.content.decode()
+            assert assignment_response.status_code == 200
+            assert assignment_response.context["assignment_mode"]
+        else:
+            assert map_response.status_code == 404
+            assert assignment_response.status_code == 404
+
+    def test_read_endpoints(self, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed):
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        org = login_as(org_fixture, user_fixture)
+        opp_kwargs = {"org_slug": org.slug, "opp_id": managed_opportunity.opportunity_id}
+        urls = [
+            reverse("microplanning:get_work_areas_for_assignment", kwargs=opp_kwargs),
+            reverse(
+                "microplanning:get_flw_work_areas_for_assignment",
+                kwargs={**opp_kwargs, "assignee_id": access.id},
+            ),
+            reverse("microplanning:get_flw_summary_for_assignment", kwargs=opp_kwargs) + f"?assignee_id={access.id}",
+        ]
+
+        for url in urls:
+            assert client.get(url).status_code == (200 if allowed else 404), url
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_save_assignment(
+        self, mock_hq_sync, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed
+    ):
+        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        org = login_as(org_fixture, user_fixture)
+
+        response = client.post(
+            reverse(
+                "microplanning:save_assignment",
+                kwargs={"org_slug": org.slug, "opp_id": managed_opportunity.opportunity_id},
+            ),
+            data=json.dumps({"assignments": [{"assignee_id": access.id, "work_area_ids": [wa.id]}]}),
+            content_type="application/json",
+        )
+
+        wa.refresh_from_db()
+        if allowed:
+            assert response.status_code == 200
+            assert wa.opportunity_access_id == access.id
+        else:
+            assert response.status_code == 404
+            assert wa.opportunity_access_id is None
+
+    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    def test_unassign_work_areas(
+        self, mock_unassign, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed
+    ):
+        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        mock_unassign.return_value = {"unassigned_ids": [wa.id], "skipped": 0, "failed_ids": []}
+        org = login_as(org_fixture, user_fixture)
+
+        response = client.post(
+            reverse(
+                "microplanning:unassign_work_areas",
+                kwargs={"org_slug": org.slug, "opp_id": managed_opportunity.opportunity_id},
+            ),
+            data=json.dumps({"work_area_ids": [wa.id]}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == (200 if allowed else 404)
+        assert mock_unassign.called is allowed
+
+
 @pytest.mark.django_db
 class TestMapPageWiring:
     """The map's JS reads everything from the microplanning-config tag; if it is missing or unparseable
@@ -2064,19 +2172,6 @@ class TestSaveAssignment:
         response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, payload)
         assert response.status_code == expected_status
 
-    def test_non_program_manager_cannot_assign(self, client, organization, org_user_admin, managed_opportunity):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
-        client.force_login(org_user_admin)
-
-        response = self._post(
-            client,
-            organization.slug,
-            managed_opportunity.opportunity_id,
-            [{"assignee_id": access.id, "work_area_ids": [wa.id]}],
-        )
-        assert response.status_code == 404
-
 
 @pytest.mark.django_db
 class TestUnassignWorkAreas:
@@ -2229,13 +2324,6 @@ class TestUnassignWorkAreas:
         assert response.status_code == 400
         assert str(MAX_UNASSIGN_WORK_AREAS) in response.json()["error"]
         mock_unassign.assert_not_called()
-
-    def test_non_program_manager_blocked(self, client, organization, org_user_admin, managed_opportunity):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
-        client.force_login(org_user_admin)
-
-        response = self._post(client, organization.slug, managed_opportunity.opportunity_id, [wa.id])
-        assert response.status_code == 404
 
 
 @pytest.mark.django_db

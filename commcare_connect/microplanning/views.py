@@ -94,10 +94,8 @@ from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, Use
 from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
-    opportunity_pm_required,
     opportunity_required,
 )
-from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.file import get_file_extension
@@ -238,8 +236,7 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
-    is_program_manager = is_opportunity_pm(request, opportunity)
-    assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
+    assignment_mode = bool(request.GET.get("assignment_mode"))
     inaccessible_mode = bool(request.GET.get("inaccessible_mode"))
     # Drives both the entry button's count and the list Inaccessible Mode renders, so the two
     # can never disagree.
@@ -287,7 +284,6 @@ def microplanning_home(request, *args, **kwargs):
         "exclude_url": exclude_url,
         "filter_form": filterset.form,
         "cluster_form": ClusterWorkAreasForm(),
-        "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
         "inaccessible_mode": inaccessible_mode,
         "inaccessibility_requests": inaccessibility_requests,
@@ -1125,7 +1121,7 @@ class ModifyWorkAreaUpdateView(UpdateView):
 
 
 @require_GET
-@opportunity_pm_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_work_areas_for_assignment(request, org_slug, opp_id):
@@ -1143,7 +1139,7 @@ def get_work_areas_for_assignment(request, org_slug, opp_id):
 
 
 @require_GET
-@opportunity_pm_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
@@ -1156,7 +1152,7 @@ def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
 
 
 @require_GET
-@opportunity_pm_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def get_flw_summary_for_assignment(request, org_slug, opp_id):
@@ -1182,7 +1178,7 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@opportunity_pm_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def save_assignment(request, org_slug, opp_id):
@@ -1259,7 +1255,7 @@ def save_assignment(request, org_slug, opp_id):
 
 
 @require_POST
-@opportunity_pm_required
+@opp_admin_access_required
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def unassign_work_areas(request, org_slug, opp_id):
