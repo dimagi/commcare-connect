@@ -2,7 +2,9 @@ import csv
 import io
 import logging
 import math
+import unicodedata
 from collections import defaultdict
+from typing import NamedTuple
 
 import httpx
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
@@ -50,6 +52,26 @@ def _overlap_percent(ratio):
     (0.06000000000002) is ignored with the same tolerance as the limit, so it doesn't round up a
     whole step, and every rejected pair reads as more than the limit."""
     return f"{math.ceil((ratio - WORK_AREA_OVERLAP_RATIO_TOLERANCE) * 1000) / 10:.1f}"
+
+
+def ward_key(ward):
+    """Wards that differ only in case, spacing or punctuation are the same ward ("Tudu Kwaya" and
+    "tudu-kwaya"). Groups created through the API can only store a slug as their ward.
+
+    Like slugify, but keeps combining marks such as vowel signs, so distinct names in scripts
+    like Devanagari ("राम" and "रम") stay distinct.
+    """
+    ward = unicodedata.normalize("NFKC", ward).casefold()
+    kept = "".join(
+        char if unicodedata.category(char)[0] in "LMN" else " " if char in "-_" or char.isspace() else ""
+        for char in ward
+    )
+    return "-".join(kept.split())
+
+
+class RowWard(NamedTuple):
+    line_num: int
+    ward: str
 
 
 def parse_lon_lat_centroid(value):
@@ -235,8 +257,9 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.seen_slugs = {}
         self.implementation_area_map = {}
         self.has_group_names = False
-        # Ward to use if a given group name doesn't exist yet: the ward of its first-seen row.
-        self.group_wards = {}
+        # Group name -> (line number, ward) of each of its rows.
+        self.group_rows = defaultdict(list)
+        self.existing_groups = {}
         self.group_cache = {}
         self.total_rows = 0
         self.rows_with_group = 0
@@ -251,6 +274,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         existing = WorkArea.objects.filter(opportunity_id=self.opp_id, slug__in=self.seen_slugs)
         for line_num in sorted(self.seen_slugs[slug] for slug in existing.values_list("slug", flat=True)):
             self._add_error(line_num, _("Area slug already exists for this opportunity"))
+        self._validate_group_wards()
 
     def _process_row(self, line_num, row):
         super()._process_row(line_num, row)
@@ -258,7 +282,10 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         group_name = self.get_group_name(row)
         if group_name:
             self.rows_with_group += 1
-            self.group_wards.setdefault(group_name, self.get_ward(row))
+            ward = self.get_ward(row)
+            # A missing ward is already its own row error.
+            if ward:
+                self.group_rows[group_name].append(RowWard(line_num, ward))
 
     def _after_rows(self):
         self.has_group_names = self.total_rows > 0 and self.rows_with_group == self.total_rows
@@ -268,6 +295,27 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
                 _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
             )
 
+    def _validate_group_wards(self):
+        """Every row of a group must give the group's ward: its saved ward, or for a new group the
+        ward of its first row. Wards are compared by ward_key."""
+        if not self.group_rows:
+            return
+        self.existing_groups = {
+            group.name: group
+            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_rows)
+        }
+        for group_name, rows in self.group_rows.items():
+            group = self.existing_groups.get(group_name)
+            group_ward = group.ward if group else rows[0].ward
+            group_ward_key = ward_key(group_ward)
+            for line_num, ward in rows:
+                if ward_key(ward) != group_ward_key:
+                    message = _(
+                        "Work Area Group %(group)s is in ward %(group_ward)s, but these rows give ward %(ward)s. "
+                        "Correct the ward, or use a different group name."
+                    ) % {"group": group_name, "group_ward": group_ward, "ward": ward}
+                    self._add_error(line_num, message)
+
     def _prepare_insert(self):
         self.implementation_area_map = dict(
             ImplementationArea.objects.filter(opportunity_id=self.opp_id).values_list("name", "id")
@@ -275,14 +323,15 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.group_cache = self._resolve_work_area_groups() if self.has_group_names else {}
 
     def _resolve_work_area_groups(self):
-        group_cache = {
-            group.name: group
-            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_wards)
-        }
-        missing = [name for name in self.group_wards if name not in group_cache]
+        group_cache = dict(self.existing_groups)
+        missing = [name for name in self.group_rows if name not in group_cache]
         if missing:
+            # A new group takes the ward of its first row, as that row spelled it.
             created = WorkAreaGroup.objects.bulk_create(
-                [WorkAreaGroup(opportunity_id=self.opp_id, name=name, ward=self.group_wards[name]) for name in missing]
+                [
+                    WorkAreaGroup(opportunity_id=self.opp_id, name=name, ward=self.group_rows[name][0].ward)
+                    for name in missing
+                ]
             )
             group_cache.update({group.name: group for group in created})
         return group_cache

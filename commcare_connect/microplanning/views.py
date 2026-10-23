@@ -646,9 +646,8 @@ def _area_modal_context(org_slug, opp_id, area_type):
             _("State – name of the state the work area is in"),
             _("Implementation Area – (optional) name of the matching Implementation Area"),
             _(
-                "Work Area Group Name (optional): Enter a group name for every row to assign work areas directly "
-                "and skip automatic clustering. Leave this column blank for every row to use automatic clustering. "
-                "Do not mix blank and filled values."
+                "Work Area Group Name – (optional) leave all rows blank to use automatic clustering, or "
+                "fill group name in all rows to skip it. Rows sharing a group name must share a Ward."
             ),
         ],
     }
