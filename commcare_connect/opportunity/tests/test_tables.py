@@ -1,11 +1,15 @@
 import datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from django.test import RequestFactory
+from django.test.signals import template_rendered
+from django.utils.html import strip_tags
 from django_tables2 import RequestConfig
 
-from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
+from commcare_connect.opportunity.helpers import PaymentUnitDelivery, WorkerDelivery, get_worker_tasks_base_queryset
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWork,
@@ -20,6 +24,7 @@ from commcare_connect.opportunity.tables import (
     OpportunityTable,
     PaymentInvoiceTable,
     ProgramManagerOpportunityTable,
+    WorkerDeliveryTable,
     WorkerTasksTable,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -195,3 +200,88 @@ def test_payment_invoice_table_carries_the_usd_amount_for_selection(opportunity,
         csrf_token="token",
     )
     assert expected in table.as_html(RequestFactory().get("/"))
+
+
+def _rendered_context(render):
+    """The context `render` drew its template with, captured from Django's test-mode template_rendered signal."""
+    contexts = []
+
+    def capture(sender, context, **kwargs):
+        contexts.append(context)
+
+    template_rendered.connect(capture)
+    try:
+        render()
+    finally:
+        template_rendered.disconnect(capture)
+    return contexts[0]
+
+
+@pytest.mark.parametrize("over_limit", [0, 2], ids=["within_limit", "over_limit"])
+def test_worker_delivery_table_counts(over_limit):
+    unit = PaymentUnitDelivery(
+        name="Visit",
+        payment_unit_id=None,
+        allocation=5,
+        pending=1,
+        approved=1,
+        rejected=4,
+        over_limit=over_limit,
+        incomplete=1,
+    )
+    record = WorkerDelivery(access=None, payment_units=[unit])
+    table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
+
+    progress = _rendered_context(lambda: table.render_delivery_progress(record))
+    delivered = _rendered_context(lambda: table.render_delivered(record))
+
+    # Only pending and approved work counts towards the allocation.
+    assert (progress["current"], progress["percentage"]) == (2, 40.0)
+    # Over-limit work is listed on its own, not inside Completed.
+    assert delivered["value"] == 6 + over_limit
+    assert [row["value"] for row in delivered["rows"]] == [6, 1, over_limit]
+    assert progress["warning"] == bool(over_limit)
+    assert delivered["over_limit"] == bool(over_limit)
+    assert table.has_over_limit == bool(over_limit)
+    index = table.rows[0].get_cell("index")
+    assert strip_tags(index).strip() == "1"
+    assert '@click="open = !open"' not in index
+
+
+def test_worker_delivery_table_summary_row():
+    units = [
+        PaymentUnitDelivery(
+            name=name,
+            payment_unit_id=uuid4(),
+            allocation=5,
+            pending=1,
+            approved=1,
+            rejected=0,
+            over_limit=0,
+            incomplete=0,
+        )
+        for name in ("Visit", "Screening")
+    ]
+    access = SimpleNamespace(
+        opportunity_access_id=uuid4(),
+        user=SimpleNamespace(user_id=uuid4(), name="Worker", username="worker"),
+        status=None,
+        suspended=False,
+        last_active=None,
+    )
+    record = WorkerDelivery(access=access, payment_units=units)
+    table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
+    summary = table.rows[0]
+
+    index = summary.get_cell("index")
+    assert strip_tags(index).strip() == "1"
+    assert '@click="open = !open"' in index
+    assert summary.get_cell("payment_unit") == "2 payment units"
+    summary_counts_url = _rendered_context(lambda: summary.get_cell("pending"))["counts_url"]
+    assert "payment_unit_id" not in summary_counts_url
+
+    for sub_row, unit in zip(record.bound_sub_rows, units):
+        assert all(sub_row.get_cell(name) == "" for name in table.header_columns)
+        assert sub_row.get_cell("payment_unit") == unit.name
+        counts_url = _rendered_context(lambda: sub_row.get_cell("pending"))["counts_url"]
+        assert f"payment_unit_id={unit.payment_unit_id}" in counts_url

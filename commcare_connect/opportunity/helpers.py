@@ -1,5 +1,7 @@
 from collections import namedtuple
+from dataclasses import dataclass
 from datetime import timedelta
+from uuid import UUID
 
 from django.db.models import (
     Case,
@@ -25,6 +27,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce, Round
 from django.utils.timezone import now
+from django.utils.translation import ngettext
 
 from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.opportunity.models import (
@@ -263,16 +266,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
                 output_field=IntegerField(),
             )
 
-        def completed_work_status_total_subquery(status_value, sum_field=None):
-            agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
-            return Subquery(
-                CompletedWork.objects.filter(opportunity_access_id=OuterRef("pk"), status=status_value)
-                .values("opportunity_access_id")
-                .annotate(status_count=agg)
-                .values("status_count")[:1],
-                output_field=IntegerField(),
-            )
-
         pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
         approved_count_sq = completed_work_status_subquery(
             CompletedWorkStatus.approved, sum_field="saved_approved_count"
@@ -280,13 +273,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
         over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
         incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
-
-        total_pending_for_user = completed_work_status_total_subquery(CompletedWorkStatus.pending)
-        total_approved_for_user = completed_work_status_total_subquery(
-            CompletedWorkStatus.approved, sum_field="saved_approved_count"
-        )
-        total_rejected_for_user = completed_work_status_total_subquery(CompletedWorkStatus.rejected)
-        total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
         queryset = queryset.annotate(
             status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
@@ -302,19 +288,10 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
             duplicate=Coalesce(duplicate_sq, Value(0)),
             over_limit=Coalesce(over_limit_count_sq, Value(0)),
             incomplete=Coalesce(incomplete_count_sq, Value(0)),
-            total_pending=Coalesce(total_pending_for_user, Value(0)),
-            total_approved=Coalesce(total_approved_for_user, Value(0)),
-            total_rejected=Coalesce(total_rejected_for_user, Value(0)),
-            total_over_limit=Coalesce(total_over_limit_for_user, Value(0)),
         )
 
         queryset = (
-            queryset.annotate(
-                completed=(F("pending") + F("approved") + F("rejected") + F("over_limit")),
-                total_completed=(
-                    F("total_pending") + F("total_approved") + F("total_rejected") + F("total_over_limit")
-                ),
-            )
+            queryset.annotate(delivered=(F("pending") + F("approved") + F("rejected") + F("over_limit")))
             .select_related("user")
             .order_by("user__name")
         )
@@ -347,6 +324,132 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         access_objects += queryset
     access_objects.sort(key=lambda a: a.user.name)
     return access_objects
+
+
+@dataclass
+class PaymentUnitDelivery:
+    name: str
+    payment_unit_id: UUID
+    allocation: int | None
+    pending: int
+    approved: int
+    rejected: int
+    over_limit: int
+    incomplete: int
+
+    @property
+    def delivered(self):
+        return self.pending + self.approved + self.rejected + self.over_limit
+
+    @property
+    def progress(self):
+        return self.pending + self.approved
+
+    @property
+    def has_allocation_or_work(self):
+        return self.allocation is not None or self.delivered > 0 or self.incomplete > 0
+
+
+@dataclass
+class WorkerDelivery:
+    """A worker's delivery counts on the Deliver tab, summed over `payment_units`."""
+
+    access: OpportunityAccess
+    payment_units: list[PaymentUnitDelivery]
+
+    @property
+    def opportunity_access(self):
+        return self.access
+
+    @property
+    def status(self):
+        return self.access.status
+
+    @property
+    def payment_unit_label(self):
+        if len(self.payment_units) == 1:
+            return self.payment_units[0].name
+        count = len(self.payment_units)
+        return ngettext("%(count)d payment unit", "%(count)d payment units", count) % {"count": count}
+
+    @property
+    def payment_unit_id(self):
+        # Several payment units have no single id; flag counts then span all of them.
+        if len(self.payment_units) == 1:
+            return self.payment_units[0].payment_unit_id
+        return None
+
+    @property
+    def sub_rows(self):
+        if len(self.payment_units) == 1:
+            return []
+        return [WorkerDelivery(self.access, [unit]) for unit in self.payment_units]
+
+    @property
+    def allocation(self):
+        allocations = [unit.allocation for unit in self.payment_units if unit.allocation is not None]
+        return sum(allocations) if allocations else None
+
+    @property
+    def pending(self):
+        return sum(unit.pending for unit in self.payment_units)
+
+    @property
+    def approved(self):
+        return sum(unit.approved for unit in self.payment_units)
+
+    @property
+    def rejected(self):
+        return sum(unit.rejected for unit in self.payment_units)
+
+    @property
+    def over_limit(self):
+        return sum(unit.over_limit for unit in self.payment_units)
+
+    @property
+    def incomplete(self):
+        return sum(unit.incomplete for unit in self.payment_units)
+
+    @property
+    def delivered(self):
+        return sum(unit.delivered for unit in self.payment_units)
+
+    @property
+    def progress(self):
+        return sum(unit.progress for unit in self.payment_units)
+
+
+def get_worker_deliveries(opportunity: Opportunity, filters: dict):
+    """One `WorkerDelivery` per worker, built from the per-payment-unit rows of
+    `get_annotated_opportunity_access_deliver_status`.
+
+    That query returns a row for every payment unit in the opportunity, so units the worker has
+    neither an allocation for nor any work in are dropped. A worker with nothing anywhere keeps
+    them all, since they could deliver in any of them.
+    """
+    rows_by_access = {}
+    for row in get_annotated_opportunity_access_deliver_status(opportunity, filters):
+        rows_by_access.setdefault(row.pk, []).append(row)
+
+    deliveries = []
+    for rows in rows_by_access.values():
+        units = [_payment_unit_delivery(row) for row in rows]
+        units_with_allocation_or_work = [unit for unit in units if unit.has_allocation_or_work] or units
+        deliveries.append(WorkerDelivery(access=rows[0], payment_units=units_with_allocation_or_work))
+    return deliveries
+
+
+def _payment_unit_delivery(row):
+    return PaymentUnitDelivery(
+        name=row.payment_unit,
+        payment_unit_id=row.payment_unit_payment_unit_id,
+        allocation=row.total_visits,
+        pending=row.pending,
+        approved=row.approved,
+        rejected=row.rejected,
+        over_limit=row.over_limit,
+        incomplete=row.incomplete,
+    )
 
 
 def get_payment_report_data(opportunity: Opportunity, usd=False):
@@ -647,8 +750,7 @@ def get_worker_tasks_base_queryset(opportunity):
     """Return the annotated queryset for the worker tasks table.
 
     One row per (worker, active task) pair. Only workers with active tasks
-    are included. Ordered by user name then task creation date, as required
-    by `GroupedByWorkerMixin` for correct row grouping.
+    are included. Ordered by user name then task creation date.
     """
     return (
         OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
