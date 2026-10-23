@@ -13,6 +13,7 @@ from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.text import slugify
 from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
@@ -35,6 +36,7 @@ from commcare_connect.opportunity.models import (
     Currency,
     DeliverUnit,
     DeliverUnitFlagRules,
+    DeliveryType,
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
@@ -2478,3 +2480,52 @@ class AudioAttachmentTranscribeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+
+
+class DeliveryTypeForm(forms.ModelForm):
+    """Adds or edits a delivery type from Internal Features.
+
+    On create the slug is filled in from the name as you type (see slugAutofill in alpine_data.js) and, if left
+    blank, generated from it on save. After that it is read-only: reports, data exports and the Program API
+    identify delivery types by it, so changing it would break anything that stored the old one.
+    """
+
+    class Meta:
+        model = DeliveryType
+        fields = ("name", "slug", "description")
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+        help_texts = {"slug": _("Lowercase letters, numbers, hyphens and underscores.")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["description"].required = False
+        if self.instance.pk:
+            self.fields["slug"].disabled = True
+            self.fields["slug"].help_text = _(
+                "Reports, data exports and the Program API identify delivery types by it, so it can't change."
+            )
+        else:
+            self.fields["slug"].required = False
+            self.fields["name"].widget.attrs.update({"x-ref": "name", "x-on:input": "nameChanged()"})
+            self.fields["slug"].widget.attrs.update({"x-ref": "slug", "x-on:input": "slugChanged()"})
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        if DeliveryType.objects.exclude(pk=self.instance.pk).filter(name__iexact=name).exists():
+            raise ValidationError(gettext("A delivery type with this name already exists."))
+        return name
+
+    def clean_slug(self):
+        if self.instance.pk:
+            return self.instance.slug
+        slug = self.cleaned_data["slug"].strip() or slugify(self.cleaned_data.get("name", ""))
+        if not slug:
+            raise ValidationError(gettext("Enter a slug, or a name containing at least one letter or number."))
+        if slug != slugify(slug):
+            raise ValidationError(gettext("Use only lowercase letters, numbers, hyphens and underscores."))
+        if DeliveryType.objects.exclude(pk=self.instance.pk).filter(slug=slug).exists():
+            raise ValidationError(gettext("A delivery type with this slug already exists."))
+        return slug
