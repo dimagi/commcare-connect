@@ -191,3 +191,54 @@ def test_history_of_a_deleted_organization_is_still_listed(admin_client, source,
 
     assert response.status_code == 200
     assert "delete" in [event.pgh_label for event in response.context["cl"].result_list]
+
+
+class TestEventChanges:
+    @pytest.mark.parametrize(
+        "label, expected",
+        [
+            ("update", "Name: Source Organization → Renamed Organization; Status: — → Active"),
+            ("insert", "—"),
+        ],
+    )
+    def test_an_organization_event_page_shows_its_changes(self, admin_client, source, label, expected):
+        source.name = "Renamed Organization"
+        source.status = "active"
+        source.save()
+        event = source.events.get(pgh_label=label)
+
+        response = admin_client.get(reverse("admin:organization_organizationevent_change", args=(event.pk,)))
+
+        assert _changes_shown(response) == expected
+
+    def test_a_contact_event_page_shows_its_changes(self, admin_client, source):
+        contact = source.contacts.create(name="Grace Wanjiru", email="grace@example.com")
+        contact.is_main_poc = True
+        contact.save()
+        event = contact.events.latest("pgh_id")
+
+        response = admin_client.get(reverse("admin:organization_contactevent_change", args=(event.pk,)))
+
+        assert _changes_shown(response) == "Is main poc: No → Yes"
+
+    def test_long_values_are_shown_in_full(self, admin_client, source):
+        shared_start = "x" * 60
+        source.notes = f"{shared_start} first"
+        source.save()
+        source.notes = f"{shared_start} second"
+        source.save()
+        event = source.events.latest("pgh_id")
+
+        response = admin_client.get(reverse("admin:organization_organizationevent_change", args=(event.pk,)))
+
+        assert _changes_shown(response) == f"Notes: {shared_start} first → {shared_start} second"
+
+
+def _changes_shown(response):
+    """The rendered value of the read-only Changes field on an admin change page."""
+    for fieldset in response.context["adminform"]:
+        for line in fieldset:
+            for field in line:
+                if field.field["name"] == "changes":
+                    return field.contents()
+    return None

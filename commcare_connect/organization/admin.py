@@ -24,7 +24,7 @@ from commcare_connect.organization.models import (
     UserOrganizationMembership,
 )
 from commcare_connect.users.forms import AdminOrganizationForm
-from commcare_connect.utils.admin import AuditEventAdmin, audited_object
+from commcare_connect.utils.admin import AuditEventAdmin, ChangedFieldsMixin, audited_object
 
 MERGE_ACTION = "merge_workspaces"
 
@@ -206,7 +206,7 @@ class OrganizationAuditEventAdmin(AuditEventAdmin):
 
 
 @admin.register(OrganizationEvent)
-class OrganizationEventAdmin(OrganizationAuditEventAdmin):
+class OrganizationEventAdmin(ChangedFieldsMixin, OrganizationAuditEventAdmin):
     list_display = ("pgh_created_at", "organization", "pgh_label", "changed_by")
     list_filter = ("pgh_label", ("pgh_obj", admin.RelatedOnlyFieldListFilter))
     search_fields = ("name", "short_name")
@@ -216,7 +216,7 @@ class OrganizationEventAdmin(OrganizationAuditEventAdmin):
 
 
 @admin.register(ContactEvent)
-class ContactEventAdmin(OrganizationAuditEventAdmin):
+class ContactEventAdmin(ChangedFieldsMixin, OrganizationAuditEventAdmin):
     # `organization` is snapshotted on the event, so it still resolves after the contact is deleted.
     list_display = ("pgh_created_at", "contact", "organization", "pgh_label", "changed_by")
     list_filter = ("pgh_label", ("organization", admin.RelatedOnlyFieldListFilter))
