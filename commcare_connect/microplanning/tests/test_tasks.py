@@ -495,18 +495,34 @@ class TestWorkAreaCSVImporter:
     def test_import_compares_wards_ignoring_case_spacing_and_punctuation(self, opportunity):
         # Groups created through the API can only store a slug as their ward.
         existing_group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="tudu-kwaya")
+        WorkAreaGroupFactory(opportunity=opportunity, name="group-c", ward="st_mary")
         rows = [
             self.build_row("area-1", "group-a", ward="Tudu Kwaya"),
             self.build_row("area-2", "group-b", ward="Ward South"),
             self.build_row("area-3", "group-b", ward="ward south"),
             self.build_row("area-4", "group-b", ward="Ward-South"),
+            self.build_row("area-5", "group-c", ward="St. Mary"),
         ]
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
 
-        assert result == {"created": 4}
+        assert result == {"created": 5}
         assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
         # A new group takes its first row's spelling.
         assert WorkAreaGroup.objects.get(opportunity=opportunity, name="group-b").ward == "Ward South"
+
+    def test_import_keeps_wards_that_differ_by_vowel_signs_apart(self, opportunity):
+        rows = [
+            self.build_row("area-1", "group-a", ward="राम"),
+            self.build_row("area-2", "group-a", ward="रम"),
+        ]
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Work Area Group group-a is in ward राम, but these rows give ward रम. "
+                "Correct the ward, or use a different group name.": [3]
+            }
+        }
 
     def test_import_reports_only_rows_in_another_ward_than_a_new_groups_first_row(self, opportunity):
         rows = [

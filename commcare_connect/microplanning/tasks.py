@@ -2,6 +2,7 @@ import csv
 import io
 import logging
 import math
+import unicodedata
 from collections import defaultdict
 from typing import NamedTuple
 
@@ -12,7 +13,6 @@ from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils.html import strip_tags
-from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from commcare_connect.connect_id_client import send_message
@@ -56,8 +56,17 @@ def _overlap_percent(ratio):
 
 def ward_key(ward):
     """Wards that differ only in case, spacing or punctuation are the same ward ("Tudu Kwaya" and
-    "tudu-kwaya"). Groups created through the API can only store a slug as their ward."""
-    return slugify(ward, allow_unicode=True)
+    "tudu-kwaya"). Groups created through the API can only store a slug as their ward.
+
+    Like slugify, but keeps combining marks such as vowel signs, so distinct names in scripts
+    like Devanagari ("राम" and "रम") stay distinct.
+    """
+    ward = unicodedata.normalize("NFKC", ward).casefold()
+    kept = "".join(
+        char if unicodedata.category(char)[0] in "LMN" else " " if char in "-_" or char.isspace() else ""
+        for char in ward
+    )
+    return "-".join(kept.split())
 
 
 class RowWard(NamedTuple):
