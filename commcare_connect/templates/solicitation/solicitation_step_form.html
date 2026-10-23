@@ -1,0 +1,25 @@
+{% extends "solicitation/solicitation_step_base.html" %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+{% block step_content %}
+  <form method="post" class="flex flex-col gap-6">
+    {% csrf_token %}
+    {% if not solicitation.structure_locked %}
+      <p class="hint flex items-center gap-2">
+        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        {% translate "Each step is saved as a draft. Nothing is visible to applicants until you publish it." %}
+      </p>
+    {% endif %}
+    <div class="card_bg">{% crispy form %}</div>
+    <div class="flex gap-3 justify-end">
+      {# Leaves without saving this step; earlier steps are already saved. #}
+      <a class="button button-md outline-style"
+         href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
+      {% if not solicitation.structure_locked %}
+        <button type="submit" class="button button-md primary-dark">{% translate "Save and continue" %}</button>
+      {% elif step == "details" %}
+        <button type="submit" class="button button-md primary-dark">{% translate "Save" %}</button>
+      {% endif %}
+    </div>
+  </form>
+{% endblock step_content %}

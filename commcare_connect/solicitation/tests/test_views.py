@@ -69,3 +69,21 @@ class TestSolicitationNavItem:
             response = client.get(reverse("opportunity:list", args=(org.slug,)))
 
         assert (reverse("solicitation:list", args=(org.slug,)) in response.content.decode()) is shown
+
+
+def step_url(step, solicitation):
+    return reverse(f"solicitation:{step}", args=(solicitation.organization.slug, solicitation.solicitation_id))
+
+
+@pytest.mark.django_db
+class TestSolicitationSteps:
+    @pytest.fixture(autouse=True)
+    def pm_client(self, client, program_manager_org_user_admin):
+        client.force_login(program_manager_org_user_admin)
+        with override_switch(SOLICITATIONS, active=True):
+            yield client
+
+    def test_create_renders(self, pm_client, program_manager_org):
+        response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
+
+        assert response.status_code == HTTPStatus.OK

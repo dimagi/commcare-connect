@@ -1,0 +1,141 @@
+from operator import attrgetter
+
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Field, Layout, Row
+from django import forms
+from django.utils.translation import gettext_lazy as _
+
+from commcare_connect.opportunity.forms import CHECKBOX_CLASS
+from commcare_connect.opportunity.models import Country, Currency
+from commcare_connect.program.forms import DATE_INPUT
+from commcare_connect.program.models import Program
+from commcare_connect.solicitation.models import Solicitation
+
+DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
+TOGGLE_WRAPPER_CLASS = "bg-slate-100 flex items-center justify-between p-4 rounded-lg"
+SEARCHABLE_SELECT = forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"})
+
+# A draft may leave these empty; publishing needs them, so an active solicitation keeps them required.
+PUBLISH_REQUIRED_FIELDS = ("description", "contact_email", "country")
+
+
+class SolicitationForm(forms.ModelForm):
+    currency = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.order_by("code"),
+        empty_label=_("Select a currency"),
+        widget=SEARCHABLE_SELECT,
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        empty_label=_("Select a country"),
+        widget=SEARCHABLE_SELECT,
+    )
+
+    class Meta:
+        model = Solicitation
+        fields = [
+            "title",
+            "type",
+            "description",
+            "budget_min",
+            "budget_max",
+            "currency",
+            "country",
+            "delivery_type",
+            "expected_start_date",
+            "expected_end_date",
+            "application_deadline",
+            "estimated_scale",
+            "contact_email",
+            "program",
+            "public",
+            "hide_scores_until_submit",
+        ]
+        labels = {
+            "title": _("Title"),
+            "type": _("Type"),
+            "description": _("Scope of work"),
+            "budget_min": _("Minimum budget"),
+            "budget_max": _("Maximum budget"),
+            "delivery_type": _("Delivery type"),
+            "expected_start_date": _("Expected start date"),
+            "expected_end_date": _("Expected end date"),
+            "application_deadline": _("Application deadline"),
+            "estimated_scale": _("Estimated scale"),
+            "contact_email": _("Contact email"),
+            "program": _("Program"),
+            "public": _("Public (anyone can see and apply)"),
+            "hide_scores_until_submit": _("Hide scores until submit"),
+        }
+        widgets = {
+            "expected_start_date": DATE_INPUT,
+            "expected_end_date": DATE_INPUT,
+            "application_deadline": DATETIME_INPUT,
+            "program": SEARCHABLE_SELECT,
+            "delivery_type": SEARCHABLE_SELECT,
+        }
+
+    def __init__(self, *args, organization, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.organization = organization
+        self.user = user
+        self.fields["program"].queryset = Program.objects.filter(organization=organization).order_by("name")
+        # Program.__str__ is its slug; PMs pick programs by name.
+        self.fields["program"].label_from_instance = attrgetter("name")
+        if self.instance.status == Solicitation.Status.DRAFT:
+            for name in PUBLISH_REQUIRED_FIELDS:
+                self.fields[name].required = False
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Row("title", "type", css_class="grid grid-cols-2 gap-2"),
+            "description",
+            Row("budget_min", "budget_max", "currency", css_class="grid grid-cols-3 gap-2"),
+            Row("country", "delivery_type", "estimated_scale", css_class="grid grid-cols-3 gap-2"),
+            Row(
+                "expected_start_date", "expected_end_date", "application_deadline", css_class="grid grid-cols-3 gap-2"
+            ),
+            Row("contact_email", "program", css_class="grid grid-cols-2 gap-2"),
+            Row(
+                Field("public", css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS),
+                Field("hide_scores_until_submit", css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS),
+                css_class="grid grid-cols-2 gap-2",
+            ),
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        self._validate_budget(cleaned_data)
+        self._validate_dates(cleaned_data)
+        self._validate_deadline(cleaned_data)
+        return cleaned_data
+
+    def _validate_budget(self, cleaned_data):
+        budget_min = cleaned_data.get("budget_min")
+        budget_max = cleaned_data.get("budget_max")
+        if budget_min is not None and budget_max is not None and budget_max < budget_min:
+            self.add_error("budget_max", _("Maximum budget must not be less than the minimum."))
+
+    def _validate_dates(self, cleaned_data):
+        start_date = cleaned_data.get("expected_start_date")
+        end_date = cleaned_data.get("expected_end_date")
+        if start_date and end_date and end_date <= start_date:
+            self.add_error("expected_end_date", _("End date must be after the start date."))
+
+    def _validate_deadline(self, cleaned_data):
+        deadline = cleaned_data.get("application_deadline")
+        if not deadline or self.instance.status != Solicitation.Status.ACTIVE:
+            return
+        # clean() runs before the instance is updated, so it still holds the stored deadline. The input
+        # only has minute precision, so seconds are dropped to let an unchanged deadline through.
+        if deadline < self.instance.application_deadline.replace(second=0, microsecond=0):
+            self.add_error("application_deadline", _("A published deadline can only be extended."))
+
+    def save(self, commit=True):
+        if not self.instance.pk:
+            self.instance.organization = self.organization
+            self.instance.created_by = self.user.email
+        self.instance.modified_by = self.user.email
+        return super().save(commit=commit)
