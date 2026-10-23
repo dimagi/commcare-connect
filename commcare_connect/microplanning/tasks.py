@@ -19,7 +19,7 @@ from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
-from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT
+from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT, WORK_AREA_OVERLAP_RATIO_TOLERANCE
 from .exceptions import ImportRejected
 from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from .overlap import Overlap, find_overlapping_work_areas
@@ -46,9 +46,10 @@ def get_cluster_area_cache_lock_key(opp_id: int):
 
 def _overlap_percent(ratio):
     """The overlap as a percentage, rounded up to one decimal so a pair just over the limit never
-    reads as exactly at it (5.04% shows as 5.1%, not 5.0%). The small nudge stops floating-point
-    noise in an exact ratio (0.06000000000002) from rounding up a whole step."""
-    return f"{math.ceil(ratio * 1000 - 1e-9) / 10:.1f}"
+    reads as exactly at it (5.04% shows as 5.1%, not 5.0%). Floating-point noise in an exact ratio
+    (0.06000000000002) is ignored with the same tolerance as the limit, so it doesn't round up a
+    whole step, and every rejected pair reads as more than the limit."""
+    return f"{math.ceil((ratio - WORK_AREA_OVERLAP_RATIO_TOLERANCE) * 1000) / 10:.1f}"
 
 
 def parse_lon_lat_centroid(value):

@@ -18,7 +18,7 @@ from django.db import connection
 from django.db.models import F, FilteredRelation, FloatField, Q, Value
 from django.db.models.functions import Cast, Least, NullIf
 
-from .const import WORK_AREA_MAX_OVERLAP_RATIO
+from .const import WORK_AREA_MAX_OVERLAP_RATIO, WORK_AREA_OVERLAP_RATIO_TOLERANCE
 from .models import WorkArea, WorkAreaStatus
 
 
@@ -66,7 +66,7 @@ def find_overlapping_work_areas(new_ids: list[int]):
             ratio=_area(Intersection("boundary", "other_boundary"))
             / NullIf(Least(_area("boundary"), _area("other_boundary")), Value(0.0)),
         )
-        .filter(ratio__gt=WORK_AREA_MAX_OVERLAP_RATIO)
+        .filter(ratio__gt=WORK_AREA_MAX_OVERLAP_RATIO + WORK_AREA_OVERLAP_RATIO_TOLERANCE)
         .order_by("pk", "other_id")
         .values("pk", "other_id", "other_slug", "ratio")
     )

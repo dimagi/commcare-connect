@@ -445,6 +445,8 @@ class TestWorkAreaCSVImporter:
     "ratio, expected",
     [
         (0.0504, "5.1"),
+        (0.050000002, "5.1"),  # the smallest ratio the check rejects still reads as over the limit
+        (0.05000000000023, "5.0"),  # floating-point noise in an exact 5%
         (0.06000000000002, "6.0"),
         (0.25, "25.0"),
         (1.0, "100.0"),

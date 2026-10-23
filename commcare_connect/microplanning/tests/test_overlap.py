@@ -30,6 +30,17 @@ class TestFindOverlappingWorkAreas:
         if overlaps:
             assert find_pairs([new]) == {(new.pk, existing.pk): 0.06}
 
+    @pytest.mark.parametrize(
+        "x, y, size",
+        # Places and sizes where an exact 5% measures slightly over, from floating-point noise.
+        [(36.8, -1.29, 0.005), (7.4, 9.6, 0.001), (0, 0, 1.0), (77.1, 28.6, 0.001), (151.2, -33.8, 0.001)],
+    )
+    def test_exactly_the_limit_passes(self, opportunity, x, y, size):
+        WorkAreaFactory(opportunity=opportunity, boundary=square(x, y, size))
+        new = WorkAreaFactory(opportunity=opportunity, boundary=square(x + 0.95 * size, y, size))
+
+        assert find_pairs([new]) == {}
+
     def test_shared_corner_passes(self, opportunity):
         WorkAreaFactory(opportunity=opportunity, boundary=square(0, 0))
         new = WorkAreaFactory(opportunity=opportunity, boundary=square(1, 1))

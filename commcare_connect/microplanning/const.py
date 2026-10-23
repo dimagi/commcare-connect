@@ -39,6 +39,9 @@ MAX_AUTOZOOM_ZOOM = 18
 # along their edges, and a 0% rule would reject correctly drawn files. 5% tolerates those slivers
 # while still catching real problems such as duplicates or one work area drawn inside another.
 WORK_AREA_MAX_OVERLAP_RATIO = 0.05
+# Measured ratios carry floating-point noise: a pair drawn at exactly 5% can measure 0.05000000000023
+# or 0.04999999999997 depending on where it sits. Ratios within this of the limit count as the limit.
+WORK_AREA_OVERLAP_RATIO_TOLERANCE = 1e-9
 # Overlap errors listed for a rejected upload; the rest are summed up in one line.
 WORK_AREA_OVERLAP_ERROR_LIMIT = 50
 
