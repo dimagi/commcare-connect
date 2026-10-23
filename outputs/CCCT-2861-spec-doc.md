@@ -104,8 +104,7 @@ The work splits into 8 tickets:
   - An FLW whose next step has no funded claim limit, or whose payment window has closed, waits at that step; later steps are not triggered in its place.
   - If the payment window closes while a step is in progress, the completion is recorded as an over-limit visit (`claim_limit_ended`) and the schedule moves on, as form visits do today.
   - Opportunities with no Deliver app have no tasks (neither relearn nor OCS).
-  - One provider at launch, and callback only: Connect triggers, then the service posts back. Polling (`check_status`), work started by the external service with no trigger, and other credential models are later additions to the interface.
-- **API changes:** new `POST /api/external_unit_completed/` for integrations; `/api/receiver/` is unchanged. The mobile opportunity serializer emits `deliver_app: null`, `unit_type` on payment units and visits, and a new `activities` list with a `launch` descriptor.
+- **API changes:** new `POST /api/external_unit_completed/` for integrations. `/api/receiver/` keeps its payload and responses, but `FormReceiver.post` now looks up the token's server as an `ExternalServer` with `service=commcare_hq`, so a token from an integration's application is rejected there (Ticket 3). The mobile opportunity serializer emits `deliver_app: null`, `delivery_type`, `unit_type` on payment units and visits, and a new `activities` list with a `launch` descriptor.
 - **Error logging:** the provider raises `ProviderNotConfigured` for missing configuration (for OCS: no OCS account for `configured_by`, unset `OCS_BASE_URL`), which is logged and marks the session `failed` without retrying, and `ProviderTransientError` for transient errors, which retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (the service may have started the work), so it is never retried past the cap; the Program Manager re-triggers it. Completion posts with an unknown `unitId` return `404`, and posts for an FLW with no claim raise `ProcessingError`; both are logged.
 
 **Monitoring and Alerting Plan:**
@@ -395,7 +394,7 @@ Auto-claim on Learn completion:
 The completion endpoint:
 
 - Each integration has a dedicated OAuth application in Connect, used only for posting completions, linked from an `ExternalServer` with its provider as `service`. For v1, one for OCS.
-- New class-based view `ExternalUnitCompletedView` at `POST /api/external_unit_completed/` (`api:external_unit_completed`), next to `TaskCompletedView`. It uses `OAuth2Authentication` and `TokenHasReadWriteScope`, plus a permission class that requires `request.auth.application` to belong to an `ExternalServer` whose `service` is a provider key. `FormReceiver` is not changed.
+- New class-based view `ExternalUnitCompletedView` at `POST /api/external_unit_completed/` (`api:external_unit_completed`), next to `TaskCompletedView`. It uses `OAuth2Authentication` and `TokenHasReadWriteScope`, plus a permission class that requires `request.auth.application` to belong to an `ExternalServer` whose `service` is a provider key. `FormReceiver` only changes as described in Ticket 3: its server lookup filters on `service=commcare_hq`.
 - `ExternalUnitCompletionSerializer` validates the payload. The view hands the validated data and the server's `service` to a service function, `complete_external_session(unit_id, provider, external_ref, started_at, completed_at, data)`, which holds all the logic and is tested directly.
 - `complete_external_session` locks the `ExternalSession` found by `unitId` (`404` if none) and checks that its step's `provider` equals the server's `service` (`403` if not). It then branches on the session's status:
   - `completed`: return and do nothing.
@@ -451,7 +450,7 @@ The completion endpoint:
 - An integration's token posting to `/api/receiver/` is rejected, and HQ servers keep working after the rename.
 - `UserVisit.duration` works for external unit visits.
 - The visit details panel for an external unit visit shows the OCS session data link and renders without a map or form; with `OCS_BASE_URL` unset it renders without the link.
-- `/api/receiver/` and HQ form processing are unchanged.
+- HQ form processing is unchanged, and `/api/receiver/` accepts the same payloads from HQ servers' tokens as before the rename.
 
 #### Ticket 6 – Mobile API: activities
 
@@ -459,13 +458,14 @@ The completion endpoint:
 
 **Changes:**
 
-- `OpportunitySerializer`: `payment_units[].unit_type` (`form` | `external`) and `activities[]` for the requesting FLW: `external_id`, `provider`, `label` (the step's name), `noun` (the provider's `display_noun`, e.g. "Interview"), `status`, `scheduled_for`, `completed_at`, `order` and `launch` (the provider's `launch_descriptor`, e.g. `{"type": "connect_channel", "channel_id": ...}`; `null` until triggered).
+- `OpportunitySerializer`: `delivery_type` (the `DeliveryType` slug, e.g. `interviews`; `null` when unset), the same delivery type that turns on the schedule toggle on the web (Ticket 1), so the app shows features by delivery type rather than by a new opportunity-type field. Also `payment_units[].unit_type` (`form` | `external`) and `activities[]` for the requesting FLW: `external_id`, `provider`, `label` (the step's name), `noun` (the provider's `display_noun`, e.g. "Interview"), `status`, `scheduled_for`, `completed_at`, `order` and `launch` (the provider's `launch_descriptor`, e.g. `{"type": "connect_channel", "channel_id": ...}`; `null` until triggered). An opportunity with no external steps has `activities: []`; CommCare launches stay on `learn_app` and `deliver_app` and have no launch descriptor.
 - Load activities with a `Prefetch` on the requesting FLW's accesses: `ExternalSession.objects.select_related("step__deliver_unit").order_by("step__order")`, into a `to_attr`, so the query count doesn't depend on the number of opportunities.
 - `UserVisitViewSet`: visits gain `unit_type`.
 
 **Acceptance criteria:**
 
 - An FLW's opportunity response lists their activities in order with current status and launch descriptor.
+- The response carries the opportunity's `delivery_type` slug, and `null` when it has none.
 - A `django_assert_num_queries` test shows the query count is the same for one and several opportunities.
 - Existing fields are unchanged.
 
@@ -475,6 +475,7 @@ The completion endpoint:
 
 **Changes:**
 
+- What "Start" opens comes from data the app already receives, with no opportunity-type field: with a `deliver_app`, the Deliver app as today, with the activities list shown alongside when `activities` is not empty; with `deliver_app: null`, the activities list, where the current activity opens by its `launch`. `delivery_type` decides which features and labels are shown (for example the interview screens for `interviews`), not how anything is launched.
 - Add an activities list with status, labelled with each activity's `noun` and `label`. Opening an activity is driven by its `launch.type`: one renderer per launch type, not per provider. v1 implements `connect_channel` (opens the chat via `channel_id`); an unknown type shows the activity without an open action.
 - Label external payment units and visits.
 - Show auto-claimed opportunities as claimed after Learn, with no Claim step.
@@ -482,6 +483,7 @@ The completion endpoint:
 **Acceptance criteria:**
 
 - An FLW sees each activity's status and can open the active one.
+- On an opportunity with no Deliver app, "Start" opens the activities list; on one with a Deliver app it opens the Deliver app as today.
 - An activity with an unknown launch type is listed but not openable, and the app doesn't crash.
 - Earnings from external units show alongside other payment units.
 
