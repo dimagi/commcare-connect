@@ -60,7 +60,7 @@ def ward_key(ward):
     return slugify(ward, allow_unicode=True)
 
 
-class GroupRow(NamedTuple):
+class RowWard(NamedTuple):
     line_num: int
     ward: str
 
@@ -276,7 +276,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
             ward = self.get_ward(row)
             # A missing ward is already its own row error.
             if ward:
-                self.group_rows[group_name].append(GroupRow(line_num, ward))
+                self.group_rows[group_name].append(RowWard(line_num, ward))
 
     def _after_rows(self):
         self.has_group_names = self.total_rows > 0 and self.rows_with_group == self.total_rows
