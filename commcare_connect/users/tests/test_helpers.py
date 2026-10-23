@@ -27,19 +27,19 @@ class TestBuildHqUserPayload:
             "default_phone_number": "+1234567890",
         }
 
-    def test_excludes_name_when_blank(self, mobile_user):
-        mobile_user.name = ""
+    @pytest.mark.parametrize(
+        "user_field,empty_value,payload_key",
+        [
+            pytest.param("name", "", "first_name", id="blank_name"),
+            pytest.param("phone_number", None, "default_phone_number", id="null_phone"),
+        ],
+    )
+    def test_excludes_empty_fields(self, mobile_user, user_field, empty_value, payload_key):
+        setattr(mobile_user, user_field, empty_value)
 
         payload = build_hq_user_payload(mobile_user)
 
-        assert "first_name" not in payload
-
-    def test_excludes_phone_when_null(self, mobile_user):
-        mobile_user.phone_number = None
-
-        payload = build_hq_user_payload(mobile_user)
-
-        assert "default_phone_number" not in payload
+        assert payload_key not in payload
 
 
 @pytest.mark.django_db
