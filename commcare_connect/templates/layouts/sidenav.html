@@ -84,6 +84,10 @@
             {% if request.user.can_access_organization_directory %}
               {% include "components/sidenav-items.html" with name='LLO Directory' icon='address-book' target=organization_directory_url namespace='organization_directory' %}
             {% endif %}
+            {% if request.user.is_staff %}
+              {% url 'admin:index' as django_admin_url %}
+              {% include "components/sidenav-items.html" with name='Django Admin' icon='screwdriver-wrench' target=django_admin_url namespace='admin' %}
+            {% endif %}
           </div>
         </div>
       {% endif %}

@@ -102,7 +102,7 @@ class User(AbstractUser):
 
     @property
     def show_admin_sidenav(self):
-        return self.show_internal_features or self.can_access_organization_directory
+        return self.show_internal_features or self.can_access_organization_directory or self.is_staff
 
 
 class ConnectIDUserLink(models.Model):
