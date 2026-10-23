@@ -5,7 +5,7 @@ from django.urls import reverse
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.solicitation.models import SolicitationApplication
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 from commcare_connect.solicitation.tests.factories import SolicitationApplicationFactory, SolicitationFactory
 from commcare_connect.solicitation.views import org_solicitations
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
@@ -82,6 +82,22 @@ class TestSolicitationSteps:
         client.force_login(program_manager_org_user_admin)
         with override_switch(SOLICITATIONS, active=True):
             yield client
+
+    @pytest.mark.parametrize(
+        "status, linked",
+        [
+            (Solicitation.Status.DRAFT, True),
+            (Solicitation.Status.ACTIVE, True),
+            (Solicitation.Status.CLOSED, False),
+            (Solicitation.Status.CANCELLED, False),
+        ],
+    )
+    def test_list_links_only_editable_titles(self, pm_client, program_manager_org, status, linked):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+
+        response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
+
+        assert (step_url("details", solicitation) in response.content.decode()) is linked
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
