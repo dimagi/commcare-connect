@@ -1,0 +1,33 @@
+{% load i18n %}
+{% load crispy_forms_tags %}
+{# Loaded into modal.html for both Add and Edit; posting back swaps this fragment for itself with any errors. #}
+<div id="delivery-type-form-wrapper">
+  <div class="header">
+    <h2 id="delivery-type-modal-title" class="title">
+      {% if object %}
+        {% translate "Edit Delivery Type" %}
+      {% else %}
+        {% translate "Add Delivery Type" %}
+      {% endif %}
+    </h2>
+    <button type="button"
+            class="button-icon"
+            @click="deliveryTypeModalUrl = null"
+            aria-label="{% translate 'Close' %}">
+      <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+    </button>
+  </div>
+  {# On create the slug follows the name until edited; the form adds the matching x-ref/x-on attrs to both inputs. #}
+  <form hx-post="{{ request.path }}"
+        hx-target="#delivery-type-form-wrapper"
+        hx-swap="outerHTML"
+        {% if not object %}x-data="slugAutofill()"{% endif %}>
+    <div class="content">{% crispy form %}</div>
+    <div class="footer flex justify-end gap-3">
+      <button type="button"
+              class="button button-md outline-style"
+              @click="deliveryTypeModalUrl = null">{% translate "Cancel" %}</button>
+      <button type="submit" class="button button-md primary-dark">{% translate "Save" %}</button>
+    </div>
+  </form>
+</div>
