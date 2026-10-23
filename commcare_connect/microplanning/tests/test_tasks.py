@@ -1,18 +1,23 @@
 import csv
 import io
+import itertools
 from unittest import mock
 
 import httpx
 import pytest
+from django.contrib.gis.geos import Polygon
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import (
     OVERTURE_CATALOG_URL,
     ImplementationAreaCSVImporter,
     WorkAreaCSVImporter,
+    _overlap_percent,
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
@@ -22,6 +27,7 @@ from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
+    square,
 )
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
@@ -227,12 +233,15 @@ class TestWorkAreaCSVImporter:
         expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
 
-    def build_row(self, slug, group_name=None):
+    # Each built row gets its own square, so rows in one file never overlap each other.
+    _polygon_offsets = itertools.count()
+
+    def build_row(self, slug, group_name=None, boundary=None):
         row = [
             slug,
             "ward",
             self.CENTROID,
-            self.POLYGON,
+            (boundary or square(77 + 2 * next(self._polygon_offsets), 28)).wkt,
             5,
             "6",
             "100",
@@ -295,6 +304,156 @@ class TestWorkAreaCSVImporter:
         assert result["created"] == 1
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
         assert WorkArea.objects.get(slug="area-1").work_area_group == existing_group
+
+    def test_import_next_to_existing_work_area(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0))
+        rows = [self.build_row("area-1", boundary=square(1, 0))]  # shares an edge
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {"created": 1}
+
+    def test_overlap_with_existing_work_area_is_rejected(self, opportunity):
+        existing = WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0))
+        rows = [
+            self.build_row("area-1"),
+            self.build_row("area-2", boundary=square(0.75, 0)),
+        ]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Work Area area-2 overlaps existing Work Area existing by 25.0%. "
+                "Correct the boundary or remove the work area, then upload again.": [3]
+            }
+        }
+        assert list(WorkArea.objects.filter(opportunity=opportunity)) == [existing]
+
+    def test_overlap_within_the_file_is_rejected_once_naming_both_rows(self, opportunity):
+        rows = [
+            self.build_row("area-1", boundary=square(0, 0)),
+            self.build_row("area-2"),
+            self.build_row("area-3", boundary=square(0.5, 0)),
+        ]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Work Areas area-1 and area-3 overlap each other by 50.0%. "
+                "Correct one boundary or remove one work area, then upload again.": [2, 4]
+            }
+        }
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_overlap_over_the_limit_is_summed_up(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0, 100))
+        rows = [self.build_row(f"area-{n}", boundary=square(n, 1)) for n in range(52)]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert len(result["errors"]) == 51
+        assert list(result["errors"].items())[-1] == ("2 more overlaps not shown.", [1])
+
+    def test_rejected_import_leaves_no_new_groups(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(0, 0))
+        rows = [self.build_row("area-1", "new-group", boundary=square(0, 0))]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv_with_groups(rows)).run()
+
+        assert "errors" in result
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        assert WorkArea.objects.filter(opportunity=opportunity).count() == 1
+
+    def test_self_crossing_boundary_is_a_row_error(self, opportunity):
+        bow_tie = Polygon(((0, 0), (1, 1), (1, 0), (0, 1), (0, 0)), srid=SRID)
+        rows = [self.build_row("area-1"), self.build_row("area-2", boundary=bow_tie)]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Boundary is not a valid polygon, e.g. its edges cross. Fix the boundary, then upload again.": [3]
+            }
+        }
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_import_locks_the_opportunity_before_reading_work_areas(self, opportunity):
+        with CaptureQueriesContext(connection) as queries:
+            WorkAreaCSVImporter(opportunity.id, self.build_csv([self.build_row("area-1")])).run()
+
+        sqls = [query["sql"] for query in queries]
+        lock = next(i for i, sql in enumerate(sqls) if "FOR NO KEY UPDATE" in sql)
+        first_work_area_query = next(i for i, sql in enumerate(sqls) if '"microplanning_workarea"' in sql)
+        assert '"opportunity_opportunity"' in sqls[lock]
+        assert lock < first_work_area_query
+
+    def test_import_refreshes_statistics_between_insert_and_overlap_check(self, opportunity):
+        with CaptureQueriesContext(connection) as queries:
+            WorkAreaCSVImporter(opportunity.id, self.build_csv([self.build_row("area-1")])).run()
+
+        sqls = [query["sql"] for query in queries]
+        insert = next(i for i, sql in enumerate(sqls) if sql.startswith('INSERT INTO "microplanning_workarea"'))
+        analyze = next(i for i, sql in enumerate(sqls) if sql.startswith("ANALYZE"))
+        overlap_check = next(i for i, sql in enumerate(sqls) if "ST_Intersection" in sql)
+        assert sqls[analyze] == 'ANALYZE "microplanning_workarea" ("opportunity_id")'
+        assert insert < analyze < overlap_check
+
+    def test_import_validates_rows_before_locking_the_opportunity(self, opportunity):
+        importer = WorkAreaCSVImporter(opportunity.id, self.build_csv([self.build_row("")]))
+        errors_when_locked = []
+        lock = importer._lock
+
+        def record_errors_then_lock():
+            errors_when_locked.append(dict(importer.errors))
+            lock()
+
+        importer._lock = record_errors_then_lock
+        importer.run()
+
+        assert errors_when_locked == [{"Area slug is required and it should be unique.": [2]}]
+
+    def test_import_with_missing_columns_does_not_lock_the_opportunity(self, opportunity):
+        with CaptureQueriesContext(connection) as queries:
+            result = WorkAreaCSVImporter(opportunity.id, self.build_csv([["area-1"]], headers=["Area Slug"])).run()
+
+        assert any(message.startswith("Missing columns") for message in result["errors"])
+        assert not any("FOR NO KEY UPDATE" in query["sql"] for query in queries)
+
+    def test_import_reports_existing_slugs_with_other_row_errors(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="area-2")
+        rows = [self.build_row("area-1"), self.build_row("area-2"), self.build_row("")]
+
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv(rows)).run()
+
+        assert result == {
+            "errors": {
+                "Area slug is required and it should be unique.": [4],
+                "Area slug already exists for this opportunity": [3],
+            }
+        }
+        assert WorkArea.objects.filter(opportunity=opportunity).count() == 1
+
+    def test_import_with_no_rows(self, opportunity):
+        result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
+
+        assert result == {"created": 0}
+
+
+@pytest.mark.parametrize(
+    "ratio, expected",
+    [
+        (0.0504, "5.1"),
+        (0.050000002, "5.1"),  # the smallest ratio the check rejects still reads as over the limit
+        (0.05000000000023, "5.0"),  # floating-point noise in an exact 5%
+        (0.06000000000002, "6.0"),
+        (0.25, "25.0"),
+        (1.0, "100.0"),
+    ],
+)
+def test_overlap_percent_never_rounds_down_to_the_limit(ratio, expected):
+    assert _overlap_percent(ratio) == expected
 
 
 @pytest.mark.django_db
@@ -417,6 +576,15 @@ def test_implementation_area_duplicate_name_in_file(opportunity):
     content = io.StringIO(f'{IA_HEADER}\nWard,77.1 28.6,"{IA_POLY}"\nWard,77.2 28.7,"{IA_POLY}"\n')
     result = ImplementationAreaCSVImporter(opportunity.id, content).run()
     assert "Duplicate Implementation Area Name in file" in result["errors"]
+
+
+@pytest.mark.django_db
+def test_implementation_area_name_that_already_exists(opportunity):
+    ImplementationAreaFactory(opportunity=opportunity, name="Ward")
+    content = io.StringIO(f'{IA_HEADER}\nWard,77.1 28.6,"{IA_POLY}"\nOther,77.2 28.7,"{IA_POLY}"\n')
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"errors": {"Implementation Area Name already exists for this opportunity": [2]}}
+    assert ImplementationArea.objects.filter(opportunity=opportunity).count() == 1
 
 
 @pytest.mark.django_db
