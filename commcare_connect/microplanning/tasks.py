@@ -307,8 +307,9 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         for group_name, rows in self.group_rows.items():
             group = self.existing_groups.get(group_name)
             group_ward = group.ward if group else rows[0].ward
+            group_ward_key = ward_key(group_ward)
             for line_num, ward in rows:
-                if ward_key(ward) != ward_key(group_ward):
+                if ward_key(ward) != group_ward_key:
                     message = _(
                         "Work Area Group %(group)s is in ward %(group_ward)s, but these rows give ward %(ward)s. "
                         "Correct the ward, or use a different group name."
