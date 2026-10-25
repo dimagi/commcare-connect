@@ -73,7 +73,7 @@ DJANGO_APPS = [
     "django.contrib.sites",
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
-    "django.contrib.staticfiles",
+    "config.apps.StaticFilesConfig",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
     "django.contrib.gis",

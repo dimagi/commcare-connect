@@ -3,6 +3,8 @@ import sys
 
 import pytest
 from django.conf import settings
+from django.core.management import call_command
+from django.test import override_settings
 
 
 def test_session_cookie_is_secure():
@@ -36,3 +38,13 @@ def test_api_responds_with_json_only(client, accept, expected_status):
 
     assert response.status_code == expected_status
     assert response["Content-Type"] == "application/json"
+
+
+def test_collectstatic_leaves_out_unused_third_party_static(tmp_path):
+    with override_settings(STATIC_ROOT=tmp_path):
+        call_command("collectstatic", interactive=False, verbosity=0)
+
+    collected = {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()}
+    assert not [p for p in collected if p.startswith(("rest_framework/", "django_tables2/"))]
+    # The ignore patterns must not reach static we do serve.
+    assert {"admin/css/base.css", "js/htmx.js"} <= collected
