@@ -101,7 +101,9 @@ def test_publish_errors(overrides, weights, blocked_steps):
     "question_type, options, valid, saved_options",
     [
         (SolicitationQuestion.QuestionType.CHOICE, "Yes\r\nNo", True, ["Yes", "No"]),
+        (SolicitationQuestion.QuestionType.CHOICE, "Yes\r\n\r\nNo\r\n", True, ["Yes", "No"]),
         (SolicitationQuestion.QuestionType.CHOICE, "", False, None),
+        (SolicitationQuestion.QuestionType.CHOICE, "\r\n\r\n", False, None),
         (SolicitationQuestion.QuestionType.TEXT, "Yes", True, None),
     ],
 )

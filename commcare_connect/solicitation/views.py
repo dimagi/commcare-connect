@@ -20,6 +20,7 @@ from commcare_connect.solicitation.models import (
     EDITABLE_STATUSES,
     Solicitation,
     SolicitationApplication,
+    SolicitationEvaluationCriterion,
     SolicitationQuestion,
 )
 from commcare_connect.solicitation.tables import SolicitationTable
@@ -150,7 +151,10 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
             .get_queryset()
             .select_related("currency", "country", "delivery_type", "program")
             .prefetch_related(
-                "criteria", Prefetch("questions", queryset=SolicitationQuestion.objects.select_related("criterion"))
+                Prefetch("criteria", queryset=SolicitationEvaluationCriterion.objects.order_by("pk")),
+                Prefetch(
+                    "questions", queryset=SolicitationQuestion.objects.select_related("criterion").order_by("pk")
+                ),
             )
         )
 

@@ -31,7 +31,7 @@ class HiddenDeleteInlineFormSet(BaseInlineFormSet):
 
 class BaseQuestionInlineFormSet(HiddenDeleteInlineFormSet):
     def get_form_kwargs(self, index):
-        return {"criteria": self.instance.criteria.all()}
+        return {"criteria": self.instance.criteria.order_by("pk")}
 
 
 class SolicitationForm(forms.ModelForm):
@@ -186,7 +186,7 @@ class CriterionForm(FormsetRowForm):
 
 class QuestionForm(FormsetRowForm):
     choice_options = SimpleArrayField(
-        forms.CharField(),
+        forms.CharField(required=False),
         label=_("Choice options"),
         delimiter="\n",
         required=False,
@@ -214,6 +214,10 @@ class QuestionForm(FormsetRowForm):
         super().__init__(*args, **kwargs)
         self.fields["criterion"].queryset = criteria
         self.helper["required"].wrap(Field, css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS)
+
+    def clean_choice_options(self):
+        # Blank lines, including the trailing newline a textarea often submits, aren't options.
+        return [option for option in self.cleaned_data["choice_options"] if option]
 
     def clean(self):
         cleaned_data = super().clean()
