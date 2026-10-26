@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from unittest.mock import patch
 
 import pytest
 from django.urls import reverse
@@ -6,11 +7,12 @@ from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
     SolicitationFactory,
+    SolicitationInvitationFactory,
     SolicitationQuestionFactory,
 )
 from commcare_connect.solicitation.views import org_solicitations
@@ -193,3 +195,81 @@ class TestSolicitationSteps:
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
 
         assert response.status_code == HTTPStatus.OK
+
+
+@pytest.fixture
+def solicitation(program_manager_org):
+    return SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE, public=False)
+
+
+@pytest.mark.django_db
+class TestSolicitationInvitations:
+    @pytest.fixture
+    def mock_send_mail(self):
+        with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
+            yield mock
+
+    def test_invite_creates_row_and_sends_one_email(
+        self,
+        pm_client,
+        solicitation,
+        program_manager_org_user_admin,
+        mock_send_mail,
+        django_capture_on_commit_callbacks,
+    ):
+        invited_org = MembershipFactory().organization
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = pm_client.post(step_url("invitations", solicitation), {"organization": invited_org.pk})
+
+        assert response.url == step_url("invitations", solicitation)
+        invitation = SolicitationInvitation.objects.get(solicitation=solicitation)
+        assert (invitation.organization, invitation.invited_by) == (invited_org, program_manager_org_user_admin)
+        mock_send_mail.delay.assert_called_once()
+        assert mock_send_mail.delay.call_args.kwargs["recipient_list"] == invited_org.get_member_emails()
+
+    @pytest.mark.parametrize("already_invited", [True, False])
+    def test_invite_rejects_invited_and_own_org(
+        self, pm_client, solicitation, program_manager_org, mock_send_mail, already_invited
+    ):
+        if already_invited:
+            organization = SolicitationInvitationFactory(solicitation=solicitation).organization
+        else:
+            organization = program_manager_org
+
+        response = pm_client.post(step_url("invitations", solicitation), {"organization": organization.pk})
+
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["form"].errors
+        assert solicitation.invitations.count() == int(already_invited)
+        mock_send_mail.delay.assert_not_called()
+
+    def test_list_shows_invitations(self, pm_client, solicitation):
+        invitation = SolicitationInvitationFactory(solicitation=solicitation)
+
+        response = pm_client.get(step_url("invitations", solicitation))
+
+        assert [row.record for row in response.context["table"].rows] == [invitation]
+
+    @pytest.mark.parametrize(
+        "status, public, own_org",
+        [
+            (Solicitation.Status.DRAFT, False, True),
+            (Solicitation.Status.CLOSED, False, True),
+            (Solicitation.Status.CANCELLED, False, True),
+            (Solicitation.Status.ACTIVE, True, True),
+            (Solicitation.Status.ACTIVE, False, False),
+        ],
+    )
+    def test_only_own_active_private_solicitations(self, pm_client, program_manager_org, status, public, own_org):
+        organization = program_manager_org if own_org else OrganizationFactory()
+        solicitation = SolicitationFactory(organization=organization, status=status, public=public)
+        invitation = SolicitationInvitationFactory(solicitation=solicitation)
+        # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
+        url_args = (program_manager_org.slug, solicitation.solicitation_id)
+        list_url = reverse("solicitation:invitations", args=url_args)
+
+        assert pm_client.get(list_url).status_code == HTTPStatus.NOT_FOUND
+        invite_response = pm_client.post(list_url, {"organization": OrganizationFactory().pk})
+        assert invite_response.status_code == HTTPStatus.NOT_FOUND
+        assert solicitation.invitations.get() == invitation

@@ -5,7 +5,7 @@ from django_tables2 import columns
 
 from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
 from commcare_connect.solicitation.models import EDITABLE_STATUSES, Solicitation
-from commcare_connect.utils.tables import DMYTColumn
+from commcare_connect.utils.tables import DMYTColumn, IndexColumn
 
 
 def details_url(record, table):
@@ -25,3 +25,13 @@ class SolicitationTable(tables.Table):
         model = Solicitation
         fields = ("title", "type", "status", "application_deadline", "response_count")
         empty_text = _("No solicitations yet.")
+
+
+class SolicitationInvitationTable(tables.Table):
+    index = IndexColumn()
+    organization = columns.Column(verbose_name=_("Organization"), order_by="organization__name")
+    invited_by = columns.Column(verbose_name=_("Invited by"), orderable=False)
+    date_created = DMYTColumn(verbose_name=_("Invited on"))
+
+    class Meta:
+        empty_text = _("No organizations invited yet.")

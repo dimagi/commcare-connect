@@ -12,9 +12,15 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, Currency
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import DATE_INPUT
 from commcare_connect.program.models import Program
-from commcare_connect.solicitation.models import Solicitation, SolicitationEvaluationCriterion, SolicitationQuestion
+from commcare_connect.solicitation.models import (
+    Solicitation,
+    SolicitationEvaluationCriterion,
+    SolicitationInvitation,
+    SolicitationQuestion,
+)
 
 DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
 TOGGLE_WRAPPER_CLASS = "bg-slate-100 flex items-center justify-between p-4 rounded-lg"
@@ -253,3 +259,19 @@ def publish_errors(solicitation):
     if total != 100:
         errors["criteria"] = [_("Criteria weights must total 100%% (currently %(total)s%%).") % {"total": total}]
     return errors
+
+
+class SolicitationInvitationForm(forms.ModelForm):
+    class Meta:
+        model = SolicitationInvitation
+        fields = ["organization"]
+        widgets = {"organization": SEARCHABLE_SELECT}
+
+    def __init__(self, *args, solicitation, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Already-invited orgs aren't offered, so each org is invited at most once.
+        self.fields["organization"].queryset = (
+            Organization.objects.exclude(pk=solicitation.organization_id)
+            .exclude(solicitation_invitations__solicitation=solicitation)
+            .order_by("name")
+        )

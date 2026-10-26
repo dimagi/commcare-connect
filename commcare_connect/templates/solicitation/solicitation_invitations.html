@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load render_table from django_tables2 %}
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock css %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+{% block content %}
+  {# A rejected invite re-renders the page, so the modal reopens to show the error. #}
+  <div class="flex flex-col gap-4 w-full"
+       x-data="{ showInviteModal: {{ form.errors|yesno:'true,false' }} }">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <div class="flex flex-col gap-1">
+      <h1 class="title">{{ solicitation.title }}</h1>
+      <p class="hint">
+        {% translate "This solicitation is private: only invited organizations can apply. Each invited organization's members get an email." %}
+      </p>
+    </div>
+    <div class="card_bg">
+      <div class="flex gap-x-4 items-center justify-between mb-4">
+        <h2 class="title-sm">{% translate "Invited organizations" %}</h2>
+        <div class="flex gap-x-4 items-center">
+          <button type="button"
+                  class="button-icon shadow-sm"
+                  @click.stop="showInviteModal = true"
+                  x-tooltip.raw="{% translate "Invite organization" %}">
+            <i class="fa-solid fa-plus text-brand-deep-purple"></i>
+          </button>
+        </div>
+      </div>
+      {% render_table table %}
+    </div>
+    <div x-cloak
+         x-show="showInviteModal"
+         x-transition.opacity
+         class="modal-backdrop"
+         @keydown.escape.window="showInviteModal = false">
+      <div @click.outside="showInviteModal = false" x-transition class="modal">
+        <div class="header">
+          <h2 class="title">{% translate "Invite organization" %}</h2>
+          <button type="button"
+                  @click="showInviteModal = false"
+                  class="button-icon"
+                  aria-label="{% translate "Close" %}">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="py-4">{{ form|crispy }}</div>
+          <div class="footer">
+            <button type="button"
+                    @click="showInviteModal = false"
+                    class="button button-md outline-style">{% translate "Close" %}</button>
+            <button type="submit" class="button button-md primary-dark">{% translate "Invite" %}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% include "components/confirm_modal.html" %}
+  </div>
+{% endblock content %}
