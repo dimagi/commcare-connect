@@ -1,0 +1,171 @@
+# Generates release notes for a GitHub release with Claude (using the connect-web-release-notes skill from
+# dimagi/dimagi-claude-workflows) and publishes them to the Confluence Web Release Notes page and #connect-product-feed.
+#
+# Called by deploy.yml after every successful production deploy, where problems post a warning in the deploy's Slack
+# thread but leave the run green. Run it by hand from the Actions tab to retry a release; there problems fail the run.
+#
+# Confluence needs the CONFLUENCE_EMAIL and CONFLUENCE_API_TOKEN secrets, an Atlassian service account's email and
+# scoped API token; without them the Confluence step is skipped with a warning and Slack is still posted.
+name: Release notes
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
+      slack_thread_ts:
+        required: false
+        type: string
+      called_from_deploy:
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (defaults to the latest release)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  release-notes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Resolve release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${INPUT_TAG:-$(gh release view --repo "$REPO" --json tagName --jq .tagName)}"
+          gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt > "$RUNNER_TEMP/releases.json"
+          PUBLISHED=$(jq -r --arg t "$TAG" '.[] | select(.tagName == $t) | .publishedAt' "$RUNNER_TEMP/releases.json")
+          PREV_PUBLISHED=$(jq -r --arg t "$TAG" \
+            '(map(.tagName) | index($t)) as $i | if $i == null then empty else .[$i + 1].publishedAt // empty end' \
+            "$RUNNER_TEMP/releases.json")
+          if [ -z "$PUBLISHED" ] || [ -z "$PREV_PUBLISHED" ]; then
+            echo "Could not find release $TAG and the release before it" >&2
+            exit 1
+          fi
+          {
+            echo "TAG=$TAG"
+            echo "PUBLISHED=$PUBLISHED"
+            echo "PREV_PUBLISHED=$PREV_PUBLISHED"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout release notes skill
+        uses: actions/checkout@v4
+        with:
+          repository: dimagi/dimagi-claude-workflows
+          ref: main
+          path: .claude-workflows
+
+      - id: generate
+        name: Generate release notes
+        continue-on-error: true
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          claude_args: |
+            --model claude-sonnet-5-5 --max-turns 40 --allowedTools "Bash(gh release list:*),Bash(gh release view:*),Bash(gh pr list:*),Bash(gh pr view:*),Read,Write,Glob"
+          prompt: |
+            Read .claude-workflows/plugins/connect-tech/skills/connect-web-release-notes/SKILL.md and follow its
+            steps 1 to 6 for release ${{ env.TAG }} of ${{ env.REPO }}, with these changes:
+
+            - Step 1: the latest release is ${{ env.TAG }} (published ${{ env.PUBLISHED }}) and the previous release
+              was published ${{ env.PREV_PUBLISHED }}.
+            - Step 2: search with the exact timestamps, not whole days:
+              --search "merged:${{ env.PREV_PUBLISHED }}..${{ env.PUBLISHED }}". Several releases can happen on one
+              day, and whole days would repeat PRs from an earlier release.
+            - Do NOT do steps 7 and 8 and do not try to reach Confluence or Slack. Instead write exactly these files:
+              1. outputs/release_notes_${{ env.TAG }}.md - the Markdown release notes from step 6.
+              2. outputs/confluence.html - the same release notes as a Confluence storage format (XHTML) fragment:
+                 no <html> or <body> wrapper, headings as <h1>/<h2>, items as <p> with <strong> titles, PR links
+                 kept as <a href="...">, and no horizontal rule at the start or end.
+              3. outputs/slack.txt - the Slack message described in step 8, with one change: the message is sent
+                 through the raw Slack API, so bold uses *single asterisks*, not **double**.
+            - If there are no user-facing changes to report, write no files at all.
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-${{ env.TAG }}
+          path: outputs/
+          if-no-files-found: ignore
+
+      - id: confluence
+        name: Publish to Confluence
+        if: ${{ hashFiles('outputs/confluence.html') != '' }}
+        env:
+          CONFLUENCE_EMAIL: ${{ secrets.CONFLUENCE_EMAIL }}
+          CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+          CONFLUENCE_BASE_URL: ${{ secrets.CONFLUENCE_BASE_URL }}
+        run: |
+          status=0
+          python deploy/ci/publish_confluence.py --page-id 3870556169 \
+            --fragment-file outputs/confluence.html --message "Add v$TAG release notes" || status=$?
+          case $status in
+            0) echo "result=ok" >> "$GITHUB_OUTPUT" ;;
+            2) echo "result=skipped" >> "$GITHUB_OUTPUT" ;;
+            *) echo "result=failed" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - id: slack
+        name: Publish to Slack
+        if: ${{ hashFiles('outputs/slack.txt') != '' }}
+        continue-on-error: true
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          payload=$(jq -n --rawfile text outputs/slack.txt \
+            '{channel: "C08MRUZ8T9A", text: $text, unfurl_links: false, unfurl_media: false}')
+          response=$(curl --fail --silent --show-error --max-time 30 \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H 'Content-type: application/json; charset=utf-8' \
+            -d "$payload" https://slack.com/api/chat.postMessage)
+          if [ "$(echo "$response" | jq -r .ok)" != "true" ]; then
+            echo "Slack rejected the message: $(echo "$response" | jq -r .error)" >&2
+            exit 1
+          fi
+
+      - name: Report problems
+        if: ${{ always() }}
+        env:
+          GENERATE_OUTCOME: ${{ steps.generate.outcome }}
+          CONFLUENCE_RESULT: ${{ steps.confluence.outputs.result }}
+          SLACK_OUTCOME: ${{ steps.slack.outcome }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          THREAD_TS: ${{ inputs.slack_thread_ts }}
+          CALLED_FROM_DEPLOY: ${{ inputs.called_from_deploy }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          problems=()
+          [ "$GENERATE_OUTCOME" = "success" ] || problems+=("generating the notes failed")
+          [ "$CONFLUENCE_RESULT" = "skipped" ] && problems+=("Confluence credentials not configured, skipped")
+          [ "$CONFLUENCE_RESULT" = "failed" ] && problems+=("Confluence update failed")
+          [ "$SLACK_OUTCOME" = "failure" ] && problems+=("Slack post failed")
+          if [ ${#problems[@]} -eq 0 ]; then
+            echo "No problems"
+            exit 0
+          fi
+          summary=$(IFS=';'; echo "${problems[*]}" | sed 's/;/; /g')
+          echo "Release notes problems: $summary" >&2
+          text=":warning: Deploy succeeded, but release notes for ${TAG:-the release} had problems: $summary. <$RUN_URL|View Run>"
+          payload=$(jq -n --arg text "$text" --arg ts "$THREAD_TS" \
+            '{channel: "C09HWCJSVJ6", text: $text} + (if $ts == "" then {} else {thread_ts: $ts} end)')
+          curl --silent --show-error --max-time 30 -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H 'Content-type: application/json; charset=utf-8' -d "$payload" https://slack.com/api/chat.postMessage \
+            || echo "Could not post the warning to Slack" >&2
+          if [ "$CALLED_FROM_DEPLOY" != "true" ]; then
+            exit 1
+          fi

@@ -1,0 +1,54 @@
+# Deploys production every Monday, Wednesday and Friday at 12:00 UTC (GitHub may start it a few minutes late).
+#
+# To stop scheduled deploys, disable this workflow in the Actions tab (workflow page, "..." menu, Disable workflow)
+# and enable it again when they should resume. Manual deploys via the Deploy workflow are unaffected.
+#
+# A run deploys only when main has changed since the latest release and CI passed on it. A failed, running or
+# missing CI run skips the deploy and posts a warning to the production deploy channel.
+name: Scheduled production deploy
+
+on:
+  schedule:
+    - cron: '0 12 * * 1,3,5'
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - id: gate
+        name: Check main is ready to deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python deploy/ci/scheduled_deploy_gate.py --repo "${{ github.repository }}"
+
+      - name: Notify deploy skipped
+        if: ${{ steps.gate.outputs.warn == 'true' }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "text": ":warning: Scheduled production deploy skipped: ${{ steps.gate.outputs.reason }} <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+  deploy:
+    needs: gate
+    if: ${{ needs.gate.outputs.deploy == 'true' }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      deploy_type: scheduled
+    secrets: inherit

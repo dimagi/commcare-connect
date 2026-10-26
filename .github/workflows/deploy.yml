@@ -8,6 +8,8 @@ env:
 permissions:
   id-token: write
   contents: write
+  # Passed on to release-notes.yml, which reads PR descriptions
+  pull-requests: read
 
 on:
   push:
@@ -33,6 +35,15 @@ on:
         options:
           - scheduled
           - adhoc
+  # Called by scheduled-deploy.yml
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      deploy_type:
+        required: true
+        type: string
 
 # One deploy per environment at a time; later runs wait rather than cancel a deploy in progress
 concurrency:
@@ -231,3 +242,13 @@ jobs:
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
+  release-notes:
+    name: Publish release notes
+    needs: deploy
+    if: ${{ success() && inputs.environment == 'production' }}
+    uses: ./.github/workflows/release-notes.yml
+    with:
+      slack_thread_ts: ${{ needs.deploy.outputs.slack_ts }}
+      called_from_deploy: true
+    secrets: inherit
