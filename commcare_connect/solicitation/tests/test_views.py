@@ -86,12 +86,6 @@ def step_url(step, solicitation):
 
 @pytest.mark.django_db
 class TestSolicitationSteps:
-    @pytest.fixture(autouse=True)
-    def pm_client(self, client, program_manager_org_user_admin):
-        client.force_login(program_manager_org_user_admin)
-        with override_switch(SOLICITATIONS, active=True):
-            yield client
-
     @pytest.fixture
     def draft(self, program_manager_org):
         return SolicitationFactory(organization=program_manager_org, country=_get_default_country())
