@@ -51,7 +51,7 @@ inv translations
 - **API versioning**: `AcceptHeaderVersioning` with versions `1.0` and `2.0`
 - **Background tasks**: Celery with Redis broker; beat scheduler uses DB
 - **Feature flags**: django-waffle with a custom `Flag` model. Flag names in `flags/flag_names.py`, switch names in `flags/switch_names.py` — see Terminology below
-- **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion)
+- **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion). Read `docs/audit-history.md` before tracking a model or reading its events
 - **Database**: PostgreSQL + PostGIS. `ATOMIC_REQUESTS = True` (all requests are transactions)
 - **Deployment**: Kamal (Docker-based) + Ansible on EC2. See `deploy/README.md`
 
@@ -161,5 +161,6 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
+- `docs/audit-history.md` — how pghistory change tracking is set up, and how to track a model or read its events
 - `deploy/README.md` — Kamal + Ansible deployment
 - `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, form_receiver, flags)
