@@ -14,14 +14,17 @@ on:
 permissions:
   id-token: write
   contents: write
-  pull-requests: read
-  actions: read
+  actions: write
 
 jobs:
   gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       deploy: ${{ steps.gate.outputs.deploy }}
+      sha: ${{ steps.gate.outputs.sha }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -51,4 +54,5 @@ jobs:
     with:
       environment: production
       deploy_type: scheduled
+      ref: ${{ needs.gate.outputs.sha }}
     secrets: inherit

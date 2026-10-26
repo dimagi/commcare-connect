@@ -118,20 +118,20 @@ on. Manual deploys through the `Deploy` workflow keep working while the schedule
 
 ### Release notes
 
-After every successful production deploy, scheduled or manual, `.github/workflows/release-notes.yml` runs Claude with
-the `connect-web-release-notes` skill from
-[dimagi-claude-workflows](https://github.com/dimagi/dimagi-claude-workflows). Claude writes the notes for the new
-release, then the workflow:
+After every successful production deploy, scheduled or manual, the deploy starts `.github/workflows/release-notes.yml`
+as a separate run. Claude writes the notes for the new release using the
+`connect-web-release-notes` skill from [dimagi-claude-workflows](https://github.com/dimagi/dimagi-claude-workflows).
+It runs in a job of its own, with no publishing credentials. A second job then:
 
-- prepends them to the [Web Release Notes](https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3870556169/Web+Release+Notes)
+- prepends the notes to the [Web Release Notes](https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3870556169/Web+Release+Notes)
   Confluence page (`deploy/ci/publish_confluence.py`),
-- posts a summary to `#connect-product-feed`,
-- uploads the Markdown as a workflow artifact.
+- posts a summary to `#connect-product-feed`.
 
-Any problem leaves the deploy green. Instead, a warning goes into the deploy's Slack thread saying what failed. This
-covers the notes failing to generate, missing Confluence credentials, or Confluence or Slack rejecting the post. To
-retry, run **Actions → Release notes → Run workflow**, optionally with a release tag. A manual run fails when something
-goes wrong.
+The Markdown is kept as a workflow artifact.
+
+Problems never affect the deploy run. The release-notes run fails, and a warning goes into the deploy's Slack thread
+saying what failed. This covers the notes failing to generate, missing Confluence credentials, or Confluence or Slack
+rejecting the post. To retry, run **Actions → Release notes → Run workflow**, optionally with a release tag.
 
 ## Accessing logs
 

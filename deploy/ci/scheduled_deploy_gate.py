@@ -36,7 +36,7 @@ def main():
 
     decision = decide(head_sha, release_sha, ci_run, paths)
     print(decision.reason or f"Deploying {head_sha[:7]}")
-    _write_outputs(decision)
+    _write_outputs(decision, head_sha)
 
 
 def decide(head_sha: str, release_sha: str | None, ci_run: dict | None, paths_since_ci_run: list[str]) -> GateDecision:
@@ -51,7 +51,9 @@ def decide(head_sha: str, release_sha: str | None, ci_run: dict | None, paths_si
         return _skip(f"CI on main ({short_sha}) is {ci_run['status']}: {run_url}")
     if ci_run["conclusion"] != "success":
         return _skip(f"CI on main ({short_sha}) finished with {ci_run['conclusion']}: {run_url}")
-    if not all(path.startswith(CI_IGNORED_PREFIXES) for path in paths_since_ci_run):
+    # A run for a different commit with no files between them means main moved while we looked: not verified
+    run_is_for_other_commit = ci_run["headSha"] != head_sha and not paths_since_ci_run
+    if run_is_for_other_commit or not all(path.startswith(CI_IGNORED_PREFIXES) for path in paths_since_ci_run):
         return _skip(f"CI has not been run on main ({short_sha}); latest run is for an older commit: {run_url}")
     return GateDecision(deploy=True, warn=False, reason="")
 
@@ -95,7 +97,7 @@ def _gh(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _write_outputs(decision: GateDecision):
+def _write_outputs(decision: GateDecision, head_sha: str):
     output_path = os.environ.get("GITHUB_OUTPUT")
     if not output_path:
         return
@@ -103,6 +105,8 @@ def _write_outputs(decision: GateDecision):
         f.write(f"deploy={str(decision.deploy).lower()}\n")
         f.write(f"warn={str(decision.warn).lower()}\n")
         f.write(f"reason={decision.reason}\n")
+        # The deploy checks out this commit, so anything merged after the gate ran waits for the next slot
+        f.write(f"sha={head_sha}\n")
 
 
 if __name__ == "__main__":

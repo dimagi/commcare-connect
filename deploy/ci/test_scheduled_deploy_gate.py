@@ -39,6 +39,8 @@ def ci_run(sha, status="completed", conclusion="success"):
             id="code-since-run",
         ),
         pytest.param("b" * 40, None, ci_run("b" * 40), [], True, False, "", id="no-release-yet"),
+        # main moved between reading HEAD and reading the CI run: the compare comes back empty
+        pytest.param("b" * 40, "a" * 40, ci_run("c" * 40), [], False, True, "not been run", id="run-for-other-sha"),
     ],
 )
 def test_decide(head, release, run, paths, deploy, warn, reason_part):
