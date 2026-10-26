@@ -41,7 +41,12 @@ def q(c, sql, args=None):
         except psycopg2.ProgrammingError: return None
 ```
 
-**Verified production facts this plan is built on** (2026-08-12 and 2026-08-20):
+The [runbook](2026-08-20-superset-pg16-inplace-upgrade-runbook.md)'s session setup is the canonical
+version of these helpers. It adds `CONN` (the subscription's connection string), `repl()` (runs SQL
+on the primary as `postgres_repl`) and `cascade_nonempty()` (a rolled-back truncate dry run), which
+the commands below assume.
+
+**Verified production facts this plan is built on** (2026-08-12, 2026-08-20 and 2026-10-26):
 
 | Fact | Value |
 |---|---|
@@ -61,6 +66,12 @@ def q(c, sql, args=None):
 | `max_slot_wal_keep_size` (primary) | **`-1`** — the slot is never invalidated |
 | Slot state | one slot, active, 56 bytes retained, no backlog |
 | Publication vs subscription | **no drift** — 29 published, 29 at `srsubstate = 'r'` |
+| Instances and parameter groups | Superset: `connect-superset-prod` on **`default.postgres15`** (no custom settings, so the upgrade uses `default.postgres16`). Primary: `connect-production` on `logicalreplicatorpublisher15` (`rds.logical_replication = 1`), which the upgrade never touches. |
+| Connect's DB user on the primary | `connect` — owns the publication, but has **neither** `rds_replication` nor `rds_superuser`, so it **cannot drop replication slots**. Slot drops run as `postgres_repl`. |
+| Origin functions (`postgres`, on 15.17) | Can run `pg_replication_origin_progress` and `pg_replication_origin_advance`; cannot read `pg_replication_origin_status`. Enough for Task 9's position fix. |
+| Foreign keys into replicated tables | The secondary carries the **full** Django schema, so 48 FK columns in non-replicated tables point at replicated ones. Plain `TRUNCATE` of the 29 is refused; `TRUNCATE ... CASCADE` reaches 38 more tables, **all empty** on the production secondary. |
+| `pg_dump` / `pg_restore` | 16.15 on the Superset host. The Connect image has no Postgres client. |
+| Superset metadata owner | Role `superset_meta` owns all 50 tables in `superset_meta`; not a superuser; `postgres` not a member (Task 1 Step 4 fixes that). |
 
 ---
 
@@ -109,6 +120,17 @@ If this errors *on PG15*, stop and escalate — it only becomes harder on 16.
 **Step 3: Verify.** Re-run Step 1; it must no longer be empty. `admin_option = False` is fine —
 `INHERIT` membership is what the apply worker needs, and it survives `pg_upgrade` (verified).
 
+**Step 4: Also grant the Superset metadata owner, `superset_meta`.** It owns all 50 tables in the
+`superset_meta` database (confirmed 2026-10-26; not a superuser; `postgres` not yet a member). The same
+PG16 change bites the metadata restore: without membership, `pg_restore --clean` as `postgres` cannot
+drop or re-own those tables, and recreates them owned by `postgres` — Superset's own user then gets
+`permission denied` on them. Verified locally both ways; with the grant, the restore keeps every owner.
+
+```python
+q(conn, 'GRANT "superset_meta" TO "postgres";')
+q(conn, "SELECT pg_has_role('postgres','superset_meta','MEMBER');")   # [(True,)]
+```
+
 ---
 
 ### Task 2: Baselines and credentials
@@ -144,7 +166,7 @@ with connections["secondary"].cursor() as c:
 Confirm backup retention > 0, so RDS takes an automatic pre-upgrade snapshot:
 
 ```bash
-aws rds describe-db-instances --db-instance-identifier <instance-id> \
+aws rds describe-db-instances --db-instance-identifier connect-superset-prod \
   --query 'DBInstances[].[BackupRetentionPeriod,PreferredBackupWindow,DBInstanceStatus]' --output table
 ```
 
@@ -183,10 +205,11 @@ after the Step 4 dump (such writes would be lost if the dump were restored), and
 outage rather than errors or the empty tables of a re-copy.
 
 **Step 4:** Dump Superset's metadata — the only irreplaceable data on the instance, and the rollback
-artifact if Superset breaks after the upgrade:
+artifact if Superset breaks after the upgrade. Run it **on the Superset host**: it has `pg_dump`
+16.15, and the file must outlive any container (Connect's image has no Postgres client anyway).
 
 ```bash
-pg_dump -h <endpoint> -U postgres -d superset_meta -Fc -f superset_meta_window_start.dump
+pg_dump -h <endpoint> -U postgres -d superset_meta -Fc -f ~/superset_meta_window_start.dump
 ```
 
 **Step 5:** Record timestamps.
@@ -199,7 +222,13 @@ pg_dump -h <endpoint> -U postgres -d superset_meta -Fc -f superset_meta_window_s
 conn = secondary(user="postgres")
 q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub DISABLE;")
 print(q(conn, "SELECT subname, subenabled FROM pg_subscription;"))   # expect False
+wait_disabled()                                                       # expect True (runbook helper)
 ```
+
+`DISABLE` is asynchronous: the apply worker finishes its current transaction before exiting, and the
+slot's `confirmed_flush_lsn` can still move until the walsender goes away. Recording positions before
+`wait_disabled()` returns `True` risks an `APPLIED` that is too low (Task 9 then hits duplicate keys)
+or a slot position that is too low (R2 then picks an unnecessary re-copy).
 
 **Step 2: Record the slot position on the primary** — that is where the backlog replays from:
 
@@ -219,13 +248,26 @@ compares against `confirmed_flush_lsn`. Re-run this query periodically through t
 the subscription is re-enabled. `max_slot_wal_keep_size = -1` means the slot will **not** be dropped
 to protect the disk, so **watch primary free space** rather than assuming it self-limits.
 
+**Step 2b: Record how far the subscriber had actually applied (`APPLIED`).** Under live writes the
+subscriber applies transactions slightly before it reports them to the primary, so at `DISABLE` it is
+usually *ahead* of the slot's `confirmed_flush_lsn` (1,040 bytes in a local test). The upgrade erases
+the subscriber's own record of this, and Task 9 needs it: a new subscription that starts from the
+slot re-sends that gap, and re-applying its `INSERT`s fails on duplicate keys, forever.
+
+```python
+OLDOID = q(conn, "SELECT oid FROM pg_subscription WHERE subname='tables_for_superset_sub';")[0][0]
+APPLIED = q(conn, f"SELECT pg_replication_origin_progress('pg_{OLDOID}', true);")[0][0]
+```
+
+Record the value in the log.
+
 **Step 3: Take the manual snapshot, and wait for it.** It is taken *after* the disable on purpose:
 the snapshot's replication position then matches the slot exactly, so a restore made before anything
 re-enables replication can resume with no gap and no re-copy (Phase 5, R5a). A snapshot taken while
 the subscription was still running would fall behind the slot and could never resume cleanly.
 
 ```bash
-aws rds create-db-snapshot --db-instance-identifier <instance-id> \
+aws rds create-db-snapshot --db-instance-identifier connect-superset-prod \
   --db-snapshot-identifier superset-pre-pg16-<yyyymmdd>-1
 
 aws rds wait db-snapshot-completed \
@@ -238,7 +280,16 @@ RDS refuses a duplicate.
 
 ### Task 7: Run the engine upgrade
 
-**Step 1:** RDS console → Modify → engine version **16.13** → apply immediately. Not `16.13-R2`.
+**Step 1:** Upgrade with parameter group **`default.postgres16`**, the PG16 counterpart of the
+instance's current default group. Not `16.13-R2`.
+
+```bash
+aws rds modify-db-instance --db-instance-identifier connect-superset-prod --engine-version 16.13 \
+  --allow-major-version-upgrade --db-parameter-group-name default.postgres16 --apply-immediately
+```
+
+If the precheck fails, the instance stays on 15.17 with replication disabled since Task 6. Follow
+the abort path in Phase 5; re-enabling on 15.17 is safe (verified locally).
 **Step 2:** Wait. **Record start and end times**.
 **Step 3:** Confirm the engine reports 16.13:
 
@@ -269,8 +320,8 @@ the update as a follow-up.
 **Step 5:** Confirm geometry still queries:
 
 ```python
-print(q(conn, """SELECT ST_AsText(ST_Centroid(geometry))
-                 FROM microplanning_workarea WHERE geometry IS NOT NULL LIMIT 1;"""))
+print(q(conn, """SELECT ST_AsText(ST_Centroid(boundary))
+                 FROM microplanning_workarea WHERE boundary IS NOT NULL LIMIT 1;"""))
 ```
 
 ### Task 8: The probe — before anything destructive
@@ -295,10 +346,25 @@ print(q(conn, "SELECT has_database_privilege(current_user, current_database(), '
 dropping the subscription, so attempting it on a `False` strands the instance with no way to
 reconnect — snapshot restore only. Treat either `False` as a `False` overall.
 
+**Step 2b: Test-create a throwaway subscription.** The privileges can pass while `CREATE` still fails
+(a wrong host, a password, `pg_hba`, a network path), and by then Task 9 has dropped the subscription
+Task 10 needs. This test-create **connects** to the primary and reads the publication, but with
+`create_slot = false, enabled = false, copy_data = false` it creates no slot and replicates nothing;
+then it is removed. `CONN` is built from Django's settings, not from the live subscription, so this is
+the only proof that it works. The runbook also runs it in Task 2, on 15.17, so a bad `CONN` surfaces
+before the window. Also re-check `pg_replication_origin_advance` here: Task 2 only saw it on 15.
+
+```python
+q(conn, f"CREATE SUBSCRIPTION probe_sub CONNECTION '{CONN}' PUBLICATION tables_for_superset_pub WITH (create_slot = false, enabled = false, copy_data = false);")
+q(conn, "ALTER SUBSCRIPTION probe_sub SET (slot_name = NONE); DROP SUBSCRIPTION probe_sub;")
+```
+
 **Step 3: Branch, and write the branch into the log before acting.**
 
-- Both `True` → Task 9 (replay from the slot, no re-copy)
-- Either `False` → Task 10 (rebuild). Do **not** attempt Task 9.
+- `pg_subscription_rel` not `0` in Step 1 → stop and escalate (Task 10's refresh would copy nothing)
+- Origin advance allowed and the test-create worked → Task 9 (replay, no re-copy). The Step 2
+  privilege queries are diagnostic: the test-create needs exactly those privileges, so it is the gate.
+- Anything else → Task 10 (rebuild). Do **not** attempt Task 9.
 
 ### Task 9: Replay from the retained slot (probe returned `True`)
 
@@ -315,8 +381,8 @@ q(conn, "DROP SUBSCRIPTION tables_for_superset_sub;")
 **Step 2: Re-create against the retained slot, not copying**
 
 ```python
-q(conn, """CREATE SUBSCRIPTION tables_for_superset_sub
-             CONNECTION 'host=<primary> port=5432 dbname=<db> user=postgres_repl password=<pw> sslmode=require'
+q(conn, f"""CREATE SUBSCRIPTION tables_for_superset_sub
+             CONNECTION '{CONN}'
              PUBLICATION tables_for_superset_pub
              WITH (copy_data = false,
                    slot_name = 'tables_for_superset_sub',
@@ -326,6 +392,16 @@ q(conn, """CREATE SUBSCRIPTION tables_for_superset_sub
 
 **If `create_slot = false` is refused** (unverified on RDS), fall through to Step 4.
 
+**Step 2b: Start from `APPLIED`, not from the slot.** Move the new subscription's origin to the
+position recorded in Task 6 Step 2b, so the transactions the subscriber already has are skipped.
+Without this, the duplicate-key loop described there follows (reproduced locally: 5 errors in 20s,
+replication stalled; with the advance: 0 errors, 0 missing rows).
+
+```python
+NEWOID = q(conn, "SELECT oid FROM pg_subscription WHERE subname='tables_for_superset_sub';")[0][0]
+q(conn, f"SELECT pg_replication_origin_advance('pg_{NEWOID}', '{APPLIED}');")
+```
+
 **Step 3: Enable and let it replay**
 
 ```python
@@ -333,9 +409,11 @@ q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub ENABLE;")
 ```
 
 Expected: `pg_subscription_rel` populates at state `r` with no copying, and the backlog replays.
-Go to Phase 4.
+Watch `apply_error_count` in `pg_stat_subscription_stats` for a few minutes. If it rises (duplicate
+keys, e.g. the advance was skipped), fall back to Step 4. Otherwise go to Phase 4.
 
-**Step 4: Only if Step 2 was refused.** Copy instead of replaying. Order matters — the slot goes
+**Step 4: Only if Step 2 was refused, or Step 3 hit duplicate keys.** Copy instead of replaying.
+If a subscription exists, disable, detach and drop it first. Order matters — the slot goes
 first.
 
 **4a. Drop the retained slot on the primary.** Step 1 detached it deliberately, so it is still there
@@ -343,17 +421,21 @@ under the subscription's name. Re-creating without `slot_name` / `create_slot` m
 create a slot by that name and fail with `replication slot ... already exists` — the same collision
 that makes `--recreate` unsafe, again after the subscription is gone.
 
-```sql
--- on the primary: confirm inactive, then drop
-SELECT slot_name, active FROM pg_replication_slots WHERE slot_name = 'tables_for_superset_sub';
-SELECT pg_drop_replication_slot('tables_for_superset_sub');
-```
-
-**4b. Truncate the 29 tables** — copying into populated tables fails with `duplicate key value
-violates unique constraint`, so this is mandatory.
+Drop it as `postgres_repl`: Connect's `connect` user has no replication rights.
 
 ```python
-q(conn, "SET ROLE connect_superset; TRUNCATE <the 29 replicated tables>;")
+primary("SELECT slot_name, active FROM pg_replication_slots WHERE slot_name='tables_for_superset_sub';")  # inactive
+repl("SELECT pg_drop_replication_slot('tables_for_superset_sub');")
+```
+
+**4b. Truncate the replicated tables** — copying into populated tables fails with `duplicate key value
+violates unique constraint`, so this is mandatory. It needs `CASCADE`: non-replicated tables on the
+secondary hold foreign keys into these, and plain `TRUNCATE` is refused (verified locally against
+the full schema). Dry-run first; `cascade_nonempty()` must return `{}`.
+
+```python
+cascade_nonempty(conn)   # {}
+q(conn, TRUNCATE)        # SET ROLE connect_superset; TRUNCATE <replicated tables> CASCADE;
 q(conn, "RESET ROLE;")   # session-scoped; left set, the DDL below runs as connect_superset and fails
 ```
 
@@ -369,9 +451,12 @@ q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub ENABLE;")
 
 Verified end to end in Docker under prod-shaped roles. Needs only subscription ownership.
 
-**Step 1: Enable** — required, `REFRESH` is refused on a disabled subscription (verified):
+**Step 1: Dry-run the truncate, then enable.** `cascade_nonempty(conn)` must return `{}` *before*
+enabling: if it doesn't, you stop, and an enabled subscription would meanwhile be consuming the slot.
+`ENABLE` is required, since `REFRESH` is refused on a disabled subscription (verified):
 
 ```python
+cascade_nonempty(conn)   # {}
 q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub ENABLE;")
 ```
 
@@ -379,7 +464,8 @@ q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub ENABLE;")
 into populated tables returns no error while every tablesync loops on duplicate keys.
 
 ```python
-q(conn, "SET ROLE connect_superset; TRUNCATE <the 29 replicated tables>;")
+cascade_nonempty(conn)   # {} -- see Task 9 Step 4b for why CASCADE
+q(conn, TRUNCATE)
 q(conn, "RESET ROLE;")   # Step 4 sends you back here; leave it set and the later DDL fails
 ```
 
@@ -397,7 +483,9 @@ no-op — Task 2 Step 2 confirmed the published set matches. **Never `--recreate
 
 **Step 4: Watch the copy.** States progress `i` → `d` → `r`; errors stay `0|0`. Superset stays
 stopped until this completes (~1 hour at most, see Task 4 Step 3). **Do not trust the command's output** — it reports success
-regardless. A table parked at `d` means the truncate missed it; truncate it now and it self-heals.
+regardless. A table parked at `d` means the truncate missed it, which the single-statement truncate
+should rule out. If it happens, go to the full rollback rather than re-truncate with `CASCADE` — that
+would empty tables already at `r`, and those never re-copy.
 
 ### Task 11: Lift the deploy freeze
 
@@ -443,14 +531,19 @@ q(conn, "RESET ROLE;")
 
 **Task 13: Data — movement, not just counts**
 
-**Step 1:** `./manage.py logical_replication_status`, compare to the Task 2 baseline.
+**Step 1:** `./manage.py logical_replication_status`, compare to the Task 2 baseline. On PG16 the
+command fails (`permission denied for table pg_subscription`) unless RDS lets `postgres` read that
+table: it runs `SELECT *`, and PG16 hides `subconninfo` from non-superusers (reproduced locally). If
+it fails, skip it — Step 4 and Task 12 cover the same ground.
 **Step 2:** Wait several minutes and sample again. **Step 3:** Confirm the counts moved — a single
 sample cannot distinguish frozen from current, which is exactly how this failure hides.
-**Step 4:** Insert a synthetic row into one replicated table, confirm it reaches the secondary, then
-delete it and confirm the delete replicates too — the plan's one write to the primary, so log both
-statements. **Step 5:** Slot on the primary is `active`, retained bytes small and falling.
+**Step 4:** Compare `max(id)` of `opportunity_uservisit` on both sides; within a few minutes the
+secondary must reach the primary's earlier value. This proves live inserts flow without writing
+test data to production. **Step 5:** Slot on the primary is `active`, retained bytes small and falling.
 
-**Task 14: Superset** — start Superset only once Tasks 12–13 pass. Then check that dashboards load, logins work, a saved chart still queries the analytics
+**Task 14: Superset** — first `ANALYZE` both `superset` and `superset_meta`: the upgrade does not
+carry planner statistics over, and dashboards run slowly until they are rebuilt. Then start Superset,
+only once Tasks 12–13 pass. Then check that dashboards load, logins work, a saved chart still queries the analytics
 database, and geometry-backed content renders.
 
 **Task 15: Close out** — summarise the measured upgrade duration, the probe answer, and whether the
@@ -470,7 +563,8 @@ they were the open unknowns.
 
 | Trigger | Action |
 |---|---|
-| Precheck fails when the upgrade is initiated | Safe — it aborts and nothing changes. Retrieve `pg_upgrade_precheck.log` from the RDS console, fix the flagged extension, retry. Cost is a wasted window, not damage. |
+| Precheck fails when the upgrade is initiated | The instance stays on 15.17, but replication has been disabled since Task 6. Re-enable the subscription (safe on 15.17; verified locally), start Superset, lift the freeze (runbook: *Abort before upgrade*). Then retrieve `pg_upgrade_precheck.log` from the RDS console, fix the flagged issue, retry another day. |
+| Duplicate-key errors after Task 9's `ENABLE` | Task 9 Step 4 (fresh slot, re-copy). |
 | Task 7 — PostGIS not at 3.4.3 after the upgrade | **Not a rollback trigger.** Wrong minor applied; 3.4.3 is supported on PG16. Verify geometry (Step 5) and carry the update as a follow-up. |
 | Task 8 probe returns `False` | Proceed to Task 10. The window already allows for it (Task 4 Step 3). No in-window approval needed. |
 | Task 10 — tables stuck at `d` | Truncate them again; the sync self-heals. Verified. |
@@ -516,16 +610,16 @@ been rehearsed. The R0 dry run is the rehearsal.
 instance's networking or parameter group — anything not passed explicitly falls back to defaults.
 
 ```bash
-aws rds describe-db-instances --db-instance-identifier <instance-id> \
+aws rds describe-db-instances --db-instance-identifier connect-superset-prod \
   --query 'DBInstances[0].{Class:DBInstanceClass,SubnetGroup:DBSubnetGroup.DBSubnetGroupName,
            SecurityGroups:VpcSecurityGroups[].VpcSecurityGroupId,ParamGroups:DBParameterGroups[].DBParameterGroupName,
            OptionGroups:OptionGroupMemberships[].OptionGroupName,MultiAZ:MultiAZ,Public:PubliclyAccessible,
            StorageType:StorageType,Iops:Iops,Endpoint:Endpoint.Address}'
 ```
 
-**The parameter group matters most.** The upgrade moves the instance onto a `postgres16` group, and
-a restored 15.17 instance needs the current `postgres15` one, which carries the logical-replication
-settings. Record its name and do not delete or modify it until the upgrade is closed out.
+**Parameter group:** the instance is on `default.postgres15` (no custom settings; confirmed
+2026-10-26), so a restored 15.17 instance uses that too. The primary's `logicalreplicatorpublisher15`
+is unrelated to this instance; never modify it.
 
 **Step 2: Record where the endpoint is configured**, in case R4's rename route is not used:
 
@@ -548,8 +642,8 @@ still finish inside the window. Allow for the restore time (unmeasured; Step 4 m
 to ~1 hour for a possible full re-copy (R5b).
 
 **Step 4 (recommended): Dry-run the restore.** Restore the latest automated snapshot to a scratch
-identifier with the Step 1 settings, except for the parameter group. **Use a copy of the
-`postgres15` group with `max_logical_replication_workers = 0`.** Automated snapshots are taken with
+identifier with the Step 1 settings, except for the parameter group. **Use a copy of
+`default.postgres15` with `max_logical_replication_workers = 0`.** Automated snapshots are taken with
 the subscription *enabled*, so a scratch instance booted with the real group starts an apply worker
 straight away. Whenever the production subscriber reconnects, that worker can take the production
 slot and consume changes production then never receives. With zero workers it cannot. On the
@@ -569,8 +663,15 @@ q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub SET (slot_name = NONE);")
 ```
 
 **Detach, do not `DROP`.** Dropping a subscription that still has a slot name also drops the slot
-on the primary, which removes R5a. If no subscription exists, or the instance is unreachable,
-skip this step. R2 confirms the outcome either way.
+on the primary, which removes R5a. Wait for `wait_disabled()` between `DISABLE` and `SET`, so R2
+reads a settled slot. If no subscription exists, or the instance is unreachable, skip this step. R2
+confirms the outcome either way.
+
+**The failed instance stays a threat until it is stopped.** If R1 was skipped, its subscription can
+still take the slot — including during R5a. R2's `active = true` case is resolved by ending that
+walsender as `postgres_repl` (`pg_terminate_backend(active_pid)`; same role, so no extra privilege),
+and R4 stops the failed instance outright. An instance stuck in `upgrading` can't be renamed, so in
+that case R4 takes the fallback route.
 
 #### R2: Inspect the slot on the primary — this picks the R5 branch
 
@@ -595,13 +696,14 @@ Write the branch into the log before continuing.
 
 ```bash
 aws rds restore-db-instance-from-db-snapshot \
-  --db-instance-identifier <instance-id>-rollback \
+  --db-instance-identifier connect-superset-prod-rollback \
   --db-snapshot-identifier superset-pre-pg16-<yyyymmdd>-1 \
   --db-instance-class <R0> --db-subnet-group-name <R0> \
-  --vpc-security-group-ids <R0> --db-parameter-group-name <R0 postgres15 group> \
-  --option-group-name <R0> [--multi-az] [--no-publicly-accessible]
+  --vpc-security-group-ids <R0> --db-parameter-group-name default.postgres15 \
+  --option-group-name <R0> --storage-type <R0> [--iops <R0>] \
+  <--multi-az | --no-multi-az> <--publicly-accessible | --no-publicly-accessible>
 
-aws rds wait db-instance-available --db-instance-identifier <instance-id>-rollback
+aws rds wait db-instance-available --db-instance-identifier connect-superset-prod-rollback
 ```
 
 The instance comes back on 15.17, with its subscription **disabled** (Task 6 ran before the
@@ -624,12 +726,12 @@ identifier means `SECONDARY_DATABASE_URL`, Superset's URI and its stored connect
 correct (unverified here; the R0 dry run can confirm it on the scratch instance):
 
 ```bash
-aws rds modify-db-instance --db-instance-identifier <instance-id> \
-  --new-db-instance-identifier <instance-id>-failed-pg16 --apply-immediately
-# poll describe-db-instances until <instance-id>-failed-pg16 is 'available'
-aws rds modify-db-instance --db-instance-identifier <instance-id>-rollback \
-  --new-db-instance-identifier <instance-id> --apply-immediately
-# poll until <instance-id> is 'available' and its Endpoint.Address matches the R0 record
+aws rds modify-db-instance --db-instance-identifier connect-superset-prod \
+  --new-db-instance-identifier connect-superset-prod-failed-pg16 --apply-immediately
+# poll describe-db-instances until connect-superset-prod-failed-pg16 is 'available'
+aws rds modify-db-instance --db-instance-identifier connect-superset-prod-rollback \
+  --new-db-instance-identifier connect-superset-prod --apply-immediately
+# poll until connect-superset-prod is 'available' and its Endpoint.Address matches the R0 record
 ```
 
 DNS can take a few minutes to follow. Restart the Connect containers afterwards, so no pooled
@@ -646,8 +748,10 @@ connection passwords will not decrypt.
 changes where the endpoint name resolves, not existing connections. On the fallback route, the
 shell's settings also predate the config change. Running R5 on that `conn` would enable, drop or
 truncate on the wrong instance. Worst of all, R5b would leave the restored tables full, and the
-re-copy would then stall without any error. So open a fresh `./manage.py shell` in a restarted
-Connect container, run `conn = secondary()`, and confirm it shows `version()` 15.17, the
+re-copy would then stall without any error. So open a fresh `./manage.py shell` in a **new**
+Connect container (`docker restart` keeps the old env file's values) — and run R5b's
+`setup_logical_replication` in that **same** container, or on the fallback route it reaches the
+failed instance — run `conn = secondary()`, and confirm it shows `version()` 15.17, the
 subscription disabled, and `pg_subscription_rel` at `('r', 29)` before going on.
 
 **R5a — resume (slot untouched).** The restored subscriber's position matches the slot, so enabling
@@ -670,16 +774,15 @@ q(conn, "ALTER SUBSCRIPTION tables_for_superset_sub SET (slot_name = NONE);")
 q(conn, "DROP SUBSCRIPTION tables_for_superset_sub;")
 ```
 
-```sql
--- 2. On the primary, if R2 found the slot: confirm inactive, then drop
-SELECT slot_name, active FROM pg_replication_slots WHERE slot_name = 'tables_for_superset_sub';
-SELECT pg_drop_replication_slot('tables_for_superset_sub');
+```python
+# 2. If R2 found the slot: drop it as postgres_repl (connect can't drop slots)
+repl("SELECT pg_drop_replication_slot('tables_for_superset_sub');")
 ```
 
 ```python
-# 3. Truncate the 29 tables -- the copy fails on duplicate keys otherwise
-#    (list: commcare_connect/multidb/constants.py -> REPLICATION_ALLOWED_MODELS)
-q(conn, "SET ROLE connect_superset; TRUNCATE <the 29 replicated tables>;")
+# 3. Truncate -- the copy fails on duplicate keys otherwise. CASCADE, as in Task 9 Step 4b.
+cascade_nonempty(conn)   # {}
+q(conn, TRUNCATE)
 q(conn, "RESET ROLE;")
 ```
 
@@ -709,8 +812,9 @@ As in Task 11. If the fallback route in R4 was used, this deploy is also what pi
 - Keep the snapshot and the Task 5 dump until the next upgrade attempt.
 - Record the trigger, the R2 branch taken, and the restore and copy durations in the investigation doc.
 
-**What bounds the downside:** the primary is written to in three places only — Task 1's `GRANT`,
-`setup_logical_replication`'s `ALTER PUBLICATION ... SET TABLE`, and Task 13's canary and its delete
-— and the replicated tables are reproducible by definition. The worst realistic outcome is Superset
+**What bounds the downside:** the primary is written to in only three ways — `setup_logical_replication`'s
+`ALTER PUBLICATION ... SET TABLE` (a no-op when the published set matches) and its
+`GRANT SELECT ON ALL TABLES ... TO postgres_repl` (already in place), and dropping our own replication
+slot — and the replicated tables are reproducible by definition. The worst realistic outcome is Superset
 down for hours and analytics rebuilt from scratch, via the full rollback. Superset metadata changes
 made during the window are lost. The window should not allow any.
