@@ -335,7 +335,7 @@ class ContactListView(LLODirectoryListView):
     template_name = "organization/directory/contact_list.html"
 
     def get_queryset(self):
-        return Contact.objects.filter(is_archived=False).select_related("organization").order_by("name")
+        return Contact.objects.select_related("organization").order_by("name")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -395,6 +395,8 @@ class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
 
 class ContactFormMixin(LLODirectoryFormMixin):
     model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
     form_class = ContactForm
     template_name = "organization/directory/contact_form.html"
     list_url_name = "organization_directory:contacts"
@@ -410,15 +412,24 @@ class ContactUpdateView(ContactFormMixin, UpdateView):
 
 class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
     http_method_names = ["post"]
+    is_archived = True
+    success_message = gettext_lazy("Contact {name} archived.")
 
     def post(self, request, *args, **kwargs):
         contact = self.get_object()
-        contact.is_archived = True
+        contact.is_archived = self.is_archived
         contact.modified_by = request.user.email
         contact.save(update_fields=["is_archived", "modified_by", "date_modified"])
-        messages.success(request, gettext("Contact {name} archived.").format(name=contact.name))
+        messages.success(request, self.success_message.format(name=contact.name))
         return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
+
+
+class ContactRestoreView(ContactArchiveView):
+    is_archived = False
+    success_message = gettext_lazy("Contact {name} restored.")
 
 
 class ContactExportView(LLODirectoryAccessMixin, View):
@@ -446,13 +457,24 @@ class ContactExportStatusView(LLODirectoryAccessMixin, View):
     http_method_names = ["get"]
 
     def get(self, request, task_id):
-        return render_export_status(
-            request,
-            task_id=task_id,
-            download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
-            export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
-            ownership_check=lambda request, task_meta: _check_export_requester(request, task_meta.get("args") or []),
-        )
+        try:
+            return render_export_status(
+                request,
+                task_id=task_id,
+                download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
+                export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
+                ownership_check=lambda request, task_meta: _check_export_requester(
+                    request, task_meta.get("args") or []
+                ),
+            )
+        except Http404:
+            # htmx doesn't swap in an error response, so a 404 would leave the listing's loading
+            # spinner in place for good. Someone else's export is answered with a notice instead.
+            return render(
+                request,
+                "organization/directory/export_unavailable.html",
+                {"contacts_url": reverse("organization_directory:contacts")},
+            )
 
 
 class ContactExportDownloadView(LLODirectoryAccessMixin, View):

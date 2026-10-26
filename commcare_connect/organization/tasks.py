@@ -62,13 +62,17 @@ def send_invite_accepted_notification(membership_id):
 
 @celery_app.task()
 def export_contacts(query_string, user_id, export_format):
-    """Saves the unarchived contacts matching the listing filters in `query_string`, returning the file name.
+    """Saves the contacts matching the listing filters in `query_string`, returning the file name.
 
     `user_id` is not used here. With `CELERY_RESULT_EXTENDED` on, the result backend stores a task's arguments
     alongside its result, so the export status and download views can read `user_id` back from the task and
     return 404 to anyone other than the user who requested the export.
     """
-    contacts = Contact.objects.filter(is_archived=False).select_related("organization").order_by("name")
+    contacts = Contact.objects.select_related("organization").order_by("name")
     filterset = ContactFilterSet(QueryDict(query_string), queryset=contacts)
     content = TableExport(export_format, ContactExportTable(filterset.qs)).export()
+    if isinstance(content, str):
+        # CSV comes back as text. Encoding it here keeps names with accents or other non-ASCII
+        # characters intact, rather than leaving the encoding to the storage backend's default.
+        content = content.encode()
     return get_export_storage().save(f"contacts-{uuid.uuid4()}.{export_format}", ContentFile(content))

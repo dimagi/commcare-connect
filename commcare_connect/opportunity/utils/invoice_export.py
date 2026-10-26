@@ -13,11 +13,9 @@ from tablib import Dataset
 from commcare_connect.opportunity.models import InvoiceStatus, PaymentInvoice
 from commcare_connect.opportunity.utils.invoice import filter_invoices_by_month
 from commcare_connect.opportunity.utils.invoice_line_items import get_invoice_service_summary
+from commcare_connect.utils.file import neutralize_formula
 
 DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
-
-# Leading characters that make a spreadsheet treat a cell as a formula.
-FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
 
 # Invoices that will never be paid are left out of a whole-month export.
 EXPORT_EXCLUDED_STATUSES = (
@@ -137,7 +135,7 @@ def build_invoice_summary_dataset(invoices) -> Dataset:
 def _summary_row(invoice):
     payment = getattr(invoice, "payment", None)
     return [
-        _neutralize_formula(invoice.invoice_number),
+        neutralize_formula(invoice.invoice_number),
         invoice.invoice_type.label,
         invoice.get_status_display(),
         invoice.start_date,
@@ -150,10 +148,3 @@ def _summary_row(invoice):
         invoice.date,
         payment.date_paid.date() if payment else None,
     ]
-
-
-def _neutralize_formula(value):
-    """Stop a spreadsheet from evaluating a user-supplied cell as a formula (CSV injection)."""
-    if value.startswith(FORMULA_TRIGGERS):
-        return f"'{value}"
-    return value

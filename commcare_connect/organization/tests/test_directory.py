@@ -266,6 +266,13 @@ class TestContactFilterSet:
         assert _filtered_contacts({"main_poc": "true"}) == [main]
         assert _filtered_contacts({"main_poc": ""}) == [main, other]
 
+    def test_lists_archived_contacts_only_when_asked_for(self):
+        active = ContactFactory()
+        archived = ContactFactory(is_archived=True)
+
+        assert _filtered_contacts({}) == [active]
+        assert _filtered_contacts({"archived": "true"}) == [archived]
+
 
 @pytest.mark.django_db
 class TestContactListAccess:
@@ -321,6 +328,16 @@ class TestContactForm:
         assert new_main.is_main_poc
         assert not current_main.is_main_poc
 
+    def test_saving_without_commit_leaves_the_current_main_poc(self):
+        current_main = ContactFactory(is_main_poc=True)
+        form = ContactForm(data=_contact_form_data(current_main.organization, is_main_poc="True"))
+
+        assert form.is_valid(), form.errors
+        form.save(commit=False)
+
+        current_main.refresh_from_db()
+        assert current_main.is_main_poc
+
     def test_email_already_used_by_another_contact_is_rejected(self, organization):
         existing = ContactFactory(email="grace@umojahealth.org")
 
@@ -328,6 +345,13 @@ class TestContactForm:
 
         assert not form.is_valid()
         assert existing.organization.name in form.errors["email"][0]
+
+    def test_email_used_by_an_archived_contact_says_it_is_archived(self, organization):
+        ContactFactory(name="Grace Wanjiru", email="grace@umojahealth.org", is_archived=True)
+
+        form = ContactForm(data=_contact_form_data(organization, email="grace@umojahealth.org"))
+
+        assert "Grace Wanjiru (archived)" in form.errors["email"][0]
 
     def test_a_contact_keeps_its_own_email_on_edit(self):
         contact = ContactFactory(email="grace@umojahealth.org")
@@ -353,7 +377,7 @@ class TestContactFormViews:
     def test_requires_permission(self, client, user, url_name):
         contact = ContactFactory()
         client.force_login(user)
-        args = (contact.pk,) if url_name.endswith("edit") else ()
+        args = (contact.contact_id,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
 
@@ -364,7 +388,9 @@ class TestContactArchiveView:
         contact = ContactFactory()
         client.force_login(user_with_directory_access)
 
-        response = client.post(f"{reverse('organization_directory:contact_archive', args=(contact.pk,))}?search=x")
+        url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        response = client.post(f"{url}?search=x")
 
         contact.refresh_from_db()
         assert contact.is_archived
@@ -375,7 +401,7 @@ class TestContactArchiveView:
         contact = ContactFactory()
         client.force_login(user_with_directory_access)
 
-        response = client.get(reverse("organization_directory:contact_archive", args=(contact.pk,)))
+        response = client.get(reverse("organization_directory:contact_archive", args=(contact.contact_id,)))
 
         assert response.status_code == 405
         contact.refresh_from_db()
@@ -385,7 +411,31 @@ class TestContactArchiveView:
         contact = ContactFactory()
         client.force_login(user)
 
-        assert client.post(reverse("organization_directory:contact_archive", args=(contact.pk,))).status_code == 403
+        url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        assert client.post(url).status_code == 403
+
+
+@pytest.mark.django_db
+class TestContactRestoreView:
+    def test_restores_and_returns_to_the_filtered_listing(self, client, user_with_directory_access):
+        contact = ContactFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+        url = reverse("organization_directory:contact_restore", args=(contact.contact_id,))
+
+        response = client.post(f"{url}?archived=true")
+
+        contact.refresh_from_db()
+        assert not contact.is_archived
+        assert contact.modified_by == user_with_directory_access.email
+        assert response.url == f"{reverse('organization_directory:contacts')}?archived=true"
+
+    def test_requires_permission(self, client, user):
+        contact = ContactFactory(is_archived=True)
+        client.force_login(user)
+        url = reverse("organization_directory:contact_restore", args=(contact.contact_id,))
+
+        assert client.post(url).status_code == 403
 
 
 @pytest.mark.django_db
@@ -404,6 +454,26 @@ class TestExportContacts:
         assert len(rows) == 2
         assert rows[1].startswith("Grace Wanjiru,")
         assert ",Yes," in rows[1]
+
+    def test_text_cannot_become_a_spreadsheet_formula(self):
+        ContactFactory(name="=HYPERLINK(1)", phone="+254 722 118 340", email="grace@example.com")
+
+        with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+            saved_name = export_contacts("", user_id=1, export_format="csv")
+            with get_export_storage().open(saved_name) as saved:
+                row = saved.read().decode().splitlines()[1]
+
+        assert row.startswith("'=HYPERLINK(1),")
+        assert ",grace@example.com,'+254 722 118 340," in row
+
+    def test_saves_names_with_special_characters_as_utf8(self):
+        ContactFactory(name="José Ñúñez")
+
+        with mock.patch("commcare_connect.organization.tasks.get_export_storage") as get_storage:
+            export_contacts("", user_id=1, export_format="csv")
+
+        saved_content = get_storage.return_value.save.call_args.args[1].read()
+        assert "José Ñúñez" in saved_content.decode("utf-8")
 
 
 @pytest.mark.django_db
@@ -429,6 +499,21 @@ class TestContactExportViews:
         response = client.post(reverse("organization_directory:contact_export"), {"export_format": "pdf"})
 
         assert response.status_code == 400
+
+    def test_status_of_another_users_export_shows_a_notice(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+        other_users_task = mock.Mock()
+        other_users_task._get_task_meta.return_value = {
+            "status": "SUCCESS",
+            "args": ["", user_with_directory_access.pk + 1, "csv"],
+        }
+
+        with mock.patch("commcare_connect.utils.celery.AsyncResult", return_value=other_users_task):
+            response = client.get(reverse("organization_directory:contact_export_status", args=("task-id",)))
+
+        assert response.status_code == 200
+        assert "Start a new export" in response.content.decode()
+        assert "Download Export" not in response.content.decode()
 
     def test_download_is_refused_to_other_users(self, client, user_with_directory_access):
         client.force_login(user_with_directory_access)

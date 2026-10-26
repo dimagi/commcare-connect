@@ -1,6 +1,7 @@
 import secrets
 from datetime import timedelta
 from functools import partial
+from uuid import uuid4
 
 from django.conf import settings
 from django.db import models, transaction
@@ -105,6 +106,7 @@ class Contact(BaseModel):
     the contact as well.
     """
 
+    contact_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="contacts")
     name = models.CharField(max_length=255)
     title = models.CharField(max_length=255, blank=True)
@@ -131,6 +133,15 @@ class Contact(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        """Saves the contact, first unmarking the organization's other main contact if this one is now main."""
+        with transaction.atomic():
+            if self.is_main_poc:
+                Contact.objects.filter(organization_id=self.organization_id, is_main_poc=True).exclude(
+                    pk=self.pk
+                ).update(is_main_poc=False)
+            super().save(*args, **kwargs)
 
 
 class UserOrganizationMembership(models.Model):

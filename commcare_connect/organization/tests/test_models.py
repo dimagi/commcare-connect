@@ -238,6 +238,15 @@ class TestOrganizationInvite:
 
 @pytest.mark.django_db
 class TestContact:
+    def test_a_new_main_poc_replaces_the_current_one(self):
+        current_main = ContactFactory(is_main_poc=True)
+
+        new_main = ContactFactory(organization=current_main.organization, is_main_poc=True)
+
+        current_main.refresh_from_db()
+        assert new_main.is_main_poc
+        assert not current_main.is_main_poc
+
     def test_email_is_unique_ignoring_case(self):
         ContactFactory(email="grace@umojahealth.org")
 

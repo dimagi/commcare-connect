@@ -28,7 +28,8 @@ directory_urlpatterns = [
         views.ContactExportDownloadView.as_view(),
         name="contact_export_download",
     ),
-    path("contacts/<int:pk>/edit/", views.ContactUpdateView.as_view(), name="contact_edit"),
-    path("contacts/<int:pk>/archive/", views.ContactArchiveView.as_view(), name="contact_archive"),
+    path("contacts/<uuid:contact_id>/edit/", views.ContactUpdateView.as_view(), name="contact_edit"),
+    path("contacts/<uuid:contact_id>/archive/", views.ContactArchiveView.as_view(), name="contact_archive"),
+    path("contacts/<uuid:contact_id>/restore/", views.ContactRestoreView.as_view(), name="contact_restore"),
     path("<slug:slug>/edit/", views.OrganizationUpdateView.as_view(), name="edit"),
 ]
