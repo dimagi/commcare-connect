@@ -446,28 +446,32 @@ def _get_inactive_message(access: OpportunityAccess):
     if has_claimed_opportunity:
         message = _check_deliver_inactive(access)
     else:
-        # Send notification if user has completed learn modules and has not claimed the opportunity
-        if access.learn_progress == 100:
-            message = _get_deliver_message(access)
-        else:
-            message = _get_learn_message(access)
+        message = _get_learn_message(access)
     return message
 
 
 def _get_learn_message(access: OpportunityAccess):
     last_user_learn_module = access.completedmodule_set.order_by("date").last()
     if last_user_learn_module and is_date_before(last_user_learn_module.date, days=3):
+        title = gettext(f"Resume your learning journey for {access.opportunity.name}")
+        body = gettext(
+            f"You have not completed your learning for {access.opportunity.name}. "
+            "Please complete the learning modules to start delivering visits."
+        )
+        if access.learn_progress == 100:
+            title = gettext(f"Claim your job for {access.opportunity.name}")
+            body = gettext(
+                f"You have completed your learning for {access.opportunity.name}. "
+                "Please claim the opportunity to start delivering visits."
+            )
         return Message(
             usernames=[access.user.username],
             data={
                 "action": "ccc_learn_progress",
                 "opportunity_id": str(access.opportunity.id),
                 "opportunity_uuid": str(access.opportunity.opportunity_id),
-                "title": gettext(f"Resume your learning journey for {access.opportunity.name}"),
-                "body": gettext(
-                    f"You have not completed your learning for {access.opportunity.name}. "
-                    "Please complete the learning modules to start delivering visits."
-                ),
+                "title": title,
+                "body": body,
             },
         )
 

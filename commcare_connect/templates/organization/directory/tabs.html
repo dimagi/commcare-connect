@@ -1,10 +1,19 @@
 {% load i18n %}
+{% url 'organization_directory:list' as organizations_url %}
+{% url 'organization_directory:contacts' as contacts_url %}
 <div class="flex items-center w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
   <div class="tabs">
-    <a href="{% url 'organization_directory:list' %}" class="tab tab-active">
+    <a href="{{ organizations_url }}"
+       class="tab {% if request.path == organizations_url %}tab-active{% endif %}">
       <i class="fa-solid fa-building" aria-hidden="true"></i>
       {% translate "Organizations" %}
       <span class="text-xs text-gray-400">{{ organizations_count }}</span>
+    </a>
+    <a href="{{ contacts_url }}"
+       class="tab {% if request.path == contacts_url %}tab-active{% endif %}">
+      <i class="fa-solid fa-address-card" aria-hidden="true"></i>
+      {% translate "Contacts" %}
+      <span class="text-xs text-gray-400">{{ contacts_count }}</span>
     </a>
   </div>
 </div>

@@ -1,15 +1,18 @@
-from urllib.parse import urlencode
+from unittest import mock
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from django.contrib.auth.models import Permission
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
-from commcare_connect.organization.filters import OrganizationFilterSet
-from commcare_connect.organization.forms import OrganizationDirectoryForm
-from commcare_connect.organization.models import Organization, OrganizationStatus, PrimarySector
+from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
+from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
+from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.organization.tables import OrganizationDirectoryTable
-from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
+from commcare_connect.organization.tasks import export_contacts
+from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
+from commcare_connect.utils.celery import get_export_storage
 
 
 def _filtered_organizations(params):
@@ -231,3 +234,292 @@ class TestOrganizationFormViews:
         args = (org.slug,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
+
+
+def _filtered_contacts(params):
+    return list(ContactFilterSet(params, queryset=Contact.objects.order_by("name")).qs)
+
+
+@pytest.mark.django_db
+class TestContactFilterSet:
+    @pytest.mark.parametrize("search", ["grace", "umoja", "UMOJAHEALTH.or"])
+    def test_search_matches_name_organization_and_email(self, search):
+        organization = OrganizationFactory(name="Umoja Health Trust")
+        contact = ContactFactory(organization=organization, name="Grace Wanjiru", email="g@umojahealth.org")
+        ContactFactory(name="Someone Else", email="else@example.com")
+
+        assert _filtered_contacts({"search": search}) == [contact]
+
+    def test_country_and_status_filters_use_the_organization(self, countries):
+        kenyan = OrganizationFactory(status=OrganizationStatus.ACTIVE)
+        kenyan.countries.add(countries["KEN"], countries["TZA"])
+        contact = ContactFactory(organization=kenyan)
+        ContactFactory(organization=OrganizationFactory(status=OrganizationStatus.INACTIVE))
+
+        assert _filtered_contacts({"countries": ["KEN", "TZA"]}) == [contact]
+        assert _filtered_contacts({"organization_status": ["active"]}) == [contact]
+
+    def test_main_poc_only(self):
+        main = ContactFactory(name="A Main", is_main_poc=True)
+        other = ContactFactory(name="B Other", organization=main.organization)
+
+        assert _filtered_contacts({"main_poc": "true"}) == [main]
+        assert _filtered_contacts({"main_poc": ""}) == [main, other]
+
+    def test_lists_archived_contacts_only_when_asked_for(self):
+        active = ContactFactory()
+        archived = ContactFactory(is_archived=True)
+
+        assert _filtered_contacts({}) == [active]
+        assert _filtered_contacts({"archived": "true"}) == [archived]
+
+
+@pytest.mark.django_db
+class TestContactListAccess:
+    def test_requires_permission(self, client, user):
+        client.force_login(user)
+        assert client.get(reverse("organization_directory:contacts")).status_code == 403
+
+    def test_lists_unarchived_contacts(self, client, user_with_directory_access):
+        contact = ContactFactory()
+        ContactFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contacts"))
+
+        assert response.status_code == 200
+        assert list(response.context["table"].data) == [contact]
+
+
+def _contact_form_data(organization, **overrides):
+    return {"organization": organization.pk, "name": "Grace Wanjiru", "email": "grace@umojahealth.org"} | overrides
+
+
+@pytest.mark.django_db
+class TestContactForm:
+    def test_requires_name_organization_and_email(self):
+        form = ContactForm(data={})
+
+        assert set(form.errors) == {"name", "organization", "email"}
+
+    def test_saves_all_fields(self, organization):
+        data = _contact_form_data(
+            organization, title="Executive Director", is_main_poc="True", phone="+254 722 118 340", notes="Met at AMR"
+        )
+        form = ContactForm(data=data)
+
+        assert form.is_valid(), form.errors
+        contact = form.save()
+
+        assert contact.organization == organization
+        assert contact.title == "Executive Director"
+        assert contact.is_main_poc
+        assert contact.phone == "+254 722 118 340"
+        assert contact.notes == "Met at AMR"
+
+    def test_becoming_main_poc_replaces_the_current_one(self):
+        current_main = ContactFactory(is_main_poc=True)
+        form = ContactForm(data=_contact_form_data(current_main.organization, is_main_poc="True"))
+
+        assert form.is_valid(), form.errors
+        new_main = form.save()
+
+        current_main.refresh_from_db()
+        assert new_main.is_main_poc
+        assert not current_main.is_main_poc
+
+    def test_saving_without_commit_leaves_the_current_main_poc(self):
+        current_main = ContactFactory(is_main_poc=True)
+        form = ContactForm(data=_contact_form_data(current_main.organization, is_main_poc="True"))
+
+        assert form.is_valid(), form.errors
+        form.save(commit=False)
+
+        current_main.refresh_from_db()
+        assert current_main.is_main_poc
+
+    def test_email_already_used_by_another_contact_is_rejected(self, organization):
+        existing = ContactFactory(email="grace@umojahealth.org")
+
+        form = ContactForm(data=_contact_form_data(organization, email="GRACE@umojahealth.org"))
+
+        assert not form.is_valid()
+        assert existing.organization.name in form.errors["email"][0]
+
+    def test_email_used_by_an_archived_contact_says_it_is_archived(self, organization):
+        ContactFactory(name="Grace Wanjiru", email="grace@umojahealth.org", is_archived=True)
+
+        form = ContactForm(data=_contact_form_data(organization, email="grace@umojahealth.org"))
+
+        assert "Grace Wanjiru (archived)" in form.errors["email"][0]
+
+    def test_a_contact_keeps_its_own_email_on_edit(self):
+        contact = ContactFactory(email="grace@umojahealth.org")
+
+        assert ContactForm(data=_contact_form_data(contact.organization), instance=contact).is_valid()
+
+
+@pytest.mark.django_db
+class TestContactFormViews:
+    def test_create_returns_to_the_contacts_listing(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = client.post(
+            reverse("organization_directory:contact_create"), _contact_form_data(organization), HTTP_HX_REQUEST="true"
+        )
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:contacts")
+        assert organization.contacts.get().name == "Grace Wanjiru"
+
+    @pytest.mark.parametrize(
+        "url_name", ["organization_directory:contact_create", "organization_directory:contact_edit"]
+    )
+    def test_requires_permission(self, client, user, url_name):
+        contact = ContactFactory()
+        client.force_login(user)
+        args = (contact.contact_id,) if url_name.endswith("edit") else ()
+
+        assert client.get(reverse(url_name, args=args)).status_code == 403
+
+
+@pytest.mark.django_db
+class TestContactArchiveView:
+    def test_archives_and_returns_to_the_filtered_listing(self, client, user_with_directory_access):
+        contact = ContactFactory()
+        client.force_login(user_with_directory_access)
+
+        url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        response = client.post(f"{url}?search=x")
+
+        contact.refresh_from_db()
+        assert contact.is_archived
+        assert contact.modified_by == user_with_directory_access.email
+        assert response.url == f"{reverse('organization_directory:contacts')}?search=x"
+
+    def test_get_is_not_allowed(self, client, user_with_directory_access):
+        contact = ContactFactory()
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contact_archive", args=(contact.contact_id,)))
+
+        assert response.status_code == 405
+        contact.refresh_from_db()
+        assert not contact.is_archived
+
+    def test_requires_permission(self, client, user):
+        contact = ContactFactory()
+        client.force_login(user)
+
+        url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
+
+        assert client.post(url).status_code == 403
+
+
+@pytest.mark.django_db
+class TestContactRestoreView:
+    def test_restores_and_returns_to_the_filtered_listing(self, client, user_with_directory_access):
+        contact = ContactFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+        url = reverse("organization_directory:contact_restore", args=(contact.contact_id,))
+
+        response = client.post(f"{url}?archived=true")
+
+        contact.refresh_from_db()
+        assert not contact.is_archived
+        assert contact.modified_by == user_with_directory_access.email
+        assert response.url == f"{reverse('organization_directory:contacts')}?archived=true"
+
+    def test_requires_permission(self, client, user):
+        contact = ContactFactory(is_archived=True)
+        client.force_login(user)
+        url = reverse("organization_directory:contact_restore", args=(contact.contact_id,))
+
+        assert client.post(url).status_code == 403
+
+
+@pytest.mark.django_db
+class TestExportContacts:
+    def test_exports_the_filtered_unarchived_contacts(self):
+        ContactFactory(name="Grace Wanjiru", is_main_poc=True)
+        ContactFactory(name="Peter Otieno")
+        ContactFactory(name="Grace Archived", is_archived=True)
+
+        with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+            saved_name = export_contacts("search=grace", user_id=1, export_format="csv")
+            with get_export_storage().open(saved_name) as saved:
+                rows = saved.read().decode().splitlines()
+
+        assert rows[0].startswith("Contact Name,Organization,Role / Title,Main POC")
+        assert len(rows) == 2
+        assert rows[1].startswith("Grace Wanjiru,")
+        assert ",Yes," in rows[1]
+
+    def test_text_cannot_become_a_spreadsheet_formula(self):
+        ContactFactory(name="=HYPERLINK(1)", phone="+254 722 118 340", email="grace@example.com")
+
+        with mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": None}):
+            saved_name = export_contacts("", user_id=1, export_format="csv")
+            with get_export_storage().open(saved_name) as saved:
+                row = saved.read().decode().splitlines()[1]
+
+        assert row.startswith("'=HYPERLINK(1),")
+        assert ",grace@example.com,'+254 722 118 340," in row
+
+    def test_saves_names_with_special_characters_as_utf8(self):
+        ContactFactory(name="José Ñúñez")
+
+        with mock.patch("commcare_connect.organization.tasks.get_export_storage") as get_storage:
+            export_contacts("", user_id=1, export_format="csv")
+
+        saved_content = get_storage.return_value.save.call_args.args[1].read()
+        assert "José Ñúñez" in saved_content.decode("utf-8")
+
+
+@pytest.mark.django_db
+class TestContactExportViews:
+    def test_starts_the_export_with_the_listing_filters(
+        self, client, user_with_directory_access, django_capture_on_commit_callbacks
+    ):
+        client.force_login(user_with_directory_access)
+        url = f"{reverse('organization_directory:contact_export')}?search=grace"
+
+        with mock.patch.object(export_contacts, "apply_async") as apply_async:
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(url, {"export_format": "xlsx"})
+
+        task_id = parse_qs(urlparse(response.url).query)["export_task_id"][0]
+        apply_async.assert_called_once_with(
+            args=("search=grace", user_with_directory_access.pk, "xlsx"), task_id=task_id
+        )
+
+    def test_rejects_an_unsupported_format(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+
+        response = client.post(reverse("organization_directory:contact_export"), {"export_format": "pdf"})
+
+        assert response.status_code == 400
+
+    def test_status_of_another_users_export_shows_a_notice(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+        other_users_task = mock.Mock()
+        other_users_task._get_task_meta.return_value = {
+            "status": "SUCCESS",
+            "args": ["", user_with_directory_access.pk + 1, "csv"],
+        }
+
+        with mock.patch("commcare_connect.utils.celery.AsyncResult", return_value=other_users_task):
+            response = client.get(reverse("organization_directory:contact_export_status", args=("task-id",)))
+
+        assert response.status_code == 200
+        assert "Start a new export" in response.content.decode()
+        assert "Download Export" not in response.content.decode()
+
+    def test_download_is_refused_to_other_users(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+        other_users_task = mock.Mock(args=("", user_with_directory_access.pk + 1, "csv"))
+
+        with mock.patch("commcare_connect.organization.views.AsyncResult", return_value=other_users_task):
+            response = client.get(reverse("organization_directory:contact_export_download", args=("task-id",)))
+
+        assert response.status_code == 404
