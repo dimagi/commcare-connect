@@ -3,13 +3,14 @@ from django.contrib.messages.views import SuccessMessageMixin
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import DetailView, UpdateView
 from django_tables2 import SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.organization.decorators import OrgPMRequiredMixin
+from commcare_connect.organization.decorators import org_pm_required
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -36,7 +37,8 @@ STEP_LABELS = {
 }
 
 
-class SolicitationListView(WaffleSwitchMixin, OrgPMRequiredMixin, SingleTableView):
+@method_decorator(org_pm_required, name="dispatch")
+class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     waffle_switch = SOLICITATIONS
     table_class = SolicitationTable
     template_name = "solicitation/solicitation_list.html"
@@ -56,7 +58,8 @@ def org_solicitations(organization):
     )
 
 
-class SolicitationStepMixin(WaffleSwitchMixin, OrgPMRequiredMixin):
+@method_decorator(org_pm_required, name="dispatch")
+class SolicitationStepMixin(WaffleSwitchMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
     Every step saves to the draft, so a PM can leave and come back. Once active, the criteria and

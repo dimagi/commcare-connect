@@ -38,51 +38,43 @@ class TestRemoveMembersView:
     def test_admin_cannot_remove_self(self, client, org_user_admin, organization):
         membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [membership.id]},
+        messages = self._remove_members(
+            client=client, admin=org_user_admin, organization=organization, membership_ids=[membership.id]
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the organization."
-
+        assert messages == ["You cannot remove yourself from the organization."]
         assert UserOrganizationMembership.objects.filter(id=membership.id).exists()
 
     def test_admin_can_remove_others(self, client, org_user_admin, org_user_member, organization):
         other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [other_membership.id]},
+        messages = self._remove_members(
+            client=client, admin=org_user_admin, organization=organization, membership_ids=[other_membership.id]
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "Selected members have been removed from the organization."
-
+        assert messages == ["Selected members have been removed from the organization."]
         assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
     def test_request_fails_when_admin_in_list(self, client, org_user_admin, org_user_member, organization):
-        admin_memebership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
+        admin_membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
         other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
 
-        client.force_login(org_user_admin)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={"membership_ids": [admin_memebership.id, other_membership.id]},
+        messages = self._remove_members(
+            client=client,
+            admin=org_user_admin,
+            organization=organization,
+            membership_ids=[admin_membership.id, other_membership.id],
         )
 
-        assert response.status_code == 302
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the organization."
-
+        assert messages == ["You cannot remove yourself from the organization."]
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
+
+    def _remove_members(self, client, admin, organization, membership_ids):
+        """Post a removal as `admin` and return the messages it produced."""
+        client.force_login(admin)
+        response = client.post(self.url(org_slug=organization.slug), data={"membership_ids": membership_ids})
+        assert response.status_code == 302
+        return [str(message) for message in get_messages(response.wsgi_request)]
 
 
 @pytest.fixture
@@ -696,3 +688,55 @@ class TestPendingInvitesTableView:
         assert content.index(newest.email) < content.index(oldest.email), (
             "the members table's sort param leaked into the pending invites table"
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role,permission,sees_programs,sees_my_organization",
+    [
+        ("admin", None, True, True),
+        ("member", None, True, False),
+        ("viewer", None, True, False),
+        ("member", "org_management_settings_access", True, True),
+        ("viewer", "org_management_settings_access", True, True),
+        (None, "all_org_access", True, True),
+    ],
+)
+def test_sidenav_entries_visibility(client, organization, role, permission, sees_programs, sees_my_organization):
+    user = UserFactory()
+    if role:
+        UserOrganizationMembership.objects.create(user=user, organization=organization, role=role)
+    if permission:
+        user.user_permissions.add(Permission.objects.get(codename=permission))
+        user = User.objects.get(pk=user.pk)  # a fresh instance, so the permission cache sees the grant
+    client.force_login(user)
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert (reverse("program:home", args=(organization.slug,)) in content) is sees_programs
+    assert (reverse("organization:home", args=(organization.slug,)) in content) is sees_my_organization
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_my_organization_to_org_settings_manager_without_membership(client, organization):
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="org_management_settings_access"))
+    client.force_login(user)
+
+    content = client.get(reverse("organization:home", args=(organization.slug,))).content.decode()
+
+    assert reverse("organization:home", args=(organization.slug,)) in content
+    assert reverse("opportunity:list", args=(organization.slug,)) not in content
+    assert reverse("program:home", args=(organization.slug,)) not in content
+
+
+@pytest.mark.django_db
+def test_sidenav_shows_all_entries_to_superuser_without_membership(client, organization):
+    client.force_login(UserFactory(is_superuser=True))
+
+    content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert reverse("opportunity:list", args=(organization.slug,)) in content
+    assert reverse("program:home", args=(organization.slug,)) in content
+    assert reverse("organization:home", args=(organization.slug,)) in content
