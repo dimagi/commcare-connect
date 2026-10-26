@@ -280,7 +280,8 @@ class Opportunity(BaseModel):
         manual adjustments and limits set before a payment-unit change are kept. The unclaimed budget
         is projected at today's config: a worker can only claim while the remaining budget covers a
         full allocation (see ``ClaimOpportunityView``), so it funds whole workers, each getting every
-        unit's full ``max_total``; a leftover too small for one more worker funds nothing.
+        unit's full ``max_total``; a leftover too small for one more worker funds nothing. Once the
+        opportunity has ended no one can claim, so the unclaimed budget funds nothing either.
 
         Units with neither a claim limit nor a ``max_total`` are left out. Empty when there is no
         budget, or when the limited units cost nothing and so have no budget limit.
@@ -293,7 +294,9 @@ class Opportunity(BaseModel):
             return {}
 
         claimed = self._claimed_visits_by_unit()
-        unclaimed_workers = max(self.remaining_budget, 0) // budget_per_worker if budget_per_worker else 0
+        unclaimed_workers = (
+            max(self.remaining_budget, 0) // budget_per_worker if budget_per_worker and not self.has_ended else 0
+        )
         return {
             pu.pk: claimed.get(pu.pk, 0) + (pu.max_total or 0) * unclaimed_workers
             for pu in payment_units

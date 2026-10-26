@@ -367,6 +367,29 @@ def test_allotted_visits_by_unit_follows_claim_limits(opportunity: Opportunity, 
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "end_date, expected",
+    [
+        # 1500 - 450 claimed = 1050 left: 7 more workers at 150
+        (date.today(), 30 + 70),
+        (None, 30 + 70),
+        # No one can claim once it has ended, so only the claimed limits count
+        (date.today() - timedelta(days=1), 30),
+    ],
+)
+def test_allotted_visits_by_unit_stops_projecting_once_ended(opportunity: Opportunity, end_date, expected):
+    opportunity.total_budget = 1500
+    opportunity.save(update_fields=["total_budget"])
+    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
+    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
+    for _ in range(3):
+        _claim(opportunity)
+    opportunity.end_date = end_date
+
+    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: expected, unit_b.pk: expected}
+
+
+@pytest.mark.django_db
 def test_allotted_visits_by_unit_keeps_claim_limits_when_unit_loses_max_total(opportunity: Opportunity):
     opportunity.total_budget = 1500
     opportunity.save(update_fields=["total_budget"])
