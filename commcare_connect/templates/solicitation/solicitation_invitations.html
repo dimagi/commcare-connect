@@ -14,7 +14,7 @@
 {% block content %}
   {# A rejected invite re-renders the page, so the modal reopens to show the error. #}
   <div class="flex flex-col gap-4 w-full"
-       x-data="{ showInviteModal: {{ form.errors|yesno:'true,false' }} }">
+       x-data="{ showInviteModal: {{ form.errors|yesno:'true,false' }}, ...selectableTable() }">
     {% include "components/breadcrumbs.html" with path=path %}
     <div class="flex flex-col gap-1">
       <h1 class="title">{{ solicitation.title }}</h1>
@@ -31,6 +31,22 @@
                   @click.stop="showInviteModal = true"
                   x-tooltip.raw="{% translate "Invite organization" %}">
             <i class="fa-solid fa-plus text-brand-deep-purple"></i>
+          </button>
+          <form x-ref="removeInvitationsForm"
+                method="post"
+                action="{% url "solicitation:delete_invitations" request.org.slug solicitation.solicitation_id %}"
+                class="hidden">
+            {% csrf_token %}
+            <template x-for="id in selected">
+              <input type="hidden" name="invitation_ids" :value="id">
+            </template>
+          </form>
+          <button type="button"
+                  class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
+                  @click="$store.confirmModal.show({ title: '{% translate "Remove invitations" %}', message: `{% blocktranslate %}Remove __count__ invitation(s)? Those organizations will no longer be able to apply.{% endblocktranslate %}`.replace('__count__', selected.length), confirmBtnText: '{% translate "Remove" %}', confirmBtnRed: true, formRef: $refs.removeInvitationsForm })"
+                  :disabled="selected.length === 0"
+                  x-tooltip.raw="{% translate "Remove invitation(s)" %}">
+            <i class="fa-solid fa-trash"></i>
           </button>
         </div>
       </div>
@@ -66,3 +82,6 @@
     {% include "components/confirm_modal.html" %}
   </div>
 {% endblock content %}
+{% block inline_javascript %}
+  {% include "components/tables/selectable_table.html" %}
+{% endblock inline_javascript %}

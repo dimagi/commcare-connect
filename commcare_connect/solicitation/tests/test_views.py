@@ -251,6 +251,25 @@ class TestSolicitationInvitations:
 
         assert [row.record for row in response.context["table"].rows] == [invitation]
 
+    def test_delete_removes_selected_invitations(self, pm_client, solicitation):
+        removed, kept = SolicitationInvitationFactory.create_batch(2, solicitation=solicitation)
+
+        response = pm_client.post(step_url("delete_invitations", solicitation), {"invitation_ids": [removed.pk]})
+
+        assert response.url == step_url("invitations", solicitation)
+        assert list(solicitation.invitations.all()) == [kept]
+
+    @pytest.mark.parametrize("other_solicitation", [True, False])
+    def test_delete_rejects_invalid_selection(self, pm_client, solicitation, other_solicitation):
+        """Nothing selected, or an id from another solicitation, deletes nothing."""
+        other = SolicitationInvitationFactory()
+        data = {"invitation_ids": [other.pk]} if other_solicitation else {}
+
+        response = pm_client.post(step_url("delete_invitations", solicitation), data)
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert SolicitationInvitation.objects.filter(pk=other.pk).exists()
+
     @pytest.mark.parametrize(
         "status, public, own_org",
         [
@@ -268,8 +287,10 @@ class TestSolicitationInvitations:
         # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
         url_args = (program_manager_org.slug, solicitation.solicitation_id)
         list_url = reverse("solicitation:invitations", args=url_args)
+        delete_url = reverse("solicitation:delete_invitations", args=url_args)
 
         assert pm_client.get(list_url).status_code == HTTPStatus.NOT_FOUND
         invite_response = pm_client.post(list_url, {"organization": OrganizationFactory().pk})
         assert invite_response.status_code == HTTPStatus.NOT_FOUND
+        assert pm_client.post(delete_url, {"invitation_ids": [invitation.pk]}).status_code == HTTPStatus.NOT_FOUND
         assert solicitation.invitations.get() == invitation

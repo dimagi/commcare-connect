@@ -4,11 +4,12 @@ from django.contrib import messages
 from django.contrib.messages.views import SuccessMessageMixin
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
+from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views.generic import CreateView, DetailView, UpdateView
+from django.views.generic import CreateView, DetailView, FormView, UpdateView
 from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
@@ -18,6 +19,7 @@ from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
     SolicitationForm,
+    SolicitationInvitationDeleteForm,
     SolicitationInvitationForm,
     publish_errors,
 )
@@ -237,3 +239,18 @@ class SolicitationInvitationsView(InvitationsMixin, SuccessMessageMixin, SingleT
         response = super().form_valid(form)
         transaction.on_commit(partial(send_solicitation_invite_email, self.object.pk))
         return response
+
+
+class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
+    """Removes the invitations selected in the table."""
+
+    form_class = SolicitationInvitationDeleteForm
+    http_method_names = ["post"]
+
+    def form_valid(self, form):
+        count, _deleted = form.cleaned_data["invitation_ids"].delete()
+        messages.success(self.request, _("Removed %(count)d invitation(s).") % {"count": count})
+        return redirect(self.get_success_url())
+
+    def form_invalid(self, form):
+        return HttpResponseBadRequest()

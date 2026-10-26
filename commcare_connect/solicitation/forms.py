@@ -275,3 +275,12 @@ class SolicitationInvitationForm(forms.ModelForm):
             .exclude(solicitation_invitations__solicitation=solicitation)
             .order_by("name")
         )
+
+
+class SolicitationInvitationDeleteForm(forms.Form):
+    invitation_ids = forms.ModelMultipleChoiceField(queryset=SolicitationInvitation.objects.none())
+
+    def __init__(self, *args, solicitation, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Scoped to this solicitation, so a posted id from any other solicitation fails validation.
+        self.fields["invitation_ids"].queryset = solicitation.invitations.all()

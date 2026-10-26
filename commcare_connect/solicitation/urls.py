@@ -3,6 +3,7 @@ from django.urls import path
 from commcare_connect.solicitation.views import (
     SolicitationCriteriaView,
     SolicitationDetailsView,
+    SolicitationInvitationDeleteView,
     SolicitationInvitationsView,
     SolicitationListView,
     SolicitationPublishView,
@@ -18,4 +19,9 @@ urlpatterns = [
     path("<uuid:solicitation_id>/questions/", view=SolicitationQuestionsView.as_view(), name="questions"),
     path("<uuid:solicitation_id>/publish/", view=SolicitationPublishView.as_view(), name="publish"),
     path("<uuid:solicitation_id>/invitations/", view=SolicitationInvitationsView.as_view(), name="invitations"),
+    path(
+        "<uuid:solicitation_id>/invitations/delete/",
+        view=SolicitationInvitationDeleteView.as_view(),
+        name="delete_invitations",
+    ),
 ]
