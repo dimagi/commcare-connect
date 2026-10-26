@@ -111,6 +111,10 @@ deploying, it checks `main`:
 - **CI on `main` failed, is still running, or hasn't run:** the run skips the deploy and posts a warning to the
   production deploy channel. It doesn't retry, and the next slot tries again. Commits that only touch `docs/` don't
   need a CI run of their own.
+- **The check itself fails** (for example a GitHub API error): the run skips and posts a warning.
+
+The deploy is pinned to the commit that was checked. If a manual deploy is running, the scheduled one waits for it,
+then checks again and skips quietly when production already has that commit or a newer one.
 
 To stop scheduled deploys, go to **Actions → Scheduled production deploy**, open the **⋯** menu and choose
 **Disable workflow**. Choose **Enable workflow** in the same place to resume them. Nothing reminds you to turn it back
@@ -119,8 +123,8 @@ on. Manual deploys through the `Deploy` workflow keep working while the schedule
 ### Release notes
 
 After every successful production deploy, scheduled or manual, the deploy starts `.github/workflows/release-notes.yml`
-as a separate run. Claude writes the notes for the new release using the
-`connect-web-release-notes` skill from [dimagi-claude-workflows](https://github.com/dimagi/dimagi-claude-workflows).
+as a separate run. Claude writes the notes for the PRs in the commits between the previous release tag and the new
+one, using the `connect-web-release-notes` skill from [dimagi-claude-workflows](https://github.com/dimagi/dimagi-claude-workflows).
 It runs in a job of its own, with no publishing credentials. A second job then:
 
 - prepends the notes to the [Web Release Notes](https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3870556169/Web+Release+Notes)
@@ -131,7 +135,12 @@ The Markdown is kept as a workflow artifact.
 
 Problems never affect the deploy run. The release-notes run fails, and a warning goes into the deploy's Slack thread
 saying what failed. This covers the notes failing to generate, missing Confluence credentials, or Confluence or Slack
-rejecting the post. To retry, run **Actions → Release notes → Run workflow**, optionally with a release tag.
+rejecting the post. To retry, run **Actions → Release notes → Run workflow**, optionally with a release tag. Choose
+**Publish to** to retry only the target that failed. Re-running is safe for Confluence: the page is left alone when it
+already has that release. Slack has no such check and posts again.
+
+Release-notes runs queue one at a time, so back-to-back deploys don't race on the Confluence page. GitHub keeps only
+one waiting run, so if a third deploy finishes while one is waiting, run the replaced release by hand.
 
 ## Accessing logs
 
