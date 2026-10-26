@@ -930,14 +930,6 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         assert area.work_area_group_id == group.id
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
 
-    def test_resolves_existing_group_whose_ward_is_a_slug(self, v2_write_client, opportunity):
-        # The group write API only accepts slug wards, so its groups store "ward-north" for "Ward North".
-        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-north")
-        payload = [self._item(work_area_group_name="group-a", ward="Ward North")]
-        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
-        assert response.status_code == 201
-        assert WorkArea.objects.get(opportunity=opportunity, slug="area-1").work_area_group_id == group.id
-
     def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
         WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")
         payload = [self._item(work_area_group_name="group-a")]

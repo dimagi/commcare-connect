@@ -2,7 +2,6 @@ import csv
 import io
 import logging
 import math
-import unicodedata
 from collections import defaultdict
 from typing import NamedTuple
 
@@ -52,21 +51,6 @@ def _overlap_percent(ratio):
     (0.06000000000002) is ignored with the same tolerance as the limit, so it doesn't round up a
     whole step, and every rejected pair reads as more than the limit."""
     return f"{math.ceil((ratio - WORK_AREA_OVERLAP_RATIO_TOLERANCE) * 1000) / 10:.1f}"
-
-
-def ward_key(ward):
-    """Wards that differ only in case, spacing or punctuation are the same ward ("Tudu Kwaya" and
-    "tudu-kwaya"). Groups created through the API can only store a slug as their ward.
-
-    Like slugify, but keeps combining marks such as vowel signs, so distinct names in scripts
-    like Devanagari ("राम" and "रम") stay distinct.
-    """
-    ward = unicodedata.normalize("NFKC", ward).casefold()
-    kept = "".join(
-        char if unicodedata.category(char)[0] in "LMN" else " " if char in "-_" or char.isspace() else ""
-        for char in ward
-    )
-    return "-".join(kept.split())
 
 
 class RowWard(NamedTuple):
@@ -297,7 +281,7 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
 
     def _validate_group_wards(self):
         """Every row of a group must give the group's ward: its saved ward, or for a new group the
-        ward of its first row. Wards are compared by ward_key."""
+        ward of its first row, spelled the same way."""
         if not self.group_rows:
             return
         self.existing_groups = {
@@ -307,9 +291,8 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         for group_name, rows in self.group_rows.items():
             group = self.existing_groups.get(group_name)
             group_ward = group.ward if group else rows[0].ward
-            group_ward_key = ward_key(group_ward)
             for line_num, ward in rows:
-                if ward_key(ward) != group_ward_key:
+                if ward != group_ward:
                     message = _(
                         "Work Area Group %(group)s is in ward %(group_ward)s, but these rows give ward %(ward)s. "
                         "Correct the ward, or use a different group name."
