@@ -77,8 +77,12 @@ class BaseAreaCSVImporter:
         if not self._validate_headers(reader):
             return False
         self._load_existing()
+        has_rows = False
         for line_num, row in enumerate(reader, start=2):
+            has_rows = True
             self._process_row(line_num, row)
+        if not has_rows:
+            self._add_error(1, _("The file has no data rows. Add at least one row below the header."))
         self._after_rows()
         self._clear_existing()
         return len(self.errors) == 0
