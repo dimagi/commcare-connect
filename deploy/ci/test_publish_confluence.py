@@ -75,8 +75,9 @@ def test_publish_prepends_to_page(monkeypatch):
     fake = FakeUrlopen()
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
 
-    publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "Add vX release notes")
+    published = publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "Add vX release notes", "vX")
 
+    assert published
     (get, get_timeout), (put, put_timeout) = fake.requests
     assert get.full_url == f"{BASE_URL}/wiki/api/v2/pages/3870556169?body-format=storage"
     assert put.full_url == f"{BASE_URL}/wiki/api/v2/pages/3870556169"
@@ -96,4 +97,29 @@ def test_publish_raises_on_conflict(monkeypatch):
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", FakeUrlopen(put_error=conflict))
 
     with pytest.raises(PublishError, match="409.*version mismatch"):
-        publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "M")
+        publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "M", "vX")
+
+
+def test_publish_skips_release_already_on_page(monkeypatch):
+    fake = FakeUrlopen()
+    monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
+
+    published = publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "M", "old")
+
+    assert not published
+    assert [request.get_method() for request, _ in fake.requests] == ["GET"]
+
+
+def test_main_exits_not_configured_without_credentials(monkeypatch, tmp_path):
+    fragment = tmp_path / "confluence.html"
+    fragment.write_text("<h1>new</h1>")
+    monkeypatch.delenv("CONFLUENCE_EMAIL", raising=False)
+    monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+    argv = ["--page-id", "1", "--fragment-file", str(fragment), "--message", "M", "--tag", "vX"]
+    monkeypatch.setattr(publish_confluence.sys, "argv", ["publish_confluence.py", *argv])
+
+    with pytest.raises(SystemExit) as exit_info:
+        publish_confluence.main()
+
+    # Not 2: argparse and the interpreter use that for their own errors
+    assert exit_info.value.code == 3

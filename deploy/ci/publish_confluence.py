@@ -1,7 +1,10 @@
 """Prepend a release notes fragment to the Confluence Web Release Notes page.
 
-Run by .github/workflows/release-notes.yml. Exit codes: 0 published, 1 Confluence rejected the update,
-2 credentials not configured (the caller reports this as skipped rather than failed).
+Run by .github/workflows/release-notes.yml. Exit codes: 0 published (or the release was already on the page),
+1 Confluence rejected the update, 3 credentials not configured (the caller reports this as skipped rather than failed).
+Not 2 for that, because argparse and the interpreter exit with 2 for their own errors.
+
+Uses urllib rather than httpx, the repo's usual client, so it runs on a bare GitHub runner with nothing installed.
 """
 
 import argparse
@@ -18,7 +21,7 @@ from collections.abc import Mapping
 DEFAULT_BASE_URL = "https://api.atlassian.com/ex/confluence/dbff467f-3c3f-4ced-a2ba-a29e1941edd6"
 TIMEOUT_SECONDS = 30
 EXIT_FAILED = 1
-EXIT_NOT_CONFIGURED = 2
+EXIT_NOT_CONFIGURED = 3
 
 
 class PublishError(Exception):
@@ -30,6 +33,7 @@ def main():
     parser.add_argument("--page-id", required=True)
     parser.add_argument("--fragment-file", required=True)
     parser.add_argument("--message", required=True)
+    parser.add_argument("--tag", required=True, help="skip the update if the page already mentions this release")
     args = parser.parse_args()
 
     auth = credentials_from_env(os.environ)
@@ -41,11 +45,14 @@ def main():
         fragment = f.read()
     base_url = os.environ.get("CONFLUENCE_BASE_URL") or DEFAULT_BASE_URL
     try:
-        publish(base_url, auth, args.page_id, fragment, args.message)
+        published = publish(base_url, auth, args.page_id, fragment, args.message, args.tag)
     except PublishError as e:
         print(e)
         sys.exit(EXIT_FAILED)
-    print(f"Updated Confluence page {args.page_id}")
+    if published:
+        print(f"Updated Confluence page {args.page_id}")
+    else:
+        print(f"Confluence page {args.page_id} already has release {args.tag}, left unchanged")
 
 
 def credentials_from_env(env: Mapping[str, str]) -> tuple[str, str] | None:
@@ -56,11 +63,16 @@ def credentials_from_env(env: Mapping[str, str]) -> tuple[str, str] | None:
     return email, token
 
 
-def publish(base_url: str, auth: tuple[str, str], page_id: str, fragment: str, message: str) -> None:
+def publish(base_url: str, auth: tuple[str, str], page_id: str, fragment: str, message: str, tag: str) -> bool:
+    """Returns False without changing the page when it already mentions the release, so retries are safe."""
     page_url = f"{base_url}/wiki/api/v2/pages/{page_id}"
     page = _request("GET", f"{page_url}?body-format=storage", auth)
-    new_body = prepend_release_notes(page["body"]["storage"]["value"], fragment)
+    existing_body = page["body"]["storage"]["value"]
+    if tag in existing_body:
+        return False
+    new_body = prepend_release_notes(existing_body, fragment)
     _request("PUT", page_url, auth, build_update_payload(page, new_body, message))
+    return True
 
 
 def prepend_release_notes(existing_body: str, fragment: str) -> str:
