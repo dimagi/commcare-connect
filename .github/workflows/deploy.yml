@@ -8,8 +8,6 @@ env:
 permissions:
   id-token: write
   contents: write
-  # Starts release-notes.yml after a production deploy
-  actions: write
 
 on:
   push:
@@ -55,7 +53,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Only scheduled-deploy.yml passes a ref. By the time this run holds the concurrency slot, a manual deploy may have
+  # shipped that commit or a newer one, and deploying the ref then would repeat it or roll production back. Runs
+  # (as a no-op) on every deploy because a skipped job here would also skip the jobs after deploy.
+  recheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.recheck.outputs.deploy || 'true' }}
+    steps:
+      - name: Checkout source code
+        if: ${{ inputs.ref }}
+        uses: actions/checkout@v4
+
+      - id: recheck
+        name: Check the commit is still ahead of the latest release
+        if: ${{ inputs.ref }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python deploy/ci/scheduled_deploy_gate.py --repo "${{ github.repository }}" --recheck "${{ inputs.ref }}"
+
+      - name: Notify recheck failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "text": ":warning: Scheduled production deploy skipped: checking the commit against the latest release failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
   deploy:
+    needs: recheck
+    if: ${{ needs.recheck.outputs.deploy == 'true' }}
     runs-on: ubuntu-latest
     env:
       DEPLOY_ENV: ${{ inputs.environment || 'staging' }}
@@ -260,6 +293,8 @@ jobs:
     if: ${{ success() && inputs.environment == 'production' }}
     runs-on: ubuntu-latest
     continue-on-error: true
+    permissions:
+      actions: write
     steps:
       - name: Dispatch release-notes.yml
         env:

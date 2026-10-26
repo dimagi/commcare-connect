@@ -2,6 +2,9 @@
 
 Run by .github/workflows/scheduled-deploy.yml. Deploys only when main has changed since the latest release and CI
 passed on it; otherwise skips, and asks for a Slack warning when the skip needs a person's attention.
+
+With --recheck SHA it is run again by deploy.yml once the deploy holds the production concurrency slot, because a
+manual deploy may have shipped the same or a newer commit while the scheduled one waited.
 """
 
 import argparse
@@ -12,6 +15,8 @@ from dataclasses import dataclass
 
 # ci.yml has paths-ignore: ['docs/**'], so commits touching only these get no CI run of their own
 CI_IGNORED_PREFIXES = ("docs/",)
+# The compare API lists at most this many files; a list this long may be missing some
+COMPARE_FILE_LIMIT = 300
 
 
 @dataclass(frozen=True)
@@ -24,19 +29,16 @@ class GateDecision:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
+    parser.add_argument("--recheck", metavar="SHA", help="only check SHA is still ahead of the latest release")
     args = parser.parse_args()
 
-    head_sha = _gh("api", f"repos/{args.repo}/commits/main", "--jq", ".sha")
-    release_sha = _latest_release_sha(args.repo)
-    ci_run = _latest_ci_run(args.repo)
-    paths = []
-    if ci_run and ci_run["headSha"] != head_sha:
-        compare = f"repos/{args.repo}/compare/{ci_run['headSha']}...{head_sha}"
-        paths = _gh("api", compare, "--jq", ".files[].filename").splitlines()
-
-    decision = decide(head_sha, release_sha, ci_run, paths)
-    print(decision.reason or f"Deploying {head_sha[:7]}")
-    _write_outputs(decision, head_sha)
+    if args.recheck:
+        decision = _recheck(args.repo, args.recheck)
+        sha = args.recheck
+    else:
+        decision, sha = _gate(args.repo)
+    print(decision.reason or f"Deploying {sha[:7]}")
+    _write_outputs(decision, sha)
 
 
 def decide(head_sha: str, release_sha: str | None, ci_run: dict | None, paths_since_ci_run: list[str]) -> GateDecision:
@@ -51,6 +53,8 @@ def decide(head_sha: str, release_sha: str | None, ci_run: dict | None, paths_si
         return _skip(f"CI on main ({short_sha}) is {ci_run['status']}: {run_url}")
     if ci_run["conclusion"] != "success":
         return _skip(f"CI on main ({short_sha}) finished with {ci_run['conclusion']}: {run_url}")
+    if len(paths_since_ci_run) >= COMPARE_FILE_LIMIT:
+        return _skip(f"too many files changed on main ({short_sha}) since the latest CI run to check: {run_url}")
     # A run for a different commit with no files between them means main moved while we looked: not verified
     run_is_for_other_commit = ci_run["headSha"] != head_sha and not paths_since_ci_run
     if run_is_for_other_commit or not all(path.startswith(CI_IGNORED_PREFIXES) for path in paths_since_ci_run):
@@ -58,16 +62,49 @@ def decide(head_sha: str, release_sha: str | None, ci_run: dict | None, paths_si
     return GateDecision(deploy=True, warn=False, reason="")
 
 
+def recheck(sha: str, compare_status: str) -> GateDecision:
+    """compare_status is the compare API's status for latest-release...sha."""
+    if compare_status == "ahead":
+        return GateDecision(deploy=True, warn=False, reason="")
+    return GateDecision(
+        deploy=False,
+        warn=False,
+        reason=f"nothing to deploy: {sha[:7]} is {compare_status} compared to the latest release",
+    )
+
+
+def latest_release_sha(repo: str) -> str | None:
+    try:
+        tag = _gh("api", f"repos/{repo}/releases/latest", "--jq", ".tag_name")
+    except subprocess.CalledProcessError as e:
+        if "HTTP 404" in (e.stderr or ""):
+            return None
+        raise
+    return _gh("api", f"repos/{repo}/commits/{tag}", "--jq", ".sha")
+
+
+def _gate(repo: str) -> tuple[GateDecision, str]:
+    head_sha = _gh("api", f"repos/{repo}/commits/main", "--jq", ".sha")
+    release_sha = latest_release_sha(repo)
+    ci_run = _latest_ci_run(repo)
+    paths = []
+    if ci_run and ci_run["headSha"] != head_sha:
+        compare = f"repos/{repo}/compare/{ci_run['headSha']}...{head_sha}"
+        # A rename's old path counts too: moving code into docs/ still changes code
+        paths = _gh("api", compare, "--jq", ".files[] | .filename, (.previous_filename // empty)").splitlines()
+    return decide(head_sha, release_sha, ci_run, paths), head_sha
+
+
+def _recheck(repo: str, sha: str) -> GateDecision:
+    release_sha = latest_release_sha(repo)
+    if release_sha is None:
+        return GateDecision(deploy=True, warn=False, reason="")
+    status = _gh("api", f"repos/{repo}/compare/{release_sha}...{sha}", "--jq", ".status")
+    return recheck(sha, status)
+
+
 def _skip(reason: str) -> GateDecision:
     return GateDecision(deploy=False, warn=True, reason=reason)
-
-
-def _latest_release_sha(repo: str) -> str | None:
-    try:
-        tag = _gh("release", "view", "--repo", repo, "--json", "tagName", "--jq", ".tagName")
-    except subprocess.CalledProcessError:
-        return None
-    return _gh("api", f"repos/{repo}/commits/{tag}", "--jq", ".sha")
 
 
 def _latest_ci_run(repo: str) -> dict | None:
@@ -97,7 +134,7 @@ def _gh(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _write_outputs(decision: GateDecision, head_sha: str):
+def _write_outputs(decision: GateDecision, sha: str):
     output_path = os.environ.get("GITHUB_OUTPUT")
     if not output_path:
         return
@@ -106,7 +143,7 @@ def _write_outputs(decision: GateDecision, head_sha: str):
         f.write(f"warn={str(decision.warn).lower()}\n")
         f.write(f"reason={decision.reason}\n")
         # The deploy checks out this commit, so anything merged after the gate ran waits for the next slot
-        f.write(f"sha={head_sha}\n")
+        f.write(f"sha={sha}\n")
 
 
 if __name__ == "__main__":

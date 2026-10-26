@@ -36,13 +36,13 @@ jobs:
         run: python deploy/ci/scheduled_deploy_gate.py --repo "${{ github.repository }}"
 
       - name: Notify deploy skipped
-        if: ${{ steps.gate.outputs.warn == 'true' }}
+        if: ${{ steps.gate.outputs.warn == 'true' || failure() }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
           channel-id: 'C09HWCJSVJ6'
           payload: |
             {
-              "text": ":warning: Scheduled production deploy skipped: ${{ steps.gate.outputs.reason }} <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"
+              "text": ":warning: Scheduled production deploy skipped: ${{ steps.gate.outputs.reason || 'checking main failed' }} <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
