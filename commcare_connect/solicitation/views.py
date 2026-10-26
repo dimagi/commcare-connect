@@ -181,6 +181,12 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         messages.success(request, _("Solicitation published."))
         return redirect(self.get_success_url())
 
+    def get_success_url(self):
+        # Only invited organizations can apply to a private solicitation, so inviting them is the next step.
+        if not self.object.public:
+            return reverse("solicitation:invitations", args=[self.request.org.slug, self.object.solicitation_id])
+        return super().get_success_url()
+
 
 def invitable_solicitations(organization):
     """Invitations only matter for private solicitations, and only once they're published."""

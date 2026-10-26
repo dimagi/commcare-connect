@@ -132,6 +132,19 @@ class TestSolicitationSteps:
         assert response.url == step_url("publish", draft)
         assert draft.questions.get().criterion == criterion
 
+    @pytest.mark.parametrize("public", [True, False])
+    def test_publish_redirects_private_solicitations_to_invitations(self, pm_client, draft, public):
+        draft.public = public
+        draft.save()
+        SolicitationEvaluationCriterionFactory(solicitation=draft, weight=100)
+
+        response = pm_client.post(step_url("publish", draft))
+
+        expected = (
+            reverse("solicitation:list", args=(draft.organization.slug,)) if public else step_url("invitations", draft)
+        )
+        assert response.url == expected
+
     @pytest.mark.parametrize("weight, published", [(100, True), (90, False)])
     def test_publish(self, pm_client, draft, weight, published):
         SolicitationEvaluationCriterionFactory(solicitation=draft, weight=weight)
