@@ -417,6 +417,8 @@ def test_worker_progress_template_renders(opportunity, total_budget):
     budget = "1,000" if total_budget else "--"
     assert f"<strong>{amount_with_currency(0, opportunity.currency_code)}</strong> workers · " in html
     assert f"org / {budget}" in html
+    earned_tooltip = "Worker and org pay earned" if total_budget else "No budget is set for this opportunity."
+    assert f'x-tooltip.raw="{earned_tooltip}' in html
     if total_budget is None:
         assert "0/--" in html
 

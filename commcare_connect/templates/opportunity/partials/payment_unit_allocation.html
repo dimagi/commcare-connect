@@ -4,13 +4,15 @@
     <span class="text-sm font-medium text-brand-deep-purple">{{ unit.name }}</span>
     <div class="flex items-baseline gap-3">
       {% include "opportunity/partials/limit_status.html" with usage=unit %}
-      <span class="text-sm font-semibold text-brand-indigo">{{ unit.completed_label }}</span>
+      <span class="text-sm font-semibold text-brand-indigo"
+            x-tooltip.raw="{% translate 'Deliveries completed for this payment unit, out of the number the budget funds.' %}">{{ unit.completed_label }}</span>
     </div>
   </div>
   {% include "opportunity/partials/status_split_bar.html" with usage=unit %}
   {% if unit.today %}
     <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5"
+           x-tooltip.raw="{% translate 'Deliveries active workers completed today, out of the daily limit multiplied by the number of active workers who can deliver this payment unit.' %}">
         <span class="hint">{% translate "Today (all workers):" %}</span>
         {% if unit.today.is_reached %}
           {% include "opportunity/partials/limit_note.html" with text=unit.today.label warning=True %}

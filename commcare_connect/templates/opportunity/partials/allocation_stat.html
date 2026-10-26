@@ -1,5 +1,6 @@
 <div class="flex items-start gap-2 {% if hidden %}invisible{% endif %}"
-     {% if hidden %}aria-hidden="true"{% endif %}>
+     {% if hidden %}aria-hidden="true"{% endif %}
+     {% if tooltip %}x-tooltip.raw="{{ tooltip }}"{% endif %}>
   <i class="{{ icon }} {{ color }} mt-0.5 text-sm" aria-hidden="true"></i>
   <div class="flex flex-col gap-0.5">
     <dt class="text-xs text-brand-blue-light">{{ label }}</dt>

@@ -42,7 +42,8 @@
       <div class="flex flex-col p-2 rounded-xl {% if total.is_reached %}bg-brand-marigold/10{% else %}bg-indigo-50{% endif %}">
         <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-2 py-2">
           <h4 class="title-sm">{% translate "Delivery Allocation" %}</h4>
-          <span class="hint">
+          <span class="hint"
+                x-tooltip.raw="{% translate 'Active workers have claimed the opportunity, are not suspended and their claim has not ended. A worker has synced when the server received a delivery from them in the last 24 hours.' %}">
             {% blocktranslate trimmed with synced=allocation.synced_workers|intcomma active=allocation.active_workers|intcomma %}
               {{ synced }} of {{ active }} workers synced in the last 24 hours
             {% endblocktranslate %}
@@ -52,15 +53,16 @@
              class="flex flex-col gap-5 bg-white p-4 rounded-lg">
           <div class="flex flex-col gap-3.5">
             <div class="flex items-center justify-between gap-3">
-              <span class="title-sm">{% translate "Total Deliveries" %}</span>
+              <span class="title-sm"
+                    x-tooltip.raw="{% translate 'Deliveries completed across all payment units, out of the number the budget funds.' %}">{% translate "Total Deliveries" %}</span>
               {% include "opportunity/partials/limit_status.html" with usage=total is_total=True %}
             </div>
             <dl class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {% include "opportunity/partials/allocation_stat.html" with label=_("Completed") value=total.completed_label icon="fa-regular fa-circle-check" color="text-brand-indigo" %}
-              {% include "opportunity/partials/allocation_stat.html" with label=_("Approved") value=total.counts.approved|intcomma icon="fa-solid fa-thumbs-up" color="text-message-success-text" %}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Completed") value=total.completed_label icon="fa-regular fa-circle-check" color="text-brand-indigo" tooltip=_("Approved, pending and rejected deliveries, out of the number the budget funds. All of them count toward the delivery limit.") %}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Approved") value=total.counts.approved|intcomma icon="fa-solid fa-thumbs-up" color="text-message-success-text" tooltip=_("Deliveries approved for payment.") %}
               {# Pending keeps its cell when hidden so the card height does not change #}
-              {% include "opportunity/partials/allocation_stat.html" with label=_("Pending") value=total.counts.pending|intcomma icon="fa-regular fa-clock" color="text-brand-cornflower-blue" hidden=allocation.hide_pending %}
-              {% include "opportunity/partials/allocation_stat.html" with label=_("Rejected") value=total.counts.rejected|intcomma icon="fa-solid fa-thumbs-down" color="text-brand-mango" %}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Pending") value=total.counts.pending|intcomma icon="fa-regular fa-clock" color="text-brand-cornflower-blue" hidden=allocation.hide_pending tooltip=_("Deliveries waiting to be reviewed.") %}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Rejected") value=total.counts.rejected|intcomma icon="fa-solid fa-thumbs-down" color="text-brand-mango" tooltip=_("Deliveries that were rejected. They still count toward the delivery limit.") %}
             </dl>
             <div class="flex flex-col gap-1.5">
               <div class="progress-track">
@@ -115,7 +117,15 @@
           <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-2.5">
               <span class="title-sm">{% translate "Earned" %}</span>
-              <span class="badge badge-sm {% if payments.over_budget %}badge-amber{% else %}primary-light{% endif %}">
+              {% if payments.earned_percent is None %}
+                {% translate "No budget is set for this opportunity." as earned_percent_tooltip %}
+              {% elif payments.has_org_pay %}
+                {% translate "Worker and org pay earned for approved deliveries, as a share of the total budget." as earned_percent_tooltip %}
+              {% else %}
+                {% translate "Pay earned for approved deliveries, as a share of the total budget." as earned_percent_tooltip %}
+              {% endif %}
+              <span class="badge badge-sm {% if payments.over_budget %}badge-amber{% else %}primary-light{% endif %}"
+                    x-tooltip.raw="{{ earned_percent_tooltip }}">
                 {% if payments.earned_percent is None %}
                   --
                 {% else %}
@@ -123,7 +133,13 @@
                 {% endif %}
               </span>
             </div>
-            <span class="amount-breakdown text-right {% if payments.over_budget %}over-budget{% endif %}">
+            {% if payments.has_org_pay %}
+              {% translate "Earned by workers · earned by the organization / total budget" as earned_amount_tooltip %}
+            {% else %}
+              {% translate "Earned by workers / total budget" as earned_amount_tooltip %}
+            {% endif %}
+            <span class="amount-breakdown text-right {% if payments.over_budget %}over-budget{% endif %}"
+                  x-tooltip.raw="{{ earned_amount_tooltip }}">
               {% if payments.has_org_pay %}
                 {% blocktranslate trimmed with worker=payments.worker_earned_label org=payments.org_earned_label budget=payments.budget_label %}
                   <strong>{{ worker }}</strong> workers · <strong>{{ org }}</strong> org / {{ budget }}
@@ -160,9 +176,11 @@
           <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-2.5">
               <span class="title-sm">{% translate "Paid" %}</span>
-              <span class="badge badge-sm primary-light">{{ payments.paid_percent|floatformat:0 }}%</span>
+              <span class="badge badge-sm primary-light"
+                    x-tooltip.raw="{% translate 'Share of what workers have earned that has been paid to them.' %}">{{ payments.paid_percent|floatformat:0 }}%</span>
             </div>
-            <span class="amount-breakdown"><strong>{{ payments.paid_label }}</strong> / {{ payments.worker_earned|intcomma }}</span>
+            <span class="amount-breakdown"
+                  x-tooltip.raw="{% translate 'Paid to workers / earned by workers' %}"><strong>{{ payments.paid_label }}</strong> / {{ payments.worker_earned|intcomma }}</span>
           </div>
           <div class="progress-track">
             <div class="progress-fill bg-brand-indigo"
