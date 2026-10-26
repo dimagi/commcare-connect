@@ -101,6 +101,38 @@ Ideally deploy should be done via GitHub actions however it can be run locally a
 inv deploy
 ```
 
+### Scheduled deploys
+
+The `Scheduled production deploy` workflow (`.github/workflows/scheduled-deploy.yml`) deploys `main` to production
+every Monday, Wednesday and Friday at 12:00 UTC. GitHub sometimes starts scheduled runs a few minutes late. Before
+deploying, it checks `main`:
+
+- **Nothing new since the latest release:** the run skips quietly.
+- **CI on `main` failed, is still running, or hasn't run:** the run skips the deploy and posts a warning to the
+  production deploy channel. It doesn't retry, and the next slot tries again. Commits that only touch `docs/` don't
+  need a CI run of their own.
+
+To stop scheduled deploys, go to **Actions → Scheduled production deploy**, open the **⋯** menu and choose
+**Disable workflow**. Choose **Enable workflow** in the same place to resume them. Nothing reminds you to turn it back
+on. Manual deploys through the `Deploy` workflow keep working while the schedule is disabled.
+
+### Release notes
+
+After every successful production deploy, scheduled or manual, `.github/workflows/release-notes.yml` runs Claude with
+the `connect-web-release-notes` skill from
+[dimagi-claude-workflows](https://github.com/dimagi/dimagi-claude-workflows). Claude writes the notes for the new
+release, then the workflow:
+
+- prepends them to the [Web Release Notes](https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3870556169/Web+Release+Notes)
+  Confluence page (`deploy/ci/publish_confluence.py`),
+- posts a summary to `#connect-product-feed`,
+- uploads the Markdown as a workflow artifact.
+
+Any problem leaves the deploy green. Instead, a warning goes into the deploy's Slack thread saying what failed. This
+covers the notes failing to generate, missing Confluence credentials, or Confluence or Slack rejecting the post. To
+retry, run **Actions → Release notes → Run workflow**, optionally with a release tag. A manual run fails when something
+goes wrong.
+
 ## Accessing logs
 
 The logs from the Docker containers are shipped to CloudWatch. To access them you will need to use the AWS console.
