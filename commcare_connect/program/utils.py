@@ -30,6 +30,10 @@ class AccessLevel(IntEnum):
         return min(level_a, level_b)
 
     @property
+    def has_view(self) -> bool:
+        return self >= AccessLevel.VIEW
+
+    @property
     def has_standard(self) -> bool:
         return self >= AccessLevel.STANDARD
 

@@ -7,7 +7,7 @@
     <!-- Logo Section -->
     <div>
       <div class="flex p-2 justify-start">
-        <div x-show.immediate="!sidebarOpen" class=" h-12 transition-none">
+        <div x-show.immediate="!sidebarOpen" class="h-12 transition-none">
           <img src="{% static 'images/logo.svg' %}"
                alt="Compact Logo"
                class="w-8 h-8">
@@ -33,26 +33,26 @@
     <!-- Navigation Items -->
     {% if request.user.is_authenticated %}
       {% if request.org %}
-        {% if request.org_membership or request.user.is_superuser %}
-          <div class="mt-5">
+        <div class="mt-5">
+          {% if request.org_access_level.has_view %}
             {% url 'opportunity:list' request.org.slug as opportunity_url %}
-            {% include "components/sidenav-items.html" with name='Opportunities' icon='table-cells-large' target=opportunity_url namespace='opportunity' %}
-            {% if not request.org_membership.is_viewer %}
-              {% url 'program:home' request.org.slug as program_home_url %}
-              {% include "components/sidenav-items.html" with name='Programs' icon='table-columns' target=program_home_url namespace='program' %}
-              {% switch "solicitations" %}
-                {% if request.user|is_pm_org_admin:request.org %}
-                  {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
-                  {% trans "Solicitations" as solicitations_name %}
-                  {% include "components/sidenav-items.html" with name=solicitations_name icon='file-signature' target=solicitation_list_url namespace='solicitation' %}
-                {% endif %}
-              {% endswitch %}
-              {% url 'organization:home' request.org.slug as organization_home_url %}
-              {% trans "My Organization" as organization_name %}
-              {% include "components/sidenav-items.html" with name=organization_name icon='building' target=organization_home_url namespace='organization' %}
-            {% endif %}
-          </div>
-        {% endif %}
+            {% include "components/sidenav-items.html" with name="Opportunities" icon="table-cells-large" target=opportunity_url namespace="opportunity" %}
+            {% url 'program:home' request.org.slug as program_home_url %}
+            {% include "components/sidenav-items.html" with name="Programs" icon="table-columns" target=program_home_url namespace="program" %}
+            {% switch "solicitations" %}
+              {% if request.user|is_pm_org_admin:request.org %}
+                {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
+                {% trans "Solicitations" as solicitations_name %}
+                {% include "components/sidenav-items.html" with name=solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
+              {% endif %}
+            {% endswitch %}
+          {% endif %}
+          {% if request.org_access_level.has_admin or perms.users.org_management_settings_access %}
+            {% url 'organization:home' request.org.slug as organization_home_url %}
+            {% trans "My Organization" as organization_name %}
+            {% include "components/sidenav-items.html" with name=organization_name icon="building" target=organization_home_url namespace="organization" %}
+          {% endif %}
+        </div>
       {% endif %}
       {% if request.user.show_admin_sidenav %}
         {% url 'users:internal_features' as internal_features_url %}

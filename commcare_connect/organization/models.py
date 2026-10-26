@@ -1,9 +1,11 @@
 import secrets
 from datetime import timedelta
 from functools import partial
+from uuid import uuid4
 
 from django.conf import settings
 from django.db import models, transaction
+from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -95,6 +97,51 @@ class Organization(BaseModel):
             member_query = member_query.exclude(role=UserOrganizationMembership.Role.VIEWER)
 
         return list(member_query.values_list("user__email", flat=True))
+
+
+class Contact(BaseModel):
+    """A named person at an organization.
+
+    A contact lives only as long as its organization: deleting/archiving the organization deletes/archives
+    the contact as well.
+    """
+
+    contact_id = models.UUIDField(editable=False, default=uuid4, unique=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="contacts")
+    name = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, blank=True)
+    email = models.EmailField()
+    phone = models.CharField(max_length=32, blank=True)
+    is_main_poc = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    is_archived = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_main_poc=True),
+                name="one_main_poc_per_organization",
+            ),
+            # One contact per person, so a person is linked to only one organization.
+            models.UniqueConstraint(
+                Lower("email"),
+                name="unique_contact_email",
+                violation_error_message=_("A contact with this email already exists."),
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        """Saves the contact, first unmarking the organization's other main contact if this one is now main."""
+        with transaction.atomic():
+            if self.is_main_poc:
+                Contact.objects.filter(organization_id=self.organization_id, is_main_poc=True).exclude(
+                    pk=self.pk
+                ).update(is_main_poc=False)
+            super().save(*args, **kwargs)
 
 
 class UserOrganizationMembership(models.Model):

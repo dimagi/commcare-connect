@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.test import RequestFactory
 from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.utils.timezone import now
 from django.views import View
 
@@ -26,9 +27,9 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.reports import urls as reports_urls
-from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
+from commcare_connect.reports.decorators import kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.reports.views import InvoiceReportFilter, InvoiceReportView
+from commcare_connect.reports.views import DeliveryStatsReportView, InvoiceReportFilter, InvoiceReportView
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -449,7 +450,8 @@ class TestKPIReportPermission:
             return HttpResponse("OK")
 
         # Dummy class-based view
-        class DummyKPIReportView(KPIReportMixin, View):
+        @method_decorator(kpi_report_access_required, name="dispatch")
+        class DummyKPIReportView(View):
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 
@@ -469,6 +471,11 @@ class TestKPIReportPermission:
             url,
             "kpi_report_access",
         )
+
+    def test_delivery_stats_report_is_gated(self):
+        stub_get = lambda self, request, *args, **kwargs: HttpResponse("OK")  # noqa: E731
+        with mock.patch.object(DeliveryStatsReportView, "get", stub_get):
+            check_basic_permissions(UserFactory(), reverse("reports:delivery_stats_report"), "kpi_report_access")
 
 
 @pytest.mark.django_db

@@ -31,6 +31,7 @@ from commcare_connect.solicitation.tests.factories import (
     SolicitationInvitationFactory,
 )
 from commcare_connect.users.tests.factories import (
+    ContactFactory,
     MembershipFactory,
     OrganizationFactory,
     OrganizationInviteFactory,
@@ -210,6 +211,7 @@ class TestSimpleReassignments:
         supervised = OpportunityFactory(supervising_organization=source)
         payment = PaymentFactory(organization=source)
         labs_record = LabsRecord.objects.create(experiment="merge-test", type="note", data={}, organization=source)
+        contact = ContactFactory(organization=source)
         owned_program = ProgramFactory(organization=source)
         funded_program = ProgramFactory(funder=source)
         solicitation = SolicitationFactory(organization=source)
@@ -223,6 +225,7 @@ class TestSimpleReassignments:
             (supervised, "supervising_organization"),
             (payment, "organization"),
             (labs_record, "organization"),
+            (contact, "organization"),
             (owned_program, "organization"),
             (funded_program, "funder"),
             (solicitation, "organization"),
@@ -239,6 +242,20 @@ class TestSimpleReassignments:
         assert set(summary.reassigned) == {relation.label for relation in SIMPLE_REASSIGNMENTS}
         assert summary.reassigned["program.Program.organization"] == 1
         assert summary.reassigned["opportunity.Payment.organization"] == 0
+
+
+class TestContacts:
+    @pytest.mark.parametrize("target_has_main", [True, False])
+    def test_target_keeps_at_most_one_main_contact(self, source, target, target_has_main):
+        source_main = ContactFactory(organization=source, is_main_poc=True)
+        target_main = ContactFactory(organization=target, is_main_poc=target_has_main)
+
+        merge_organizations(source, target)
+
+        source_main.refresh_from_db()
+        assert source_main.organization == target
+        assert source_main.is_main_poc != target_has_main
+        assert target.contacts.filter(is_main_poc=True).get() == (target_main if target_has_main else source_main)
 
 
 class TestProgramWatchers:

@@ -1,9 +1,10 @@
 from django.db.models import Count, Q
+from django.utils.decorators import method_decorator
 from django_tables2 import SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.organization.decorators import OrgPMRequiredMixin
+from commcare_connect.organization.decorators import org_pm_required
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.utils.tables import get_validated_page_size
@@ -12,7 +13,8 @@ from commcare_connect.utils.tables import get_validated_page_size
 NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
 
 
-class SolicitationListView(WaffleSwitchMixin, OrgPMRequiredMixin, SingleTableView):
+@method_decorator(org_pm_required, name="dispatch")
+class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     waffle_switch = SOLICITATIONS
     table_class = SolicitationTable
     template_name = "solicitation/solicitation_list.html"

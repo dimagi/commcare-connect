@@ -144,7 +144,16 @@ def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
 
 @pytest.mark.django_db
 @override_settings(OCS_BASE_URL=OCS_URL)
-def test_trigger_bot_forwards_participant_data(user, httpx_mock):
+@pytest.mark.parametrize(
+    "optionals",
+    [
+        pytest.param({"participant_data": {"connectTaskId": "task-1"}}, id="participant_data"),
+        pytest.param({"start_new_session": True}, id="start_new_session"),
+        # A falsey-but-not-None optional must survive into the payload.
+        pytest.param({"start_new_session": False}, id="falsey_start_new_session"),
+    ],
+)
+def test_trigger_bot_forwards_provided_optionals(user, httpx_mock, optionals):
     _connect_ocs(user)
     httpx_mock.add_response(
         url=f"{OCS_URL}/api/v2/trigger_bot/",
@@ -152,44 +161,14 @@ def test_trigger_bot_forwards_participant_data(user, httpx_mock):
         json={"session_id": "s", "url": "u", "team": {}, "channel": {"data": {"external_channel_id": "c"}}},
     )
 
-    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", participant_data={"connectTaskId": "task-1"})
+    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", **optionals)
 
     body = json.loads(httpx_mock.get_requests()[0].read())
-    assert body["participant_data"] == {"connectTaskId": "task-1"}
-
-
-@pytest.mark.django_db
-@override_settings(OCS_BASE_URL=OCS_URL)
-def test_trigger_bot_includes_optionals_only_when_provided(user, httpx_mock):
-    _connect_ocs(user)
-    httpx_mock.add_response(
-        url=f"{OCS_URL}/api/v2/trigger_bot/",
-        method="POST",
-        json={"session_id": "s", "url": "u", "team": {}, "channel": {"data": {"external_channel_id": "c"}}},
-    )
-
-    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", start_new_session=True)
-
-    body = json.loads(httpx_mock.get_requests()[0].read())
-    assert body["start_new_session"] is True
-
-
-@pytest.mark.django_db
-@override_settings(OCS_BASE_URL=OCS_URL)
-def test_trigger_bot_includes_falsey_optionals_when_provided(user, httpx_mock):
-    """A falsey-but-not-None optional (e.g. start_new_session=False) must survive into the payload."""
-    _connect_ocs(user)
-    httpx_mock.add_response(
-        url=f"{OCS_URL}/api/v2/trigger_bot/",
-        method="POST",
-        json={"session_id": "s", "url": "u", "team": {}, "channel": {"data": {"external_channel_id": "c"}}},
-    )
-
-    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", start_new_session=False)
-
-    body = json.loads(httpx_mock.get_requests()[0].read())
-    assert "start_new_session" in body
-    assert body["start_new_session"] is False
+    for key, value in optionals.items():
+        assert key in body
+        assert body[key] == value
+        # == alone would accept 0/1 for False/True.
+        assert type(body[key]) is type(value)
 
 
 @pytest.mark.django_db
@@ -210,20 +189,24 @@ def test_trigger_bot_raises_when_session_or_channel_missing(user, httpx_mock, re
         ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
 
 
-@pytest.mark.django_db
-@override_settings(OCS_BASE_URL=OCS_URL)
-def test_trigger_bot_raises_ocs_api_error_on_non_2xx(user, httpx_mock):
-    _connect_ocs(user)
+def _trigger_bot_non_2xx(httpx_mock):
     httpx_mock.add_response(url=f"{OCS_URL}/api/v2/trigger_bot/", method="POST", status_code=400, text="bad")
 
-    with pytest.raises(ocs_api.OcsApiError):
-        ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
+
+def _trigger_bot_network_error(httpx_mock):
+    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/v2/trigger_bot/", method="POST")
 
 
 @pytest.mark.django_db
 @override_settings(OCS_BASE_URL=OCS_URL)
-def test_trigger_bot_raises_ocs_api_error_on_network_error(user, httpx_mock):
+@pytest.mark.parametrize(
+    "configure_response",
+    [_trigger_bot_non_2xx, _trigger_bot_network_error],
+    ids=["non_2xx", "network_error"],
+)
+def test_trigger_bot_raises_ocs_api_error(user, httpx_mock, configure_response):
     _connect_ocs(user)
-    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/v2/trigger_bot/", method="POST")
+    configure_response(httpx_mock)
+
     with pytest.raises(ocs_api.OcsApiError):
         ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
