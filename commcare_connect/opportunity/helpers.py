@@ -373,11 +373,8 @@ class WorkerDelivery:
         return ngettext("%(count)d payment unit", "%(count)d payment units", count) % {"count": count}
 
     @property
-    def payment_unit_id(self):
-        # Several payment units have no single id; flag counts then span all of them.
-        if len(self.payment_units) == 1:
-            return self.payment_units[0].payment_unit_id
-        return None
+    def payment_unit_ids(self):
+        return [unit.payment_unit_id for unit in self.payment_units]
 
     @property
     def sub_rows(self):

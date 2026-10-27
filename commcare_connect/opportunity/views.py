@@ -3406,10 +3406,10 @@ def worker_flag_counts(request, org_slug, opp_id):
         filters["completed_work__opportunity_access__opportunity"] = request.opportunity
 
     status = request.GET.get("status", CompletedWorkStatus.pending)
-    payment_unit_id = request.GET.get("payment_unit_id")
+    payment_unit_ids = request.GET.getlist("payment_unit_id")
     filters["completed_work__status"] = status
-    if payment_unit_id:
-        filters["completed_work__payment_unit__payment_unit_id"] = payment_unit_id
+    if payment_unit_ids:
+        filters["completed_work__payment_unit__payment_unit_id__in"] = payment_unit_ids
 
     visits = UserVisit.objects.filter(**filters)
     all_flags = [flag for visit in visits.all() for flag in visit.flags]

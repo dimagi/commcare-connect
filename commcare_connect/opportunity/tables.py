@@ -1572,11 +1572,13 @@ class WorkerDeliveryTable(OrgContextTable):
     def _render_flag_counts(self, record, value, status):
         url = reverse("opportunity:worker_flag_counts", args=[self.org_slug, self.opp_id])
 
-        params = {"status": status, "access_id": record.access.opportunity_access_id}
-        # A summary row spans several payment units, so its flag counts aren't limited to one.
-        if record.payment_unit_id:
-            params["payment_unit_id"] = record.payment_unit_id
-        full_url = f"{url}?{urlencode(params)}"
+        # Limit flag counts to the row's payment units, which the filters may have narrowed.
+        params = {
+            "status": status,
+            "access_id": record.access.opportunity_access_id,
+            "payment_unit_id": record.payment_unit_ids,
+        }
+        full_url = f"{url}?{urlencode(params, doseq=True)}"
 
         return render_to_string(
             "components/worker_page/fetch_flag_counts.html",

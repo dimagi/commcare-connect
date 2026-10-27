@@ -1,6 +1,7 @@
 import datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
@@ -277,10 +278,14 @@ def test_worker_delivery_table_summary_row():
     assert '@click="open = !open"' in index
     assert summary.get_cell("payment_unit") == "2 payment units"
     summary_counts_url = _rendered_context(lambda: summary.get_cell("pending"))["counts_url"]
-    assert "payment_unit_id" not in summary_counts_url
+    assert _payment_unit_ids(summary_counts_url) == [str(unit.payment_unit_id) for unit in units]
 
     for sub_row, unit in zip(record.bound_sub_rows, units):
         assert all(sub_row.get_cell(name) == "" for name in table.header_columns)
         assert sub_row.get_cell("payment_unit") == unit.name
         counts_url = _rendered_context(lambda: sub_row.get_cell("pending"))["counts_url"]
-        assert f"payment_unit_id={unit.payment_unit_id}" in counts_url
+        assert _payment_unit_ids(counts_url) == [str(unit.payment_unit_id)]
+
+
+def _payment_unit_ids(url):
+    return parse_qs(urlparse(url).query)["payment_unit_id"]

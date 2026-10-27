@@ -109,14 +109,62 @@ def test_get_worker_deliveries(opportunity: Opportunity):
     assert deliveries[no_work_access.pk].payment_unit_label == "3 payment units"
     one_unit = deliveries[one_unit_access.pk]
     assert one_unit.payment_unit_label == payment_units[0].name
-    assert one_unit.payment_unit_id == payment_units[0].payment_unit_id
+    assert one_unit.payment_unit_ids == [payment_units[0].payment_unit_id]
     assert one_unit.sub_rows == []
     two_units = deliveries[two_unit_access.pk]
     assert two_units.payment_unit_label == "2 payment units"
-    assert two_units.payment_unit_id is None
+    assert two_units.payment_unit_ids == [unit.payment_unit_id for unit in payment_units[:2]]
     assert [row.payment_unit_label for row in two_units.sub_rows] == [unit.name for unit in payment_units[:2]]
     assert two_units.over_limit == 2
     assert two_units.delivered == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters,expected_units",
+    [
+        ({}, ["flagged", "clean"]),
+        ({"last_active": 5}, ["flagged", "clean"]),
+        ({"has_duplicates": True}, ["flagged"]),
+        ({"has_duplicates": False}, ["clean"]),
+        ({"has_overlimit": True}, ["flagged"]),
+        ({"has_overlimit": False}, ["clean"]),
+        ({"review_pending": True}, ["flagged"]),
+        ({"review_pending": False}, ["clean"]),
+        ({"has_flags": True}, ["flagged"]),
+        ({"has_flags": False}, ["clean"]),
+        ({"has_overlimit": True, "review_pending": False}, []),
+    ],
+)
+def test_get_worker_deliveries_with_filters(opportunity: Opportunity, filters, expected_units):
+    # Filters apply per payment unit, so a worker's row covers only the units that match.
+    flagged = PaymentUnitFactory(opportunity=opportunity, name="flagged")
+    clean = PaymentUnitFactory(opportunity=opportunity, name="clean")
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, last_active=now() - timedelta(days=10))
+    duplicate = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=flagged,
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=2,
+    )
+    UserVisitFactory(
+        opportunity_access=access, deliver_unit__payment_unit=flagged, completed_work=duplicate, flagged=True
+    )
+    CompletedWorkFactory(opportunity_access=access, payment_unit=flagged, status=CompletedWorkStatus.over_limit)
+    CompletedWorkFactory(
+        opportunity_access=access, payment_unit=clean, status=CompletedWorkStatus.approved, saved_approved_count=1
+    )
+    units = {"flagged": flagged, "clean": clean}
+
+    deliveries = get_worker_deliveries(opportunity, filters)
+
+    if not expected_units:
+        assert deliveries == []
+        return
+    (delivery,) = deliveries
+    assert [unit.name for unit in delivery.payment_units] == expected_units
+    assert delivery.payment_unit_ids == [units[name].payment_unit_id for name in expected_units]
+    assert delivery.over_limit == (1 if "flagged" in expected_units else 0)
 
 
 @pytest.mark.django_db
