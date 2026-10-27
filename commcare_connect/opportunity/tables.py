@@ -858,12 +858,15 @@ class WorkerVisitTable(tables.Table):
             badge_classes = "bg-green-100 text-green-800"
         else:
             badge_classes = "bg-gray-100 text-gray-800"
-        return format_html(
+        badge = format_html(
             '<span class="inline-flex w-[80px] items-center justify-center px-3 py-1 rounded text-xs font-medium {}">'
             "{}</span>",
             badge_classes,
             record.get_status_display(),
         )
+        if status == VisitValidationStatus.over_limit:
+            return header_with_tooltip(badge, "; ".join(record.get_over_limit_reasons_display()))
+        return badge
 
 
 class UserVisitVerificationTable(WorkerVisitTable):
