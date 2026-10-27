@@ -5,13 +5,15 @@ from django.utils.safestring import SafeString
 from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
+from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
 from commcare_connect.organization.models import (
     ORGANIZATION_STATUS_DEFINITIONS,
     Organization,
     OrganizationInvite,
+    PrimarySector,
     UserOrganizationMembership,
 )
-from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
+from commcare_connect.utils.tables import DMYTColumn, IndexColumn, ManagedOptionTable, select_column
 
 ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
 ROLE_BADGE_TEMPLATE = "organization/role_badge.html"
@@ -96,3 +98,10 @@ class OrganizationDirectoryTable(tables.Table):
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")
+
+
+class PrimarySectorTable(ManagedOptionTable):
+    organization_count = columns.Column(verbose_name=_("Organizations"), attrs=STAT_COLUMN_ATTRS)
+
+    class Meta(ManagedOptionTable.Meta):
+        model = PrimarySector

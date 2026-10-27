@@ -36,6 +36,7 @@ from commcare_connect.opportunity.models import HQApiKey, Opportunity, Opportuni
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.organization.forms import PrimarySectorForm
 from commcare_connect.organization.models import PrimarySector
+from commcare_connect.organization.tables import PrimarySectorTable
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.users.managed_options import (
     ManagedOptionCreateView,
@@ -421,6 +422,7 @@ class PrimarySectorMixin:
 
 class PrimarySectorListView(PrimarySectorMixin, ManagedOptionListView):
     template_name = "users/primary_sectors/list.html"
+    table_class = PrimarySectorTable
 
     def get_queryset(self):
         return (

@@ -144,6 +144,16 @@ class TestPrimarySectorViews:
         assert response.status_code == 200
         assert reverse("users:primary_sector_update", args=[sector.pk]) in response.content.decode()
 
+    @pytest.mark.parametrize(
+        "sort, expected", [("organization_count", ["Unused", "Health"]), ("-organization_count", ["Health", "Unused"])]
+    )
+    def test_list_sorts_by_organization_count(self, client, settings_admin, sector, sort, expected):
+        PrimarySector.objects.create(name="Unused", slug="unused", description="")
+        OrganizationFactory().primary_sectors.add(sector)
+        client.force_login(settings_admin)
+        response = client.get(reverse("users:primary_sector_list"), {"sort": sort})
+        assert [row.record.name for row in response.context["table"].rows] == expected
+
     def test_list_disables_delete_for_sector_in_use(self, client, settings_admin, sector):
         OrganizationFactory().primary_sectors.add(sector)
         client.force_login(settings_admin)

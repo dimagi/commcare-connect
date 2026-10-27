@@ -3,8 +3,9 @@
 Each page is a list with an Add/Edit modal and a guarded Delete. A model plugs in by subclassing these views with a
 shared mixin that sets `model`, `form_class` (a `ManagedOptionForm`), `url_prefix`, `in_use_message` and
 `in_use_hint`, and by
-giving the model an `is_in_use()` method. Its list view annotates `in_use` onto the queryset and its list template
-extends `users/managed_options/list.html`. The URLs are named `<url_prefix>_list`, `_create`, `_update` and `_delete`.
+giving the model an `is_in_use()` method. Its list view sets a `ManagedOptionTable` subclass as `table_class`,
+annotates `in_use` (and any count columns) onto the queryset, and uses a template extending
+`users/managed_options/list.html`. The URLs are named `<url_prefix>_list`, `_create`, `_update` and `_delete`.
 """
 
 from django.contrib import messages
@@ -16,6 +17,7 @@ from django.urls import reverse
 from django.utils.text import capfirst
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import CreateView, ListView, UpdateView, View
+from django_tables2 import SingleTableMixin
 
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
@@ -44,9 +46,11 @@ class ManagedOptionMixin(LoginRequiredMixin, PermissionRequiredMixin):
         return context
 
 
-class ManagedOptionListView(ManagedOptionMixin, ListView):
-    """Subclasses set the template and annotate `in_use` in `get_queryset`, so the list can disable Delete
-    without a query per row."""
+class ManagedOptionListView(ManagedOptionMixin, SingleTableMixin, ListView):
+    """Subclasses annotate `in_use` in `get_queryset`, so the table can disable Delete without a query per row."""
+
+    # A short, admin-curated list: one page, sortable by column.
+    table_pagination = False
 
 
 class ManagedOptionFormMixin(ManagedOptionMixin, SuccessMessageMixin):

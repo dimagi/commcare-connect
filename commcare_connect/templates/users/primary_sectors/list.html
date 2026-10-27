@@ -3,9 +3,3 @@
 {% block intro %}
   {% translate "These are the options organizations pick from for their Primary Sectors. A sector used by any organization cannot be deleted." %}
 {% endblock intro %}
-{% block extra_headers %}
-  <th class="col-stat">{% translate "Organizations" %}</th>
-{% endblock extra_headers %}
-{% block extra_cells %}
-  <td class="col-stat">{{ item.organization_count }}</td>
-{% endblock extra_cells %}

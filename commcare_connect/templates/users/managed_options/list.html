@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load i18n %}
-{# Base list page for users/managed_options.py. Children fill intro, extra_headers and extra_cells (per `item`). #}
+{% load render_table from django_tables2 %}
+{# Base list page for users/managed_options.py; children fill the intro. The view's table supplies the columns. #}
 {% block title %}{{ option.verbose_name_plural|title }}{% endblock %}
 {% block content %}
   <div class="container" x-data="{ modalUrl: null }">
@@ -18,74 +19,7 @@
       {% block intro %}
       {% endblock intro %}
     </p>
-    {% if object_list %}
-      <table class="base-table">
-        <thead>
-          <tr>
-            <th>{% translate "Name" %}</th>
-            <th>{% translate "Slug" %}</th>
-            <th>{% translate "Description" %}</th>
-            {% block extra_headers %}
-            {% endblock extra_headers %}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in object_list %}
-            <tr>
-              <td>{{ item.name }}</td>
-              <td>{{ item.slug }}</td>
-              {# Free text of up to 255 chars: wraps rather than widening the table past the page. #}
-              <td class="whitespace-normal">{{ item.description }}</td>
-              {% block extra_cells %}
-              {% endblock extra_cells %}
-              <td>
-                <div class="flex items-center justify-end gap-2">
-                  <button type="button"
-                          class="button-icon"
-                          aria-label="{% blocktranslate with name=item.name %}Edit {{ name }}{% endblocktranslate %}"
-                          x-tooltip.raw="{% translate 'Edit' %}"
-                          @click.stop="modalUrl = '{% url option.update_url_name item.pk %}'">
-                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
-                  </button>
-                  <form method="post" action="{% url option.delete_url_name item.pk %}">
-                    {% csrf_token %}
-                    {% if item.in_use %}
-                      {# The tooltip sits on the wrapper because a disabled .button-icon ignores pointer events. #}
-                      <span class="inline-flex" x-tooltip.raw="{{ option.in_use_hint }}">
-                        <button type="button"
-                                class="button-icon"
-                                aria-label="{% blocktranslate with name=item.name %}Delete {{ name }}{% endblocktranslate %}"
-                                disabled>
-                          <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                        </button>
-                      </span>
-                    {% else %}
-                      {# Unescaped here so escapejs below is the only escaping: the modal shows it via x-text, so HTML-escaping would display literally. #}
-                      {% autoescape off %}
-                        {% blocktranslate asvar delete_message with option=option.verbose_name name=item.name %}Delete the {{ option }} "{{ name }}"? This cannot be undone.{% endblocktranslate %}
-                        {% blocktranslate asvar delete_title with option=option.verbose_name|title %}Delete {{ option }}{% endblocktranslate %}
-                      {% endautoescape %}
-                      <button type="button"
-                              class="button-icon hover:bg-red-600 hover:text-white"
-                              aria-label="{% blocktranslate with name=item.name %}Delete {{ name }}{% endblocktranslate %}"
-                              x-tooltip.raw="{% translate 'Delete' %}"
-                              @click.stop="$store.confirmModal.show({ title: '{{ delete_title|escapejs }}', message: '{{ delete_message|escapejs }}', confirmBtnText: '{% translate "Delete" %}', confirmBtnRed: true, formRef: $el.form })">
-                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                      </button>
-                    {% endif %}
-                  </form>
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="text-gray-500">
-        {% blocktranslate with options=option.verbose_name_plural %}No {{ options }} yet.{% endblocktranslate %}
-      </p>
-    {% endif %}
+    {% render_table table %}
     {% include "users/managed_options/modal.html" %}
     {% include "components/confirm_modal.html" %}
   </div>
