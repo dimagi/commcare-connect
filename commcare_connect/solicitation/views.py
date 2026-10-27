@@ -207,19 +207,19 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
-def invitable_solicitations(organization):
-    """Invitations only matter for private solicitations, and only once they're published."""
-    return Solicitation.objects.filter(organization=organization, status=Solicitation.Status.ACTIVE, public=False)
-
-
 @method_decorator(org_pm_required, name="dispatch")
 class InvitationsMixin(WaffleSwitchMixin):
     waffle_switch = SOLICITATIONS
 
     @cached_property
     def solicitation(self):
+        # Invitations only matter for private solicitations, and only once they're published.
         return get_object_or_404(
-            invitable_solicitations(self.request.org), solicitation_id=self.kwargs["solicitation_id"]
+            Solicitation,
+            organization=self.request.org,
+            status=Solicitation.Status.ACTIVE,
+            public=False,
+            solicitation_id=self.kwargs["solicitation_id"],
         )
 
     def get_form_kwargs(self):
