@@ -5,6 +5,8 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.contrib.messages import get_messages
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.urls import reverse
 from django.utils.timezone import now
 
@@ -25,6 +27,7 @@ from commcare_connect.reports.forms import AddRecipientForm
 from commcare_connect.reports.tables import AdminReportTable
 from commcare_connect.reports.tasks import email_delivery_stats_export, send_delivery_stats_export
 from commcare_connect.reports.tests.test_reports import _create_kpi_test_data
+from commcare_connect.reports.views import queue_delivery_stats_email
 from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.test_utils import check_basic_permissions
 
@@ -254,3 +257,61 @@ def test_recipients_page_adds_and_removes(client, kpi_user):
 
     client.post(reverse("reports:remove_delivery_stats_recipient", args=[kpi_user.pk]))
     assert get_recipients() == []
+
+
+def _request_for(rf, user):
+    request = rf.post("/")
+    request.user = user
+    request.session = {}
+    request._messages = FallbackStorage(request)
+    return request
+
+
+@pytest.mark.parametrize("filter_data", [{"period": "quarterly", "from_date": "2026-01"}, None])
+def test_queue_email_dispatches_for_requester(rf, kpi_user, filter_data, django_capture_on_commit_callbacks):
+    request = _request_for(rf, kpi_user)
+    with mock.patch("commcare_connect.reports.views.email_delivery_stats_export.delay") as delay:
+        with django_capture_on_commit_callbacks(execute=True):
+            queue_delivery_stats_email(request, filter_data)
+
+    delay.assert_called_once_with(kpi_user.pk, filter_data)
+    assert [str(m) for m in get_messages(request)] == [f"The export will be emailed to {kpi_user.email} shortly."]
+
+
+def test_queue_email_for_user_without_email_queues_nothing(rf, django_capture_on_commit_callbacks):
+    user = _grant_kpi_access(UserFactory(email=None))
+    request = _request_for(rf, user)
+    with mock.patch("commcare_connect.reports.views.email_delivery_stats_export.delay") as delay:
+        with django_capture_on_commit_callbacks(execute=True):
+            queue_delivery_stats_email(request, None)
+
+    delay.assert_not_called()
+    assert [m.level_tag for m in get_messages(request)] == ["error"]
+
+
+def test_email_view_passes_posted_filters(client, kpi_user):
+    client.force_login(kpi_user)
+    with mock.patch("commcare_connect.reports.views.queue_delivery_stats_email") as queue:
+        response = client.post(
+            reverse("reports:email_delivery_stats_view"),
+            {"period": "quarterly", "program": "", "csrfmiddlewaretoken": "x"},
+        )
+
+    assert response.status_code == 200
+    assert queue.call_args.args[1] == {"period": "quarterly", "program": ""}
+
+
+def test_email_monthly_view_passes_no_filters(client, kpi_user):
+    client.force_login(kpi_user)
+    with mock.patch("commcare_connect.reports.views.queue_delivery_stats_email") as queue:
+        client.post(reverse("reports:email_delivery_stats_monthly"), {"period": "quarterly"})
+
+    assert queue.call_args.args[1] is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["reports:email_delivery_stats_view", "reports:email_delivery_stats_monthly"])
+def test_email_views_require_kpi_access(client, url_name):
+    client.force_login(UserFactory())
+
+    assert client.post(reverse(url_name)).status_code == 403

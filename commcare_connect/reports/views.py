@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from functools import partial
 from urllib.parse import urlencode
 
 import django_filters
@@ -9,9 +10,10 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.db import transaction
 from django.db.models import F, Max
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.functional import cached_property
@@ -42,7 +44,7 @@ from commcare_connect.reports.delivery_stats_export import (
 from commcare_connect.reports.forms import AddRecipientForm
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
-from commcare_connect.reports.tasks import export_invoice_report_task
+from commcare_connect.reports.tasks import email_delivery_stats_export, export_invoice_report_task
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, INVOICE_REPORT_ACCESS
@@ -186,6 +188,31 @@ class DeliveryStatsReportView(tables.SingleTableMixin, NonModelFilterView):
     @property
     def object_list(self):
         return get_table_data_for_year_month(**self.filter_values)
+
+
+@kpi_report_access_required
+@require_POST
+def email_delivery_stats_view(request):
+    filter_data = {key: value for key, value in request.POST.items() if key != "csrfmiddlewaretoken"}
+    queue_delivery_stats_email(request, filter_data)
+    return render(request, "components/messages.html")
+
+
+@kpi_report_access_required
+@require_POST
+def email_delivery_stats_monthly(request):
+    queue_delivery_stats_email(request, None)
+    return render(request, "components/messages.html")
+
+
+def queue_delivery_stats_email(request, filter_data):
+    """Email the export to the requesting user only. filter_data=None means the monthly export."""
+    email = request.user.email
+    if not email:
+        messages.error(request, _("Your account has no email address, so the export can't be emailed."))
+        return
+    transaction.on_commit(partial(email_delivery_stats_export.delay, request.user.pk, filter_data))
+    messages.success(request, _("The export will be emailed to {email} shortly.").format(email=email))
 
 
 @method_decorator(kpi_report_access_required, name="dispatch")

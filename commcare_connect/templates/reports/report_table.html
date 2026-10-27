@@ -11,7 +11,8 @@
       <p class="loading-text">{% trans "Loading..." %}</p>
     </div>
   </div>
-  <form hx-get="{{ report_url }}"
+  <form id="delivery-stats-filters"
+        hx-get="{{ report_url }}"
         hx-target="div.table-container"
         hx-swap="outerHTML"
         hx-trigger="change"
@@ -21,6 +22,23 @@
         class="form-inline">
     {% crispy filter.form %}
   </form>
+  <div class="flex gap-2 mb-4">
+    <button type="button"
+            class="button button-md primary-dark"
+            hx-post="{% url 'reports:email_delivery_stats_view' %}"
+            hx-include="#delivery-stats-filters"
+            hx-target="#messages"
+            hx-swap="innerHTML">
+      <i class="fa-solid fa-envelope"></i> {% translate "Email me this view" %}
+    </button>
+    <button type="button"
+            class="button button-md outline-style"
+            hx-post="{% url 'reports:email_delivery_stats_monthly' %}"
+            hx-target="#messages"
+            hx-swap="innerHTML">
+      <i class="fa-solid fa-calendar"></i> {% translate "Email me the monthly export" %}
+    </button>
+  </div>
   {% render_table table %}
 {% endblock %}
 {% block javascript %}
