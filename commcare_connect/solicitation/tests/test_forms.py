@@ -117,10 +117,28 @@ def test_question_choice_options(question_type, options, valid, saved_options):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("question_type", ["", SolicitationQuestion.QuestionType.CHOICE])
+def test_question_form_shows_choice_options_only_for_choice(question_type):
+    form = QuestionForm(initial={"question_type": question_type}, criteria=SolicitationFactory().criteria.all())
+    question_type_wrapper = form.helper.layout[2]
+
+    assert f'x-data="{{&quot;questionType&quot;: &quot;{question_type}&quot;}}"' in question_type_wrapper.flat_attrs
+    assert 'x-show="questionType === &#x27;choice&#x27;"' in question_type_wrapper[1].flat_attrs
+
+
+@pytest.mark.django_db
 def test_program_choices_show_names(program, user):
     form = SolicitationForm(organization=program.organization, user=user)
 
     assert (str(program.pk), program.name) in [(str(value), label) for value, label in form.fields["program"].choices]
+
+
+@pytest.mark.django_db
+def test_program_select_carries_its_delivery_types(program, user):
+    form = SolicitationForm(organization=program.organization, user=user)
+    program_field = form.helper.layout[5][0]
+
+    assert program_field.attrs["data-delivery-types"] == f"{{&quot;{program.pk}&quot;: {program.delivery_type_id}}}"
 
 
 @pytest.mark.parametrize("weight, valid", [(0, True), (100, True), (-50, False), (150, False)])

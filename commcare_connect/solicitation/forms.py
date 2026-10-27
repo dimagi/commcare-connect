@@ -1,7 +1,8 @@
+import json
 from operator import attrgetter
 
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Field, Layout, Row
+from crispy_forms.layout import Div, Field, Layout, Row
 from django import forms
 from django.contrib.postgres.forms import SimpleArrayField
 from django.db.models import Sum
@@ -19,6 +20,10 @@ from commcare_connect.solicitation.models import Solicitation, SolicitationEvalu
 DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
 TOGGLE_WRAPPER_CLASS = "bg-slate-100 flex items-center justify-between p-4 rounded-lg"
 SEARCHABLE_SELECT = forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"})
+# Alpine handler on the program select: sets the delivery type select to the picked program's delivery type.
+FILL_DELIVERY_TYPE_FROM_PROGRAM = (
+    "$el.value && $refs.deliveryType.tomselect.setValue(JSON.parse($el.dataset.deliveryTypes)[$el.value])"
+)
 
 # A draft may leave these empty; publishing needs them, so an active solicitation keeps them required.
 PUBLISH_REQUIRED_FIELDS = ("description", "contact_email", "country")
@@ -84,6 +89,7 @@ class SolicitationForm(forms.ModelForm):
             "public": _("Public (anyone can see and apply)"),
             "hide_scores_until_submit": _("Hide scores until submit"),
         }
+        help_texts = {"application_deadline": _("Time is in UTC.")}
         widgets = {
             "expected_start_date": DATE_INPUT,
             "expected_end_date": DATE_INPUT,
@@ -96,7 +102,8 @@ class SolicitationForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.organization = organization
         self.user = user
-        self.fields["program"].queryset = Program.objects.filter(organization=organization).order_by("name")
+        programs = Program.objects.filter(organization=organization).order_by("name")
+        self.fields["program"].queryset = programs
         # Program.__str__ is its slug; PMs pick programs by name.
         self.fields["program"].label_from_instance = attrgetter("name")
         if self.instance.status == Solicitation.Status.DRAFT:
@@ -108,11 +115,21 @@ class SolicitationForm(forms.ModelForm):
             Row("title", "type", css_class="grid grid-cols-2 gap-2"),
             "description",
             Row("budget_min", "budget_max", "currency", css_class="grid grid-cols-3 gap-2"),
-            Row("country", "delivery_type", "estimated_scale", css_class="grid grid-cols-3 gap-2"),
+            Row("country", "estimated_scale", "contact_email", css_class="grid grid-cols-3 gap-2"),
             Row(
                 "expected_start_date", "expected_end_date", "application_deadline", css_class="grid grid-cols-3 gap-2"
             ),
-            Row("contact_email", "program", css_class="grid grid-cols-2 gap-2"),
+            # Picking a program fills in its delivery type; the PM can still change it afterwards.
+            Row(
+                Field(
+                    "program",
+                    data_delivery_types=json.dumps(dict(programs.values_list("pk", "delivery_type_id"))),
+                    **{"@change": FILL_DELIVERY_TYPE_FROM_PROGRAM},
+                ),
+                Field("delivery_type", x_ref="deliveryType"),
+                css_class="grid grid-cols-2 gap-2",
+                x_data="",
+            ),
             Row(
                 Field("public", css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS),
                 Field("hide_scores_until_submit", css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS),
@@ -213,7 +230,20 @@ class QuestionForm(FormsetRowForm):
     def __init__(self, *args, criteria, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["criterion"].queryset = criteria
-        self.helper["required"].wrap(Field, css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS)
+        self.helper.layout = Layout(
+            "text",
+            "help_text",
+            # Choice options only apply to choice questions, so they show only when that type is picked.
+            # `contents` keeps both fields in the row's grid.
+            Div(
+                Field("question_type", x_model="questionType"),
+                Div("choice_options", x_show="questionType === 'choice'"),
+                css_class="contents",
+                x_data=json.dumps({"questionType": self["question_type"].value() or ""}),
+            ),
+            Field("required", css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS),
+            "criterion",
+        )
 
     def clean_choice_options(self):
         # Blank lines, including the trailing newline a textarea often submits, aren't options.
