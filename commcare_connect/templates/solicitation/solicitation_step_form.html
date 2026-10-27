@@ -46,6 +46,11 @@
           </div>
           {% if solicitation.structure_locked %}
             <p class="hint">{% translate "Criteria and questions can't change once a solicitation is published." %}</p>
+          {% elif step == "criteria" %}
+            <p class="hint flex items-center gap-2">
+              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+              {% translate "Weights must add up to 100% before you can publish." %}
+            </p>
           {% endif %}
           {{ formset.management_form }}
           {{ formset|as_crispy_errors }}
@@ -64,6 +69,9 @@
     {% endif %}
     <div class="flex gap-3 justify-end">
       {# Leaves without saving this step; earlier steps are already saved. #}
+      {% if previous_step_url %}
+        <a class="button button-md outline-style" href="{{ previous_step_url }}">{% translate "Back" %}</a>
+      {% endif %}
       <a class="button button-md outline-style"
          href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
       {% if not solicitation.structure_locked %}

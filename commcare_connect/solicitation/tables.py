@@ -17,14 +17,18 @@ def details_url(record, table):
 class SolicitationTable(tables.Table):
     title = columns.Column(verbose_name=_("Title"), linkify=details_url, attrs={"a": {"class": "underline"}})
     type = columns.Column(verbose_name=_("Type"))
+    visibility = columns.Column(verbose_name=_("Visibility"), accessor="public")
     status = columns.TemplateColumn(verbose_name=_("Status"), template_name="solicitation/status_badge.html")
     application_deadline = DMYTColumn(verbose_name=_("Deadline"))
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
 
     class Meta:
         model = Solicitation
-        fields = ("title", "type", "status", "application_deadline", "response_count")
+        fields = ("title", "type", "visibility", "status", "application_deadline", "response_count")
         empty_text = _("No solicitations yet.")
+
+    def render_visibility(self, value):
+        return _("Public") if value else _("Private")
 
 
 class SolicitationInvitationTable(tables.Table):

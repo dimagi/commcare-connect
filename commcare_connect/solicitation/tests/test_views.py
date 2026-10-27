@@ -189,6 +189,19 @@ class TestSolicitationSteps:
         assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.OK
 
     @pytest.mark.parametrize(
+        "step, previous_step",
+        [("details", None), ("criteria", "details"), ("questions", "criteria"), ("publish", "questions")],
+    )
+    def test_step_navigation(self, pm_client, draft, program_manager_org, step, previous_step):
+        response = pm_client.get(step_url(step, draft))
+
+        assert response.context["path"] == [
+            {"title": "Solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
+            {"title": draft.title},
+        ]
+        assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
+
+    @pytest.mark.parametrize(
         "status, linked",
         [
             (Solicitation.Status.DRAFT, True),
@@ -208,6 +221,7 @@ class TestSolicitationSteps:
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
 
         assert response.status_code == HTTPStatus.OK
+        assert response.context["path"][-1] == {"title": "New solicitation"}
 
 
 @pytest.fixture

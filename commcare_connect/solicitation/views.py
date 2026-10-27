@@ -77,12 +77,21 @@ class SolicitationStepMixin(WaffleSwitchMixin):
     slug_field = "solicitation_id"
     slug_url_kwarg = "solicitation_id"
     step = None
+    previous_step = None
     next_step = None
 
     def get_queryset(self):
         return Solicitation.objects.filter(organization=self.request.org, status__in=EDITABLE_STATUSES)
 
     def get_context_data(self, **kwargs):
+        kwargs["path"] = [
+            {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
+            {"title": self.object.title if self.object.pk else _("New solicitation")},
+        ]
+        if self.previous_step:
+            kwargs["previous_step_url"] = reverse(
+                f"solicitation:{self.previous_step}", args=[self.request.org.slug, self.object.solicitation_id]
+            )
         return super().get_context_data(
             step=self.step, step_label=STEP_LABELS[self.step], step_labels=STEP_LABELS, **kwargs
         )
@@ -139,12 +148,14 @@ class SolicitationFormSetStepView(SolicitationStepMixin, UpdateView):
 
 class SolicitationCriteriaView(SolicitationFormSetStepView):
     step = "criteria"
+    previous_step = "details"
     next_step = "questions"
     form_class = CriterionInlineFormSet
 
 
 class SolicitationQuestionsView(SolicitationFormSetStepView):
     step = "questions"
+    previous_step = "criteria"
     next_step = "publish"
     form_class = QuestionInlineFormSet
 
@@ -153,6 +164,7 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
     """Reviews the solicitation and publishes it once nothing blocks it."""
 
     step = "publish"
+    previous_step = "questions"
     template_name = "solicitation/solicitation_publish.html"
 
     def get_queryset(self):
