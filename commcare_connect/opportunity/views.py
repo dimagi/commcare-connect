@@ -1008,7 +1008,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
                 opportunity=request.opportunity,
                 paymentunit_count=PaymentUnit.objects.filter(opportunity=request.opportunity).count(),
                 form=form,
-                form_title=_("Payment Unit Create"),
+                form_title=_("Add Payment Unit"),
             ),
         )
 
@@ -1027,7 +1027,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title=_("Payment Unit Create"),
+            form_title=_("Add Payment Unit"),
             form=form,
             path=path,
         ),
@@ -1107,7 +1107,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title="Payment Unit Edit",
+            form_title=_("Edit Payment Unit"),
             form=form,
             path=path,
         ),
