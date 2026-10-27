@@ -29,14 +29,14 @@
             hx-include="#delivery-stats-filters"
             hx-target="#messages"
             hx-swap="innerHTML">
-      <i class="fa-solid fa-envelope"></i> {% translate "Email me this view" %}
+      <i class="fa-solid fa-envelope"></i> {% translate "Export (current)" %}
     </button>
     <button type="button"
             class="button button-md outline-style"
             hx-post="{% url 'reports:email_delivery_stats_monthly' %}"
             hx-target="#messages"
             hx-swap="innerHTML">
-      <i class="fa-solid fa-calendar"></i> {% translate "Email me the monthly export" %}
+      <i class="fa-solid fa-calendar"></i> {% translate "Export (monthly)" %}
     </button>
   </div>
   {% render_table table %}
