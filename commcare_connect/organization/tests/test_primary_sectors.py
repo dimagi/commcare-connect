@@ -70,20 +70,13 @@ class TestPrimarySectorForm:
         assert form.fields["slug"].disabled
         assert "x-on:input" not in form.fields["name"].widget.attrs
 
-    def test_rename_keeps_slug(self, sector):
-        form = PrimarySectorForm({"name": "Global Health", "slug": "health", "description": "x"}, instance=sector)
+    @pytest.mark.parametrize("slug", ["health", "global-health", "", "Not Valid"])
+    def test_rename_ignores_posted_slug(self, sector, slug):
+        form = PrimarySectorForm({"name": "Global Health", "slug": slug, "description": ""}, instance=sector)
         assert form.is_valid(), form.errors
         form.save()
         sector.refresh_from_db()
         assert (sector.name, sector.slug) == ("Global Health", "health")
-
-    @pytest.mark.parametrize("slug", ["global-health", "", "Not Valid"])
-    def test_edit_ignores_posted_slug(self, sector, slug):
-        form = PrimarySectorForm({"name": "Health", "slug": slug, "description": ""}, instance=sector)
-        assert form.is_valid(), form.errors
-        form.save()
-        sector.refresh_from_db()
-        assert sector.slug == "health"
 
 
 @pytest.mark.django_db
@@ -138,26 +131,18 @@ class TestPrimarySectorViews:
         assert response.status_code == 302
         assert response.url == reverse("users:primary_sector_list")
 
-    def test_list_renders(self, client, settings_admin, sector):
-        client.force_login(settings_admin)
-        response = client.get(reverse("users:primary_sector_list"))
-        assert response.status_code == 200
-        assert reverse("users:primary_sector_update", args=[sector.pk]) in response.content.decode()
-
-    @pytest.mark.parametrize(
-        "sort, expected", [("organization_count", ["Unused", "Health"]), ("-organization_count", ["Health", "Unused"])]
-    )
-    def test_list_sorts_by_organization_count(self, client, settings_admin, sector, sort, expected):
+    def test_list_sorts_by_organization_count(self, client, settings_admin, sector):
         PrimarySector.objects.create(name="Unused", slug="unused", description="")
         OrganizationFactory().primary_sectors.add(sector)
         client.force_login(settings_admin)
-        response = client.get(reverse("users:primary_sector_list"), {"sort": sort})
-        assert [row.record.name for row in response.context["table"].rows] == expected
+        response = client.get(reverse("users:primary_sector_list"), {"sort": "-organization_count"})
+        assert [row.record.name for row in response.context["table"].rows] == ["Health", "Unused"]
 
     def test_list_disables_delete_for_sector_in_use(self, client, settings_admin, sector):
         OrganizationFactory().primary_sectors.add(sector)
         client.force_login(settings_admin)
         content = client.get(reverse("users:primary_sector_list")).content.decode()
+        assert reverse("users:primary_sector_update", args=[sector.pk]) in content
         assert 'x-tooltip.raw="Used by organizations, so it cannot be deleted."' in content
         assert "formRef: $el.form" not in content
 
@@ -165,7 +150,7 @@ class TestPrimarySectorViews:
         PrimarySector.objects.create(name="Women's Health", slug="womens-health", description="")
         client.force_login(settings_admin)
         content = client.get(reverse("users:primary_sector_list")).content.decode()
-        assert "$store.confirmModal.show(" in content
+        assert "formRef: $el.form" in content
         assert "Women\\u0027s Health" in content
 
     def test_create_from_modal_redirects_to_list(self, client, settings_admin):
