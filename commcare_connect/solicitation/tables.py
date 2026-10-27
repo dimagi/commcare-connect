@@ -39,7 +39,7 @@ class SolicitationTable(tables.Table):
 class SolicitationInvitationTable(tables.Table):
     select = select_column()
     index = IndexColumn()
-    organization = columns.Column(verbose_name=_("Organization"), order_by="organization__name")
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
     invited_by = columns.Column(verbose_name=_("Invited by"), orderable=False)
     date_created = DMYTColumn(verbose_name=_("Invited on"))
 

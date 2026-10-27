@@ -306,6 +306,8 @@ class SolicitationInvitationForm(forms.Form):
             .exclude(solicitation_invitations__solicitation=solicitation)
             .order_by("name")
         )
+        # Organization.__str__ is its slug; PMs pick organizations by name.
+        self.fields["organizations"].label_from_instance = attrgetter("name")
 
 
 class SolicitationInvitationDeleteForm(forms.Form):

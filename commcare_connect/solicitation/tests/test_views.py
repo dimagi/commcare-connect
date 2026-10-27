@@ -278,12 +278,16 @@ class TestSolicitationInvitations:
         assert solicitation.invitations.count() == int(already_invited)
         mock_send_mail.delay.assert_not_called()
 
-    def test_list_shows_invitations(self, pm_client, solicitation):
+    def test_list_shows_invitations_by_org_name(self, pm_client, solicitation):
         invitation = SolicitationInvitationFactory(solicitation=solicitation)
+        uninvited = OrganizationFactory()
 
         response = pm_client.get(step_url("invitations", solicitation))
 
-        assert [row.record for row in response.context["table"].rows] == [invitation]
+        [row] = response.context["table"].rows
+        assert (row.record, row.get_cell("organization")) == (invitation, invitation.organization.name)
+        choices = dict(response.context["form"].fields["organizations"].choices)
+        assert choices[uninvited.pk] == uninvited.name
 
     def test_delete_removes_selected_invitations(self, pm_client, solicitation):
         removed, kept = SolicitationInvitationFactory.create_batch(2, solicitation=solicitation)
