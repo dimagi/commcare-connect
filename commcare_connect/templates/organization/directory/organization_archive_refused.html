@@ -6,7 +6,7 @@
       {% blocktranslate with name=object.name %}Can't archive {{ name }} yet{% endblocktranslate %}
     </h2>
     <p class="hint">
-      {% translate "It is still part of the live or upcoming work below. Archiving is possible once that work has finished." %}
+      {% translate "It is still part of the work below. Archiving is possible once that work is finished and settled." %}
     </p>
   </div>
   <button type="button"
@@ -26,6 +26,10 @@
       <p>
         {% translate "Role:" %}
         {{ blocker.roles|join:", " }}
+      </p>
+      <p>
+        {% translate "Why:" %}
+        {{ blocker.reasons|join:", " }}
       </p>
     </li>
   {% endfor %}

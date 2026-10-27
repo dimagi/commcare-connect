@@ -4,8 +4,14 @@ from unittest import mock
 import pytest
 from django.db import DatabaseError
 
-from commcare_connect.opportunity.models import Opportunity
-from commcare_connect.opportunity.tests.factories import OpportunityFactory
+from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, VisitReviewStatus, VisitValidationStatus
+from commcare_connect.opportunity.tests.factories import (
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    PaymentFactory,
+    PaymentInvoiceFactory,
+    UserVisitFactory,
+)
 from commcare_connect.organization.archive import (
     ArchiveBlocker,
     ArchiveBlockerKind,
@@ -114,9 +120,9 @@ def test_live_or_upcoming_program_q(end_date, expected):
     assert Program.objects.filter(live_or_upcoming_program_q(TODAY), pk=program.pk).exists() == expected
 
 
-def _blocker(record, roles):
+def _blocker(record, roles, reasons=("Live or upcoming",)):
     kind = ArchiveBlockerKind.PROGRAM if isinstance(record, Program) else ArchiveBlockerKind.OPPORTUNITY
-    return ArchiveBlocker(name=record.name, kind=kind, roles=roles)
+    return ArchiveBlocker(name=record.name, kind=kind, roles=roles, reasons=list(reasons))
 
 
 def _ended_program(**kwargs):
@@ -164,3 +170,82 @@ class TestArchiveBlockers:
         _ended_opportunity(program=_ended_program(organization=organization))
 
         assert archive_blockers(organization) == []
+
+
+def _invoice(status):
+    return lambda opportunity: PaymentInvoiceFactory(opportunity=opportunity, status=status)
+
+
+def _payment(accrued, paid, confirmed=True):
+    def create(opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity, payment_accrued=accrued)
+        PaymentFactory(opportunity_access=access, amount=paid, confirmed=confirmed)
+
+    return create
+
+
+def _visit(status, review_status=VisitReviewStatus.agree):
+    def create(opportunity):
+        UserVisitFactory(
+            opportunity=opportunity,
+            opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            status=status,
+            review_status=review_status,
+        )
+
+    return create
+
+
+@pytest.mark.django_db
+class TestUnsettledWorkBlocksArchiving:
+    @pytest.mark.parametrize(
+        "create_unsettled, reason",
+        [
+            (_invoice(InvoiceStatus.PENDING_NM_REVIEW), "Unsettled invoices"),
+            (_invoice(InvoiceStatus.PENDING_PM_REVIEW), "Unsettled invoices"),
+            (_invoice(InvoiceStatus.READY_TO_PAY), "Unsettled invoices"),
+            # A status added later counts as unsettled until it is listed as settled.
+            (_invoice("awaiting_finance"), "Unsettled invoices"),
+            (_payment(accrued=100, paid=40), "Payments owed to workers"),
+            (_visit(VisitValidationStatus.pending), "Visits awaiting review"),
+            (_visit(VisitValidationStatus.approved, VisitReviewStatus.pending), "Visits awaiting review"),
+        ],
+    )
+    def test_unsettled_work_on_a_finished_opportunity_blocks(self, organization, create_unsettled, reason):
+        opportunity = _ended_opportunity(organization=organization, program=_ended_program())
+        create_unsettled(opportunity)
+
+        assert archive_blockers(organization) == [_blocker(opportunity, ["Network manager"], [reason])]
+
+    @pytest.mark.parametrize(
+        "create_settled",
+        [
+            _invoice(InvoiceStatus.PAID),
+            _invoice(InvoiceStatus.CANCELLED_BY_NM),
+            _invoice(InvoiceStatus.REJECTED_BY_PM),
+            _invoice(InvoiceStatus.ARCHIVED),
+            _payment(accrued=100, paid=100, confirmed=False),
+            _visit(VisitValidationStatus.approved, VisitReviewStatus.agree),
+            _visit(VisitValidationStatus.rejected, VisitReviewStatus.pending),
+        ],
+    )
+    def test_settled_work_does_not_block(self, organization, create_settled):
+        create_settled(_ended_opportunity(organization=organization, program=_ended_program()))
+
+        assert archive_blockers(organization) == []
+
+    def test_visits_of_an_automatically_verified_opportunity_do_not_block(self, organization):
+        opportunity = _ended_opportunity(
+            organization=organization, program=_ended_program(), automatic_visit_verification=True
+        )
+        _visit(VisitValidationStatus.pending)(opportunity)
+
+        assert archive_blockers(organization) == []
+
+    def test_live_opportunity_with_an_unsettled_invoice_is_one_blocker_with_both_reasons(self, organization):
+        opportunity = OpportunityFactory(organization=organization, program=_ended_program())
+        _invoice(InvoiceStatus.READY_TO_PAY)(opportunity)
+
+        assert archive_blockers(organization) == [
+            _blocker(opportunity, ["Network manager"], ["Live or upcoming", "Unsettled invoices"])
+        ]
