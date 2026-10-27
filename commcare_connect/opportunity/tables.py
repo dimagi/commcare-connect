@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
+    DeliveryType,
     InvoiceStatus,
     LearnModule,
     OpportunityAccess,
@@ -44,6 +45,7 @@ from commcare_connect.utils.tables import (
     DurationColumn,
     GroupedTable,
     IndexColumn,
+    ManagedOptionTable,
     OrgContextTable,
     merge_attrs,
     select_column,
@@ -2005,3 +2007,11 @@ class TaskTable(OpportunityContextTable):
         else:
             badge_class = "badge badge-sm bg-slate-100 text-slate-500"
         return format_html('<span class="{}">{}</span>', badge_class, record.get_mode_display())
+
+
+class DeliveryTypeTable(ManagedOptionTable):
+    program_count = columns.Column(verbose_name=gettext_lazy("Programs"), attrs=STAT_COLUMN_ATTRS)
+    opportunity_count = columns.Column(verbose_name=gettext_lazy("Opportunities"), attrs=STAT_COLUMN_ATTRS)
+
+    class Meta(ManagedOptionTable.Meta):
+        model = DeliveryType

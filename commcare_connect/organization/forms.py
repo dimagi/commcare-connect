@@ -5,7 +5,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
 from django.template.loader import render_to_string
 from django.utils import timezone
-from django.utils.text import slugify
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
@@ -19,6 +18,7 @@ from commcare_connect.organization.models import (
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
+from commcare_connect.utils.forms import ManagedOptionForm
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 EARLIEST_ESTABLISHMENT_YEAR = 1800
@@ -414,53 +414,11 @@ def _clean_lines(raw, validator, error_message):
     return "\n".join(entries)
 
 
-class PrimarySectorForm(forms.ModelForm):
-    """Adds or edits a primary sector option from Internal Features.
+class PrimarySectorForm(ManagedOptionForm):
+    locked_slug_help_text = gettext_lazy("Data exports identify primary sectors by it, so it can't change.")
 
-    On create the slug is filled in from the name as you type (see slugAutofill in alpine_data.js) and, if left
-    blank, generated from it on save. After that it is read-only: the data export identifies sectors by it, so
-    changing it would break anything that stored the old one.
-    """
-
-    class Meta:
+    class Meta(ManagedOptionForm.Meta):
         model = PrimarySector
-        fields = ("name", "slug", "description")
-        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
-        help_texts = {"slug": gettext_lazy("Lowercase letters, numbers, hyphens and underscores.")}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["description"].required = False
-        if self.instance.pk:
-            self.fields["slug"].disabled = True
-            self.fields["slug"].help_text = gettext_lazy(
-                "Data exports identify primary sectors by it, so it can't change."
-            )
-        else:
-            self.fields["slug"].required = False
-            self.fields["name"].widget.attrs.update({"x-ref": "name", "x-on:input": "nameChanged()"})
-            self.fields["slug"].widget.attrs.update({"x-ref": "slug", "x-on:input": "slugChanged()"})
-        self.helper = helper.FormHelper(self)
-        self.helper.form_tag = False
-        self.helper.disable_csrf = True
-
-    def clean_name(self):
-        name = self.cleaned_data["name"].strip()
-        if PrimarySector.objects.exclude(pk=self.instance.pk).filter(name__iexact=name).exists():
-            raise ValidationError(gettext("A primary sector with this name already exists."))
-        return name
-
-    def clean_slug(self):
-        if self.instance.pk:
-            return self.instance.slug
-        slug = self.cleaned_data["slug"].strip() or slugify(self.cleaned_data.get("name", ""))
-        if not slug:
-            raise ValidationError(gettext("Enter a slug, or a name containing at least one letter or number."))
-        if slug != slugify(slug):
-            raise ValidationError(gettext("Use only lowercase letters, numbers, hyphens and underscores."))
-        if PrimarySector.objects.exclude(pk=self.instance.pk).filter(slug=slug).exists():
-            raise ValidationError(gettext("A primary sector with this slug already exists."))
-        return slug
 
 
 class OrganizationInviteForm(forms.ModelForm):

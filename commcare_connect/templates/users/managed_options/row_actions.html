@@ -1,0 +1,38 @@
+{% load i18n %}
+{# ManagedOptionTable's actions column; `option` comes from the list page's context (users/managed_options.py). #}
+<div class="flex items-center justify-end gap-2">
+  <button type="button"
+          class="button-icon"
+          aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
+          x-tooltip.raw="{% translate 'Edit' %}"
+          @click.stop="modalUrl = '{% url option.update_url_name record.pk %}'">
+    <i class="fa-solid fa-pen" aria-hidden="true"></i>
+  </button>
+  <form method="post" action="{% url option.delete_url_name record.pk %}">
+    {% csrf_token %}
+    {% if record.in_use %}
+      {# The tooltip sits on the wrapper because a disabled .button-icon ignores pointer events. #}
+      <span class="inline-flex" x-tooltip.raw="{{ option.in_use_hint }}">
+        <button type="button"
+                class="button-icon"
+                aria-label="{% blocktranslate with name=record.name %}Delete {{ name }}{% endblocktranslate %}"
+                disabled>
+          <i class="fa-solid fa-trash" aria-hidden="true"></i>
+        </button>
+      </span>
+    {% else %}
+      {# Unescaped here so escapejs below is the only escaping: the modal shows it via x-text, so HTML-escaping would display literally. #}
+      {% autoescape off %}
+        {% blocktranslate asvar delete_message with option=option.verbose_name name=record.name %}Delete the {{ option }} "{{ name }}"? This cannot be undone.{% endblocktranslate %}
+        {% blocktranslate asvar delete_title with option=option.verbose_name|title %}Delete {{ option }}{% endblocktranslate %}
+      {% endautoescape %}
+      <button type="button"
+              class="button-icon hover:bg-red-600 hover:text-white"
+              aria-label="{% blocktranslate with name=record.name %}Delete {{ name }}{% endblocktranslate %}"
+              x-tooltip.raw="{% translate 'Delete' %}"
+              @click.stop="$store.confirmModal.show({ title: '{{ delete_title|escapejs }}', message: '{{ delete_message|escapejs }}', confirmBtnText: '{% translate "Delete" %}', confirmBtnRed: true, formRef: $el.form })">
+        <i class="fa-solid fa-trash" aria-hidden="true"></i>
+      </button>
+    {% endif %}
+  </form>
+</div>

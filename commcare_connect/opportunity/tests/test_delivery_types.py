@@ -96,12 +96,12 @@ class TestDeliveryTypeForm:
 @pytest.mark.django_db
 class TestDeliveryTypeInUse:
     def test_unused(self, delivery_type):
-        assert not delivery_type.is_in_use
+        assert not delivery_type.is_in_use()
 
     @pytest.mark.parametrize("factory", REFERENCING_FACTORIES)
     def test_used(self, delivery_type, factory):
         factory(delivery_type=delivery_type)
-        assert delivery_type.is_in_use
+        assert delivery_type.is_in_use()
 
 
 @pytest.mark.django_db
@@ -159,7 +159,8 @@ class TestDeliveryTypeViews:
         ProgramFactory.create_batch(2, delivery_type=delivery_type)
         OpportunityFactory.create_batch(3, delivery_type=delivery_type)
         client.force_login(settings_admin)
-        rows = {dt.pk: dt for dt in client.get(reverse("users:delivery_type_list")).context["delivery_types"]}
+        table = client.get(reverse("users:delivery_type_list")).context["table"]
+        rows = {row.record.pk: row.record for row in table.rows}
         assert (rows[delivery_type.pk].program_count, rows[delivery_type.pk].opportunity_count) == (2, 3)
         assert (rows[unused.pk].program_count, rows[unused.pk].opportunity_count) == (0, 0)
         assert rows[delivery_type.pk].in_use
@@ -169,8 +170,32 @@ class TestDeliveryTypeViews:
     def test_list_in_use_without_counted_references(self, client, settings_admin, delivery_type, factory):
         factory(delivery_type=delivery_type)
         client.force_login(settings_admin)
-        (row,) = client.get(reverse("users:delivery_type_list")).context["delivery_types"].filter(pk=delivery_type.pk)
-        assert row.in_use
+        table = client.get(reverse("users:delivery_type_list")).context["table"]
+        (record,) = [row.record for row in table.rows if row.record.pk == delivery_type.pk]
+        assert record.in_use
+
+    @pytest.mark.parametrize(
+        "sort, expected",
+        [("opportunity_count", ["Unused", "Nutrition"]), ("-opportunity_count", ["Nutrition", "Unused"])],
+    )
+    def test_list_sorts_by_opportunity_count(self, client, settings_admin, delivery_type, sort, expected):
+        DeliveryType.objects.create(name="Unused", slug="unused", description="")
+        OpportunityFactory(delivery_type=delivery_type)
+        client.force_login(settings_admin)
+        response = client.get(reverse("users:delivery_type_list"), {"sort": sort})
+        # Factories can add delivery types of their own; only the order of these two matters.
+        names = [row.record.name for row in response.context["table"].rows]
+        assert [name for name in names if name in expected] == expected
+
+    def test_list_disables_delete_for_delivery_type_in_use(self, client, settings_admin, delivery_type):
+        OpportunityFactory(delivery_type=delivery_type)
+        client.force_login(settings_admin)
+        content = client.get(reverse("users:delivery_type_list")).content.decode()
+        assert (
+            'x-tooltip.raw="Used by programs, opportunities, solicitations or worker credentials, so it cannot be '
+            'deleted."' in content
+        )
+        assert "formRef: $el.form" not in content
 
     def test_delete_confirmation_escapes_name(self, client, settings_admin):
         DeliveryType.objects.create(name="Women's Health", slug="womens-health", description="")
@@ -198,7 +223,7 @@ class TestDeliveryTypeViews:
         )
         assert response.status_code == 200
         assert "HX-Redirect" not in response.headers
-        assert 'id="delivery-type-form-wrapper"' in response.content.decode()
+        assert 'id="managed-option-form-wrapper"' in response.content.decode()
         assert DeliveryType.objects.filter(name__iexact="nutrition").count() == 1
 
     def test_edit_from_modal_redirects_to_list(self, client, settings_admin, delivery_type):

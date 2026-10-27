@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load render_table from django_tables2 %}
+{# Base list page for users/managed_options.py; children fill the intro. The view's table supplies the columns. #}
+{% block title %}{{ option.verbose_name_plural|title }}{% endblock %}
+{% block content %}
+  <div class="container" x-data="{ modalUrl: null }">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="title">{{ option.verbose_name_plural|title }}</h2>
+      {# .stop on modal openers: the modal mounts before the click reaches document, where its @click.outside would close it again. #}
+      <button type="button"
+              class="button button-md primary-dark !inline-flex items-center gap-2"
+              @click.stop="modalUrl = '{% url option.create_url_name %}'">
+        <i class="fa-solid fa-plus"></i>
+        {% blocktranslate with option=option.verbose_name|title %}Add {{ option }}{% endblocktranslate %}
+      </button>
+    </div>
+    <p class="hint mb-4">
+      {% block intro %}
+      {% endblock intro %}
+    </p>
+    {% render_table table %}
+    {% include "users/managed_options/modal.html" %}
+    {% include "components/confirm_modal.html" %}
+  </div>
+{% endblock content %}
