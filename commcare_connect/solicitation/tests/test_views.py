@@ -237,7 +237,7 @@ class TestSolicitationInvitations:
         with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
             yield mock
 
-    def test_invite_creates_row_and_sends_one_email(
+    def test_invite_creates_rows_and_emails_each_org(
         self,
         pm_client,
         solicitation,
@@ -245,16 +245,20 @@ class TestSolicitationInvitations:
         mock_send_mail,
         django_capture_on_commit_callbacks,
     ):
-        invited_org = MembershipFactory().organization
+        invited_orgs = [MembershipFactory().organization for _ in range(2)]
 
         with django_capture_on_commit_callbacks(execute=True):
-            response = pm_client.post(step_url("invitations", solicitation), {"organization": invited_org.pk})
+            response = pm_client.post(
+                step_url("invitations", solicitation), {"organizations": [org.pk for org in invited_orgs]}
+            )
 
         assert response.url == step_url("invitations", solicitation)
-        invitation = SolicitationInvitation.objects.get(solicitation=solicitation)
-        assert (invitation.organization, invitation.invited_by) == (invited_org, program_manager_org_user_admin)
-        mock_send_mail.delay.assert_called_once()
-        assert mock_send_mail.delay.call_args.kwargs["recipient_list"] == invited_org.get_member_emails()
+        invitations = SolicitationInvitation.objects.filter(solicitation=solicitation)
+        assert {(i.organization, i.invited_by) for i in invitations} == {
+            (org, program_manager_org_user_admin) for org in invited_orgs
+        }
+        sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
+        assert sorted(sent_to) == sorted(org.get_member_emails() for org in invited_orgs)
 
     @pytest.mark.parametrize("already_invited", [True, False])
     def test_invite_rejects_invited_and_own_org(
@@ -265,7 +269,9 @@ class TestSolicitationInvitations:
         else:
             organization = program_manager_org
 
-        response = pm_client.post(step_url("invitations", solicitation), {"organization": organization.pk})
+        # A valid org alongside the rejected one is not invited either.
+        data = {"organizations": [organization.pk, OrganizationFactory().pk]}
+        response = pm_client.post(step_url("invitations", solicitation), data)
 
         assert response.status_code == HTTPStatus.OK
         assert response.context["form"].errors
@@ -318,7 +324,7 @@ class TestSolicitationInvitations:
         delete_url = reverse("solicitation:delete_invitations", args=url_args)
 
         assert pm_client.get(list_url).status_code == HTTPStatus.NOT_FOUND
-        invite_response = pm_client.post(list_url, {"organization": OrganizationFactory().pk})
+        invite_response = pm_client.post(list_url, {"organizations": [OrganizationFactory().pk]})
         assert invite_response.status_code == HTTPStatus.NOT_FOUND
         assert pm_client.post(delete_url, {"invitation_ids": [invitation.pk]}).status_code == HTTPStatus.NOT_FOUND
         assert solicitation.invitations.get() == invitation

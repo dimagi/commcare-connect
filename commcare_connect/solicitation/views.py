@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views.generic import CreateView, DetailView, FormView, UpdateView
+from django.views.generic import DetailView, FormView, UpdateView
 from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
@@ -28,10 +28,11 @@ from commcare_connect.solicitation.models import (
     Solicitation,
     SolicitationApplication,
     SolicitationEvaluationCriterion,
+    SolicitationInvitation,
     SolicitationQuestion,
 )
 from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
-from commcare_connect.solicitation.tasks import send_solicitation_invite_email
+from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
 
 # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
@@ -228,12 +229,11 @@ class InvitationsMixin(WaffleSwitchMixin):
         return reverse("solicitation:invitations", args=[self.request.org.slug, self.solicitation.solicitation_id])
 
 
-class SolicitationInvitationsView(InvitationsMixin, SuccessMessageMixin, SingleTableMixin, CreateView):
-    """Lists the organizations invited to a private solicitation and invites another."""
+class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
+    """Lists the organizations invited to a private solicitation and invites more."""
 
     form_class = SolicitationInvitationForm
     template_name = "solicitation/solicitation_invitations.html"
-    success_message = _("%(organization)s has been invited.")
     table_class = SolicitationInvitationTable
 
     def get_table_data(self):
@@ -257,12 +257,20 @@ class SolicitationInvitationsView(InvitationsMixin, SuccessMessageMixin, SingleT
         return super().get_context_data(solicitation=self.solicitation, path=path, **kwargs)
 
     def form_valid(self, form):
-        form.instance.solicitation = self.solicitation
-        form.instance.invited_by = self.request.user
-        form.instance.created_by = form.instance.modified_by = self.request.user.email
-        response = super().form_valid(form)
-        transaction.on_commit(partial(send_solicitation_invite_email, self.object.pk))
-        return response
+        email = self.request.user.email
+        invitations = SolicitationInvitation.objects.bulk_create(
+            SolicitationInvitation(
+                solicitation=self.solicitation,
+                organization=organization,
+                invited_by=self.request.user,
+                created_by=email,
+                modified_by=email,
+            )
+            for organization in form.cleaned_data["organizations"]
+        )
+        transaction.on_commit(partial(send_solicitation_invite_emails, [invitation.pk for invitation in invitations]))
+        messages.success(self.request, _("Invited %(count)d organization(s).") % {"count": len(invitations)})
+        return redirect(self.get_success_url())
 
 
 class SolicitationInvitationDeleteView(InvitationsMixin, FormView):

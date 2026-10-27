@@ -291,16 +291,17 @@ def publish_errors(solicitation):
     return errors
 
 
-class SolicitationInvitationForm(forms.ModelForm):
-    class Meta:
-        model = SolicitationInvitation
-        fields = ["organization"]
-        widgets = {"organization": SEARCHABLE_SELECT}
+class SolicitationInvitationForm(forms.Form):
+    organizations = forms.ModelMultipleChoiceField(
+        label=_("Organizations"),
+        queryset=Organization.objects.none(),
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+    )
 
     def __init__(self, *args, solicitation, **kwargs):
         super().__init__(*args, **kwargs)
         # Already-invited orgs aren't offered, so each org is invited at most once.
-        self.fields["organization"].queryset = (
+        self.fields["organizations"].queryset = (
             Organization.objects.exclude(pk=solicitation.organization_id)
             .exclude(solicitation_invitations__solicitation=solicitation)
             .order_by("name")

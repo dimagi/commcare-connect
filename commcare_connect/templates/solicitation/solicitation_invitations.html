@@ -29,7 +29,7 @@
           <button type="button"
                   class="button-icon shadow-sm"
                   @click.stop="showInviteModal = true"
-                  x-tooltip.raw="{% translate "Invite organization" %}">
+                  x-tooltip.raw="{% translate "Invite organizations" %}">
             <i class="fa-solid fa-plus text-brand-deep-purple"></i>
           </button>
           <form x-ref="removeInvitationsForm"
@@ -59,7 +59,7 @@
          @keydown.escape.window="showInviteModal = false">
       <div @click.outside="showInviteModal = false" x-transition class="modal">
         <div class="header">
-          <h2 class="title">{% translate "Invite organization" %}</h2>
+          <h2 class="title">{% translate "Invite organizations" %}</h2>
           <button type="button"
                   @click="showInviteModal = false"
                   class="button-icon"
