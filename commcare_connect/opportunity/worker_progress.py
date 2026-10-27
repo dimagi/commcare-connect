@@ -120,12 +120,12 @@ def _status_counts_by_payment_unit(opportunity):
 def _daily_limit_used_by_payment_unit(opportunity: Opportunity, payment_units: list[PaymentUnit]) -> dict[int, int]:
     """How much of today's daily limit active workers have used, summed per payment unit.
 
-    The form receiver checks the daily limit against each deliver unit's visits separately. A worker
-    can't complete a new delivery today once any required deliver unit has max_daily visits, or once every
-    optional deliver unit has, since a delivery needs a visit to each required unit but only one optional
-    one. So a worker has used as much of the limit as the higher of its busiest required unit and its
-    least busy optional unit. Only active workers count, as only they make up the daily capacity this is
-    measured against.
+    The form receiver marks a visit over_limit once the worker already has max_daily visits today to that
+    deliver unit. A delivery needs a visit to each required unit but only one optional one, so a worker
+    can't complete another delivery within the limit once any required unit is full, or once every
+    optional one is. So a worker has used as much of the limit as the higher of its busiest required unit
+    and its least busy optional unit. Only active workers count, as only they make up the daily capacity
+    this is measured against.
     """
     required_deliver_units, optional_deliver_units = _deliver_units_by_payment_unit(payment_units)
     limit_used_by_payment_unit = defaultdict(int)
