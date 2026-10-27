@@ -11,6 +11,7 @@
 {% endblock javascript %}
 {% block content %}
   <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
+    {% include "components/breadcrumbs.html" with path=path %}
     <h1 class="title">
       {% if solicitation.pk %}
         {{ solicitation.title }}

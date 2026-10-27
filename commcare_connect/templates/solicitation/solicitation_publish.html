@@ -70,7 +70,7 @@
       <div>
         <dt class="hint">{% translate "Application deadline" %}</dt>
         <dd>
-          {{ solicitation.application_deadline|date:"d M Y, H:i" }}
+          {{ solicitation.application_deadline|date:"d M Y, H:i T" }}
         </dd>
       </div>
       <div>
@@ -165,6 +165,9 @@
     <form method="post" class="flex flex-col gap-4">
       {% csrf_token %}
       <div class="flex gap-3 justify-end">
+        {% if previous_step_url %}
+          <a class="button button-md outline-style" href="{{ previous_step_url }}">{% translate "Back" %}</a>
+        {% endif %}
         <a class="button button-md outline-style"
            href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
         <button type="submit"
