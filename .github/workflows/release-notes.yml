@@ -116,14 +116,36 @@ jobs:
                  kept as <a href="...">, and no horizontal rule at the start or end.
               3. outputs/slack.txt - the Slack message described in step 8, with one change: the message is sent
                  through the raw Slack API, so bold uses *single asterisks*, not **double**.
-            - If there are no user-facing changes to report, write no files at all.
+            - If there are no user-facing changes to report, write only outputs/NO_CHANGES, containing the word
+              none, and none of the files above.
+
+      # Claude can stop early (max turns, an error) and still succeed, so check it left either a complete set of
+      # notes or the NO_CHANGES marker, instead of publishing nothing without saying so
+      - name: Check the release notes are complete
+        run: |
+          notes=("outputs/release_notes_${TAG}.md" outputs/confluence.html outputs/slack.txt)
+          present=()
+          missing=()
+          for f in "${notes[@]}"; do
+            if [ -s "$f" ]; then present+=("$f"); else missing+=("$f"); fi
+          done
+          if [ -f outputs/NO_CHANGES ]; then
+            if [ ${#present[@]} -gt 0 ]; then
+              echo "Claude wrote NO_CHANGES and release notes (${present[*]})" >&2
+              exit 1
+            fi
+            echo "No user-facing changes in $TAG"
+          elif [ ${#missing[@]} -gt 0 ]; then
+            echo "Claude did not write ${missing[*]}" >&2
+            exit 1
+          fi
 
       - name: Upload release notes
         uses: actions/upload-artifact@v4
         with:
           name: release-notes
           path: outputs/
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   publish:
     needs: generate
@@ -138,7 +160,6 @@ jobs:
 
       - name: Download release notes
         uses: actions/download-artifact@v4
-        continue-on-error: true # no artifact means Claude found nothing user-facing
         with:
           name: release-notes
           path: outputs/

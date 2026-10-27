@@ -135,10 +135,11 @@ The Markdown is kept as a workflow artifact. Slack mentions such as `<!channel>`
 posting, so an edited PR body can't ping the channel.
 
 Problems never affect the deploy run. The release-notes run fails, and a warning goes into the deploy's Slack thread
-saying what failed. This covers the notes failing to generate, missing Confluence credentials, or Confluence or Slack
-rejecting the post. To retry, run **Actions → Release notes → Run workflow**, optionally with a release tag. Choose
-**Publish to** to retry only the target that failed. Re-running is safe for Confluence: the page is left alone when it
-already has that release. Slack has no such check and posts again.
+saying what failed. This covers the notes failing to generate or coming back incomplete, missing Confluence
+credentials, or Confluence or Slack rejecting the post. When a release has nothing user-facing, Claude says so
+explicitly and nothing is published. To retry, run **Actions → Release notes → Run workflow**, optionally with a
+release tag. Choose **Publish to** to retry only the target that failed. Re-running is safe for Confluence: the page
+is left alone when it already has that release. Slack has no such check and posts again.
 
 Release-notes runs queue one at a time, so back-to-back deploys don't race on the Confluence page. GitHub keeps only
 one waiting run, so if a third deploy finishes while one is waiting, run the replaced release by hand.
