@@ -131,7 +131,8 @@ It runs in a job of its own, with no publishing credentials. A second job then:
   Confluence page (`deploy/ci/publish_confluence.py`),
 - posts a summary to `#connect-product-feed`.
 
-The Markdown is kept as a workflow artifact.
+The Markdown is kept as a workflow artifact. Slack mentions such as `<!channel>` are stripped from the summary before
+posting, so an edited PR body can't ping the channel.
 
 Problems never affect the deploy run. The release-notes run fails, and a warning goes into the deploy's Slack thread
 saying what failed. This covers the notes failing to generate, missing Confluence credentials, or Confluence or Slack

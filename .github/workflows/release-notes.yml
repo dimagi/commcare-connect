@@ -167,9 +167,11 @@ jobs:
         continue-on-error: true
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        # The notes are written from PR bodies anyone can edit, so drop Slack mentions (<!channel>, <!here>,
+        # <!subteam^...>, <@U...>) rather than let a PR ping the channel. <url|label> links are kept.
         run: |
           payload=$(jq -n --rawfile text outputs/slack.txt \
-            '{channel: "C08MRUZ8T9A", text: $text, unfurl_links: false, unfurl_media: false}')
+            '{channel: "C08MRUZ8T9A", text: ($text | gsub("<[!@][^>]*>"; "")), unfurl_links: false, unfurl_media: false}')
           response=$(curl --fail --silent --show-error --max-time 30 \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H 'Content-type: application/json; charset=utf-8' \
             -d "$payload" https://slack.com/api/chat.postMessage)
