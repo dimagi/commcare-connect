@@ -3,7 +3,9 @@ import io
 from datetime import UTC, date, datetime
 from unittest import mock
 
+import httpx
 import pytest
+from celery.exceptions import Retry
 from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -315,3 +317,24 @@ def test_email_views_require_kpi_access(client, url_name):
     client.force_login(UserFactory())
 
     assert client.post(reverse(url_name)).status_code == 403
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "task, args",
+    [(send_delivery_stats_export, ()), (email_delivery_stats_export, ("user", None))],
+)
+def test_export_tasks_retry_when_connectid_is_unreachable(task, args, kpi_user, mailoutbox):
+    add_recipient(kpi_user)
+    args = tuple(kpi_user.pk if arg == "user" else arg for arg in args)
+    with (
+        mock.patch(
+            "commcare_connect.reports.helpers.fetch_user_counts", side_effect=httpx.ConnectError("unreachable")
+        ),
+        mock.patch.object(task, "retry", side_effect=Retry) as retry,
+    ):
+        with pytest.raises(Retry):
+            task(*args)
+
+    retry.assert_called_once()
+    assert mailoutbox == []

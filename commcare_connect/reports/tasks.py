@@ -3,6 +3,7 @@ import uuid
 from collections import defaultdict
 from itertools import chain
 
+import httpx
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
@@ -161,7 +162,18 @@ def export_invoice_report_task(filters_data, user_id):
     return ExportS3Boto3Storage().save(filename, ContentFile(content.encode("utf-8")))
 
 
-@celery_app.task()
+# A ConnectID outage at send time would otherwise lose the email; the CSV is built before sending, so retries
+# can't send twice.
+EXPORT_RETRY_OPTIONS = {
+    "autoretry_for": (httpx.HTTPError,),
+    "retry_kwargs": {"max_retries": 5},
+    "retry_backoff": True,
+    "retry_backoff_max": 1800,
+    "retry_jitter": True,
+}
+
+
+@celery_app.task(**EXPORT_RETRY_OPTIONS)
 def send_delivery_stats_export():
     recipients = get_eligible_recipients()
     if not recipients:
@@ -170,7 +182,7 @@ def send_delivery_stats_export():
     _send_export_email([user.email for user in recipients], previous_month_filters(now().date()), monthly=True)
 
 
-@celery_app.task()
+@celery_app.task(**EXPORT_RETRY_OPTIONS)
 def email_delivery_stats_export(user_id, filter_data):
     """Email the Delivery Stats CSV to one user. filter_data=None sends the monthly export."""
     user = User.objects.get(pk=user_id)
