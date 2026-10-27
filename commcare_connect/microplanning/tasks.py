@@ -56,6 +56,7 @@ class BaseAreaCSVImporter:
         self.csv_source = csv_source
         self.errors = defaultdict(list)
         self.created_count = 0
+        self.total_rows = 0
 
     def run(self):
         if not self._validate_all_rows(self.csv_source):
@@ -77,11 +78,9 @@ class BaseAreaCSVImporter:
         if not self._validate_headers(reader):
             return False
         self._load_existing()
-        has_rows = False
         for line_num, row in enumerate(reader, start=2):
-            has_rows = True
             self._process_row(line_num, row)
-        if not has_rows:
+        if not self.total_rows:
             self._add_error(1, _("The file has no data rows. Add at least one row below the header."))
         self._after_rows()
         self._clear_existing()
@@ -120,6 +119,7 @@ class BaseAreaCSVImporter:
         return True
 
     def _process_row(self, line_num, row):
+        self.total_rows += 1
         for processor in self.get_processors():
             processor(row, line_num)
 
@@ -210,7 +210,6 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         # Ward to use if a given group name doesn't exist yet: the ward of its first-seen row.
         self.group_wards = {}
         self.group_cache = {}
-        self.total_rows = 0
         self.rows_with_group = 0
 
     def _canonical_headers(self):
@@ -221,7 +220,6 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
 
     def _process_row(self, line_num, row):
         super()._process_row(line_num, row)
-        self.total_rows += 1
         group_name = self.get_group_name(row)
         if group_name:
             self.rows_with_group += 1
