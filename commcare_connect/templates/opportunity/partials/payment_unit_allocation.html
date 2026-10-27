@@ -12,7 +12,7 @@
   {% if unit.today %}
     <div class="flex flex-col gap-1">
       <div class="flex items-center gap-1.5"
-           x-tooltip.raw="{% translate 'How much of the daily limit active workers have used today, counting each worker’s most-visited deliver unit, out of the daily limit multiplied by the number of active workers who can deliver this payment unit.' %}">
+           x-tooltip.raw="{% translate 'How much of the daily limit active workers have used today, counted the same way each worker’s daily limit is checked, out of the daily limit multiplied by the number of active workers who can deliver this payment unit.' %}">
         <span class="hint">{% translate "Today (all workers):" %}</span>
         {% if unit.today.is_reached %}
           {% include "opportunity/partials/limit_note.html" with text=unit.today.label warning=True %}
