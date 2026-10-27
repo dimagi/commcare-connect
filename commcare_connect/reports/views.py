@@ -11,6 +11,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.db.models import F, Max
 from django.http import HttpResponse
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils.functional import cached_property
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
@@ -27,7 +28,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
-from commcare_connect.reports.decorators import KPIReportMixin
+from commcare_connect.reports.decorators import kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
 from commcare_connect.reports.tasks import export_invoice_report_task
@@ -143,7 +144,8 @@ class NonModelFilterView(FilterView):
         return self.render_to_response(context)
 
 
-class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelFilterView):
+@method_decorator(kpi_report_access_required, name="dispatch")
+class DeliveryStatsReportView(tables.SingleTableMixin, NonModelFilterView):
     table_class = AdminReportTable
     filterset_class = DeliveryReportFilters
 

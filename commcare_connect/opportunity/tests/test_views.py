@@ -79,6 +79,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
+    get_earned_summary,
     get_export_task_id,
     invoice_pdf_filename,
 )
@@ -147,19 +148,14 @@ def test_add_budget_existing_users_for_managed_opportunity(
     budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
     initial_total_budget = budget_per_user * 2
 
-    program = ProgramFactory(organization=program_manager_org, budget=200)
-    opportunity = OpportunityFactory(
-        program=program,
+    opportunity, claim, claim_limit = _create_managed_opportunity_with_claim(
+        program_manager_org=program_manager_org,
         organization=organization,
+        mobile_user=mobile_user,
         total_budget=initial_total_budget,
-    )
-    payment_unit = PaymentUnitFactory(
-        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
-    )
-    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
-    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
-    claim_limit = OpportunityClaimLimitFactory(
-        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+        payment_per_visit=payment_per_visit,
+        org_pay_per_visit=org_pay_per_visit,
+        max_visits_per_user=max_visits_per_user,
     )
 
     assert opportunity.total_budget == initial_total_budget
@@ -324,19 +320,14 @@ def test_decrease_budget_existing_users_for_managed_opportunity(
     budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
     initial_total_budget = budget_per_user * 2
 
-    program = ProgramFactory(organization=program_manager_org, budget=200)
-    opportunity = OpportunityFactory(
-        program=program,
+    opportunity, claim, claim_limit = _create_managed_opportunity_with_claim(
+        program_manager_org=program_manager_org,
         organization=organization,
+        mobile_user=mobile_user,
         total_budget=initial_total_budget,
-    )
-    payment_unit = PaymentUnitFactory(
-        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
-    )
-    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
-    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
-    claim_limit = OpportunityClaimLimitFactory(
-        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+        payment_per_visit=payment_per_visit,
+        org_pay_per_visit=org_pay_per_visit,
+        max_visits_per_user=max_visits_per_user,
     )
 
     assert opportunity.total_budget == initial_total_budget
@@ -368,6 +359,30 @@ def test_decrease_budget_existing_users_for_managed_opportunity(
     assert opportunity.total_budget == initial_total_budget
     assert opportunity.claimed_budget == expected_claimed_budget
     assert claim_limit.max_visits == max_visits_per_user - decrease_visits
+
+
+def _create_managed_opportunity_with_claim(
+    *,
+    program_manager_org,
+    organization,
+    mobile_user,
+    total_budget,
+    payment_per_visit,
+    org_pay_per_visit,
+    max_visits_per_user,
+):
+    """Create a managed opportunity with one payment unit and a claim for ``mobile_user``."""
+    program = ProgramFactory(organization=program_manager_org, budget=200)
+    opportunity = OpportunityFactory(program=program, organization=organization, total_budget=total_budget)
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    claim_limit = OpportunityClaimLimitFactory(
+        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+    )
+    return opportunity, claim, claim_limit
 
 
 @pytest.mark.django_db
@@ -3646,23 +3661,18 @@ class TestUserVisitsListVisitIdParam:
             for i in range(25)
         ]
 
-    def test_visit_id_jumps_to_containing_page(self, client, organization, org_user_member, opportunity, mobile_user):
-        visits = self._make_visits(opportunity, mobile_user)
-        target = visits[20]  # 21st visit in date order -> page 2 at the default page size of 20
-
-        client.force_login(org_user_member)
-        url = reverse(
-            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
-        )
-        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}")
-
-        assert response.status_code == HTTPStatus.OK
-        table = response.context["table"]
-        assert table.page.number == 2
-        assert any(row.record.pk == target.pk for row in table.page.object_list)
-
-    def test_explicit_page_param_is_not_overridden(
-        self, client, organization, org_user_member, opportunity, mobile_user
+    @pytest.mark.parametrize(
+        "extra_query, expected_page",
+        [
+            # The 21st visit in date order is on page 2 at the default page size of 20.
+            ("", 2),
+            # An explicit page param is not overridden.
+            ("&page=1", 1),
+        ],
+        ids=["jumps_to_containing_page", "explicit_page_not_overridden"],
+    )
+    def test_visit_id_param(
+        self, client, organization, org_user_member, opportunity, mobile_user, extra_query, expected_page
     ):
         visits = self._make_visits(opportunity, mobile_user)
         target = visits[20]
@@ -3671,11 +3681,12 @@ class TestUserVisitsListVisitIdParam:
         url = reverse(
             "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
         )
-        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}&page=1")
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}{extra_query}")
 
         assert response.status_code == HTTPStatus.OK
         table = response.context["table"]
-        assert table.page.number == 1
+        assert table.page.number == expected_page
+        assert any(row.record.pk == target.pk for row in table.page.object_list) == (expected_page == 2)
 
 
 @pytest.mark.django_db
@@ -3692,9 +3703,16 @@ class TestOpportunityDeliveryStatsTiles:
         assert b"Audit Opportunity" not in response.content
         assert b"Tasks Assigned to Connect Workers" not in response.content
 
+    @pytest.mark.parametrize(
+        "flag_name, tile_text",
+        [(MICROPLANNING, b"View Progress Map"), (WEEKLY_PERFORMANCE_REPORT, b"Audit Opportunity")],
+        ids=["progress_map", "audit"],
+    )
     @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
-    def test_progress_map_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
-        flag = Flag.objects.create(name=MICROPLANNING)
+    def test_tile_shown_when_flag_enabled(
+        self, client, organization, org_user_member, opportunity, scope, flag_name, tile_text
+    ):
+        flag = Flag.objects.create(name=flag_name)
         if scope == "opportunity":
             flag.opportunities.add(opportunity)
         elif scope == "program":
@@ -3708,25 +3726,7 @@ class TestOpportunityDeliveryStatsTiles:
         client.force_login(org_user_member)
         response = client.get(self._url(organization, opportunity))
 
-        assert b"View Progress Map" in response.content
-
-    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
-    def test_audit_tile_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
-        flag = Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT)
-        if scope == "opportunity":
-            flag.opportunities.add(opportunity)
-        elif scope == "program":
-            program = ProgramFactory(organization=organization)
-            opportunity.program = program
-            opportunity.save(update_fields=["program"])
-            flag.programs.add(program)
-        elif scope == "organization":
-            flag.organizations.add(organization)
-
-        client.force_login(org_user_member)
-        response = client.get(self._url(organization, opportunity))
-
-        assert b"Audit Opportunity" in response.content
+        assert tile_text in response.content
 
     def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
         self, client, organization, org_user_member, opportunity
@@ -4044,3 +4044,50 @@ def test_get_export_task_id_requires_standard_access(rf, opportunity, access_lev
         "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
     ):
         assert get_export_task_id(request, opportunity) == expected
+
+
+@pytest.mark.parametrize(
+    "worker_accrued, org_accrued, total_budget, expected_total, expected_percentage, expected_tooltip",
+    [
+        (
+            500,
+            0,
+            1000,
+            "NGN 500",
+            50,
+            "Percentage Earned by all workers out of Max Budget in the Opportunity",
+        ),
+        (
+            900,
+            100,
+            1000,
+            "NGN 900 workers · NGN 100 org",
+            100,
+            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
+        ),
+        (
+            900,
+            200,
+            1000,
+            "NGN 900 workers · NGN 200 org",
+            100,
+            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
+        ),
+        (
+            900,
+            100,
+            0,
+            "NGN 900 workers · NGN 100 org",
+            0,
+            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
+        ),
+    ],
+)
+def test_get_earned_summary(
+    worker_accrued, org_accrued, total_budget, expected_total, expected_percentage, expected_tooltip
+):
+    earned = get_earned_summary(worker_accrued, org_accrued, total_budget, "NGN")
+
+    assert earned.total == expected_total
+    assert earned.percentage == expected_percentage
+    assert earned.percentage_tooltip == expected_tooltip

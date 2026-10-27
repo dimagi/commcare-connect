@@ -42,10 +42,14 @@ from commcare_connect.users.tests.factories import MobileUserFactory
 
 
 @pytest.mark.django_db
-def test_deliver_status_query_no_visits(opportunity: Opportunity):
+@pytest.mark.parametrize("visits_elsewhere", [False, True], ids=["no_visits", "visits_another_opportunity"])
+def test_deliver_status_query_no_visits(opportunity: Opportunity, visits_elsewhere):
+    # Visits for another opportunity must not count towards this one.
     mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
+        if visits_elsewhere:
+            CompletedWorkFactory.create_batch(5)
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
 
     usernames = {user.username for user in mobile_users}
@@ -82,24 +86,6 @@ def test_deliver_status_query(opportunity: Opportunity):
         assert completed_work_counts[(username, access.payment_unit)]["completed"] == access.completed
         assert completed_work_counts[(username, access.payment_unit)]["over_limit"] == access.over_limit
         assert completed_work_counts[(username, access.payment_unit)]["incomplete"] == access.incomplete
-
-
-@pytest.mark.django_db
-def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunity):
-    # Test user visit counts when visits are for another opportunity. Should return 0 for all counts as the user has
-    # done no visits in the current opportunity.
-    mobile_users = MobileUserFactory.create_batch(5)
-    for mobile_user in mobile_users:
-        OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
-        CompletedWorkFactory.create_batch(5)
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
-    usernames = {user.username for user in mobile_users}
-    for access in access_objects:
-        assert access.user.username in usernames
-        assert access.approved == 0
-        assert access.rejected == 0
-        assert access.pending == 0
-        assert access.completed == 0
 
 
 @pytest.mark.django_db
@@ -469,8 +455,13 @@ def test_opportunity_worker_progress_stats(opportunity):
     PaymentFactory(opportunity_access=access, date_paid=today, amount=100)
 
     # Total deliveries = 4
+    # Org pay on non-approved work is excluded from total_org_accrued
     CompletedWorkFactory.create_batch(
-        2, opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1
+        2,
+        opportunity_access=access,
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+        saved_org_payment_accrued=40,
     )
     CompletedWorkFactory.create_batch(
         1,
@@ -478,6 +469,7 @@ def test_opportunity_worker_progress_stats(opportunity):
         status=CompletedWorkStatus.approved,
         saved_completed_count=1,
         saved_approved_count=1,
+        saved_org_payment_accrued=30,
     )
     CompletedWorkFactory.create_batch(
         1, opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1
@@ -506,6 +498,7 @@ def test_opportunity_worker_progress_stats(opportunity):
         status=CompletedWorkStatus.approved,
         saved_completed_count=2,
         saved_approved_count=2,
+        saved_org_payment_accrued=60,
     )
 
     result = get_opportunity_worker_progress(opportunity.id)
@@ -515,6 +508,7 @@ def test_opportunity_worker_progress_stats(opportunity):
     assert result.approved_deliveries == 3
     assert result.rejected_deliveries == 1
     assert result.total_accrued == 300
+    assert result.total_org_accrued == 90
     assert result.total_paid == 100
     assert result.visits_since_yesterday == 2
 

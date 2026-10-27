@@ -62,3 +62,65 @@ def audited_object(field_name, description):
         return related or UNKNOWN
 
     return display
+
+
+class ChangedFieldsMixin:
+    """Adds a "Changes" field to an event's page, listing the fields that differ from the record's previous event.
+
+    Events are snapshots of the whole record, so a change is found by comparing an event with the
+    one before it for the same record. A record's first event has nothing to compare against.
+    """
+
+    def get_readonly_fields(self, request, obj=None):
+        return ("changes", *super().get_readonly_fields(request, obj))
+
+    @admin.display(description=_("Changes"))
+    def changes(self, obj):
+        previous_event = (
+            type(obj).objects.filter(pgh_obj_id=obj.pgh_obj_id, pgh_id__lt=obj.pgh_id).order_by("-pgh_id").first()
+        )
+        return changed_fields_summary(previous_event, obj) or UNKNOWN
+
+
+def changed_fields_summary(previous_event, event):
+    """Describes each tracked field whose value differs between two events, e.g. "Status: — → Active"."""
+    if previous_event is None:
+        return ""
+    changes = []
+    for field in _tracked_fields(event):
+        # Compared on the stored values, not the displayed ones (choice labels, related records' names).
+        if _stored_value(previous_event, field) != _stored_value(event, field):
+            before, after = _event_value(previous_event, field), _event_value(event, field)
+            changes.append(f"{field.verbose_name.capitalize()}: {before} → {after}")
+    return "; ".join(changes)
+
+
+def _stored_value(event, field):
+    """The field's stored value, with None and an empty string counted as the same empty value."""
+    value = getattr(event, field.attname)
+    return None if value == "" else value
+
+
+def _tracked_fields(event):
+    tracked_pk = event.pgh_tracked_model._meta.pk.attname
+    return [
+        field
+        for field in event._meta.concrete_fields
+        if not field.name.startswith("pgh_") and field.attname != tracked_pk
+    ]
+
+
+def _event_value(event, field):
+    value = getattr(event, field.attname)
+    if value in (None, ""):
+        return UNKNOWN
+    if field.is_relation:
+        try:
+            value = getattr(event, field.name)
+        except ObjectDoesNotExist:
+            pass
+    elif field.choices:
+        value = dict(field.flatchoices).get(value, value)
+    elif isinstance(value, bool):
+        value = _("Yes") if value else _("No")
+    return str(value)

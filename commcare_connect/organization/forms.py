@@ -11,6 +11,7 @@ from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.tables import value_with_icon_tooltip
 from commcare_connect.organization.models import (
     ORGANIZATION_STATUS_DEFINITIONS,
+    Contact,
     Organization,
     OrganizationInvite,
     OrganizationStatus,
@@ -334,6 +335,73 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
                 css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
             ),
         )
+
+
+class ContactForm(forms.ModelForm):
+    class Meta:
+        model = Contact
+        fields = ("name", "organization", "title", "is_main_poc", "email", "phone", "notes")
+        widgets = {
+            "organization": forms.Select(
+                attrs={
+                    "data-tomselect": "1",
+                    "data-tomselect:no-remove-button": "1",
+                    "placeholder": gettext_lazy("Select organization"),
+                }
+            ),
+            "is_main_poc": forms.Select(choices=((False, gettext_lazy("No")), (True, gettext_lazy("Yes")))),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+        labels = {
+            "name": gettext_lazy("Contact Full Name"),
+            "organization": gettext_lazy("Organization Name"),
+            "title": gettext_lazy("Role / Title"),
+            "is_main_poc": gettext_lazy("Main POC?"),
+            "email": gettext_lazy("Email Address"),
+            "phone": gettext_lazy("Phone Number"),
+            "notes": gettext_lazy("Contact Notes"),
+        }
+        help_texts = {
+            "organization": gettext_lazy("Links this contact to an existing Organization."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["organization"].queryset = Organization.objects.order_by("name")
+        self.fields["organization"].empty_label = gettext("Select organization")
+        self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.layout = layout.Layout(
+            layout.Div(
+                _full_width("name"),
+                _full_width("organization"),
+                "title",
+                "is_main_poc",
+                "email",
+                "phone",
+                _full_width("notes"),
+                css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
+            ),
+        )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip()
+        existing = (
+            Contact.objects.filter(email__iexact=email).exclude(pk=self.instance.pk).select_related("organization")
+        )
+        if contact := existing.first():
+            if contact.is_archived:
+                message = gettext("This email already belongs to %(name)s (archived) at %(organization)s.")
+            else:
+                message = gettext("This email already belongs to %(name)s at %(organization)s.")
+            raise ValidationError(message, params={"name": contact.name, "organization": contact.organization.name})
+        return email
+
+    def _get_validation_exclusions(self):
+        # Contact.save() unmarks the organization's other main contact first, so the one-main-contact
+        # constraint can't be broken by this form and must not reject a new main contact.
+        return super()._get_validation_exclusions() | {"is_main_poc"}
 
 
 def _wizard_step(number, title, *fields):

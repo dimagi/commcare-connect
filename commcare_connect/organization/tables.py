@@ -8,12 +8,19 @@ from django_tables2 import columns
 from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
 from commcare_connect.organization.models import (
     ORGANIZATION_STATUS_DEFINITIONS,
+    Contact,
     Organization,
     OrganizationInvite,
     PrimarySector,
     UserOrganizationMembership,
 )
-from commcare_connect.utils.tables import DMYTColumn, IndexColumn, ManagedOptionTable, select_column
+from commcare_connect.utils.tables import (
+    DMYTColumn,
+    IndexColumn,
+    ManagedOptionTable,
+    SpreadsheetSafeColumn,
+    select_column,
+)
 
 ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
 ROLE_BADGE_TEMPLATE = "organization/role_badge.html"
@@ -98,6 +105,48 @@ class OrganizationDirectoryTable(tables.Table):
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")
+
+
+class ContactDirectoryTable(tables.Table):
+    # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
+    # instead of the referer's.
+    use_view_url = False
+    name = columns.Column(verbose_name=_("Contact Name"))
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    title = columns.Column(verbose_name=_("Role / Title"))
+    is_main_poc = columns.TemplateColumn(
+        verbose_name=_("POC"),
+        template_name="organization/directory/main_poc_badge.html",
+        orderable=False,
+    )
+    email = columns.TemplateColumn(verbose_name=_("Email"), template_name="organization/directory/email_link.html")
+    phone = columns.Column(verbose_name=_("Phone"), orderable=False)
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/contact_row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
+
+    class Meta:
+        model = Contact
+        fields = ("name", "organization", "title", "is_main_poc", "email", "phone")
+        sequence = (*fields, "actions")
+        default = "—"
+        empty_text = _("No contacts found.")
+
+
+class ContactExportTable(tables.Table):
+    name = SpreadsheetSafeColumn(verbose_name=_("Contact Name"))
+    organization = SpreadsheetSafeColumn(verbose_name=_("Organization"), accessor="organization__name")
+    title = SpreadsheetSafeColumn(verbose_name=_("Role / Title"))
+    is_main_poc = columns.Column(verbose_name=_("Main POC"))
+    email = SpreadsheetSafeColumn(verbose_name=_("Email"))
+    phone = SpreadsheetSafeColumn(verbose_name=_("Phone"))
+    notes = SpreadsheetSafeColumn(verbose_name=_("Notes"))
+
+    def value_is_main_poc(self, value):
+        return _("Yes") if value else _("No")
 
 
 class PrimarySectorTable(ManagedOptionTable):

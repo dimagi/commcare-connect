@@ -4,6 +4,7 @@ from factory.django import DjangoModelFactory, Password
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.organization.models import (
+    Contact,
     Organization,
     OrganizationInvite,
     UserOrganizationMembership,
@@ -57,6 +58,15 @@ class OrganizationFactory(DjangoModelFactory):
         model = Organization
 
 
+class ContactFactory(DjangoModelFactory):
+    organization = SubFactory(OrganizationFactory)
+    name = Faker("name")
+    email = Sequence(lambda n: f"contact{n}@example.com")
+
+    class Meta:
+        model = Contact
+
+
 class MembershipFactory(DjangoModelFactory):
     class Meta:
         model = UserOrganizationMembership
@@ -92,9 +102,5 @@ class ProgramManagerOrganisationFactory(DjangoModelFactory):
         model = Organization
 
 
-class ProgramManagerOrgWithUsersFactory(ProgramManagerOrganisationFactory):
-    admin = RelatedFactory(MembershipFactory, "organization", role="admin")
-    member = RelatedFactory(MembershipFactory, "organization", role="member")
-
-    class Meta:
-        skip_postgeneration_save = True
+class ProgramManagerOrgWithUsersFactory(OrgWithUsersFactory):
+    program_manager = True
