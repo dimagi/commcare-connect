@@ -46,6 +46,19 @@ def build_delivery_stats_csv(filters: dict) -> str:
     return TableExport("csv", table).export()
 
 
+def describe_filters(filters: dict) -> list[str]:
+    lines = []
+    for name, value in filters.items():
+        if not value:
+            continue
+        if isinstance(value, date):
+            value = value.strftime("%B %Y")
+        elif name == "period":
+            value = value.title()
+        lines.append(f"{name.replace('_', ' ').title()}: {value}")
+    return lines
+
+
 def is_eligible_recipient(user: User) -> bool:
     return bool(user.is_active and user.email and user.has_perm(KPI_REPORT_ACCESS))
 

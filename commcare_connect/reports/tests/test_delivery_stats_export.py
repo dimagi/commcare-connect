@@ -1,6 +1,7 @@
 import csv
 import io
 from datetime import UTC, date, datetime
+from unittest import mock
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -20,6 +21,7 @@ from commcare_connect.reports.delivery_stats_export import (
     remove_recipient,
 )
 from commcare_connect.reports.tables import AdminReportTable
+from commcare_connect.reports.tasks import email_delivery_stats_export, send_delivery_stats_export
 from commcare_connect.reports.tests.test_reports import _create_kpi_test_data
 from commcare_connect.users.tests.factories import UserFactory
 
@@ -127,3 +129,66 @@ def test_add_and_remove_recipient_creates_flag(kpi_user):
 
     remove_recipient(kpi_user)
     assert get_recipients() == []
+
+
+@pytest.fixture
+def empty_report():
+    with mock.patch(
+        "commcare_connect.reports.delivery_stats_export.get_table_data_for_year_month", return_value=[]
+    ) as get_data:
+        yield get_data
+
+
+@pytest.mark.django_db
+def test_send_export_without_flag_sends_nothing(mailoutbox, empty_report):
+    send_delivery_stats_export()
+
+    assert mailoutbox == []
+    empty_report.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_send_export_only_to_eligible_recipients(mailoutbox, empty_report, kpi_user, previous_month):
+    add_recipient(kpi_user)
+    add_recipient(UserFactory())
+    add_recipient(_grant_kpi_access(UserFactory(is_active=False)))
+
+    send_delivery_stats_export()
+
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == [kpi_user.email]
+    assert mailoutbox[0].subject == f"Delivery Stats — {previous_month:%B %Y}"
+    name, _, mimetype = mailoutbox[0].attachments[0]
+    assert name == f"delivery-stats-{previous_month:%Y-%m}.csv"
+    assert mimetype == "text/csv"
+    assert empty_report.call_args.kwargs == previous_month_filters(now().date())
+
+
+@pytest.mark.django_db
+def test_email_monthly_export_goes_only_to_requester(mailoutbox, empty_report, kpi_user):
+    add_recipient(_grant_kpi_access(UserFactory()))
+
+    email_delivery_stats_export(kpi_user.pk, None)
+
+    assert [message.to for message in mailoutbox] == [[kpi_user.email]]
+    assert empty_report.call_args.kwargs == previous_month_filters(now().date())
+
+
+@pytest.mark.django_db
+def test_email_filtered_export_honors_filters(mailoutbox, empty_report, kpi_user):
+    email_delivery_stats_export(kpi_user.pk, {"from_date": "2026-01", "to_date": "2026-03", "period": "quarterly"})
+
+    assert empty_report.call_args.kwargs["period"] == "quarterly"
+    assert empty_report.call_args.kwargs["from_date"] == date(2026, 1, 1)
+    assert mailoutbox[0].subject == "Delivery Stats export"
+    assert mailoutbox[0].attachments[0][0] == f"delivery-stats-export-{now().date():%Y-%m-%d}.csv"
+    assert "Period: Quarterly" in mailoutbox[0].body
+
+
+@pytest.mark.django_db
+def test_email_export_to_user_without_email_sends_nothing(mailoutbox, empty_report):
+    user = _grant_kpi_access(UserFactory(email=None))
+
+    email_delivery_stats_export(user.pk, None)
+
+    assert mailoutbox == []
