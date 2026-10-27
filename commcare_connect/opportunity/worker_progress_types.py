@@ -87,22 +87,23 @@ class LimitUsage:
 
 @dataclass
 class DailyUsage:
-    """Deliveries today for one payment unit against the combined daily capacity of all active workers."""
+    """How much of one payment unit's daily limit active workers have used today, against their combined
+    daily capacity."""
 
-    delivered: int
+    used: int
     capacity: int
 
     @property
     def label(self):
-        return f"{intcomma(self.delivered)}/{intcomma(self.capacity)}"
+        return f"{intcomma(self.used)}/{intcomma(self.capacity)}"
 
     @property
     def is_reached(self):
-        return self.delivered > 0 and self.delivered >= self.capacity
+        return self.used > 0 and self.used >= self.capacity
 
     @property
     def width(self):
-        return _bar_width(self.delivered, self.capacity) if self.capacity else (100 if self.delivered else 0)
+        return _bar_width(self.used, self.capacity) if self.capacity else (100 if self.used else 0)
 
 
 @dataclass

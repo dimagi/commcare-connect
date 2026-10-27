@@ -65,18 +65,18 @@ def test_limit_usage_bars_stop_at_full():
 
 
 @pytest.mark.parametrize(
-    "delivered, capacity, reached, width",
+    "used, capacity, reached, width",
     [
         (84, 130, False, 84 / 130 * 100),
         (130, 130, True, 100),
         (140, 130, True, 100),
         (0, 0, False, 0),
-        # Deliveries from a worker whose limit for the unit has since ended, so it adds no capacity
+        # Visits from a worker whose limit for the unit was ended after they visited, so it adds no capacity
         (2, 0, True, 100),
     ],
 )
-def test_daily_usage(delivered, capacity, reached, width):
-    today = DailyUsage(delivered=delivered, capacity=capacity)
+def test_daily_usage(used, capacity, reached, width):
+    today = DailyUsage(used=used, capacity=capacity)
     assert today.is_reached is reached
     assert today.width == pytest.approx(width)
 
@@ -196,76 +196,93 @@ def test_get_delivery_allocation(opportunity):
     assert allocation.total.counts == StatusCounts(approved=2, pending=2, rejected=1)
     assert allocation.active_workers == 2
     assert allocation.synced_workers == 1
-    assert by_name[household.name].today == DailyUsage(delivered=1, capacity=3)
+    assert by_name[household.name].today == DailyUsage(used=2, capacity=3)
     assert by_name[anc.name].today is None
     assert allocation.hide_pending is False
 
 
 TODAY = 0
 YESTERDAY = -1
-TOMORROW = 1
 V = VisitValidationStatus
+A, B, OPTIONAL_1, OPTIONAL_2 = "a", "b", "optional_1", "optional_2"
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "work_status, visits, worker_active, counted",
+    "visits, used",
     [
-        (CompletedWorkStatus.pending, [(TODAY, V.pending)], True, True),
-        # A delivery started yesterday and finished today was completed today
+        # The busiest deliver unit is the one the daily limit stops first
+        ([(A, TODAY, V.pending), (A, TODAY, V.pending), (B, TODAY, V.pending)], 2),
+        # Every visit the form receiver counts toward the limit counts, whatever its review status
+        ([(A, TODAY, V.approved), (A, TODAY, V.rejected), (A, TODAY, V.duplicate)], 3),
+        ([(A, YESTERDAY, V.pending), (A, YESTERDAY, V.pending), (B, TODAY, V.pending)], 1),
+        # Over-limit and trial visits don't count toward the daily limit
+        ([(A, TODAY, V.pending), (A, TODAY, V.over_limit), (A, TODAY, V.trial)], 1),
+        # A delivery needs a visit to only one optional deliver unit, so the least busy one is what the
+        # limit stops
+        ([(A, TODAY, V.pending), (OPTIONAL_1, TODAY, V.pending), (OPTIONAL_1, TODAY, V.pending)], 1),
         (
-            CompletedWorkStatus.approved,
-            [(YESTERDAY, V.approved), (TODAY, V.approved)],
-            True,
-            True,
+            [
+                (A, TODAY, V.pending),
+                (OPTIONAL_1, TODAY, V.pending),
+                (OPTIONAL_1, TODAY, V.pending),
+                (OPTIONAL_2, TODAY, V.pending),
+                (OPTIONAL_2, TODAY, V.pending),
+            ],
+            2,
         ),
-        (CompletedWorkStatus.pending, [(YESTERDAY, V.pending)], True, False),
-        # Its last counting visit is after today, so it wasn't completed today
-        (
-            CompletedWorkStatus.approved,
-            [(TODAY, V.approved), (TOMORROW, V.approved)],
-            True,
-            False,
-        ),
-        # A trial visit today doesn't move the delivery date
-        (
-            CompletedWorkStatus.pending,
-            [(YESTERDAY, V.pending), (TODAY, V.trial)],
-            True,
-            False,
-        ),
-        # An over-limit visit today doesn't move the delivery date
-        (
-            CompletedWorkStatus.rejected,
-            [(YESTERDAY, V.rejected), (TODAY, V.over_limit)],
-            True,
-            False,
-        ),
-        (CompletedWorkStatus.over_limit, [(TODAY, V.over_limit)], True, False),
-        (CompletedWorkStatus.incomplete, [(TODAY, V.pending)], True, False),
-        # Only active workers make up the daily capacity, so only their deliveries count
-        (CompletedWorkStatus.pending, [(TODAY, V.pending)], False, False),
     ],
 )
-def test_deliveries_today(opportunity, work_status, visits, worker_active, counted):
+def test_daily_limit_used(opportunity, visits, used):
     unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3)
-    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit)
-    access = OpportunityAccessFactory(opportunity=opportunity, suspended=not worker_active)
-    OpportunityClaimFactory(opportunity_access=access, end_date=localdate())
-    work = CompletedWorkFactory(opportunity_access=access, payment_unit=unit, status=work_status)
-    for days, status in visits:
-        UserVisitFactory(
-            opportunity=opportunity,
-            opportunity_access=access,
-            deliver_unit=deliver_unit,
-            completed_work=work,
-            status=status,
-            visit_date=now() + timedelta(days=days),
-        )
+    deliver_units = {
+        A: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit),
+        B: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit),
+        OPTIONAL_1: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit, optional=True),
+        OPTIONAL_2: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit, optional=True),
+    }
+    access = _claimed_worker(opportunity)
+    for du, days, status in visits:
+        _visit(access, deliver_units[du], status, days)
 
     (allocation_unit,) = get_delivery_allocation(opportunity).payment_units
 
-    assert allocation_unit.today.delivered == (1 if counted else 0)
+    assert allocation_unit.today.used == used
+
+
+@pytest.mark.django_db
+def test_daily_limit_used_sums_active_workers(opportunity):
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3)
+    a = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit)
+    b = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit)
+    # Each worker is stopped by a different deliver unit, and both count
+    first, second = _claimed_worker(opportunity), _claimed_worker(opportunity)
+    for deliver_unit in [a, a, b]:
+        _visit(first, deliver_unit, V.pending)
+    for deliver_unit in [b, b]:
+        _visit(second, deliver_unit, V.pending)
+    # Only active workers make up the daily capacity, so only their visits count
+    _visit(_claimed_worker(opportunity, suspended=True), a, V.rejected)
+
+    (allocation_unit,) = get_delivery_allocation(opportunity).payment_units
+
+    assert allocation_unit.today.used == 2 + 2
+
+
+def _claimed_worker(opportunity, suspended=False):
+    access = OpportunityAccessFactory(opportunity=opportunity, suspended=suspended)
+    OpportunityClaimFactory(opportunity_access=access, end_date=localdate())
+    return access
+
+
+def _visit(access, deliver_unit, status, days=TODAY):
+    UserVisitFactory(
+        opportunity=access.opportunity,
+        opportunity_access=access,
+        deliver_unit=deliver_unit,
+        status=status,
+        visit_date=now() + timedelta(days=days),
+    )
 
 
 NO_LIMIT = object()
