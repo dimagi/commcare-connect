@@ -295,7 +295,10 @@ class SolicitationInvitationForm(forms.Form):
     organizations = forms.ModelMultipleChoiceField(
         label=_("Organizations"),
         queryset=Organization.objects.none(),
-        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        # Clearing the search after each pick lets a PM type the next organization straight away.
+        widget=forms.SelectMultiple(
+            attrs={"data-tomselect": "1", "data-tomselect:settings": json.dumps({"clearAfterSelect": True})}
+        ),
     )
 
     def __init__(self, *args, solicitation, **kwargs):
