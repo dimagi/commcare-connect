@@ -113,7 +113,8 @@ jobs:
               1. outputs/release_notes_${{ env.TAG }}.md - the Markdown release notes from step 6.
               2. outputs/confluence.html - the same release notes as a Confluence storage format (XHTML) fragment:
                  no <html> or <body> wrapper, headings as <h1>/<h2>, items as <p> with <strong> titles, PR links
-                 kept as <a href="...">, and no horizontal rule at the start or end.
+                 kept as <a href="...">, and no horizontal rule at the start or end. The <h1> must contain
+                 v${{ env.TAG }}.
               3. outputs/slack.txt - the Slack message described in step 8, with one change: the message is sent
                  through the raw Slack API, so bold uses *single asterisks*, not **double**.
             - If there are no user-facing changes to report, write only outputs/NO_CHANGES, containing the word

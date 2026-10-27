@@ -75,7 +75,7 @@ def test_publish_prepends_to_page(monkeypatch):
     fake = FakeUrlopen()
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
 
-    published = publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "Add vX release notes", "vX")
+    published = publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>vX</h1>", "Add vX release notes", "vX")
 
     assert published
     (get, get_timeout), (put, put_timeout) = fake.requests
@@ -86,7 +86,7 @@ def test_publish_prepends_to_page(monkeypatch):
     expected_auth = "Basic " + base64.b64encode(b"bot@example.com:t").decode()
     assert get.get_header("Authorization") == put.get_header("Authorization") == expected_auth
     body = json.loads(put.data)
-    assert body["body"]["value"] == "<h1>new</h1><hr/><p>old</p>"
+    assert body["body"]["value"] == "<h1>vX</h1><hr/><p>old</p>"
     assert body["version"] == {"number": 8, "message": "Add vX release notes"}
 
 
@@ -97,17 +97,26 @@ def test_publish_raises_on_conflict(monkeypatch):
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", FakeUrlopen(put_error=conflict))
 
     with pytest.raises(PublishError, match="409.*version mismatch"):
-        publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "M", "vX")
+        publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>vX</h1>", "M", "vX")
 
 
 def test_publish_skips_release_already_on_page(monkeypatch):
     fake = FakeUrlopen()
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
 
-    published = publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "M", "old")
+    published = publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>old</h1>", "M", "old")
 
     assert not published
     assert [request.get_method() for request, _ in fake.requests] == ["GET"]
+
+
+def test_publish_refuses_fragment_without_the_release(monkeypatch):
+    fake = FakeUrlopen()
+    monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
+
+    with pytest.raises(PublishError, match="do not mention release vX"):
+        publish(BASE_URL, ("bot@example.com", "t"), "3870556169", "<h1>new</h1>", "M", "vX")
+    assert fake.requests == []
 
 
 def test_main_exits_not_configured_without_credentials(monkeypatch, tmp_path):

@@ -64,7 +64,12 @@ def credentials_from_env(env: Mapping[str, str]) -> tuple[str, str] | None:
 
 
 def publish(base_url: str, auth: tuple[str, str], page_id: str, fragment: str, message: str, tag: str) -> bool:
-    """Returns False without changing the page when it already mentions the release, so retries are safe."""
+    """Returns False without changing the page when it already mentions the release, so retries are safe.
+
+    The fragment has to mention the release too, or a retry could not recognise it on the page and would add it again.
+    """
+    if tag not in fragment:
+        raise PublishError(f"The release notes do not mention release {tag}, so a retry could add them twice")
     page_url = f"{base_url}/wiki/api/v2/pages/{page_id}"
     page = _request("GET", f"{page_url}?body-format=storage", auth)
     existing_body = page["body"]["storage"]["value"]
