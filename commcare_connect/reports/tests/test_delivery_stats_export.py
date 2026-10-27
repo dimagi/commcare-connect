@@ -5,12 +5,11 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.urls import reverse
 from django.utils.timezone import now
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
-from commcare_connect.flags.flag_names import DELIVERY_STATS_MONTHLY_EXPORT
-from commcare_connect.flags.models import Flag
 from commcare_connect.reports.delivery_stats_export import (
     add_recipient,
     build_delivery_stats_csv,
@@ -22,10 +21,12 @@ from commcare_connect.reports.delivery_stats_export import (
     previous_month_filters,
     remove_recipient,
 )
+from commcare_connect.reports.forms import AddRecipientForm
 from commcare_connect.reports.tables import AdminReportTable
 from commcare_connect.reports.tasks import email_delivery_stats_export, send_delivery_stats_export
 from commcare_connect.reports.tests.test_reports import _create_kpi_test_data
 from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.utils.test_utils import check_basic_permissions
 
 
 def _grant_kpi_access(user):
@@ -36,12 +37,6 @@ def _grant_kpi_access(user):
 @pytest.fixture
 def kpi_user(db):
     return _grant_kpi_access(UserFactory())
-
-
-@pytest.fixture
-def no_flag(db):
-    # The reports migration creates the flag; remove it to exercise the unconfigured path.
-    Flag.objects.filter(name=DELIVERY_STATS_MONTHLY_EXPORT).delete()
 
 
 @pytest.fixture
@@ -113,7 +108,8 @@ def test_is_eligible_recipient(setup, eligible):
     assert is_eligible_recipient(user) is eligible
 
 
-def test_recipients_without_flag_are_empty(no_flag):
+@pytest.mark.django_db
+def test_recipients_without_flag_are_empty():
     assert get_recipient_flag() is None
     assert get_recipients() == []
     assert get_eligible_recipients() == []
@@ -129,7 +125,9 @@ def test_get_eligible_recipients_skips_ineligible(kpi_user):
     assert get_eligible_recipients() == [kpi_user]
 
 
-def test_add_and_remove_recipient_creates_flag(no_flag, kpi_user):
+def test_add_and_remove_recipient_creates_flag(kpi_user):
+    assert get_recipient_flag() is None
+
     add_recipient(kpi_user)
     assert get_recipient_flag().users.filter(pk=kpi_user.pk).exists()
 
@@ -145,7 +143,8 @@ def empty_report():
         yield get_data
 
 
-def test_send_export_without_flag_sends_nothing(no_flag, mailoutbox, empty_report):
+@pytest.mark.django_db
+def test_send_export_without_flag_sends_nothing(mailoutbox, empty_report):
     send_delivery_stats_export()
 
     assert mailoutbox == []
@@ -197,3 +196,61 @@ def test_email_export_to_user_without_email_sends_nothing(mailoutbox, empty_repo
     email_delivery_stats_export(user.pk, None)
 
     assert mailoutbox == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "setup, error",
+    [
+        ("eligible", None),
+        ("unknown", "No active Connect user with this email."),
+        ("inactive", "No active Connect user with this email."),
+        ("no_perm", "This user does not have access to the Delivery Stats report."),
+    ],
+)
+def test_add_recipient_form(setup, error):
+    user = UserFactory(email="recipient@example.com", is_active=setup != "inactive")
+    if setup != "no_perm":
+        _grant_kpi_access(user)
+    email = "unknown@example.com" if setup == "unknown" else user.email
+
+    form = AddRecipientForm({"email": email})
+
+    if error:
+        assert form.errors["email"] == [error]
+    else:
+        assert form.is_valid()
+        assert form.cleaned_data["email"] == user
+
+
+def test_add_recipient_form_is_case_insensitive(kpi_user):
+    form = AddRecipientForm({"email": kpi_user.email.upper()})
+
+    assert form.is_valid()
+    assert form.cleaned_data["email"] == kpi_user
+
+
+@pytest.mark.django_db
+def test_recipients_page_is_gated():
+    check_basic_permissions(UserFactory(), reverse("reports:delivery_stats_recipients"), "kpi_report_access")
+
+
+def test_recipients_page_marks_ineligible_recipients(client, kpi_user):
+    no_perm_user = UserFactory()
+    add_recipient(kpi_user)
+    add_recipient(no_perm_user)
+    client.force_login(kpi_user)
+
+    response = client.get(reverse("reports:delivery_stats_recipients"))
+
+    assert set(response.context["recipients"]) == {(kpi_user, True), (no_perm_user, False)}
+
+
+def test_recipients_page_adds_and_removes(client, kpi_user):
+    client.force_login(kpi_user)
+
+    client.post(reverse("reports:delivery_stats_recipients"), {"email": kpi_user.email})
+    assert get_recipients() == [kpi_user]
+
+    client.post(reverse("reports:remove_delivery_stats_recipient", args=[kpi_user.pk]))
+    assert get_recipients() == []
