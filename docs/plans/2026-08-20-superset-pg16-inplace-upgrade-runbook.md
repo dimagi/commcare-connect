@@ -13,6 +13,8 @@ Work top to bottom and tick each box. For the reasoning behind any step, see the
 - ⛔ Never pass `--recreate` to `setup_logical_replication`.
 - ⛔ Never `DROP SUBSCRIPTION` without first `SET (slot_name = NONE)`.
 - ⛔ Never touch the primary's parameter group (`logicalreplicatorpublisher15`).
+- ⛔ Every `aws` command carries `AWS_PROFILE=commcare-connect` and `--region eu-west-1`. The old
+  us-east-1 instances have the **same identifiers**.
 
 ## Prerequisites
 
@@ -20,8 +22,8 @@ Work top to bottom and tick each box. For the reasoning behind any step, see the
 |---|---|
 | Superset RDS | `connect-superset-prod`, parameter group `default.postgres15`, master user `postgres` (1Password: *RDS Replica Subscriber DB Root credentials*) |
 | Connect primary | `connect-production`, parameter group `logicalreplicatorpublisher15` (leave alone) |
-| `postgres_repl` password | Replication user on the primary. Used for the subscription and for slot drops |
-| AWS | Console + CloudShell (eu-west-1) with RDS permissions |
+| `postgres_repl` password | Replication user on the primary (1Password: *Prod Superset RDS replication user*). Used for the subscription and for slot drops |
+| AWS | Console, plus a local AWS CLI with the `commcare-connect` profile and RDS permissions |
 | Connect shell | `./manage.py shell` on an EU Connect host, as used for the earlier checks |
 | Superset host | Browser SSH with sudo. `pg_dump`/`pg_restore` 16.15 live here |
 | Superset UI | Admin role (for the R4 fallback) |
@@ -152,8 +154,8 @@ conn = secondary()
 
 ### Task 2 — Baselines and checks
 
-- [ ] `./manage.py logical_replication_status` — record the counts. (It works on 15.17; on 16 it may
-      fail, see Task 13.)
+- [ ] `./manage.py logical_replication_status` — record the counts. Log in as `postgres`. It prints
+      the `postgres_repl` password in the subscription row: redact it before sharing the output.
 - [ ] `primary("SELECT count(*) FROM pg_publication_tables WHERE pubname='tables_for_superset_pub';")` → `N`
 - [ ] `q(conn, "SELECT srsubstate, count(*) FROM pg_subscription_rel GROUP BY 1;")` → `[('r', N)]`
 - [ ] Record table owners (Task 12 compares against this):
@@ -176,7 +178,7 @@ conn = secondary()
 
 - [ ] Backup retention > 0:
   ```bash
-  aws rds describe-db-instances --db-instance-identifier connect-superset-prod \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 describe-db-instances --db-instance-identifier connect-superset-prod \
     --query 'DBInstances[].[BackupRetentionPeriod,DBInstanceStatus]' --output table
   ```
 
@@ -185,15 +187,15 @@ conn = secondary()
 - [ ] Outage window agreed.
 - [ ] Deploy freeze agreed for the window.
 - [ ] Window has ~1 hour of headroom for the slow path: if Task 9b or 10 is needed, Superset
-      stays down until `opportunity_uservisit` (14 GB of the 16 GB) finishes copying — estimated
-      10–25 min, allow up to an hour. Prefer low Connect traffic, and say in the downtime notice it
+      stays down until `opportunity_uservisit` (14 GB of the 16 GB) finishes copying — ~12 min for
+      12 GB in the rehearsal, so ~15 min here; allow up to an hour. Prefer low Connect traffic, and say in the downtime notice it
       may run long.
 
 ### R0 — Rollback pre-stage
 
 - [ ] Record the restore settings:
   ```bash
-  aws rds describe-db-instances --db-instance-identifier connect-superset-prod \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 describe-db-instances --db-instance-identifier connect-superset-prod \
     --query 'DBInstances[0].{Class:DBInstanceClass,SubnetGroup:DBSubnetGroup.DBSubnetGroupName,
              SecurityGroups:VpcSecurityGroups[].VpcSecurityGroupId,ParamGroups:DBParameterGroups[].DBParameterGroupName,
              OptionGroups:OptionGroupMemberships[].OptionGroupName,MultiAZ:MultiAZ,Public:PubliclyAccessible,
@@ -203,16 +205,13 @@ conn = secondary()
   ```
   `ReadReplicas` should be empty. If not, stop: the upgrade plan does not cover replicas.
 - [ ] Name the **rollback owner** and the **cutoff**: the latest time a full rollback can start and
-      still finish in the window (restore time, from the dry run below, plus up to ~1 hour of re-copy).
-      Record both.
+      still finish in the window. Rehearsal timings: restore ~7 min, rename swap ~4 min, re-copy
+      ~15 min; allow up to ~1 hour in total. Record both.
 - [ ] Superset endpoint locations (for the R4 fallback):
   - Metadata URI: `SQLALCHEMY_DATABASE_URI` in `/home/ccc_superset/www/superset/superset_config.py`.
     Edit by hand; the ansible_superset repo is out of date, so don't run the playbook.
   - Restart: `sudo supervisorctl restart superset`.
   - Stored connection: only **Connect New** points at this instance.
-- [ ] *(Recommended)* Dry-run restore of the latest automated snapshot to a scratch instance, using a
-      copy of `default.postgres15` with **`max_logical_replication_workers = 0`**. Time it, try the R4
-      rename, then delete the scratch instance and parameter group.
 
 ---
 
@@ -254,12 +253,14 @@ conn = secondary()
   APPLIED = q(conn, f"SELECT pg_replication_origin_progress('pg_{OLDOID}', true);")[0][0]
   primary(f"SELECT pg_wal_lsn_diff('{APPLIED}', confirmed_flush_lsn) FROM pg_replication_slots WHERE slot_name='tables_for_superset_sub';")
   ```
-  The last line shows how many bytes the subscriber is ahead of the slot. `0` or more is expected.
+  The last line shows how many bytes the subscriber is ahead of the slot. A negative value is also
+  fine: it means no replicated writes since the subscriber's last commit, and streaming then resumes
+  from the slot.
 - [ ] Snapshot, and **wait for it to finish**:
   ```bash
-  aws rds create-db-snapshot --db-instance-identifier connect-superset-prod \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 create-db-snapshot --db-instance-identifier connect-superset-prod \
     --db-snapshot-identifier superset-pre-pg16-<yyyymmdd>-1
-  aws rds wait db-snapshot-completed --db-snapshot-identifier superset-pre-pg16-<yyyymmdd>-1
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 wait db-snapshot-completed --db-snapshot-identifier superset-pre-pg16-<yyyymmdd>-1
   ```
 - [ ] From now on, re-run the slot query periodically and **watch primary free space**.
 
@@ -268,12 +269,14 @@ conn = secondary()
 - [ ] Start the upgrade (or the console equivalent: Modify → 16.13, not `16.13-R2` → parameter group
       `default.postgres16` → apply immediately):
   ```bash
-  aws rds modify-db-instance --db-instance-identifier connect-superset-prod --engine-version 16.13 \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 modify-db-instance --db-instance-identifier connect-superset-prod --engine-version 16.13 \
     --allow-major-version-upgrade --db-parameter-group-name default.postgres16 --apply-immediately
   ```
-- [ ] Wait until `available`.
-  - Precheck failed (instance back on 15.17) → **Abort before upgrade** (below).
-  - Upgrade failed, or not `available` by the cutoff → **Full rollback**.
+- [ ] Watch the status. Expect `upgrading` (~5 min), then `backing-up` on 16.13, then `available`
+      (~14 min in total in the rehearsal). The database accepts connections from `backing-up` onwards,
+      so carry on with the next steps then.
+  - Precheck failed (`upgrading`, then back to `available` on 15.17) → **Abort before upgrade** (below).
+  - Upgrade failed, or not on 16.13 by the cutoff → **Full rollback**.
 - [ ] Reconnect (the reboot killed `conn`): `conn = secondary(); q(conn, "SELECT version();")` → 16.13
 - [ ] PostGIS. Expect `[('3.4.3', '3.4.3')]` for both databases:
   ```python
@@ -387,9 +390,7 @@ conn = secondary()
 
 ### Task 13 — Data moves
 
-- [ ] `./manage.py logical_replication_status` — compare to the baseline. On PG16 it fails with
-      `permission denied for table pg_subscription` unless RDS lets `postgres` read that table (it runs
-      `SELECT *`). If so, skip it: the next two checks cover replication.
+- [ ] `./manage.py logical_replication_status` — compare to the baseline (redact the password line).
 - [ ] Latest visit on each side. Wait a few minutes: the secondary must reach the primary's earlier value:
   `primary("SELECT max(id) FROM opportunity_uservisit;"), q(conn, "SELECT max(id) FROM opportunity_uservisit;")`
 - [ ] The slot on the primary is `active`, and its retained WAL is small and falling.
@@ -443,13 +444,14 @@ Task 7 starts). Re-enabling is safe here: the subscriber's state is intact.
 ### Metadata restore
 
 - [ ] Stop Superset (if running).
-- [ ] On the Superset host, restore. Exit code `1` is expected, so read the errors (PostGIS owner and
-      comment errors are harmless):
+- [ ] On the Superset host, restore. Expect exit code `0`. If there are errors, read them: PostGIS owner
+      and comment errors are harmless.
   ```bash
   pg_restore -h <endpoint> -U postgres -d superset_meta --clean --if-exists ~/superset_meta_window_start.dump
   ```
   Do **not** pass `--no-owner` or `--role`.
-- [ ] PostGIS is back at 3.4.3 in `superset_meta`.
+- [ ] Tables in `superset_meta` are still owned by `superset_meta`. PostGIS comes back at PG16's
+      default (3.4.6), which is fine.
 - [ ] Start Superset, then check logins and one saved chart.
 
 ### Full rollback
@@ -474,19 +476,19 @@ Task 7 starts). Re-enabling is safe here: the subscriber's state is intact.
   | Inactive, LSN **equals** the Task 6 record | R5a |
   | LSN **ahead** of the Task 6 record | R5b |
   | No slot | R5b, skipping the slot drop |
-  | `active = true` | The failed instance (or something else) still holds it. End that connection as `postgres_repl`, then re-check: `repl("SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE slot_name='tables_for_superset_sub' AND active;")`. If it comes back, stop the failed instance (`aws rds stop-db-instance`). |
+  | `active = true` | The failed instance (or something else) still holds it. End that connection as `postgres_repl`, then re-check: `repl("SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE slot_name='tables_for_superset_sub' AND active;")`. If it comes back, stop the failed instance (`aws rds stop-db-instance`, with the profile and region). |
 
 **R3 — Restore the snapshot**
 
 - [ ] Restore with the R0 settings:
   ```bash
-  aws rds restore-db-instance-from-db-snapshot \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 restore-db-instance-from-db-snapshot \
     --db-instance-identifier connect-superset-prod-rollback \
     --db-snapshot-identifier superset-pre-pg16-<yyyymmdd>-1 \
     --db-instance-class <R0> --db-subnet-group-name <R0> --vpc-security-group-ids <R0> \
     --db-parameter-group-name default.postgres15 --option-group-name <R0> \
     --storage-type <R0> [--iops <R0>] <--multi-az | --no-multi-az> <--publicly-accessible | --no-publicly-accessible>
-  aws rds wait db-instance-available --db-instance-identifier connect-superset-prod-rollback
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 wait db-instance-available --db-instance-identifier connect-superset-prod-rollback
   ```
   Its state is checked in R5, once there is a connection to it.
 
@@ -494,10 +496,10 @@ Task 7 starts). Re-enabling is safe here: the subscriber's state is intact.
 
 - [ ] Preferred: swap the instance identifiers, so no config changes are needed:
   ```bash
-  aws rds modify-db-instance --db-instance-identifier connect-superset-prod \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 modify-db-instance --db-instance-identifier connect-superset-prod \
     --new-db-instance-identifier connect-superset-prod-failed-pg16 --apply-immediately
   # wait until available
-  aws rds modify-db-instance --db-instance-identifier connect-superset-prod-rollback \
+  AWS_PROFILE=commcare-connect aws rds --region eu-west-1 modify-db-instance --db-instance-identifier connect-superset-prod-rollback \
     --new-db-instance-identifier connect-superset-prod --apply-immediately
   # wait until available and the endpoint matches the R0 record
   ```
@@ -509,7 +511,7 @@ Task 7 starts). Re-enabling is safe here: the subscriber's state is intact.
       `/home/ccc_superset/www/superset/superset_config.py`, and once Superset is started, update the
       host on the **Connect New** connection before users get access. Keep `SECRET_KEY` unchanged.
 - [ ] Stop the failed instance, so it can never reclaim the slot:
-      `aws rds stop-db-instance --db-instance-identifier <its current identifier>`. Don't delete it.
+      `AWS_PROFILE=commcare-connect aws rds --region eu-west-1 stop-db-instance --db-instance-identifier <its current identifier>`. Don't delete it.
 - [ ] Re-apply the R0 settings a restore doesn't carry over (deletion protection, backup retention,
       monitoring), via `aws rds modify-db-instance`.
 
