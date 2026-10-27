@@ -43,6 +43,8 @@ def _usage(completed, limit):
         (1000, 1000, 0, False, True, False),
         (1050, 1000, 0, False, True, True),
         (5, None, None, False, False, False),
+        (0, 0, 0, False, False, False),
+        (2, 0, 0, False, True, True),
     ],
 )
 def test_limit_usage_states(completed, limit, remaining, nearing, reached, exceeded):

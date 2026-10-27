@@ -53,7 +53,8 @@ class LimitUsage:
 
     @property
     def is_reached(self):
-        return self.limit is not None and self.completed >= self.limit
+        # A limit of zero with nothing delivered against it isn't reached, as there was nothing to reach
+        return self.limit is not None and self.completed > 0 and self.completed >= self.limit
 
     @property
     def is_exceeded(self):
@@ -61,7 +62,7 @@ class LimitUsage:
 
     @property
     def is_nearing(self):
-        return not self.is_reached and self.limit is not None and self.remaining <= self.limit * NEARING_LIMIT_FRACTION
+        return not self.is_reached and bool(self.limit) and self.remaining <= self.limit * NEARING_LIMIT_FRACTION
 
     @property
     def completed_width(self):
