@@ -9,6 +9,8 @@ from django.utils.timezone import now
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
+from commcare_connect.flags.flag_names import DELIVERY_STATS_MONTHLY_EXPORT
+from commcare_connect.flags.models import Flag
 from commcare_connect.reports.delivery_stats_export import (
     add_recipient,
     build_delivery_stats_csv,
@@ -34,6 +36,12 @@ def _grant_kpi_access(user):
 @pytest.fixture
 def kpi_user(db):
     return _grant_kpi_access(UserFactory())
+
+
+@pytest.fixture
+def no_flag(db):
+    # The reports migration creates the flag; remove it to exercise the unconfigured path.
+    Flag.objects.filter(name=DELIVERY_STATS_MONTHLY_EXPORT).delete()
 
 
 @pytest.fixture
@@ -105,8 +113,7 @@ def test_is_eligible_recipient(setup, eligible):
     assert is_eligible_recipient(user) is eligible
 
 
-@pytest.mark.django_db
-def test_recipients_without_flag_are_empty():
+def test_recipients_without_flag_are_empty(no_flag):
     assert get_recipient_flag() is None
     assert get_recipients() == []
     assert get_eligible_recipients() == []
@@ -122,8 +129,7 @@ def test_get_eligible_recipients_skips_ineligible(kpi_user):
     assert get_eligible_recipients() == [kpi_user]
 
 
-@pytest.mark.django_db
-def test_add_and_remove_recipient_creates_flag(kpi_user):
+def test_add_and_remove_recipient_creates_flag(no_flag, kpi_user):
     add_recipient(kpi_user)
     assert get_recipient_flag().users.filter(pk=kpi_user.pk).exists()
 
@@ -139,8 +145,7 @@ def empty_report():
         yield get_data
 
 
-@pytest.mark.django_db
-def test_send_export_without_flag_sends_nothing(mailoutbox, empty_report):
+def test_send_export_without_flag_sends_nothing(no_flag, mailoutbox, empty_report):
     send_delivery_stats_export()
 
     assert mailoutbox == []
