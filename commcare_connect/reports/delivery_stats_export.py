@@ -79,6 +79,10 @@ def get_recipients() -> list[User]:
     return list(flag.users.order_by("email"))
 
 
+def get_recipient_rows() -> list[tuple[User, bool]]:
+    return [(user, is_eligible_recipient(user)) for user in get_recipients()]
+
+
 def get_eligible_recipients() -> list[User]:
     eligible = []
     for user in get_recipients():

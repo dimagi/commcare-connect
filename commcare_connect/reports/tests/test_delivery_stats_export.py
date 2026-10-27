@@ -20,6 +20,7 @@ from commcare_connect.reports.delivery_stats_export import (
     get_eligible_recipients,
     get_filter_values,
     get_recipient_flag,
+    get_recipient_rows,
     get_recipients,
     is_eligible_recipient,
     previous_month_filters,
@@ -341,3 +342,12 @@ def test_export_tasks_retry_when_connectid_is_unreachable(task, args, kpi_user, 
 
     retry.assert_called_once()
     assert mailoutbox == []
+
+
+@pytest.mark.django_db
+def test_get_recipient_rows_flags_ineligible_recipients(kpi_user):
+    no_perm_user = UserFactory()
+    add_recipient(kpi_user)
+    add_recipient(no_perm_user)
+
+    assert set(get_recipient_rows()) == {(kpi_user, True), (no_perm_user, False)}

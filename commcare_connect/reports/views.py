@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-from functools import partial
 from urllib.parse import urlencode
 
 import django_filters
@@ -10,7 +9,6 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.db import transaction
 from django.db.models import F, Max
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -37,8 +35,7 @@ from commcare_connect.program.models import Program
 from commcare_connect.reports.decorators import kpi_report_access_required
 from commcare_connect.reports.delivery_stats_export import (
     add_recipient,
-    get_recipients,
-    is_eligible_recipient,
+    get_recipient_rows,
     remove_recipient,
 )
 from commcare_connect.reports.forms import AddRecipientForm
@@ -211,7 +208,7 @@ def queue_delivery_stats_email(request, filter_data):
     if not email:
         messages.error(request, _("Your account has no email address, so the export can't be emailed."))
         return
-    transaction.on_commit(partial(email_delivery_stats_export.delay, request.user.pk, filter_data))
+    email_delivery_stats_export.delay_on_commit(request.user.pk, filter_data)
     messages.success(request, _("The export will be emailed to {email} shortly.").format(email=email))
 
 
@@ -222,7 +219,7 @@ class DeliveryStatsRecipientsView(FormView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["recipients"] = [(user, is_eligible_recipient(user)) for user in get_recipients()]
+        context["recipients"] = get_recipient_rows()
         return context
 
     def form_valid(self, form):
