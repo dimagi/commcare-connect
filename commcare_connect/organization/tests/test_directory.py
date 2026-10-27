@@ -74,6 +74,13 @@ class TestOrganizationFilterSet:
 
         assert _filtered_organizations({"status": ["active", "prospective"]}) == {active, prospective}
 
+    def test_lists_archived_organizations_only_when_asked_for(self):
+        active = OrganizationFactory()
+        archived = OrganizationFactory(is_archived=True)
+
+        assert _filtered_organizations({}) == {active}
+        assert _filtered_organizations({"archived": "true"}) == {archived}
+
 
 @pytest.mark.django_db
 class TestOrganizationListAccess:
@@ -89,6 +96,15 @@ class TestOrganizationListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [org]
+
+    def test_organizations_count_excludes_archived(self, client, user_with_directory_access):
+        OrganizationFactory()
+        OrganizationFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:list"))
+
+        assert response.context["organizations_count"] == 1
 
 
 @pytest.mark.django_db
@@ -406,6 +422,13 @@ def _contact_form_data(organization, **overrides):
 
 @pytest.mark.django_db
 class TestContactForm:
+    def test_organization_choices_exclude_archived_organizations(self, organization):
+        archived = OrganizationFactory(is_archived=True)
+
+        assert list(ContactForm().fields["organization"].queryset) == [organization]
+        contact_of_archived = ContactFactory(organization=archived)
+        assert archived in ContactForm(instance=contact_of_archived).fields["organization"].queryset
+
     def test_requires_name_organization_and_email(self):
         form = ContactForm(data={})
 
