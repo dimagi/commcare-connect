@@ -60,7 +60,13 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
 def org_solicitations(organization):
     return (
         Solicitation.objects.filter(organization=organization)
-        .annotate(response_count=Count("applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES)))
+        # distinct, since counting two relations joins both and would multiply each count by the other.
+        .annotate(
+            response_count=Count(
+                "applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES), distinct=True
+            ),
+            invited_count=Count("invitations", distinct=True),
+        )
         .order_by("-date_created")
     )
 

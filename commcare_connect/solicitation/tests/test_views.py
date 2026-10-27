@@ -22,17 +22,18 @@ Status = SolicitationApplication.Status
 
 
 @pytest.mark.django_db
-def test_org_solicitations_scoped_to_org_with_response_counts(program_manager_org):
+def test_org_solicitations_counts(program_manager_org):
     solicitation = SolicitationFactory(organization=program_manager_org)
     for status in Status:
         SolicitationApplicationFactory(solicitation=solicitation, status=status)
+    SolicitationInvitationFactory.create_batch(3, solicitation=solicitation)
     empty = SolicitationFactory(organization=program_manager_org)
     SolicitationApplicationFactory(status=Status.SUBMITTED)  # another org's solicitation
 
-    counts = {s.pk: s.response_count for s in org_solicitations(program_manager_org)}
+    counts = {s.pk: (s.response_count, s.invited_count) for s in org_solicitations(program_manager_org)}
 
-    # Every status except draft and withdrawn counts as a response.
-    assert counts == {solicitation.pk: len(Status) - 2, empty.pk: 0}
+    # Every status except draft and withdrawn counts as a response; invitations don't inflate that count.
+    assert counts == {solicitation.pk: (len(Status) - 2, 3), empty.pk: (0, 0)}
 
 
 @pytest.mark.django_db

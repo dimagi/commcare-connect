@@ -20,15 +20,20 @@ class SolicitationTable(tables.Table):
     visibility = columns.Column(verbose_name=_("Visibility"), accessor="public")
     status = columns.TemplateColumn(verbose_name=_("Status"), template_name="solicitation/status_badge.html")
     application_deadline = DMYTColumn(verbose_name=_("Deadline"))
+    invited_count = columns.Column(verbose_name=_("Invited"), attrs=STAT_COLUMN_ATTRS)
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
 
     class Meta:
         model = Solicitation
-        fields = ("title", "type", "visibility", "status", "application_deadline", "response_count")
+        fields = ("title", "type", "visibility", "status", "application_deadline", "invited_count", "response_count")
         empty_text = _("No solicitations yet.")
 
     def render_visibility(self, value):
         return _("Public") if value else _("Private")
+
+    def render_invited_count(self, value, record):
+        # Anyone can apply to a public solicitation, so it has no invitations to count.
+        return "—" if record.public else value
 
 
 class SolicitationInvitationTable(tables.Table):
