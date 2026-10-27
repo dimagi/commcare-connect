@@ -97,6 +97,8 @@ class UserVisitTable(OrgContextTable):
     justification = columns.Column("Justification", accessor="justification", visible=False)
     duration = columns.Column("Duration", accessor="duration", visible=False)
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
+    payment_unit = columns.Column("Payment Unit", accessor="completed_work__payment_unit__name", visible=False)
+    over_limit_reasons = columns.Column("Over Limit Reason", accessor="over_limit_reasons", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
     entity_name = columns.Column("Entity Name", accessor="entity_name")
@@ -117,6 +119,9 @@ class UserVisitTable(OrgContextTable):
         short = [flag[1] for flag in value.get("flags")]
         return ", ".join(short)
 
+    def value_over_limit_reasons(self, record):
+        return "; ".join(record.get_over_limit_reasons_display())
+
     class Meta:
         model = UserVisit
         fields = ("user__name", "username", "visit_date", "status", "review_status")
@@ -129,6 +134,8 @@ class UserVisitTable(OrgContextTable):
             "username",
             "user__name",
             "deliver_unit",
+            "payment_unit",
+            "over_limit_reasons",
         )
         empty_text = "No forms."
         orderable = False
