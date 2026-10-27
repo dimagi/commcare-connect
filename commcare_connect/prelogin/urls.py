@@ -1,5 +1,6 @@
 import re
 
+from django.conf import settings
 from django.urls import path, re_path
 from django.views.generic import RedirectView
 
@@ -11,6 +12,8 @@ app_name = "prelogin"
 # load balancer routes only /public/* and /blog/* to it. Every other path on
 # connect.dimagi.com lands here, so the old marketing URLs (live, indexed,
 # bookmarked) are permanently redirected to their new /public/ locations.
+# Other environments have no /public/, so these redirects are off unless
+# settings.MARKETING_SITE_ENABLED is set.
 #
 # Matched with an optional trailing slash; query strings (e.g. the
 # /insights?program=kmc filters) are carried through to the new URL.
@@ -38,23 +41,28 @@ MARKETING_REDIRECTS = {
     "programs": "/public/portfolio",
 }
 
-urlpatterns = [
-    re_path(
-        rf"^{re.escape(route)}/?$" if route else r"^$",
-        RedirectView.as_view(url=target, permanent=True, query_string=True),
-        name=f"redirect-{route or 'home'}",
-    )
-    for route, target in MARKETING_REDIRECTS.items()
-]
-
-# Program detail pages: /portfolio/<slug>, plus the legacy /programs/<slug>.
-urlpatterns += [
-    re_path(
-        r"^(?:portfolio|programs)/(?P<slug>[\w-]+)/?$",
-        RedirectView.as_view(url="/public/portfolio/%(slug)s", permanent=True, query_string=True),
-        name="redirect-portfolio-detail",
-    ),
-]
+if settings.MARKETING_SITE_ENABLED:
+    urlpatterns = [
+        re_path(
+            rf"^{re.escape(route)}/?$" if route else r"^$",
+            RedirectView.as_view(url=target, permanent=True, query_string=True),
+            name=f"redirect-{route or 'home'}",
+        )
+        for route, target in MARKETING_REDIRECTS.items()
+    ]
+    # Program detail pages: /portfolio/<slug>, plus the legacy /programs/<slug>.
+    urlpatterns += [
+        re_path(
+            r"^(?:portfolio|programs)/(?P<slug>[\w-]+)/?$",
+            RedirectView.as_view(url="/public/portfolio/%(slug)s", permanent=True, query_string=True),
+            name="redirect-portfolio-detail",
+        ),
+    ]
+else:
+    # No marketing site to land on, so the root goes into the app.
+    urlpatterns = [
+        path("", RedirectView.as_view(pattern_name="users:redirect"), name="redirect-home"),
+    ]
 
 # "Connect in action" story pages — standalone templates, not yet migrated to
 # the marketing site, so still served here.
