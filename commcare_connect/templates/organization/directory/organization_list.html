@@ -22,6 +22,7 @@
   <div class="min-w-48">{{ filter.form.countries }}</div>
   <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
   <div class="min-w-48">{{ filter.form.status }}</div>
+  <div class="min-w-48">{{ filter.form.archived }}</div>
 {% endblock filters %}
 {% block result_count %}
   {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}

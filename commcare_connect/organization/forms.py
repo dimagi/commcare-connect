@@ -3,6 +3,7 @@ from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
+from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
@@ -365,7 +366,10 @@ class ContactForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["organization"].queryset = Organization.objects.order_by("name")
+        # A contact keeps its own organization as a choice after that organization is archived.
+        self.fields["organization"].queryset = Organization.objects.filter(
+            Q(is_archived=False) | Q(pk=self.instance.organization_id)
+        ).order_by("name")
         self.fields["organization"].empty_label = gettext("Select organization")
         self.helper = _modal_form_helper(self)
         self.helper.layout = layout.Layout(
