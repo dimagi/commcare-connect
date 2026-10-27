@@ -14,13 +14,22 @@ def details_url(record, table):
     return None
 
 
+def invitations_url(record, table):
+    # Invitations are only managed once a private solicitation is live.
+    if record.status == Solicitation.Status.ACTIVE and not record.public:
+        return reverse("solicitation:invitations", args=(table.request.org.slug, record.solicitation_id))
+    return None
+
+
 class SolicitationTable(tables.Table):
     title = columns.Column(verbose_name=_("Title"), linkify=details_url, attrs={"a": {"class": "underline"}})
     type = columns.Column(verbose_name=_("Type"))
     visibility = columns.Column(verbose_name=_("Visibility"), accessor="public")
     status = columns.TemplateColumn(verbose_name=_("Status"), template_name="solicitation/status_badge.html")
     application_deadline = DMYTColumn(verbose_name=_("Deadline"))
-    invited_count = columns.Column(verbose_name=_("Invited"), attrs=STAT_COLUMN_ATTRS)
+    invited_count = columns.Column(
+        verbose_name=_("Invited"), linkify=invitations_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
+    )
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
 
     class Meta:
