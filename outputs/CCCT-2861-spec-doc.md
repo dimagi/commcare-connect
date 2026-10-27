@@ -21,7 +21,7 @@
 ### Relevant Codebases
 
 - [commcare-connect](https://github.com/dimagi/commcare-connect) — optional deliver app, external unit and scheduler models, the provider layer and OCS provider, Program Manager UI, external unit completion endpoint, mobile API fields.
-- [commcare-android](https://github.com/dimagi/commcare-android) — skip the Deliver app launch after Learn when there is none; show the activity and progress, and external payment units; the activity opens by its launch type.
+- [commcare-android](https://github.com/dimagi/commcare-android) — skip the Deliver app launch after Learn when there is none; show the activity and external payment units; the activity opens by its launch type.
 - [open-chat-studio](https://github.com/dimagi/open-chat-studio) — configuration only, no code changes: an OCS pipeline step posts each interview completion to Connect's external unit completion endpoint.
 
 ---
@@ -100,7 +100,7 @@ The work splits into 8 tickets:
   - An FLW whose next step has no funded claim limit, or whose payment window has closed, waits at that step; later steps are not triggered in its place.
   - If the payment window closes while a step is in progress, the completion is recorded as an over-limit visit (`claim_limit_ended`) and the schedule moves on, as form visits do today.
   - Opportunities with no Deliver app have no tasks (neither relearn nor OCS).
-- **API changes:** new `POST /api/external_unit_completed/` for integrations. `/api/receiver/` keeps its payload and responses, but `FormReceiver.post` now looks up the token's server as an `ExternalServer` with `service=commcare_hq`, so a token from an integration's application is rejected there (Ticket 3). The mobile opportunity serializer emits `deliver_app: null`, `delivery_type`, `unit_type` on payment units and visits, and new `activity` (with a `launch` descriptor) and `activity_progress` fields.
+- **API changes:** new `POST /api/external_unit_completed/` for integrations. `/api/receiver/` keeps its payload and responses, but `FormReceiver.post` now looks up the token's server as an `ExternalServer` with `service=commcare_hq`, so a token from an integration's application is rejected there (Ticket 3). The mobile opportunity serializer emits `deliver_app: null`, `delivery_type`, `unit_type` on payment units and visits, and a new `activity` field (with a `launch` descriptor). Progress stays on the existing `delivery_progress` endpoint, unchanged.
 - **Error logging:** the provider raises `ProviderNotConfigured` for missing configuration (for OCS: no OCS account for `configured_by`, unset `OCS_BASE_URL`), which is logged and marks the session `failed` without retrying, and `ProviderTransientError` for transient errors, which retry with backoff (`autoretry_for` + `retry_backoff`) until the session's `attempts` reaches `MAX_TRIGGER_ATTEMPTS`, then mark the session `failed` with `last_error`. A timed-out trigger is ambiguous (the service may have started the work), so it is never retried past the cap; the Program Manager re-triggers it. Completion posts with an unknown `unitId` return `404`, and posts for an FLW with no claim raise `ProcessingError`; both are logged.
 
 **Monitoring and Alerting Plan:**
@@ -126,7 +126,7 @@ The work splits into 8 tickets:
 - **Posting completions to `/api/receiver/` in the HQ form shape**, with `FormReceiver` branching on the OAuth application. Rejected because the service would have to fabricate an HQ form (`domain`, `app_id`, `xmlns`, a deliver block) that means nothing for its work, the HQ receiver would carry integration branching, and an external ID used as `xform_id` changes on re-trigger. A dedicated endpoint gives integrations a small, explicit payload and reuses the same helpers extracted from `process_deliver_unit`.
 - **A separate unit model with its own accrual path.** Rejected because it would need parallel versions of `calculate_completed`, visit listings, exports, invoicing and the mobile payment views, and the two paths would drift.
 - **Claiming automatically when the FLW finishes Learn** (on opportunities with no Deliver app, from a Celery task). Rejected: the app already has a claim step and endpoint, a manual claim keeps one claim path with the same budget rules for every opportunity, and an automatic claim would reserve budget for FLWs who may never start.
-- **An `activities[]` list on mobile**, one entry per session. Rejected because only one session can be open at a time, so only one entry is ever actionable; sessions are created one step at a time, so the list wouldn't include steps not reached yet; and finished work already appears as visits and payments. `activity` plus `activity_progress` gives the app what it needs. If parallel external work is ever allowed, a list can come in a new mobile API version.
+- **An `activities[]` list on mobile**, one entry per session. Rejected because only one session can be open at a time, so only one entry is ever actionable; sessions are created one step at a time, so the list wouldn't include steps not reached yet; and finished work already appears as visits and payments. A single `activity` gives the app what it needs, and progress comes from the existing `delivery_progress` endpoint. If parallel external work is ever allowed, a list can come in a new mobile API version.
 - **Sending `unitId` to OCS in `participant_data`** (as OCS tasks send `connectTaskId`). Rejected because OCS participant data belongs to the participant, not the session: two open sessions on the same chatbot for one FLW would overwrite each other's ID.
 
 ---
@@ -452,12 +452,12 @@ The completion endpoint:
 
 **Changes:**
 
-Everything below goes on the opportunity API itself: new fields on `OpportunitySerializer` (`opportunity/api/serializers/mobile.py`), returned by `GET /api/opportunity/`, which the app already loads. There is no new endpoint, and no separate call like `delivery_progress`, so the app gets the activity in the same response as the opportunity.
+Everything below goes on the opportunity API itself: new fields on `OpportunitySerializer` (`opportunity/api/serializers/mobile.py`), returned by `GET /api/opportunity/`, which the app already loads. There is no new endpoint, so the app gets the activity in the same response as the opportunity.
 
 - `delivery_type` (the `DeliveryType` slug, e.g. `interviews`; `null` when unset), the same delivery type that turns on the schedule toggle on the web (Ticket 1), so the app shows features by delivery type rather than by a new opportunity-type field. Also `payment_units[].unit_type` (`form` | `external`).
 - `activity` (a nested object on each opportunity): the requesting FLW's open session on that opportunity (`scheduled`, `triggering`, `triggered` or `failed`; the `one_open_external_session` constraint means there is at most one), or `null` when there is none (no schedule, waiting for a funded claim limit, or every step done). Fields: `external_id`, `provider`, `label` (the step's name), `noun` (the provider's `display_noun`, e.g. "Interview"), `status`, `scheduled_for` and `launch`.
 - `launch` is where the provider's `launch_descriptor(session)` goes, e.g. `{"type": "connect_channel", "channel_id": ...}` for OCS. It is `null` until the session is `triggered` (a `scheduled`, `triggering` or `failed` session has nothing to open yet). CommCare launches stay on `learn_app` and `deliver_app` and have no launch descriptor.
-- `activity_progress`: `{"completed": n, "total": m}`, where `total` is the schedule's active steps and `completed` the FLW's steps that are `completed` or `skipped`; `null` when the opportunity has no schedule. Finished work is already in the visits and payment responses, so the app gets no per-step list.
+- No progress field. The worker's progress comes from the existing `delivery_progress` endpoint (`DeliveryProgressView`), which already returns their deliveries (built from `CompletedWork`), payments, accrued amount and claim limits; completed external units create `CompletedWork` like form visits, so it needs no change.
 
 ```json
 {
@@ -471,8 +471,7 @@ Everything below goes on the opportunity API itself: new fields on `OpportunityS
     "status": "triggered",
     "scheduled_for": "2026-10-06T09:00:00Z",
     "launch": { "type": "connect_channel", "channel_id": "…" }
-  },
-  "activity_progress": { "completed": 1, "total": 3 }
+  }
 }
 ```
 
@@ -481,8 +480,9 @@ Everything below goes on the opportunity API itself: new fields on `OpportunityS
 
 **Acceptance criteria:**
 
-- An FLW's opportunity response has their open session as `activity`, with `launch` set once it is triggered, and `activity_progress` counting completed and skipped steps against the active steps.
-- `activity` is `null` when the FLW has no open session, and both fields are `null` on an opportunity with no schedule.
+- An FLW's opportunity response has their open session as `activity`, with `launch` set once it is triggered.
+- `activity` is `null` when the FLW has no open session, including on an opportunity with no schedule.
+- `delivery_progress` responses are unchanged, and include completed external units in `deliveries` and `payment_accrued`.
 - The response carries the opportunity's `delivery_type` slug, and `null` when it has none.
 - A `django_assert_num_queries` test shows the query count is the same for one and several opportunities.
 - Existing fields are unchanged.
@@ -494,12 +494,12 @@ Everything below goes on the opportunity API itself: new fields on `OpportunityS
 **Changes:**
 
 - What "Start" opens comes from data the app already receives, with no opportunity-type field: with a `deliver_app`, the Deliver app as today, with the activity shown alongside when `activity` is set; with `deliver_app: null`, the activity, opened by its `launch`. `delivery_type` decides which features and labels are shown (for example the interview screens for `interviews`), not how anything is launched.
-- Show the activity with its `noun`, `label` and status, and progress from `activity_progress` ("Interview 2 of 3"). Opening it is driven by `launch.type`: one renderer per launch type, not per provider. v1 implements `connect_channel` (opens the chat via `channel_id`). With `launch: null` (scheduled, starting or failed) it shows the status and due date without an open action, and an unknown type is shown the same way. With `activity: null` and progress not finished, it says the next activity isn't scheduled yet.
+- Show the activity with its `noun`, `label` and status. There is no new progress UI; the existing delivery progress screens, fed by `delivery_progress`, cover it. Opening it is driven by `launch.type`: one renderer per launch type, not per provider. v1 implements `connect_channel` (opens the chat via `channel_id`). With `launch: null` (scheduled, starting or failed) it shows the status and due date without an open action, and an unknown type is shown the same way. With `activity: null` no activity is shown.
 - Label external payment units and visits.
 
 **Acceptance criteria:**
 
-- An FLW sees their activity's status and progress, and can open it once it is triggered.
+- An FLW sees their activity's status and can open it once it is triggered.
 - On an opportunity with no Deliver app, "Start" opens the activity; on one with a Deliver app it opens the Deliver app as today.
 - An activity with an unknown launch type, or with no `launch` yet, is shown but not openable, and the app doesn't crash.
 - Earnings from external units show alongside other payment units.
