@@ -47,12 +47,12 @@ sequenceDiagram
     actor FLW as FLW (Connect app)
     participant OCS as Open Chat Studio
 
-    PM->>C: Configure the schedule (steps, provider config) and payment units
+    PM->>C: Configure the schedule (provider, its config, steps) and payment units
     FLW->>C: Finish Learn app (forms through the form receiver)
     FLW->>C: Claim in the app (POST /api/opportunity/<id>/claim)
     C->>C: schedule_next_step: first session due at max(now, start dates)
     loop Each step, in order
-        Note over C: Beat task claims the due session (triggering)
+        Note over C: Beat task picks up the due session (triggering)
         C->>OCS: provider.trigger → trigger_bot (chatbot, prompt, merged session data incl. unitId)
         OCS-->>C: external_ref (OCS session ID) and provider_data (channel ID)
         C-->>FLW: Push notification
@@ -65,7 +65,7 @@ sequenceDiagram
 
 1. A Program Manager sets up the schedule: its provider (OCS in v1), the schedule's provider config (for OCS: the chatbot every interview uses and the session data sent with every interview, such as the FLW cohort), then for each step its config (for OCS: the opening prompt and the step's session data), order and Next Trigger days, and payment units that use the external units. The schedule stays editable while steps run; edits apply to sessions not yet triggered.
 2. The FLW finishes the Learn app and claims the opportunity in the app, through the existing claim endpoint, as today. The claim creates the first session, due at the later of now and the opportunity and payment unit start dates.
-3. The beat task claims each due session and triggers it through the schedule's provider (`provider.trigger`, which for OCS calls `ocs_api.trigger_bot`), and the FLW is notified.
+3. The beat task picks up each due session and triggers it through the schedule's provider (`provider.trigger`, which for OCS calls `ocs_api.trigger_bot`), and the FLW is notified.
 4. The FLW does the work in the external service. For OCS, they have the interview chat with the bot in Connect messaging.
 5. The service posts the completion to `/api/external_unit_completed/`. Connect records an approved `UserVisit`, payment accrues through `CompletedWork`, and the next step is scheduled for `completed_at + next_trigger_days`.
 6. Steps 3–5 repeat until the last step is complete.
@@ -280,7 +280,7 @@ Schedule page and payment unit linking:
   - Adding and editing a step happens in a modal (the `tasks/new_task_modal.html` pattern, re-rendered by htmx on errors). The modal holds the step's name, the schedule provider's `config_form` and Next Trigger days; there is no provider field, because the provider is set on the schedule.
 - Reordering follows open-chat-studio's annotation fields form (`human_annotations/queue_form.html`): native HTML5 drag on the handle, in an Alpine component in its own JS file, with no new dependency. Drag is the only way to reorder; there are no up/down buttons, so every row has the same handle and actions. Moves happen client-side; a "Save order / Discard" bar appears once the order changes, and "Save order" posts the ordered step IDs in one request.
 - Session data (the schedule's and each step's) is edited as key/value rows with add and remove, stored as a JSON object of strings. The reserved `unitId` key is rejected on its row.
-- Each step's config is edited and validated through its provider's `config_form`; the schedule's provider config through `schedule_config_form`.
+- Each step's config is edited and validated through the schedule provider's `config_form`; the schedule's provider config through `schedule_config_form`.
 - The page, the Schedule stepper step, the menu item, the resources tab and the dashboard chip are shown only when `schedule_enabled(opportunity)` (Ticket 1). With the toggle off the stepper is Create Opportunity → Payment Unit → Budget, as today.
 - Only providers whose `is_configured()` is true are offered when the schedule is created. If none is, hide the page and nav item.
 - Connection takeover: saving the schedule does not change `configured_by`. A "Use my connection" action sets `configured_by` to the current Program Manager after `provider.check_connection(user)` succeeds. The page shows the current owner and whether their connection works. It is the only way `configured_by` is set, including on first setup. For OCS, if the Program Manager hasn't connected OCS, show `ocs/_connect_prompt.html`. "Use my connection" asks for confirmation first.
@@ -306,7 +306,7 @@ Schedule page and payment unit linking:
 - Dragging a row reorders the steps, and the order is saved only on "Save order".
 - Saving the schedule never changes `configured_by`; the takeover action does, and fails with a clear error when the provider's connection check fails.
 - Invalid provider config fails validation with the provider's error.
-- The schedule can't be activated while a step has no payment unit.
+- The schedule can't be activated while its provider config is incomplete (for OCS, no chatbot) or a step has no payment unit.
 - The page degrades as described when OCS isn't connected or configured.
 - A Program Manager can create payment units from external units, individually or as a set.
 - Mixed-type payment units fail validation with a clear error.
@@ -324,23 +324,23 @@ Schedule page and payment unit linking:
   - Payable means the FLW's claim has an `OpportunityClaimLimit` for the step's payment unit, that limit is not used up, and `scheduled_for` is on or before `claim.end_date`, the claim limit's `end_date` and the payment unit's `end_date`. A new claim funds every payment unit: `ClaimOpportunityView` rejects it with `OPPORTUNITY_FULL` unless the remaining budget covers `budget_per_user()`, as today, and that rule now covers external units too. A limit can only be missing for a payment unit added after the FLW claimed that the claim-limit backfill couldn't fund; steps never trigger for work that can't be paid.
   - `scheduled_for` is the latest of: now (or `completed_at + next_trigger_days` of the previous step), `opportunity.start_date` and the step's payment unit `start_date`. Steps never run before they can be paid; otherwise the visit would be a `trial` visit and never paid.
   - The selection rule, including the payable check, is a pure function over plain data (sessions, steps, claim limits, dates), so it can be unit tested without the database.
-  - It is called on claim, completion, skip, un-suspension, a worker's claim end-date extension and schedule reactivation.
+  - It is called on claim, completion, skip and un-suspension, and through `replan_external_sessions` (Ticket 8) on a worker's claim end-date extension, payment unit changes and schedule reactivation.
 - Beat task `trigger_due_external_sessions` (every 5 minutes, registered by data migration) selects due `scheduled` sessions on active schedules, for active steps, with `select_for_update(skip_locked=True)`, moves them to `triggering`, sets a fresh `trigger_token` and `trigger_claimed_at`, and dispatches `trigger_external_session(session_id, trigger_token)` with `transaction.on_commit`. Sessions stuck in `triggering` (by `trigger_claimed_at`) for more than 30 minutes are picked up again the same way, with a new token, which retires the old worker. This is separate from Celery retries, which happen inside one worker's chain: recovery covers a worker that died or a task that was lost before it ran. The 30 minutes must stay well above the provider call timeout plus the longest Celery retry backoff (`retry_backoff_max`), so only dead workers are recovered.
 - `trigger_external_session(session_id, trigger_token)` locks the session and returns unless it is still `triggering` and its `trigger_token` matches. It then repeats the payable check for today: if the claim, claim limit or payment unit has ended, or the limit is used up, since the session was scheduled, it marks the session `cancelled` (conditional on its token), logs the reason and makes no provider call. Before every provider call, Celery retries included, it repeats that check and increments `attempts` in its own committed update, so the count survives a failed call and a worker retired by recovery stops at its next attempt; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `provider.trigger(session)` for the schedule's provider and records the result with a conditional update, `filter(pk=..., status=triggering, trigger_token=trigger_token).update(status=triggered, external_ref=..., provider_data=..., triggered_at=now)`. If no row matches, a completion or a newer worker has already won, so it does nothing; a `completed` session stays `completed`. Marking the session `failed` uses the same conditional update.
 - `ProviderTransientError` retries with `autoretry_for` + `retry_backoff`. Every retry is another provider call and increments `attempts`, so `attempts` is the single cap: at `MAX_TRIGGER_ATTEMPTS` (a module constant, initially 3) the session is marked `failed` with `last_error`. Each failed call overwrites `last_error`. `ProviderNotConfigured` marks the session `failed` without retrying.
-- Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_step` when the FLW is un-suspended or their claim's end date is extended. Extending `Opportunity.end_date` alone doesn't change existing claims (`OpportunityClaim.end_date` is copied at claim time), so it reopens nothing; Program Managers extend workers' claims as today with `AddBudgetExistingUsersForm` (which updates `OpportunityClaim.end_date` and the claim limits' `end_date`), and that form's `save()` calls `schedule_next_step` on commit for each selected worker.
+- Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_step` when the FLW is un-suspended or their claim's end date is extended. Extending `Opportunity.end_date` alone doesn't change existing claims (`OpportunityClaim.end_date` is copied at claim time), so it reopens nothing; Program Managers extend workers' claims as today with `AddBudgetExistingUsersForm` (which updates `OpportunityClaim.end_date` and the claim limits' `end_date`), and that form's `save()` dispatches `replan_external_sessions(schedule_id)` on commit (Ticket 8), which calls `schedule_next_step` for every claimed worker with no open session.
 - Worker views, both labelled with the provider's noun ("Interviews"):
 
   - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the schedule toggle is on and the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and an Attention column. Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
   - The Attention column names the issue as a badge, not an icon, with the detail in a tooltip (`x-tooltip`), and the badge links to where the issue is fixed:
 
-    | Issue                 | When                                                     | Tooltip detail                      | Links to                                                                                     |
-    | --------------------- | -------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------- |
-    | No reply in 7+ days   | `triggered` for more than 7 days                         | the step and when it started        | the worker's Interviews tab with that session selected (Re-trigger, Skip)                    |
-    | Couldn't start        | `failed` with `ProviderTransientError` or another error  | the step, attempts and `last_error` | the worker's Interviews tab with that session selected (Re-trigger)                          |
-    | OCS connection        | `failed` with `ProviderNotConfigured` (credentials)      | whose connection failed             | the connection card on the schedule page                                                     |
-    | No funded claim limit | Waiting: no funded `OpportunityClaimLimit` for the step  | the step and payment unit           | that payment unit's edit page                                                                |
-    | Payment window closed | Waiting: past the claim, claim limit or payment unit end | which end date passed               | the payment unit's edit page, or the opportunity's edit page when it is the claim's end date |
+    | Issue                 | When                                                     | Tooltip detail                      | Links to                                                                                                  |
+    | --------------------- | -------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
+    | No reply in 7+ days   | `triggered` for more than 7 days                         | the step and when it started        | the worker's Interviews tab with that session selected (Re-trigger, Skip)                                 |
+    | Couldn't start        | `failed` with `ProviderTransientError` or another error  | the step, attempts and `last_error` | the worker's Interviews tab with that session selected (Re-trigger)                                       |
+    | OCS connection        | `failed` with `ProviderNotConfigured` (credentials)      | whose connection failed             | the connection card on the schedule page                                                                  |
+    | No funded claim limit | Waiting: no funded `OpportunityClaimLimit` for the step  | the step and payment unit           | that payment unit's edit page                                                                             |
+    | Payment window closed | Waiting: past the claim, claim limit or payment unit end | which end date passed               | the payment unit's edit page, or the Add Budget page for existing workers when it is the claim's end date |
 
     The issue label for a provider credential failure uses the provider's name ("OCS connection"). A worker with no issue shows a dash. The waiting reason comes from the pure selection function behind `schedule_next_step`, run for the page's rows with their claims, claim limits and payment units prefetched, so it adds no per-row queries.
 
@@ -365,11 +365,11 @@ Schedule page and payment unit linking:
 - A trigger that keeps failing makes exactly `MAX_TRIGGER_ATTEMPTS` provider calls (Celery retries included), then ends `failed` with `last_error` set.
 - Re-triggering a `failed` session resets `attempts` to `0` and allows a fresh set of attempts.
 - A failed trigger is visible on the worker page and can be re-triggered.
-- Each Attention badge shows its issue type and tooltip, and links to its fix: a session issue opens the worker's Interviews tab with that session selected, a credential failure opens the connection card, and a waiting reason opens the payment unit or opportunity edit page.
+- Each Attention badge shows its issue type and tooltip, and links to its fix: a session issue opens the worker's Interviews tab with that session selected, a credential failure opens the connection card, and a waiting reason opens the payment unit's edit page or the Add Budget page for existing workers.
 - Skip only takes effect after the warning modal is confirmed, and the modal lists the set payment unit it breaks when the step is a required unit of one.
 - On the single-worker Interviews tab, each filter (status, step, needs attention) narrows the rows, filters combine, and the badge shows how many are applied.
 - A suspended and then un-suspended FLW resumes at the step they were on.
-- Extending a worker's claim end date with `AddBudgetExistingUsersForm` reopens their cancelled session; extending only the opportunity's end date does not.
+- Extending a worker's claim end date with `AddBudgetExistingUsersForm` reopens their cancelled session through the replan; extending only the opportunity's end date does not.
 - The trigger task is tested with a fake provider registered in the test, so it does not depend on OCS.
 - Until Ticket 5 ships, sessions are started by calling `schedule_next_step` directly (tests, shell); claims start them from Ticket 5.
 
@@ -475,7 +475,7 @@ Everything below goes on the opportunity API itself: new fields on `OpportunityS
 }
 ```
 
-- Load the open session with a `Prefetch` on the requesting FLW's accesses (`ExternalSession.objects.filter(status__in=OPEN).select_related("step__deliver_unit")`, into a `to_attr`) and the two counts with annotations, so the query count doesn't depend on the number of opportunities.
+- Load the open session with a `Prefetch` on the requesting FLW's accesses (`ExternalSession.objects.filter(status__in=OPEN).select_related("step__deliver_unit")`, into a `to_attr`), so the query count doesn't depend on the number of opportunities.
 - `UserVisitViewSet`: visits gain `unit_type`.
 
 **Acceptance criteria:**
@@ -523,7 +523,7 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
   - **Changing an external unit's payment unit** (`edit_payment_unit`, or moving it to another payment unit): rejected while any session for that step is `triggering`, `triggered` or `failed`, because completion pays through `deliver_unit.payment_unit` and the in-flight session must be paid against the unit it was started under (`failed` sessions can still receive a late completion). Sessions not yet triggered follow the new mapping, and the change runs a replan.
   - **Pausing (`active` off):** the beat task stops triggering the schedule's sessions; triggered sessions can still complete and are paid. Reactivating runs the replan.
 - Turning the Active toggle off asks for confirmation with the number of workers it affects, split into those with a `scheduled` session (it won't trigger while paused) and those with a `triggering` or `triggered` session (they can still finish and are paid). While the schedule is paused, a warning in the schedule card shows the same counts. Turning it back on doesn't confirm, and neither does turning it off when no worker has an open session. The counts come from one aggregate query over the schedule's open sessions.
-- `add_payment_unit` and `edit_payment_unit` dispatch `replan_external_sessions` on commit, after `create_claim_limits` backfills existing claims, when the payment unit contains external units, so FLWs waiting on a funded claim limit are scheduled once one exists.
+- `add_payment_unit`, `edit_payment_unit` and `AddBudgetExistingUsersForm` (claim end-date extensions) dispatch `replan_external_sessions` on commit, after `create_claim_limits` backfills existing claims, when the payment unit contains external units, so FLWs waiting on a funded claim limit are scheduled once one exists.
 - `replan_external_sessions(schedule_id)` (Celery, idempotent, on commit):
   - For each `scheduled` session, locked with `select_for_update(skip_locked=True)` (a session the beat task is claiming is skipped and triggers with the version it read): re-run the selection rule from `schedule_next_step`. If it picks the same step, update `scheduled_for`; otherwise cancel this session and create or reopen the picked one.
   - For each claimed, unsuspended FLW on a running opportunity with no open session, call `schedule_next_step(access)`. This also starts schedules for FLWs who claimed before the schedule existed.
@@ -566,4 +566,4 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
 - **Payload contract with OCS:** agree the exact `data` fields OCS sends with a completion.
 - **OCS session link:** confirm the URL format for an OCS session's page, whether it needs the OCS team slug (and whether `trigger_bot` can return it, or the full URL), and that Program Managers have OCS access to that team. Without access, the link opens OCS's login or permission page.
 - **Mobile compatibility:** agree the minimum mobile API version for opportunities with no Deliver app.
-- **QA:** test opportunities with a Deliver app only, external units only, and both. Cover Learn finishing through module completion and through the assessment, claiming when the budget is full or the opportunity has ended, an FLW who claimed before the schedule was set up, duplicate posts, late posts after a re-trigger, a post from the wrong integration, suspended FLWs, FLWs who finish Learn before the start date, and over-limit.
+- **QA:** test opportunities with a Deliver app only, external units only, and both. Cover Learn finishing through module completion and through the assessment, claiming when the budget is full or the opportunity has ended, an FLW who claimed before the schedule was set up, duplicate posts, late posts after a re-trigger, a post from the wrong integration, suspended FLWs, FLWs who claim before the start date, and over-limit.
