@@ -162,12 +162,12 @@ def export_invoice_report_task(filters_data, user_id):
     return ExportS3Boto3Storage().save(filename, ContentFile(content.encode("utf-8")))
 
 
-# A ConnectID outage at send time would otherwise lose the email; the CSV is built before sending, so retries
-# can't send twice.
+# Building the CSV calls ConnectID (fetch_user_counts), so an outage raises httpx errors before any email is
+# sent; retrying is safe and avoids losing the month's email. Backoff 60s doubling, capped at 30 min.
 EXPORT_RETRY_OPTIONS = {
     "autoretry_for": (httpx.HTTPError,),
     "retry_kwargs": {"max_retries": 5},
-    "retry_backoff": True,
+    "retry_backoff": 60,
     "retry_backoff_max": 1800,
     "retry_jitter": True,
 }
