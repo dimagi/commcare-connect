@@ -96,6 +96,21 @@ def total_accrued_sq():
     )
 
 
+def total_org_accrued_sq():
+    return Coalesce(
+        Subquery(
+            CompletedWork.objects.filter(
+                opportunity_access__opportunity_id=OuterRef("pk"), status=CompletedWorkStatus.approved
+            )
+            .values("opportunity_access__opportunity_id")
+            .annotate(total=Sum("saved_org_payment_accrued"))
+            .values("total"),
+            output_field=IntegerField(),
+        ),
+        0,
+    )
+
+
 def total_paid_sq():
     return Coalesce(
         Subquery(

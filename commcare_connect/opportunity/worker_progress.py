@@ -2,11 +2,10 @@
 
 from datetime import datetime, time, timedelta
 
-from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.utils.timezone import localdate, make_aware, now
 
-from commcare_connect.opportunity.helpers import total_accrued_sq, total_paid_sq
+from commcare_connect.opportunity.helpers import total_accrued_sq, total_org_accrued_sq, total_paid_sq
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
@@ -62,14 +61,6 @@ def get_delivery_allocation(opportunity: Opportunity) -> DeliveryAllocation:
 
 
 def get_worker_payments(opportunity: Opportunity) -> WorkerPayments:
-    org_earned = (
-        CompletedWork.objects.filter(
-            opportunity_access__opportunity=OuterRef("pk"), status=CompletedWorkStatus.approved
-        )
-        .values("opportunity_access__opportunity")
-        .annotate(total=Sum("saved_org_payment_accrued"))
-        .values("total")
-    )
     # One query; worker pay reuses the Worker Payments card's subqueries so the two cards always agree
     totals = (
         Opportunity.objects.filter(pk=opportunity.pk)
@@ -77,7 +68,7 @@ def get_worker_payments(opportunity: Opportunity) -> WorkerPayments:
         .annotate(
             total_accrued=total_accrued_sq(),
             total_paid=total_paid_sq(),
-            org_earned=Coalesce(Subquery(org_earned, output_field=IntegerField()), 0),
+            org_earned=total_org_accrued_sq(),
             has_org_pay_unit=Exists(PaymentUnit.objects.filter(opportunity=OuterRef("pk"), org_amount__gt=0)),
         )
         .get()
