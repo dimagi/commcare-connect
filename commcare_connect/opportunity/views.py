@@ -231,7 +231,11 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
-from commcare_connect.opportunity.worker_progress import get_delivery_allocation, get_worker_payments
+from commcare_connect.opportunity.worker_progress import (
+    get_delivery_allocation,
+    get_payment_unit_breakdown,
+    get_worker_payments,
+)
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
     opp_standard_access_required,
@@ -3553,7 +3557,18 @@ def opportunity_worker_progress(request, org_slug, opp_id):
         {
             "allocation": get_delivery_allocation(request.opportunity),
             "payments": get_worker_payments(request.opportunity),
+            "payment_unit_breakdown_url": reverse("opportunity:payment_unit_breakdown", args=(org_slug, opp_id)),
         },
+    )
+
+
+@opp_view_access_required
+@opportunity_required
+def opportunity_payment_unit_breakdown(request, org_slug, opp_id):
+    return render(
+        request,
+        "opportunity/partials/payment_unit_breakdown.html",
+        {"breakdown": get_payment_unit_breakdown(request.opportunity)},
     )
 
 

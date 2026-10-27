@@ -17,7 +17,11 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.worker_progress import get_delivery_allocation, get_worker_payments
+from commcare_connect.opportunity.worker_progress import (
+    get_delivery_allocation,
+    get_payment_unit_breakdown,
+    get_worker_payments,
+)
 from commcare_connect.opportunity.worker_progress_types import (
     DailyUsage,
     DeliveryAllocation,
@@ -184,8 +188,9 @@ def test_get_delivery_allocation(opportunity):
         )
 
     allocation = get_delivery_allocation(opportunity)
+    breakdown = get_payment_unit_breakdown(opportunity)
 
-    by_name = {unit.name: unit for unit in allocation.payment_units}
+    by_name = {unit.name: unit for unit in breakdown.payment_units}
     # Claimants hold 30 household visits (150), leaving 950: 9 more full workers, and the leftover 50 is
     # short of a full allocation
     assert by_name[household.name].limit == 30 + 90
@@ -199,6 +204,8 @@ def test_get_delivery_allocation(opportunity):
     assert by_name[household.name].today == DailyUsage(used=2, capacity=3)
     assert by_name[anc.name].today is None
     assert allocation.hide_pending is False
+    assert breakdown.hide_pending is False
+    assert allocation.has_payment_units is True
 
 
 TODAY = 0
@@ -245,7 +252,7 @@ def test_daily_limit_used(opportunity, visits, used):
     for du, days, status in visits:
         _visit(access, deliver_units[du], status, days)
 
-    (allocation_unit,) = get_delivery_allocation(opportunity).payment_units
+    (allocation_unit,) = get_payment_unit_breakdown(opportunity).payment_units
 
     assert allocation_unit.today.used == used
 
@@ -264,7 +271,7 @@ def test_daily_limit_used_sums_active_workers(opportunity):
     # Only active workers make up the daily capacity, so only their visits count
     _visit(_claimed_worker(opportunity, suspended=True), a, V.rejected)
 
-    (allocation_unit,) = get_delivery_allocation(opportunity).payment_units
+    (allocation_unit,) = get_payment_unit_breakdown(opportunity).payment_units
 
     assert allocation_unit.today.used == 2 + 2
 
@@ -307,7 +314,7 @@ def test_daily_capacity(opportunity, limit_end_date, capacity):
     if limit_end_date is not NO_LIMIT:
         OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=unit, end_date=limit_end_date)
 
-    (allocation_unit,) = get_delivery_allocation(opportunity).payment_units
+    (allocation_unit,) = get_payment_unit_breakdown(opportunity).payment_units
 
     assert allocation_unit.today.capacity == capacity
 
@@ -372,7 +379,7 @@ def test_get_delivery_allocation_unit_without_total(opportunity):
 
     allocation = get_delivery_allocation(opportunity)
 
-    by_name = {unit.name: unit for unit in allocation.payment_units}
+    by_name = {unit.name: unit for unit in get_payment_unit_breakdown(opportunity).payment_units}
     assert by_name[limited.name].limit == 100
     assert by_name[unlimited.name].limit is None
     assert by_name[unlimited.name].is_reached is False
@@ -431,6 +438,8 @@ def test_worker_progress_template_renders(opportunity, total_budget):
 
     assert "Delivery Allocation" in html
     assert "Show Payment Units" in html
+    # The payment units are loaded when the breakdown is first opened
+    assert "Loading payment units" in html
     budget = "1,000" if total_budget else "--"
     assert f"<strong>{amount_with_currency(0, opportunity.currency_code)}</strong> workers · " in html
     assert f"org / {budget}" in html
@@ -446,7 +455,7 @@ def test_worker_progress_template_renders(opportunity, total_budget):
 )
 def test_completed_bar_turns_warning_colour_from_nearing(completed, warning):
     allocation = DeliveryAllocation(
-        total=_usage(completed, 1000), payment_units=[], active_workers=0, synced_workers=0
+        total=_usage(completed, 1000), has_payment_units=False, active_workers=0, synced_workers=0
     )
     payments = WorkerPayments(currency="", budget=None, worker_earned=0, org_earned=0, paid=0, has_org_pay=False)
 
@@ -455,3 +464,24 @@ def test_completed_bar_turns_warning_colour_from_nearing(completed, warning):
     )
 
     assert ('class="progress-fill bg-brand-marigold"' in html) is warning
+
+
+@pytest.mark.django_db
+def test_get_delivery_allocation_without_payment_units(opportunity):
+    allocation = get_delivery_allocation(opportunity)
+
+    assert allocation.has_payment_units is False
+    assert get_payment_unit_breakdown(opportunity).payment_units == []
+
+
+@pytest.mark.django_db
+def test_payment_unit_breakdown_template_renders(opportunity):
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3, amount=5, org_amount=5)
+
+    html = render_to_string(
+        "opportunity/partials/payment_unit_breakdown.html",
+        {"breakdown": get_payment_unit_breakdown(opportunity)},
+    )
+
+    assert unit.name in html
+    assert "Today (all workers):" in html

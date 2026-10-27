@@ -22,6 +22,7 @@ from commcare_connect.opportunity.worker_progress_types import (
     DailyUsage,
     DeliveryAllocation,
     LimitUsage,
+    PaymentUnitBreakdown,
     PaymentUnitUsage,
     StatusCounts,
     WorkerPayments,
@@ -32,11 +33,29 @@ def get_delivery_allocation(opportunity: Opportunity) -> DeliveryAllocation:
     payment_units = list(opportunity.paymentunit_set.order_by("pk"))
     limit_by_unit = opportunity.allotted_visits_by_unit(payment_units)
     status_counts_by_unit = _status_counts_by_payment_unit(opportunity)
+    active_worker_count, synced_worker_count = _active_and_synced_worker_counts(opportunity)
+
+    total_usage = LimitUsage(
+        counts=sum((status_counts_by_unit.get(pu.pk, StatusCounts()) for pu in payment_units), StatusCounts()),
+        limit=sum(limit_by_unit.values()) if limit_by_unit else None,
+    )
+    return DeliveryAllocation(
+        total=total_usage,
+        has_payment_units=bool(payment_units),
+        active_workers=active_worker_count,
+        synced_workers=synced_worker_count,
+    )
+
+
+def get_payment_unit_breakdown(opportunity: Opportunity) -> PaymentUnitBreakdown:
+    """The Delivery Allocation card's per payment unit usage, which the dashboard loads only when it is opened."""
+    payment_units = list(opportunity.paymentunit_set.order_by("pk"))
+    limit_by_unit = opportunity.allotted_visits_by_unit(payment_units)
+    status_counts_by_unit = _status_counts_by_payment_unit(opportunity)
     daily_limit_used_by_unit = _daily_limit_used_by_payment_unit(
         opportunity, [pu for pu in payment_units if pu.max_daily]
     )
     workers_able_to_deliver_by_unit = _workers_able_to_deliver_by_payment_unit(opportunity)
-    active_worker_count, synced_worker_count = _active_and_synced_worker_counts(opportunity)
 
     unit_usages = [
         PaymentUnitUsage(
@@ -52,16 +71,7 @@ def get_delivery_allocation(opportunity: Opportunity) -> DeliveryAllocation:
         )
         for pu in payment_units
     ]
-    total_usage = LimitUsage(
-        counts=sum((usage.counts for usage in unit_usages), StatusCounts()),
-        limit=sum(limit_by_unit.values()) if limit_by_unit else None,
-    )
-    return DeliveryAllocation(
-        total=total_usage,
-        payment_units=unit_usages,
-        active_workers=active_worker_count,
-        synced_workers=synced_worker_count,
-    )
+    return PaymentUnitBreakdown(payment_units=unit_usages)
 
 
 def get_worker_payments(opportunity: Opportunity) -> WorkerPayments:
