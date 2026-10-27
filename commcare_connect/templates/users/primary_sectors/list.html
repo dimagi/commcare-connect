@@ -1,88 +1,11 @@
-{% extends "base.html" %}
+{% extends "users/managed_options/list.html" %}
 {% load i18n %}
-{% block title %}
-  {% translate "Primary Sectors" %}
-{% endblock %}
-{% block content %}
-  <div class="container" x-data="{ sectorModalUrl: null }">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="title">{% translate "Primary Sectors" %}</h2>
-      {# .stop on modal openers: the modal mounts before the click reaches document, where its @click.outside would close it again. #}
-      <button type="button"
-              class="button button-md primary-dark !inline-flex items-center gap-2"
-              @click.stop="sectorModalUrl = '{% url 'users:primary_sector_create' %}'">
-        <i class="fa-solid fa-plus"></i> {% translate "Add Primary Sector" %}
-      </button>
-    </div>
-    <p class="hint mb-4">
-      {% translate "These are the options organizations pick from for their Primary Sectors. A sector used by any organization cannot be deleted." %}
-    </p>
-    {% if sectors %}
-      <table class="base-table">
-        <thead>
-          <tr>
-            <th>{% translate "Name" %}</th>
-            <th>{% translate "Slug" %}</th>
-            <th>{% translate "Description" %}</th>
-            <th class="col-stat">{% translate "Organizations" %}</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for sector in sectors %}
-            <tr>
-              <td>{{ sector.name }}</td>
-              <td>{{ sector.slug }}</td>
-              {# Free text of up to 255 chars: wraps rather than widening the table past the page. #}
-              <td class="whitespace-normal">{{ sector.description }}</td>
-              <td class="col-stat">{{ sector.organization_count }}</td>
-              <td>
-                <div class="flex items-center justify-end gap-2">
-                  <button type="button"
-                          class="button-icon"
-                          aria-label="{% blocktranslate with name=sector.name %}Edit {{ name }}{% endblocktranslate %}"
-                          x-tooltip.raw="{% translate 'Edit' %}"
-                          @click.stop="sectorModalUrl = '{% url 'users:primary_sector_update' sector.pk %}'">
-                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
-                  </button>
-                  <form method="post"
-                        action="{% url 'users:primary_sector_delete' sector.pk %}">
-                    {% csrf_token %}
-                    {% if sector.organization_count %}
-                      {# The tooltip sits on the wrapper because a disabled .button-icon ignores pointer events. #}
-                      <span class="inline-flex"
-                            x-tooltip.raw="{% translate 'Used by organizations, so it cannot be deleted.' %}">
-                        <button type="button"
-                                class="button-icon"
-                                aria-label="{% blocktranslate with name=sector.name %}Delete {{ name }}{% endblocktranslate %}"
-                                disabled>
-                          <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                        </button>
-                      </span>
-                    {% else %}
-                      {# Unescaped here so escapejs below is the only escaping: the modal shows it via x-text, so HTML-escaping would display literally. #}
-                      {% autoescape off %}
-                        {% blocktranslate asvar delete_message with name=sector.name %}Delete the primary sector "{{ name }}"? This cannot be undone.{% endblocktranslate %}
-                      {% endautoescape %}
-                      <button type="button"
-                              class="button-icon hover:bg-red-600 hover:text-white"
-                              aria-label="{% blocktranslate with name=sector.name %}Delete {{ name }}{% endblocktranslate %}"
-                              x-tooltip.raw="{% translate 'Delete' %}"
-                              @click.stop="$store.confirmModal.show({ title: '{% translate "Delete Primary Sector" %}', message: '{{ delete_message|escapejs }}', confirmBtnText: '{% translate "Delete" %}', confirmBtnRed: true, formRef: $el.form })">
-                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                      </button>
-                    {% endif %}
-                  </form>
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="text-gray-500">{% translate "No primary sectors yet." %}</p>
-    {% endif %}
-    {% include "users/primary_sectors/modal.html" %}
-    {% include "components/confirm_modal.html" %}
-  </div>
-{% endblock content %}
+{% block intro %}
+  {% translate "These are the options organizations pick from for their Primary Sectors. A sector used by any organization cannot be deleted." %}
+{% endblock intro %}
+{% block extra_headers %}
+  <th class="col-stat">{% translate "Organizations" %}</th>
+{% endblock extra_headers %}
+{% block extra_cells %}
+  <td class="col-stat">{{ item.organization_count }}</td>
+{% endblock extra_cells %}

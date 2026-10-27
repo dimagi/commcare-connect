@@ -144,6 +144,13 @@ class TestPrimarySectorViews:
         assert response.status_code == 200
         assert reverse("users:primary_sector_update", args=[sector.pk]) in response.content.decode()
 
+    def test_list_disables_delete_for_sector_in_use(self, client, settings_admin, sector):
+        OrganizationFactory().primary_sectors.add(sector)
+        client.force_login(settings_admin)
+        content = client.get(reverse("users:primary_sector_list")).content.decode()
+        assert 'x-tooltip.raw="Used by organizations, so it cannot be deleted."' in content
+        assert "formRef: $el.form" not in content
+
     def test_delete_confirmation_escapes_sector_name(self, client, settings_admin):
         PrimarySector.objects.create(name="Women's Health", slug="womens-health", description="")
         client.force_login(settings_admin)
@@ -170,7 +177,7 @@ class TestPrimarySectorViews:
         )
         assert response.status_code == 200
         assert "HX-Redirect" not in response.headers
-        assert 'id="primary-sector-form-wrapper"' in response.content.decode()
+        assert 'id="managed-option-form-wrapper"' in response.content.decode()
         assert PrimarySector.objects.filter(name__iexact="health").count() == 1
 
     def test_edit_from_modal_redirects_to_list(self, client, settings_admin, sector):

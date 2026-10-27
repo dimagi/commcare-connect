@@ -1,6 +1,9 @@
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils.text import slugify
 from django.utils.timezone import localdate
+from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.utils.datetime import DateRanges
@@ -67,3 +70,57 @@ class PresetDateRangeWidget(forms.MultiWidget):
         context = super().get_context(name, value, attrs)
         context["custom"] = DateRanges.CUSTOM.value
         return context
+
+
+class ManagedOptionForm(forms.ModelForm):
+    """Adds or edits a name/slug/description option that Internal Features manages (see users/managed_options.py).
+
+    On create the slug is filled in from the name as you type (see slugAutofill in alpine_data.js) and, if left
+    blank, generated from it on save. After that it is read-only, as other systems identify options by it; subclasses
+    say which in `locked_slug_help_text`.
+    """
+
+    locked_slug_help_text = None
+
+    class Meta:
+        fields = ("name", "slug", "description")
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+        help_texts = {"slug": _("Lowercase letters, numbers, hyphens and underscores.")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["description"].required = False
+        if self.instance.pk:
+            self.fields["slug"].disabled = True
+            self.fields["slug"].help_text = self.locked_slug_help_text
+        else:
+            self.fields["slug"].required = False
+            self.fields["name"].widget.attrs.update({"x-ref": "name", "x-on:input": "nameChanged()"})
+            self.fields["slug"].widget.attrs.update({"x-ref": "slug", "x-on:input": "slugChanged()"})
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        if self._others().filter(name__iexact=name).exists():
+            raise ValidationError(gettext("A %(option)s with this name already exists."), params=self._params())
+        return name
+
+    def clean_slug(self):
+        if self.instance.pk:
+            return self.instance.slug
+        slug = self.cleaned_data["slug"].strip() or slugify(self.cleaned_data.get("name", ""))
+        if not slug:
+            raise ValidationError(gettext("Enter a slug, or a name containing at least one letter or number."))
+        if slug != slugify(slug):
+            raise ValidationError(gettext("Use only lowercase letters, numbers, hyphens and underscores."))
+        if self._others().filter(slug=slug).exists():
+            raise ValidationError(gettext("A %(option)s with this slug already exists."), params=self._params())
+        return slug
+
+    def _others(self):
+        return self._meta.model.objects.exclude(pk=self.instance.pk)
+
+    def _params(self):
+        return {"option": self._meta.model._meta.verbose_name}
