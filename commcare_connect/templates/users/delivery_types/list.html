@@ -41,16 +41,25 @@
               <td>
                 <div class="flex justify-end gap-2">
                   <button type="button"
-                          class="button button-sm outline-style"
-                          @click.stop="deliveryTypeModalUrl = '{% url 'users:delivery_type_update' delivery_type.pk %}'">
-                    {% translate "Edit" %}
+                          class="button-icon"
+                          @click.stop="deliveryTypeModalUrl = '{% url 'users:delivery_type_update' delivery_type.pk %}'"
+                          aria-label="{% blocktranslate with name=delivery_type.name %}Edit {{ name }}{% endblocktranslate %}"
+                          x-tooltip.raw="{% translate 'Edit' %}">
+                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
                   </button>
                   <form method="post"
                         action="{% url 'users:delivery_type_delete' delivery_type.pk %}">
                     {% csrf_token %}
                     {% if delivery_type.in_use %}
-                      <span title="{% translate "Used by programs, opportunities, solicitations or worker credentials, so it cannot be deleted." %}">
-                        <button type="button" class="button button-sm negative-light" disabled>{% translate "Delete" %}</button>
+                      {# The tooltip sits on the wrapper because a disabled .button-icon ignores the pointer. #}
+                      <span class="inline-flex"
+                            x-tooltip.raw="{% translate "Used by programs, opportunities, solicitations or worker credentials, so it cannot be deleted." %}">
+                        <button type="button"
+                                class="button-icon"
+                                aria-label="{% blocktranslate with name=delivery_type.name %}Delete {{ name }}{% endblocktranslate %}"
+                                disabled>
+                          <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                        </button>
                       </span>
                     {% else %}
                       {# Unescaped here so escapejs below is the only escaping: the modal shows it via x-text, so HTML-escaping would display literally. #}
@@ -58,9 +67,11 @@
                         {% blocktranslate asvar delete_message with name=delivery_type.name %}Delete the delivery type "{{ name }}"? This cannot be undone.{% endblocktranslate %}
                       {% endautoescape %}
                       <button type="button"
-                              class="button button-sm negative-light"
-                              @click.stop="$store.confirmModal.show({ title: '{% translate "Delete Delivery Type" %}', message: '{{ delete_message|escapejs }}', confirmBtnText: '{% translate "Delete" %}', confirmBtnRed: true, formRef: $el.form })">
-                        {% translate "Delete" %}
+                              class="button-icon"
+                              @click.stop="$store.confirmModal.show({ title: '{% translate "Delete Delivery Type" %}', message: '{{ delete_message|escapejs }}', confirmBtnText: '{% translate "Delete" %}', confirmBtnRed: true, formRef: $el.form })"
+                              aria-label="{% blocktranslate with name=delivery_type.name %}Delete {{ name }}{% endblocktranslate %}"
+                              x-tooltip.raw="{% translate 'Delete' %}">
+                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
                       </button>
                     {% endif %}
                   </form>
