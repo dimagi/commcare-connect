@@ -47,15 +47,11 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
         return get_validated_page_size(self.request)
 
     def get_queryset(self):
-        return org_solicitations(self.request.org)
-
-
-def org_solicitations(organization):
-    return (
-        Solicitation.objects.filter(organization=organization)
-        .annotate(response_count=Count("applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES)))
-        .order_by("-date_created")
-    )
+        return (
+            Solicitation.objects.filter(organization=self.request.org)
+            .annotate(response_count=Count("applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES)))
+            .order_by("-date_created")
+        )
 
 
 @method_decorator(org_pm_required, name="dispatch")
