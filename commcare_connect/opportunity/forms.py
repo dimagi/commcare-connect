@@ -1512,6 +1512,10 @@ class PaymentUnitForm(forms.ModelForm):
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
+        required_deliver_units = set(cleaned_data.get("required_deliver_units", []))
+        if required_deliver_units & set(cleaned_data.get("optional_deliver_units", [])):
+            self.add_error("optional_deliver_units", _("A deliver unit cannot be both required and optional."))
+
         if cleaned_data.get("no_daily_limit"):
             cleaned_data["max_daily"] = None
         elif cleaned_data.get("max_daily") is None and "max_daily" not in self.errors:

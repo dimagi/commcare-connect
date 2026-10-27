@@ -1585,6 +1585,20 @@ def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submi
 
 
 @pytest.mark.django_db
+def test_payment_unit_form_rejects_deliver_unit_both_required_and_optional(opportunity):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+
+    form = _payment_unit_form(
+        opportunity,
+        {"required_deliver_units": [str(deliver_unit.id)], "optional_deliver_units": [str(deliver_unit.id)]},
+        deliver_units=[deliver_unit],
+    )
+
+    assert not form.is_valid()
+    assert form.errors["optional_deliver_units"] == ["A deliver unit cannot be both required and optional."]
+
+
+@pytest.mark.django_db
 class TestPaymentUnitFormDailyLimit:
     @override_switch(OPTIONAL_DAILY_LIMIT, active=False)
     def test_daily_limit_required_when_switch_off(self, opportunity):
