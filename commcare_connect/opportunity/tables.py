@@ -914,7 +914,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
         super().__init__(*args, **kwargs)
         self.columns["select"].column.visible = not self.is_opportunity_pm
 
-    def get_icons(self, statuses):
+    def get_icons(self, statuses, record):
         status_meta = {
             # Review Status Pending, Visit Status Approved
             "approved_pending_review": {
@@ -929,7 +929,10 @@ class UserVisitVerificationTable(WorkerVisitTable):
             },
             VisitValidationStatus.duplicate: {"icon": "fa-solid fa-clone", "tooltip": "Duplicate Visit"},
             VisitValidationStatus.trial: {"icon": "fa-solid fa-marker", "tooltip": "Trail Visit"},
-            VisitValidationStatus.over_limit: {"icon": "fa-solid fa-marker", "tooltip": "Daily limit exceeded"},
+            VisitValidationStatus.over_limit: {
+                "icon": "fa-solid fa-marker",
+                "tooltip": "; ".join(record.get_over_limit_reasons_display()),
+            },
             VisitReviewStatus.disagree: {"icon": "fa-solid fa-thumbs-down", "tooltip": "Disagreed by PM"},
             VisitReviewStatus.agree: {"icon": "fa-solid fa-thumbs-up", "tooltip": "Agreed by PM"},
             # Review Status Pending (custom name, original choice clashes with Visit Pending)
@@ -956,7 +959,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
 
     def render_icons(self, record):
         if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
-            return self.get_icons([record.status])
+            return self.get_icons([record.status], record)
 
         status = []
         if record.review_status and record.review_created_on:
@@ -974,7 +977,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
             else:
                 status.append(record.status)
 
-        return self.get_icons(status)
+        return self.get_icons(status, record)
 
 
 class UserInfoColumn(tables.Column):
