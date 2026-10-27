@@ -1,0 +1,129 @@
+import csv
+import io
+from datetime import UTC, date, datetime
+
+import pytest
+from django.contrib.auth.models import Permission
+from django.utils.timezone import now
+
+from commcare_connect.conftest import MobileUserFactory
+from commcare_connect.connect_id_client.main import fetch_user_counts
+from commcare_connect.reports.delivery_stats_export import (
+    add_recipient,
+    build_delivery_stats_csv,
+    get_eligible_recipients,
+    get_filter_values,
+    get_recipient_flag,
+    get_recipients,
+    is_eligible_recipient,
+    previous_month_filters,
+    remove_recipient,
+)
+from commcare_connect.reports.tables import AdminReportTable
+from commcare_connect.reports.tests.test_reports import _create_kpi_test_data
+from commcare_connect.users.tests.factories import UserFactory
+
+
+def _grant_kpi_access(user):
+    user.user_permissions.add(Permission.objects.get(codename="kpi_report_access"))
+    return user
+
+
+@pytest.fixture
+def kpi_user(db):
+    return _grant_kpi_access(UserFactory())
+
+
+@pytest.fixture
+def previous_month():
+    return previous_month_filters(now().date())["from_date"]
+
+
+@pytest.mark.parametrize(
+    "today, expected",
+    [
+        (date(2026, 10, 1), date(2026, 9, 1)),
+        (date(2026, 10, 27), date(2026, 9, 1)),
+        (date(2027, 1, 1), date(2026, 12, 1)),
+        (date(2026, 3, 31), date(2026, 2, 1)),
+    ],
+)
+def test_previous_month_filters(today, expected):
+    assert previous_month_filters(today) == {"from_date": expected, "to_date": expected, "period": "monthly"}
+
+
+@pytest.mark.django_db
+def test_build_csv_monthly_has_one_row_with_page_headers(previous_month, httpx_mock):
+    _create_kpi_test_data(
+        MobileUserFactory.create_batch(2), datetime.combine(previous_month, datetime.min.time(), UTC)
+    )
+    fetch_user_counts.clear()
+    httpx_mock.add_response(method="GET", json={"total_users": {}, "non_invited_users": {}})
+
+    csv_text = build_delivery_stats_csv(previous_month_filters(now().date()))
+
+    rows = list(csv.reader(io.StringIO(csv_text)))
+    assert rows[0] == [str(column.header) for column in AdminReportTable([], period="monthly").columns]
+    data_rows = [row for row in rows[1:] if row[0] != "Total"]
+    assert len(data_rows) == 1
+    assert data_rows[0][0] == previous_month.strftime("%B %Y")
+
+
+@pytest.mark.django_db
+def test_get_filter_values_parses_querystring_data(program):
+    values = get_filter_values(
+        {"from_date": "2026-09", "to_date": "2026-09", "period": "quarterly", "program": str(program.pk)}
+    )
+
+    assert values["from_date"] == date(2026, 9, 1)
+    assert values["period"] == "quarterly"
+    assert values["program"] == program
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "setup, eligible",
+    [
+        ("perm", True),
+        ("superuser", True),
+        ("no_perm", False),
+        ("inactive_with_perm", False),
+        ("no_email_with_perm", False),
+    ],
+)
+def test_is_eligible_recipient(setup, eligible):
+    user = UserFactory(
+        is_superuser=setup == "superuser",
+        is_active=setup != "inactive_with_perm",
+        email=None if setup == "no_email_with_perm" else "someone@example.com",
+    )
+    if setup.endswith("perm") and setup != "no_perm":
+        _grant_kpi_access(user)
+
+    assert is_eligible_recipient(user) is eligible
+
+
+@pytest.mark.django_db
+def test_recipients_without_flag_are_empty():
+    assert get_recipient_flag() is None
+    assert get_recipients() == []
+    assert get_eligible_recipients() == []
+
+
+@pytest.mark.django_db
+def test_get_eligible_recipients_skips_ineligible(kpi_user):
+    no_perm_user = UserFactory()
+    add_recipient(kpi_user)
+    add_recipient(no_perm_user)
+
+    assert set(get_recipients()) == {kpi_user, no_perm_user}
+    assert get_eligible_recipients() == [kpi_user]
+
+
+@pytest.mark.django_db
+def test_add_and_remove_recipient_creates_flag(kpi_user):
+    add_recipient(kpi_user)
+    assert get_recipient_flag().users.filter(pk=kpi_user.pk).exists()
+
+    remove_recipient(kpi_user)
+    assert get_recipients() == []
