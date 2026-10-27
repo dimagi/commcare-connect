@@ -19,7 +19,11 @@
     <div class="flex flex-col gap-1">
       <h1 class="title">{{ solicitation.title }}</h1>
       <p class="hint">
-        {% translate "This solicitation is private: only invited organizations can apply. Each invited organization's members get an email." %}
+        {% if solicitation.public %}
+          {% translate "This solicitation is public: any organization can apply, and invited organizations' members get an email asking them to." %}
+        {% else %}
+          {% translate "This solicitation is private: only invited organizations can apply. Each invited organization's members get an email." %}
+        {% endif %}
       </p>
     </div>
     <div class="card_bg">

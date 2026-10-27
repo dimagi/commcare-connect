@@ -212,7 +212,7 @@ class TestSolicitationSteps:
         [
             (Solicitation.Status.DRAFT, False, True, False),
             (Solicitation.Status.ACTIVE, False, True, True),
-            (Solicitation.Status.ACTIVE, True, True, False),
+            (Solicitation.Status.ACTIVE, True, True, True),
             (Solicitation.Status.CLOSED, False, False, False),
             (Solicitation.Status.CANCELLED, False, False, False),
         ],
@@ -245,6 +245,7 @@ class TestSolicitationInvitations:
         with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
             yield mock
 
+    @pytest.mark.parametrize("public", [True, False])
     def test_invite_creates_rows_and_emails_each_org(
         self,
         pm_client,
@@ -252,7 +253,10 @@ class TestSolicitationInvitations:
         program_manager_org_user_admin,
         mock_send_mail,
         django_capture_on_commit_callbacks,
+        public,
     ):
+        solicitation.public = public
+        solicitation.save()
         invited_orgs = [MembershipFactory().organization for _ in range(2)]
 
         with django_capture_on_commit_callbacks(execute=True):
@@ -322,11 +326,10 @@ class TestSolicitationInvitations:
             (Solicitation.Status.DRAFT, False, True),
             (Solicitation.Status.CLOSED, False, True),
             (Solicitation.Status.CANCELLED, False, True),
-            (Solicitation.Status.ACTIVE, True, True),
             (Solicitation.Status.ACTIVE, False, False),
         ],
     )
-    def test_only_own_active_private_solicitations(self, pm_client, program_manager_org, status, public, own_org):
+    def test_only_own_active_solicitations(self, pm_client, program_manager_org, status, public, own_org):
         organization = program_manager_org if own_org else OrganizationFactory()
         solicitation = SolicitationFactory(organization=organization, status=status, public=public)
         invitation = SolicitationInvitationFactory(solicitation=solicitation)

@@ -209,12 +209,11 @@ class InvitationsMixin(WaffleSwitchMixin):
 
     @cached_property
     def solicitation(self):
-        # Invitations only matter for private solicitations, and only once they're published.
+        # Organizations are only invited once a solicitation is published.
         return get_object_or_404(
             Solicitation,
             organization=self.request.org,
             status=Solicitation.Status.ACTIVE,
-            public=False,
             solicitation_id=self.kwargs["solicitation_id"],
         )
 
@@ -226,7 +225,7 @@ class InvitationsMixin(WaffleSwitchMixin):
 
 
 class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
-    """Lists the organizations invited to a private solicitation and invites more."""
+    """Lists the organizations invited to a solicitation and invites more."""
 
     form_class = SolicitationInvitationForm
     template_name = "solicitation/solicitation_invitations.html"

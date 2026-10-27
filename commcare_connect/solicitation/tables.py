@@ -15,8 +15,8 @@ def details_url(record, table):
 
 
 def invitations_url(record, table):
-    # Invitations are only managed once a private solicitation is live.
-    if record.status == Solicitation.Status.ACTIVE and not record.public:
+    # Invitations are only managed once a solicitation is live.
+    if record.status == Solicitation.Status.ACTIVE:
         return reverse("solicitation:invitations", args=(table.request.org.slug, record.solicitation_id))
     return None
 
@@ -39,10 +39,6 @@ class SolicitationTable(tables.Table):
 
     def render_visibility(self, value):
         return _("Public") if value else _("Private")
-
-    def render_invited_count(self, value, record):
-        # Anyone can apply to a public solicitation, so it has no invitations to count.
-        return "—" if record.public else value
 
 
 class SolicitationInvitationTable(tables.Table):
