@@ -157,15 +157,18 @@ def test_send_export_without_flag_sends_nothing(mailoutbox, empty_report):
 
 
 @pytest.mark.django_db
-def test_send_export_only_to_eligible_recipients(mailoutbox, empty_report, kpi_user, previous_month):
+def test_send_export_bccs_only_eligible_recipients(mailoutbox, empty_report, kpi_user, previous_month):
+    other_kpi_user = _grant_kpi_access(UserFactory())
     add_recipient(kpi_user)
+    add_recipient(other_kpi_user)
     add_recipient(UserFactory())
     add_recipient(_grant_kpi_access(UserFactory(is_active=False)))
 
     send_delivery_stats_export()
 
     assert len(mailoutbox) == 1
-    assert mailoutbox[0].to == [kpi_user.email]
+    assert mailoutbox[0].to == []
+    assert sorted(mailoutbox[0].bcc) == sorted([kpi_user.email, other_kpi_user.email])
     assert mailoutbox[0].subject == f"Delivery Stats — {previous_month:%B %Y}"
     name, _, mimetype = mailoutbox[0].attachments[0]
     assert name == f"delivery-stats-{previous_month:%Y-%m}.csv"

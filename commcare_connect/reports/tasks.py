@@ -179,7 +179,8 @@ def send_delivery_stats_export():
     if not recipients:
         logger.info("No eligible recipients for the monthly Delivery Stats export; skipping.")
         return
-    _send_export_email([user.email for user in recipients], previous_month_filters(now().date()), monthly=True)
+    # Bcc so recipients don't see each other's addresses.
+    _send_export_email(previous_month_filters(now().date()), monthly=True, bcc=[user.email for user in recipients])
 
 
 @celery_app.task(**EXPORT_RETRY_OPTIONS)
@@ -190,12 +191,12 @@ def email_delivery_stats_export(user_id, filter_data):
         logger.info("User %s has no email; not sending the Delivery Stats export.", user_id)
         return
     if filter_data is None:
-        _send_export_email([user.email], previous_month_filters(now().date()), monthly=True)
+        _send_export_email(previous_month_filters(now().date()), monthly=True, to=[user.email])
     else:
-        _send_export_email([user.email], get_filter_values(filter_data), monthly=False)
+        _send_export_email(get_filter_values(filter_data), monthly=False, to=[user.email])
 
 
-def _send_export_email(recipients, filters, monthly):
+def _send_export_email(filters, monthly, to=None, bcc=None):
     if monthly:
         month = filters["from_date"]
         subject = f"Delivery Stats — {month:%B %Y}"
@@ -205,6 +206,6 @@ def _send_export_email(recipients, filters, monthly):
         subject = "Delivery Stats export"
         filename = f"delivery-stats-export-{now().date():%Y-%m-%d}.csv"
         body = "Attached is the Delivery Stats report with these filters:\n\n" + "\n".join(describe_filters(filters))
-    message = EmailMessage(subject, body, settings.DEFAULT_FROM_EMAIL, to=recipients)
+    message = EmailMessage(subject, body, settings.DEFAULT_FROM_EMAIL, to=to, bcc=bcc)
     message.attach(filename, build_delivery_stats_csv(filters), "text/csv")
     message.send()
