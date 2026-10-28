@@ -495,6 +495,10 @@ class OrganizationArchiveForm(forms.Form):
         self.helper = _modal_form_helper(self)
 
 
+class OrganizationRestoreForm(OrganizationArchiveForm):
+    """Takes the same optional reason as archiving."""
+
+
 def _modal_form_helper(form):
     # The directory's modal template supplies the <form> tag and the CSRF token.
     form_helper = helper.FormHelper(form)

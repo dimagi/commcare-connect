@@ -1,0 +1,28 @@
+{% extends "organization/directory/modal_form.html" %}
+{% load i18n %}
+{% block form_title %}
+  {% translate "Restore Organization" %}
+{% endblock form_title %}
+{% block form_subheading %}
+  <p class="hint">{{ object.name }}</p>
+{% endblock form_subheading %}
+{% block before_form %}
+  <div class="flex flex-col gap-2 mb-4 text-sm">
+    <p>
+      {% translate "Restoring this organization gives its members access again, and makes the programs it owns and their opportunities visible again." %}
+    </p>
+    <p>
+      {% url 'organization_directory:contacts' as contacts_url %}
+      {% blocktranslate trimmed with url=contacts_url name=object.name|urlencode %}
+        Its contacts stay archived. Restore the ones you need from its archived contacts by clicking
+        <a class="underline"
+           href="{{ url }}?archived=true&amp;search={{ name }}"
+           target="_blank"
+           rel="noopener">here</a>.
+      {% endblocktranslate %}
+    </p>
+  </div>
+{% endblock before_form %}
+{% block submit_label %}
+  {% translate "Restore" %}
+{% endblock submit_label %}

@@ -1,6 +1,16 @@
 {% load i18n %}
 <div class="flex items-center gap-3">
-  {% if not record.is_archived %}
+  {% if record.is_archived %}
+    <button type="button"
+            class="button-icon"
+            hx-get="{% url 'organization_directory:restore' record.slug %}?next={{ request.get_full_path|urlencode }}"
+            hx-target="#directory-form"
+            aria-label="{% blocktranslate with name=record.name %}Restore {{ name }}{% endblocktranslate %}"
+            x-data
+            x-tooltip.raw="{% translate 'Restore' %}">
+      <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+    </button>
+  {% else %}
     <button type="button"
             class="button-icon"
             hx-get="{% url 'organization_directory:edit' record.slug %}?next={{ request.get_full_path|urlencode }}"
