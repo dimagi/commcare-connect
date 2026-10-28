@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -244,9 +245,10 @@ class TestOrganizationArchiveView:
     def test_get_shows_the_owned_programs_with_their_opportunity_counts(
         self, client, user_with_directory_access, organization
     ):
-        program = ProgramFactory(organization=organization)
-        OpportunityFactory.create_batch(2, program=program)
-        ProgramFactory(funder=organization)
+        ended = date.today() - timedelta(days=1)
+        program = ProgramFactory(organization=organization, start_date=ended - timedelta(days=30), end_date=ended)
+        OpportunityFactory.create_batch(2, program=program, end_date=ended)
+        ProgramFactory(funder=organization, start_date=ended - timedelta(days=30), end_date=ended)
         client.force_login(user_with_directory_access)
 
         response = client.get(
@@ -272,6 +274,44 @@ class TestOrganizationArchiveView:
         organization.refresh_from_db()
         assert organization.is_archived
         assert organization.notes.endswith(": Duplicate")
+
+    def test_get_lists_the_blockers_instead_of_the_form(self, client, user_with_directory_access, organization):
+        program = ProgramFactory(organization=organization)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:archive", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        assert "organization/directory/organization_archive_refused.html" in [t.name for t in response.templates]
+        assert [blocker.name for blocker in response.context["blockers"]] == [program.name]
+        assert 'name="reason"' not in response.content.decode()
+
+    def test_refusal_lists_each_blockers_roles(self, client, user_with_directory_access, organization):
+        ProgramFactory(organization=organization, funder=organization)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:archive", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        content = response.content.decode()
+        assert "Program owner, Program funder" in content
+        assert "programs" not in response.context
+
+    def test_post_is_refused_when_work_became_live_after_the_modal_opened(
+        self, client, user_with_directory_access, organization
+    ):
+        client.force_login(user_with_directory_access)
+        ProgramFactory(organization=organization)
+
+        response = _post_archive(client, organization, {"reason": "Duplicate"})
+
+        assert "HX-Redirect" not in response.headers
+        assert "organization/directory/organization_archive_refused.html" in [t.name for t in response.templates]
+        organization.refresh_from_db()
+        assert not organization.is_archived
+        assert organization.notes == ""
 
     def test_post_locks_the_organization_row(self, rf, organization):
         view = OrganizationArchiveView()
