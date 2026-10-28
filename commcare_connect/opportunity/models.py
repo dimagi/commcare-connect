@@ -263,10 +263,12 @@ class Opportunity(BaseModel):
             )
 
     @property
-    def number_of_users(self):
+    def budgeted_workers(self):
+        """Workers ``total_budget`` gives a full allocation to at today's payment-unit config, whoever has
+        claimed."""
         if not self.total_budget:
             return 0
-        return self.total_budget / self.budget_per_user()
+        return self.total_budget // self.budget_per_user()
 
     @property
     def allotted_visits(self):

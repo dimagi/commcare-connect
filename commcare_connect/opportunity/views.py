@@ -595,7 +595,7 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
             {
                 "name": "Max Connect Workers",
                 "count": header_with_tooltip(
-                    safe_display(int(object.number_of_users)), "Maximum allowed workers in the Opportunity"
+                    safe_display(object.budgeted_workers), "Maximum allowed workers in the Opportunity"
                 ),
                 "icon": "fa-users",
             },
