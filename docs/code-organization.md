@@ -22,9 +22,9 @@ Each app splits this code by what it does:
 | `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                                            | Is it a plain data container?                                           |
 | `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`                           | Is it caught outside the module that raises it?                         |
 
-Each role is a package with one module per topic inside, e.g. `services/billing.py` and `services/approvals.py`.
+Start a role as one module (`queries.py`) while the app covers one topic. Turn it into a package with one module per topic (`services/billing.py`, `services/approvals.py`) once it holds several unrelated topics.
 
-`helpers.py` goes away. Don't add new ones, and move code out of the existing ones into its role package.
+`helpers.py` goes away. Don't add new ones, and move code out of the existing ones into its role module.
 
 Clients for external systems stay in the app that owns the integration, as their own module: `commcarehq/`, `ocs_provider/`, `connect_id_client/`.
 
@@ -32,7 +32,7 @@ Clients for external systems stay in the app that owns the integration, as their
 
 ### Services, queries, permissions and exports
 
-These go in their role module even when only one place calls them. A reader should be able to guess where one lives from what it does. For example, `rollback_invoice_line_items` is only called from one view, but it reverses an invoice's billing, so it belongs in `opportunity/services/`.
+These go in their role module or package even when only one place calls them. A reader should be able to guess where one lives from what it does. For example, `rollback_invoice_line_items` is only called from one view, but it reverses an invoice's billing, so it belongs in `opportunity/services/`.
 
 ### Utilities
 
@@ -50,7 +50,7 @@ Any other utility with one caller stays as a private function in the caller's mo
 
 ### Code shared between apps
 
-- Code that imports no app goes in `commcare_connect/utils/<topic>.py`. That package must never import an app: five apps' models import `utils/db.py`, so an app import there causes circular imports.
+- Code that imports no app from this repo goes in `commcare_connect/utils/<topic>.py`. It may import Django and third-party packages, including their models. It must not import this repo's apps, because five apps' models import `utils/db.py` and an app import there causes circular imports. The one exception is a module that holds only constants, such as `flags/switch_names.py`, when there's no other way.
 - Code that depends on an app's models stays in that app. Other apps import it from there.
 - An app doesn't write another app's models directly, whether from a view, form or task. It calls a service in the app that owns the model.
 
@@ -66,6 +66,10 @@ Reusable filters and annotations are methods on a custom `QuerySet`, exposed wit
 - Needed on every page: `web/context_processors.py`.
 
 Exports don't query or write. The caller gets the data from `queries` and passes it in. A context builder may call `queries` too, but doesn't write its own queries.
+
+## Models
+
+A model method reads or changes only its own model's fields. Models don't import `services` or `queries`. When an operation also has to call another app, an external system or a task, write a service that calls the model method and then the other steps. That way, saving a model in a test, migration or admin action has no hidden effects. `AssignedTask.assign` and `AssignedTask.mark_completed` in `opportunity/models.py` predate this rule.
 
 ## Views and tasks
 
