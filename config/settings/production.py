@@ -1,4 +1,15 @@
 from .deployed import *  # noqa
+from .deployed import env
+
+# GENERAL
+# ------------------------------------------------------------------------------
+# Hardcoded instead of read from DJANGO_DEBUG (as base.py does), so debug pages can never be switched on here
+DEBUG = False
+
+# SECURITY
+# ------------------------------------------------------------------------------
+# Defaults to 1 day
+SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=86400)
 
 # django-rest-framework
 # -------------------------------------------------------------------------------

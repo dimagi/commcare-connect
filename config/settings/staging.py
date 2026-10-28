@@ -1,4 +1,10 @@
 from .deployed import *  # noqa
+from .deployed import env
+
+# EMAIL
+# ------------------------------------------------------------------------------
+# Tells staging's error emails to ADMINS apart from production's
+EMAIL_SUBJECT_PREFIX = env("DJANGO_EMAIL_SUBJECT_PREFIX", default="[Connect Staging] ")
 
 # django-rest-framework
 # -------------------------------------------------------------------------------
