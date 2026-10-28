@@ -404,6 +404,19 @@ def test_allotted_visits_by_unit_keeps_claim_limits_when_unit_loses_max_total(op
 
 
 @pytest.mark.django_db
+def test_units_without_max_total_cost_nothing_per_worker(opportunity: Opportunity):
+    unit = _budget_unit(opportunity)
+    _budget_unit(opportunity, max_total=None)
+    opportunity.total_budget = 1000
+    opportunity.save(update_fields=["total_budget"])
+
+    # ClaimOpportunityView compares the remaining budget with this, so it must agree with the projection
+    assert opportunity.budget_per_user() == 100
+    assert opportunity.budgeted_workers == 10
+    assert opportunity.allotted_visits_by_unit() == {unit.pk: 100}
+
+
+@pytest.mark.django_db
 def test_claim_limits(opportunity: Opportunity):
     for _ in range(3):
         _budget_unit(opportunity)

@@ -232,7 +232,10 @@ class Opportunity(BaseModel):
         Budget consumed per user across the given payment units; includes org pay unless
         include_org_pay is False.
         """
-        return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
+        # A unit without a max_total gives claimants no visits (see OpportunityClaimLimit.create_claim_limits)
+        return sum(
+            (pu.max_total or 0) * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units
+        )
 
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
