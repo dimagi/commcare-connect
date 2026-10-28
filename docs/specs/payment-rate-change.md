@@ -656,7 +656,8 @@ earn `<New worker pay>` `<Currency>` per `<Payment unit name>`. You have `<Visit
 ### 11.2 What a pay rate increase does
 
 When the cost per delivery goes up, visit limits go down for **both existing and new workers**, so the opportunity
-stays within budget. This also applies when only org pay goes up.
+stays within budget. This also applies when only org pay goes up. This scales each worker's visit limit and the
+payment unit's max visits per worker (`max_total`).
 
 **Rule**
 
@@ -707,6 +708,9 @@ The payment unit's **max visits per worker** is scaled by the same ratio, rounde
 80 × 5 = 100 × 4, so new workers get the same money as existing ones. It never goes below 1, or new workers
 couldn't join the unit at all; their limit is still capped by what the remaining budget can pay.
 
+**Daily limit.** If the payment unit's max visits per day (`max_daily`) is now above the scaled max, it is lowered
+to match, so the daily limit is never higher than the total.
+
 **Code**
 
 ```python
@@ -725,7 +729,9 @@ def scale_visit_limits(payment_unit, old_rate, new_rate):
         claim_limit.save(update_fields=["max_visits"])
     if payment_unit.max_total:
         payment_unit.max_total = max(1, payment_unit.max_total * old_cost // new_cost)
-        payment_unit.save(update_fields=["max_total"])
+        if payment_unit.max_daily and payment_unit.max_daily > payment_unit.max_total:
+            payment_unit.max_daily = payment_unit.max_total
+        payment_unit.save(update_fields=["max_total", "max_daily"])
 ```
 
 ### 11.3 Message before confirming
@@ -734,10 +740,14 @@ One message for the payment unit, with no per-worker numbers.
 
 **Increase**
 
-> "This increase will reduce workers' remaining visits for this payment unit by around `<Percent>`% when it takes
-> effect on `<Effective date>`. Add budget first if you want workers to keep their visits."
+> "This increase will reduce workers' remaining visits for this payment unit by around `<Percent>`% (`<Visits>`
+> visits in total) when it takes effect on `<Effective date>`. Add budget first if you want workers to keep their
+> visits."
 
 `<Percent>` = 1 − old cost ÷ new cost (e.g. 20% for 4 → 5).
+
+`<Visits>` = Σ over workers of (current limit − new limit), using the 11.2 rule with today's counts (e.g. 44 in the
+11.2 example: Asha 16 + Ben 28). It can change slightly by the 1st as deliveries are approved.
 
 The message also shows the budget needed to keep workers' visits: Σ over workers of (limit − deliveries approved) ×
 (new cost − old cost).
