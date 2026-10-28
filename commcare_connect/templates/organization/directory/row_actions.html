@@ -1,12 +1,23 @@
 {% load i18n %}
 <div class="flex items-center gap-3">
-  <button type="button"
-          class="button-icon"
-          hx-get="{% url 'organization_directory:edit' record.slug %}?next={{ request.get_full_path|urlencode }}"
-          hx-target="#directory-form"
-          aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
-          x-data
-          x-tooltip.raw="{% translate 'Edit' %}">
-    <i class="fa-solid fa-pen" aria-hidden="true"></i>
-  </button>
+  {% if not record.is_archived %}
+    <button type="button"
+            class="button-icon"
+            hx-get="{% url 'organization_directory:edit' record.slug %}?next={{ request.get_full_path|urlencode }}"
+            hx-target="#directory-form"
+            aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
+            x-data
+            x-tooltip.raw="{% translate 'Edit' %}">
+      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+    </button>
+    <button type="button"
+            class="button-icon"
+            hx-get="{% url 'organization_directory:archive' record.slug %}?next={{ request.get_full_path|urlencode }}"
+            hx-target="#directory-form"
+            aria-label="{% blocktranslate with name=record.name %}Archive {{ name }}{% endblocktranslate %}"
+            x-data
+            x-tooltip.raw="{% translate 'Archive' %}">
+      <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+    </button>
+  {% endif %}
 </div>

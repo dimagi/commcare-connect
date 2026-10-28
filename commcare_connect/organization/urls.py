@@ -32,4 +32,5 @@ directory_urlpatterns = [
     path("contacts/<uuid:contact_id>/archive/", views.ContactArchiveView.as_view(), name="contact_archive"),
     path("contacts/<uuid:contact_id>/restore/", views.ContactRestoreView.as_view(), name="contact_restore"),
     path("<slug:slug>/edit/", views.OrganizationUpdateView.as_view(), name="edit"),
+    path("<slug:slug>/archive/", views.OrganizationArchiveView.as_view(), name="archive"),
 ]

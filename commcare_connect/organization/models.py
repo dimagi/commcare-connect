@@ -79,6 +79,7 @@ class Organization(BaseModel):
     eoi_links = models.TextField(blank=True, help_text=_("One EOI link per line."))
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=OrganizationStatus, blank=True)
+    is_archived = models.BooleanField(default=False, db_default=False)
     latest_msa_link = models.URLField(blank=True)
     latest_work_order_link = models.URLField(blank=True)
     verified = models.BooleanField(default=False)
