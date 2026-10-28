@@ -402,20 +402,35 @@ class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
     success_message = gettext_lazy("Organization {name} updated.")
 
 
-class OrganizationArchiveView(LLODirectoryFormMixin, SingleObjectMixin, FormView):
+class OrganizationArchiveStateView(LLODirectoryFormMixin, SingleObjectMixin, FormView):
+    """Confirms a change to whether an organization is archived in a directory modal, then makes it."""
+
     model = Organization
     slug_field = "slug"
-    form_class = OrganizationArchiveForm
-    template_name = "organization/directory/organization_archive_form.html"
     list_url_name = "organization_directory:list"
-    success_message = gettext_lazy("Organization {name} archived.")
+    # The archived state the organization has to be in for the change to apply.
+    from_archived = None
 
     def get_queryset(self):
-        queryset = Organization.objects.filter(is_archived=False)
+        queryset = Organization.objects.filter(is_archived=self.from_archived)
         if self.request.method == "POST":
             # Locked until the request's transaction ends, so two submissions at once can't both apply.
             queryset = queryset.select_for_update()
         return queryset
+
+    def form_valid(self, form):
+        self.change_state(form.cleaned_data)
+        return self.success_response()
+
+    def change_state(self, cleaned_data):
+        raise NotImplementedError
+
+
+class OrganizationArchiveView(OrganizationArchiveStateView):
+    from_archived = False
+    form_class = OrganizationArchiveForm
+    template_name = "organization/directory/organization_archive_form.html"
+    success_message = gettext_lazy("Organization {name} archived.")
 
     # The organization is looked up here rather than in dispatch(), so the permission check runs first.
     def get(self, request, *args, **kwargs):
@@ -443,9 +458,8 @@ class OrganizationArchiveView(LLODirectoryFormMixin, SingleObjectMixin, FormView
         programs = self.object.program_set.annotate(opportunity_count=Count("opportunity")).order_by("name")
         return super().get_context_data(programs=programs, **kwargs)
 
-    def form_valid(self, form):
-        archive_organization(self.object, user_email=self.request.user.email, reason=form.cleaned_data["reason"])
-        return self.success_response()
+    def change_state(self, cleaned_data):
+        archive_organization(self.object, user_email=self.request.user.email, reason=cleaned_data["reason"])
 
 
 class ContactFormMixin(LLODirectoryFormMixin):
