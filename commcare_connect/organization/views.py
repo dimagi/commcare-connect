@@ -24,7 +24,10 @@ from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
-from commcare_connect.organization.archive import archive_organization
+from commcare_connect.organization.archive import (
+    archive_blockers,
+    archive_organization,
+)
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
@@ -417,19 +420,30 @@ class OrganizationArchiveView(LLODirectoryFormMixin, SingleObjectMixin, FormView
     # The organization is looked up here rather than in dispatch(), so the permission check runs first.
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
+        self.blockers = archive_blockers(self.object)
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
+        # Checked again on submit, in case work became live after the confirmation was opened.
+        self.blockers = archive_blockers(self.object)
+        if self.blockers:
+            return self.render_to_response(self.get_context_data())
         return super().post(request, *args, **kwargs)
 
+    def get_template_names(self):
+        if self.blockers:
+            return ["organization/directory/organization_archive_refused.html"]
+        return super().get_template_names()
+
     def get_context_data(self, **kwargs):
+        if self.blockers:
+            return super().get_context_data(blockers=self.blockers, **kwargs)
         # The programs it owns, which archiving it hides along with their opportunities.
         programs = self.object.program_set.annotate(opportunity_count=Count("opportunity")).order_by("name")
         return super().get_context_data(programs=programs, **kwargs)
 
     def form_valid(self, form):
-        # TODO: refuse while the organization has unfinished work
         archive_organization(self.object, user_email=self.request.user.email, reason=form.cleaned_data["reason"])
         return self.success_response()
 
