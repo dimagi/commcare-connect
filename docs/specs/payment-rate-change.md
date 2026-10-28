@@ -180,7 +180,7 @@ class PaymentUnit(models.Model):
 
 **A pay rate counts only once it is applied** (`applied_on` set), not when its date comes.
 
-- If the daily job runs late, approvals, budget checks and new workers keep the old pay rate until the change is
+- If the pay rate job runs late, approvals, budget checks and new workers keep the old pay rate until the change is
   applied, so earned pay and visit limits always match.
 - If the job cancels the change instead (section [11.4](#114-no-overspend-funding-check)), nobody ever earned the new
   pay rate.
@@ -445,7 +445,7 @@ multiplying by the current pay rate, so they always match earned pay and never l
 
 ## Part 2: Scheduling and applying pay rate changes
 
-What PMs, NMs and workers see, the daily job, and visit limits (tickets 5–9, release 3). Depends on the
+What PMs, NMs and workers see, the pay rate job, and visit limits (tickets 5–9, release 3). Depends on the
 changes in Part 1.
 
 ## 9. Scheduling a change
@@ -545,13 +545,17 @@ started and no pay rate is active.
 
 **When it runs**
 
-A new Celery beat task, **the daily job**, runs **every day at 00:00 UTC**. It applies every pay rate change whose
-date has come but isn't applied yet.
-- **00:00** so the new pay rate starts as close to the 1st as possible. Until the job runs, everything keeps the old
-  pay rate (section [6.2](#62-looking-up-a-pay-rate)). Traffic is low then, so its brief locks don't hold up visits.
-- **Daily**, not only on the 1st, so a failed run is picked up the next day instead of leaving a change stuck (its
-  date has passed, so it can't be cancelled). It also checks scheduled changes for funding every day (section
-  [11.4](#114-no-overspend-funding-check)).
+A new Celery beat task, **the pay rate job**, applies every pay rate change whose date has come but isn't applied
+yet.
+- **Every hour on the 1st**, starting at 00:00 UTC, since scheduled changes always fall on the 1st. 00:00 so the new
+  pay rate starts as close to the 1st as possible; until the job runs, everything keeps the old pay rate (section
+  [6.2](#62-looking-up-a-pay-rate)). Traffic is low then, so its brief locks don't hold up visits. A failed run is
+  picked up within the hour instead of leaving a change stuck (its date has passed, so it can't be cancelled).
+- **Once a day on other days**, at 00:00 UTC: it checks scheduled changes for funding (section
+  [11.4](#114-no-overspend-funding-check)) and applies anything still not applied.
+- If a change is still not applied, PMs and NMs see a banner (section [12.4](#124-banners)).
+
+> **Note:** the exact schedule, and when the funding check runs on the 1st, can be finalised during implementation.
 
 **What it does**
 
@@ -571,7 +575,7 @@ For each change:
   it is already applied or cancelled. So a failed task leaves nothing half-done, and a retried one never scales or
   notifies twice.
 - **Retries:** about 1, 2, 4, 8 and 16 seconds apart, all within a minute. A task that still fails is reported to
-  Sentry, and the next day's run tries again.
+  Sentry, and the next run tries again.
 
 **Code**
 
@@ -684,7 +688,7 @@ new limit    = the higher of: scaled limit, deliveries completed; never above th
 
 **When**
 
-Limits are scaled on the 1st, by the daily job. So a change cancelled before the 1st leaves nothing to undo.
+Limits are scaled on the 1st, by the pay rate job. So a change cancelled before the 1st leaves nothing to undo.
 
 **Example**
 
@@ -777,8 +781,8 @@ ahead.
    - Other payment units' scheduled changes share the same remaining budget, so the check adds up the shortfalls of
      all the opportunity's scheduled changes, including this one.
 2. **Between scheduling and the 1st**: PMs and NMs see a warning banner as soon as the total can no longer be funded
-   (section [12.4](#124-banners)). The daily job also emails the PM and NM admins once, so they can act as soon as
-   possible, since the banner only reaches people who open Connect Web.
+   (section [12.4](#124-banners)). The pay rate job's daily funding check also emails the PM and NM admins once, so
+   they can act as soon as possible, since the banner only reaches people who open Connect Web.
 3. **On the 1st at 00:00**, before limits are scaled. By then the change may no longer fit: workers may have submitted
    more visits, new workers may have joined, limits may have been raised (Add Budget or max visits per worker), or
    over-limit visits may have been approved. If there isn't enough budget, the change is **cancelled automatically**:
@@ -900,6 +904,19 @@ apply."
 - It goes away by itself once the change can be funded again (waiting deliveries approved or budget added).
 - It can take up to an hour to appear or go away (cached, because it counts visits per worker).
 
+**Delayed change banner (PMs and NMs)**
+
+If a change is still Scheduled after its planned date (the pay rate job hasn't applied it yet), a banner is shown:
+
+"`<Opportunity name>`: the pay rate change for `<Payment unit name>` planned for `<Effective date>` hasn't been
+applied yet. Workers are still paid at the old pay rate. Please contact support if this message is still shown in a
+few hours."
+
+- Shown to the same people as the funding warning banner. It is checked when the page loads, so it shows even if
+  the job doesn't run.
+- It replaces the upcoming change banner for that change, and goes away by itself once the change is applied.
+- Not shown for a change the job cancelled (for example, one that couldn't be funded): it is no longer Scheduled.
+
 ## 13. All scenarios
 
 **Scheduling and editing**
@@ -992,5 +1009,3 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
   stops being approved" rules in section [7](#7-updating-earned-pay-the-key-change) are no longer needed.
 - **Credit billed work that is rejected later.** Today and with this change, rejecting work after it was invoiced
   doesn't change the invoice. A credit on the next invoice could reverse it.
-- **Alert if the job doesn't run.** A Sentry cron monitor on the daily job, alerting if it hasn't started or finished
-  within an hour. One monitor is free; extras cost about $0.78 a month.
