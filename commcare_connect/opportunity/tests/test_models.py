@@ -423,6 +423,28 @@ def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "end_date, workers, visits",
+    [
+        # ClaimOpportunityView lets anyone claim while the units cost nothing
+        (None, None, None),
+        (date.today() - timedelta(days=1), 2, 20),
+    ],
+)
+def test_units_that_cost_nothing_put_no_limit_on_claims(opportunity: Opportunity, end_date, workers, visits):
+    opportunity.total_budget = 1000
+    opportunity.save(update_fields=["total_budget"])
+    unit = _budget_unit(opportunity, amount=0)
+    for _ in range(2):
+        _claim(opportunity)
+    opportunity.end_date = end_date
+
+    assert opportunity.max_workers == workers
+    assert opportunity.allotted_visits == visits
+    assert opportunity.allotted_visits_by_unit() == ({unit.pk: visits} if visits else {})
+
+
+@pytest.mark.django_db
 def test_budget_capacity_reads_units_and_claims_once(opportunity: Opportunity, django_assert_num_queries):
     _claimed_two_unit_opportunity(opportunity, claims=3)
 

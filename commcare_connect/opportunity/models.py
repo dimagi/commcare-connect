@@ -96,8 +96,8 @@ class OpportunityStatus(models.IntegerChoices):
 
 
 class BudgetCapacity(NamedTuple):
-    workers: int
-    visits: int
+    workers: int | None
+    visits: int | None
 
 
 class UnitClaims(NamedTuple):
@@ -280,12 +280,14 @@ class Opportunity(BaseModel):
 
     @property
     def max_workers(self):
-        """Workers who have claimed, plus the whole workers the remaining budget can still fund."""
+        """Workers who have claimed, plus the whole workers the remaining budget can still fund. ``None``
+        when the budget puts no limit on claims."""
         return self.budget_capacity().workers
 
     @property
     def allotted_visits(self):
-        """Deliveries the budget funds across all workers, as a whole number."""
+        """Deliveries the budget funds across all workers, as a whole number. ``None`` when the budget puts
+        no limit on them."""
         return self.budget_capacity().visits
 
     def budget_capacity(self):
@@ -293,14 +295,15 @@ class Opportunity(BaseModel):
 
         Workers who have claimed count with the visits in their claim limits. On top of them come the
         whole workers the remaining budget can still fund, each getting every unit's full ``max_total``.
+        Either figure is ``None`` when the budget puts no limit on it.
         """
         payment_units = list(self.paymentunit_set.all())
         claims_by_unit = self._claims_by_unit()
         unclaimed_workers = self._unclaimed_worker_count(payment_units, claims_by_unit)
         visits_by_unit = self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers)
         return BudgetCapacity(
-            workers=self._claimed_worker_count() + unclaimed_workers,
-            visits=sum(visits_by_unit.values()),
+            workers=None if unclaimed_workers is None else self._claimed_worker_count() + unclaimed_workers,
+            visits=None if visits_by_unit is None else sum(visits_by_unit.values()),
         )
 
     def allotted_visits_by_unit(self, payment_units=None):
@@ -314,19 +317,22 @@ class Opportunity(BaseModel):
         opportunity has ended no one can claim, so the unclaimed budget funds nothing either.
 
         Units with neither a claim limit nor a ``max_total`` are left out. Empty when there is no
-        budget, or when the limited units cost nothing and so have no budget limit.
+        budget, or when the units cost nothing and so have no budget limit.
         """
         if payment_units is None:
             payment_units = self.paymentunit_set.all()
         claims_by_unit = self._claims_by_unit()
         unclaimed_workers = self._unclaimed_worker_count(payment_units, claims_by_unit)
-        return self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers)
+        return self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers) or {}
 
     def _allotted_visits_by_unit(self, payment_units, claims_by_unit, unclaimed_workers):
-        """``allotted_visits_by_unit`` from payment units and claims that have already been read."""
-        has_limited_units = any(pu.max_total for pu in payment_units)
-        if not self.total_budget or (has_limited_units and not self.budget_per_user_for_units(payment_units)):
+        """``allotted_visits_by_unit``, but ``None`` when the budget puts no limit on the deliveries."""
+        if not self.total_budget:
             return {}
+        if unclaimed_workers is None:
+            if any(pu.max_total for pu in payment_units):
+                return None
+            unclaimed_workers = 0
         return {
             pu.pk: (claims_by_unit[pu.pk].visits if pu.pk in claims_by_unit else 0)
             + (pu.max_total or 0) * unclaimed_workers
@@ -338,7 +344,7 @@ class Opportunity(BaseModel):
         return OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
 
     def _unclaimed_worker_count(self, payment_units, claims_by_unit):
-        """Whole workers the remaining budget can still fund.
+        """Whole workers the remaining budget can still fund, or ``None`` when it puts no limit on them.
 
         Applies ``ClaimOpportunityView``'s rule: a worker can claim while the remaining budget covers
         ``budget_per_user()``, which is what ``budget_per_user_for_units`` prices here.
@@ -349,7 +355,7 @@ class Opportunity(BaseModel):
         remaining_budget = self.total_budget - sum(claims.cost for claims in claims_by_unit.values())
         budget_per_worker = self.budget_per_user_for_units(payment_units)
         if not budget_per_worker:
-            return 0
+            return None if remaining_budget >= 0 else 0
         return max(remaining_budget, 0) // budget_per_worker
 
     def _claims_by_unit(self):
