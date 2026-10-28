@@ -11,23 +11,26 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db import transaction
+from django.db.models import Count
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, UpdateView, View
+from django.views.generic import CreateView, FormView, UpdateView, View
 from django.views.generic.detail import SingleObjectMixin
 from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.organization.archive import archive_organization
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     ContactForm,
     InviteAcceptForm,
+    OrganizationArchiveForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
     OrganizationDirectoryForm,
@@ -394,6 +397,41 @@ class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
 
 class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
     success_message = gettext_lazy("Organization {name} updated.")
+
+
+class OrganizationArchiveView(LLODirectoryFormMixin, SingleObjectMixin, FormView):
+    model = Organization
+    slug_field = "slug"
+    form_class = OrganizationArchiveForm
+    template_name = "organization/directory/organization_archive_form.html"
+    list_url_name = "organization_directory:list"
+    success_message = gettext_lazy("Organization {name} archived.")
+
+    def get_queryset(self):
+        queryset = Organization.objects.filter(is_archived=False)
+        if self.request.method == "POST":
+            # Locked until the request's transaction ends, so two submissions at once can't both apply.
+            queryset = queryset.select_for_update()
+        return queryset
+
+    # The organization is looked up here rather than in dispatch(), so the permission check runs first.
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super().post(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        # The programs it owns, which archiving it hides along with their opportunities.
+        programs = self.object.program_set.annotate(opportunity_count=Count("opportunity")).order_by("name")
+        return super().get_context_data(programs=programs, **kwargs)
+
+    def form_valid(self, form):
+        # TODO: refuse while the organization has unfinished work
+        archive_organization(self.object, user_email=self.request.user.email, reason=form.cleaned_data["reason"])
+        return self.success_response()
 
 
 class ContactFormMixin(LLODirectoryFormMixin):

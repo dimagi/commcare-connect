@@ -6,11 +6,14 @@ from django.contrib.auth.models import Permission
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
+from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.organization.tables import OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
+from commcare_connect.organization.views import OrganizationArchiveView
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.celery import get_export_storage
 
@@ -234,6 +237,72 @@ class TestOrganizationFormViews:
         args = (org.slug,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
+
+
+@pytest.mark.django_db
+class TestOrganizationArchiveView:
+    def test_get_shows_the_owned_programs_with_their_opportunity_counts(
+        self, client, user_with_directory_access, organization
+    ):
+        program = ProgramFactory(organization=organization)
+        OpportunityFactory.create_batch(2, program=program)
+        ProgramFactory(funder=organization)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:archive", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        assert [(listed, listed.opportunity_count) for listed in response.context["programs"]] == [(program, 2)]
+        assert program.name in response.content.decode()
+
+    def test_direct_visit_redirects_to_the_listing(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:archive", args=(organization.slug,)))
+
+        assert response.url == reverse("organization_directory:list")
+
+    def test_post_archives_and_redirects(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = _post_archive(client, organization, {"reason": "Duplicate"})
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:list")
+        organization.refresh_from_db()
+        assert organization.is_archived
+        assert organization.notes.endswith(": Duplicate")
+
+    def test_post_locks_the_organization_row(self, rf, organization):
+        view = OrganizationArchiveView()
+        view.setup(rf.post("/"), slug=organization.slug)
+
+        assert view.get_queryset().query.select_for_update
+
+    def test_archived_organization_is_not_found(self, client, user_with_directory_access):
+        organization = OrganizationFactory(is_archived=True, notes="Existing")
+        client.force_login(user_with_directory_access)
+
+        response = _post_archive(client, organization, {"reason": "Again"})
+
+        assert response.status_code == 404
+        organization.refresh_from_db()
+        assert organization.notes == "Existing"
+
+    @pytest.mark.parametrize("slug_exists", [True, False])
+    def test_requires_permission(self, client, user, organization, slug_exists):
+        client.force_login(user)
+        slug = organization.slug if slug_exists else "no-such-org"
+
+        response = client.post(reverse("organization_directory:archive", args=(slug,)))
+
+        assert response.status_code == 403
+
+
+def _post_archive(client, organization, data):
+    return client.post(
+        reverse("organization_directory:archive", args=(organization.slug,)), data, HTTP_HX_REQUEST="true"
+    )
 
 
 def _filtered_contacts(params):

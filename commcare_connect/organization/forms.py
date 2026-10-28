@@ -487,6 +487,19 @@ class PrimarySectorForm(ManagedOptionForm):
         model = PrimarySector
 
 
+class OrganizationArchiveForm(forms.Form):
+    reason = forms.CharField(
+        label=gettext_lazy("Reason (optional)"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text=gettext_lazy("Added to the organization's notes as a System Note."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = _modal_form_helper(self)
+
+
 def _modal_form_helper(form):
     # The directory's modal template supplies the <form> tag and the CSRF token.
     form_helper = helper.FormHelper(form)
