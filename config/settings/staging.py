@@ -1,5 +1,5 @@
-from .deployed import *  # noqa
-from .deployed import env
+from .deploy_base import *  # noqa
+from .deploy_base import env
 
 # EMAIL
 # ------------------------------------------------------------------------------

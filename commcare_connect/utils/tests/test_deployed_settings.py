@@ -9,7 +9,7 @@ DEPLOYED_SETTINGS_MODULES = ["config.settings.staging", "config.settings.product
 
 
 def _load_deployed_settings(module):
-    # Imported in a subprocess: deployed.py mutates base.py's MIDDLEWARE list in place, which would alter the
+    # Imported in a subprocess: deploy_base.py mutates base.py's MIDDLEWARE list in place, which would alter the
     # settings of the running test session. read_env is stubbed out so a developer's .env can't override the
     # defaults under test; deployed environments have no .env either.
     script = (
