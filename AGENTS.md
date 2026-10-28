@@ -108,7 +108,8 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
 - **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
-- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views.py` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
+- **Keep business logic out of views, forms and tasks.** Put it in the app's `services`, `queries`, `permissions` or `exports`. Read `docs/code-organization.md` before adding such code or moving existing code
+- **Prefer class-based views** for form handling and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views.py` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
 - **Use Django Forms** over raw HTML forms for validation and rendering
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
 - **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
@@ -159,6 +160,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 ## Further reading
 
+- `docs/code-organization.md` — where services, queries, exports and utilities go
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
