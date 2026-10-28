@@ -117,6 +117,13 @@ def opportunities_accessible_to_org(org):
     )
 
 
+def opportunities_linked_to_org(org):
+    """Opportunities the organization delivers or supervises, or that sit under a program it owns or funds."""
+    return Opportunity.objects.filter(
+        Q(organization=org) | Q(supervising_organization=org) | Q(program__organization=org) | Q(program__funder=org)
+    )
+
+
 def orgs_ids_with_admin_access_to_opportunity(opportunity) -> set:
     """Every org with ADMIN access to this opportunity, independent of any request."""
     org_ids = {
