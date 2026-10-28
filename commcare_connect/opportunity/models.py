@@ -687,6 +687,8 @@ class PaymentUnit(models.Model):
     amount = models.PositiveIntegerField()
     org_amount = models.PositiveIntegerField(default=0)
     name = models.CharField(max_length=255)
+    # Shown to workers in the mobile app in place of the internal name, when set
+    display_name = models.CharField(max_length=30, blank=True, default="")
     description = models.TextField()
     max_total = models.IntegerField(null=True)
     # None means the payment unit has no daily limit
@@ -713,6 +715,8 @@ class DeliverUnit(models.Model):
     )
     slug = models.SlugField(max_length=100)
     name = models.CharField(max_length=255)
+    # Shown to workers in the mobile app in place of the internal name, when set
+    display_name = models.CharField(max_length=30, blank=True, default="")
     payment_unit = models.ForeignKey(
         PaymentUnit,
         on_delete=models.DO_NOTHING,
