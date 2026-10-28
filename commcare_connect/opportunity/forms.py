@@ -1292,13 +1292,28 @@ class AddBudgetNewUsersForm(forms.Form):
         self.opportunity.save()
 
 
+DISPLAY_NAME_LABEL = _("Display name")
+DISPLAY_NAME_HELP_TEXT = _("Shown to workers in the Connect app.")
+
+
 class PaymentUnitForm(forms.ModelForm):
     no_daily_limit = forms.BooleanField(required=False, label=_("No daily limit"))
 
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
+        fields = [
+            "name",
+            "display_name",
+            "description",
+            "amount",
+            "org_amount",
+            "max_total",
+            "max_daily",
+            "start_date",
+            "end_date",
+        ]
         help_texts = {
+            "display_name": DISPLAY_NAME_HELP_TEXT,
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
@@ -1308,6 +1323,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
         labels = {
+            "display_name": DISPLAY_NAME_LABEL,
             "amount": _("Worker pay per visit"),
             "org_amount": _("Org pay per visit"),
             "max_total": _("Maximum visits per user"),
@@ -1335,7 +1351,7 @@ class PaymentUnitForm(forms.ModelForm):
         self.helper.layout = Layout(
             Div(
                 Row(
-                    Column(Field("name"), Field("description")),
+                    Column(Field("name"), Field("display_name"), Field("description")),
                     Column(
                         self.get_amounts_div(),
                         self.get_limits_div(),
