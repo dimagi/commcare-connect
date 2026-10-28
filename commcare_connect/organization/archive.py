@@ -95,6 +95,11 @@ def archive_organization(organization: Organization, *, user_email: str, reason:
     _set_archived(organization, archived=True, user_email=user_email, reason=reason)
 
 
+def restore_organization(organization: Organization, *, user_email: str, reason: str) -> None:
+    """Restore the organization, noting the reason when one is given. Its contacts stay archived."""
+    _set_archived(organization, archived=False, user_email=user_email, reason=reason)
+
+
 def live_or_upcoming_program_q(today: date) -> Q:
     """Programs that haven't ended. Every program has both dates, so this covers upcoming ones too."""
     return Q(end_date__gte=today)

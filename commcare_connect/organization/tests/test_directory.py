@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.contrib.messages import get_messages
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
@@ -345,14 +346,68 @@ class TestOrganizationArchiveView:
         organization.refresh_from_db()
         assert organization.notes == "Existing"
 
-    @pytest.mark.parametrize("slug_exists", [True, False])
-    def test_requires_permission(self, client, user, organization, slug_exists):
-        client.force_login(user)
-        slug = organization.slug if slug_exists else "no-such-org"
 
-        response = client.post(reverse("organization_directory:archive", args=(slug,)))
+@pytest.mark.django_db
+class TestOrganizationRestoreView:
+    def test_get_links_to_the_organizations_archived_contacts(self, client, user_with_directory_access):
+        organization = OrganizationFactory(name="Umoja Health", is_archived=True)
+        client.force_login(user_with_directory_access)
 
-        assert response.status_code == 403
+        response = client.get(
+            reverse("organization_directory:restore", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        contacts_url = f"{reverse('organization_directory:contacts')}?archived=true&amp;search=Umoja%20Health"
+        assert f'href="{contacts_url}" target="_blank" rel="noopener">here</a>' in response.content.decode()
+
+    def test_post_restores_and_says_the_contacts_stay_archived(self, client, user_with_directory_access):
+        organization = OrganizationFactory(name="Umoja Health", is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = _post_restore(client, organization, {"reason": ""})
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:list")
+        organization.refresh_from_db()
+        assert not organization.is_archived
+        [message] = [str(message) for message in get_messages(response.wsgi_request)]
+        assert "Umoja Health restored" in message
+        assert "contacts are still archived" in message
+
+    def test_active_organization_is_not_found(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = _post_restore(client, organization, {"reason": ""})
+
+        assert response.status_code == 404
+
+    def test_archived_rows_offer_restore_instead_of_edit(self, client, user_with_directory_access):
+        organization = OrganizationFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(f"{reverse('organization_directory:list')}?archived=true")
+
+        content = response.content.decode()
+        assert reverse("organization_directory:restore", args=(organization.slug,)) in content
+        assert reverse("organization_directory:edit", args=(organization.slug,)) not in content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name, is_archived", [("organization_directory:archive", False), ("organization_directory:restore", True)]
+)
+@pytest.mark.parametrize("slug_exists", [True, False])
+def test_archiving_and_restoring_require_permission(client, user, url_name, is_archived, slug_exists):
+    organization = OrganizationFactory(is_archived=is_archived)
+    client.force_login(user)
+    slug = organization.slug if slug_exists else "no-such-org"
+
+    assert client.post(reverse(url_name, args=(slug,))).status_code == 403
+
+
+def _post_restore(client, organization, data):
+    return client.post(
+        reverse("organization_directory:restore", args=(organization.slug,)), data, HTTP_HX_REQUEST="true"
+    )
 
 
 def _post_archive(client, organization, data):

@@ -27,6 +27,7 @@ from rest_framework.decorators import api_view
 from commcare_connect.organization.archive import (
     archive_blockers,
     archive_organization,
+    restore_organization,
 )
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
@@ -38,6 +39,7 @@ from commcare_connect.organization.forms import (
     OrganizationCreateForm,
     OrganizationDirectoryForm,
     OrganizationInviteForm,
+    OrganizationRestoreForm,
 )
 from commcare_connect.organization.models import Contact, Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import (
@@ -460,6 +462,28 @@ class OrganizationArchiveView(OrganizationArchiveStateView):
 
     def change_state(self, cleaned_data):
         archive_organization(self.object, user_email=self.request.user.email, reason=cleaned_data["reason"])
+
+
+class OrganizationRestoreView(OrganizationArchiveStateView):
+    from_archived = True
+    form_class = OrganizationRestoreForm
+    template_name = "organization/directory/organization_restore_form.html"
+    success_message = gettext_lazy(
+        "Organization {name} restored. Its contacts are still archived; restore the ones you need from the "
+        "Contacts tab."
+    )
+
+    # The organization is looked up here rather than in dispatch(), so the permission check runs first.
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super().post(request, *args, **kwargs)
+
+    def change_state(self, cleaned_data):
+        restore_organization(self.object, user_email=self.request.user.email, reason=cleaned_data["reason"])
 
 
 class ContactFormMixin(LLODirectoryFormMixin):

@@ -19,6 +19,7 @@ from commcare_connect.organization.archive import (
     archive_organization,
     live_or_upcoming_opportunity_q,
     live_or_upcoming_program_q,
+    restore_organization,
 )
 from commcare_connect.organization.models import Contact, Organization
 from commcare_connect.program.models import Program, ProgramApplicationStatus
@@ -83,6 +84,29 @@ class TestArchiveOrganization:
         archive_organization(organization, user_email=STAFF_EMAIL, reason="")
 
         assert organization.events.latest("pgh_id").is_archived
+
+
+@pytest.mark.django_db
+class TestRestoreOrganization:
+    def test_restores_the_organization_and_leaves_its_contacts_archived(self):
+        organization = OrganizationFactory(is_archived=True)
+        contact = ContactFactory(organization=organization, is_archived=True)
+
+        restore_organization(organization, user_email=STAFF_EMAIL, reason="")
+
+        organization.refresh_from_db()
+        assert not organization.is_archived
+        assert organization.modified_by == STAFF_EMAIL
+        assert Contact.objects.get(pk=contact.pk).is_archived
+
+    @mock.patch("commcare_connect.organization.archive.timezone.now", return_value=datetime(2026, 10, 27, tzinfo=UTC))
+    def test_reason_is_appended_as_a_system_note(self, _now):
+        organization = OrganizationFactory(is_archived=True)
+
+        restore_organization(organization, user_email=STAFF_EMAIL, reason="Back")
+
+        organization.refresh_from_db()
+        assert organization.notes == "[System Note] Restored on 2026-10-27 by staff@example.com: Back"
 
 
 @pytest.mark.django_db
