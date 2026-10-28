@@ -562,6 +562,8 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
                 return value.strftime("%Y-%m-%d")
             return str(value)
 
+        budget_capacity = object.budget_capacity()
+
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
             {
@@ -595,14 +597,15 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
             {
                 "name": "Max Connect Workers",
                 "count": header_with_tooltip(
-                    safe_display(object.budgeted_workers), "Maximum allowed workers in the Opportunity"
+                    safe_display(budget_capacity.workers),
+                    "Workers who have claimed, plus how many more the remaining budget can fund",
                 ),
                 "icon": "fa-users",
             },
             {
                 "name": "Max Service Deliveries",
                 "count": header_with_tooltip(
-                    safe_display(object.allotted_visits),
+                    safe_display(budget_capacity.visits),
                     "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
                 ),
                 "icon": "fa-gears",

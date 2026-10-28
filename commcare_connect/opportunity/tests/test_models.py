@@ -279,6 +279,17 @@ def _claim(opportunity):
     return claim
 
 
+def _claimed_two_unit_opportunity(opportunity, claims):
+    """A budget of 1500 with units costing 50 and 100 a worker (150 in all), and ``claims`` workers claimed."""
+    opportunity.total_budget = 1500
+    opportunity.save(update_fields=["total_budget"])
+    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
+    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
+    for _ in range(claims):
+        _claim(opportunity)
+    return unit_a, unit_b
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "total_budget, expected",
@@ -353,12 +364,7 @@ def _add_unit_c(opportunity, unit_a, unit_b):
     ],
 )
 def test_allotted_visits_by_unit_follows_claim_limits(opportunity: Opportunity, change, expected):
-    opportunity.total_budget = 1500
-    opportunity.save(update_fields=["total_budget"])
-    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
-    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
-    for _ in range(3):
-        _claim(opportunity)
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=3)
 
     change(opportunity, unit_a, unit_b)
 
@@ -368,39 +374,43 @@ def test_allotted_visits_by_unit_follows_claim_limits(opportunity: Opportunity, 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "end_date, expected",
+    "end_date, visits, workers",
     [
         # 1500 - 450 claimed = 1050 left: 7 more workers at 150
-        (date.today(), 30 + 70),
-        (None, 30 + 70),
-        # No one can claim once it has ended, so only the claimed limits count
-        (date.today() - timedelta(days=1), 30),
+        (date.today(), 30 + 70, 3 + 7),
+        (None, 30 + 70, 3 + 7),
+        # No one can claim once it has ended, so only the claimants count, unlike in budgeted_workers
+        (date.today() - timedelta(days=1), 30, 3),
     ],
 )
-def test_allotted_visits_by_unit_stops_projecting_once_ended(opportunity: Opportunity, end_date, expected):
-    opportunity.total_budget = 1500
-    opportunity.save(update_fields=["total_budget"])
-    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
-    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
-    for _ in range(3):
-        _claim(opportunity)
+def test_projection_stops_once_ended(opportunity: Opportunity, end_date, visits, workers):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=3)
     opportunity.end_date = end_date
 
-    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: expected, unit_b.pk: expected}
+    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: visits, unit_b.pk: visits}
+    assert opportunity.max_workers == workers
+    assert opportunity.budgeted_workers == 10
 
 
 @pytest.mark.django_db
 def test_allotted_visits_by_unit_keeps_claim_limits_when_unit_loses_max_total(opportunity: Opportunity):
-    opportunity.total_budget = 1500
-    opportunity.save(update_fields=["total_budget"])
-    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
-    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
-    _claim(opportunity)
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=1)
     unit_a.max_total = None
     unit_a.save()
 
     # 1500 - 150 claimed = 1350 left at 100 a worker (unit B only): 13 more workers
     assert opportunity.allotted_visits_by_unit() == {unit_a.pk: 10, unit_b.pk: 10 + 130}
+
+
+@pytest.mark.django_db
+def test_max_workers_counts_claimants_at_their_claimed_cost(opportunity: Opportunity):
+    unit_a, _ = _claimed_two_unit_opportunity(opportunity, claims=3)
+    unit_a.max_total = 20
+    unit_a.save()
+
+    # 1050 left at 20 × 5 + 10 × 10 = 200 a worker: 5 more. budgeted_workers prices all 7 at 200.
+    assert opportunity.max_workers == 3 + 5
+    assert opportunity.budgeted_workers == 7
 
 
 @pytest.mark.django_db
@@ -413,6 +423,17 @@ def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+def test_budget_capacity_reads_units_and_claims_once(opportunity: Opportunity, django_assert_num_queries):
+    _claimed_two_unit_opportunity(opportunity, claims=3)
+
+    # Payment units, claim limits by unit, claim count
+    with django_assert_num_queries(3):
+        capacity = opportunity.budget_capacity()
+
+    assert capacity == (3 + 7, 30 + 70 + 30 + 70)
+
+
+@pytest.mark.django_db
 def test_units_without_max_total_cost_nothing_per_worker(opportunity: Opportunity):
     unit = _budget_unit(opportunity)
     _budget_unit(opportunity, max_total=None)
@@ -422,6 +443,7 @@ def test_units_without_max_total_cost_nothing_per_worker(opportunity: Opportunit
     # ClaimOpportunityView compares the remaining budget with this, so it must agree with the projection
     assert opportunity.budget_per_user() == 100
     assert opportunity.budgeted_workers == 10
+    assert opportunity.max_workers == 10
     assert opportunity.allotted_visits_by_unit() == {unit.pk: 100}
 
 
