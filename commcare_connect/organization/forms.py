@@ -367,9 +367,7 @@ class ContactForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("name")
         self.fields["organization"].empty_label = gettext("Select organization")
-        self.helper = helper.FormHelper(self)
-        self.helper.form_tag = False
-        self.helper.disable_csrf = True
+        self.helper = _modal_form_helper(self)
         self.helper.layout = layout.Layout(
             layout.Div(
                 _full_width("name"),
@@ -478,6 +476,14 @@ def _clean_lines(raw, validator, error_message):
     if bad:
         raise ValidationError(error_message, params={"bad": ", ".join(bad)})
     return "\n".join(entries)
+
+
+def _modal_form_helper(form):
+    # The directory's modal template supplies the <form> tag and the CSRF token.
+    form_helper = helper.FormHelper(form)
+    form_helper.form_tag = False
+    form_helper.disable_csrf = True
+    return form_helper
 
 
 class OrganizationInviteForm(forms.ModelForm):
