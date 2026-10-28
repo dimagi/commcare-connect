@@ -1,3 +1,4 @@
+import itertools
 import json
 from unittest import mock
 
@@ -21,6 +22,7 @@ from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
+    square,
 )
 from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
 from commcare_connect.opportunity.models import LabsRecord
@@ -1005,12 +1007,15 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
     def url(self, opp_id):
         return reverse("data_export:work_area_bulk_create", kwargs={"opp_id": opp_id})
 
+    # Each item gets its own square, so items in one payload never overlap each other.
+    _boundary_offsets = itertools.count()
+
     def _item(self, **overrides):
         item = {
             "slug": "area-1",
             "ward": "ward-a",
             "centroid": "36.8 -1.29",
-            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+            "boundary": square(36.8 + 0.05 * next(self._boundary_offsets), -1.3, 0.02).wkt,
             "building_count": 5,
             "expected_visit_count": 10,
             "target_population": 100,
@@ -1035,7 +1040,7 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         assert area.case_properties == {"lga": "lga-1", "state": "state-1"}
 
     def test_resolves_existing_work_area_group_by_name(self, v2_write_client, opportunity):
-        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="original-ward")
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
         payload = [self._item(work_area_group_name="group-a")]
         response = _post_json(v2_write_client, self.url(opportunity.id), payload)
         assert response.status_code == 201
@@ -1043,6 +1048,31 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.work_area_group_id == group.id
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+
+    def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
+        WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")
+        payload = [self._item(work_area_group_name="group-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area Group group-a is in ward ward-b, but these rows give ward ward-a. "
+            "Correct the ward, or use a different group name."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_new_group_spanning_wards_rejected(self, v2_write_client, opportunity):
+        payload = [
+            self._item(slug="area-1", work_area_group_name="new-group", ward="ward-a"),
+            self._item(slug="area-2", work_area_group_name="new-group", ward="ward-b"),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area Group new-group is in ward ward-a, but these rows give ward ward-b. "
+            "Correct the ward, or use a different group name."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
     def test_creates_missing_work_area_group_by_name(self, v2_write_client, opportunity):
         payload = [self._item(work_area_group_name="new-group", ward="ward-b")]
@@ -1096,6 +1126,34 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.implementation_area_id is None
         assert area.implementation_area_name == "not-created-yet"
+
+    def test_overlapping_items_rejected(self, v2_write_client, opportunity):
+        payload = [
+            self._item(slug="area-1", boundary=square(36.8, -1.3, 0.02).wkt),
+            self._item(slug="area-2", boundary=square(36.81, -1.3, 0.02).wkt),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Areas area-1 and area-2 overlap each other by 50.0%. "
+            "Correct one boundary or remove one work area, then upload again."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_item_overlapping_existing_work_area_rejected(self, v2_write_client, opportunity):
+        existing = WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(36.8, -1.3, 0.02))
+        payload = [
+            self._item(slug="area-1", work_area_group_name="new-group"),
+            self._item(slug="area-2", boundary=square(36.8, -1.3, 0.02).wkt, work_area_group_name="new-group"),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area area-2 overlaps existing Work Area existing by 100.0%. "
+            "Correct the boundary or remove the work area, then upload again."
+        ]
+        assert list(WorkArea.objects.filter(opportunity=opportunity)) == [existing]
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db(transaction=True)
