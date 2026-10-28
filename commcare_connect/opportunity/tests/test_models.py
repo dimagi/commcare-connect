@@ -404,6 +404,15 @@ def test_allotted_visits_by_unit_keeps_claim_limits_when_unit_loses_max_total(op
 
 
 @pytest.mark.django_db
+def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
+    opportunity.total_budget = 1000
+    _budget_unit(opportunity, amount=0)
+
+    # The finalize form prefills Max Connect Workers from this, so it must not raise
+    assert opportunity.budgeted_workers is None
+
+
+@pytest.mark.django_db
 def test_units_without_max_total_cost_nothing_per_worker(opportunity: Opportunity):
     unit = _budget_unit(opportunity)
     _budget_unit(opportunity, max_total=None)
