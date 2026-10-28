@@ -15,7 +15,6 @@ from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
@@ -45,6 +44,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
+from django.utils.decorators import method_decorator
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
@@ -107,9 +107,9 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    amount_with_currency,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_deliveries,
     get_worker_learn_table_data,
@@ -231,17 +231,19 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
+from commcare_connect.opportunity.worker_progress import (
+    get_delivery_allocation,
+    get_payment_unit_breakdown,
+    get_worker_payments,
+)
 from commcare_connect.organization.decorators import (
-    OppPMRequiredMixin,
-    OppStandardAccessMixin,
-    OppViewAccessMixin,
-    OrgViewAccessMixin,
-    ProgramAdminAccessMixin,
     opp_admin_access_required,
     opp_standard_access_required,
     opp_view_access_required,
     opportunity_pm_required,
     opportunity_required,
+    org_view_access_required,
+    program_admin_access_required,
 )
 from commcare_connect.program.utils import (
     AccessLevel,
@@ -319,10 +321,6 @@ class OpportunityObjectMixin:
         return self.get_opportunity()
 
 
-class OpportunityPMRequiredMixin(OppPMRequiredMixin, OpportunityObjectMixin):
-    pass
-
-
 class OrgContextSingleTableView(SingleTableView):
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
@@ -330,7 +328,8 @@ class OrgContextSingleTableView(SingleTableView):
         return kwargs
 
 
-class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
+@method_decorator(org_view_access_required, name="dispatch")
+class OpportunityList(FilterMixin, SingleTableView):
     model = Opportunity
     table_class = ProgramManagerOpportunityTable
     template_name = "opportunity/opportunities_list.html"
@@ -392,7 +391,8 @@ class OpportunityList(OrgViewAccessMixin, FilterMixin, SingleTableView):
         return data.get_data()
 
 
-class OpportunityInit(ProgramAdminAccessMixin, CreateView):
+@method_decorator(program_admin_access_required, name="dispatch")
+class OpportunityInit(CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -417,7 +417,8 @@ class OpportunityInit(ProgramAdminAccessMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, ProgramAdminAccessMixin, UpdateView):
+@method_decorator(program_admin_access_required, name="dispatch")
+class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -444,7 +445,8 @@ class OpportunityInitUpdate(OpportunityObjectMixin, ProgramAdminAccessMixin, Upd
         return context
 
 
-class OpportunityEdit(OpportunityObjectMixin, OppStandardAccessMixin, UpdateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_edit.html"
     form_class = OpportunityChangeForm
@@ -486,7 +488,8 @@ class OpportunityEdit(OpportunityObjectMixin, OppStandardAccessMixin, UpdateView
         return form_kwargs
 
 
-class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView):
+@method_decorator(opportunity_pm_required, name="dispatch")
+class OpportunityFinalize(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -530,11 +533,8 @@ class OpportunityFinalize(OpportunityObjectMixin, OppPMRequiredMixin, UpdateView
         return response
 
 
-def amount_with_currency(amount, currency_code):
-    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
-
-
-class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class OpportunityDashboard(OpportunityObjectMixin, DetailView):
     model = Opportunity
     template_name = "opportunity/dashboard.html"
 
@@ -602,7 +602,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OppViewAccessMixin, DetailVie
             {
                 "name": "Max Service Deliveries",
                 "count": header_with_tooltip(
-                    safe_display(int(object.allotted_visits)),
+                    safe_display(object.allotted_visits),
                     "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
                 ),
                 "icon": "fa-gears",
@@ -1333,7 +1333,8 @@ def fetch_audio_attachment(request, org_slug, opp_id, pk):
     return FileResponse(attachment, filename=audio.name, content_type=audio.content_type)
 
 
-class AudioAttachmentTranscribe(SuccessMessageMixin, OppStandardAccessMixin, OpportunityObjectMixin, UpdateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class AudioAttachmentTranscribe(SuccessMessageMixin, OpportunityObjectMixin, UpdateView):
     model = AudioAttachment
     form_class = AudioAttachmentTranscribeForm
     template_name = "opportunity/audio_attachment_transcribe.html"
@@ -1467,7 +1468,9 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     )
 
 
-class TaskTypesConfig(OpportunityPMRequiredMixin, OppStandardAccessMixin, TemplateView):
+@method_decorator(opportunity_pm_required, name="dispatch")
+@method_decorator(opp_standard_access_required, name="dispatch")
+class TaskTypesConfig(OpportunityObjectMixin, TemplateView):
     template_name = "opportunity/task_types_config.html"
 
     def get_context_data(self, **kwargs):
@@ -1548,14 +1551,18 @@ def _hx_current_path(request):
     return urlunsplit(("", "", parsed.path, parsed.query, ""))
 
 
-class TaskTypeOcsSection(OpportunityPMRequiredMixin, OppStandardAccessMixin, View):
+@method_decorator(opportunity_pm_required, name="dispatch")
+@method_decorator(opp_standard_access_required, name="dispatch")
+class TaskTypeOcsSection(OpportunityObjectMixin, View):
     def get(self, request, org_slug, opp_id):
         context = get_ocs_task_section_context(request)
         context["ocs_section_url"] = request.get_full_path()
         return render(request, "opportunity/_ocs_task_section.html", context)
 
 
-class EditTaskType(OpportunityPMRequiredMixin, OppStandardAccessMixin, UpdateView):
+@method_decorator(opportunity_pm_required, name="dispatch")
+@method_decorator(opp_standard_access_required, name="dispatch")
+class EditTaskType(OpportunityObjectMixin, UpdateView):
     template_name = "opportunity/edit_task_type_form.html"
     form_class = EditTaskTypeForm
     model = TaskType
@@ -1598,7 +1605,8 @@ def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
     return HttpResponse(status=200)
 
 
-class OpportunityCompletedWorkTable(OppViewAccessMixin, OpportunityObjectMixin, SingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class OpportunityCompletedWorkTable(OpportunityObjectMixin, SingleTableView):
     model = CompletedWork
     paginate_by = 25
     table_class = CompletedWorkTable
@@ -1878,7 +1886,8 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class InvoiceCreateView(OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
     form_class = AutomatedPaymentInvoiceForm
@@ -1952,7 +1961,8 @@ class InvoiceCreateView(OppStandardAccessMixin, OpportunityObjectMixin, CreateVi
         return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().opportunity_id))
 
 
-class InvoiceReviewView(OppViewAccessMixin, OpportunityObjectMixin, DetailView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class InvoiceReviewView(OpportunityObjectMixin, DetailView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_detail.html"
 
@@ -2069,7 +2079,8 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
     return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
 
 
-class InvoiceFinanceRequestView(OpportunityPMRequiredMixin, View):
+@method_decorator(opportunity_pm_required, name="dispatch")
+class InvoiceFinanceRequestView(OpportunityObjectMixin, View):
     """Send an approved invoice to Finance as a Jira service desk request, and show how that is going.
 
     Both methods return the invoice page's Finance card, which htmx swaps in place.
@@ -2443,7 +2454,8 @@ def sync_deliver_units(request, org_slug, opp_id):
     return HttpResponse(content=message, status=status)
 
 
-class WorkerPageView(OppViewAccessMixin, OpportunityObjectMixin, TemplateView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class WorkerPageView(OpportunityObjectMixin, TemplateView):
     page_title = None
 
     def dispatch(self, request, *args, **kwargs):
@@ -2607,7 +2619,8 @@ class UserTasksView(WorkerPageView, FilterMixin):
         return context
 
 
-class WorkerTableView(OppViewAccessMixin, OpportunityObjectMixin, SingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class WorkerTableView(OpportunityObjectMixin, SingleTableView):
     redirect_url_name = None  # subclasses must set this to the parent page URL name
 
     def get_paginate_by(self, table_data):
@@ -2997,7 +3010,8 @@ def user_task_details(request, org_slug, opp_id, pk):
     )
 
 
-class BaseWorkerListView(OppViewAccessMixin, OpportunityObjectMixin, View):
+@method_decorator(opp_view_access_required, name="dispatch")
+class BaseWorkerListView(OpportunityObjectMixin, View):
     template_name = "opportunity/opportunity_worker.html"
     hx_template_name = "opportunity/workers.html"
     active_tab = "workers"
@@ -3451,7 +3465,8 @@ def deliver_unit_table(request, org_slug=None, opp_id=None):
     )
 
 
-class OpportunityPaymentUnitTableView(OppViewAccessMixin, OpportunityObjectMixin, OrgContextSingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class OpportunityPaymentUnitTableView(OpportunityObjectMixin, OrgContextSingleTableView):
     model = PaymentUnit
     table_class = PaymentUnitTable
     template_name = "tables/single_table.html"
@@ -3536,79 +3551,24 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 @opp_view_access_required
 @opportunity_required
 def opportunity_worker_progress(request, org_slug, opp_id):
-    result = get_opportunity_worker_progress(request.opportunity.pk)
-
-    def safe_percent(numerator, denominator):
-        percent = (numerator / denominator) * 100 if denominator else 0
-        return 100 if percent > 100 else percent
-
-    verified_percentage = safe_percent(result.approved_deliveries or 0, result.total_deliveries or 0)
-    rejected_percentage = safe_percent(result.rejected_deliveries or 0, result.total_deliveries or 0)
-    earned_percentage = safe_percent(result.total_accrued or 0, result.total_budget or 0)
-    paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
-
-    worker_progress = [
-        {
-            "title": "Verification",
-            "progress": [
-                {
-                    "title": "Approved",
-                    "total": header_with_tooltip(
-                        result.approved_deliveries,
-                        "Number of Service Deliveries Approved by both PM and NM or Auto-approved",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{verified_percentage:.0f}%", "Percentage Approved out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": verified_percentage,
-                },
-                {
-                    "title": "Rejected",
-                    "total": header_with_tooltip(result.rejected_deliveries, "Number of Service Deliveries Rejected"),
-                    "value": header_with_tooltip(
-                        f"{rejected_percentage:.0f}%", "Percentage Rejected out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": rejected_percentage,
-                },
-            ],
-        },
-        {
-            "title": "Payments to Connect Workers",
-            "progress": [
-                {
-                    "title": "Earned",
-                    "total": header_with_tooltip(
-                        amount_with_currency(result.total_accrued, result.currency_code), "Earned Amount"
-                    ),
-                    "value": header_with_tooltip(
-                        f"{earned_percentage:.0f}%",
-                        "Percentage Earned by all workers out of Max Budget in the Opportunity",
-                    ),
-                    "badge_type": True,
-                    "percent": earned_percentage,
-                },
-                {
-                    "title": "Paid",
-                    "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid, result.currency_code),
-                        "Paid Amount to All Connect Workers",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
-                    ),
-                    "badge_type": True,
-                    "percent": paid_percentage,
-                },
-            ],
-        },
-    ]
-
     return render(
         request,
         "opportunity/opportunity_worker_progress.html",
-        {"worker_progress": worker_progress},
+        {
+            "allocation": get_delivery_allocation(request.opportunity),
+            "payments": get_worker_payments(request.opportunity),
+            "payment_unit_breakdown_url": reverse("opportunity:payment_unit_breakdown", args=(org_slug, opp_id)),
+        },
+    )
+
+
+@opp_view_access_required
+@opportunity_required
+def opportunity_payment_unit_breakdown(request, org_slug, opp_id):
+    return render(
+        request,
+        "opportunity/partials/payment_unit_breakdown.html",
+        {"breakdown": get_payment_unit_breakdown(request.opportunity)},
     )
 
 
@@ -3943,7 +3903,8 @@ def visit_export_count(request, org_slug, opp_id):
     return HttpResponse(html)
 
 
-class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMixin, OrgContextSingleTableView):
+@method_decorator(opp_view_access_required, name="dispatch")
+class AssignedTaskListView(OpportunityObjectMixin, FilterMixin, OrgContextSingleTableView):
     template_name = "opportunity/assigned_task_list.html"
     table_class = AssignedTaskListTable
     paginate_by = DEFAULT_PAGE_SIZE
@@ -4011,7 +3972,8 @@ class AssignedTaskListView(OpportunityObjectMixin, OppViewAccessMixin, FilterMix
         return context
 
 
-class EditAssignedTask(LoginRequiredMixin, OpportunityObjectMixin, OppStandardAccessMixin, UpdateView):
+@method_decorator(opp_standard_access_required, name="dispatch")
+class EditAssignedTask(OpportunityObjectMixin, UpdateView):
     template_name = "opportunity/edit_assigned_task_form.html"
     form_class = EditAssignedTaskForm
     model = AssignedTask

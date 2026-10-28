@@ -1,0 +1,9 @@
+{
+  "minTokens": 30,
+  "minLines": 4,
+  "ignoreIdentifiers": true,
+  "similarity": 0.9,
+  "format": ["python", "javascript"],
+  "ignore": ["**/migrations/**"],
+  "reporters": ["console"]
+}

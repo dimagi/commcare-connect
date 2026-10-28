@@ -1,3 +1,4 @@
+{% load i18n humanize %}
 {% if skeleton %}
   <!-- Skeleton Loader with HTMX call -->
   <div id="worker-progress-container"
@@ -6,7 +7,7 @@
        hx-target="#worker-progress-container"
        hx-swap="innerHTML">
     <div class="flex gap-4 w-full justify-between p-4 rounded-b-xl bg-white animate-pulse">
-      {% for _ in "123" %}
+      {% for _ in "12" %}
         <div class="flex flex-col p-2 bg-indigo-50 rounded-xl w-full">
           <!-- Section title skeleton -->
           <div class="h-4 w-1/3 bg-indigo-200 rounded my-2"></div>
@@ -35,29 +36,169 @@
     </div>
   </div>
 {% else %}
-  <!-- Actual Worker Progress UI -->
-  <div class="flex gap-4 w-full justify-between p-4 rounded-b-xl bg-white">
-    {% for data in worker_progress %}
-      <div class="flex flex-col p-2 bg-indigo-50 rounded-xl w-full">
-        <h4 class="text-sm font-medium py-2">{{ data.title }}</h4>
-        <div class="bg-white p-4 rounded-lg">
-          {% for progress in data.progress %}
-            <div class="flex gap-4 w-full items-end rounded-lg my-3">
-              <div class="flex-1 flex flex-col gap-1.5 w-full">
-                <div class="flex gap-4 items-center">
-                  <span class="text-sm block">{{ progress.title }}</span>
-                  {% if progress.badge_type %}<span class="badge badge-sm primary-light">{{ progress.value }}</span>{% endif %}
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                  <div class="bg-brand-indigo h-2.5 rounded-full"
-                       style="width: {{ progress.percent }}%"></div>
-                </div>
-              </div>
-              <span class="text-lg">{{ progress.total }}</span>
+  <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-4 items-start w-full p-4 rounded-b-xl bg-white">
+    {% with total=allocation.total %}
+      <!-- Delivery Allocation -->
+      <div class="flex flex-col p-2 rounded-xl {% if total.is_reached %}bg-brand-marigold/10{% else %}bg-indigo-50{% endif %}">
+        <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-2 py-2">
+          <h4 class="title-sm">{% translate "Delivery Allocation" %}</h4>
+          <span class="hint"
+                x-tooltip.raw="{% translate 'Active workers have claimed the opportunity, are not suspended and their claim has not ended. A worker has synced when the server received a delivery from them in the last 24 hours.' %}">
+            {% blocktranslate trimmed with synced=allocation.synced_workers|intcomma active=allocation.active_workers|intcomma %}
+              {{ synced }} of {{ active }} workers synced in the last 24 hours
+            {% endblocktranslate %}
+          </span>
+        </div>
+        <div x-data="{ open: false, loadFailed: false }"
+             class="flex flex-col gap-5 bg-white p-4 rounded-lg">
+          <div class="flex flex-col gap-3.5">
+            <div class="flex items-center justify-between gap-3">
+              <span class="title-sm"
+                    x-tooltip.raw="{% translate 'Deliveries completed across all payment units, out of the number the budget funds.' %}">{% translate "Total Deliveries" %}</span>
+              {% include "opportunity/partials/limit_status.html" with usage=total is_total=True %}
             </div>
-          {% endfor %}
+            <dl class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Completed") value=total.completed_label icon="fa-regular fa-circle-check" color="text-brand-indigo" tooltip=_("Approved, pending and rejected deliveries, out of the number the budget funds. All of them count toward the delivery limit.") %}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Approved") value=total.counts.approved|intcomma icon="fa-solid fa-thumbs-up" color="text-message-success-text" tooltip=_("Deliveries approved for payment.") %}
+              {# Pending keeps its cell when hidden so the card height does not change #}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Pending") value=total.counts.pending|intcomma icon="fa-regular fa-clock" color="text-brand-cornflower-blue" hidden=allocation.hide_pending tooltip=_("Deliveries waiting to be reviewed.") %}
+              {% include "opportunity/partials/allocation_stat.html" with label=_("Rejected") value=total.counts.rejected|intcomma icon="fa-solid fa-thumbs-down" color="text-brand-mango" tooltip=_("Deliveries that were rejected. They still count toward the delivery limit.") %}
+            </dl>
+            <div class="flex flex-col gap-1.5">
+              <div class="progress-track">
+                <div class="progress-fill {% if total.is_reached or total.is_nearing %}bg-brand-marigold{% else %}bg-brand-indigo{% endif %}"
+                     style="width: {{ total.completed_width|stringformat:'.2f' }}%"></div>
+              </div>
+              {% include "opportunity/partials/status_split_bar.html" with usage=total %}
+            </div>
+          </div>
+          {% if total.is_reached %}
+            <div class="warning-banner" role="status">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <span>
+                {% if total.is_exceeded %}
+                  {% translate "Total delivery limit exceeded." %}
+                {% else %}
+                  {% translate "Total delivery limit reached." %}
+                {% endif %}
+              </span>
+            </div>
+          {% endif %}
+          {% if allocation.has_payment_units %}
+            <button type="button"
+                    @click="open = !open"
+                    hx-get="{{ payment_unit_breakdown_url }}"
+                    hx-trigger="click once"
+                    hx-target="#delivery-allocation-payment-units"
+                    hx-swap="innerHTML"
+                    @htmx:after-request="loadFailed = !$event.detail.successful"
+                    :aria-expanded="open.toString()"
+                    aria-controls="delivery-allocation-payment-units"
+                    class="flex w-full items-center justify-center gap-2 border-t border-brand-border-light pt-2.5 text-sm font-medium text-brand-indigo hover:text-brand-deep-purple">
+              <span x-show="!open">{% translate "Show Payment Units" %}</span>
+              <span x-show="open" x-cloak>{% translate "Hide Payment Units" %}</span>
+              <i class="fa-solid fa-chevron-down text-xs transition-transform duration-300"
+                 :class="open && 'rotate-180'"
+                 aria-hidden="true"></i>
+            </button>
+            <div id="delivery-allocation-payment-units"
+                 x-show="open"
+                 x-cloak
+                 class="flex flex-col gap-4">
+              <div x-show="!loadFailed"
+                   class="flex items-center justify-center gap-2 py-4 text-sm text-brand-indigo"
+                   role="status">
+                <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                <span>{% translate "Loading payment units" %}</span>
+              </div>
+              <p x-show="loadFailed"
+                 x-cloak
+                 class="py-4 text-center text-sm text-brand-mango"
+                 role="alert">{% translate "Payment units could not be loaded. Refresh the page to try again." %}</p>
+            </div>
+          {% endif %}
         </div>
       </div>
-    {% endfor %}
+    {% endwith %}
+    <!-- Payments to Connect Workers -->
+    <div class="flex flex-col p-2 bg-indigo-50 rounded-xl">
+      <h4 class="title-sm px-2 py-2">{% translate "Payments to Connect Workers" %}</h4>
+      <div class="flex flex-col gap-5 bg-white p-4 rounded-lg">
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-2.5">
+              <span class="title-sm">{% translate "Earned" %}</span>
+              {% if payments.earned_percent is None %}
+                {% translate "No budget is set for this opportunity." as earned_percent_tooltip %}
+              {% elif payments.has_org_pay %}
+                {% translate "Worker and org pay earned for approved deliveries, as a share of the total budget." as earned_percent_tooltip %}
+              {% else %}
+                {% translate "Pay earned for approved deliveries, as a share of the total budget." as earned_percent_tooltip %}
+              {% endif %}
+              <span class="badge badge-sm {% if payments.over_budget %}badge-amber{% else %}primary-light{% endif %}"
+                    x-tooltip.raw="{{ earned_percent_tooltip }}">
+                {% if payments.earned_percent is None %}
+                  --
+                {% else %}
+                  {{ payments.earned_percent|floatformat:0 }}%
+                {% endif %}
+              </span>
+            </div>
+            {% if payments.has_org_pay %}
+              {% translate "Earned by workers · earned by the organization / total budget" as earned_amount_tooltip %}
+            {% else %}
+              {% translate "Earned by workers / total budget" as earned_amount_tooltip %}
+            {% endif %}
+            <span class="amount-breakdown text-right {% if payments.over_budget %}over-budget{% endif %}"
+                  x-tooltip.raw="{{ earned_amount_tooltip }}">
+              {% if payments.has_org_pay %}
+                {% blocktranslate trimmed with worker=payments.worker_earned_label org=payments.org_earned_label budget=payments.budget_label %}
+                  <strong>{{ worker }}</strong> workers · <strong>{{ org }}</strong> org / {{ budget }}
+                {% endblocktranslate %}
+              {% else %}
+                {% blocktranslate trimmed with worker=payments.worker_earned_label budget=payments.budget_label %}
+                  <strong>{{ worker }}</strong> / {{ budget }}
+                {% endblocktranslate %}
+              {% endif %}
+            </span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill bg-brand-indigo"
+                 style="width: {{ payments.worker_width|stringformat:'.2f' }}%"></div>
+            {% if payments.has_org_pay and payments.org_earned %}
+              <div class="progress-fill bg-brand-sky"
+                   style="width: {{ payments.org_width|stringformat:'.2f' }}%"></div>
+            {% endif %}
+          </div>
+          {% if payments.has_org_pay %}
+            <div class="flex items-center gap-4 text-xs text-gray-600">
+              <span class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-brand-indigo"></span>{% translate "Worker pay" %}</span>
+              <span class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-brand-sky"></span>{% translate "Org pay" %}</span>
+            </div>
+          {% endif %}
+          {% if payments.over_budget %}
+            {% blocktranslate trimmed asvar note with amount=payments.over_budget_label %}
+              {{ amount }} over budget
+            {% endblocktranslate %}
+            {% include "opportunity/partials/limit_note.html" with text=note warning=True %}
+          {% endif %}
+        </div>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-2.5">
+              <span class="title-sm">{% translate "Paid" %}</span>
+              <span class="badge badge-sm primary-light"
+                    x-tooltip.raw="{% translate 'Share of what workers have earned that has been paid to them.' %}">{{ payments.paid_percent|floatformat:0 }}%</span>
+            </div>
+            <span class="amount-breakdown"
+                  x-tooltip.raw="{% translate 'Paid to workers / earned by workers' %}"><strong>{{ payments.paid_label }}</strong> / {{ payments.worker_earned|intcomma }}</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill bg-brand-indigo"
+                 style="width: {{ payments.paid_width|stringformat:'.2f' }}%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 {% endif %}

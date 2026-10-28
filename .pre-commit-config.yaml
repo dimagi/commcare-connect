@@ -58,8 +58,28 @@ repos:
           - '@eslint/js@10.0.1'
           - globals@17.8.0
 
+  - repo: local
+    hooks:
+      # Fails when the files you are committing add a clone that HEAD did not have.
+      # Existing duplication does not fail it. Bypass with SKIP=jscpd.
+      # Detection settings live in .jscpd.json, so a manual `jscpd --changed commcare_connect` matches this hook.
+      # Its format and ignore lists decide what jscpd scans; the top-level exclude here only decides whether the hook runs.
+      - id: jscpd
+        name: jscpd (new duplicate code)
+        entry: jscpd
+        language: python
+        additional_dependencies: ['jscpd==5.4.1']
+        args:
+          # The path goes first: --fail-on-new-clones takes an optional count and would read it as one.
+          - commcare_connect
+          - --changed
+          - --fail-on-new-clones
+        pass_filenames: false
+        files: ^commcare_connect/.*\.(py|js)$
+
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
   autoupdate_schedule: weekly
-  skip: []
+  # jscpd only checks uncommitted changes, so it has nothing to check in a clean CI checkout.
+  skip: [jscpd]
   submodules: false

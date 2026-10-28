@@ -7,6 +7,7 @@ from django.db.models.functions import Coalesce, Concat
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
@@ -23,11 +24,10 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
-    OrgPMRequiredMixin,
-    ProgramAdminAccessMixin,
     can_act_as_program_manager_user,
     is_user_pm_org_admin,
     org_admin_access_required,
+    org_pm_required,
     org_view_access_required,
     program_admin_access_required,
 )
@@ -107,15 +107,18 @@ class ProgramCreateOrUpdate(UpdateView):
         return reverse("program:home", kwargs={"org_slug": self.request.org.slug})
 
 
-class ProgramCreate(OrgPMRequiredMixin, ProgramCreateOrUpdate):
+@method_decorator(org_pm_required, name="dispatch")
+class ProgramCreate(ProgramCreateOrUpdate):
     """There is no program yet to have a relationship with, so it is the org that decides."""
 
 
-class ProgramUpdate(ProgramAdminAccessMixin, ProgramCreateOrUpdate):
+@method_decorator(program_admin_access_required, name="dispatch")
+class ProgramUpdate(ProgramCreateOrUpdate):
     """Editing an existing program requires admin access on that program."""
 
 
-class ManagedOpportunityList(ProgramAdminAccessMixin, ListView):
+@method_decorator(program_admin_access_required, name="dispatch")
+class ManagedOpportunityList(ListView):
     model = Opportunity
     paginate_by = 10
     default_ordering = "name"

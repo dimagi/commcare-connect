@@ -270,7 +270,47 @@ class Opportunity(BaseModel):
 
     @property
     def allotted_visits(self):
-        return self.max_visits_per_user * self.number_of_users
+        """Deliveries the budget funds across all workers, as a whole number."""
+        return sum(self.allotted_visits_by_unit().values())
+
+    def allotted_visits_by_unit(self, payment_units=None):
+        """Deliveries the budget funds for each payment unit across all workers.
+
+        Workers who have claimed count with the limits in their ``OpportunityClaimLimit`` rows, so
+        manual adjustments and limits set before a payment-unit change are kept. The unclaimed budget
+        is projected at today's config: a worker can only claim while the remaining budget covers a
+        full allocation (see ``ClaimOpportunityView``), so it funds whole workers, each getting every
+        unit's full ``max_total``; a leftover too small for one more worker funds nothing. Once the
+        opportunity has ended no one can claim, so the unclaimed budget funds nothing either.
+
+        Units with neither a claim limit nor a ``max_total`` are left out. Empty when there is no
+        budget, or when the limited units cost nothing and so have no budget limit.
+        """
+        if payment_units is None:
+            payment_units = self.paymentunit_set.all()
+        limited_units = [pu for pu in payment_units if pu.max_total]
+        budget_per_worker = self.budget_per_user_for_units(limited_units)
+        if not self.total_budget or (limited_units and not budget_per_worker):
+            return {}
+
+        claimed = self._claimed_visits_by_unit()
+        unclaimed_workers = (
+            max(self.remaining_budget, 0) // budget_per_worker if budget_per_worker and not self.has_ended else 0
+        )
+        return {
+            pu.pk: claimed.get(pu.pk, 0) + (pu.max_total or 0) * unclaimed_workers
+            for pu in payment_units
+            if pu.max_total or pu.pk in claimed
+        }
+
+    def _claimed_visits_by_unit(self):
+        rows = (
+            OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=self)
+            .values("payment_unit_id")
+            .annotate(visits=Sum("max_visits"))
+            .order_by()
+        )
+        return {row["payment_unit_id"]: row["visits"] for row in rows}
 
     @property
     def max_visits_per_user(self):

@@ -8,6 +8,8 @@ from django.utils.timezone import is_aware, localtime  # For timezone handling
 from django_tables2.data import TableQuerysetData
 from django_tables2.rows import BoundRow
 
+from commcare_connect.utils.file import neutralize_formula
+
 STOP_CLICK_PROPAGATION_ATTR = {"td": {"@click.stop": ""}}
 TEXT_CENTER_ATTR = {"td": {"class": "text-center"}}
 
@@ -68,6 +70,13 @@ def get_duration_min(total_seconds):
         parts.append(f"{minutes} min")
 
     return " ".join(parts)
+
+
+class SpreadsheetSafeColumn(tables.Column):
+    """A column whose exported text can't be run as a spreadsheet formula."""
+
+    def value(self, **kwargs):
+        return neutralize_formula(super().value(**kwargs))
 
 
 class DurationColumn(tables.Column):
