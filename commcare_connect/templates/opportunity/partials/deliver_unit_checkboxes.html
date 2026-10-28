@@ -1,0 +1,43 @@
+{% load l10n %}
+{# Renders both the required and optional lists, so each deliver unit gets two display name inputs with the same name. #}
+{# The input is disabled while its checkbox is unticked, and browsers don't submit disabled inputs, #}
+{# so only the value from the list where the unit is ticked is sent. #}
+<div id="div_{{ field.auto_id }}" class="mb-3">
+  <label class="block text-gray-700 text-sm font-bold mb-2">
+    {{ field.label }}
+    {% if field.field.required %}<span class="asteriskField">*</span>{% endif %}
+  </label>
+  {% for row in field.field.deliver_unit_rows %}
+    <div class="mr-3"
+         x-data="{ selected: {{ row.selected|yesno:'true,false' }} }">
+      <label class="block text-gray-700"
+             for="{{ field.auto_id }}_{{ forloop.counter }}">
+        <input type="checkbox"
+               name="{{ field.html_name }}"
+               id="{{ field.auto_id }}_{{ forloop.counter }}"
+               value="{{ row.deliver_unit.pk|unlocalize }}"
+               x-model="selected"
+               {% if row.selected %}checked{% endif %}>
+        {{ row.deliver_unit.name }}
+      </label>
+      <div class="ml-6 mt-1 mb-2" x-show="selected" x-cloak>
+        <label class="block text-gray-700 text-sm mb-1"
+               for="{{ row.display_name.auto_id }}_{{ field.html_name }}">{{ row.display_name.label }}</label>
+        <input type="text"
+               class="base-input"
+               name="{{ row.display_name.html_name }}"
+               id="{{ row.display_name.auto_id }}_{{ field.html_name }}"
+               value="{{ row.display_name.value|default_if_none:'' }}"
+               maxlength="{{ row.display_name.field.max_length }}"
+               x-bind:disabled="!selected">
+        {% for error in row.display_name.errors %}
+          <p class="text-red-500 text-xs italic">
+            <strong>{{ error }}</strong>
+          </p>
+        {% endfor %}
+        <small class="text-gray-600">{{ row.display_name.help_text }}</small>
+      </div>
+    </div>
+  {% endfor %}
+  {% include "tailwind/layout/help_text_and_errors.html" %}
+</div>

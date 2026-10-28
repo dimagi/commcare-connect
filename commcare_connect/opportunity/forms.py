@@ -1292,6 +1292,7 @@ class AddBudgetNewUsersForm(forms.Form):
         self.opportunity.save()
 
 
+DELIVER_UNIT_CHECKBOXES_TEMPLATE = "opportunity/partials/deliver_unit_checkboxes.html"
 DISPLAY_NAME_LABEL = _("Display name")
 DISPLAY_NAME_HELP_TEXT = _("Shown to workers in the Connect app.")
 
@@ -1333,7 +1334,7 @@ class PaymentUnitForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
 
-        deliver_units = kwargs.pop("deliver_units", [])
+        self.deliver_units = list(kwargs.pop("deliver_units", []))
         payment_units = kwargs.pop("payment_units", [])
         org_slug = kwargs.pop("org_slug")
 
@@ -1361,9 +1362,9 @@ class PaymentUnitForm(forms.ModelForm):
                     css_class="grid grid-cols-2 gap-4 p-6 card_bg",
                 ),
                 Row(
-                    Field("required_deliver_units"),
+                    Field("required_deliver_units", template=DELIVER_UNIT_CHECKBOXES_TEMPLATE),
                     Field("payment_units"),
-                    Field("optional_deliver_units"),
+                    Field("optional_deliver_units", template=DELIVER_UNIT_CHECKBOXES_TEMPLATE),
                     Div(
                         HTML(
                             f"""
@@ -1388,7 +1389,7 @@ class PaymentUnitForm(forms.ModelForm):
                 css_class="flex flex-col gap-4",
             )
         )
-        deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
+        deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in self.deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
         self.fields["required_deliver_units"] = forms.MultipleChoiceField(
             choices=deliver_unit_choices,
@@ -1410,6 +1411,14 @@ class PaymentUnitForm(forms.ModelForm):
             help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
             required=False,
         )
+        for deliver_unit in self.deliver_units:
+            self.fields[self._deliver_unit_display_name_field(deliver_unit)] = forms.CharField(
+                label=DISPLAY_NAME_LABEL,
+                help_text=DISPLAY_NAME_HELP_TEXT,
+                initial=deliver_unit.display_name,
+                max_length=DeliverUnit._meta.get_field("display_name").max_length,
+                required=False,
+            )
         if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
             deliver_units = self.instance.deliver_units.all()
             self.fields["required_deliver_units"].initial = [
@@ -1423,6 +1432,45 @@ class PaymentUnitForm(forms.ModelForm):
                 if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
+        for field_name in ("required_deliver_units", "optional_deliver_units"):
+            self.fields[field_name].deliver_unit_rows = self._deliver_unit_rows(field_name)
+
+    def save(self, commit=True):
+        payment_unit = super().save(commit)
+        if commit:
+            self._save_deliver_unit_display_names()
+        return payment_unit
+
+    def _save_deliver_unit_display_names(self):
+        # The display name input is disabled while its deliver unit is unticked, so unselected
+        # deliver units submit nothing and must keep their stored name
+        selected = {
+            int(pk) for pk in self.cleaned_data["required_deliver_units"] + self.cleaned_data["optional_deliver_units"]
+        }
+        changed = []
+        for deliver_unit in self.deliver_units:
+            if deliver_unit.pk not in selected:
+                continue
+            display_name = self.cleaned_data[self._deliver_unit_display_name_field(deliver_unit)]
+            if display_name != deliver_unit.display_name:
+                deliver_unit.display_name = display_name
+                changed.append(deliver_unit)
+        DeliverUnit.objects.bulk_update(changed, ["display_name"])
+
+    def _deliver_unit_rows(self, field_name):
+        selected = {str(pk) for pk in self[field_name].value() or []}
+        return [
+            {
+                "deliver_unit": deliver_unit,
+                "selected": str(deliver_unit.pk) in selected,
+                "display_name": self[self._deliver_unit_display_name_field(deliver_unit)],
+            }
+            for deliver_unit in self.deliver_units
+        ]
+
+    @staticmethod
+    def _deliver_unit_display_name_field(deliver_unit):
+        return f"deliver_unit_display_name_{deliver_unit.pk}"
 
     def get_amounts_div(self):
         fields = [

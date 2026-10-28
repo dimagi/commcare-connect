@@ -1510,8 +1510,8 @@ class TestPaymentUnitFormBudgetValidation:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
 
 
-def _payment_unit_form(opportunity, data=None, instance=None):
-    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+def _payment_unit_form(opportunity, data=None, instance=None, deliver_units=None):
+    deliver_units = deliver_units or [DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)]
     if data is not None:
         data = {
             "name": "Bonus",
@@ -1520,12 +1520,12 @@ def _payment_unit_form(opportunity, data=None, instance=None):
             "org_amount": 0,
             "max_total": 10,
             "max_daily": 5,
-            "required_deliver_units": [str(deliver_unit.id)],
+            "required_deliver_units": [str(deliver_units[0].id)],
             **data,
         }
     return PaymentUnitForm(
         data=data,
-        deliver_units=[deliver_unit],
+        deliver_units=deliver_units,
         payment_units=[],
         org_slug=opportunity.organization.slug,
         opportunity=opportunity,
@@ -1549,6 +1549,39 @@ def test_payment_unit_form_display_name(opportunity, display_name, expect_valid)
     assert form.is_valid() == expect_valid, form.errors
     if expect_valid:
         assert form.instance.display_name == display_name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "initial, submitted, selected, expected",
+    [
+        pytest.param("", "", True, "", id="blank"),
+        pytest.param("", "ANC visit", True, "ANC visit", id="set"),
+        pytest.param("ANC visit", "", True, "", id="cleared"),
+        # An unticked deliver unit's input is disabled, so the browser submits nothing for it
+        pytest.param("ANC visit", None, False, "ANC visit", id="unselected_keeps_name"),
+        pytest.param("", "x" * 31, True, None, id="too_long"),
+    ],
+)
+def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submitted, selected, expected):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None, display_name=initial)
+    other_deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    field = f"deliver_unit_display_name_{deliver_unit.pk}"
+    data = {"required_deliver_units": [str((deliver_unit if selected else other_deliver_unit).id)]}
+    if submitted is not None:
+        data[field] = submitted
+    form = _payment_unit_form(opportunity, data, deliver_units=[deliver_unit, other_deliver_unit])
+
+    assert form.fields[field].initial == initial
+    rows = form.fields["required_deliver_units"].deliver_unit_rows
+    assert [row["selected"] for row in rows] == [selected, not selected]
+    assert form.is_valid() == (expected is not None), form.errors
+    if expected is not None:
+        form.instance.opportunity = opportunity
+        form.save()
+        deliver_unit.refresh_from_db()
+        assert deliver_unit.display_name == expected
+        assert deliver_unit.payment_unit is None
 
 
 @pytest.mark.django_db
