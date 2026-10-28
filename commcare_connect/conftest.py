@@ -1,3 +1,4 @@
+import datetime
 import importlib
 
 import pytest
@@ -139,6 +140,13 @@ def org_user_admin(organization) -> User:
 @pytest.fixture
 def program_manager_org(db) -> Organization:
     return ProgramManagerOrgWithUsersFactory()
+
+
+@pytest.fixture(params=["ended", "no_end_date"])
+def unusable_end_date(request):
+    if request.param == "ended":
+        return datetime.date.today() - datetime.timedelta(days=1)
+    return None
 
 
 @pytest.fixture

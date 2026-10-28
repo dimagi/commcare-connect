@@ -67,6 +67,12 @@ class OpportunityActivateView(OpportunityAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if not opportunity.is_setup_complete:
+            return Response(
+                {"non_field_errors": [_("Opportunity setup is not complete and cannot be activated.")]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         opportunity.active = True
         opportunity.modified_by = request.user.email
         opportunity.save(update_fields=["active", "modified_by", "date_modified"])

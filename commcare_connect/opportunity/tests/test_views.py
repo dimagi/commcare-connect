@@ -1307,6 +1307,7 @@ class TestResendUserInvites:
         self.organization = organization
         self.opportunity = opportunity
         self.client = client
+        PaymentUnitFactory(opportunity=opportunity)
 
         self.user1 = UserFactory(phone_number="1234567890")
         self.user2 = UserFactory(phone_number="0987654321")
@@ -2844,19 +2845,29 @@ def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, or
 
 
 @pytest.mark.django_db
-def test_resend_invites_redirects_for_ended_opportunity(client, org_user_member, organization):
-    opportunity = OpportunityFactory(
-        organization=organization,
-        end_date=date.today() - timedelta(days=1),
+def test_resend_invites_redirects_for_opportunity_without_valid_end_date(
+    client, org_user_member, organization, unusable_end_date
+):
+    opportunity = OpportunityFactory(organization=organization, end_date=unusable_end_date)
+    PaymentUnitFactory(opportunity=opportunity)
+    user = UserFactory(phone_number="+15555555555")
+    invite = UserInviteFactory(
+        opportunity=opportunity,
+        phone_number=user.phone_number,
+        status=UserInviteStatus.invited,
+        opportunity_access=None,
     )
     client.force_login(org_user_member)
     url = reverse("opportunity:resend_user_invites", args=[organization.slug, opportunity.opportunity_id])
-    response = client.post(url, data={"user_invite_ids": [1]})
+    with mock.patch("commcare_connect.opportunity.views.invite_user") as invite_user_task:
+        response = client.post(url, data={"user_invite_ids": [invite.id]})
     assert response.status_code == 200
     assert (
         reverse("opportunity:detail", args=[organization.slug, opportunity.opportunity_id])
         in response.headers["HX-Redirect"]
     )
+    invite_user_task.delay.assert_not_called()
+    assert not OpportunityAccess.objects.filter(opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db

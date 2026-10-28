@@ -2356,6 +2356,10 @@ def resend_user_invites(request, org_slug, opp_id):
         messages.error(request, _("This opportunity has ended. You cannot resend invites."))
         redirect_url = reverse("opportunity:detail", args=(org_slug, opp_id))
         return HttpResponse(headers={"HX-Redirect": redirect_url})
+    if not request.opportunity.is_setup_complete:
+        messages.error(request, _("Please finish setting up the opportunity before resending invites."))
+        redirect_url = reverse("opportunity:detail", args=(org_slug, opp_id))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
     invite_ids = request.POST.getlist("user_invite_ids")
     if not invite_ids:
         return HttpResponseBadRequest()
