@@ -369,9 +369,7 @@ class ContactForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("name")
         self.fields["organization"].empty_label = gettext("Select organization")
-        self.helper = helper.FormHelper(self)
-        self.helper.form_tag = False
-        self.helper.disable_csrf = True
+        self.helper = _modal_form_helper(self)
         self.helper.layout = layout.Layout(
             layout.Div(
                 _full_width("name"),
@@ -487,6 +485,14 @@ class PrimarySectorForm(ManagedOptionForm):
 
     class Meta(ManagedOptionForm.Meta):
         model = PrimarySector
+
+
+def _modal_form_helper(form):
+    # The directory's modal template supplies the <form> tag and the CSRF token.
+    form_helper = helper.FormHelper(form)
+    form_helper.form_tag = False
+    form_helper.disable_csrf = True
+    return form_helper
 
 
 class OrganizationInviteForm(forms.ModelForm):

@@ -372,6 +372,9 @@ class LLODirectoryFormMixin(LLODirectoryAccessMixin):
             form.instance.created_by = self.request.user.email
         form.instance.modified_by = self.request.user.email
         self.object = form.save()
+        return self.success_response()
+
+    def success_response(self):
         messages.success(self.request, self.success_message.format(name=self.object.name))
         return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
 
