@@ -92,10 +92,7 @@ def archive_organization(organization: Organization, *, user_email: str, reason:
     organization.contacts.filter(is_archived=False).update(
         is_archived=True, modified_by=user_email, date_modified=timezone.now()
     )
-    organization.is_archived = True
-    organization.modified_by = user_email
-    _append_system_note(organization, "Archived", user_email, reason)
-    organization.save(update_fields=["is_archived", "notes", "modified_by", "date_modified"])
+    _set_archived(organization, archived=True, user_email=user_email, reason=reason)
 
 
 def live_or_upcoming_program_q(today: date) -> Q:
@@ -109,6 +106,13 @@ def live_or_upcoming_opportunity_q(today: date) -> Q:
     A future end date counts whether or not the opportunity is switched on or a test.
     """
     return Q(archived=False) & (Q(end_date__gte=today) | Q(end_date__isnull=True, active=True))
+
+
+def _set_archived(organization: Organization, *, archived: bool, user_email: str, reason: str) -> None:
+    organization.is_archived = archived
+    organization.modified_by = user_email
+    _append_system_note(organization, "Archived" if archived else "Restored", user_email, reason)
+    organization.save(update_fields=["is_archived", "notes", "modified_by", "date_modified"])
 
 
 def _append_system_note(organization: Organization, action: str, user_email: str, reason: str) -> None:
