@@ -162,7 +162,6 @@ def test_get_worker_deliveries_with_filters(opportunity: Opportunity, filters, e
         assert deliveries == []
         return
     (delivery,) = deliveries
-    assert [unit.name for unit in delivery.payment_units] == expected_units
     assert delivery.payment_unit_ids == [units[name].payment_unit_id for name in expected_units]
     assert delivery.over_limit == (1 if "flagged" in expected_units else 0)
 

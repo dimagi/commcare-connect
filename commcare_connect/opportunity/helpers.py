@@ -1,5 +1,5 @@
 from collections import namedtuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import UUID
 
@@ -326,16 +326,27 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
     return access_objects
 
 
+COUNT_FIELDS = ("pending", "approved", "rejected", "over_limit", "incomplete")
+
+
 @dataclass
-class PaymentUnitDelivery:
-    name: str
-    payment_unit_id: UUID
+class WorkerDelivery:
+    """A row on the Deliver tab: one payment unit, or a worker's summary row totalling `sub_rows`."""
+
+    opportunity_access: OpportunityAccess
+    payment_unit_label: str
+    payment_unit_ids: list[UUID]
     allocation: int | None
     pending: int
     approved: int
     rejected: int
     over_limit: int
     incomplete: int
+    sub_rows: list["WorkerDelivery"] = field(default_factory=list)
+
+    @property
+    def status(self):
+        return self.opportunity_access.status
 
     @property
     def delivered(self):
@@ -348,68 +359,6 @@ class PaymentUnitDelivery:
     @property
     def has_allocation_or_work(self):
         return self.allocation is not None or self.delivered > 0 or self.incomplete > 0
-
-
-@dataclass
-class WorkerDelivery:
-    """A worker's delivery counts on the Deliver tab, summed over `payment_units`."""
-
-    opportunity_access: OpportunityAccess
-    payment_units: list[PaymentUnitDelivery]
-
-    @property
-    def status(self):
-        return self.opportunity_access.status
-
-    @property
-    def payment_unit_label(self):
-        if len(self.payment_units) == 1:
-            return self.payment_units[0].name
-        count = len(self.payment_units)
-        return ngettext("%(count)d payment unit", "%(count)d payment units", count) % {"count": count}
-
-    @property
-    def payment_unit_ids(self):
-        return [unit.payment_unit_id for unit in self.payment_units]
-
-    @property
-    def sub_rows(self):
-        if len(self.payment_units) == 1:
-            return []
-        return [WorkerDelivery(self.opportunity_access, [unit]) for unit in self.payment_units]
-
-    @property
-    def allocation(self):
-        allocations = [unit.allocation for unit in self.payment_units if unit.allocation is not None]
-        return sum(allocations) if allocations else None
-
-    @property
-    def pending(self):
-        return sum(unit.pending for unit in self.payment_units)
-
-    @property
-    def approved(self):
-        return sum(unit.approved for unit in self.payment_units)
-
-    @property
-    def rejected(self):
-        return sum(unit.rejected for unit in self.payment_units)
-
-    @property
-    def over_limit(self):
-        return sum(unit.over_limit for unit in self.payment_units)
-
-    @property
-    def incomplete(self):
-        return sum(unit.incomplete for unit in self.payment_units)
-
-    @property
-    def delivered(self):
-        return sum(unit.delivered for unit in self.payment_units)
-
-    @property
-    def progress(self):
-        return sum(unit.progress for unit in self.payment_units)
 
 
 def get_worker_deliveries(opportunity: Opportunity, filters: dict):
@@ -426,22 +375,33 @@ def get_worker_deliveries(opportunity: Opportunity, filters: dict):
 
     deliveries = []
     for rows in rows_by_access.values():
-        units = [_payment_unit_delivery(row) for row in rows]
-        units_with_allocation_or_work = [unit for unit in units if unit.has_allocation_or_work] or units
-        deliveries.append(WorkerDelivery(opportunity_access=rows[0], payment_units=units_with_allocation_or_work))
+        units = [_unit_row(row) for row in rows]
+        deliveries.append(_worker_row([unit for unit in units if unit.has_allocation_or_work] or units))
     return deliveries
 
 
-def _payment_unit_delivery(row):
-    return PaymentUnitDelivery(
-        name=row.payment_unit,
-        payment_unit_id=row.payment_unit_payment_unit_id,
+def _unit_row(row):
+    return WorkerDelivery(
+        opportunity_access=row,
+        payment_unit_label=row.payment_unit,
+        payment_unit_ids=[row.payment_unit_payment_unit_id],
         allocation=row.total_visits,
-        pending=row.pending,
-        approved=row.approved,
-        rejected=row.rejected,
-        over_limit=row.over_limit,
-        incomplete=row.incomplete,
+        **{name: getattr(row, name) for name in COUNT_FIELDS},
+    )
+
+
+def _worker_row(units):
+    if len(units) == 1:
+        return units[0]
+    count = len(units)
+    allocations = [unit.allocation for unit in units if unit.allocation is not None]
+    return WorkerDelivery(
+        opportunity_access=units[0].opportunity_access,
+        payment_unit_label=ngettext("%(count)d payment unit", "%(count)d payment units", count) % {"count": count},
+        payment_unit_ids=[unit_id for unit in units for unit_id in unit.payment_unit_ids],
+        allocation=sum(allocations) if allocations else None,
+        sub_rows=units,
+        **{name: sum(getattr(unit, name) for unit in units) for name in COUNT_FIELDS},
     )
 
 

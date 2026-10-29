@@ -10,7 +10,7 @@ from django.test.signals import template_rendered
 from django.utils.html import strip_tags
 from django_tables2 import RequestConfig
 
-from commcare_connect.opportunity.helpers import PaymentUnitDelivery, WorkerDelivery, get_worker_tasks_base_queryset
+from commcare_connect.opportunity.helpers import WorkerDelivery, get_worker_tasks_base_queryset
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWork,
@@ -220,9 +220,10 @@ def _rendered_context(render):
 
 @pytest.mark.parametrize("over_limit", [0, 2], ids=["within_limit", "over_limit"])
 def test_worker_delivery_table_counts(over_limit):
-    unit = PaymentUnitDelivery(
-        name="Visit",
-        payment_unit_id=None,
+    record = WorkerDelivery(
+        opportunity_access=None,
+        payment_unit_label="Visit",
+        payment_unit_ids=[uuid4()],
         allocation=5,
         pending=1,
         approved=1,
@@ -230,7 +231,6 @@ def test_worker_delivery_table_counts(over_limit):
         over_limit=over_limit,
         incomplete=1,
     )
-    record = WorkerDelivery(opportunity_access=None, payment_units=[unit])
     table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
 
     progress = _rendered_context(lambda: table.render_delivery_progress(record))
@@ -249,19 +249,6 @@ def test_worker_delivery_table_counts(over_limit):
 
 
 def test_worker_delivery_table_summary_row():
-    units = [
-        PaymentUnitDelivery(
-            name=name,
-            payment_unit_id=uuid4(),
-            allocation=5,
-            pending=1,
-            approved=1,
-            rejected=0,
-            over_limit=0,
-            incomplete=0,
-        )
-        for name in ("Visit", "Screening")
-    ]
     access = SimpleNamespace(
         opportunity_access_id=uuid4(),
         user=SimpleNamespace(user_id=uuid4(), name="Worker", username="worker"),
@@ -269,7 +256,18 @@ def test_worker_delivery_table_summary_row():
         suspended=False,
         last_active=None,
     )
-    record = WorkerDelivery(opportunity_access=access, payment_units=units)
+    counts = {"allocation": 5, "pending": 1, "approved": 1, "rejected": 0, "over_limit": 0, "incomplete": 0}
+    units = [
+        WorkerDelivery(opportunity_access=access, payment_unit_label=name, payment_unit_ids=[uuid4()], **counts)
+        for name in ("Visit", "Screening")
+    ]
+    record = WorkerDelivery(
+        opportunity_access=access,
+        payment_unit_label="2 payment units",
+        payment_unit_ids=[unit.payment_unit_ids[0] for unit in units],
+        sub_rows=units,
+        **counts,
+    )
     table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
     summary = table.rows[0]
 
@@ -278,13 +276,13 @@ def test_worker_delivery_table_summary_row():
     assert '@click="open = !open"' in index
     assert summary.get_cell("payment_unit") == "2 payment units"
     summary_counts_url = _rendered_context(lambda: summary.get_cell("pending"))["counts_url"]
-    assert _payment_unit_ids(summary_counts_url) == [str(unit.payment_unit_id) for unit in units]
+    assert _payment_unit_ids(summary_counts_url) == [str(unit_id) for unit_id in record.payment_unit_ids]
 
     for sub_row, unit in zip(record.bound_sub_rows, units):
         assert all(sub_row.get_cell(name) == "" for name in table.header_columns)
-        assert sub_row.get_cell("payment_unit") == unit.name
+        assert sub_row.get_cell("payment_unit") == unit.payment_unit_label
         counts_url = _rendered_context(lambda: sub_row.get_cell("pending"))["counts_url"]
-        assert _payment_unit_ids(counts_url) == [str(unit.payment_unit_id)]
+        assert _payment_unit_ids(counts_url) == [str(unit_id) for unit_id in unit.payment_unit_ids]
 
 
 def _payment_unit_ids(url):

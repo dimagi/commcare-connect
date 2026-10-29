@@ -1512,7 +1512,7 @@ class WorkerDeliveryTable(OrgContextTable):
 
     def render_index(self, record, bound_column, bound_row):
         value = bound_column.column.render(value=None, record=record, bound_column=bound_column, bound_row=bound_row)
-        if len(record.payment_units) == 1:
+        if not record.sub_rows:
             # An invisible chevron keeps the number aligned with the expandable rows' numbers.
             return format_html(
                 '<span class="flex items-center gap-2">'
