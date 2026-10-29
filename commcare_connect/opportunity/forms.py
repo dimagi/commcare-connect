@@ -1309,7 +1309,10 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date",
         ]
         help_texts = {
-            "display_name": _("Shown to workers in the Connect app."),
+            "display_name": _(
+                "Optional. Shown to workers in the Connect app instead of the name. "
+                "If left blank, workers see the name."
+            ),
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
