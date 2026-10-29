@@ -1520,7 +1520,8 @@ class WorkerDeliveryTable(OrgContextTable):
                 value,
             )
         return format_html(
-            '<button type="button" @click="open = !open" class="flex items-center gap-2" :aria-expanded="open">'
+            '<button type="button" @click="open = !open" class="flex items-center gap-2 cursor-pointer" '
+            ':aria-expanded="open">'
             '<i class="fa-solid fa-chevron-down text-xs transition-transform duration-200" '
             ":class=\"{{'rotate-180': open}}\"></i>{}</button>",
             value,
