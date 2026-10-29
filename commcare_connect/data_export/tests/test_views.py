@@ -32,7 +32,9 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
-from commcare_connect.users.tests.factories import MembershipFactory, OrgWithUsersFactory
+from commcare_connect.organization.models import Organization
+from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.tests.api import add_token_credentials
 
@@ -217,6 +219,34 @@ class TestProgramOpportunityOrganizationDataView:
         assert is_test_by_id[live_opp.id] is False
         assert is_test_by_id[test_opp.id] is True
 
+    def test_leaves_out_archived_organizations_and_their_work(self, api_client, organization, org_user_member):
+        archived = OrganizationFactory(is_archived=True)
+        MembershipFactory(organization=archived, user=org_user_member)
+        archived_opportunity = OpportunityFactory(organization=archived)
+        archived_program = ProgramFactory(organization=archived)
+        add_export_credentials(api_client, org_user_member)
+
+        data = api_client.get(reverse("data_export:opp_org_program_list")).json()
+
+        assert [org["id"] for org in data["organizations"]] == [organization.id]
+        assert archived_opportunity.id not in [opp["id"] for opp in data["opportunities"]]
+        assert archived_program.id not in [program["id"] for program in data["programs"]]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("archived", [False, True])
+def test_organization_program_data_leaves_out_archived_organizations(
+    api_client, organization, org_user_member, archived
+):
+    program = ProgramFactory(organization=organization)
+    Organization.objects.filter(pk=organization.pk).update(is_archived=archived)
+    add_export_credentials(api_client, org_user_member)
+    _add_v2_header(api_client)
+
+    response = api_client.get(reverse("data_export:organization_program_data", args=(organization.slug,)))
+
+    assert [row["id"] for row in response.json()["results"]] == ([] if archived else [program.id])
+
 
 @pytest.mark.django_db
 class TestOpportunityAccessCheckView:
@@ -357,6 +387,18 @@ class TestLLOEntityDataView:
         assert result["year_of_establishment"] == 2005
         assert result["contact_emails"] == "one@example.com"
         assert sorted(result["members"]) == sorted(org.get_member_emails())
+
+    def test_leaves_out_archived_organizations(self, api_client, user):
+        active, archived = OrganizationFactory(), OrganizationFactory(is_archived=True)
+        user.user_permissions.add(Permission.objects.get(codename="llo_entity_internal_access"))
+        add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+
+        data = api_client.get(reverse("data_export:llo_entity_data")).json()
+
+        ids = [row["id"] for row in data["results"]]
+        assert active.id in ids
+        assert archived.id not in ids
 
     def test_requires_export_scope(self, api_client, user):
         _add_v2_header(api_client)
@@ -510,6 +552,17 @@ class TestLabsRecordDataViewAuthorization:
         response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": record.id}], format="json")
         assert response.status_code == 200
         assert not LabsRecord.objects.filter(pk=record.pk).exists()
+
+    @pytest.mark.parametrize("archived, expected_status", [(False, 200), (True, 404)])
+    def test_get_for_an_archived_organization_returns_404(
+        self, organization, api_client, org_user_member, archived, expected_status
+    ):
+        Organization.objects.filter(pk=organization.pk).update(is_archived=archived)
+        add_export_credentials(api_client, org_user_member)
+
+        response = api_client.get(self.LABS_RECORD_URL, {"organization_id": organization.id})
+
+        assert response.status_code == expected_status
 
     def test_delete_nonexistent_id_returns_404(self, api_client, org_user_member):
         add_export_credentials(api_client, org_user_member)

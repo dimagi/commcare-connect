@@ -287,6 +287,7 @@ def _get_org_or_404(user, org_id):
             Organization.objects.filter(
                 memberships__user=user,
                 id=org_id,
+                is_archived=False,
             )
             .distinct()
             .get()
@@ -307,7 +308,7 @@ class ProgramOpportunityOrganizationDataView(BaseDataExportView):
         )
     )
     def get(self, request):
-        organizations = Organization.objects.filter(memberships__user=request.user)
+        organizations = Organization.objects.filter(memberships__user=request.user, is_archived=False)
         opportunities = (
             Opportunity.objects.filter(Q(organization__in=organizations) | Q(program__organization__in=organizations))
             .annotate(visit_count=Count("uservisit", distinct=True))
@@ -672,7 +673,11 @@ class OrganizationProgramDataView(BaseDataExportListView):
     serializer_class = ProgramDataExportSerializer
 
     def get_queryset(self, request, org_slug):
-        return Program.objects.filter(organization__slug=org_slug, organization__memberships__user=self.request.user)
+        return Program.objects.filter(
+            organization__slug=org_slug,
+            organization__memberships__user=self.request.user,
+            organization__is_archived=False,
+        )
 
 
 class ProgramOpportunityDataView(BaseDataExportListView):
@@ -762,7 +767,9 @@ class LLOEntityDataView(BaseDataExportListViewV2):
             raise NotFound
 
     def get_queryset(self, *args, **kwargs):
-        return Organization.objects.prefetch_related("countries", "primary_sectors", "members")
+        return Organization.objects.filter(is_archived=False).prefetch_related(
+            "countries", "primary_sectors", "members"
+        )
 
 
 class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):
