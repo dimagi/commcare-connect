@@ -478,7 +478,8 @@ class TestWorkAreaCSVImporter:
     def test_import_with_no_rows(self, opportunity):
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
 
-        assert result == {"created": 0}
+        assert result == {"errors": {"The file has no data rows. Add at least one row below the header.": [1]}}
+        assert WorkArea.objects.filter(opportunity=opportunity).count() == 0
 
     def test_import_accepts_groups_each_in_one_ward(self, opportunity):
         rows = [
@@ -702,6 +703,23 @@ def test_implementation_area_short_row_reports_boundary_error(opportunity):
     content = io.StringIO(f"{IA_HEADER}\nWard,77.1 28.6\n")
     result = ImplementationAreaCSVImporter(opportunity.id, content).run()
     assert "Invalid WKT format for Boundary(Polygon)." in result["errors"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "importer_class,header",
+    [(ImplementationAreaCSVImporter, IA_HEADER), (WorkAreaCSVImporter, WA_BASE_HEADER)],
+)
+@pytest.mark.parametrize("body", ["", "{header}\n", "{header}\n\n\n"])
+def test_import_without_data_rows_reports_error(opportunity, importer_class, header, body):
+    content = io.StringIO(body.format(header=header))
+    result = importer_class(opportunity.id, content).run()
+    if body:
+        expected_error = "The file has no data rows. Add at least one row below the header."
+    else:
+        expected_error = "Missing columns: " + ", ".join(sorted(importer_class.HEADERS.values()))
+    assert not importer_class.model.objects.filter(opportunity_id=opportunity.id).exists()
+    assert result == {"errors": {expected_error: [1]}}
 
 
 @pytest.mark.django_db

@@ -73,6 +73,7 @@ class BaseAreaCSVImporter:
         self.csv_source = csv_source
         self.errors = defaultdict(list)
         self.created_count = 0
+        self.total_rows = 0
         # pk -> (CSV line number, saved instance) for every row this import inserted.
         self.inserted = {}
 
@@ -109,6 +110,8 @@ class BaseAreaCSVImporter:
             raise ImportRejected
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
+        if not self.total_rows:
+            self._add_error(1, _("The file has no data rows. Add at least one row below the header."))
         self._after_rows()
 
     def _stream_and_insert(self, f):
@@ -149,6 +152,7 @@ class BaseAreaCSVImporter:
         return True
 
     def _process_row(self, line_num, row):
+        self.total_rows += 1
         for processor in self.get_processors():
             processor(row, line_num)
 
@@ -245,7 +249,6 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
         self.group_rows = defaultdict(list)
         self.existing_groups = {}
         self.group_cache = {}
-        self.total_rows = 0
         self.rows_with_group = 0
 
     def _canonical_headers(self):
@@ -262,7 +265,6 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
 
     def _process_row(self, line_num, row):
         super()._process_row(line_num, row)
-        self.total_rows += 1
         group_name = self.get_group_name(row)
         if group_name:
             self.rows_with_group += 1
