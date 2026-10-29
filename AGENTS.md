@@ -79,7 +79,7 @@ commcare_connect/
   prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
 config/
-  settings/        # base.py, local.py, test.py, staging.py, production.py
+  settings/        # base.py, local.py, test.py; deploy_base.py shared by staging.py + production.py
   api_router.py    # DRF API URL routing
   celery_app.py    # Celery config
   urls.py          # Root URL config
