@@ -478,7 +478,8 @@ class TestWorkAreaCSVImporter:
     def test_import_with_no_rows(self, opportunity):
         result = WorkAreaCSVImporter(opportunity.id, self.build_csv([])).run()
 
-        assert result == {"created": 0}
+        assert result == {"errors": {"The file has no data rows. Add at least one row below the header.": [1]}}
+        assert WorkArea.objects.filter(opportunity=opportunity).count() == 0
 
     def test_import_accepts_groups_each_in_one_ward(self, opportunity):
         rows = [
