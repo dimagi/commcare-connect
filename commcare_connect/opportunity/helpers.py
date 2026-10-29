@@ -354,16 +354,12 @@ class PaymentUnitDelivery:
 class WorkerDelivery:
     """A worker's delivery counts on the Deliver tab, summed over `payment_units`."""
 
-    access: OpportunityAccess
+    opportunity_access: OpportunityAccess
     payment_units: list[PaymentUnitDelivery]
 
     @property
-    def opportunity_access(self):
-        return self.access
-
-    @property
     def status(self):
-        return self.access.status
+        return self.opportunity_access.status
 
     @property
     def payment_unit_label(self):
@@ -380,7 +376,7 @@ class WorkerDelivery:
     def sub_rows(self):
         if len(self.payment_units) == 1:
             return []
-        return [WorkerDelivery(self.access, [unit]) for unit in self.payment_units]
+        return [WorkerDelivery(self.opportunity_access, [unit]) for unit in self.payment_units]
 
     @property
     def allocation(self):
@@ -432,7 +428,7 @@ def get_worker_deliveries(opportunity: Opportunity, filters: dict):
     for rows in rows_by_access.values():
         units = [_payment_unit_delivery(row) for row in rows]
         units_with_allocation_or_work = [unit for unit in units if unit.has_allocation_or_work] or units
-        deliveries.append(WorkerDelivery(access=rows[0], payment_units=units_with_allocation_or_work))
+        deliveries.append(WorkerDelivery(opportunity_access=rows[0], payment_units=units_with_allocation_or_work))
     return deliveries
 
 

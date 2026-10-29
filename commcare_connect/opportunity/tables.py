@@ -1437,9 +1437,9 @@ class WorkerDeliveryTable(OrgContextTable):
     """Renders `WorkerDelivery` records: one row per worker, expanding to a row per payment unit."""
 
     index = IndexColumn()
-    user = tables.Column(accessor="access__user", orderable=False, verbose_name="Name", footer="Total")
+    user = tables.Column(accessor="opportunity_access__user", orderable=False, verbose_name="Name", footer="Total")
     status = StatusIndicatorColumn(orderable=False)
-    last_active = DMYTColumn(accessor="access__last_active", empty_values=())
+    last_active = DMYTColumn(accessor="opportunity_access__last_active", empty_values=())
     payment_unit = tables.Column(accessor="payment_unit_label", orderable=False)
     delivery_progress = tables.Column(
         verbose_name=header_with_tooltip(
@@ -1576,7 +1576,7 @@ class WorkerDeliveryTable(OrgContextTable):
         # Limit flag counts to the row's payment units, which the filters may have narrowed.
         params = {
             "status": status,
-            "access_id": record.access.opportunity_access_id,
+            "access_id": record.opportunity_access.opportunity_access_id,
             "payment_unit_id": record.payment_unit_ids,
         }
         full_url = f"{url}?{urlencode(params, doseq=True)}"
@@ -1601,7 +1601,7 @@ class WorkerDeliveryTable(OrgContextTable):
 
     def _user_visits_url(self, record):
         base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        return f"{base_url}?{urlencode({'user': record.access.user.user_id})}"
+        return f"{base_url}?{urlencode({'user': record.opportunity_access.user.user_id})}"
 
 
 class WorkerLearnStatusTable(tables.Table):

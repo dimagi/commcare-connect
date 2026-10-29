@@ -103,7 +103,7 @@ def test_get_worker_deliveries(opportunity: Opportunity):
             opportunity_access=two_unit_access, payment_unit=payment_unit, status=CompletedWorkStatus.over_limit
         )
 
-    deliveries = {delivery.access.pk: delivery for delivery in get_worker_deliveries(opportunity, {})}
+    deliveries = {delivery.opportunity_access.pk: delivery for delivery in get_worker_deliveries(opportunity, {})}
 
     assert len(deliveries) == 3
     assert deliveries[no_work_access.pk].payment_unit_label == "3 payment units"

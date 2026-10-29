@@ -230,7 +230,7 @@ def test_worker_delivery_table_counts(over_limit):
         over_limit=over_limit,
         incomplete=1,
     )
-    record = WorkerDelivery(access=None, payment_units=[unit])
+    record = WorkerDelivery(opportunity_access=None, payment_units=[unit])
     table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
 
     progress = _rendered_context(lambda: table.render_delivery_progress(record))
@@ -269,7 +269,7 @@ def test_worker_delivery_table_summary_row():
         suspended=False,
         last_active=None,
     )
-    record = WorkerDelivery(access=access, payment_units=units)
+    record = WorkerDelivery(opportunity_access=access, payment_units=units)
     table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
     summary = table.rows[0]
 
