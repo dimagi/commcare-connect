@@ -1292,11 +1292,6 @@ class AddBudgetNewUsersForm(forms.Form):
         self.opportunity.save()
 
 
-DELIVER_UNIT_CHECKBOXES_TEMPLATE = "opportunity/partials/deliver_unit_checkboxes.html"
-DISPLAY_NAME_LABEL = _("Display name")
-DISPLAY_NAME_HELP_TEXT = _("Shown to workers in the Connect app.")
-
-
 class PaymentUnitForm(forms.ModelForm):
     no_daily_limit = forms.BooleanField(required=False, label=_("No daily limit"))
 
@@ -1314,7 +1309,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date",
         ]
         help_texts = {
-            "display_name": DISPLAY_NAME_HELP_TEXT,
+            "display_name": _("Shown to workers in the Connect app."),
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
@@ -1324,7 +1319,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
         labels = {
-            "display_name": DISPLAY_NAME_LABEL,
+            "display_name": _("Display name"),
             "amount": _("Worker pay per visit"),
             "org_amount": _("Org pay per visit"),
             "max_total": _("Maximum visits per user"),
@@ -1347,6 +1342,7 @@ class PaymentUnitForm(forms.ModelForm):
         elif self.instance.pk:
             self.fields["no_daily_limit"].initial = self.instance.max_daily is None
 
+        deliver_unit_checkboxes_template = "opportunity/partials/deliver_unit_checkboxes.html"
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -1362,9 +1358,9 @@ class PaymentUnitForm(forms.ModelForm):
                     css_class="grid grid-cols-2 gap-4 p-6 card_bg",
                 ),
                 Row(
-                    Field("required_deliver_units", template=DELIVER_UNIT_CHECKBOXES_TEMPLATE),
+                    Field("required_deliver_units", template=deliver_unit_checkboxes_template),
                     Field("payment_units"),
-                    Field("optional_deliver_units", template=DELIVER_UNIT_CHECKBOXES_TEMPLATE),
+                    Field("optional_deliver_units", template=deliver_unit_checkboxes_template),
                     Div(
                         HTML(
                             f"""
@@ -1411,10 +1407,11 @@ class PaymentUnitForm(forms.ModelForm):
             help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
             required=False,
         )
+        display_name_field = self.fields["display_name"]
         for deliver_unit in self.deliver_units:
             self.fields[self._deliver_unit_display_name_field(deliver_unit)] = forms.CharField(
-                label=DISPLAY_NAME_LABEL,
-                help_text=DISPLAY_NAME_HELP_TEXT,
+                label=display_name_field.label,
+                help_text=display_name_field.help_text,
                 initial=deliver_unit.display_name,
                 max_length=DeliverUnit._meta.get_field("display_name").max_length,
                 required=False,
