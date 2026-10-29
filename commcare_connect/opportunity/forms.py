@@ -1345,10 +1345,25 @@ class PaymentUnitForm(forms.ModelForm):
         elif self.instance.pk:
             self.fields["no_daily_limit"].initial = self.instance.max_daily is None
 
-        deliver_unit_checkboxes_template = "opportunity/partials/deliver_unit_checkboxes.html"
         self.helper = FormHelper(self)
         self.helper.form_tag = False
-        self.helper.layout = Layout(
+        self.helper.layout = self._build_layout(org_slug)
+        self._add_unit_fields(payment_units)
+        self._add_deliver_unit_display_name_fields()
+        if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
+            self._set_initial_units(payment_units)
+        for field_name in ("required_deliver_units", "optional_deliver_units"):
+            self.fields[field_name].deliver_unit_rows = self._deliver_unit_rows(field_name)
+
+    def save(self, commit=True):
+        payment_unit = super().save(commit)
+        if commit:
+            self._save_deliver_unit_display_names()
+        return payment_unit
+
+    def _build_layout(self, org_slug):
+        deliver_unit_checkboxes_template = "opportunity/partials/deliver_unit_checkboxes.html"
+        return Layout(
             Div(
                 Row(
                     Column(Field("name"), Field("display_name"), Field("description")),
@@ -1388,6 +1403,8 @@ class PaymentUnitForm(forms.ModelForm):
                 css_class="flex flex-col gap-4",
             )
         )
+
+    def _add_unit_fields(self, payment_units):
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in self.deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
         self.fields["required_deliver_units"] = forms.MultipleChoiceField(
@@ -1410,6 +1427,8 @@ class PaymentUnitForm(forms.ModelForm):
             help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
             required=False,
         )
+
+    def _add_deliver_unit_display_name_fields(self):
         display_name_field = self.fields["display_name"]
         for deliver_unit in self.deliver_units:
             self.fields[self._deliver_unit_display_name_field(deliver_unit)] = forms.CharField(
@@ -1419,27 +1438,20 @@ class PaymentUnitForm(forms.ModelForm):
                 max_length=DeliverUnit._meta.get_field("display_name").max_length,
                 required=False,
             )
-        if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
-            deliver_units = self.instance.deliver_units.all()
-            self.fields["required_deliver_units"].initial = [
-                deliver_unit.pk for deliver_unit in filter(lambda x: not x.optional, deliver_units)
-            ]
-            self.fields["optional_deliver_units"].initial = [
-                deliver_unit.pk for deliver_unit in filter(lambda x: x.optional, deliver_units)
-            ]
-            payment_units_initial = []
-            for payment_unit in payment_units:
-                if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
-                    payment_units_initial.append(payment_unit.pk)
-            self.fields["payment_units"].initial = payment_units_initial
-        for field_name in ("required_deliver_units", "optional_deliver_units"):
-            self.fields[field_name].deliver_unit_rows = self._deliver_unit_rows(field_name)
 
-    def save(self, commit=True):
-        payment_unit = super().save(commit)
-        if commit:
-            self._save_deliver_unit_display_names()
-        return payment_unit
+    def _set_initial_units(self, payment_units):
+        deliver_units = self.instance.deliver_units.all()
+        self.fields["required_deliver_units"].initial = [
+            deliver_unit.pk for deliver_unit in filter(lambda x: not x.optional, deliver_units)
+        ]
+        self.fields["optional_deliver_units"].initial = [
+            deliver_unit.pk for deliver_unit in filter(lambda x: x.optional, deliver_units)
+        ]
+        payment_units_initial = []
+        for payment_unit in payment_units:
+            if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
+                payment_units_initial.append(payment_unit.pk)
+        self.fields["payment_units"].initial = payment_units_initial
 
     def _save_deliver_unit_display_names(self):
         # The display name input is disabled while its deliver unit is unticked, so unselected
