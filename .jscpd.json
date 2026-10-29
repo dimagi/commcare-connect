@@ -1,8 +1,8 @@
 {
   "minTokens": 30,
   "minLines": 4,
-  "ignoreIdentifiers": true,
-  "similarity": 0.9,
+  "ignoreIdentifiers": false,
+  "similarity": 0.85,
   "format": ["python", "javascript"],
   "ignore": ["**/migrations/**"],
   "reporters": ["console"]
