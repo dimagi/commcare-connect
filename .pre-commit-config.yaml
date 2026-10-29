@@ -64,9 +64,10 @@ repos:
       # Existing duplication does not fail it. Bypass with SKIP=jscpd.
       # Detection settings live in .jscpd.json, so a manual `jscpd --changed commcare_connect` matches this hook.
       # Its format and ignore lists decide what jscpd scans; the top-level exclude here only decides whether the hook runs.
+      # Skipped during a merge: the merged-in files are staged too, so clones from the other branch would count as new.
       - id: jscpd
         name: jscpd (new duplicate code)
-        entry: jscpd
+        entry: bash -c 'test -e "$(git rev-parse --git-path MERGE_HEAD)" || exec jscpd "$@"' jscpd
         language: python
         additional_dependencies: ['jscpd==5.4.1']
         args:
