@@ -29,7 +29,12 @@ from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.reports import urls as reports_urls
 from commcare_connect.reports.decorators import kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.reports.views import DeliveryStatsReportView, InvoiceReportFilter, InvoiceReportView
+from commcare_connect.reports.views import (
+    DeliveryReportFilters,
+    DeliveryStatsReportView,
+    InvoiceReportFilter,
+    InvoiceReportView,
+)
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -507,6 +512,16 @@ def test_export_invoice_report_task_creates_export_file():
     mock_storage.return_value.save.assert_called_once()
     save_args = mock_storage.return_value.save.call_args[0]
     assert save_args[0] == result
+
+
+@pytest.mark.django_db
+def test_delivery_report_organization_filter_leaves_out_archived_organizations():
+    active, archived = OrganizationFactory(), OrganizationFactory(is_archived=True)
+
+    queryset = DeliveryReportFilters.base_filters["organization"].queryset
+
+    assert active in queryset
+    assert archived not in queryset
 
 
 @pytest.mark.django_db
