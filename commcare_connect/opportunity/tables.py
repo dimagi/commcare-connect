@@ -97,6 +97,8 @@ class UserVisitTable(OrgContextTable):
     justification = columns.Column("Justification", accessor="justification", visible=False)
     duration = columns.Column("Duration", accessor="duration", visible=False)
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
+    payment_unit = columns.Column("Payment Unit", accessor="completed_work__payment_unit__name", visible=False)
+    over_limit_reasons = columns.Column("Over Limit Reason", accessor="over_limit_reasons", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
     entity_name = columns.Column("Entity Name", accessor="entity_name")
@@ -117,6 +119,9 @@ class UserVisitTable(OrgContextTable):
         short = [flag[1] for flag in value.get("flags")]
         return ", ".join(short)
 
+    def value_over_limit_reasons(self, record):
+        return "; ".join(record.get_over_limit_reasons_display())
+
     class Meta:
         model = UserVisit
         fields = ("user__name", "username", "visit_date", "status", "review_status")
@@ -129,6 +134,8 @@ class UserVisitTable(OrgContextTable):
             "username",
             "user__name",
             "deliver_unit",
+            "payment_unit",
+            "over_limit_reasons",
         )
         empty_text = "No forms."
         orderable = False
@@ -851,12 +858,15 @@ class WorkerVisitTable(tables.Table):
             badge_classes = "bg-green-100 text-green-800"
         else:
             badge_classes = "bg-gray-100 text-gray-800"
-        return format_html(
+        badge = format_html(
             '<span class="inline-flex w-[80px] items-center justify-center px-3 py-1 rounded text-xs font-medium {}">'
             "{}</span>",
             badge_classes,
             record.get_status_display(),
         )
+        if status == VisitValidationStatus.over_limit:
+            return header_with_tooltip(badge, "; ".join(record.get_over_limit_reasons_display()))
+        return badge
 
 
 class UserVisitVerificationTable(WorkerVisitTable):
@@ -907,7 +917,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
         super().__init__(*args, **kwargs)
         self.columns["select"].column.visible = not self.is_opportunity_pm
 
-    def get_icons(self, statuses):
+    def get_icons(self, statuses, record):
         status_meta = {
             # Review Status Pending, Visit Status Approved
             "approved_pending_review": {
@@ -922,7 +932,10 @@ class UserVisitVerificationTable(WorkerVisitTable):
             },
             VisitValidationStatus.duplicate: {"icon": "fa-solid fa-clone", "tooltip": "Duplicate Visit"},
             VisitValidationStatus.trial: {"icon": "fa-solid fa-marker", "tooltip": "Trail Visit"},
-            VisitValidationStatus.over_limit: {"icon": "fa-solid fa-marker", "tooltip": "Daily limit exceeded"},
+            VisitValidationStatus.over_limit: {
+                "icon": "fa-solid fa-marker",
+                "tooltip": "; ".join(record.get_over_limit_reasons_display()),
+            },
             VisitReviewStatus.disagree: {"icon": "fa-solid fa-thumbs-down", "tooltip": "Disagreed by PM"},
             VisitReviewStatus.agree: {"icon": "fa-solid fa-thumbs-up", "tooltip": "Agreed by PM"},
             # Review Status Pending (custom name, original choice clashes with Visit Pending)
@@ -949,7 +962,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
 
     def render_icons(self, record):
         if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
-            return self.get_icons([record.status])
+            return self.get_icons([record.status], record)
 
         status = []
         if record.review_status and record.review_created_on:
@@ -967,7 +980,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
             else:
                 status.append(record.status)
 
-        return self.get_icons(status)
+        return self.get_icons(status, record)
 
 
 class UserInfoColumn(tables.Column):
