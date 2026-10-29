@@ -8,7 +8,7 @@ from commcare_connect.users.helpers import (
     get_organization_for_request,
 )
 from commcare_connect.users.models import ConnectIDUserLink
-from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory
+from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MembershipFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -190,6 +190,15 @@ class TestGetOrganizationForRequest:
         request.user = org_user_member
         result = get_organization_for_request(request, {})
         assert result == organization
+
+    def test_default_organization_skips_archived_ones(self, rf: RequestFactory, org_user_member, organization):
+        organization.is_archived = True
+        organization.save(update_fields=["is_archived"])
+        active = MembershipFactory(user=org_user_member).organization
+        request = rf.get("/fake-url/")
+        request.user = org_user_member
+
+        assert get_organization_for_request(request, {}) == active
 
     def test_returns_none_when_no_slug_and_no_membership(self, rf: RequestFactory, user):
         request = rf.get("/fake-url/")

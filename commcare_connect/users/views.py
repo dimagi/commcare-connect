@@ -45,7 +45,7 @@ from commcare_connect.utils.permission_const import (
     PRODUCT_FEATURES_ACCESS,
 )
 
-from .helpers import create_hq_user_and_link
+from .helpers import active_memberships, create_hq_user_and_link
 from .models import ConnectIDUserLink
 
 User = get_user_model()
@@ -72,7 +72,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
     permanent = False
 
     def get_redirect_url(self):
-        if not self.request.user.memberships.exists():
+        if not active_memberships(self.request.user).exists():
             return reverse("no_organization")
         organization = self.request.org
         if organization:

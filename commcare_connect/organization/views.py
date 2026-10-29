@@ -50,6 +50,7 @@ from commcare_connect.organization.tables import (
 )
 from commcare_connect.organization.tasks import export_contacts, send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
+from commcare_connect.users.helpers import active_memberships
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
@@ -72,11 +73,14 @@ def organization_create(request):
 
 @login_required
 def no_organization(request):
-    """Landing page for users who don't belong to any organization yet."""
-    if request.user.memberships.exists():
+    """Landing page for users who don't belong to any organization, or only to archived ones."""
+    if active_memberships(request.user).exists():
         return redirect("users:redirect")
 
-    return render(request, "organization/no_organization.html")
+    has_archived_organization = request.user.memberships.filter(organization__is_archived=True).exists()
+    return render(
+        request, "organization/no_organization.html", {"has_archived_organization": has_archived_organization}
+    )
 
 
 @org_profile_edit_access_required

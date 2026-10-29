@@ -16,7 +16,7 @@ from commcare_connect.opportunity.tests.factories import OpportunityAccessFactor
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
-from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.users.tests.factories import MembershipFactory, UserFactory
 from commcare_connect.users.views import (
     UpdateUserProfileView,
     UserRedirectView,
@@ -99,6 +99,20 @@ class TestUserRedirectView:
 
         view.request = request
         assert view.get_redirect_url() == f"/a/{organization.slug}/opportunity/"
+
+    @pytest.mark.parametrize("has_active_organization", [True, False])
+    def test_archived_organizations_are_skipped(self, client, organization, org_user_member, has_active_organization):
+        organization.is_archived = True
+        organization.save(update_fields=["is_archived"])
+        expected = reverse("no_organization")
+        if has_active_organization:
+            active = MembershipFactory(user=org_user_member).organization
+            expected = reverse("opportunity:list", args=(active.slug,))
+        client.force_login(org_user_member)
+
+        response = client.get(reverse("users:redirect"))
+
+        assert response.url == expected
 
 
 class TestCreateUserLinkView:

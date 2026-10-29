@@ -1,7 +1,9 @@
 import pytest
+from django.test import RequestFactory
 from django.urls import reverse
 
 from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
+from commcare_connect.users.middleware import OrganizationMiddleware
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationInviteFactory
 
@@ -64,3 +66,15 @@ class TestArchivedOrganizationPages:
         response = _get_as(client, org_user_member, "opportunity:list", organization)
 
         assert response.context["has_active_organization"] == has_other_organization
+
+
+@pytest.mark.django_db
+def test_memberships_leave_out_archived_organizations(rf: RequestFactory, organization, org_user_member):
+    _archive(organization)
+    active_membership = MembershipFactory(user=org_user_member)
+    request = rf.get("/fake-url/")
+    request.user = org_user_member
+
+    OrganizationMiddleware(lambda request: None).process_view(request, None, (), {})
+
+    assert list(request.memberships) == [active_membership]
