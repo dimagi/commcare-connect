@@ -1309,7 +1309,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date",
         ]
         help_texts = {
-            "display_name": _("Shown to workers in the Connect app."),
+            "display_name": _("Optional. Shown to workers in the Connect app. If blank, workers see the name."),
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
@@ -1407,11 +1407,12 @@ class PaymentUnitForm(forms.ModelForm):
             help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
             required=False,
         )
-        display_name_field = self.fields["display_name"]
         for deliver_unit in self.deliver_units:
             self.fields[self._deliver_unit_display_name_field(deliver_unit)] = forms.CharField(
-                label=display_name_field.label,
-                help_text=display_name_field.help_text,
+                label=self.fields["display_name"].label,
+                help_text=_(
+                    "Optional. Shown to workers in the Connect app. If blank, workers see the deliver unit name."
+                ),
                 initial=deliver_unit.display_name,
                 max_length=DeliverUnit._meta.get_field("display_name").max_length,
                 required=False,
