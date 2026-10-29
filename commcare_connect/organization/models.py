@@ -111,6 +111,12 @@ class Organization(BaseModel):
         return list(member_query.values_list("user__email", flat=True))
 
 
+def selectable_organizations_q(already_linked=()) -> models.Q:
+    """Organizations that can be chosen for a link: those that aren't archived, plus the ones a record
+    already links to, so that saving the record keeps them."""
+    return models.Q(is_archived=False) | models.Q(pk__in=already_linked)
+
+
 # Insert and delete rather than the default insert and update: adding and removing a country or
 # sector are a row insert and a row delete, and a removal would otherwise go unrecorded.
 @pghistory.track(pghistory.InsertEvent(), pghistory.DeleteEvent())

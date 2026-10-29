@@ -18,6 +18,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentUnitFactory,
 )
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ProgramForm
 from commcare_connect.program.helpers import eligible_funders, eligible_watchers
 from commcare_connect.program.models import (
@@ -281,6 +282,13 @@ class TestFunderOrganizations:
 
         assert program_manager_org not in eligible_funders(program_manager_org)
 
+    @pytest.mark.parametrize("already_linked", [False, True])
+    def test_archived_funder_is_offered_only_when_already_linked(self, program_manager_org, already_linked):
+        archived = OrganizationFactory(funder=True, is_archived=True)
+        linked = [archived.pk] if already_linked else []
+
+        assert (archived in eligible_funders(program_manager_org, already_linked=linked)) is already_linked
+
 
 def program_form_data(delivery_type, **overrides):
     data = {
@@ -431,6 +439,15 @@ class TestWatcherOrganizations:
         assert program_manager_org not in result
         assert funder_org not in result
 
+    @pytest.mark.parametrize("already_linked", [False, True])
+    def test_archived_watcher_is_offered_only_when_already_linked(self, program_manager_org, already_linked):
+        archived = OrganizationFactory(is_archived=True)
+        linked = [archived.pk] if already_linked else []
+
+        result = eligible_watchers(program_manager_org, None, already_linked=linked)
+
+        assert (archived in result) is already_linked
+
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
@@ -509,6 +526,25 @@ class TestProgramFormWatchersOnEdit:
         assert form.is_valid(), form.errors
 
         assert list(form.save().watchers.all()) == [new_watcher]
+
+    def test_archived_funder_and_watchers_stay_on_an_edited_program(
+        self, program_manager_org_user_admin, watched_program, funder_org, watcher_org
+    ):
+        watched_program.funder = funder_org
+        watched_program.save()
+        Organization.objects.filter(pk__in=[funder_org.pk, watcher_org.pk]).update(is_archived=True)
+
+        form = ProgramForm(
+            user=program_manager_org_user_admin,
+            organization=watched_program.organization,
+            instance=watched_program,
+            data=program_edit_data(watched_program, watchers=[watcher_org.id]),
+        )
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        assert updated.funder == funder_org
+        assert list(updated.watchers.all()) == [watcher_org]
 
     def test_current_funder_is_rejected_as_watcher(self, program_manager_org_user_admin, watched_program, funder_org):
         watched_program.funder = funder_org

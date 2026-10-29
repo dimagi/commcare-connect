@@ -17,7 +17,7 @@ from django.db.models import (
 from django.db.models.functions import Cast, Coalesce, Round
 
 from commcare_connect.opportunity.models import Opportunity, UserVisit, VisitValidationStatus
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, selectable_organizations_q
 from commcare_connect.program.models import Program, ProgramApplicationStatus
 
 EXCLUDED_STATUS = [
@@ -28,15 +28,19 @@ EXCLUDED_STATUS = [
 FILTER_FOR_VALID_VISIT_DATE = ~Q(opportunityaccess__uservisit__status__in=EXCLUDED_STATUS)
 
 
-def eligible_funders(program_organization):
+def eligible_funders(program_organization, already_linked=()):
     """Organizations that may be chosen as a program's funder.
 
     Funder organizations other than the program's own.
     """
-    return Organization.objects.filter(funder=True).exclude(pk=program_organization.pk).order_by("name")
+    return (
+        Organization.objects.filter(selectable_organizations_q(already_linked), funder=True)
+        .exclude(pk=program_organization.pk)
+        .order_by("name")
+    )
 
 
-def eligible_watchers(program_organization, funder):
+def eligible_watchers(program_organization, funder, already_linked=()):
     """Organizations that may be chosen as a program's watchers.
 
     The program's own organization and its funder are excluded: both already hold a higher
@@ -45,10 +49,14 @@ def eligible_watchers(program_organization, funder):
     excluded_ids = {program_organization.pk}
     if funder:
         excluded_ids.add(funder.pk)
-    return Organization.objects.exclude(pk__in=excluded_ids).order_by("name")
+    return (
+        Organization.objects.filter(selectable_organizations_q(already_linked))
+        .exclude(pk__in=excluded_ids)
+        .order_by("name")
+    )
 
 
-def eligible_supervising_organizations(program):
+def eligible_supervising_organizations(program, already_linked=()):
     """Organizations that may be chosen to supervise an opportunity in `program`.
 
     The program's own organization, its funder, and every organization with an accepted
@@ -65,7 +73,12 @@ def eligible_supervising_organizations(program):
     # distinct() is required despite ProgramApplication being unique per (program, organization):
     # the join is not scoped to this program, so an organization matched on identity above is
     # returned once per application row it holds, for any program.
-    return Organization.objects.filter(eligible).distinct().order_by("name")
+    return (
+        Organization.objects.filter(eligible)
+        .filter(selectable_organizations_q(already_linked))
+        .distinct()
+        .order_by("name")
+    )
 
 
 def calculate_safe_percentage(numerator, denominator):

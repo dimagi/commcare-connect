@@ -69,12 +69,15 @@ class ProgramForm(forms.ModelForm):
         self.helper.layout = Layout(*self._layout_fields())
 
     def _configure_funder_field(self):
-        self.fields["funder"].queryset = eligible_funders(self.organization)
+        self.fields["funder"].queryset = eligible_funders(self.organization, already_linked=[self.instance.funder_id])
         if self.instance.pk:
             self._lock_funder_field()
 
     def _configure_watchers_field(self):
-        self.fields["watchers"].queryset = eligible_watchers(self.organization, self.instance.funder)
+        watchers = self.instance.watchers.all() if self.instance.pk else []
+        self.fields["watchers"].queryset = eligible_watchers(
+            self.organization, self.instance.funder, already_linked=watchers
+        )
 
     def _lock_funder_field(self):
         """The funder is chosen once, at creation.

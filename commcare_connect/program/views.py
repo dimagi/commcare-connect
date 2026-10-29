@@ -184,7 +184,7 @@ class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, OpportunityInitU
 @require_POST
 def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
-    organization = get_object_or_404(Organization, slug=requested_org_slug)
+    organization = get_object_or_404(Organization, slug=requested_org_slug, is_archived=False)
     if organization == request.org:
         messages.error(request, f"Cannot invite organization {organization.name} to program.")
         return redirect(reverse("program:applications", kwargs={"org_slug": org_slug, "pk": pk}))
@@ -227,6 +227,8 @@ def manage_application(request, org_slug, application_id, action):
     new_status = status_mapping.get(action, None)
     if new_status is None:
         return redirect(redirect_url)
+    if new_status == ProgramApplicationStatus.ACCEPTED and application.organization.is_archived:
+        raise Http404()
 
     application.status = new_status
     application.modified_by = request.user.email
@@ -365,7 +367,7 @@ def program_manager_home(request, org):
         pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="opp_id"
     )
 
-    organizations = Organization.objects.exclude(pk=org.pk).order_by("name")
+    organizations = Organization.objects.filter(is_archived=False).exclude(pk=org.pk).order_by("name")
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
         {"title": "Pending Invoices", "rows": pending_payments},

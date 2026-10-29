@@ -60,7 +60,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         label="Program",
     )
     organization = django_filters.ModelChoiceFilter(
-        queryset=Organization.objects.all().order_by("name"),
+        queryset=Organization.objects.filter(is_archived=False).order_by("name"),
         label="Organization",
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )

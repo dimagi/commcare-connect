@@ -54,7 +54,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     TaskTypeFactory,
 )
-from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
@@ -1623,6 +1623,18 @@ class TestSupervisingOrganizations:
     def test_excludes_unrelated_organization(self, opportunity):
         assert OrganizationFactory() not in eligible_supervising_organizations(opportunity.program)
 
+    @pytest.mark.parametrize("already_linked", [False, True])
+    def test_archived_organization_is_offered_only_when_already_linked(self, opportunity, already_linked):
+        archived = OrganizationFactory(is_archived=True)
+        ProgramApplicationFactory(
+            organization=archived, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
+        )
+        linked = [archived.pk] if already_linked else []
+
+        result = eligible_supervising_organizations(opportunity.program, already_linked=linked)
+
+        assert (archived in result) is already_linked
+
     def test_program_without_funder_does_not_error(self, opportunity):
         program = opportunity.program
         program.funder = None
@@ -1728,6 +1740,18 @@ class TestSupervisingOrganizationEnabled(SupervisingOrganizationFormTestBase):
         assert "supervising_organization" in form.fields
         assert form.fields["supervising_organization"].initial == opportunity.program.organization
 
+    def test_archived_organization_is_not_offered(self, opportunity):
+        Organization.objects.filter(pk=opportunity.organization_id).update(is_archived=True)
+
+        form = OpportunityInitForm(
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+            program=opportunity.program,
+        )
+
+        assert opportunity.organization not in form.fields["organization"].queryset
+        assert opportunity.organization not in form.fields["supervising_organization"].queryset
+
     def test_ineligible_organization_is_rejected(self, opportunity):
         form = self._create_form(opportunity, supervising_organization=OrganizationFactory().pk)
 
@@ -1768,6 +1792,18 @@ class TestSupervisingOrganizationOnEdit(SupervisingOrganizationFormTestBase):
         )
 
         assert form.fields["supervising_organization"].initial == opportunity.organization
+
+    def test_archived_network_manager_and_supervisor_stay_on_an_edited_opportunity(self, opportunity):
+        opportunity.supervising_organization = opportunity.organization
+        opportunity.save()
+        Organization.objects.filter(pk=opportunity.organization_id).update(is_archived=True)
+
+        form = self._update_form(opportunity, supervising_organization=opportunity.organization.pk)
+
+        assert form.is_valid(), form.errors
+        updated = form.save()
+        assert updated.organization == opportunity.organization
+        assert updated.supervising_organization == opportunity.organization
 
     def test_changing_supervisor_moves_oversight(self, opportunity):
         """Both organizations are accepted applicants and nothing else.

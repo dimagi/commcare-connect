@@ -22,7 +22,9 @@ from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_ap
 
 
 class ProgramCreateSerializer(serializers.ModelSerializer):
-    organization = serializers.SlugRelatedField(slug_field="slug", queryset=Organization.objects.all())
+    organization = serializers.SlugRelatedField(
+        slug_field="slug", queryset=Organization.objects.filter(is_archived=False)
+    )
     delivery_type = serializers.SlugRelatedField(slug_field="slug", queryset=DeliveryType.objects.all())
     currency = serializers.SlugRelatedField(slug_field="code", queryset=Currency.objects.all())
     country = serializers.SlugRelatedField(slug_field="name", queryset=Country.objects.all())
@@ -84,7 +86,9 @@ class ProgramResponseSerializer(serializers.ModelSerializer):
 
 
 class ProgramApplicationCreateSerializer(serializers.ModelSerializer):
-    organization = serializers.SlugRelatedField(slug_field="slug", queryset=Organization.objects.all())
+    organization = serializers.SlugRelatedField(
+        slug_field="slug", queryset=Organization.objects.filter(is_archived=False)
+    )
 
     class Meta:
         model = ProgramApplication
@@ -132,7 +136,9 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField()
     short_description = serializers.CharField(max_length=50)
-    organization = serializers.SlugRelatedField(slug_field="slug", queryset=Organization.objects.all())
+    organization = serializers.SlugRelatedField(
+        slug_field="slug", queryset=Organization.objects.filter(is_archived=False)
+    )
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     total_budget = serializers.IntegerField(min_value=1)

@@ -80,6 +80,11 @@ class ProgramApplicationAcceptView(ProgramAPIView):
                 {"status": [_("Cannot accept application with status '{status}'.").format(status=application.status)]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if application.organization.is_archived:
+            return Response(
+                {"organization": [_("Cannot accept an application from an archived organization.")]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         application.status = ProgramApplicationStatus.ACCEPTED
         application.modified_by = request.user.email
         application.save(update_fields=["status", "modified_by", "date_modified"])

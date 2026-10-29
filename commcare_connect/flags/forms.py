@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import Opportunity
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, selectable_organizations_q
 from commcare_connect.program.models import Program
 
 User = get_user_model()
@@ -19,7 +19,7 @@ class FlagForm(forms.ModelForm):
         label="Users",
     )
     organizations = forms.ModelMultipleChoiceField(
-        queryset=Organization.objects.order_by("name"),
+        queryset=Organization.objects.none(),
         required=False,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
         label="Organizations",
@@ -43,6 +43,10 @@ class FlagForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        organizations = self.instance.organizations.all() if self.instance.pk else []
+        self.fields["organizations"].queryset = Organization.objects.filter(
+            selectable_organizations_q(organizations)
+        ).order_by("name")
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(

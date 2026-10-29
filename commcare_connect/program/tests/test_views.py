@@ -198,6 +198,14 @@ class TestInviteOrganizationView(BaseProgramTest):
         response = self.client.post(self.valid_url, data)
         assert response.status_code == HTTPStatus.NOT_FOUND
 
+    def test_archived_organization_cannot_be_invited(self):
+        archived = OrganizationFactory(is_archived=True)
+
+        response = self.client.post(self.valid_url, {"organization": archived.slug})
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert not ProgramApplication.objects.filter(organization=archived).exists()
+
 
 @pytest.mark.django_db
 class TestProgramHomeBudgetData(BaseProgramTest):
@@ -298,6 +306,13 @@ class TestProgramHomeListsAccessiblePrograms:
         programs = response.context["programs"]
         assert [program.id for program in programs] == [self.program.id]
         assert programs[0].user_has_admin_access is (has_admin_access and role == Role.ADMIN)
+
+    def test_archived_organizations_are_not_offered_for_invitation(self):
+        archived = OrganizationFactory(is_archived=True)
+
+        response = self.home_for(self.program.organization)
+
+        assert archived not in response.context["organizations"]
 
     @pytest.mark.parametrize("actor,offered", [("owner", True), ("funder", True), ("watcher", False)])
     def test_manage_controls_are_rendered_only_for_admins(self, actor, offered):
@@ -492,6 +507,16 @@ class TestManageApplicationView(BaseProgramTest):
             "program:manage_application",
             kwargs={"org_slug": org.slug, "application_id": self.application.id, "action": action},
         )
+
+    def test_application_from_an_archived_organization_cannot_be_accepted(self):
+        Organization.objects.filter(pk=self.application.organization_id).update(is_archived=True)
+        act_as_admin(self.client, self.organization)
+
+        response = self.client.post(self.manage_url(self.organization, "accept"))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        self.application.refresh_from_db()
+        assert self.application.status == ProgramApplicationStatus.APPLIED
 
     @pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
     def test_accept_application(self, actor, expected, program_actors):

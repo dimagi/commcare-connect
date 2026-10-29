@@ -9,8 +9,10 @@ from commcare_connect.opportunity.app_xml import DeliverUnit as DeliverUnitData
 from commcare_connect.opportunity.app_xml import Module
 from commcare_connect.opportunity.models import CommCareApp, HQApiKey, Opportunity
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory, HQApiKeyFactory
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 @pytest.fixture
@@ -93,6 +95,18 @@ class TestPermissions:
             },
             format="json",
         )
+        assert response.status_code == 403
+
+    def test_archived_program_manager_org_rejected(
+        self, api_client, program_manager_org, program_manager_org_user_admin, delivery_type
+    ):
+        Organization.objects.filter(pk=program_manager_org.pk).update(is_archived=True)
+        api_client.force_authenticate(program_manager_org_user_admin)
+
+        response = api_client.post(
+            "/api/programs/", _program_payload(program_manager_org, delivery_type), format="json"
+        )
+
         assert response.status_code == 403
 
 
@@ -200,6 +214,37 @@ class TestProgramApplication:
         assert response.status_code == expected_status_code
         application.refresh_from_db()
         assert application.status == ProgramApplicationStatus.ACCEPTED
+
+    def test_application_from_an_archived_organization_cannot_be_accepted(
+        self, api_client, program_manager_org_user_admin, program
+    ):
+        application = ProgramApplicationFactory(
+            program=program,
+            organization=OrganizationFactory(is_archived=True),
+            status=ProgramApplicationStatus.APPLIED,
+        )
+        api_client.force_authenticate(program_manager_org_user_admin)
+
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/{application.program_application_id}/accept/",
+        )
+
+        assert response.status_code == 400
+        application.refresh_from_db()
+        assert application.status == ProgramApplicationStatus.APPLIED
+
+    def test_archived_organization_cannot_be_invited(self, api_client, program_manager_org_user_admin, program):
+        archived = OrganizationFactory(is_archived=True)
+        api_client.force_authenticate(program_manager_org_user_admin)
+
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/",
+            {"organization": archived.slug},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert not ProgramApplication.objects.filter(organization=archived).exists()
 
     def test_invite_requires_program_org_admin(self, api_client, user, program, organization):
         api_client.force_authenticate(user)
@@ -320,7 +365,8 @@ class TestManagedOpportunityCreate:
 
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
-    def test_create_opportunity_unaccepted_org_fails(
+    @pytest.mark.parametrize("unaccepted", [True, False])
+    def test_create_opportunity_for_an_unaccepted_or_archived_org_fails(
         self,
         mock_deliver_units,
         mock_learn_modules,
@@ -332,8 +378,12 @@ class TestManagedOpportunityCreate:
         accepted_application,
         hq_server,
         hq_api_key,
+        unaccepted,
     ):
-        ProgramApplication.objects.filter(program=program).update(status=ProgramApplicationStatus.INVITED)
+        if unaccepted:
+            ProgramApplication.objects.filter(program=program).update(status=ProgramApplicationStatus.INVITED)
+        else:
+            Organization.objects.filter(pk=organization.pk).update(is_archived=True)
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
             f"/api/programs/{program.program_id}/opportunities/",
