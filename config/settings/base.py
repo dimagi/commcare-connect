@@ -73,7 +73,7 @@ DJANGO_APPS = [
     "django.contrib.sites",
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
-    "django.contrib.staticfiles",
+    "config.apps.StaticFilesConfig",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
     "django.contrib.gis",
@@ -336,6 +336,8 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # No BrowsableAPIRenderer outside local dev: its pages load DRF's bundled Bootstrap 3, which is end-of-life.
+    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
