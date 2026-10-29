@@ -11,7 +11,7 @@ from ..program.utils import (
     opportunity_by_id,
     org_access_level_from_request,
 )
-from .helpers import get_organization_for_request
+from .helpers import active_memberships, get_organization_for_request
 
 
 def _get_organization(request, view_kwargs):
@@ -36,7 +36,7 @@ def _get_org_membership(request):
 
 def _get_all_memberships(request):
     if not hasattr(request, "_cached_memberships"):
-        memberships = Membership.objects.filter(user=request.user)
+        memberships = active_memberships(request.user)
         request._cached_memberships = memberships
     return request._cached_memberships
 
@@ -90,8 +90,7 @@ def _is_archived_organization_page(request, view_kwargs):
 def _render_organization_archived(request):
     authenticated = request.user.is_authenticated
     context = {
-        "has_active_organization": authenticated
-        and request.user.memberships.filter(organization__is_archived=False).exists(),
+        "has_active_organization": authenticated and active_memberships(request.user).exists(),
         "can_create_organization": authenticated,
     }
     return render(request, "organization/organization_archived.html", context, status=404)
