@@ -1,7 +1,7 @@
 import datetime
 import json
 import logging
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, namedtuple
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from functools import cached_property, partial
@@ -3552,13 +3552,11 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 def opportunity_worker_progress(request, org_slug, opp_id):
     result = get_opportunity_worker_progress(request.opportunity.pk)
 
-    def safe_percent(numerator, denominator):
-        percent = (numerator / denominator) * 100 if denominator else 0
-        return 100 if percent > 100 else percent
-
     verified_percentage = safe_percent(result.approved_deliveries or 0, result.total_deliveries or 0)
     rejected_percentage = safe_percent(result.rejected_deliveries or 0, result.total_deliveries or 0)
-    earned_percentage = safe_percent(result.total_accrued or 0, result.total_budget or 0)
+    earned = get_earned_summary(
+        result.total_accrued or 0, result.total_org_accrued or 0, result.total_budget or 0, result.currency_code
+    )
     paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
 
     worker_progress = [
@@ -3593,15 +3591,10 @@ def opportunity_worker_progress(request, org_slug, opp_id):
             "progress": [
                 {
                     "title": "Earned",
-                    "total": header_with_tooltip(
-                        amount_with_currency(result.total_accrued, result.currency_code), "Earned Amount"
-                    ),
-                    "value": header_with_tooltip(
-                        f"{earned_percentage:.0f}%",
-                        "Percentage Earned by all workers out of Max Budget in the Opportunity",
-                    ),
+                    "total": header_with_tooltip(earned.total, "Earned Amount"),
+                    "value": header_with_tooltip(f"{earned.percentage:.0f}%", earned.percentage_tooltip),
                     "badge_type": True,
-                    "percent": earned_percentage,
+                    "percent": earned.percentage,
                 },
                 {
                     "title": "Paid",
@@ -3624,6 +3617,36 @@ def opportunity_worker_progress(request, org_slug, opp_id):
         "opportunity/opportunity_worker_progress.html",
         {"worker_progress": worker_progress},
     )
+
+
+EarnedSummary = namedtuple("EarnedSummary", ["total", "percentage", "percentage_tooltip"])
+
+
+def get_earned_summary(
+    worker_accrued: int, org_accrued: int, total_budget: int, currency_code: str | None
+) -> EarnedSummary:
+    """Earned figures for the Payments to Connect Workers card.
+
+    The budget covers org pay as well as worker pay, so the percentage counts both. The worker
+    amount is shown on its own so it still matches Payments Earned on the Worker Payments card.
+    """
+    percentage = safe_percent(worker_accrued + org_accrued, total_budget)
+    total = amount_with_currency(worker_accrued, currency_code)
+    if not org_accrued:
+        return EarnedSummary(
+            total, percentage, _("Percentage Earned by all workers out of Max Budget in the Opportunity")
+        )
+    return EarnedSummary(
+        _("%(worker_amount)s workers · %(org_amount)s org")
+        % {"worker_amount": total, "org_amount": amount_with_currency(org_accrued, currency_code)},
+        percentage,
+        _("Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity"),
+    )
+
+
+def safe_percent(numerator: float, denominator: float) -> float:
+    percent = (numerator / denominator) * 100 if denominator else 0
+    return 100 if percent > 100 else percent
 
 
 @opp_view_access_required
