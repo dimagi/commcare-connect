@@ -90,6 +90,7 @@ class OrganizationDirectoryTable(tables.Table):
         # Lazy so the template isn't rendered at import time.
         verbose_name=lazy(_status_column_header, SafeString)(),
         template_name="organization/directory/status_badge.html",
+        extra_context=lambda record: {"status": record.status},
     )
     countries = columns.ManyToManyColumn(verbose_name=_("Countries"), attrs=WRAPPING_COLUMN_ATTRS)
     # Free text listing several regions, so it sorts no more meaningfully than countries.
