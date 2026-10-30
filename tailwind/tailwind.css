@@ -257,7 +257,7 @@
 .button {
   /* Reserve a 1px border on every button so solid variants (e.g. .primary-dark) render the
      same size as bordered ones (e.g. .outline-style, which overrides the color). */
-  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg border border-transparent text-sm font-medium transition-all duration-300;
+  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-center border border-transparent text-sm font-medium transition-all duration-300;
 }
 
 .button:not(:disabled):hover::after {
@@ -905,7 +905,8 @@
 
 select:disabled,
 .textinput:disabled,
-.numberinput:disabled {
+.numberinput:disabled,
+.textarea:disabled {
   @apply pointer-events-none opacity-50;
   @apply bg-gray-200;
 }

@@ -57,6 +57,15 @@ class Solicitation(BaseModel):
     def __str__(self):
         return self.title
 
+    @property
+    def structure_locked(self):
+        """Questions and criteria are fixed once the solicitation leaves draft, so applicants answer the same form."""
+        return self.status != self.Status.DRAFT
+
+
+# Closed and cancelled solicitations are finished, so only these can still be edited.
+EDITABLE_STATUSES = (Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE)
+
 
 class SolicitationEvaluationCriterion(BaseModel):
     """Internal-only scored dimension. Never shown to applicants or on public pages."""
