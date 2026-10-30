@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import uuid
 from collections import Counter, defaultdict, namedtuple
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -2552,6 +2553,16 @@ class WorkerPageView(OpportunityObjectMixin, TemplateView):
         return context
 
 
+def _is_valid_uuid(value):
+    if not value:
+        return False
+    try:
+        uuid.UUID(str(value))
+    except ValueError:
+        return False
+    return True
+
+
 class UserVisitVerificationView(WorkerPageView):
     template_name = "opportunity/user_visit_verification.html"
     page_title = gettext_lazy("Visits")
@@ -2560,7 +2571,8 @@ class UserVisitVerificationView(WorkerPageView):
         context = super().get_context_data(**kwargs)
         context["MAPBOX_TOKEN"] = settings.MAPBOX_TOKEN
         context["show_worker_tasks_tabs"] = switch_is_active(WORKER_VISITS_TASKS)
-        context["visit_id"] = self.request.GET.get("visit_id")
+        visit_id = self.request.GET.get("visit_id")
+        context["visit_id"] = visit_id if _is_valid_uuid(visit_id) else None
         return context
 
 
@@ -2733,6 +2745,8 @@ class WorkerVisitTableView(WorkerTableView):
         return table
 
     def _get_visit_page(self, visit_id):
+        if not _is_valid_uuid(visit_id):
+            return None
         queryset = self.get_queryset()
         target = queryset.filter(user_visit_id=visit_id).first()
         if not target:
@@ -2845,7 +2859,9 @@ def visit_verification_table_view(request, org_slug, opp_id):
 @opp_view_access_required
 @opportunity_required
 def user_visit_details(request, org_slug, opp_id, pk):
-    user_visit = get_object_or_404(UserVisit, user_visit_id=pk, opportunity=request.opportunity)
+    user_visit = get_object_by_uuid_or_int(
+        UserVisit.objects.filter(opportunity=request.opportunity), pk, uuid_field="user_visit_id"
+    )
     verification_flags_config = request.opportunity.opportunityverificationflags
 
     serializer = XFormSerializer(data=user_visit.form_json)
@@ -2954,10 +2970,10 @@ def user_visit_details(request, org_slug, opp_id, pk):
 @opp_view_access_required
 @opportunity_required
 def user_visit_data(request, org_slug, opp_id, pk):
-    user_visit = get_object_or_404(
-        UserVisit.objects.select_related("user", "deliver_unit"),
-        user_visit_id=pk,
-        opportunity=request.opportunity,
+    user_visit = get_object_by_uuid_or_int(
+        UserVisit.objects.select_related("user", "deliver_unit").filter(opportunity=request.opportunity),
+        pk,
+        uuid_field="user_visit_id",
     )
     worker_url = reverse("opportunity:user_visits_list", args=[org_slug, opp_id])
     visit_date = user_visit.visit_date

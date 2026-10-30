@@ -3585,6 +3585,27 @@ def test_user_visit_details_renders_audio_player(client, organization, org_user_
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("view_name", ["opportunity:user_visit_details", "opportunity:user_visit_data"])
+def test_user_visit_views_invalid_pk_returns_404(client, organization, org_user_member, opportunity, view_name):
+    client.force_login(org_user_member)
+    url = reverse(view_name, args=(organization.slug, opportunity.opportunity_id, "not-a-uuid"))
+    response = client.get(url)
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("view_name", ["opportunity:user_visit_details", "opportunity:user_visit_data"])
+def test_user_visit_views_int_pk_from_other_opportunity_returns_404(
+    client, organization, org_user_member, opportunity, view_name
+):
+    other_visit = UserVisitFactory.create()
+    client.force_login(org_user_member)
+    url = reverse(view_name, args=(organization.slug, opportunity.opportunity_id, other_visit.pk))
+    response = client.get(url)
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
 class TestAudioAttachmentTranscribe:
     def _url(self, organization, opportunity, audio):
         return reverse(
