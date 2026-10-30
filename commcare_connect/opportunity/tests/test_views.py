@@ -82,6 +82,7 @@ from commcare_connect.opportunity.views import (
     get_earned_summary,
     get_export_task_id,
     invoice_pdf_filename,
+    link_deliver_units,
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
@@ -2046,6 +2047,23 @@ class TestEditPaymentUnit:
         url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
         response = client.get(url)
         assert response.status_code == HTTPStatus.OK
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("optional", [False, True])
+def test_link_deliver_units_reuses_unit_from_inactive_opportunity(opportunity, optional):
+    inactive_payment_unit = PaymentUnitFactory(opportunity=OpportunityFactory(active=False))
+    reused = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=inactive_payment_unit, optional=not optional)
+    unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    selected = [str(reused.id), str(unattached.id)]
+
+    link_deliver_units(payment_unit, [] if optional else selected, selected if optional else [])
+
+    for deliver_unit in (reused, unattached):
+        deliver_unit.refresh_from_db()
+        assert deliver_unit.payment_unit == payment_unit
+        assert deliver_unit.optional == optional
 
 
 @pytest.mark.django_db

@@ -1297,8 +1297,22 @@ class PaymentUnitForm(forms.ModelForm):
 
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
+        fields = [
+            "name",
+            "display_name",
+            "description",
+            "amount",
+            "org_amount",
+            "max_total",
+            "max_daily",
+            "start_date",
+            "end_date",
+        ]
         help_texts = {
+            "display_name": _(
+                "Optional. Shown to workers in the Connect app instead of the name. "
+                "If left blank, workers see the name."
+            ),
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
@@ -1308,6 +1322,7 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
         labels = {
+            "display_name": _("Display name"),
             "amount": _("Worker pay per visit"),
             "org_amount": _("Org pay per visit"),
             "max_total": _("Maximum visits per user"),
@@ -1317,7 +1332,7 @@ class PaymentUnitForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
 
-        deliver_units = kwargs.pop("deliver_units", [])
+        self.deliver_units = list(kwargs.pop("deliver_units", []))
         payment_units = kwargs.pop("payment_units", [])
         org_slug = kwargs.pop("org_slug")
 
@@ -1332,10 +1347,26 @@ class PaymentUnitForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
-        self.helper.layout = Layout(
+        self.helper.layout = self._build_layout(org_slug)
+        self._add_unit_fields(payment_units)
+        self._add_deliver_unit_display_name_fields()
+        if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
+            self._set_initial_units(payment_units)
+        for field_name in ("required_deliver_units", "optional_deliver_units"):
+            self.fields[field_name].deliver_unit_rows = self._deliver_unit_rows(field_name)
+
+    def save(self, commit=True):
+        payment_unit = super().save(commit)
+        if commit:
+            self._save_deliver_unit_display_names()
+        return payment_unit
+
+    def _build_layout(self, org_slug):
+        deliver_unit_checkboxes_template = "opportunity/partials/deliver_unit_checkboxes.html"
+        return Layout(
             Div(
                 Row(
-                    Column(Field("name"), Field("description")),
+                    Column(Field("name"), Field("display_name"), Field("description")),
                     Column(
                         self.get_amounts_div(),
                         self.get_limits_div(),
@@ -1345,9 +1376,9 @@ class PaymentUnitForm(forms.ModelForm):
                     css_class="grid grid-cols-2 gap-4 p-6 card_bg",
                 ),
                 Row(
-                    Field("required_deliver_units"),
+                    Field("required_deliver_units", template=deliver_unit_checkboxes_template),
                     Field("payment_units"),
-                    Field("optional_deliver_units"),
+                    Field("optional_deliver_units", template=deliver_unit_checkboxes_template),
                     Div(
                         HTML(
                             f"""
@@ -1372,7 +1403,9 @@ class PaymentUnitForm(forms.ModelForm):
                 css_class="flex flex-col gap-4",
             )
         )
-        deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
+
+    def _add_unit_fields(self, payment_units):
+        deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in self.deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
         self.fields["required_deliver_units"] = forms.MultipleChoiceField(
             choices=deliver_unit_choices,
@@ -1394,19 +1427,62 @@ class PaymentUnitForm(forms.ModelForm):
             help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
             required=False,
         )
-        if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
-            deliver_units = self.instance.deliver_units.all()
-            self.fields["required_deliver_units"].initial = [
-                deliver_unit.pk for deliver_unit in filter(lambda x: not x.optional, deliver_units)
-            ]
-            self.fields["optional_deliver_units"].initial = [
-                deliver_unit.pk for deliver_unit in filter(lambda x: x.optional, deliver_units)
-            ]
-            payment_units_initial = []
-            for payment_unit in payment_units:
-                if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
-                    payment_units_initial.append(payment_unit.pk)
-            self.fields["payment_units"].initial = payment_units_initial
+
+    def _add_deliver_unit_display_name_fields(self):
+        display_name_field = self.fields["display_name"]
+        for deliver_unit in self.deliver_units:
+            self.fields[self._deliver_unit_display_name_field(deliver_unit)] = forms.CharField(
+                label=display_name_field.label,
+                help_text=display_name_field.help_text,
+                initial=deliver_unit.display_name,
+                max_length=DeliverUnit._meta.get_field("display_name").max_length,
+                required=False,
+            )
+
+    def _set_initial_units(self, payment_units):
+        deliver_units = self.instance.deliver_units.all()
+        self.fields["required_deliver_units"].initial = [
+            deliver_unit.pk for deliver_unit in filter(lambda x: not x.optional, deliver_units)
+        ]
+        self.fields["optional_deliver_units"].initial = [
+            deliver_unit.pk for deliver_unit in filter(lambda x: x.optional, deliver_units)
+        ]
+        payment_units_initial = []
+        for payment_unit in payment_units:
+            if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
+                payment_units_initial.append(payment_unit.pk)
+        self.fields["payment_units"].initial = payment_units_initial
+
+    def _save_deliver_unit_display_names(self):
+        # The display name input is disabled while its deliver unit is unticked, so unselected
+        # deliver units submit nothing and must keep their stored name
+        selected = {
+            int(pk) for pk in self.cleaned_data["required_deliver_units"] + self.cleaned_data["optional_deliver_units"]
+        }
+        changed = []
+        for deliver_unit in self.deliver_units:
+            if deliver_unit.pk not in selected:
+                continue
+            display_name = self.cleaned_data[self._deliver_unit_display_name_field(deliver_unit)]
+            if display_name != deliver_unit.display_name:
+                deliver_unit.display_name = display_name
+                changed.append(deliver_unit)
+        DeliverUnit.objects.bulk_update(changed, ["display_name"])
+
+    def _deliver_unit_rows(self, field_name):
+        selected = {str(pk) for pk in self[field_name].value() or []}
+        return [
+            {
+                "deliver_unit": deliver_unit,
+                "selected": str(deliver_unit.pk) in selected,
+                "display_name": self[self._deliver_unit_display_name_field(deliver_unit)],
+            }
+            for deliver_unit in self.deliver_units
+        ]
+
+    @staticmethod
+    def _deliver_unit_display_name_field(deliver_unit):
+        return f"deliver_unit_display_name_{deliver_unit.pk}"
 
     def get_amounts_div(self):
         fields = [
@@ -1447,6 +1523,10 @@ class PaymentUnitForm(forms.ModelForm):
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        required_deliver_units = set(cleaned_data.get("required_deliver_units", []))
+        if required_deliver_units & set(cleaned_data.get("optional_deliver_units", [])):
+            self.add_error("optional_deliver_units", _("A deliver unit cannot be both required and optional."))
 
         if cleaned_data.get("no_daily_limit"):
             cleaned_data["max_daily"] = None

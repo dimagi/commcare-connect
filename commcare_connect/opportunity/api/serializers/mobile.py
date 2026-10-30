@@ -60,7 +60,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
 class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
-        fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
+        fields = ["id", "payment_unit_id", "name", "display_name", "max_total", "max_daily", "amount", "end_date"]
 
 
 def _is_api_v2(context):
