@@ -5,5 +5,8 @@
   "similarity": 0.9,
   "format": ["python", "javascript"],
   "ignore": ["**/migrations/**"],
+  "ignorePattern": [
+    "(?m)^[ \\t]*(from[ \\t]+\\S+[ \\t]+)?import[ \\t]+(\\([^)]*\\)|.*)$"
+  ],
   "reporters": ["console"]
 }

@@ -2,7 +2,8 @@
 {% load i18n %}
 {% load crispy_forms_tags %}
 {% block tab_options %}
-  {% include "components/filter_modal.html" with form_id="filterForm" hx_indicator="#loadingIndicator" %}
+  {% translate "Filtering keeps only matching payment units in each worker's row and its totals." as filter_note %}
+  {% include "components/filter_modal.html" with form_id="filterForm" hx_indicator="#loadingIndicator" note=filter_note %}
   <div x-cloak
        x-data="{showVisitImportModal: false, showVisitExportModal: false}">
     {% if not opportunity.automatic_visit_verification %}

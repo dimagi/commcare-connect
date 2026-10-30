@@ -1,4 +1,3 @@
-import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
@@ -97,6 +96,8 @@ class UserVisitTable(OrgContextTable):
     justification = columns.Column("Justification", accessor="justification", visible=False)
     duration = columns.Column("Duration", accessor="duration", visible=False)
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
+    payment_unit = columns.Column("Payment Unit", accessor="completed_work__payment_unit__name", visible=False)
+    over_limit_reasons = columns.Column("Over Limit Reason", accessor="over_limit_reasons", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
     entity_name = columns.Column("Entity Name", accessor="entity_name")
@@ -117,6 +118,9 @@ class UserVisitTable(OrgContextTable):
         short = [flag[1] for flag in value.get("flags")]
         return ", ".join(short)
 
+    def value_over_limit_reasons(self, record):
+        return "; ".join(record.get_over_limit_reasons_display())
+
     class Meta:
         model = UserVisit
         fields = ("user__name", "username", "visit_date", "status", "review_status")
@@ -129,6 +133,8 @@ class UserVisitTable(OrgContextTable):
             "username",
             "user__name",
             "deliver_unit",
+            "payment_unit",
+            "over_limit_reasons",
         )
         empty_text = "No forms."
         orderable = False
@@ -204,7 +210,7 @@ class DeliverStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name of the User", footer="Total")
     username = columns.Column(accessor="user__username", visible=False)
     payment_unit = columns.Column("Name of Payment Unit")
-    completed = SumColumn("Delivered")
+    delivered = SumColumn("Delivered")
     pending = SumColumn("Pending")
     approved = SumColumn("Approved")
     rejected = SumColumn("Rejected")
@@ -220,7 +226,7 @@ class DeliverStatusTable(OrgContextTable):
             "display_name",
             "username",
             "payment_unit",
-            "completed",
+            "delivered",
             "pending",
             "approved",
             "rejected",
@@ -851,12 +857,15 @@ class WorkerVisitTable(tables.Table):
             badge_classes = "bg-green-100 text-green-800"
         else:
             badge_classes = "bg-gray-100 text-gray-800"
-        return format_html(
+        badge = format_html(
             '<span class="inline-flex w-[80px] items-center justify-center px-3 py-1 rounded text-xs font-medium {}">'
             "{}</span>",
             badge_classes,
             record.get_status_display(),
         )
+        if status == VisitValidationStatus.over_limit:
+            return header_with_tooltip(badge, "; ".join(record.get_over_limit_reasons_display()))
+        return badge
 
 
 class UserVisitVerificationTable(WorkerVisitTable):
@@ -907,7 +916,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
         super().__init__(*args, **kwargs)
         self.columns["select"].column.visible = not self.is_opportunity_pm
 
-    def get_icons(self, statuses):
+    def get_icons(self, statuses, record):
         status_meta = {
             # Review Status Pending, Visit Status Approved
             "approved_pending_review": {
@@ -922,7 +931,10 @@ class UserVisitVerificationTable(WorkerVisitTable):
             },
             VisitValidationStatus.duplicate: {"icon": "fa-solid fa-clone", "tooltip": "Duplicate Visit"},
             VisitValidationStatus.trial: {"icon": "fa-solid fa-marker", "tooltip": "Trail Visit"},
-            VisitValidationStatus.over_limit: {"icon": "fa-solid fa-marker", "tooltip": "Daily limit exceeded"},
+            VisitValidationStatus.over_limit: {
+                "icon": "fa-solid fa-marker",
+                "tooltip": "; ".join(record.get_over_limit_reasons_display()),
+            },
             VisitReviewStatus.disagree: {"icon": "fa-solid fa-thumbs-down", "tooltip": "Disagreed by PM"},
             VisitReviewStatus.agree: {"icon": "fa-solid fa-thumbs-up", "tooltip": "Agreed by PM"},
             # Review Status Pending (custom name, original choice clashes with Visit Pending)
@@ -949,7 +961,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
 
     def render_icons(self, record):
         if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
-            return self.get_icons([record.status])
+            return self.get_icons([record.status], record)
 
         status = []
         if record.review_status and record.review_created_on:
@@ -967,7 +979,7 @@ class UserVisitVerificationTable(WorkerVisitTable):
             else:
                 status.append(record.status)
 
-        return self.get_icons(status)
+        return self.get_icons(status, record)
 
 
 class UserInfoColumn(tables.Column):
@@ -1265,62 +1277,6 @@ class WorkerWorkAreaTable(OrgContextTable):
         order_by = ("-last_active",)
 
 
-class GroupedByWorkerMixin:
-    """Mixin for tables that show multiple rows per worker, hiding worker-level
-    columns on sub-rows. Subclasses must call `run_after_every_row(record)`
-    in their last rendered column."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._seen_users = set()
-
-    def _is_seen(self, record):
-        return record.pk in self._seen_users
-
-    def run_after_every_row(self, record):
-        self._seen_users.add(record.pk)
-
-    def _get_user_url(self, record):
-        base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        return f"{base_url}?{urlencode({'user': record.user.user_id})}"
-
-    def render_user(self, value, record):
-        if self._is_seen(record):
-            return ""
-        return format_html(
-            '<a href="{}" class="w-40">'
-            '<p class="text-sm text-slate-900">{}</p>'
-            '<p class="text-xs text-slate-400">{}</p>'
-            "</a>",
-            self._get_user_url(record),
-            value.name,
-            value.username,
-        )
-
-    def render_index(self, value, record):
-        page = getattr(self, "page", None)
-
-        if not hasattr(self, "_row_counter"):
-            unique_before_page = 0
-
-            if page:
-                per_page = page.paginator.per_page
-                page_start_index = (page.number - 1) * per_page
-                seen_ids = set()
-
-                for d in self.data[:page_start_index]:
-                    if d.pk not in seen_ids:
-                        seen_ids.add(d.pk)
-                        unique_before_page += 1
-
-            self._row_counter = itertools.count(start=unique_before_page + 1)
-
-        if self._is_seen(record):
-            return ""
-
-        return next(self._row_counter)
-
-
 class WorkerTasksTable(GroupedTable, OrgContextTable):
     index = IndexColumn()
     worker_status = StatusIndicatorColumn(verbose_name=_("Status"), empty_values=())
@@ -1468,53 +1424,61 @@ class TotalFlagCountsColumn(tables.Column):
 
 class TotalDeliveredColumn(tables.Column):
     def render_footer(self, bound_column, table):
-        completed = sum(row.completed for row in table.data)
+        delivered = sum(row.delivered for row in table.data)
         incomplete = sum(row.incomplete for row in table.data)
         over_limit = sum(row.over_limit for row in table.data)
-
-        rows = [
-            {"label": "Completed", "value": completed},
-            {"label": "Incomplete", "value": incomplete},
-            {"label": "Over limit", "value": over_limit},
-        ]
-        return render_to_string(
-            "components/worker_page/deliver_column.html",
-            {
-                "value": completed,
-                "rows": rows,
-            },
-        )
+        return _render_delivered_breakdown(delivered, incomplete, over_limit)
 
 
-class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
-    id = tables.Column(visible=False)
+def _render_delivered_breakdown(delivered, incomplete, over_limit, show_over_limit_warning=False):
+    rows = [
+        {"label": _("Completed"), "value": delivered - over_limit},
+        {"label": _("Incomplete"), "value": incomplete},
+        {"label": _("Over limit"), "value": over_limit},
+    ]
+    return render_to_string(
+        "components/worker_page/deliver_column.html",
+        {
+            "value": delivered,
+            "rows": rows,
+            "over_limit": show_over_limit_warning and over_limit > 0,
+        },
+    )
+
+
+class WorkerDeliveryTable(OrgContextTable):
+    """Renders `WorkerDelivery` records: one row per worker, expanding to a row per payment unit."""
+
     index = IndexColumn()
-    user = tables.Column(orderable=False, verbose_name="Name", footer="Total")
+    user = tables.Column(accessor="opportunity_access__user", orderable=False, verbose_name="Name", footer="Total")
     status = StatusIndicatorColumn(orderable=False)
-    last_active = DMYTColumn(empty_values=())
-    payment_unit = tables.Column(orderable=False)
-    delivery_progress = tables.Column(accessor="total_visits", empty_values=(), orderable=False)
+    last_active = DMYTColumn(accessor="opportunity_access__last_active", empty_values=())
+    payment_unit = tables.Column(accessor="payment_unit_label", orderable=False)
+    delivery_progress = tables.Column(
+        verbose_name=header_with_tooltip(
+            "Delivery Progress", "Pending and approved payment units against the worker's allocation"
+        ),
+        accessor="allocation",
+        empty_values=(),
+        orderable=False,
+    )
     delivered = TotalDeliveredColumn(
         verbose_name=header_with_tooltip("Delivered", "Delivered number of payment units"),
-        accessor="completed",
-        order_by="total_completed",
+        accessor="delivered",
     )
     pending = TotalFlagCountsColumn(
         verbose_name=header_with_tooltip("Pending", "Payment units with pending approvals with NM or PM"),
         status=CompletedWorkStatus.pending,
-        order_by="total_pending",
     )
     approved = TotalFlagCountsColumn(
         verbose_name=header_with_tooltip(
             "Approved", "Payment units that are fully approved automatically or manually by NM and PM"
         ),
         status=CompletedWorkStatus.approved,
-        order_by="total_approved",
     )
     rejected = TotalFlagCountsColumn(
         verbose_name=header_with_tooltip("Rejected", "Payment units that are rejected"),
         status=CompletedWorkStatus.rejected,
-        order_by="total_rejected",
     )
 
     action = tables.TemplateColumn(
@@ -1527,8 +1491,6 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
     )
 
     class Meta:
-        model = OpportunityAccess
-        fields = ("id", "user")
         sequence = (
             "index",
             "status",
@@ -1544,25 +1506,59 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         )
         order_by = ("user__name", "-last_active")
         row_attrs = {"class": "group"}
+        template_name = "tables/worker_delivery_table.html"
+
+    # Worker-level columns, left blank on a worker's per-payment-unit rows. The action opens all of the
+    # worker's visits, so repeating it per unit would suggest the visits are filtered to that unit.
+    header_columns = ("index", "status", "user", "last_active", "action")
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
         self.use_view_url = False
         super().__init__(*args, **kwargs)
+        for record in self.data:
+            record.bound_sub_rows = [GroupedTable.SubBoundRow(record=row, table=self) for row in record.sub_rows]
 
-    def render_status(self, record, value):
-        if self._is_seen(record):
-            return ""
-        return StatusIndicatorColumn.render(self.columns["status"].column, record)
+    @property
+    def has_over_limit(self):
+        return any(record.over_limit for record in self.data)
+
+    def render_index(self, record, bound_column, bound_row):
+        value = bound_column.column.render(value=None, record=record, bound_column=bound_column, bound_row=bound_row)
+        if not record.sub_rows:
+            # An invisible chevron keeps the number aligned with the expandable rows' numbers.
+            return format_html(
+                '<span class="flex items-center gap-2">'
+                '<i class="fa-solid fa-chevron-down text-xs invisible" aria-hidden="true"></i>{}</span>',
+                value,
+            )
+        return format_html(
+            '<button type="button" @click="open = !open" class="flex items-center gap-2 cursor-pointer" '
+            ':aria-expanded="open">'
+            '<i class="fa-solid fa-chevron-down text-xs transition-transform duration-200" '
+            ":class=\"{{'rotate-180': open}}\"></i>{}</button>",
+            value,
+        )
+
+    def render_user(self, value, record):
+        return format_html(
+            '<a href="{}" class="w-40">'
+            '<p class="text-sm text-slate-900">{}</p>'
+            '<p class="text-xs text-slate-400">{}</p>'
+            "</a>",
+            self._user_visits_url(record),
+            value.name,
+            value.username,
+        )
 
     def render_delivery_progress(self, record):
-        current = record.completed
-        total = record.total_visits
+        current = record.progress
+        total = record.allocation
 
         if not total:
             return "-"
 
-        percentage = round((current / total) * 100, 2)
+        percentage = min(round((current / total) * 100, 2), 100)
 
         context = {
             "current": current,
@@ -1574,39 +1570,29 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         return render_to_string("components/progressbar/simple-progressbar.html", context)
 
     def render_action(self, record):
-        base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
+        url = self._user_visits_url(record)
         template = """
             <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
                 <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
             </div>
         """
-        self.run_after_every_row(record)
         return format_html(template, url)
 
-    def render_delivered(self, record, value):
-        rows = [
-            {"label": "Completed", "value": record.completed},
-            {"label": "Incomplete", "value": record.incomplete},
-            {"label": "Over limit", "value": record.over_limit},
-        ]
-        return render_to_string(
-            "components/worker_page/deliver_column.html",
-            {
-                "value": value,
-                "rows": rows,
-            },
+    def render_delivered(self, record):
+        return _render_delivered_breakdown(
+            record.delivered, record.incomplete, record.over_limit, show_over_limit_warning=True
         )
 
     def _render_flag_counts(self, record, value, status):
         url = reverse("opportunity:worker_flag_counts", args=[self.org_slug, self.opp_id])
 
+        # Limit flag counts to the row's payment units, which the filters may have narrowed.
         params = {
             "status": status,
-            "payment_unit_id": record.payment_unit_payment_unit_id,
-            "access_id": record.opportunity_access_id,
+            "access_id": record.opportunity_access.opportunity_access_id,
+            "payment_unit_id": record.payment_unit_ids,
         }
-        full_url = f"{url}?{urlencode(params)}"
+        full_url = f"{url}?{urlencode(params, doseq=True)}"
 
         return render_to_string(
             "components/worker_page/fetch_flag_counts.html",
@@ -1626,11 +1612,9 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
     def render_rejected(self, record, value):
         return self._render_flag_counts(record, value, status=CompletedWorkStatus.rejected)
 
-    def render_last_active(self, record, value):
-        if self._is_seen(record):
-            return ""
-
-        return DMYTColumn().render(value)
+    def _user_visits_url(self, record):
+        base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
+        return f"{base_url}?{urlencode({'user': record.opportunity_access.user.user_id})}"
 
 
 class WorkerLearnStatusTable(tables.Table):
