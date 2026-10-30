@@ -7,7 +7,9 @@
 {% endblock %}
 {% block javascript %}
   {{ block.super }}
+  <script src="{% url 'javascript-catalog' %}"></script>
   <script src="{% static 'bundles/js/mapbox-bundle.js' %}"></script>
+  <script src="{% static 'bundles/js/microplanning-bundle.js' %}"></script>
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
   <script src="{% static 'bundles/js/work_area_search-bundle.js' %}"></script>
 {% endblock javascript %}
@@ -822,5 +824,5 @@
       </div>
     </div>
   </div>
-  {% include "microplanning/map_handler.html" %}
+  {{ map_config|json_script:"microplanning-config" }}
 {% endblock %}

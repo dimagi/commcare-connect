@@ -26,6 +26,10 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/org_creation_wizard.js',
     ),
+    microplanning: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/microplanning/index.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),

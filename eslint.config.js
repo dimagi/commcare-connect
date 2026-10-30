@@ -38,4 +38,22 @@ module.exports = [
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
+  {
+    // The progress map uses the copies vendors-bundle.js and mapbox-bundle.js put on window;
+    // importing them would bundle a second Alpine/Mapbox (see microplanning/index.js).
+    files: ['commcare_connect/static/js/microplanning/**/*.js'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['alpinejs', 'mapbox-gl', 'htmx.org'],
+              message: 'Use the window global instead (see index.js).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
