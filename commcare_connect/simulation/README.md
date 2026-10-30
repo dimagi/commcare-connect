@@ -13,8 +13,29 @@ Installed only by `config/settings/local.py` and `config/settings/test.py`; it n
 
 `--admin-email` must belong to an existing local user, who becomes admin of every organization the scenario
 creates. Use `--pm-email` / `--nm-email` to put the program-manager and network-manager sides on different users.
-Unless `--keep` is passed, the scenario first deletes the organizations it owns, so reruns start clean. The
-command prints the pages worth opening when it finishes.
+Unless `--keep` is passed, the scenario first deletes the organizations it owns, so reruns start clean. It
+refuses, deleting nothing, when anything outside them depends on them: another organization's opportunity
+under their program or using their apps, or a solicitation. The command prints the pages worth opening when it
+finishes.
+
+## Standard scenarios
+
+Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations, a program and managed opportunities,
+with a history that runs from about six weeks ago to now.
+
+- `baseline`: one active opportunity whose workers have finished learning and claimed it.
+- `opp_setup`: opportunities in each setup state: a draft, an active one, an ended one, and one with several
+  payment units and verification rules.
+- `learning`: workers at every learn stage: invited only, part way, finished but not claimed, failed the
+  assessment, and claimed.
+- `delivery_review`: clean and flagged visits (duplicate, no GPS, too short), approved, rejected or still pending
+  with the network manager, and agreed or disagreed by the program manager.
+- `payments`: approved work paid to workers in full and in part, and invoices that are paid, ready to pay, and
+  waiting for program-manager review.
+- `payment_units`: one opportunity paying two kinds of visit at different rates, workers paid in full and in part,
+  and an invoice whose line items split the work by payment unit.
+
+`--small` builds the fewest records that still show every state; that is what CI builds.
 
 ## Writing a scenario
 
@@ -24,6 +45,9 @@ A scenario is a module in `scenarios/` with `ORG_NAMES` and `build(sim, *, small
 **Never seed with the ORM or factories.** If no step does what you need, add one that sends the page's request
 through `sim.browser(user)`, which fails with the errors the page showed if the page refuses it. Inbound
 integrations with no page, such as HQ forwarding a form, call the function their endpoint runs.
+
+The one exception is configuration records that have no UI path: the simulated `HQServer` and its OAuth
+application, and the program's `DeliveryType`, are get-or-created.
 
 ## History and the clock
 
