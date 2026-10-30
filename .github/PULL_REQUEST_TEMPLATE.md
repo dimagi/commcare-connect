@@ -9,6 +9,14 @@
     associated with this change. Describe the rationale and design decisions.
 -->
 
+## Documentation
+
+<!--
+    Required for user-facing changes. Link the Confluence pages this change makes out of date
+    and say whether they are updated yet. Include pages linked on the ticket that turned out not
+    to need changes. Write "None" if nothing user-facing changed.
+-->
+
 ## Safety Assurance
 
 ### Safety story
