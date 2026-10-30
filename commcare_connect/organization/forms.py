@@ -273,9 +273,11 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "latest_msa_link",
             "latest_work_order_link",
             "notes",
+            "is_test",
         )
         widgets = OrganizationProfileForm.Meta.widgets | {
             "has_used_connect": forms.Select(choices=((True, gettext_lazy("Yes")), (False, gettext_lazy("No")))),
+            "is_test": forms.Select(choices=((False, gettext_lazy("No")), (True, gettext_lazy("Yes")))),
             "regions": forms.TextInput(),
             "office_address": forms.TextInput(),
         }
@@ -290,6 +292,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "latest_msa_link": gettext_lazy("Latest MSA Link"),
             "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
             "notes": gettext_lazy("Organization Notes"),
+            "is_test": gettext_lazy("Test Organization?"),
         }
         help_texts = {
             "name": gettext_lazy("Renaming the organization does not change its URL."),
@@ -320,6 +323,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
                 "has_used_connect",
                 "team_size",
                 "flws_managed",
+                "is_test",
                 _full_width("countries"),
                 _full_width("regions"),
                 _full_width("primary_sectors"),

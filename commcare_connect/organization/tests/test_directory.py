@@ -70,6 +70,13 @@ class TestOrganizationFilterSet:
 
         assert _filtered_organizations({"status": ["active", "prospective"]}) == {active, prospective}
 
+    def test_test_organizations_are_listed_only_when_asked_for(self):
+        real = OrganizationFactory()
+        test = OrganizationFactory(is_test=True)
+
+        assert set(OrganizationFilterSet(queryset=Organization.objects.all()).qs) == {real}
+        assert _filtered_organizations({"test": "true"}) == {test}
+
 
 @pytest.mark.django_db
 class TestOrganizationListAccess:
@@ -85,6 +92,15 @@ class TestOrganizationListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [org]
+
+    def test_count_leaves_out_test_organizations(self, client, user_with_directory_access):
+        OrganizationFactory()
+        OrganizationFactory(is_test=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:list"))
+
+        assert response.context["organizations_count"] == 1
 
 
 @pytest.mark.django_db
@@ -156,6 +172,13 @@ class TestOrganizationDirectoryForm:
         assert list(org.countries.all()) == [countries["KEN"]]
         assert org.contact_emails == "a@example.com\nb@example.com"
         assert org.eoi_links == "https://example.com/eoi-1\nhttps://example.com/eoi-2"
+
+    @pytest.mark.parametrize("is_test", [True, False])
+    def test_saves_is_test(self, countries, sectors, is_test):
+        form = OrganizationDirectoryForm(data=_form_data(countries, sectors, is_test=str(is_test)))
+
+        assert form.is_valid(), form.errors
+        assert form.save().is_test == is_test
 
     def test_eoi_links_must_be_urls(self, countries, sectors):
         data = _form_data(countries, sectors, eoi_links="https://example.com/eoi-1\nnot a link")
