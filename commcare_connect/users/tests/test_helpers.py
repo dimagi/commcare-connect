@@ -91,6 +91,30 @@ class TestCreateHqUserAndLink:
         with pytest.raises(CommCareHQAPIException):
             create_hq_user_and_link(mobile_user, domain, opportunity)
 
+    def test_link_created_concurrently_is_treated_as_success(self, mobile_user, opportunity, monkeypatch):
+        domain = "test-domain"
+        cc_username = f"{mobile_user.username.lower()}@{domain}.commcarehq.org"
+
+        class FakeResponse:
+            status_code = 201
+
+            def json(self):
+                return {"id": "new-uuid"}
+
+        def fake_create_hq_user(user, domain_, api_key):
+            # Simulate a parallel request inserting the link after our exists() check.
+            ConnectIDUserLink.objects.create(
+                user=user, domain=domain_, hq_server=opportunity.hq_server, commcare_username=cc_username
+            )
+            return FakeResponse()
+
+        monkeypatch.setattr("commcare_connect.users.helpers._create_hq_user", fake_create_hq_user)
+
+        assert create_hq_user_and_link(mobile_user, domain, opportunity)
+        links = ConnectIDUserLink.objects.filter(user=mobile_user, domain=domain)
+        assert links.count() == 1
+        assert links.get().hq_user_uuid == "new-uuid"
+
 
 @pytest.mark.django_db
 class TestFetchHqUserUuid:
