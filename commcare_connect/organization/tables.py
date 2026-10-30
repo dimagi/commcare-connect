@@ -69,6 +69,10 @@ def _status_column_header():
     return render_to_string("organization/directory/status_header.html", {"definitions_html": definitions_html})
 
 
+def _status_badge(status_accessor):
+    return f'{{% include "organization/directory/status_badge.html" with status={status_accessor} %}}'
+
+
 # Lists of countries, regions and sectors wrap rather than widening the table.
 WRAPPING_COLUMN_ATTRS = {"td": {"class": "whitespace-normal"}}
 
@@ -81,7 +85,7 @@ class OrganizationDirectoryTable(tables.Table):
     status = columns.TemplateColumn(
         # Lazy so the template isn't rendered at import time.
         verbose_name=lazy(_status_column_header, SafeString)(),
-        template_name="organization/directory/status_badge.html",
+        template_code=_status_badge("record.status"),
     )
     countries = columns.ManyToManyColumn(verbose_name=_("Countries"), attrs=WRAPPING_COLUMN_ATTRS)
     regions = columns.Column(verbose_name=_("Regions"), attrs=WRAPPING_COLUMN_ATTRS)
