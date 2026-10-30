@@ -25,7 +25,7 @@ class OptInFilterSet(django_filters.FilterSet):
         return super().filter_queryset(queryset)
 
 
-class OrganizationFilterSet(django_filters.FilterSet):
+class OrganizationFilterSet(OptInFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
@@ -46,6 +46,16 @@ class OrganizationFilterSet(django_filters.FilterSet):
         label=_("Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
+    test = django_filters.BooleanFilter(
+        field_name="is_test",
+        label=_("Show"),
+        widget=forms.Select(
+            choices=[("", _("Real")), ("true", _("Test"))],
+            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
+        ),
+    )
+
+    opt_in_filters = ("test",)
 
     class Meta:
         form = CSRFExemptForm
