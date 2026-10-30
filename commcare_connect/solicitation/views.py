@@ -1,13 +1,17 @@
+from functools import cached_property, partial
+
 from django.contrib import messages
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Prefetch, Q
-from django.shortcuts import redirect
+from django.http import HttpResponseBadRequest
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views.generic import DetailView, UpdateView
-from django_tables2 import SingleTableView
+from django.views.generic import DetailView, FormView, UpdateView
+from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
@@ -16,6 +20,8 @@ from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
     SolicitationForm,
+    SolicitationInvitationDeleteForm,
+    SolicitationInvitationForm,
     publish_errors,
 )
 from commcare_connect.solicitation.models import (
@@ -23,9 +29,11 @@ from commcare_connect.solicitation.models import (
     Solicitation,
     SolicitationApplication,
     SolicitationEvaluationCriterion,
+    SolicitationInvitation,
     SolicitationQuestion,
 )
-from commcare_connect.solicitation.tables import SolicitationTable
+from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
+from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
 
 # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
@@ -50,7 +58,13 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     def get_queryset(self):
         return (
             Solicitation.objects.filter(organization=self.request.org)
-            .annotate(response_count=Count("applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES)))
+            # distinct, since counting two relations joins both and would multiply each count by the other.
+            .annotate(
+                response_count=Count(
+                    "applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES), distinct=True
+                ),
+                invited_count=Count("invitations", distinct=True),
+            )
             .order_by("-date_created")
         )
 
@@ -179,3 +193,89 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         self.object.save(update_fields=["status", "modified_by", "date_modified"])
         messages.success(request, _("Solicitation published."))
         return redirect(self.get_success_url())
+
+    def get_success_url(self):
+        # Only invited organizations can apply to a private solicitation, so inviting them is the next step.
+        if not self.object.public:
+            return reverse("solicitation:invitations", args=[self.request.org.slug, self.object.solicitation_id])
+        return super().get_success_url()
+
+
+@method_decorator(org_pm_required, name="dispatch")
+class InvitationsMixin(WaffleSwitchMixin):
+    waffle_switch = SOLICITATIONS
+
+    @cached_property
+    def solicitation(self):
+        # Organizations are only invited once a solicitation is published.
+        return get_object_or_404(
+            Solicitation,
+            organization=self.request.org,
+            status=Solicitation.Status.ACTIVE,
+            solicitation_id=self.kwargs["solicitation_id"],
+        )
+
+    def get_form_kwargs(self):
+        return super().get_form_kwargs() | {"solicitation": self.solicitation}
+
+    def get_success_url(self):
+        return reverse("solicitation:invitations", args=[self.request.org.slug, self.solicitation.solicitation_id])
+
+
+class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
+    """Lists the organizations invited to a solicitation and invites more."""
+
+    form_class = SolicitationInvitationForm
+    template_name = "solicitation/solicitation_invitations.html"
+    table_class = SolicitationInvitationTable
+
+    def get_table_data(self):
+        return self.solicitation.invitations.select_related("organization", "invited_by").order_by(
+            "organization__name"
+        )
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def get_context_data(self, **kwargs):
+        org_slug = self.request.org.slug
+        path = [
+            {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
+            {
+                "title": self.solicitation.title,
+                "url": reverse("solicitation:details", args=[org_slug, self.solicitation.solicitation_id]),
+            },
+            {"title": _("Invited organizations"), "url": self.request.path},
+        ]
+        return super().get_context_data(solicitation=self.solicitation, path=path, **kwargs)
+
+    def form_valid(self, form):
+        email = self.request.user.email
+        invitations = SolicitationInvitation.objects.bulk_create(
+            SolicitationInvitation(
+                solicitation=self.solicitation,
+                organization=organization,
+                invited_by=self.request.user,
+                created_by=email,
+                modified_by=email,
+            )
+            for organization in form.cleaned_data["organizations"]
+        )
+        transaction.on_commit(partial(send_solicitation_invite_emails, [invitation.pk for invitation in invitations]))
+        messages.success(self.request, _("Invited %(count)d organization(s).") % {"count": len(invitations)})
+        return redirect(self.get_success_url())
+
+
+class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
+    """Removes the invitations selected in the table."""
+
+    form_class = SolicitationInvitationDeleteForm
+    http_method_names = ["post"]
+
+    def form_valid(self, form):
+        count, _deleted = form.cleaned_data["invitation_ids"].delete()
+        messages.success(self.request, _("Removed %(count)d invitation(s).") % {"count": count})
+        return redirect(self.get_success_url())
+
+    def form_invalid(self, form):
+        return HttpResponseBadRequest()

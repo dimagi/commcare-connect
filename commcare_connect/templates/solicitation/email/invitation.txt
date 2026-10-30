@@ -1,0 +1,6 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi,
+
+{{ solicitation.organization.name }} has invited your organization to apply to "{{ solicitation.title }}" ({{ solicitation.get_type_display }}).
+
+Applications close on {{ solicitation.application_deadline|date:"F j, Y H:i T" }}. For questions, contact {{ solicitation.contact_email }}.{% endblock %}
