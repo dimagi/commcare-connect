@@ -8,24 +8,31 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
-class OptInFilterSet(django_filters.FilterSet):
-    """Leaves out the rows behind each boolean filter in `opt_in_filters` until that filter is set."""
+class ToggleFilter(django_filters.BooleanFilter):
+    """A boolean filter shown as a toggle switch, filtering on True when on and on `off_value` when off.
 
-    opt_in_filters = ()
+    An `off_value` of None leaves the rows unfiltered while the toggle is off.
+    """
+
+    def __init__(self, *args, off_value=None, **kwargs):
+        kwargs.setdefault("widget", forms.CheckboxInput(attrs={"class": "simple-toggle"}))
+        super().__init__(*args, **kwargs)
+        self.off_value = off_value
+
+    def filter(self, qs, value):
+        # An unticked checkbox submits False, which stands for "off" rather than a value to filter on.
+        return super().filter(qs, True if value else self.off_value)
+
+
+class AlwaysBoundFilterSet(django_filters.FilterSet):
+    """Applies its filters even without data, so each filter's default holds on a plain visit to a listing."""
 
     def __init__(self, data=None, *args, **kwargs):
-        # A filterset with no data skips filtering altogether, which would list the opted-out rows
-        # on a plain visit to the listing, so it is always bound.
+        # A filterset with no data skips filtering altogether.
         super().__init__(data if data is not None else {}, *args, **kwargs)
 
-    def filter_queryset(self, queryset):
-        for name in self.opt_in_filters:
-            if not self.form.cleaned_data.get(name):
-                queryset = queryset.filter(**{self.filters[name].field_name: False})
-        return super().filter_queryset(queryset)
 
-
-class OrganizationFilterSet(OptInFilterSet):
+class OrganizationFilterSet(AlwaysBoundFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
@@ -46,16 +53,7 @@ class OrganizationFilterSet(OptInFilterSet):
         label=_("Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
-    test = django_filters.BooleanFilter(
-        field_name="is_test",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Real")), ("true", _("Test"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-
-    opt_in_filters = ("test",)
+    test = ToggleFilter(field_name="is_test", label=_("Test"), off_value=False)
 
     class Meta:
         form = CSRFExemptForm
@@ -69,7 +67,7 @@ class OrganizationFilterSet(OptInFilterSet):
         ).distinct()
 
 
-class ContactFilterSet(OptInFilterSet):
+class ContactFilterSet(AlwaysBoundFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
@@ -87,33 +85,9 @@ class ContactFilterSet(OptInFilterSet):
         label=_("Organization Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
-    main_poc = django_filters.BooleanFilter(
-        field_name="is_main_poc",
-        label=_("Contacts"),
-        widget=forms.Select(
-            choices=[("", _("Any Contacts")), ("true", _("Main Point of Contact Only"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-    archived = django_filters.BooleanFilter(
-        field_name="is_archived",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Active")), ("true", _("Archived"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-
-    organization_test = django_filters.BooleanFilter(
-        field_name="organization__is_test",
-        label=_("Organizations"),
-        widget=forms.Select(
-            choices=[("", _("Real")), ("true", _("Test"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-
-    opt_in_filters = ("archived", "organization_test")
+    main_poc = ToggleFilter(field_name="is_main_poc", label=_("Main Point of Contact"))
+    archived = ToggleFilter(field_name="is_archived", label=_("Archived"), off_value=False)
+    organization_test = ToggleFilter(field_name="organization__is_test", label=_("Test"), off_value=False)
 
     class Meta:
         form = CSRFExemptForm
