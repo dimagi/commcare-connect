@@ -235,16 +235,14 @@ class SMSStatusCallbackView(APIView):
 def get_api_keys(request):
     hq_server = request.GET.get("hq_server")
     if not hq_server:
-        return HttpResponse(
-            format_html("<option value='{}'>{}</option>", None, "Select a HQ Server to load API Keys.")
-        )
+        return HttpResponse(format_html("<option value='{}'>{}</option>", "", "Select a HQ Server to load API Keys."))
 
     api_keys = HQApiKey.objects.filter(hq_server=hq_server, user=request.user).order_by("-date_created")
     if not api_keys:
         return HttpResponse(headers={"HX-Trigger": "no-api-keys-found"})
 
     options = []
-    options.append(format_html("<option value='{}'>{}</option>", None, "Select an API key"))
+    options.append(format_html("<option value='{}'>{}</option>", "", "Select an API key"))
     for api_key in api_keys:
         api_key_hidden = f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}"
         options.append(
