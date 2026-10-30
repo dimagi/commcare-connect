@@ -1,0 +1,30 @@
+{% load i18n humanize %}
+{% comment %}How close `usage` is to its limit. `is_total` picks the wording for the card total over a payment unit's.{% endcomment %}
+{% if usage.is_exceeded %}
+  {% if is_total %}
+    {% translate "Total limit exceeded" as note %}
+  {% else %}
+    {% translate "Limit exceeded" as note %}
+  {% endif %}
+  {% include "opportunity/partials/limit_note.html" with text=note warning=True %}
+{% elif usage.is_reached %}
+  {% if is_total %}
+    {% translate "Total limit reached" as note %}
+  {% else %}
+    {% translate "Limit reached" as note %}
+  {% endif %}
+  {% include "opportunity/partials/limit_note.html" with text=note warning=True %}
+{% elif usage.remaining is not None %}
+  {% if is_total %}
+    {% blocktranslate trimmed asvar note count counter=usage.remaining with remaining=usage.remaining|intcomma %}
+      {{ remaining }} delivery remaining in total
+    {% plural %}
+      {{ remaining }} deliveries remaining in total
+    {% endblocktranslate %}
+  {% else %}
+    {% blocktranslate trimmed asvar note with remaining=usage.remaining|intcomma %}
+      {{ remaining }} remaining
+    {% endblocktranslate %}
+  {% endif %}
+  {% include "opportunity/partials/limit_note.html" with text=note warning=usage.is_nearing %}
+{% endif %}
