@@ -5,8 +5,14 @@ from django.urls import reverse
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.solicitation.models import SolicitationApplication
-from commcare_connect.solicitation.tests.factories import SolicitationApplicationFactory, SolicitationFactory
+from commcare_connect.program.tests.factories import _get_default_country
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
+from commcare_connect.solicitation.tests.factories import (
+    SolicitationApplicationFactory,
+    SolicitationEvaluationCriterionFactory,
+    SolicitationFactory,
+    SolicitationQuestionFactory,
+)
 from commcare_connect.solicitation.views import SolicitationListView
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
 
@@ -74,3 +80,149 @@ class TestSolicitationNavItem:
             response = client.get(reverse("opportunity:list", args=(org.slug,)))
 
         assert (reverse("solicitation:list", args=(org.slug,)) in response.content.decode()) is shown
+
+
+STEPS = ("details", "criteria", "questions", "publish")
+
+
+def step_url(step, solicitation):
+    return reverse(f"solicitation:{step}", args=(solicitation.organization.slug, solicitation.solicitation_id))
+
+
+@pytest.mark.django_db
+class TestSolicitationSteps:
+    @pytest.fixture(autouse=True)
+    def pm_client(self, client, program_manager_org_user_admin):
+        client.force_login(program_manager_org_user_admin)
+        with override_switch(SOLICITATIONS, active=True):
+            yield client
+
+    @pytest.fixture
+    def draft(self, program_manager_org):
+        return SolicitationFactory(organization=program_manager_org, country=_get_default_country())
+
+    def test_create_saves_draft_then_goes_to_criteria(self, pm_client, program_manager_org, draft_data):
+        response = pm_client.post(reverse("solicitation:create", args=(program_manager_org.slug,)), draft_data)
+
+        solicitation = Solicitation.objects.get(organization=program_manager_org)
+        assert solicitation.status == Solicitation.Status.DRAFT
+        assert response.url == step_url("criteria", solicitation)
+
+    def test_criteria_step_saves_rows(self, pm_client, draft, program_manager_org_user_admin):
+        data = {
+            "criteria-TOTAL_FORMS": 1,
+            "criteria-INITIAL_FORMS": 0,
+            "criteria-0-label": "Technical expertise",
+            "criteria-0-weight": 100,
+        }
+
+        response = pm_client.post(step_url("criteria", draft), data)
+
+        assert response.url == step_url("questions", draft)
+        criterion = draft.criteria.get()
+        assert (criterion.label, criterion.weight, criterion.created_by) == (
+            "Technical expertise",
+            100,
+            program_manager_org_user_admin.email,
+        )
+
+    def test_questions_step_links_saved_criterion(self, pm_client, draft):
+        criterion = SolicitationEvaluationCriterionFactory(solicitation=draft)
+        data = {
+            "questions-TOTAL_FORMS": 1,
+            "questions-INITIAL_FORMS": 0,
+            "questions-0-text": "Describe your team",
+            "questions-0-question_type": "text",
+            "questions-0-criterion": criterion.pk,
+        }
+
+        response = pm_client.post(step_url("questions", draft), data)
+
+        assert response.url == step_url("publish", draft)
+        assert draft.questions.get().criterion == criterion
+
+    @pytest.mark.parametrize("weight, published", [(100, True), (90, False)])
+    def test_publish(self, pm_client, draft, weight, published):
+        SolicitationEvaluationCriterionFactory(solicitation=draft, weight=weight)
+
+        response = pm_client.post(step_url("publish", draft))
+
+        draft.refresh_from_db()
+        assert (draft.status == Solicitation.Status.ACTIVE) is published
+        assert response.status_code == (HTTPStatus.FOUND if published else HTTPStatus.OK)
+
+    @pytest.mark.parametrize("step", ["criteria", "questions"])
+    def test_active_solicitation_locks_criteria_and_questions(self, pm_client, program_manager_org, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE)
+        criterion = SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=100)
+        question = SolicitationQuestionFactory(solicitation=solicitation, text="Original")
+        data = {
+            f"{step}-TOTAL_FORMS": 1,
+            f"{step}-INITIAL_FORMS": 1,
+            f"{step}-0-id": criterion.pk if step == "criteria" else question.pk,
+            f"{step}-0-DELETE": "on",
+        }
+
+        response = pm_client.post(step_url(step, solicitation), data)
+
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert list(solicitation.criteria.all()) == [criterion]
+        assert list(solicitation.questions.all()) == [question]
+
+    @pytest.mark.parametrize("step", STEPS)
+    @pytest.mark.parametrize("status", [Solicitation.Status.CLOSED, Solicitation.Status.CANCELLED])
+    def test_finished_solicitations_are_not_editable(self, pm_client, program_manager_org, status, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+
+        assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.NOT_FOUND
+
+    @pytest.mark.parametrize("step", STEPS)
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_other_orgs_solicitation_not_found(self, pm_client, program_manager_org, method, step):
+        solicitation = SolicitationFactory(organization__program_manager=True)
+        url = reverse(f"solicitation:{step}", args=(program_manager_org.slug, solicitation.solicitation_id))
+
+        assert getattr(pm_client, method)(url).status_code == HTTPStatus.NOT_FOUND
+
+    @pytest.mark.parametrize("step", STEPS)
+    @pytest.mark.parametrize("status", [Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE])
+    def test_steps_render(self, pm_client, program_manager_org, status, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+        SolicitationQuestionFactory(solicitation=solicitation)
+
+        assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.OK
+
+    @pytest.mark.parametrize(
+        "step, previous_step",
+        [("details", None), ("criteria", "details"), ("questions", "criteria"), ("publish", "questions")],
+    )
+    def test_step_navigation(self, pm_client, draft, program_manager_org, step, previous_step):
+        response = pm_client.get(step_url(step, draft))
+
+        assert response.context["path"] == [
+            {"title": "Solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
+            {"title": draft.title},
+        ]
+        assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
+
+    @pytest.mark.parametrize(
+        "status, linked",
+        [
+            (Solicitation.Status.DRAFT, True),
+            (Solicitation.Status.ACTIVE, True),
+            (Solicitation.Status.CLOSED, False),
+            (Solicitation.Status.CANCELLED, False),
+        ],
+    )
+    def test_list_links_only_editable_titles(self, pm_client, program_manager_org, status, linked):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+
+        response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
+
+        assert (step_url("details", solicitation) in response.content.decode()) is linked
+
+    def test_create_renders(self, pm_client, program_manager_org):
+        response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
+
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["path"][-1] == {"title": "New solicitation"}
