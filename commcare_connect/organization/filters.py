@@ -104,7 +104,16 @@ class ContactFilterSet(OptInFilterSet):
         ),
     )
 
-    opt_in_filters = ("archived",)
+    organization_test = django_filters.BooleanFilter(
+        field_name="organization__is_test",
+        label=_("Organizations"),
+        widget=forms.Select(
+            choices=[("", _("Real")), ("true", _("Test"))],
+            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
+        ),
+    )
+
+    opt_in_filters = ("archived", "organization_test")
 
     class Meta:
         form = CSRFExemptForm
