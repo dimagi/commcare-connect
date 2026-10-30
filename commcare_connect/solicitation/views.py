@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.messages.views import SuccessMessageMixin
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -112,11 +113,6 @@ class SolicitationFormSetStepView(SolicitationStepMixin, UpdateView):
 
     template_name = "solicitation/solicitation_step_form.html"
 
-    def post(self, request, *args, **kwargs):
-        if self.get_object().structure_locked:
-            return self.http_method_not_allowed(request, *args, **kwargs)
-        return super().post(request, *args, **kwargs)
-
     def get_form(self, form_class=None):
         formset = super().get_form(form_class)
         if self.object.structure_locked:
@@ -126,6 +122,8 @@ class SolicitationFormSetStepView(SolicitationStepMixin, UpdateView):
         return formset
 
     def form_valid(self, formset):
+        if self.object.structure_locked:
+            raise PermissionDenied
         # Not super(): ModelFormMixin would replace self.object with the list formset.save() returns.
         for form in formset:
             form.instance.created_by = form.instance.created_by or self.request.user.email
