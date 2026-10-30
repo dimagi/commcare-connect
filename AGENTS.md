@@ -13,6 +13,7 @@ inv down                            # docker compose down
 ./manage.py migrate                 # run migrations (dev)
 ./manage.py migrate_multi           # run migrations on both primary + secondary DB (prod)
 ./manage.py runserver               # dev server
+./manage.py run_scenario <name> --admin-email you@example.com  # build local data through the app (simulation/)
 
 # JavaScript/CSS
 npm ci                              # install deps
@@ -75,6 +76,7 @@ commcare_connect/
   flags/           # Waffle feature flag/switch name constants
   multidb/         # Secondary DB support + logical replication
   deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
+  simulation/      # Builds local data by driving the real forms/functions/APIs; only in INSTALLED_APPS under local.py and test.py
   web/             # Context processors, shared template tags
   prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
@@ -143,6 +145,10 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
 - **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
 - **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
+
+## Local data
+
+- **To create local dev data (not test fixtures), use the `simulation` steps or a scenario** — never seed with the ORM or factories. If a step is missing, add it (extracting view logic into a function if needed). Changing a user flow means updating its step; `test_scenarios.py` usually fails otherwise. See `commcare_connect/simulation/README.md`
 
 ## Gotchas
 
