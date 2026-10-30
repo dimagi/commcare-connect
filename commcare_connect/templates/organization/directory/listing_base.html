@@ -33,14 +33,21 @@
     {% include "organization/directory/tabs.html" %}
     <form method="get" class="card_bg flex flex-col gap-3">
       <div class="flex flex-wrap items-center gap-3">
-        <div class="simple-input w-full md:w-80">
+        {# Sized to match the tom-select filters beside it. #}
+        <div class="simple-input h-9 w-full md:w-48">
           <i class="fa-solid fa-magnifying-glass text-gray-400" aria-hidden="true"></i>
           {{ filter.form.search }}
         </div>
         {% block filters %}
         {% endblock filters %}
-        <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
-        <a href="{{ request.path }}" class="underline text-sm text-gray-500">{% translate "Reset" %}</a>
+        <button type="submit"
+                class="button button-sm primary-dark inline-flex h-9 items-center">{% translate "Apply" %}</button>
+        <a href="{{ request.path }}"
+           class="button-icon shadow-sm"
+           x-tooltip.raw="{% translate 'Reset' %}"
+           aria-label="{% translate 'Reset' %}">
+          <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+        </a>
       </div>
       <p class="text-sm text-gray-500 self-end">
         {% block result_count %}

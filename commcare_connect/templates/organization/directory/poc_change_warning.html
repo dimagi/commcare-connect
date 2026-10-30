@@ -1,0 +1,8 @@
+{% load i18n %}
+{% if main_poc_to_replace %}
+  <p class="hint text-orange-600">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+    {% translate "this contact" as this_contact %}
+    {% blocktranslate with organization=main_poc_to_replace.organization.name current=main_poc_to_replace.name new=name|default:this_contact %}This changes {{ organization }}'s point of contact from {{ current }} to {{ new }}.{% endblocktranslate %}
+  </p>
+{% endif %}
