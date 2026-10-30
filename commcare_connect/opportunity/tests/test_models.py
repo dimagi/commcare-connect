@@ -17,9 +17,12 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
     OpportunityClaimLimit,
+    OverLimitReasonChoices,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,  # added via pghistory
     TaskTypeModeChoices,
+    UserVisit,
+    VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -1008,3 +1011,31 @@ def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2
 
     assert opportunity.daily_max_visits_per_user == expected_v1
     assert opportunity.daily_max_visits_per_user_v2 == expected_v2
+
+
+@pytest.mark.parametrize(
+    "status, reasons, expected",
+    [
+        (VisitValidationStatus.approved, [], []),
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.max_daily],
+            [OverLimitReasonChoices.max_daily.label],
+        ),
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.claim_ended, OverLimitReasonChoices.max_visits],
+            [OverLimitReasonChoices.claim_ended.label, OverLimitReasonChoices.max_visits.label],
+        ),
+        (VisitValidationStatus.over_limit, [], ["Not recorded (visit predates over-limit reason tracking)"]),
+        # Reasons outlive a later manual review
+        (
+            VisitValidationStatus.rejected,
+            [OverLimitReasonChoices.max_daily],
+            [OverLimitReasonChoices.max_daily.label],
+        ),
+    ],
+)
+def test_user_visit_over_limit_reasons_display(status, reasons, expected):
+    visit = UserVisit(status=status, over_limit_reasons=reasons)
+    assert visit.get_over_limit_reasons_display() == expected

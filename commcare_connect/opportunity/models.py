@@ -1224,6 +1224,19 @@ class UserVisit(XFormBaseModel):
             return flags
         return []
 
+    def get_over_limit_reasons_display(self) -> list[str]:
+        """Labels for every limit that barred this visit, for showing to users.
+
+        Reasons are kept when a reviewer later changes the visit's status, so they are shown
+        whatever the status. Visits that went over limit before reasons were recorded have
+        none stored, so they get an explicit "not recorded" label rather than an empty list.
+        """
+        if self.over_limit_reasons:
+            return [OverLimitReasonChoices(reason).label for reason in self.over_limit_reasons]
+        if self.status == VisitValidationStatus.over_limit:
+            return [gettext("Not recorded (visit predates over-limit reason tracking)")]
+        return []
+
     @property
     def hq_link(self):
         hq_url = self.deliver_unit.app.hq_server.url

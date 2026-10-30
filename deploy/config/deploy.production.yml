@@ -2,6 +2,11 @@ logging:
   options:
     awslogs-region: 'eu-west-1'
 
+# The image defaults to config.settings.staging (Dockerfile); merged into every role's env.
+env:
+  clear:
+    DJANGO_SETTINGS_MODULE: config.settings.production
+
 traefik:
   options:
     log-driver: awslogs
