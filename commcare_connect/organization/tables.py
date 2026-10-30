@@ -69,6 +69,14 @@ def _status_column_header():
     return render_to_string("organization/directory/status_header.html", {"definitions_html": definitions_html})
 
 
+def _status_badge(status_accessor):
+    return f'{{% include "organization/directory/status_badge.html" with status={status_accessor} %}}'
+
+
+# Lists of countries, regions and sectors wrap rather than widening the table.
+WRAPPING_COLUMN_ATTRS = {"td": {"class": "whitespace-normal"}}
+
+
 class OrganizationDirectoryTable(tables.Table):
     # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
     # instead of the referer's.
@@ -77,13 +85,14 @@ class OrganizationDirectoryTable(tables.Table):
     status = columns.TemplateColumn(
         # Lazy so the template isn't rendered at import time.
         verbose_name=lazy(_status_column_header, SafeString)(),
-        template_name="organization/directory/status_badge.html",
+        template_code=_status_badge("record.status"),
     )
-    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"))
+    countries = columns.ManyToManyColumn(verbose_name=_("Countries"), attrs=WRAPPING_COLUMN_ATTRS)
+    regions = columns.Column(verbose_name=_("Regions"), attrs=WRAPPING_COLUMN_ATTRS)
+    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"), attrs=WRAPPING_COLUMN_ATTRS)
     # Team size is stored as a bracket ("11-50"), which doesn't sort meaningfully as text.
     team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
     flws_managed = columns.Column(verbose_name=_("FLWs Managed"))
-    date_created = columns.DateTimeColumn(verbose_name=_("Added"), format="d-M-Y")
     actions = columns.TemplateColumn(
         verbose_name=_("Actions"),
         template_name="organization/directory/row_actions.html",
@@ -93,7 +102,7 @@ class OrganizationDirectoryTable(tables.Table):
 
     class Meta:
         model = Organization
-        fields = ("name", "status", "primary_sectors", "team_size", "flws_managed", "date_created")
+        fields = ("name", "status", "countries", "regions", "primary_sectors", "team_size", "flws_managed")
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")
@@ -105,14 +114,20 @@ class ContactDirectoryTable(tables.Table):
     use_view_url = False
     name = columns.Column(verbose_name=_("Contact Name"))
     organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    organization_status = columns.TemplateColumn(
+        verbose_name=lazy(_status_column_header, SafeString)(),
+        accessor="organization__status",
+        template_code=_status_badge("record.organization.status"),
+    )
     title = columns.Column(verbose_name=_("Role / Title"))
     is_main_poc = columns.TemplateColumn(
-        verbose_name=_("POC"),
+        verbose_name=_("Point of Contact"),
         template_name="organization/directory/main_poc_badge.html",
         orderable=False,
     )
     email = columns.TemplateColumn(verbose_name=_("Email"), template_name="organization/directory/email_link.html")
     phone = columns.Column(verbose_name=_("Phone"), orderable=False)
+    active = columns.Column(verbose_name=_("Active"), accessor="is_archived")
     actions = columns.TemplateColumn(
         verbose_name=_("Actions"),
         template_name="organization/directory/contact_row_actions.html",
@@ -122,17 +137,20 @@ class ContactDirectoryTable(tables.Table):
 
     class Meta:
         model = Contact
-        fields = ("name", "organization", "title", "is_main_poc", "email", "phone")
+        fields = ("name", "organization", "organization_status", "title", "is_main_poc", "email", "phone", "active")
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No contacts found.")
+
+    def render_active(self, value):
+        return _("No") if value else _("Yes")
 
 
 class ContactExportTable(tables.Table):
     name = SpreadsheetSafeColumn(verbose_name=_("Contact Name"))
     organization = SpreadsheetSafeColumn(verbose_name=_("Organization"), accessor="organization__name")
     title = SpreadsheetSafeColumn(verbose_name=_("Role / Title"))
-    is_main_poc = columns.Column(verbose_name=_("Main POC"))
+    is_main_poc = columns.Column(verbose_name=_("Main Point of Contact"))
     email = SpreadsheetSafeColumn(verbose_name=_("Email"))
     phone = SpreadsheetSafeColumn(verbose_name=_("Phone"))
     notes = SpreadsheetSafeColumn(verbose_name=_("Notes"))

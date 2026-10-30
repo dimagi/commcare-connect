@@ -23,10 +23,12 @@ from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.opportunity.forms import PaymentExportForm
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     ContactForm,
+    ContactPocChangeForm,
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
@@ -304,8 +306,8 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
         context = super().get_context_data(**kwargs)
         context.update(
             {
-                "organizations_count": Organization.objects.count(),
-                "contacts_count": Contact.objects.filter(is_archived=False).count(),
+                "organizations_count": Organization.objects.filter(is_test=False).count(),
+                "contacts_count": Contact.objects.filter(is_archived=False, organization__is_test=False).count(),
                 "result_count": context["table"].paginator.count,
             }
         )
@@ -318,7 +320,7 @@ class OrganizationListView(LLODirectoryListView):
     template_name = "organization/directory/organization_list.html"
 
     def get_queryset(self):
-        return Organization.objects.prefetch_related("primary_sectors").order_by("-date_created")
+        return Organization.objects.prefetch_related("countries", "primary_sectors").order_by("-date_created")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -344,6 +346,7 @@ class ContactListView(LLODirectoryListView):
             {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
         ]
         context["export_task_id"] = self.request.GET.get("export_task_id")
+        context["export_form"] = PaymentExportForm()
         return context
 
 
@@ -410,6 +413,19 @@ class ContactUpdateView(ContactFormMixin, UpdateView):
     success_message = gettext_lazy("Contact {name} updated.")
 
 
+class ContactPocWarningView(LLODirectoryAccessMixin, View):
+    """Warns, as a contact form fragment, which main point of contact the form's choices would replace."""
+
+    http_method_names = ["get"]
+
+    def get(self, request):
+        context = {
+            "main_poc_to_replace": ContactPocChangeForm(request.GET).main_poc_to_replace(),
+            "name": request.GET.get("name", "").strip(),
+        }
+        return render(request, "organization/directory/poc_change_warning.html", context)
+
+
 class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     model = Contact
     slug_field = "contact_id"
@@ -434,12 +450,12 @@ class ContactRestoreView(ContactArchiveView):
 
 class ContactExportView(LLODirectoryAccessMixin, View):
     http_method_names = ["post"]
-    EXPORT_FORMATS = ("csv", "xlsx")
 
     def post(self, request, *args, **kwargs):
-        export_format = request.POST.get("export_format")
-        if export_format not in self.EXPORT_FORMATS:
+        form = PaymentExportForm(data=request.POST)
+        if not form.is_valid():
             return HttpResponseBadRequest(gettext("Unsupported export format."))
+        export_format = form.cleaned_data["format"]
         task_id = str(uuid.uuid4())
         transaction.on_commit(
             partial(
