@@ -373,6 +373,12 @@ def internal_features(request):
             "url": reverse("reports:delivery_stats_report"),
         },
         {
+            "perm": KPI_REPORT_ACCESS,
+            "name": "Delivery Stats Monthly Export",
+            "description": "Manage who receives the monthly Delivery Stats email.",
+            "url": reverse("reports:delivery_stats_recipients"),
+        },
+        {
             "perm": INVOICE_REPORT_ACCESS,
             "name": "Invoice Report",
             "description": "Access the Invoice reports dashboard.",

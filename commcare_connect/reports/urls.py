@@ -6,6 +6,18 @@ app_name = "reports"
 
 urlpatterns = [
     path("delivery_stats", view=views.DeliveryStatsReportView.as_view(), name="delivery_stats_report"),
+    path(
+        "delivery_stats/recipients",
+        view=views.DeliveryStatsRecipientsView.as_view(),
+        name="delivery_stats_recipients",
+    ),
+    path(
+        "delivery_stats/recipients/<int:user_id>/remove",
+        view=views.RemoveDeliveryStatsRecipientView.as_view(),
+        name="remove_delivery_stats_recipient",
+    ),
+    path("delivery_stats/email_view", view=views.email_delivery_stats_view, name="email_delivery_stats_view"),
+    path("delivery_stats/email_monthly", view=views.email_delivery_stats_monthly, name="email_delivery_stats_monthly"),
     path("invoice_report", view=views.InvoiceReportView.as_view(), name="invoice_report"),
     path("export_invoice_report", view=views.export_invoice_report, name="export_invoice_report"),
     path("export_status/<slug:task_id>", view=views.export_status, name="export_status"),
