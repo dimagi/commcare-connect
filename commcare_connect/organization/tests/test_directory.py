@@ -9,7 +9,7 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
-from commcare_connect.organization.tables import OrganizationDirectoryTable
+from commcare_connect.organization.tables import ContactDirectoryTable, OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.celery import get_export_storage
@@ -129,6 +129,18 @@ def test_countries_and_regions_columns_list_them(countries):
 
     assert set(row.get_cell("countries").split(", ")) == {countries["KEN"].name, countries["TZA"].name}
     assert row.get_cell("regions") == "Nyanza, Mwanza"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_archived, active", [(False, "Yes"), (True, "No")])
+def test_contact_row_shows_its_organization_status_and_whether_it_is_active(is_archived, active):
+    contact = ContactFactory(
+        organization=OrganizationFactory(status=OrganizationStatus.ACTIVE), is_archived=is_archived
+    )
+    row = ContactDirectoryTable([contact]).rows[0]
+
+    assert "positive-light" in row.get_cell("organization_status")
+    assert row.get_cell("active") == active
 
 
 def _form_data(country_by_code, sector_by_key, **overrides):
