@@ -2,6 +2,8 @@
 
 - ``ORG_NAMES``: the organizations it creates, which ``run_scenario`` deletes before rebuilding them;
 - ``build(sim, *, small)``: the steps, where ``small`` asks for the fewest records that still show every state.
+
+Modules whose names start with an underscore hold what the scenarios share and are not scenarios.
 """
 
 import importlib
@@ -9,7 +11,7 @@ import pkgutil
 
 
 def scenario_names():
-    return sorted(module.name for module in pkgutil.iter_modules(__path__))
+    return sorted(module.name for module in pkgutil.iter_modules(__path__) if not module.name.startswith("_"))
 
 
 def get_scenario(name):

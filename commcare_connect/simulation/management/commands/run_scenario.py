@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from commcare_connect.simulation.fakes import local_fakes
-from commcare_connect.simulation.reset import reset_orgs
+from commcare_connect.simulation.reset import ResetBlocked, reset_orgs
 from commcare_connect.simulation.scenarios import get_scenario, scenario_names
 from commcare_connect.simulation.steps import Sim
 from commcare_connect.users.models import User
@@ -25,17 +25,17 @@ class Command(BaseCommand):
         if not settings.DEBUG and not options["force"]:
             raise CommandError("run_scenario is for local development; pass --force to run with DEBUG off.")
 
-        try:
-            scenario = get_scenario(options["scenario"])
-        except LookupError as e:
-            raise CommandError(str(e))
+        scenario = get_scenario(options["scenario"])
         pm_admin = self._get_user(options["pm_email"] or options["admin_email"], "--pm-email/--admin-email")
         nm_admin = self._get_user(options["nm_email"] or options["admin_email"], "--nm-email/--admin-email")
 
         sim = Sim(pm_admin=pm_admin, nm_admin=nm_admin, seed=options["seed"], log=self.stdout.write)
         with local_fakes():
             if not options["keep"]:
-                reset_orgs(scenario.ORG_NAMES)
+                try:
+                    reset_orgs(scenario.ORG_NAMES, log=self.stdout.write)
+                except ResetBlocked as e:
+                    raise CommandError(str(e))
             scenario.build(sim, small=options["small"])
 
         self.stdout.write(self.style.SUCCESS(f"Built scenario {options['scenario']!r}."))
