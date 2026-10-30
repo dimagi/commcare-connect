@@ -358,7 +358,7 @@ class ContactForm(forms.ModelForm):
             "name": gettext_lazy("Contact Full Name"),
             "organization": gettext_lazy("Organization Name"),
             "title": gettext_lazy("Role / Title"),
-            "is_main_poc": gettext_lazy("Main POC?"),
+            "is_main_poc": gettext_lazy("Main Point of Contact?"),
             "email": gettext_lazy("Email Address"),
             "phone": gettext_lazy("Phone Number"),
             "notes": gettext_lazy("Contact Notes"),

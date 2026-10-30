@@ -121,7 +121,7 @@ class ContactDirectoryTable(tables.Table):
     )
     title = columns.Column(verbose_name=_("Role / Title"))
     is_main_poc = columns.TemplateColumn(
-        verbose_name=_("POC"),
+        verbose_name=_("Point of Contact"),
         template_name="organization/directory/main_poc_badge.html",
         orderable=False,
     )
@@ -150,7 +150,7 @@ class ContactExportTable(tables.Table):
     name = SpreadsheetSafeColumn(verbose_name=_("Contact Name"))
     organization = SpreadsheetSafeColumn(verbose_name=_("Organization"), accessor="organization__name")
     title = SpreadsheetSafeColumn(verbose_name=_("Role / Title"))
-    is_main_poc = columns.Column(verbose_name=_("Main POC"))
+    is_main_poc = columns.Column(verbose_name=_("Main Point of Contact"))
     email = SpreadsheetSafeColumn(verbose_name=_("Email"))
     phone = SpreadsheetSafeColumn(verbose_name=_("Phone"))
     notes = SpreadsheetSafeColumn(verbose_name=_("Notes"))

@@ -91,7 +91,7 @@ class ContactFilterSet(OptInFilterSet):
         field_name="is_main_poc",
         label=_("Contacts"),
         widget=forms.Select(
-            choices=[("", _("Any Contacts")), ("true", _("Main POC Only"))],
+            choices=[("", _("Any Contacts")), ("true", _("Main Point of Contact Only"))],
             attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
         ),
     )
