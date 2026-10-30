@@ -27,7 +27,10 @@ from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.jira_service_desk import JiraServiceDeskNotConfigured, attach_temporary_file, create_request
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
-from commcare_connect.opportunity.deletion import delete_opportunity
+from commcare_connect.opportunity.deletion import (
+    completed_work_using_payment_units_from_other_opportunities,
+    delete_opportunity,
+)
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
     export_deliver_status_table,
@@ -182,14 +185,27 @@ def invite_user(user_id, opportunity_access_id):
 def delete_stale_opportunities():
     cutoff = now() - relativedelta(months=6)
     visit_exists = UserVisit.objects.filter(opportunity=OuterRef("pk"))
+    payment_units_in_use_elsewhere = completed_work_using_payment_units_from_other_opportunities(OuterRef("pk"))
     stale_opportunities = (
         Opportunity.objects.filter(date_created__lt=cutoff)
-        .annotate(has_visits=Exists(visit_exists))
+        .annotate(
+            has_visits=Exists(visit_exists),
+            payment_units_in_use=Exists(payment_units_in_use_elsewhere),
+        )
         .filter(has_visits=False)
         .order_by("id")
     )
     count = 0
     for opportunity in stale_opportunities:
+        if opportunity.payment_units_in_use:
+            # Its PaymentUnits are still referenced by another opportunity's CompletedWork, so
+            # deleting it would break that opportunity's data. Leave it in place.
+            logger.info(
+                "Skipping stale opportunity %s (%s): its payment units are used by another opportunity",
+                opportunity.id,
+                opportunity.name,
+            )
+            continue
         logger.info(
             "Deleting stale opportunity %s (%s) created on %s",
             opportunity.id,

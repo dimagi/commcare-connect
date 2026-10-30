@@ -7,7 +7,7 @@ import sentry_sdk
 from django.apps import apps
 from django.db import transaction
 
-from commcare_connect.opportunity.models import DeliverUnit, Opportunity
+from commcare_connect.opportunity.models import CompletedWork, DeliverUnit, Opportunity
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,26 @@ OPPORTUNITY_DELETIONS: Sequence[ModelDeletion] = (
 )
 
 
+class OpportunityInUseError(Exception):
+    """Raised when an opportunity cannot be deleted without breaking another opportunity's data."""
+
+
+def completed_work_using_payment_units_from_other_opportunities(opportunity_id):
+    """CompletedWork belonging to *other* opportunities that references this opportunity's PaymentUnits.
+
+    A DeliverUnit belongs to a (possibly shared) deliver app and its PaymentUnit is used when
+    CompletedWork is created (see form_receiver.processor.process_deliver_unit), so another
+    opportunity's CompletedWork can point at this opportunity's PaymentUnit. CompletedWork.payment_unit
+    is DO_NOTHING and PaymentUnit.opportunity is PROTECT, so such an opportunity cannot be deleted
+    without corrupting the other opportunity's work/payment records.
+
+    ``opportunity_id`` may be a value or an ``OuterRef``.
+    """
+    return CompletedWork.objects.filter(payment_unit__opportunity_id=opportunity_id).exclude(
+        opportunity_access__opportunity_id=opportunity_id
+    )
+
+
 def delete_opportunity(opportunity_or_id):
     if isinstance(opportunity_or_id, Opportunity):
         opportunity = opportunity_or_id
@@ -67,6 +87,18 @@ def delete_opportunity(opportunity_or_id):
     opportunity_id = opportunity.pk
     total_deleted = 0
     try:
+        in_use = list(
+            completed_work_using_payment_units_from_other_opportunities(opportunity_id)
+            .values_list("payment_unit_id", "opportunity_access__opportunity_id")
+            .distinct()
+        )
+        if in_use:
+            payment_unit_ids = sorted({payment_unit_id for payment_unit_id, _ in in_use})
+            other_opportunity_ids = sorted({other_opp_id for _, other_opp_id in in_use})
+            raise OpportunityInUseError(
+                f"Opportunity {opportunity_id} cannot be deleted: its PaymentUnit(s) {payment_unit_ids} are "
+                f"referenced by CompletedWork of other opportunities {other_opportunity_ids}"
+            )
         with transaction.atomic():
             for deletion in OPPORTUNITY_DELETIONS:
                 if deletion.app_label == "opportunity" and deletion.model_name == "DeliverUnit":
