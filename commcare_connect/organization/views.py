@@ -23,6 +23,7 @@ from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.opportunity.forms import PaymentExportForm
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
@@ -344,6 +345,7 @@ class ContactListView(LLODirectoryListView):
             {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
         ]
         context["export_task_id"] = self.request.GET.get("export_task_id")
+        context["export_form"] = PaymentExportForm()
         return context
 
 
@@ -434,12 +436,12 @@ class ContactRestoreView(ContactArchiveView):
 
 class ContactExportView(LLODirectoryAccessMixin, View):
     http_method_names = ["post"]
-    EXPORT_FORMATS = ("csv", "xlsx")
 
     def post(self, request, *args, **kwargs):
-        export_format = request.POST.get("export_format")
-        if export_format not in self.EXPORT_FORMATS:
+        form = PaymentExportForm(data=request.POST)
+        if not form.is_valid():
             return HttpResponseBadRequest(gettext("Unsupported export format."))
+        export_format = form.cleaned_data["format"]
         task_id = str(uuid.uuid4())
         transaction.on_commit(
             partial(

@@ -554,6 +554,15 @@ class TestContactExportViews:
             args=("search=grace", user_with_directory_access.pk, "xlsx"), task_id=task_id
         )
 
+    def test_listing_offers_the_export_modal_with_the_listing_filters(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contacts"), {"search": "grace"})
+
+        content = response.content.decode()
+        assert "Export Contacts" in content
+        assert f'action="{reverse("organization_directory:contact_export")}?search=grace"' in content
+
     def test_rejects_an_unsupported_format(self, client, user_with_directory_access):
         client.force_login(user_with_directory_access)
 
