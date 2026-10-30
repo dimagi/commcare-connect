@@ -8,6 +8,18 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
+class ToggleFilter(django_filters.BooleanFilter):
+    """A boolean filter shown as a toggle switch, filtering only while it is switched on."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", forms.CheckboxInput(attrs={"class": "simple-toggle"}))
+        super().__init__(*args, **kwargs)
+
+    def filter(self, qs, value):
+        # An unticked checkbox submits False rather than nothing, which would filter on False.
+        return super().filter(qs, True if value else None)
+
+
 class OptInFilterSet(django_filters.FilterSet):
     """Leaves out the rows behind each boolean filter in `opt_in_filters` until that filter is set."""
 
@@ -46,14 +58,7 @@ class OrganizationFilterSet(OptInFilterSet):
         label=_("Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
-    test = django_filters.BooleanFilter(
-        field_name="is_test",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Real")), ("true", _("Test"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
+    test = ToggleFilter(field_name="is_test", label=_("Test"))
 
     opt_in_filters = ("test",)
 
@@ -87,31 +92,9 @@ class ContactFilterSet(OptInFilterSet):
         label=_("Organization Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
-    main_poc = django_filters.BooleanFilter(
-        field_name="is_main_poc",
-        label=_("Contacts"),
-        widget=forms.Select(
-            choices=[("", _("Any Contacts")), ("true", _("Main Point of Contact Only"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-    archived = django_filters.BooleanFilter(
-        field_name="is_archived",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Active")), ("true", _("Archived"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-
-    organization_test = django_filters.BooleanFilter(
-        field_name="organization__is_test",
-        label=_("Organizations"),
-        widget=forms.Select(
-            choices=[("", _("Real")), ("true", _("Test"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
+    main_poc = ToggleFilter(field_name="is_main_poc", label=_("Main Point of Contact"))
+    archived = ToggleFilter(field_name="is_archived", label=_("Archived"))
+    organization_test = ToggleFilter(field_name="organization__is_test", label=_("Test"))
 
     opt_in_filters = ("archived", "organization_test")
 
