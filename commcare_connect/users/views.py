@@ -9,6 +9,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
 from django.db import transaction
+from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
@@ -33,7 +34,16 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
+from commcare_connect.organization.forms import PrimarySectorForm
+from commcare_connect.organization.models import PrimarySector
+from commcare_connect.organization.tables import PrimarySectorTable
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.users.managed_options import (
+    ManagedOptionCreateView,
+    ManagedOptionDeleteView,
+    ManagedOptionListView,
+    ManagedOptionUpdateView,
+)
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
@@ -41,6 +51,7 @@ from commcare_connect.utils.permission_const import (
     INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
+    ORG_MANAGEMENT_SETTINGS_ACCESS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
 )
@@ -390,9 +401,47 @@ def internal_features(request):
             "description": "Manage internal permissions for users.",
             "url": reverse("users:permission_management"),
         },
+        {
+            "perm": ORG_MANAGEMENT_SETTINGS_ACCESS,
+            "name": "Primary Sectors",
+            "description": "Manage the primary sector options for organization profiles.",
+            "url": reverse("users:primary_sector_list"),
+        },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
+
+
+class PrimarySectorMixin:
+    model = PrimarySector
+    form_class = PrimarySectorForm
+    url_prefix = "users:primary_sector"
+    in_use_message = _("'%(name)s' is used by one or more organizations and cannot be deleted.")
+    in_use_hint = _("Used by organizations, so it cannot be deleted.")
+
+
+class PrimarySectorListView(PrimarySectorMixin, ManagedOptionListView):
+    template_name = "users/primary_sectors/list.html"
+    table_class = PrimarySectorTable
+
+    def get_queryset(self):
+        return (
+            PrimarySector.objects.annotate(organization_count=Count("organization"))
+            .annotate(in_use=Q(organization_count__gt=0))
+            .order_by("name")
+        )
+
+
+class PrimarySectorCreateView(PrimarySectorMixin, ManagedOptionCreateView):
+    pass
+
+
+class PrimarySectorUpdateView(PrimarySectorMixin, ManagedOptionUpdateView):
+    pass
+
+
+class PrimarySectorDeleteView(PrimarySectorMixin, ManagedOptionDeleteView):
+    pass
 
 
 _DEFAULT_MODEL_PERMS = {"add_user", "change_user", "delete_user", "view_user"}

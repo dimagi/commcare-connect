@@ -15,9 +15,11 @@ from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
     OrganizationStatus,
+    PrimarySector,
     TeamSizeRange,
 )
 from commcare_connect.users.models import User
+from commcare_connect.utils.forms import ManagedOptionForm
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 EARLIEST_ESTABLISHMENT_YEAR = 1800
@@ -478,6 +480,13 @@ def _clean_lines(raw, validator, error_message):
     if bad:
         raise ValidationError(error_message, params={"bad": ", ".join(bad)})
     return "\n".join(entries)
+
+
+class PrimarySectorForm(ManagedOptionForm):
+    locked_slug_help_text = gettext_lazy("Data exports identify primary sectors by it, so it can't change.")
+
+    class Meta(ManagedOptionForm.Meta):
+        model = PrimarySector
 
 
 class OrganizationInviteForm(forms.ModelForm):
