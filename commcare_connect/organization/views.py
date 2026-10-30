@@ -305,7 +305,7 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
         context.update(
             {
                 "organizations_count": Organization.objects.filter(is_test=False).count(),
-                "contacts_count": Contact.objects.filter(is_archived=False).count(),
+                "contacts_count": Contact.objects.filter(is_archived=False, organization__is_test=False).count(),
                 "result_count": context["table"].paginator.count,
             }
         )

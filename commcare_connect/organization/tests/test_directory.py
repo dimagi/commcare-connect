@@ -306,6 +306,13 @@ class TestContactFilterSet:
         assert _filtered_contacts({}) == [active]
         assert _filtered_contacts({"archived": "true"}) == [archived]
 
+    def test_lists_contacts_of_test_organizations_only_when_asked_for(self):
+        real = ContactFactory()
+        test = ContactFactory(organization=OrganizationFactory(is_test=True))
+
+        assert _filtered_contacts({}) == [real]
+        assert _filtered_contacts({"organization_test": "true"}) == [test]
+
 
 @pytest.mark.django_db
 class TestContactListAccess:
@@ -322,6 +329,15 @@ class TestContactListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [contact]
+
+    def test_count_leaves_out_contacts_of_test_organizations(self, client, user_with_directory_access):
+        ContactFactory()
+        ContactFactory(organization=OrganizationFactory(is_test=True))
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contacts"))
+
+        assert response.context["contacts_count"] == 1
 
 
 def _contact_form_data(organization, **overrides):
