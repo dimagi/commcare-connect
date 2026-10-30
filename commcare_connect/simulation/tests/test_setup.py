@@ -283,6 +283,23 @@ def test_unknown_deliver_unit_slug_is_an_error(sim, joined, options):
         sim.opportunity(*joined, name="Sim Opp", **options)
 
 
+def test_setup_records_follow_the_simulated_clock(sim, user):
+    moment = datetime.datetime(2025, 3, 10, 9, 0, tzinfo=datetime.UTC)
+
+    with sim.at(moment):
+        application = _join(sim, user)
+        program = application.program
+        opportunity = sim.opportunity(program, application.organization, name="Sim Opp")
+
+    for record in (program.organization, program, application, opportunity):
+        record.refresh_from_db()
+        assert record.date_created.date() == moment.date()
+    assert application.date_modified.date() == moment.date()
+    assert program.start_date == moment.date() - datetime.timedelta(days=30)
+    assert opportunity.start_date == moment.date()
+    assert opportunity.is_setup_complete
+
+
 def _sim_as(sim, *, pm_admin, nm_admin):
     """A ``Sim`` acting as other users, sharing ``sim``'s stand-ins and on_commit handling."""
     other = Sim(pm_admin=pm_admin, nm_admin=nm_admin, log=sim.log)
