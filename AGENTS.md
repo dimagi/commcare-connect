@@ -161,6 +161,5 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
-- `docs/audit-history.md` — how pghistory change tracking is set up, and how to track a model or read its events
 - `deploy/README.md` — Kamal + Ansible deployment
 - `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, form_receiver, flags)
