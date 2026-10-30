@@ -107,11 +107,11 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
-    get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
     get_payment_report_data,
+    get_worker_deliveries,
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
@@ -3210,7 +3210,7 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
         return kwargs
 
     def get_table(self, opportunity, org_slug):
-        data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values())
+        data = get_worker_deliveries(opportunity, self.get_filter_values())
         table_kwargs = {"org_slug": org_slug, "opp_id": opportunity.opportunity_id}
         if opportunity.automatic_visit_verification:
             table_kwargs["exclude"] = ("pending",)
@@ -3419,10 +3419,10 @@ def worker_flag_counts(request, org_slug, opp_id):
         filters["completed_work__opportunity_access__opportunity"] = request.opportunity
 
     status = request.GET.get("status", CompletedWorkStatus.pending)
-    payment_unit_id = request.GET.get("payment_unit_id")
+    payment_unit_ids = request.GET.getlist("payment_unit_id")
     filters["completed_work__status"] = status
-    if payment_unit_id:
-        filters["completed_work__payment_unit__payment_unit_id"] = payment_unit_id
+    if payment_unit_ids:
+        filters["completed_work__payment_unit__payment_unit_id__in"] = payment_unit_ids
 
     visits = UserVisit.objects.filter(**filters)
     all_flags = [flag for visit in visits.all() for flag in visit.flags]
