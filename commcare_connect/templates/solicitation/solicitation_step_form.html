@@ -1,23 +1,11 @@
 {% extends "solicitation/solicitation_step_base.html" %}
 {% load i18n %}
 {% load crispy_forms_tags %}
+{% load static %}
 {% block javascript %}
+  {# Not deferred: it defines an x-data helper, so it has to run before Alpine starts. #}
+  <script src="{% static 'js/solicitation_formset.js' %}"></script>
   {{ block.super }}
-  {# Inline, so formset() exists before Alpine (deferred) evaluates x-data. #}
-  <script>
-    // Adds a row to a Django formset by cloning its empty form, numbered by the current TOTAL_FORMS.
-    function formset() {
-      return {
-        addRow() {
-          const total = this.$root.querySelector('input[name$="-TOTAL_FORMS"]');
-          const row = this.$refs.emptyRow.innerHTML.replaceAll('__prefix__', total.value);
-          this.$refs.rows.insertAdjacentHTML('beforeend', row);
-          total.value = Number(total.value) + 1;
-          window.initTomSelectElements();
-        },
-      };
-    }
-  </script>
 {% endblock javascript %}
 {% block step_content %}
   <form method="post" class="flex flex-col gap-6">
@@ -32,7 +20,7 @@
       <div class="card_bg">{% crispy form %}</div>
     {% else %}
       {% with formset=form %}
-        <div x-data="formset()" class="flex flex-col gap-4">
+        <div x-data="formsetRows()" class="flex flex-col gap-4">
           <div class="flex justify-between items-center">
             <h2 class="title-sm">{{ step_label }}</h2>
             {% if not solicitation.structure_locked %}
@@ -46,11 +34,16 @@
           </div>
           {% if solicitation.structure_locked %}
             <p class="hint">{% translate "Criteria and questions can't change once a solicitation is published." %}</p>
-          {% elif step == "criteria" %}
-            <p class="hint flex items-center gap-2">
-              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-              {% translate "Weights must add up to 100% before you can publish." %}
-            </p>
+          {% else %}
+            <div class="rounded-lg warning-light p-4 flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <div>
+                {% if step == "criteria" %}
+                  <p>{% translate "Weights must add up to 100% before you can publish." %}</p>
+                {% endif %}
+                <p>{% translate "Once published, criteria and questions can't be changed." %}</p>
+              </div>
+            </div>
           {% endif %}
           {{ formset.management_form }}
           {{ formset|as_crispy_errors }}

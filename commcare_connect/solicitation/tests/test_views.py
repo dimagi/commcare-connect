@@ -175,7 +175,7 @@ class TestSolicitationSteps:
 
         response = pm_client.post(step_url(step, solicitation), data)
 
-        assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+        assert response.status_code == HTTPStatus.FORBIDDEN
         assert list(solicitation.criteria.all()) == [criterion]
         assert list(solicitation.questions.all()) == [question]
 
@@ -185,6 +185,14 @@ class TestSolicitationSteps:
         solicitation = SolicitationFactory(organization=program_manager_org, status=status)
 
         assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.NOT_FOUND
+
+    @pytest.mark.parametrize("step", STEPS)
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_other_orgs_solicitation_not_found(self, pm_client, program_manager_org, method, step):
+        solicitation = SolicitationFactory(organization__program_manager=True)
+        url = reverse(f"solicitation:{step}", args=(program_manager_org.slug, solicitation.solicitation_id))
+
+        assert getattr(pm_client, method)(url).status_code == HTTPStatus.NOT_FOUND
 
     @pytest.mark.parametrize("step", STEPS)
     @pytest.mark.parametrize("status", [Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE])

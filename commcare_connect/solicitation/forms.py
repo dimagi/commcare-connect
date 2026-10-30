@@ -24,7 +24,11 @@ from commcare_connect.solicitation.models import (
 )
 
 DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
-TOGGLE_WRAPPER_CLASS = "bg-slate-100 flex items-center justify-between p-4 rounded-lg"
+
+TOGGLE_WRAPPER_CLASS = (
+    "bg-slate-100 flex flex-wrap items-center justify-between p-4 rounded-lg "
+    "[&>label]:mb-0 [&>small]:basis-full [&>small]:mt-1"
+)
 SEARCHABLE_SELECT = forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"})
 # Alpine handler on the program select: sets the delivery type select to the picked program's delivery type.
 FILL_DELIVERY_TYPE_FROM_PROGRAM = (
@@ -92,10 +96,13 @@ class SolicitationForm(forms.ModelForm):
             "estimated_scale": _("Estimated scale"),
             "contact_email": _("Contact email"),
             "program": _("Program"),
-            "public": _("Public (anyone can see and apply)"),
+            "public": _("Public"),
             "hide_scores_until_submit": _("Hide scores until submit"),
         }
-        help_texts = {"application_deadline": _("Time is in UTC.")}
+        help_texts = {
+            "application_deadline": _("Time is in UTC."),
+            "public": _("Any organization can apply. When off, invite only."),
+        }
         widgets = {
             "expected_start_date": DATE_INPUT,
             "expected_end_date": DATE_INPUT,

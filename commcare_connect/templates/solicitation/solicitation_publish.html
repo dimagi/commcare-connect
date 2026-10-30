@@ -37,7 +37,7 @@
         <dt class="hint">{% translate "Visibility" %}</dt>
         <dd>
           {% if solicitation.public %}
-            {% translate "Public (anyone can see and apply)" %}
+            {% translate "Public (any organization can see and apply)" %}
           {% else %}
             {% translate "Private (invited organizations only)" %}
           {% endif %}
@@ -164,6 +164,10 @@
   {% if solicitation.status == "draft" %}
     <form method="post" class="flex flex-col gap-4">
       {% csrf_token %}
+      <p class="rounded-lg warning-light p-4 flex items-center gap-2">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        {% translate "Publishing locks the criteria and questions. This can't be undone." %}
+      </p>
       <div class="flex gap-3 justify-end">
         {% if previous_step_url %}
           <a class="button button-md outline-style" href="{{ previous_step_url }}">{% translate "Back" %}</a>
