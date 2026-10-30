@@ -77,6 +77,10 @@ def _status_column_header():
     return render_to_string("organization/directory/status_header.html", {"definitions_html": definitions_html})
 
 
+# Lists of countries, regions and sectors wrap rather than widening the table.
+WRAPPING_COLUMN_ATTRS = {"td": {"class": "whitespace-normal"}}
+
+
 class OrganizationDirectoryTable(tables.Table):
     # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
     # instead of the referer's.
@@ -87,11 +91,13 @@ class OrganizationDirectoryTable(tables.Table):
         verbose_name=lazy(_status_column_header, SafeString)(),
         template_name="organization/directory/status_badge.html",
     )
-    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"))
+    countries = columns.ManyToManyColumn(verbose_name=_("Countries"), attrs=WRAPPING_COLUMN_ATTRS)
+    # Free text listing several regions, so it sorts no more meaningfully than countries.
+    regions = columns.Column(verbose_name=_("Regions"), attrs=WRAPPING_COLUMN_ATTRS, orderable=False)
+    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"), attrs=WRAPPING_COLUMN_ATTRS)
     # Team size is stored as a bracket ("11-50"), which doesn't sort meaningfully as text.
     team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
     flws_managed = columns.Column(verbose_name=_("FLWs Managed"))
-    date_created = columns.DateTimeColumn(verbose_name=_("Added"), format="d-M-Y")
     actions = columns.TemplateColumn(
         verbose_name=_("Actions"),
         template_name="organization/directory/row_actions.html",
@@ -101,7 +107,7 @@ class OrganizationDirectoryTable(tables.Table):
 
     class Meta:
         model = Organization
-        fields = ("name", "status", "primary_sectors", "team_size", "flws_managed", "date_created")
+        fields = ("name", "status", "countries", "regions", "primary_sectors", "team_size", "flws_managed")
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")
