@@ -1,0 +1,10 @@
+{# The column's value is the status's display label, so this compares the stored status instead. #}
+{% if record.status == "active" %}
+  <span class="badge badge-sm positive-light">{{ value }}</span>
+{% elif record.status == "closed" %}
+  <span class="badge badge-sm primary-light">{{ value }}</span>
+{% elif record.status == "cancelled" %}
+  <span class="badge badge-sm negative-light">{{ value }}</span>
+{% else %}
+  <span class="badge badge-sm label">{{ value }}</span>
+{% endif %}
