@@ -28,6 +28,7 @@ from commcare_connect.organization.decorators import org_admin_access_required, 
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     ContactForm,
+    ContactPocChangeForm,
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
@@ -410,6 +411,18 @@ class ContactCreateView(ContactFormMixin, CreateView):
 
 class ContactUpdateView(ContactFormMixin, UpdateView):
     success_message = gettext_lazy("Contact {name} updated.")
+
+
+class ContactPocWarningView(LLODirectoryAccessMixin, View):
+    """Warns, as a contact form fragment, which main point of contact the form's choices would replace."""
+
+    http_method_names = ["get"]
+
+    def get(self, request):
+        form = ContactPocChangeForm(request.GET)
+        main_poc_to_replace = form.main_poc_to_replace()
+        context = {"main_poc_to_replace": main_poc_to_replace, "name": form.cleaned_data.get("name", "")}
+        return render(request, "organization/directory/poc_change_warning.html", context)
 
 
 class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):

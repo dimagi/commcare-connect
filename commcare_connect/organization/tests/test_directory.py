@@ -1,3 +1,4 @@
+import re
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -7,7 +8,7 @@ from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
-from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
+from commcare_connect.organization.forms import ContactForm, ContactPocChangeForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.organization.tables import ContactDirectoryTable, OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
@@ -440,6 +441,86 @@ class TestContactFormViews:
         args = (contact.contact_id,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
+
+
+@pytest.mark.django_db
+class TestContactPocChangeForm:
+    @pytest.mark.parametrize(
+        "is_main_poc, has_main_poc, choose_organization, editing_current, replaces",
+        [
+            ("True", True, True, False, True),
+            # Editing the current main point of contact replaces no one.
+            ("True", True, True, True, False),
+            ("False", True, True, False, False),
+            ("True", False, True, False, False),
+            ("True", True, False, False, False),
+        ],
+    )
+    def test_finds_the_main_point_of_contact_that_would_be_replaced(
+        self, is_main_poc, has_main_poc, choose_organization, editing_current, replaces
+    ):
+        current = ContactFactory(is_main_poc=has_main_poc)
+        data = {"organization": current.organization_id if choose_organization else "", "is_main_poc": is_main_poc}
+        if editing_current:
+            data["contact"] = current.contact_id
+
+        assert ContactPocChangeForm(data).main_poc_to_replace() == (current if replaces else None)
+
+
+def _poc_warning_slot(response):
+    return re.search(r"<div[^>]*poc-warning[^>]*>", response.content.decode().replace("\n", " ")).group()
+
+
+@pytest.mark.django_db
+class TestContactPocWarningView:
+    def test_names_the_current_and_new_point_of_contact(self, client, user_with_directory_access):
+        current = ContactFactory(
+            name="Grace Wanjiru", is_main_poc=True, organization=OrganizationFactory(name="Umoja")
+        )
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:contact_poc_warning"),
+            {"organization": current.organization_id, "is_main_poc": "True", "name": "Peter Otieno"},
+        )
+
+        assert "Please note that this changes Umoja's point of contact from Grace Wanjiru to Peter Otieno." in (
+            response.content.decode()
+        )
+
+    def test_requires_permission(self, client, user):
+        client.force_login(user)
+
+        assert client.get(reverse("organization_directory:contact_poc_warning")).status_code == 403
+
+    @pytest.mark.parametrize("editing", [False, True])
+    def test_contact_form_fetches_the_warning_into_itself(self, client, user_with_directory_access, editing):
+        contact = ContactFactory()
+        client.force_login(user_with_directory_access)
+        url = (
+            reverse("organization_directory:contact_edit", args=(contact.contact_id,))
+            if editing
+            else reverse("organization_directory:contact_create")
+        )
+
+        warning = _poc_warning_slot(client.get(url, HTTP_HX_REQUEST="true"))
+
+        # The modal's form targets the whole modal, which the warning would otherwise inherit and blank out.
+        assert 'hx-target="this"' in warning
+        assert (f"?contact={contact.contact_id}" in warning) is editing
+        # A freshly opened form can't replace anyone yet, so the warning waits for a change.
+        assert "load" not in warning
+        for field in ("organization", "is_main_poc", "name"):
+            assert f"change from:#id_{field}" in warning
+        # Screen readers announce the warning when it appears.
+        assert 'aria-live="polite"' in warning
+
+    def test_rerendered_form_fetches_the_warning_on_load(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+
+        response = client.post(reverse("organization_directory:contact_create"), {}, HTTP_HX_REQUEST="true")
+
+        assert "load" in _poc_warning_slot(response)
 
 
 @pytest.mark.django_db
