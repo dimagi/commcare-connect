@@ -11,6 +11,7 @@ the next step starts. Run steps inside ``fakes.local_fakes()``.
 import random
 from contextlib import contextmanager, nullcontext
 
+import time_machine
 from django.db import transaction
 
 from .browser import Browser
@@ -39,6 +40,17 @@ class Sim(SetupSteps, WorkerSteps, ReviewSteps, PaymentSteps):
         # Wraps every step. Tests replace it with django_capture_on_commit_callbacks(execute=True), because the
         # test transaction never commits and on_commit side effects would otherwise never run.
         self.commit_scope = nullcontext
+
+    @contextmanager
+    def at(self, when):
+        """Run the enclosed code as if it were ``when``.
+
+        The app stamps many records with ``now()`` itself (claims, learn start, reviews, invites), and checks
+        limits against today. Backdating only what a step sends would leave those out of order, so a step that
+        builds history wraps each real action in ``at`` its moment. Time keeps ticking from ``when``.
+        """
+        with time_machine.travel(when, tick=True):
+            yield
 
     @contextmanager
     def step(self):

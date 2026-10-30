@@ -104,6 +104,7 @@ dev = [
     "pytest-django>=4.5.2",
     "pytest-httpx>=0.24.0",
     "ruff>=0.16.6",
+    "time-machine>=3.6.0",
     "xml2json",
 ]
 production = [

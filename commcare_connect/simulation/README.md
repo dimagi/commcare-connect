@@ -25,6 +25,13 @@ A scenario is a module in `scenarios/` with `ORG_NAMES` and `build(sim, *, small
 through `sim.browser(user)`, which fails with the errors the page showed if the page refuses it. Inbound
 integrations with no page, such as HQ forwarding a form, call the function their endpoint runs.
 
+## History and the clock
+
+The app stamps many records with the current time itself (claims, learn start, reviews, invites) and checks
+limits against today. To build a history that reads in order, a step runs each real action inside
+`sim.at(moment)`, which moves the clock the app reads (via `time-machine`). Timestamps written by database
+triggers, such as the pghistory audit trail, keep the real time.
+
 ## How it reaches no external service
 
 `fakes.local_fakes()` patches the outbound calls to CommCare HQ, ConnectID and Twilio, runs Celery tasks inline,
