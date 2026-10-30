@@ -8,7 +8,6 @@ from http import HTTPStatus
 import pghistory
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.gis.db.models import Extent, Union
 from django.contrib.gis.db.models.fields import PointField
@@ -50,7 +49,6 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.buildings import buildings_overlay_config
 from commcare_connect.microplanning.const import (
     INACCESSIBILITY_LEGEND,
-    MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
     REQUIRED_DELIVER_UNIT_SLUGS,
@@ -82,6 +80,7 @@ from commcare_connect.microplanning.helpers import (
     work_area_detail,
     work_area_search_options,
 )
+from commcare_connect.microplanning.map_config import map_js_config
 from commcare_connect.microplanning.models import (
     ImplementationArea,
     InaccessibilityRequestStatus,
@@ -257,7 +256,6 @@ def microplanning_home(request, *args, **kwargs):
         "clear_data_details": clear_data_details,
         "show_rerun_clear_work_area_groups_btn": show_rerun_clear_work_area_groups_btn,
         "clustering_is_rerun": show_rerun_clear_work_area_groups_btn,
-        "mapbox_api_key": settings.MAPBOX_TOKEN,
         "buildings_config": buildings_overlay_config(),
         "task_id": request.GET.get("task_id"),
         "import_status_url": import_status_url,
@@ -276,8 +274,6 @@ def microplanning_home(request, *args, **kwargs):
         "groups_url": groups_url,
         "implementation_areas_url": implementation_areas_url,
         "status_meta": status_meta,
-        "workarea_min_zoom": WORKAREA_MIN_ZOOM,
-        "max_autozoom_zoom": MAX_AUTOZOOM_ZOOM,
         "edit_work_area_url": edit_work_area_url,
         "user_visit_data_url": user_visit_data_url,
         "download_url": download_url,
@@ -305,6 +301,7 @@ def microplanning_home(request, *args, **kwargs):
 
     if assignment_mode:
         context.update(_get_assignment_mode_context(request, opportunity))
+    context["map_config"] = map_js_config(context, request)
 
     return render(
         request,
