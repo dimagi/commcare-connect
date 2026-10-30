@@ -1,9 +1,21 @@
+from unittest import mock
+
 import pytest
+from dateutil.relativedelta import relativedelta
 from django.db import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.deletion import OPPORTUNITY_DELETIONS, ModelDeletion, delete_opportunity
-from commcare_connect.opportunity.models import CompletedWorkInvoice, LabsRecord, Opportunity, Payment
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkInvoice,
+    LabsRecord,
+    Opportunity,
+    Payment,
+    PaymentUnit,
+)
+from commcare_connect.opportunity.tasks import delete_stale_opportunities
 from commcare_connect.opportunity.tests import factories
 
 
@@ -132,3 +144,47 @@ def test_delete_opportunity_removes_snapshot_rows():
 
     assert delete_opportunity(opportunity) is True
     assert not CompletedWorkInvoice.objects.exists()
+
+
+def _opp_with_payment_unit_used_by_another_opportunity():
+    # Opp A owns the PaymentUnit but has no visits of its own.
+    opp_a = factories.OpportunityFactory()
+    opp_a_access = factories.OpportunityAccessFactory(opportunity=opp_a)
+    opp_a_payment_unit = factories.PaymentUnitFactory(opportunity=opp_a)
+    own_work = factories.CompletedWorkFactory(opportunity_access=opp_a_access, payment_unit=opp_a_payment_unit)
+    # Opp B shares the deliver app, so its CompletedWork was created against Opp A's PaymentUnit
+    # (process_deliver_unit uses deliver_unit.payment_unit).
+    opp_b_access = factories.OpportunityAccessFactory()
+    other_work = factories.CompletedWorkFactory(opportunity_access=opp_b_access, payment_unit=opp_a_payment_unit)
+    return opp_a, opp_a_payment_unit, own_work, other_work
+
+
+@pytest.mark.django_db
+def test_delete_opportunity_refuses_when_payment_unit_used_by_another_opportunity():
+    opp_a, payment_unit, own_work, other_work = _opp_with_payment_unit_used_by_another_opportunity()
+
+    with mock.patch("commcare_connect.opportunity.deletion.sentry_sdk.capture_exception") as capture:
+        result = delete_opportunity(opp_a)
+
+    assert result is False
+    capture.assert_called_once()
+    assert Opportunity.objects.filter(pk=opp_a.pk).exists()
+    assert PaymentUnit.objects.filter(pk=payment_unit.pk).exists()
+    assert CompletedWork.objects.filter(pk__in=[own_work.pk, other_work.pk]).count() == 2
+
+
+@pytest.mark.django_db
+def test_delete_stale_opportunities_skips_opportunity_whose_payment_unit_is_used_elsewhere():
+    opp_a, payment_unit, _, other_work = _opp_with_payment_unit_used_by_another_opportunity()
+    deletable = factories.OpportunityFactory()
+    old = now() - relativedelta(months=7)
+    Opportunity.objects.filter(pk__in=[opp_a.pk, deletable.pk]).update(date_created=old)
+
+    with mock.patch("commcare_connect.opportunity.deletion.sentry_sdk.capture_exception") as capture:
+        delete_stale_opportunities()
+
+    capture.assert_not_called()
+    assert Opportunity.objects.filter(pk=opp_a.pk).exists()
+    assert PaymentUnit.objects.filter(pk=payment_unit.pk).exists()
+    assert CompletedWork.objects.filter(pk=other_work.pk).exists()
+    assert not Opportunity.objects.filter(pk=deletable.pk).exists()
