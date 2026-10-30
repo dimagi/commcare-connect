@@ -1,0 +1,5 @@
+{# Its own target: the modal's form targets the whole modal, which this would otherwise inherit and blank out. #}
+<div hx-get="{% url 'organization_directory:contact_poc_warning' %}{% if object %}?contact={{ object.contact_id }}{% endif %}"
+     hx-trigger="load, change from:closest form"
+     hx-target="this"
+     hx-include="#id_organization, #id_is_main_poc, #id_name"></div>

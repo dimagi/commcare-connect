@@ -379,7 +379,10 @@ class ContactForm(forms.ModelForm):
                 _full_width("name"),
                 _full_width("organization"),
                 "title",
-                "is_main_poc",
+                layout.Div(
+                    "is_main_poc",
+                    layout.HTML('{% include "organization/directory/poc_change_warning_slot.html" %}'),
+                ),
                 "email",
                 "phone",
                 _full_width("notes"),
@@ -570,3 +573,21 @@ class AddCredentialForm(forms.Form):
         user_data = self.cleaned_data["users"]
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
+
+
+class ContactPocChangeForm(forms.Form):
+    """Reads a contact form's point of contact fields to find the main point of contact they would replace."""
+
+    organization = forms.IntegerField()
+    is_main_poc = forms.BooleanField(required=False)
+    contact = forms.UUIDField(required=False)
+
+    def main_poc_to_replace(self):
+        if not self.is_valid() or not self.cleaned_data["is_main_poc"]:
+            return None
+        return (
+            Contact.objects.filter(organization_id=self.cleaned_data["organization"], is_main_poc=True)
+            .exclude(contact_id=self.cleaned_data["contact"])
+            .select_related("organization")
+            .first()
+        )
