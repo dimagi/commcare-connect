@@ -114,6 +114,11 @@ class ContactDirectoryTable(tables.Table):
     use_view_url = False
     name = columns.Column(verbose_name=_("Contact Name"))
     organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    organization_status = columns.TemplateColumn(
+        verbose_name=lazy(_status_column_header, SafeString)(),
+        accessor="organization__status",
+        template_code=_status_badge("record.organization.status"),
+    )
     title = columns.Column(verbose_name=_("Role / Title"))
     is_main_poc = columns.TemplateColumn(
         verbose_name=_("POC"),
@@ -122,6 +127,7 @@ class ContactDirectoryTable(tables.Table):
     )
     email = columns.TemplateColumn(verbose_name=_("Email"), template_name="organization/directory/email_link.html")
     phone = columns.Column(verbose_name=_("Phone"), orderable=False)
+    active = columns.Column(verbose_name=_("Active"), accessor="is_archived")
     actions = columns.TemplateColumn(
         verbose_name=_("Actions"),
         template_name="organization/directory/contact_row_actions.html",
@@ -131,10 +137,13 @@ class ContactDirectoryTable(tables.Table):
 
     class Meta:
         model = Contact
-        fields = ("name", "organization", "title", "is_main_poc", "email", "phone")
+        fields = ("name", "organization", "organization_status", "title", "is_main_poc", "email", "phone", "active")
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No contacts found.")
+
+    def render_active(self, value):
+        return _("No") if value else _("Yes")
 
 
 class ContactExportTable(tables.Table):
