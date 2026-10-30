@@ -105,6 +105,16 @@ def test_status_column_shows_a_badge(status, badge_class):
     assert str(status.label) in cell
 
 
+@pytest.mark.django_db
+def test_countries_and_regions_columns_list_them(countries):
+    organization = OrganizationFactory(regions="Nyanza, Mwanza")
+    organization.countries.add(countries["KEN"], countries["TZA"])
+    row = OrganizationDirectoryTable([organization]).rows[0]
+
+    assert set(row.get_cell("countries").split(", ")) == {countries["KEN"].name, countries["TZA"].name}
+    assert row.get_cell("regions") == "Nyanza, Mwanza"
+
+
 def _form_data(country_by_code, sector_by_key, **overrides):
     data = {
         "name": "Umoja Health Trust",
