@@ -211,6 +211,47 @@
   @apply px-4 py-1;
 }
 
+/*-- progress bars -------------------------------*/
+/* A track holds one fill, or several side by side for a split bar; widths are set inline. */
+.progress-track {
+  @apply flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-gray-200;
+}
+
+/* Fills may shrink so a split bar's gaps never push its last segment out of the track */
+.progress-fill {
+  @apply h-full rounded-full;
+}
+
+/*-- notes & banners -----------------------------*/
+.warning-note {
+  @apply flex items-center gap-1.5 text-xs font-medium text-amber-700;
+}
+
+.warning-note i {
+  @apply text-brand-marigold;
+}
+
+.warning-banner {
+  @apply text-brand-deep-purple border-brand-marigold bg-brand-marigold/10 flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm;
+}
+
+.warning-banner i {
+  @apply text-brand-marigold;
+}
+
+/* An amount line whose figures are <strong> inside translated text, e.g. "<strong>NGN 10</strong> workers / 50" */
+.amount-breakdown {
+  @apply text-sm font-medium text-gray-500;
+}
+
+.amount-breakdown strong {
+  @apply text-brand-deep-purple text-base font-semibold;
+}
+
+.amount-breakdown.over-budget strong {
+  @apply text-amber-700;
+}
+
 /*-- buttons -------------------------------------*/
 
 .button {

@@ -1,7 +1,7 @@
 import datetime
 import json
 import logging
-from collections import Counter, defaultdict, namedtuple
+from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from functools import cached_property, partial
@@ -107,9 +107,9 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    amount_with_currency,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_deliveries,
     get_worker_learn_table_data,
@@ -230,6 +230,11 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_completed_work_status,
     bulk_update_visit_review_status,
     update_payment_accrued,
+)
+from commcare_connect.opportunity.worker_progress import (
+    get_delivery_allocation,
+    get_payment_unit_breakdown,
+    get_worker_payments,
 )
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
@@ -528,10 +533,6 @@ class OpportunityFinalize(OpportunityObjectMixin, UpdateView):
         return response
 
 
-def amount_with_currency(amount, currency_code):
-    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
-
-
 @method_decorator(opp_view_access_required, name="dispatch")
 class OpportunityDashboard(OpportunityObjectMixin, DetailView):
     model = Opportunity
@@ -601,7 +602,7 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
             {
                 "name": "Max Service Deliveries",
                 "count": header_with_tooltip(
-                    safe_display(int(object.allotted_visits)),
+                    safe_display(object.allotted_visits),
                     "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
                 ),
                 "icon": "fa-gears",
@@ -3550,103 +3551,25 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 @opp_view_access_required
 @opportunity_required
 def opportunity_worker_progress(request, org_slug, opp_id):
-    result = get_opportunity_worker_progress(request.opportunity.pk)
-
-    verified_percentage = safe_percent(result.approved_deliveries or 0, result.total_deliveries or 0)
-    rejected_percentage = safe_percent(result.rejected_deliveries or 0, result.total_deliveries or 0)
-    earned = get_earned_summary(
-        result.total_accrued or 0, result.total_org_accrued or 0, result.total_budget or 0, result.currency_code
-    )
-    paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
-
-    worker_progress = [
-        {
-            "title": "Verification",
-            "progress": [
-                {
-                    "title": "Approved",
-                    "total": header_with_tooltip(
-                        result.approved_deliveries,
-                        "Number of Service Deliveries Approved by both PM and NM or Auto-approved",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{verified_percentage:.0f}%", "Percentage Approved out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": verified_percentage,
-                },
-                {
-                    "title": "Rejected",
-                    "total": header_with_tooltip(result.rejected_deliveries, "Number of Service Deliveries Rejected"),
-                    "value": header_with_tooltip(
-                        f"{rejected_percentage:.0f}%", "Percentage Rejected out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": rejected_percentage,
-                },
-            ],
-        },
-        {
-            "title": "Payments to Connect Workers",
-            "progress": [
-                {
-                    "title": "Earned",
-                    "total": header_with_tooltip(earned.total, "Earned Amount"),
-                    "value": header_with_tooltip(f"{earned.percentage:.0f}%", earned.percentage_tooltip),
-                    "badge_type": True,
-                    "percent": earned.percentage,
-                },
-                {
-                    "title": "Paid",
-                    "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid, result.currency_code),
-                        "Paid Amount to All Connect Workers",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
-                    ),
-                    "badge_type": True,
-                    "percent": paid_percentage,
-                },
-            ],
-        },
-    ]
-
     return render(
         request,
         "opportunity/opportunity_worker_progress.html",
-        {"worker_progress": worker_progress},
+        {
+            "allocation": get_delivery_allocation(request.opportunity),
+            "payments": get_worker_payments(request.opportunity),
+            "payment_unit_breakdown_url": reverse("opportunity:payment_unit_breakdown", args=(org_slug, opp_id)),
+        },
     )
 
 
-EarnedSummary = namedtuple("EarnedSummary", ["total", "percentage", "percentage_tooltip"])
-
-
-def get_earned_summary(
-    worker_accrued: int, org_accrued: int, total_budget: int, currency_code: str | None
-) -> EarnedSummary:
-    """Earned figures for the Payments to Connect Workers card.
-
-    The budget covers org pay as well as worker pay, so the percentage counts both. The worker
-    amount is shown on its own so it still matches Payments Earned on the Worker Payments card.
-    """
-    percentage = safe_percent(worker_accrued + org_accrued, total_budget)
-    total = amount_with_currency(worker_accrued, currency_code)
-    if not org_accrued:
-        return EarnedSummary(
-            total, percentage, _("Percentage Earned by all workers out of Max Budget in the Opportunity")
-        )
-    return EarnedSummary(
-        _("%(worker_amount)s workers · %(org_amount)s org")
-        % {"worker_amount": total, "org_amount": amount_with_currency(org_accrued, currency_code)},
-        percentage,
-        _("Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity"),
+@opp_view_access_required
+@opportunity_required
+def opportunity_payment_unit_breakdown(request, org_slug, opp_id):
+    return render(
+        request,
+        "opportunity/partials/payment_unit_breakdown.html",
+        {"breakdown": get_payment_unit_breakdown(request.opportunity)},
     )
-
-
-def safe_percent(numerator: float, denominator: float) -> float:
-    percent = (numerator / denominator) * 100 if denominator else 0
-    return 100 if percent > 100 else percent
 
 
 @opp_view_access_required
