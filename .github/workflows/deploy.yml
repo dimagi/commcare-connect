@@ -33,6 +33,19 @@ on:
         options:
           - scheduled
           - adhoc
+  # Called by scheduled-deploy.yml
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      deploy_type:
+        required: true
+        type: string
+      ref:
+        description: 'Commit to deploy instead of the head of the deploy branch'
+        required: false
+        type: string
 
 # One deploy per environment at a time; later runs wait rather than cancel a deploy in progress
 concurrency:
@@ -40,7 +53,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Only scheduled-deploy.yml passes a ref. By the time this run holds the concurrency slot, a manual deploy may have
+  # shipped that commit or a newer one, and deploying the ref then would repeat it or roll production back. Runs
+  # (as a no-op) on every deploy because a skipped job here would also skip the jobs after deploy.
+  recheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.recheck.outputs.deploy || 'true' }}
+    steps:
+      - name: Checkout source code
+        if: ${{ inputs.ref }}
+        uses: actions/checkout@v4
+
+      - id: recheck
+        name: Check the commit is still ahead of the latest release
+        if: ${{ inputs.ref }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python deploy/ci/scheduled_deploy_gate.py --repo "${{ github.repository }}" --recheck "${{ inputs.ref }}"
+
+      - name: Notify recheck failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "text": ":warning: Scheduled production deploy skipped: checking the commit against the latest release failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
   deploy:
+    needs: recheck
+    if: ${{ needs.recheck.outputs.deploy == 'true' }}
     runs-on: ubuntu-latest
     env:
       DEPLOY_ENV: ${{ inputs.environment || 'staging' }}
@@ -48,11 +96,12 @@ jobs:
       DEPLOY_BRANCH: ${{ (inputs.environment || 'staging') == 'production' && 'main' || 'autostaging' }}
     outputs:
       slack_ts: ${{ steps.slack.outputs.ts }}
+      release_tag: ${{ steps.release_tag.outputs.tag }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.DEPLOY_BRANCH }}
+          ref: ${{ inputs.ref || env.DEPLOY_BRANCH }}
 
       - name: Set release identifier
         run: |
@@ -141,9 +190,13 @@ jobs:
           repo: dimagi/commcare-connect
           commit: ${{ env.DEPLOY_SHA }}
 
-      - name: Set release tag
+      - id: release_tag
+        name: Set release tag
         if: ${{ success() && env.DEPLOY_ENV == 'production' }}
-        run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
+        run: |
+          RELEASE_TAG="$(date -u +'%Y-%m-%d_%H-%M-%S')"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
         if: ${{ success() && env.DEPLOY_ENV == 'production' }}
@@ -232,3 +285,22 @@ jobs:
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
+  # Release notes run as their own workflow run, so they don't hold the deploy concurrency group and
+  # a release-notes failure can't turn the deploy red
+  release-notes:
+    name: Start release notes
+    needs: deploy
+    if: ${{ success() && inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch release-notes.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release-notes.yml --repo "${{ github.repository }}" --ref main \
+            -f tag="${{ needs.deploy.outputs.release_tag }}" \
+            -f slack_thread_ts="${{ needs.deploy.outputs.slack_ts }}"
