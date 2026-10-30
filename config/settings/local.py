@@ -52,6 +52,10 @@ CELERY_TASK_STORE_EAGER_RESULT = True
 JIRA_SERVICE_DESK_DRY_RUN = env("JIRA_SERVICE_DESK_DRY_RUN", default="")
 JIRA_SERVICE_DESK_DRY_RUN_DELAY = env.int("JIRA_SERVICE_DESK_DRY_RUN_DELAY", default=0)
 
+# Enables the opportunity "Test submissions" page, which fires fake CommCare HQ forms for an
+# opportunity's workers through the form processor. Also needs DEBUG.
+ENABLE_TEST_SUBMISSIONS = env.bool("ENABLE_TEST_SUBMISSIONS", default=False)
+
 # allow running the deid-scripts in development
 INSTALLED_APPS += ["commcare_connect.deid"]
 

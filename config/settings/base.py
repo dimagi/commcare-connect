@@ -429,6 +429,9 @@ JIRA_SERVICE_DESK_CLOUD_ID = env("JIRA_SERVICE_DESK_CLOUD_ID", default="811411a5
 JIRA_SERVICE_DESK_DRY_RUN = ""
 JIRA_SERVICE_DESK_DRY_RUN_DELAY = 0
 
+# Local development only (see local.py): the opportunity "Test submissions" page.
+ENABLE_TEST_SUBMISSIONS = False
+
 # Waffle Settings
 WAFFLE_FLAG_MODEL = "flags.Flag"
 WAFFLE_CREATE_MISSING_FLAGS = True

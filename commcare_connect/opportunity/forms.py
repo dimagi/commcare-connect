@@ -24,6 +24,7 @@ from commcare_connect.flags.switch_names import (
     OPPORTUNITY_CREDENTIALS,
     OPTIONAL_DAILY_LIMIT,
 )
+from commcare_connect.form_receiver.submission_simulator_types import FormType, SubmissionOverrides
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -40,6 +41,7 @@ from commcare_connect.opportunity.models import (
     HQApiKey,
     InvoiceFinanceRequest,
     InvoiceStatus,
+    LearnModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -2478,3 +2480,56 @@ class AudioAttachmentTranscribeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+
+
+class SimulatedSubmissionForm(forms.Form):
+    """One fake form submission from the local "Test submissions" page."""
+
+    # The field each form type needs
+    REQUIRED_FIELD = {FormType.DELIVER: "deliver_unit", FormType.LEARN: "learn_modules", FormType.ASSESSMENT: "score"}
+
+    access = forms.ModelChoiceField(queryset=OpportunityAccess.objects.none(), widget=forms.HiddenInput)
+    form_type = forms.TypedChoiceField(choices=FormType.choices, coerce=FormType)
+    deliver_unit = forms.ModelChoiceField(queryset=DeliverUnit.objects.none(), required=False)
+    learn_modules = forms.ModelMultipleChoiceField(queryset=LearnModule.objects.none(), required=False)
+    score = forms.IntegerField(required=False)
+    # The columns hold 255, and extra deliver blocks append up to 3 characters ("-10")
+    entity_id = forms.CharField(required=False, max_length=240, help_text=_("Leave blank for a new entity"))
+    entity_name = forms.CharField(required=False, max_length=240)
+    visit_time = forms.DateTimeField(
+        required=False, widget=forms.DateTimeInput(attrs={"type": "datetime-local"}), help_text=_("Defaults to now")
+    )
+    latitude = forms.FloatField(required=False, min_value=-90, max_value=90)
+    longitude = forms.FloatField(required=False, min_value=-180, max_value=180)
+    deliver_block_count = forms.IntegerField(min_value=1, max_value=10, initial=1)
+
+    def __init__(self, *args, opportunity: Opportunity, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["access"].queryset = OpportunityAccess.objects.filter(opportunity=opportunity).select_related(
+            "user"
+        )
+        self.fields["deliver_unit"].queryset = DeliverUnit.objects.filter(app=opportunity.deliver_app).order_by("name")
+        self.fields["learn_modules"].queryset = LearnModule.objects.filter(app=opportunity.learn_app).order_by("name")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        required = self.REQUIRED_FIELD.get(cleaned_data.get("form_type"))
+        if not required or required in self.errors:
+            return cleaned_data
+        value = cleaned_data.get(required)
+        # A score of 0 is a real score; an empty deliver unit or module selection is not
+        missing = value is None if required == "score" else not value
+        if missing:
+            self.add_error(required, _("This field is required for this form type."))
+        return cleaned_data
+
+    def get_overrides(self) -> SubmissionOverrides:
+        data = self.cleaned_data
+        return SubmissionOverrides(
+            entity_id=data["entity_id"] or None,
+            entity_name=data["entity_name"] or None,
+            visit_time=data["visit_time"],
+            latitude=data["latitude"],
+            longitude=data["longitude"],
+            deliver_block_count=data["deliver_block_count"],
+        )

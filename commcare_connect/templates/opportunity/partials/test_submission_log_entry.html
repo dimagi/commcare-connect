@@ -1,0 +1,97 @@
+{% load i18n %}
+<div class="rounded-lg border border-gray-200 p-3 text-sm flex flex-col gap-1">
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="hint">{{ submitted_at|time:"H:i:s" }}</span>
+    {% with data=form.cleaned_data %}
+      {% if data.access %}<span class="title-sm">{{ data.access.user.name }}</span>{% endif %}
+      {% if data.form_type %}<span class="badge badge-sm badge-indigo">{{ data.form_type }}</span>{% endif %}
+      {% if data.form_type == "deliver" and data.deliver_unit %}
+        <span>{{ data.deliver_unit.name }}</span>
+      {% elif data.form_type == "learn" %}
+        <span>{{ data.learn_modules|join:", " }}</span>
+      {% elif data.form_type == "assessment" %}
+        <span>{% translate "score" %} {{ data.score }}</span>
+      {% endif %}
+      {% if data.entity_id or data.visit_time or data.latitude is not None or data.deliver_block_count > 1 %}
+        <span class="hint">
+          {% translate "overrides:" %}
+          {% if data.entity_id %}
+            {% translate "entity" %} {{ data.entity_id }}
+          {% endif %}
+          {% if data.visit_time %}
+            {% translate "time" %} {{ data.visit_time|date:"Y-m-d H:i" }}
+          {% endif %}
+          {% if data.latitude is not None %}
+            {% translate "GPS" %} {{ data.latitude }}, {{ data.longitude }}
+          {% endif %}
+          {% if data.deliver_block_count > 1 %}
+            {{ data.deliver_block_count }} {% translate "blocks" %}
+          {% endif %}
+        </span>
+      {% endif %}
+    {% endwith %}
+  </div>
+  {% if form.errors %}
+    <p class="text-red-600">
+      {% translate "Invalid submission:" %}
+      {% for field, errors in form.errors.items %}{{ field }}: {{ errors|join:" " }}{% endfor %}
+    </p>
+  {% elif error %}
+    <p class="text-red-600">{{ error }}</p>
+  {% elif outcome.error %}
+    <p class="text-red-600">{% translate "Rejected:" %} {{ outcome.error }}</p>
+  {% elif outcome.recorded_nothing %}
+    <p class="text-brand-marigold">
+      {% translate "Accepted, but nothing was recorded: no active opportunity matched this app." %}
+    </p>
+  {% elif outcome %}
+    {% if outcome.other_opportunities %}
+      <p class="text-brand-marigold">
+        {% translate "Recorded on another opportunity that uses the same app:" %}
+        {{ outcome.other_opportunities|join:", " }}
+      </p>
+    {% endif %}
+    <ul class="flex flex-col gap-1">
+      {% for visit in outcome.visits %}
+        <li>
+          {% translate "Visit" %} {{ visit.pk }} · <span class="title-sm">{{ visit.get_status_display }}</span>
+          {% if visit.flags %}
+            · {% translate "flags:" %} {{ visit.flags|join:", " }}
+          {% endif %}
+          {% if visit.over_limit_reasons %}
+            · {% translate "over limit:" %} {{ visit.over_limit_reasons|join:", " }}
+          {% endif %}
+          {# Only this opportunity's visits are on its visit page #}
+          {% if visit.opportunity_id == opportunity.id %}
+            · <a class="text-brand-indigo underline"
+    href="{% url 'opportunity:user_visits_list' request.org.slug opportunity.opportunity_id %}?user={{ visit.user.user_id }}&visit_id={{ visit.user_visit_id }}">{% translate "view visit" %}</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+      {% for completed_module in outcome.completed_modules %}
+        <li>{% translate "Completed module" %} {{ completed_module.module.name }}</li>
+      {% endfor %}
+      {% for assessment in outcome.assessments %}
+        <li>
+          {% translate "Assessment" %} {{ assessment.score }} / {{ assessment.passing_score }} ·
+          <span class="title-sm">
+            {% if assessment.passed %}
+              {% translate "passed" %}
+            {% else %}
+              {% translate "failed" %}
+            {% endif %}
+          </span>
+        </li>
+      {% endfor %}
+      {% if outcome.completed_modules and outcome.completed_learn_date %}
+        <li>{% translate "Learning complete on" %} {{ outcome.completed_learn_date|date:"Y-m-d H:i" }}</li>
+      {% endif %}
+    </ul>
+  {% endif %}
+  {% if payload_json %}
+    <details>
+      <summary class="hint cursor-pointer">{% translate "Payload" %}</summary>
+      <pre class="text-xs overflow-x-auto bg-gray-50 p-2 rounded">{{ payload_json }}</pre>
+    </details>
+  {% endif %}
+</div>

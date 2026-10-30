@@ -196,6 +196,18 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 
 `update_payment_accrued_for_user` runs synchronously inside the request and takes a Redis lock per `OpportunityAccess` (`cache.lock`).
 
+## Local Testing
+
+The opportunity menu's **Test submissions (local)** page fires fake forms for any worker of an opportunity: deliver forms for a chosen deliver unit, learn-module forms and assessments. It needs `DEBUG` and `ENABLE_TEST_SUBMISSIONS=True` in `.env`; without both, the route is not registered and the menu item is hidden.
+
+- Forms are built in `submission_simulator.py` and passed straight to `process_xform`, so they skip the `FormReceiver` view and its OAuth/`HQServer` lookup, and record exactly what a forwarded form would.
+- The payload is the `ConnectFormRepeater` shape with no `attachments`, so nothing is fetched from HQ. `attachment_missing` flags every visit when that rule is on, as it does for those domains.
+- The username comes from the worker's `ConnectIDUserLink` for the app's domain. A worker without one can't be submitted for until the steps below create it.
+- **Adding workers in test mode:** with the same gate on, **Add Connect Workers** skips the ConnectID lookup. A number that already belongs to a user reuses that user; any other number becomes a made-up user (`test_<digits>`, "Test worker <last 4>"). The invite is recorded without sending the SMS or push notification.
+- Each worker has a button for their next step before delivering. **Accept invite** does what the invite link does: it marks the access and the `UserInvite` accepted, and refuses if there is no invite. Until then the worker is missing from the Deliver tab, which lists accepted workers only. **Start learning** does what `start_learn_app` does, minus creating the HQ user: it links the worker to the learn app's domain and records the learning start. **Claim opportunity** does what the mobile claim endpoint does, including linking the deliver app's domain, minus HQ user creation: it refuses a full or ended opportunity, then creates the `OpportunityClaim` and its claim limits. For a worker who already claimed, it adds any missing claim limits. Payment units the remaining budget can't fund get no limit, and the page says so. Until a worker claims, deliver forms get "User has not claimed opportunity", the same as from HQ.
+- The processor finds the opportunity by app, not by the page's opportunity. If another active opportunity uses the same app, a form can be recorded there; the log says so.
+- Post-commit tasks run as normal. With eager Celery, an assessment's push notification calls ConnectID inside the request, so assessments need a reachable ConnectID or a real Celery worker.
+
 ## Error Handling
 
 | Situation                                                               | Connect returns      | HQ does                                                                                                                |

@@ -74,6 +74,7 @@ from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import get_export_storage, set_task_progress
 from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
+from commcare_connect.utils.local_testing import simulator_enabled
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
@@ -119,7 +120,8 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
     if opportunity.has_ended:
         logger.warning("Skipping invite for ended opportunity %s (%d users)", opportunity_id, len(user_list))
         return
-    found_users = fetch_users(user_list)
+    # Local test mode has no ConnectID to look workers up in
+    found_users = _fake_connect_users(user_list) if simulator_enabled() else fetch_users(user_list)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
         UserInvite.objects.get_or_create(
@@ -129,6 +131,25 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
         )
     for user in found_users:
         update_user_and_send_invite(user, opportunity_id)
+
+
+def _fake_connect_users(phone_numbers: list[str]) -> list[ConnectIdUser]:
+    """Local test mode's stand-in for ConnectID's user lookup: every number is "found".
+
+    A number that already belongs to a user is that user, so their invites stay theirs. Any other
+    number gets a made-up user derived from it, so adding it again finds the same user.
+    """
+    existing = {user.phone_number: user for user in User.objects.filter(phone_number__in=phone_numbers)}
+    users = []
+    for phone_number in phone_numbers:
+        if user := existing.get(phone_number):
+            users.append(ConnectIdUser(name=user.name, username=user.username, phone_number=phone_number))
+            continue
+        digits = "".join(char for char in phone_number if char.isdigit())
+        users.append(
+            ConnectIdUser(name=f"Test worker {digits[-4:]}", username=f"test_{digits}", phone_number=phone_number)
+        )
+    return users
 
 
 def update_user_and_send_invite(user: ConnectIdUser, opp_id):
@@ -153,14 +174,18 @@ def invite_user(user_id, opportunity_access_id):
     body = f"You have been invited to a job in Connect. Click the link to accept {url}"
     if not user.phone_number:
         return
-    sms_status = send_sms(user.phone_number, body)
+    # Local test mode: no SMS or push notification, as there is no Twilio or ConnectID to send them
+    test_mode = simulator_enabled()
+    sms_sid = None if test_mode else send_sms(user.phone_number, body).sid
     UserInvite.objects.update_or_create(
         opportunity_access=opportunity_access,
         defaults={
-            "message_sid": sms_status.sid,
+            "message_sid": sms_sid,
             "status": UserInviteStatus.accepted if opportunity_access.accepted else UserInviteStatus.invited,
         },
     )
+    if test_mode:
+        return
     message = Message(
         usernames=[user.username],
         data={
