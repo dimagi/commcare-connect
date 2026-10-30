@@ -12,7 +12,7 @@ class OrganizationFilterSet(django_filters.FilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search organization, country, sector…")}),
+        widget=forms.TextInput(attrs={"placeholder": _("Search")}),
     )
     countries = django_filters.ModelMultipleChoiceFilter(
         queryset=Country.objects.order_by("name"),
@@ -46,7 +46,7 @@ class ContactFilterSet(django_filters.FilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search name, organization, email…")}),
+        widget=forms.TextInput(attrs={"placeholder": _("Search")}),
     )
     countries = django_filters.ModelMultipleChoiceFilter(
         field_name="organization__countries",
