@@ -13,9 +13,15 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, Currency
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import DATE_INPUT
 from commcare_connect.program.models import Program
-from commcare_connect.solicitation.models import Solicitation, SolicitationEvaluationCriterion, SolicitationQuestion
+from commcare_connect.solicitation.models import (
+    Solicitation,
+    SolicitationEvaluationCriterion,
+    SolicitationInvitation,
+    SolicitationQuestion,
+)
 
 DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
 
@@ -290,3 +296,34 @@ def publish_errors(solicitation):
     if total != 100:
         errors["criteria"] = [_("Criteria weights must total 100%% (currently %(total)s%%).") % {"total": total}]
     return errors
+
+
+class SolicitationInvitationForm(forms.Form):
+    organizations = forms.ModelMultipleChoiceField(
+        label=_("Organizations"),
+        queryset=Organization.objects.none(),
+        # Clearing the search after each pick lets a PM type the next organization straight away.
+        widget=forms.SelectMultiple(
+            attrs={"data-tomselect": "1", "data-tomselect:settings": json.dumps({"clearAfterSelect": True})}
+        ),
+    )
+
+    def __init__(self, *args, solicitation, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Already-invited orgs aren't offered, so each org is invited at most once.
+        self.fields["organizations"].queryset = (
+            Organization.objects.exclude(pk=solicitation.organization_id)
+            .exclude(solicitation_invitations__solicitation=solicitation)
+            .order_by("name")
+        )
+        # Organization.__str__ is its slug; PMs pick organizations by name.
+        self.fields["organizations"].label_from_instance = attrgetter("name")
+
+
+class SolicitationInvitationDeleteForm(forms.Form):
+    invitation_ids = forms.ModelMultipleChoiceField(queryset=SolicitationInvitation.objects.none())
+
+    def __init__(self, *args, solicitation, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Scoped to this solicitation, so a posted id from any other solicitation fails validation.
+        self.fields["invitation_ids"].queryset = solicitation.invitations.all()
