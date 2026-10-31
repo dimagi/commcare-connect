@@ -353,6 +353,17 @@ def test_get_worker_learn_table_data_all_fields(
 
 
 @pytest.mark.django_db
+def test_get_worker_learn_table_data_no_learn_modules(opportunity):
+    assert not opportunity.learn_app.learn_modules.exists()
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    row = get_worker_learn_table_data(opportunity).get(id=access.id)
+
+    assert row.completed_modules_count == 0
+    assert row.modules_completed_percentage is None
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "opportunity",
     [
