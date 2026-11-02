@@ -169,7 +169,12 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 ## Local data
 
-- **To create local dev data (not test fixtures), use the `simulation` steps or a scenario** — never seed with the ORM or factories. One-off scenarios go in the gitignored `simulation/scenarios/local/`; never commit them. If a step is missing, add it (extracting view logic into a function if needed). Changing a user flow means updating its step; `test_scenarios.py` usually fails otherwise. See `commcare_connect/simulation/README.md`
+Local dev data (not test fixtures) comes from the `simulation` app, which builds it by driving the real forms, functions and APIs. See `commcare_connect/simulation/README.md`.
+
+- **Never seed with the ORM or factories.** Compose `Sim` steps. If a step is missing, add one that submits the page's request as the acting admin (`sim.browser(user)`); don't change production code to make a step possible
+- **Shared vs personal scenarios**: `simulation/scenarios/` holds a few shared scenarios that CI builds; one-off data (a feature in progress, a bug repro) goes in the gitignored `simulation/scenarios/local/` and is never committed. Prefer extending a shared scenario over adding one
+- **Changing a user flow means updating its step in the same PR.** If you change a form, view or function a step calls, update the step; `test_scenarios.py` usually fails otherwise. Scenarios only call steps, so they rarely need changing
+- **A fixed bug leaves a regression test, not a scenario**
 
 ## Gotchas
 
