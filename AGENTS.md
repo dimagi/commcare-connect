@@ -169,7 +169,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 ## Local data
 
-- **To create local dev data (not test fixtures), use the `simulation` steps or a scenario** — never seed with the ORM or factories. If a step is missing, add it (extracting view logic into a function if needed). Changing a user flow means updating its step; `test_scenarios.py` usually fails otherwise. See `commcare_connect/simulation/README.md`
+- **To create local dev data (not test fixtures), use the `simulation` steps or a scenario** — never seed with the ORM or factories. One-off scenarios go in the gitignored `simulation/scenarios/local/`; never commit them. If a step is missing, add it (extracting view logic into a function if needed). Changing a user flow means updating its step; `test_scenarios.py` usually fails otherwise. See `commcare_connect/simulation/README.md`
 
 ## Gotchas
 

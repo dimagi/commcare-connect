@@ -19,12 +19,12 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.simulation.scenarios import get_scenario, scenario_names
+from commcare_connect.simulation.scenarios import get_scenario, standard_scenario_names
 
 pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.parametrize("name", scenario_names())
+@pytest.mark.parametrize("name", standard_scenario_names())
 def test_scenario_builds(sim, name):
     """Every standard scenario must build at its smallest size; a failure here means a step fell behind the app."""
     scenario = get_scenario(name)
