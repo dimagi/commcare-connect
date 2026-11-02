@@ -42,10 +42,9 @@ with a history that runs from about six weeks ago to now.
 A scenario is a module in `scenarios/` with `ORG_NAMES` and `build(sim, *, small)`, written in `Sim` steps
 (`steps/`). `scenarios/_common.py` has the shared opening (organizations, program, trained workers).
 
-For data only you need, such as a feature in progress or a bug to reproduce, put the module in
-`scenarios/local/`. Git ignores that folder and CI doesn't build it, but `run_scenario <name>` runs it like any
-other scenario. Its name must not be one a standard scenario already uses. Move it to `scenarios/` only when it
-shows a state others will keep needing; a fixed bug leaves a regression test, not a scenario.
+A personal scenario goes in `scenarios/local/` instead (see "Shared and personal scenarios" below). Git ignores
+that folder and CI doesn't build it, but `run_scenario <name>` runs it like any other scenario. Its name must not
+be one a shared scenario already uses.
 
 **Never seed with the ORM or factories.** If no step does what you need, add one that sends the page's request
 through `sim.browser(user)`, which fails with the errors the page showed if the page refuses it. Inbound
@@ -53,6 +52,9 @@ integrations with no page, such as HQ forwarding a form, call the function their
 
 The one exception is configuration records that have no UI path: the simulated `HQServer` and its OAuth
 application, and the program's `DeliveryType`, are get-or-created.
+
+A scenario is done when it has run: build it with `run_scenario <name> --admin-email <your local user>` and open
+the pages it prints. For a shared scenario, also run `pytest commcare_connect/simulation/tests/test_scenarios.py`.
 
 ## History and the clock
 
@@ -72,5 +74,30 @@ test transaction (see `tests/conftest.py`).
 
 ## Keeping it working
 
-`tests/test_scenarios.py` builds every standard scenario at its smallest size in CI. When a change to a form or flow breaks
-it, update the step in the same PR.
+Steps call the same code the pages do, so they break when that code changes, and CI catches it:
+`tests/test_scenarios.py` builds every standard scenario at its smallest size. What to update depends on the change:
+
+- **A form or view behind a step changes** (a new required field, a new rule): update the step in the same PR.
+- **A page's request changes** (a renamed field, a new required field, a different URL or success response):
+  update the step's POST to match what the page now sends.
+- **A new feature needs local data**: whoever first needs it adds the step. Areas with no steps yet include tasks,
+  microplanning, audit, solicitations and the reports.
+- **A new state should be easy to reach**: extend the shared scenario for that area, or add a new one if no area
+  fits.
+
+Scenarios only combine steps, so they change only when the state they show should change.
+
+## Shared and personal scenarios
+
+Shared scenarios are the small set everyone runs to reach a known state. Each one costs CI time and upkeep, so add
+one only for a state many people will need; otherwise extend an existing one.
+
+Everything else is personal and lives in the gitignored `scenarios/local/`:
+
+- **A feature in progress**: the data you need while building it.
+- **A bug repro**: write the steps that reach the bug, see it in the browser, fix it, rerun. What gets committed is
+  a regression test, small and built on the usual fixtures. Use `Sim` steps in that test only when the bug needs a
+  long flow (deliver, review, pay, invoice) that factories can't set up faithfully. The `sim` fixture is in
+  `tests/conftest.py`; move it to the global `conftest.py` when another app's tests need it.
+- **A PR a reviewer needs to try**: extend a shared scenario if the state is generally useful, or paste the steps
+  in the PR description.
