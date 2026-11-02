@@ -40,7 +40,12 @@ with a history that runs from about six weeks ago to now.
 ## Writing a scenario
 
 A scenario is a module in `scenarios/` with `ORG_NAMES` and `build(sim, *, small)`, written in `Sim` steps
-(`steps/`). For one-off data for a feature, write a scenario the same way; keep it if others will want it.
+(`steps/`). `scenarios/_common.py` has the shared opening (organizations, program, trained workers).
+
+For data only you need, such as a feature in progress or a bug to reproduce, put the module in
+`scenarios/local/`. Git ignores that folder and CI doesn't build it, but `run_scenario <name>` runs it like any
+other scenario. Its name must not be one a standard scenario already uses. Move it to `scenarios/` only when it
+shows a state others will keep needing; a fixed bug leaves a regression test, not a scenario.
 
 **Never seed with the ORM or factories.** If no step does what you need, add one that sends the page's request
 through `sim.browser(user)`, which fails with the errors the page showed if the page refuses it. Inbound
@@ -67,5 +72,5 @@ test transaction (see `tests/conftest.py`).
 
 ## Keeping it working
 
-`tests/test_scenarios.py` builds every scenario at its smallest size in CI. When a change to a form or flow breaks
+`tests/test_scenarios.py` builds every standard scenario at its smallest size in CI. When a change to a form or flow breaks
 it, update the step in the same PR.
