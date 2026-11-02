@@ -4091,3 +4091,15 @@ def test_get_earned_summary(
     assert earned.total == expected_total
     assert earned.percentage == expected_percentage
     assert earned.percentage_tooltip == expected_tooltip
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["opportunity:user_visits_list", "opportunity:user_tasks_list"])
+@pytest.mark.parametrize("user_param", ["qa-no-such-worker", "not-a-uuid", str(uuid4())])
+def test_worker_page_invalid_or_unknown_user_returns_404(
+    client, organization, org_user_member, opportunity, url_name, user_param
+):
+    client.force_login(org_user_member)
+    url = reverse(url_name, args=(organization.slug, opportunity.opportunity_id))
+    response = client.get(f"{url}?{urlencode({'user': user_param})}")
+    assert response.status_code == 404
