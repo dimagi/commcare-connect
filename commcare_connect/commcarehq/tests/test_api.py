@@ -270,6 +270,11 @@ class TestBulkCreateOrUpdateCases:
 
         assert [len(json.loads(request.content)) for request in requests] == [100, 100, 1]
 
+    def test_gives_hq_30_seconds_per_request(self, httpx_mock):
+        requests = self.send(httpx_mock, cases_data=[{"case_id": "case-1"}])
+
+        assert requests[0].extensions["timeout"] == {"connect": 30, "read": 30, "write": 30, "pool": 30}
+
 
 def _make_link(opportunity, user, hq_user_uuid=None):
     """Link `user` to the HQ domain of the opportunity's deliver app."""
