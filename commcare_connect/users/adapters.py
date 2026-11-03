@@ -65,13 +65,18 @@ class AccountAdapter(DefaultAccountAdapter):
 
     @staticmethod
     def _within_mail_budget(email: str) -> bool:
+        """Consumes one unit of the address's ``send_mail`` budget; False when the budget is spent."""
         request = allauth_context.request
         if request is None:
             return True  # commands and tasks, not a visitor: nothing to throttle
         # allauth's public consume() exempts GET requests, but the social-login callback that completes
         # a signup is a GET and sends a confirmation mail, so count those too.
         usage = ratelimit.consume(
-            request, config=account_settings.RATE_LIMITS, action="send_mail", key=email.lower(), limit_get=True
+            request,
+            config=account_settings.RATE_LIMITS,
+            action="send_mail",
+            key=mail_budget_key(email),
+            limit_get=True,
         )
         return usage is not None
 
@@ -135,3 +140,20 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if not account.user.has_usable_password():
             raise ValidationError(_("You can't disconnect your CommCare HQ account because it's your sign-in method."))
         super().validate_disconnect(account, accounts)
+
+
+GMAIL_DOMAINS = {"gmail.com", "googlemail.com"}
+
+
+def mail_budget_key(email: str) -> str:
+    """The inbox an address reaches, so aliases of one mailbox share one mail budget.
+
+    Gmail ignores dots and anything after a "+" in the local part, so a bomber could otherwise mint an
+    unlimited number of distinct addresses for one victim. Other providers can route those variants to
+    different mailboxes, so they are only lower-cased.
+    """
+    local, _, domain = email.strip().lower().rpartition("@")
+    if domain in GMAIL_DOMAINS:
+        local = local.split("+", 1)[0].replace(".", "")
+        domain = "gmail.com"
+    return f"{local}@{domain}"

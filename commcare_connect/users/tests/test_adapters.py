@@ -11,7 +11,7 @@ from allauth.socialaccount.providers.base import AuthProcess
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
-from commcare_connect.users.adapters import AccountAdapter, SocialAccountAdapter
+from commcare_connect.users.adapters import AccountAdapter, SocialAccountAdapter, mail_budget_key
 from commcare_connect.users.models import User
 
 
@@ -61,6 +61,16 @@ class TestAccountAdapter:
             for to in (email, email.upper(), email):
                 AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
         assert [message.to for message in mailoutbox] == [[email], [email.upper()]]
+
+    @pytest.mark.django_db
+    def test_send_mail_budget_is_shared_by_gmail_aliases(self, anonymous_request, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "2/d/key"}
+        local = uuid4().hex
+        aliases = [f"{local}@gmail.com", f"{local[:4]}.{local[4:]}+signup@googlemail.com", f"{local}+2@gmail.com"]
+        with context.request_context(anonymous_request("post", "/accounts/signup/")):
+            for to in aliases:
+                AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
+        assert [message.to for message in mailoutbox] == [[aliases[0]], [aliases[1]]]
 
     @pytest.mark.django_db
     def test_send_mail_outside_a_request_is_not_throttled(self, settings, mailoutbox):
@@ -161,3 +171,16 @@ def test_validate_disconnect(user, provider, has_usable_password, other_provider
             SocialAccountAdapter().validate_disconnect(account, accounts)
     else:
         SocialAccountAdapter().validate_disconnect(account, accounts)
+
+
+@pytest.mark.parametrize(
+    "email, expected",
+    [
+        ("Someone@Example.com ", "someone@example.com"),
+        ("someone+tag@example.com", "someone+tag@example.com"),  # not Gmail: "+tag" may be its own mailbox
+        ("Some.One+signup@Gmail.com", "someone@gmail.com"),
+        ("some.one@googlemail.com", "someone@gmail.com"),
+    ],
+)
+def test_mail_budget_key(email, expected):
+    assert mail_budget_key(email) == expected
