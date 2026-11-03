@@ -101,6 +101,27 @@ Ideally deploy should be done via GitHub actions however it can be run locally a
 inv deploy
 ```
 
+### Scheduled deploys
+
+The `Scheduled production deploy` workflow (`.github/workflows/scheduled-deploy.yml`) deploys `main` to production
+every Monday, Wednesday and Friday at 12:00 UTC. GitHub sometimes starts scheduled runs a few minutes late. Before
+deploying, it checks `main`:
+
+- **Nothing new since the latest release:** the run skips quietly.
+- **CI on `main` failed, is still running, or hasn't run:** the run skips the deploy and posts a warning to the
+  production deploy channel. It doesn't retry, and the next slot tries again. Commits that only touch `docs/` don't
+  need a CI run of their own.
+- **The check itself fails** (for example a GitHub API error): the run skips and posts a warning.
+
+The deploy is pinned to the commit that was checked. If a manual deploy is running, the scheduled one waits for it,
+then checks again and skips quietly when production already has that commit or a newer one. If the latest release
+isn't on that commit's history at all, for example after a hotfix release, it skips and posts a warning so someone can
+decide whether to deploy by hand.
+
+To stop scheduled deploys, go to **Actions → Scheduled production deploy**, open the **⋯** menu and choose
+**Disable workflow**. Choose **Enable workflow** in the same place to resume them. Nothing reminds you to turn it back
+on. Manual deploys through the `Deploy` workflow keep working while the schedule is disabled.
+
 ## Accessing logs
 
 The logs from the Docker containers are shipped to CloudWatch. To access them you will need to use the AWS console.
