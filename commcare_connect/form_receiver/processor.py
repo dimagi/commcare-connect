@@ -494,7 +494,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
             if is_over_limit:
                 user_visit.status = VisitValidationStatus.over_limit
-                if not completed_work.status == CompletedWorkStatus.over_limit:
+                # Work already approved keeps its status: the over-limit visit is not paid anyway, and
+                # flipping the work would move its approval date, which invoicing bills and prices by.
+                if completed_work.status not in (CompletedWorkStatus.over_limit, CompletedWorkStatus.approved):
                     completed_work.status = CompletedWorkStatus.over_limit
                     completed_work_needs_save = True
             elif counts["entity"] > 0:
