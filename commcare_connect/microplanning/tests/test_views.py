@@ -81,6 +81,14 @@ def work_area_at(opportunity, x, y, **kwargs):
     )
 
 
+@pytest.fixture
+def work_area_import_lock(opportunity):
+    """The cache key that marks the opportunity's work area import as running. Deleted after the test."""
+    lock_key = get_import_area_cache_key(opportunity.id)
+    yield lock_key
+    cache.delete(lock_key)
+
+
 class BaseMicroplanningFlagTest:
     @pytest.fixture(autouse=True)
     def setup_microplanning_flag(self, opportunity, request):
@@ -135,6 +143,36 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         messages = list(response2.wsgi_request._messages)
         assert "An import for this opportunity is already in progress." in str(messages[1])
         assert mock_delay.call_count == 1  # No new task
+
+    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    def test_an_import_that_ends_at_once_leaves_no_lock(
+        self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
+    ):
+        def import_that_ends_at_once(**kwargs):
+            cache.delete(work_area_import_lock)  # as the task does when it ends
+            return MagicMock(id="task-789")
+
+        mock_delay.side_effect = import_that_ends_at_once
+        client.force_login(org_user_admin)
+
+        client.post(
+            self.get_url(org_slug=opportunity.organization.slug, opp_id=opportunity.opportunity_id),
+            {"csv_file": csv_file},
+        )
+
+        assert cache.get(work_area_import_lock) is None
+
+    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay", side_effect=RuntimeError("no broker"))
+    def test_lock_is_released_when_the_import_cannot_be_queued(
+        self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
+    ):
+        client.force_login(org_user_admin)
+        url = self.get_url(org_slug=opportunity.organization.slug, opp_id=opportunity.opportunity_id)
+
+        with pytest.raises(RuntimeError):
+            client.post(url, {"csv_file": csv_file})
+
+        assert cache.get(work_area_import_lock) is None
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")

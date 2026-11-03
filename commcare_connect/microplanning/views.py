@@ -514,14 +514,18 @@ class AreaImportView(View):
 
         opportunity_id = request.opportunity.id
         lock_key = self.get_lock_key(opportunity_id)
-        if cache.get(lock_key):
+        # Taken before the task is queued, because the task clears it when it ends. add() lets only one
+        # of two uploads sent at the same moment through.
+        if not cache.add(lock_key, "running", timeout=1200):
             messages.error(request, _("An import for this opportunity is already in progress."))
             return redirect(redirect_url)
-
-        file_name = f"{self.file_prefix}-{opportunity_id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(request.FILES["csv_file"].read()))
-        task = self.import_task.delay(opp_id=opportunity_id, file_name=file_name)
-        cache.set(lock_key, task.id, timeout=1200)
+        try:
+            file_name = f"{self.file_prefix}-{opportunity_id}-{uuid.uuid4().hex}.csv"
+            default_storage.save(file_name, ContentFile(request.FILES["csv_file"].read()))
+            task = self.import_task.delay(opp_id=opportunity_id, file_name=file_name)
+        except Exception:
+            cache.delete(lock_key)
+            raise
         messages.info(request, self.started_message)
         return redirect(f"{redirect_url}?task_id={task.id}{self.status_query}")
 
