@@ -3,6 +3,8 @@ from typing import Any
 
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.utils import filter_users_by_email, user_email
+from allauth.core import context as allauth_context
+from allauth.core import ratelimit
 from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialAccount, SocialLogin
@@ -40,6 +42,19 @@ class AccountAdapter(DefaultAccountAdapter):
                 settings.ALLAUTH_TRUSTED_PROXY_COUNT,
             )
             return request.META["REMOTE_ADDR"]
+
+    def send_mail(self, template_prefix: str, email: str, context: dict) -> None:
+        """Caps how much account mail one address can receive, whatever the trigger.
+
+        allauth's own limits are per action, so confirmation resends, "account already exists" mails and
+        password resets each get their own allowance. The ``send_mail`` entry in ACCOUNT_RATE_LIMITS is
+        one budget for all of them, per address. Skipping is silent to the requester, like allauth's own
+        handling of the confirmation cooldown: links already sent stay valid.
+        """
+        if not ratelimit.consume(allauth_context.request, action="send_mail", key=email.lower()):
+            logger.info("Not sending %s to %s: ACCOUNT_RATE_LIMITS['send_mail'] reached", template_prefix, email)
+            return
+        super().send_mail(template_prefix, email, context)
 
     def add_message(self, request, level, message_template, message_context=None, extra_tags=""):
         if message_template == "socialaccount/messages/account_connected.txt":

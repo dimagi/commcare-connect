@@ -3,6 +3,7 @@ Module for all Form Tests.
 """
 
 import pytest
+from allauth.account.forms import ResetPasswordForm
 from allauth.core import context
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -94,3 +95,13 @@ class TestUserSignupForm:
         assert user is None
         assert response.status_code == 302  # looks like the real "verification sent" redirect to the bot
         assert not User.objects.filter(email="bot@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_password_reset_does_not_mail_addresses_without_an_account(rf, mailoutbox):
+    form = ResetPasswordForm({"email": "nobody@example.com"})
+    assert form.is_valid(), form.errors  # enumeration prevention: the form never reveals the address is unknown
+    request = _anonymous_post(rf)
+    with context.request_context(request):
+        form.save(request)
+    assert mailoutbox == []

@@ -329,6 +329,16 @@ SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupF
 SOCIALACCOUNT_STORE_TOKENS = True
 # A bot that fills in this (visually hidden) signup field gets the "verification sent" page and no account.
 ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD = "website"
+# The password reset form must not mail addresses that have no account: anyone could type any address in.
+ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False
+# Merged over allauth's defaults, action by action. Limits for one action with the same scope share one
+# cache entry in allauth 65, so an action can't combine a per-minute and a per-day limit on the same key.
+ACCOUNT_RATE_LIMITS = {
+    # allauth's own is 20/m/ip,5/m/key, which lets one address be sent 300 reset mails an hour.
+    "reset_password": "20/m/ip,3/h/key",
+    # Our own action: AccountAdapter.send_mail caps every account mail (confirmation, reset, ...) per address.
+    "send_mail": "10/d/key",
+}
 # How many trusted proxies append to X-Forwarded-For before a request reaches Django; allauth keys its
 # per-IP rate limits on the client IP that many hops back. 0 uses REMOTE_ADDR, i.e. the nearest proxy, which
 # puts every client in one bucket. AccountAdapter.get_client_ip falls back to REMOTE_ADDR when the header

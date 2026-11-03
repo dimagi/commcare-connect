@@ -1,8 +1,12 @@
+from uuid import uuid4
+
 import pytest
 from allauth.account.models import EmailAddress
+from allauth.core import context
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
+from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
@@ -33,6 +37,17 @@ class TestAccountAdapter:
         headers = {"HTTP_X_FORWARDED_FOR": forwarded_for} if forwarded_for else {}
         request = rf.get("/", REMOTE_ADDR="10.0.0.9", **headers)
         assert AccountAdapter().get_client_ip(request) == expected
+
+    @pytest.mark.django_db
+    def test_send_mail_caps_account_mail_per_address(self, rf, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "2/d/key"}
+        email = f"{uuid4().hex}@example.com"  # unique so the shared test cache can't carry state over
+        request = rf.post("/")
+        request.user = AnonymousUser()
+        with context.request_context(request):
+            for to in (email, email.upper(), email):
+                AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
+        assert [message.to for message in mailoutbox] == [[email], [email.upper()]]
 
 
 class TestSocialAccountAdapter:
