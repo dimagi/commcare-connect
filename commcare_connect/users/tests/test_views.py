@@ -3,6 +3,7 @@ from unittest import mock
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.models import Permission
 from django.contrib.messages.middleware import MessageMiddleware
@@ -466,3 +467,10 @@ class TestUpdateUserProfileView:
         worker.refresh_from_db()
         assert response.status_code == 400
         assert worker.name == "Old Name"
+
+
+@pytest.mark.django_db
+def test_signup_page_renders_the_honeypot_field(client):
+    response = client.get(reverse("account_signup"))
+    assert response.status_code == 200
+    assert f'name="{settings.ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD}"' in response.content.decode()

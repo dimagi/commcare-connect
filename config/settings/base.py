@@ -327,6 +327,8 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
+# A bot that fills in this (visually hidden) signup field gets the "verification sent" page and no account.
+ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD = "website"
 # How many trusted proxies append to X-Forwarded-For before a request reaches Django; allauth keys its
 # per-IP rate limits on the client IP that many hops back. 0 uses REMOTE_ADDR, i.e. the nearest proxy, which
 # puts every client in one bucket. AccountAdapter.get_client_ip falls back to REMOTE_ADDR when the header
