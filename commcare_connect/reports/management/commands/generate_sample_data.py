@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from functools import cache
 from itertools import cycle
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
@@ -22,7 +23,9 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedModule,
     CompletedWork,
+    DeliverUnit,
     ExchangeRate,
+    HQApiKey,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -39,9 +42,11 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     DeliveryTypeFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    OpportunityVerificationFlagsFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
@@ -60,6 +65,11 @@ fake = Faker()
 SAMPLE_EXCHANGE_RATE_DATE = date(2020, 1, 1)
 SAMPLE_EXCHANGE_RATES = {"USD": Decimal("1")}
 DEFAULT_SAMPLE_EXCHANGE_RATE = Decimal("100")
+
+FORM_TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+SAMPLE_FORM_XMLNS = "http://openrosa.org/formdesigner/sample-deliver-form"
+# The HQ API key user is looked up by name so reruns reuse it instead of minting a new one.
+SAMPLE_API_KEY_USERNAME = "sample-hq-api"
 
 # Attachment bytes are generated here rather than downloaded from HQ, so they are real files a
 # browser can open and a player can play. One image and one audio clip are built once and shared
@@ -137,6 +147,9 @@ class Command(BaseCommand):
             lambda: CompletedWork.objects.filter(
                 opportunity_access__opportunity__organization_id__in=org_ids
             ).delete(),
+            # DeliverUnit.payment_unit is DO_NOTHING, so the unit has to go before what it points
+            # at. It hangs off the opportunity's deliver app rather than the opportunity itself.
+            lambda: DeliverUnit.objects.filter(payment_unit__opportunity__organization_id__in=org_ids).delete(),
             lambda: PaymentUnit.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: UserInvite.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: OpportunityAccess.objects.filter(opportunity__organization_id__in=org_ids).delete(),
@@ -202,7 +215,8 @@ class Command(BaseCommand):
         self.stdout.write("Generating prerequisite data (users, opportunities, etc.)...")
 
         users = [MobileUserFactory() for _ in range(10)]
-        opportunities = [OpportunityFactory(organization=org) for _ in range(5)]
+        api_key = _sample_api_key()
+        opportunities = [OpportunityFactory(organization=org, api_key=api_key) for _ in range(5)]
 
         managed_opportunities = []
         for _ in range(num_managed_opps):
@@ -211,10 +225,16 @@ class Command(BaseCommand):
             managed_opp = OpportunityFactory(
                 organization=invited_org,
                 program=program,
+                api_key=api_key,
             )
             managed_opportunities.append(managed_opp)
 
         all_opportunities = opportunities + managed_opportunities
+        # The form receiver get_or_creates these as visits arrive. These visits are written
+        # straight to the database instead, so nothing else would -- and the visit detail page
+        # reads the record without guarding for its absence.
+        for opp in all_opportunities:
+            OpportunityVerificationFlagsFactory(opportunity=opp)
         all_accesses = []
         payment_units = {}
         for user in users:
@@ -242,7 +262,15 @@ class Command(BaseCommand):
         deliver_units_cache = {}
         for opp in all_opportunities:
             if opp.deliver_app and opp.deliver_app.id not in deliver_units_cache:
-                deliver_units_cache[opp.deliver_app.id] = DeliverUnitFactory(app=opp.deliver_app)
+                # The payment unit has to be passed in: left to itself DeliverUnitFactory builds
+                # one through a throwaway opportunity, which drags in its own HQ API key and a
+                # UserFactory user -- whose username sequence restarts with the process and so
+                # collides with a previous run's users.
+                if opp.id not in payment_units:
+                    payment_units[opp.id] = PaymentUnitFactory(opportunity=opp)
+                deliver_units_cache[opp.deliver_app.id] = DeliverUnitFactory(
+                    app=opp.deliver_app, payment_unit=payment_units[opp.id]
+                )
 
         start_date = datetime(2024, 7, 1, tzinfo=UTC)
         end_date = djtimezone.now()
@@ -264,13 +292,16 @@ class Command(BaseCommand):
             deliver_unit = deliver_units_cache.get(opportunity.deliver_app_id)
             payment_unit = payment_units.get(opportunity.id)
 
-            form_json = {
-                "metadata": {
-                    "location": location,
-                    "timeStart": time_start.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                    "timeEnd": time_end.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                }
-            }
+            xform_id = str(uuid4())
+            form_json = _build_form_json(
+                xform_id=xform_id,
+                opportunity=opportunity,
+                user=user,
+                location=location,
+                time_start=time_start,
+                time_end=time_end,
+                received_on=random_date,
+            )
             if random.randrange(100) < attachment_percent:
                 form_json["attachments"] = _plan_attachments()
 
@@ -285,6 +316,7 @@ class Command(BaseCommand):
                 opportunity_access=opp_access,
                 deliver_unit=deliver_unit,
                 visit_date=random_date,
+                xform_id=xform_id,
                 form_json=form_json,
             )
             # Temporarily attach the visit to the work object to link them after creation
@@ -384,6 +416,42 @@ class Command(BaseCommand):
             default_storage.save(str(blob.blob_id), ContentFile(_sample_image_bytes(), blob.name))
         for attachment in audio:
             default_storage.save(str(attachment.blob_id), ContentFile(_sample_audio_bytes(), attachment.name))
+
+
+def _sample_api_key():
+    """One HQApiKey shared by every sample opportunity, reused by later runs.
+
+    OpportunityFactory would otherwise build an HQApiKey per opportunity, each with a user from
+    UserFactory -- which numbers usernames from a sequence that restarts with the process, so a
+    second run collides with the first run's users on the username unique constraint.
+    """
+    user, _ = User.objects.get_or_create(username=SAMPLE_API_KEY_USERNAME, defaults={"name": "Sample HQ API"})
+    return HQApiKey.objects.filter(user=user).first() or HQApiKeyFactory(user=user)
+
+
+def _build_form_json(*, xform_id, opportunity, user, location, time_start, time_end, received_on):
+    """The submission payload the visit would have arrived with.
+
+    The visit detail page feeds this to XFormSerializer and then calls save() without checking
+    is_valid(), which asserts rather than degrading, so everything the serializer marks required
+    is filled in here -- a metadata-only payload makes that page raise.
+    """
+    deliver_app = opportunity.deliver_app
+    return {
+        "domain": deliver_app.cc_domain if deliver_app else "sample-domain",
+        "id": xform_id,
+        "app_id": deliver_app.cc_app_id if deliver_app else str(uuid4()),
+        "build_id": None,
+        "received_on": received_on.strftime(FORM_TIMESTAMP_FORMAT),
+        "form": {"@xmlns": SAMPLE_FORM_XMLNS, "name": opportunity.name},
+        "metadata": {
+            "location": location,
+            "timeStart": time_start.strftime(FORM_TIMESTAMP_FORMAT),
+            "timeEnd": time_end.strftime(FORM_TIMESTAMP_FORMAT),
+            "app_build_version": None,
+            "username": user.username,
+        },
+    }
 
 
 def _plan_attachments():
