@@ -176,16 +176,24 @@ To populate a local database with organizations, opportunities, visits and payme
     $ ./manage.py generate_sample_data 50 demo-org
 
 The organization is created if the slug does not already exist. Each run first deletes the
-existing opportunities, visits, payments and programs belonging to the two organizations it is
-about to use. Two optional flags are available:
+existing opportunities, visits, payments, programs and attachments belonging to the two
+organizations it is about to use, including the attachment files under `MEDIA_ROOT`. Optional
+flags:
 
 - `--invited_org_slug` — reuse a specific organization as the invited org. Without it, a new
   invited org with a random slug is created on every run, and the previous one is left behind.
 - `--managed_opportunities` — how many managed opportunities to create (default 3)
+- `--image_percent` — percentage of visits that get a photo (default 25, `0` for none)
+- `--audio_percent` — percentage of visits that get one to three audio recordings, each with a
+  stand-in transcript and translation (default 25, `0` for none)
+- `--media_dir` — a directory to search (recursively) for image / audio files to use as the
+  attachments for generated visits if requested. Otherwise placeholders are used.
 
-Adding yourself to the generated organization is a separate step, either through
+Adding yourself to the generated organizations is a separate step, either through
 `/admin/organization/userorganizationmembership/` or the organization's own member admin
-pages.
+pages. Note there are two: the primary org from `<org_slug>` and the invited org, which owns
+the managed opportunities — join only the first and those stay hidden. Worker tabs list only
+workers whose `OpportunityAccess` is accepted, which the generated ones are.
 
 ### Test coverage
 
