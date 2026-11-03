@@ -77,7 +77,7 @@ class TestUserSignupForm:
         assert f'name="{settings.ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD}"' in html
 
     @pytest.mark.django_db
-    def test_bot_that_fills_the_honeypot_gets_no_account(self, anonymous_request):
+    def test_bot_that_fills_the_honeypot_gets_no_account(self, anonymous_request, mailoutbox):
         data = {
             "email": "bot@example.com",
             "password1": "bots-c4nt-read-css",
@@ -92,6 +92,7 @@ class TestUserSignupForm:
         assert user is None
         assert response.status_code == 302  # looks like the real "verification sent" redirect to the bot
         assert not User.objects.filter(email="bot@example.com").exists()
+        assert mailoutbox == []
 
 
 @pytest.mark.django_db

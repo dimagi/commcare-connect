@@ -63,6 +63,15 @@ class TestAccountAdapter:
         assert [message.to for message in mailoutbox] == [[email], [email.upper()]]
 
     @pytest.mark.django_db
+    def test_send_mail_uses_the_configured_cap(self, anonymous_request, mailoutbox):
+        """Pins the production value, so raising or dropping it in settings is a deliberate change."""
+        email = f"{uuid4().hex}@example.com"
+        with context.request_context(anonymous_request("post", "/accounts/signup/")):
+            for _ in range(11):
+                AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+        assert len(mailoutbox) == 10
+
+    @pytest.mark.django_db
     def test_send_mail_budget_is_shared_by_gmail_aliases(self, anonymous_request, settings, mailoutbox):
         settings.ACCOUNT_RATE_LIMITS = {"send_mail": "2/d/key"}
         local = uuid4().hex
