@@ -6,9 +6,7 @@ import pytest
 from allauth.account.forms import ResetPasswordForm
 from allauth.core import context
 from django.conf import settings
-from django.contrib.auth.models import AnonymousUser
-from django.contrib.messages.middleware import MessageMiddleware
-from django.contrib.sessions.middleware import SessionMiddleware
+from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.users.forms import ManualUserOTPForm, UserAdminCreationForm, UserSignupForm
@@ -60,14 +58,6 @@ class TestManualUserOTPForm:
         assert form.errors.get("phone_number") == ["Phone number must be numeric."]
 
 
-def _anonymous_post(rf, data=None):
-    request = rf.post("/", data or {})
-    request.user = AnonymousUser()
-    SessionMiddleware(lambda r: None).process_request(request)
-    MessageMiddleware(lambda r: None).process_request(request)
-    return request
-
-
 class TestUserSignupForm:
     def test_honeypot_field_is_rendered_off_screen(self):
         field = UserSignupForm().honeypot_field
@@ -80,7 +70,14 @@ class TestUserSignupForm:
         assert UserSignupForm().honeypot_field is None
 
     @pytest.mark.django_db
-    def test_bot_that_fills_the_honeypot_gets_no_account(self, rf):
+    def test_signup_template_renders_the_honeypot_field(self, anonymous_request):
+        html = render_to_string(
+            "account/signup.html", {"form": UserSignupForm(), "login_url": "/accounts/login/"}, anonymous_request()
+        )
+        assert f'name="{settings.ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD}"' in html
+
+    @pytest.mark.django_db
+    def test_bot_that_fills_the_honeypot_gets_no_account(self, anonymous_request):
         data = {
             "email": "bot@example.com",
             "password1": "bots-c4nt-read-css",
@@ -89,7 +86,7 @@ class TestUserSignupForm:
         }
         form = UserSignupForm(data)
         assert form.is_valid(), form.errors
-        request = _anonymous_post(rf, data)
+        request = anonymous_request("post", "/accounts/signup/", data)
         with context.request_context(request):
             user, response = form.try_save(request)
         assert user is None
@@ -98,10 +95,10 @@ class TestUserSignupForm:
 
 
 @pytest.mark.django_db
-def test_password_reset_does_not_mail_addresses_without_an_account(rf, mailoutbox):
+def test_password_reset_does_not_mail_addresses_without_an_account(anonymous_request, mailoutbox):
     form = ResetPasswordForm({"email": "nobody@example.com"})
     assert form.is_valid(), form.errors  # enumeration prevention: the form never reveals the address is unknown
-    request = _anonymous_post(rf)
+    request = anonymous_request("post", "/accounts/password/reset/")
     with context.request_context(request):
         form.save(request)
     assert mailoutbox == []

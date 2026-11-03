@@ -1,17 +1,18 @@
 import logging
 from typing import Any
 
+from allauth.account import app_settings as account_settings
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.utils import filter_users_by_email, user_email
 from allauth.core import context as allauth_context
-from allauth.core import ratelimit
 from allauth.core.exceptions import ImmediateHttpResponse
+from allauth.core.internal import ratelimit
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
 from django.conf import settings
 from django.contrib import messages
-from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.utils.translation import gettext as _
@@ -36,15 +37,18 @@ class AccountAdapter(DefaultAccountAdapter):
         try:
             return super().get_client_ip(request)
         except ImproperlyConfigured:
+            remote_addr = request.META.get("REMOTE_ADDR")
             logger.error(
                 "X-Forwarded-For has fewer hops than ALLAUTH_TRUSTED_PROXY_COUNT; rate limiting on REMOTE_ADDR",
                 extra={
                     "x_forwarded_for": request.headers.get("x-forwarded-for"),
-                    "remote_addr": request.META.get("REMOTE_ADDR"),
+                    "remote_addr": remote_addr,
                     "path": request.path,
                 },
             )
-            return request.META["REMOTE_ADDR"]
+            if not remote_addr:
+                raise PermissionDenied("Unable to determine client IP address")
+            return remote_addr
 
     def send_mail(self, template_prefix: str, email: str, context: dict) -> None:
         """Caps how much account mail one address can receive, whatever the trigger.
@@ -54,10 +58,22 @@ class AccountAdapter(DefaultAccountAdapter):
         one budget for all of them, per address. Skipping is silent to the requester, like allauth's own
         handling of the confirmation cooldown: links already sent stay valid.
         """
-        if not ratelimit.consume(allauth_context.request, action="send_mail", key=email.lower()):
+        if not self._within_mail_budget(email):
             logger.info("Not sending %s to %s: ACCOUNT_RATE_LIMITS['send_mail'] reached", template_prefix, email)
             return
         super().send_mail(template_prefix, email, context)
+
+    @staticmethod
+    def _within_mail_budget(email: str) -> bool:
+        request = allauth_context.request
+        if request is None:
+            return True  # commands and tasks, not a visitor: nothing to throttle
+        # allauth's public consume() exempts GET requests, but the social-login callback that completes
+        # a signup is a GET and sends a confirmation mail, so count those too.
+        usage = ratelimit.consume(
+            request, config=account_settings.RATE_LIMITS, action="send_mail", key=email.lower(), limit_get=True
+        )
+        return usage is not None
 
     def add_message(self, request, level, message_template, message_context=None, extra_tags=""):
         if message_template == "socialaccount/messages/account_connected.txt":

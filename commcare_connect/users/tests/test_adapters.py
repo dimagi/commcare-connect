@@ -4,10 +4,10 @@ from uuid import uuid4
 import pytest
 from allauth.account.models import EmailAddress
 from allauth.core import context
+from allauth.core.ratelimit import respond_429
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
-from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
@@ -53,15 +53,29 @@ class TestAccountAdapter:
         )
 
     @pytest.mark.django_db
-    def test_send_mail_caps_account_mail_per_address(self, rf, settings, mailoutbox):
+    def test_send_mail_caps_account_mail_per_address(self, anonymous_request, settings, mailoutbox):
         settings.ACCOUNT_RATE_LIMITS = {"send_mail": "2/d/key"}
         email = f"{uuid4().hex}@example.com"  # unique so the shared test cache can't carry state over
-        request = rf.post("/")
-        request.user = AnonymousUser()
-        with context.request_context(request):
+        # A GET, because the social-login callback sends confirmation mail on one and must count too.
+        with context.request_context(anonymous_request("get", "/accounts/commcarehq/login/callback/")):
             for to in (email, email.upper(), email):
                 AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
         assert [message.to for message in mailoutbox] == [[email], [email.upper()]]
+
+    @pytest.mark.django_db
+    def test_send_mail_outside_a_request_is_not_throttled(self, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "1/d/key"}
+        email = f"{uuid4().hex}@example.com"
+        for _ in range(2):
+            AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+        assert len(mailoutbox) == 2
+
+    @pytest.mark.django_db
+    def test_rate_limited_response_uses_the_site_error_page(self, anonymous_request):
+        response = respond_429(anonymous_request("post", "/accounts/password/reset/"))
+        assert response.status_code == 429
+        assert "Too Many Requests (429)" in response.content.decode()
+        assert 'class="title' in response.content.decode()  # rendered through base.html, not allauth's inline fallback
 
 
 class TestSocialAccountAdapter:
