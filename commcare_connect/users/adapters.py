@@ -31,14 +31,18 @@ class AccountAdapter(DefaultAccountAdapter):
 
         allauth raises ImproperlyConfigured when X-Forwarded-For has fewer hops than the setting trusts.
         That is a deployment fact we can't verify from code, so fall back to REMOTE_ADDR (the nearest
-        proxy, i.e. one shared rate-limit bucket) and log it rather than 500.
+        proxy, i.e. one shared rate-limit bucket) and report it to Sentry rather than 500.
         """
         try:
             return super().get_client_ip(request)
         except ImproperlyConfigured:
-            logger.warning(
-                "X-Forwarded-For %r has fewer hops than ALLAUTH_TRUSTED_PROXY_COUNT; rate limiting on REMOTE_ADDR",
-                request.headers.get("x-forwarded-for"),
+            logger.error(
+                "X-Forwarded-For has fewer hops than ALLAUTH_TRUSTED_PROXY_COUNT; rate limiting on REMOTE_ADDR",
+                extra={
+                    "x_forwarded_for": request.headers.get("x-forwarded-for"),
+                    "remote_addr": request.META.get("REMOTE_ADDR"),
+                    "path": request.path,
+                },
             )
             return request.META["REMOTE_ADDR"]
 

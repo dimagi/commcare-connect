@@ -1,3 +1,4 @@
+import logging
 from uuid import uuid4
 
 import pytest
@@ -37,6 +38,19 @@ class TestAccountAdapter:
         headers = {"HTTP_X_FORWARDED_FOR": forwarded_for} if forwarded_for else {}
         request = rf.get("/", REMOTE_ADDR="10.0.0.9", **headers)
         assert AccountAdapter().get_client_ip(request) == expected
+
+    def test_too_short_forwarded_header_is_reported_as_an_error(self, rf, settings, caplog):
+        settings.ALLAUTH_TRUSTED_PROXY_COUNT = 3
+        request = rf.get("/accounts/login/", REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="203.0.113.5")
+        with caplog.at_level(logging.ERROR, logger="commcare_connect.users.adapters"):
+            AccountAdapter().get_client_ip(request)
+        (record,) = caplog.records
+        assert record.levelno == logging.ERROR
+        assert (record.x_forwarded_for, record.remote_addr, record.path) == (
+            "203.0.113.5",
+            "10.0.0.9",
+            "/accounts/login/",
+        )
 
     @pytest.mark.django_db
     def test_send_mail_caps_account_mail_per_address(self, rf, settings, mailoutbox):
