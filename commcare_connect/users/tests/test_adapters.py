@@ -15,6 +15,25 @@ class TestAccountAdapter:
     def test_respects_registration_setting(self, rf: RequestFactory):
         assert not AccountAdapter().is_open_for_signup(rf.get("/"))
 
+    @pytest.mark.parametrize(
+        "proxy_count, forwarded_for, expected",
+        [
+            (0, None, "10.0.0.9"),
+            (0, "203.0.113.5, 10.0.0.1", "10.0.0.9"),
+            (2, "203.0.113.5, 10.0.0.1", "203.0.113.5"),
+            # A client can prepend anything to the header; only the hops the proxies appended count.
+            (2, "198.51.100.7, 203.0.113.5, 10.0.0.1", "203.0.113.5"),
+            # Fewer hops than configured: fall back to the socket address rather than fail the request.
+            (2, "203.0.113.5", "10.0.0.9"),
+            (2, None, "10.0.0.9"),
+        ],
+    )
+    def test_get_client_ip_trusts_configured_proxy_hops(self, rf, settings, proxy_count, forwarded_for, expected):
+        settings.ALLAUTH_TRUSTED_PROXY_COUNT = proxy_count
+        headers = {"HTTP_X_FORWARDED_FOR": forwarded_for} if forwarded_for else {}
+        request = rf.get("/", REMOTE_ADDR="10.0.0.9", **headers)
+        assert AccountAdapter().get_client_ip(request) == expected
+
 
 class TestSocialAccountAdapter:
     @override_settings(ACCOUNT_ALLOW_REGISTRATION=False)

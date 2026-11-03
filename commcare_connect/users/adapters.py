@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from allauth.account.adapter import DefaultAccountAdapter
@@ -8,7 +9,7 @@ from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
 from django.conf import settings
 from django.contrib import messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.utils.translation import gettext as _
@@ -16,10 +17,29 @@ from django.utils.translation import gettext as _
 from commcare_connect.commcarehq_provider.provider import CommcareHQProvider
 from commcare_connect.utils.middleware import is_safe_redirect_url
 
+logger = logging.getLogger(__name__)
+
 
 class AccountAdapter(DefaultAccountAdapter):
     def is_open_for_signup(self, request: HttpRequest):
         return getattr(settings, "ACCOUNT_ALLOW_REGISTRATION", True)
+
+    def get_client_ip(self, request: HttpRequest) -> str:
+        """Keeps login and signup working when ALLAUTH_TRUSTED_PROXY_COUNT overstates the proxy depth.
+
+        allauth raises ImproperlyConfigured when X-Forwarded-For has fewer hops than the setting trusts.
+        That is a deployment fact we can't verify from code, so fall back to REMOTE_ADDR (the nearest
+        proxy, i.e. one shared rate-limit bucket) and log it rather than 500.
+        """
+        try:
+            return super().get_client_ip(request)
+        except ImproperlyConfigured:
+            logger.warning(
+                "X-Forwarded-For %r is shorter than ALLAUTH_TRUSTED_PROXY_COUNT=%s; rate limiting on REMOTE_ADDR",
+                request.headers.get("x-forwarded-for"),
+                settings.ALLAUTH_TRUSTED_PROXY_COUNT,
+            )
+            return request.META["REMOTE_ADDR"]
 
     def add_message(self, request, level, message_template, message_context=None, extra_tags=""):
         if message_template == "socialaccount/messages/account_connected.txt":

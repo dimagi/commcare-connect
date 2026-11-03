@@ -327,6 +327,11 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
+# How many trusted proxies append to X-Forwarded-For before a request reaches Django; allauth keys its
+# per-IP rate limits on the client IP that many hops back. 0 uses REMOTE_ADDR, i.e. the nearest proxy, which
+# puts every client in one bucket. AccountAdapter.get_client_ip falls back to REMOTE_ADDR when the header
+# is shorter than this, so a value that is too high does not break login or signup.
+ALLAUTH_TRUSTED_PROXY_COUNT = env.int("ALLAUTH_TRUSTED_PROXY_COUNT", default=0)
 
 # django-rest-framework
 # -------------------------------------------------------------------------------
