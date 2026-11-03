@@ -1,16 +1,25 @@
+import io
 import random
+import wave
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from functools import cache
+from itertools import cycle
 
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone as djtimezone
 from faker import Faker
+from PIL import Image
 
 from commcare_connect.opportunity.models import (
     Assessment,
+    AudioAttachment,
+    BlobMeta,
     CompletedModule,
     CompletedWork,
     ExchangeRate,
@@ -52,6 +61,20 @@ SAMPLE_EXCHANGE_RATE_DATE = date(2020, 1, 1)
 SAMPLE_EXCHANGE_RATES = {"USD": Decimal("1")}
 DEFAULT_SAMPLE_EXCHANGE_RATE = Decimal("100")
 
+# Attachment bytes are generated here rather than downloaded from HQ, so they are real files a
+# browser can open and a player can play. One image and one audio clip are built once and shared
+# by every attachment: each is written to MEDIA_ROOT under its own blob_id, so keep them small.
+SAMPLE_IMAGE_SIZE = (320, 240)
+SAMPLE_IMAGE_COLOR = (70, 130, 180)
+SAMPLE_AUDIO_RATE = 8000
+SAMPLE_AUDIO_SECONDS = 1
+# Stand-ins for the transcription service, which local setups have no credentials for.
+SAMPLE_TRANSCRIPTS = [
+    ("Namaste, aaj main teen ghar gaya.", "Hello, I visited three households today."),
+    ("Bachche ko bukhar tha, dawa di.", "The child had a fever, so I gave medicine."),
+    ("Maa aur bachcha dono theek hain.", "The mother and baby are both well."),
+]
+
 
 class Command(BaseCommand):
     help = "Generates fake data for testing purposes"
@@ -70,6 +93,15 @@ class Command(BaseCommand):
             type=int,
             default=3,
             help="Number of managed opportunities to create",
+        )
+        parser.add_argument(
+            "--attachment_percent",
+            type=int,
+            default=25,
+            help=(
+                "Percentage of visits that get a photo and one to three audio recordings, "
+                "with transcripts and translations. Pass 0 to generate none."
+            ),
         )
 
     def _sample_exchange_rate(self, currency_code):
@@ -95,6 +127,7 @@ class Command(BaseCommand):
                 | Q(invoice__opportunity__organization_id__in=org_ids)
             ).delete(),
             lambda: PaymentInvoice.objects.filter(opportunity__organization_id__in=org_ids).delete(),
+            lambda: self._delete_attachments(org_ids),
             lambda: UserVisit.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: OpportunityClaim.objects.filter(
                 opportunity_access__opportunity__organization_id__in=org_ids
@@ -116,11 +149,29 @@ class Command(BaseCommand):
             delete()
         self.stdout.write("Cleanup complete.")
 
+    def _delete_attachments(self, org_ids):
+        """Drops attachment rows and the files behind them before visits are deleted.
+
+        AudioAttachment would cascade with its visit, but BlobMeta is keyed by xform_id rather
+        than a foreign key, so nothing deletes it on our behalf. The stored files go too, or
+        MEDIA_ROOT grows by a full set of blobs on every run.
+        """
+        xform_ids = list(
+            UserVisit.objects.filter(opportunity__organization_id__in=org_ids).values_list("xform_id", flat=True)
+        )
+        blobs = BlobMeta.objects.filter(parent_id__in=xform_ids)
+        audio = AudioAttachment.objects.filter(user_visit__opportunity__organization_id__in=org_ids)
+        for blob_id in [*blobs.values_list("blob_id", flat=True), *audio.values_list("blob_id", flat=True)]:
+            default_storage.delete(str(blob_id))
+        blobs.delete()
+        audio.delete()
+
     def handle(self, *args, **options):
         num_visits = options["num_visits"]
         org_slug = options["org_slug"]
         invited_org_slug = options["invited_org_slug"]
         num_managed_opps = options["managed_opportunities"]
+        attachment_percent = options["attachment_percent"]
         BATCH_SIZE = 10000
 
         org, created = Organization.objects.get_or_create(slug=org_slug, defaults={"name": org_slug, "slug": org_slug})
@@ -213,6 +264,16 @@ class Command(BaseCommand):
             deliver_unit = deliver_units_cache.get(opportunity.deliver_app_id)
             payment_unit = payment_units.get(opportunity.id)
 
+            form_json = {
+                "metadata": {
+                    "location": location,
+                    "timeStart": time_start.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "timeEnd": time_end.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                }
+            }
+            if random.randrange(100) < attachment_percent:
+                form_json["attachments"] = _plan_attachments()
+
             work = CompletedWorkFactory.build(
                 opportunity_access=opp_access,
                 payment_unit=payment_unit,
@@ -224,13 +285,7 @@ class Command(BaseCommand):
                 opportunity_access=opp_access,
                 deliver_unit=deliver_unit,
                 visit_date=random_date,
-                form_json={
-                    "metadata": {
-                        "location": location,
-                        "timeStart": time_start.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                        "timeEnd": time_end.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                    }
-                },
+                form_json=form_json,
             )
             # Temporarily attach the visit to the work object to link them after creation
             work._transient_visit = visit
@@ -283,3 +338,88 @@ class Command(BaseCommand):
             visits_for_creation.append(visit_object)
 
         UserVisit.objects.bulk_create(visits_for_creation)
+        self._create_attachments(visits_for_creation)
+
+    def _create_attachments(self, visits):
+        """Creates the rows and stored files for whatever each visit's form_json announced.
+
+        This mirrors ``_save_attachment`` in ``opportunity.tasks``, which is what a real
+        submission goes through: audio becomes an AudioAttachment keyed by the visit, anything
+        else a BlobMeta keyed by the form, and the bytes land in storage under the blob_id.
+        """
+        blobs = []
+        audio = []
+        for visit in visits:
+            # Cycled from a shuffled copy, so one visit's recordings read differently from each
+            # other however many it has.
+            transcripts = cycle(random.sample(SAMPLE_TRANSCRIPTS, k=len(SAMPLE_TRANSCRIPTS)))
+            for name, attachment in visit.form_json.get("attachments", {}).items():
+                if name == "form.xml":
+                    continue
+                if attachment["content_type"].startswith("audio/"):
+                    transcript, translation = next(transcripts)
+                    audio.append(
+                        AudioAttachment(
+                            user_visit=visit,
+                            name=name,
+                            content_type=attachment["content_type"],
+                            content_length=attachment["length"],
+                            transcript=transcript,
+                            translation=translation,
+                        )
+                    )
+                else:
+                    blobs.append(
+                        BlobMeta(
+                            parent_id=visit.xform_id,
+                            name=name,
+                            content_type=attachment["content_type"],
+                            content_length=attachment["length"],
+                        )
+                    )
+
+        BlobMeta.objects.bulk_create(blobs)
+        AudioAttachment.objects.bulk_create(audio)
+        for blob in blobs:
+            default_storage.save(str(blob.blob_id), ContentFile(_sample_image_bytes(), blob.name))
+        for attachment in audio:
+            default_storage.save(str(attachment.blob_id), ContentFile(_sample_audio_bytes(), attachment.name))
+
+
+def _plan_attachments():
+    """One visit's attachments, in the shape HQ reports them in ``form_json``.
+
+    Only names, types and sizes are decided here; the rows and files need the visit's primary
+    key, so they are created once it has one (see ``_create_attachments``).
+    """
+    attachments = {
+        "form.xml": {"content_type": "text/xml", "length": 1000},
+        "photo.jpg": {"content_type": "image/jpeg", "length": len(_sample_image_bytes())},
+    }
+    for question in range(1, random.randint(1, 3) + 1):
+        attachments[f"question_{question}.wav"] = {
+            "content_type": "audio/wav",
+            "length": len(_sample_audio_bytes()),
+        }
+    return attachments
+
+
+@cache
+def _sample_image_bytes():
+    """A flat-colour JPEG, built once and shared by every image attachment."""
+    buffer = io.BytesIO()
+    Image.new("RGB", SAMPLE_IMAGE_SIZE, SAMPLE_IMAGE_COLOR).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+@cache
+def _sample_audio_bytes():
+    """A second of silence as a WAV, built once and shared by every audio attachment."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(1)
+        clip.setframerate(SAMPLE_AUDIO_RATE)
+        # 0x80 is the midpoint of 8-bit unsigned PCM, so this is silence rather than a click.
+        clip.writeframes(b"\x80" * (SAMPLE_AUDIO_RATE * SAMPLE_AUDIO_SECONDS))
+    return buffer.getvalue()
