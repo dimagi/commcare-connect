@@ -8,6 +8,7 @@ The opportunity app is the core domain of CommCare Connect. It manages paid prog
 - **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → delivering → paid.
 - **OpportunityClaim** — Created when a user commits to delivering work. Allocates visit limits per payment unit.
 - **PaymentUnit** — Defines what a user gets paid for and how much. Can be hierarchical (parent/child).
+- **PaymentUnitRate** — Pay rate history of a payment unit, one row per pay rate. Rows are never deleted except with their opportunity. Every unit gets an Initial Rate row when created.
 - **DeliverUnit** — A type of form submission within a delivery app (e.g., "household visit", "follow-up").
 - **Task** — A named task within a learn/deliver app, distinct from a LearnModule.
 - **TaskUnit** — A task module from the delivery app XML. A task unit links to a task.
