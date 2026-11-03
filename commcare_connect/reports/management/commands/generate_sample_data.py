@@ -1,16 +1,19 @@
 import io
+import mimetypes
 import random
 import wave
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from functools import cache
 from itertools import cycle
+from pathlib import Path
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone as djtimezone
@@ -71,9 +74,12 @@ SAMPLE_FORM_XMLNS = "http://openrosa.org/formdesigner/sample-deliver-form"
 # The HQ API key user is looked up by name so reruns reuse it instead of minting a new one.
 SAMPLE_API_KEY_USERNAME = "sample-hq-api"
 
-# Attachment bytes are generated here rather than downloaded from HQ, so they are real files a
-# browser can open and a player can play. One image and one audio clip are built once and shared
-# by every attachment: each is written to MEDIA_ROOT under its own blob_id, so keep them small.
+IMAGE_KIND = "image"
+AUDIO_KIND = "audio"
+
+# Without --media_dir, attachment bytes are generated here rather than downloaded from HQ, so they
+# are still real files a browser can open and a player can play. One image and one audio clip are
+# built once and shared: each is written to MEDIA_ROOT under its own blob_id, so keep them small.
 SAMPLE_IMAGE_SIZE = (320, 240)
 SAMPLE_IMAGE_COLOR = (70, 130, 180)
 SAMPLE_AUDIO_RATE = 8000
@@ -105,12 +111,28 @@ class Command(BaseCommand):
             help="Number of managed opportunities to create",
         )
         parser.add_argument(
-            "--attachment_percent",
+            "--image_percent",
+            type=int,
+            default=25,
+            help="Percentage of visits that get a photo. Pass 0 to generate none.",
+        )
+        parser.add_argument(
+            "--audio_percent",
             type=int,
             default=25,
             help=(
-                "Percentage of visits that get a photo and one to three audio recordings, "
-                "with transcripts and translations. Pass 0 to generate none."
+                "Percentage of visits that get one to three audio recordings, with transcripts "
+                "and translations. Pass 0 to generate none."
+            ),
+        )
+        parser.add_argument(
+            "--media_dir",
+            type=str,
+            default=None,
+            help=(
+                "Directory to draw attachment files from instead of the generated placeholders. "
+                "Searched recursively and sorted by type, so images become photos and audio "
+                "becomes recordings. A type the directory has none of falls back to a placeholder."
             ),
         )
 
@@ -184,7 +206,9 @@ class Command(BaseCommand):
         org_slug = options["org_slug"]
         invited_org_slug = options["invited_org_slug"]
         num_managed_opps = options["managed_opportunities"]
-        attachment_percent = options["attachment_percent"]
+        image_percent = options["image_percent"]
+        audio_percent = options["audio_percent"]
+        media = MediaLibrary(options["media_dir"], warn=lambda message: self.stdout.write(self.style.WARNING(message)))
         BATCH_SIZE = 10000
 
         org, created = Organization.objects.get_or_create(slug=org_slug, defaults={"name": org_slug, "slug": org_slug})
@@ -305,8 +329,9 @@ class Command(BaseCommand):
                 time_end=time_end,
                 received_on=random_date,
             )
-            if random.randrange(100) < attachment_percent:
-                form_json["attachments"] = _plan_attachments()
+            attachments, media_sources = _plan_attachments(media, image_percent, audio_percent)
+            if media_sources:
+                form_json["attachments"] = attachments
 
             work = CompletedWorkFactory.build(
                 opportunity_access=opp_access,
@@ -322,6 +347,9 @@ class Command(BaseCommand):
                 xform_id=xform_id,
                 form_json=form_json,
             )
+            # The bytes behind each attachment, carried until the visit has a primary key. They
+            # stay off form_json, which is the payload HQ sent and holds no local paths.
+            visit._transient_media = media_sources
             # Temporarily attach the visit to the work object to link them after creation
             work._transient_visit = visit
             works_to_create.append(work)
@@ -376,7 +404,7 @@ class Command(BaseCommand):
         self._create_attachments(visits_for_creation)
 
     def _create_attachments(self, visits):
-        """Creates the rows and stored files for whatever each visit's form_json announced.
+        """Creates the rows and stored files for the media each visit was planned with.
 
         This mirrors ``_save_attachment`` in ``opportunity.tasks``, which is what a real
         submission goes through: audio becomes an AudioAttachment keyed by the visit, anything
@@ -388,37 +416,39 @@ class Command(BaseCommand):
             # Cycled from a shuffled copy, so one visit's recordings read differently from each
             # other however many it has.
             transcripts = cycle(random.sample(SAMPLE_TRANSCRIPTS, k=len(SAMPLE_TRANSCRIPTS)))
-            for name, attachment in visit.form_json.get("attachments", {}).items():
-                if name == "form.xml":
-                    continue
-                if attachment["content_type"].startswith("audio/"):
+            for name, source in getattr(visit, "_transient_media", {}).items():
+                if source.kind == AUDIO_KIND:
                     transcript, translation = next(transcripts)
                     audio.append(
-                        AudioAttachment(
-                            user_visit=visit,
-                            name=name,
-                            content_type=attachment["content_type"],
-                            content_length=attachment["length"],
-                            transcript=transcript,
-                            translation=translation,
+                        (
+                            AudioAttachment(
+                                user_visit=visit,
+                                name=name,
+                                content_type=source.content_type,
+                                content_length=len(source.content),
+                                transcript=transcript,
+                                translation=translation,
+                            ),
+                            source,
                         )
                     )
                 else:
                     blobs.append(
-                        BlobMeta(
-                            parent_id=visit.xform_id,
-                            name=name,
-                            content_type=attachment["content_type"],
-                            content_length=attachment["length"],
+                        (
+                            BlobMeta(
+                                parent_id=visit.xform_id,
+                                name=name,
+                                content_type=source.content_type,
+                                content_length=len(source.content),
+                            ),
+                            source,
                         )
                     )
 
-        BlobMeta.objects.bulk_create(blobs)
-        AudioAttachment.objects.bulk_create(audio)
-        for blob in blobs:
-            default_storage.save(str(blob.blob_id), ContentFile(_sample_image_bytes(), blob.name))
-        for attachment in audio:
-            default_storage.save(str(attachment.blob_id), ContentFile(_sample_audio_bytes(), attachment.name))
+        BlobMeta.objects.bulk_create([row for row, _ in blobs])
+        AudioAttachment.objects.bulk_create([row for row, _ in audio])
+        for row, source in [*blobs, *audio]:
+            default_storage.save(str(row.blob_id), ContentFile(source.content, row.name))
 
 
 def _sample_api_key():
@@ -457,22 +487,109 @@ def _build_form_json(*, xform_id, opportunity, user, location, time_start, time_
     }
 
 
-def _plan_attachments():
-    """One visit's attachments, in the shape HQ reports them in ``form_json``.
+def _plan_attachments(media, image_percent, audio_percent):
+    """One visit's attachments: the ``form_json`` dict HQ reports, and the media behind each name.
 
-    Only names, types and sizes are decided here; the rows and files need the visit's primary
-    key, so they are created once it has one (see ``_create_attachments``).
+    Images and audio are rolled separately, so a run can produce photos without recordings or the
+    other way round. Names are ours rather than the source file's, which keeps them unique when
+    the same file is drawn twice; only the suffix follows the file, so a player still sees the
+    format it expects. The rows and stored files need the visit's primary key, so they are created
+    once it has one (see ``_create_attachments``).
     """
-    attachments = {
-        "form.xml": {"content_type": "text/xml", "length": 1000},
-        "photo.jpg": {"content_type": "image/jpeg", "length": len(_sample_image_bytes())},
-    }
-    for question in range(1, random.randint(1, 3) + 1):
-        attachments[f"question_{question}.wav"] = {
-            "content_type": "audio/wav",
-            "length": len(_sample_audio_bytes()),
-        }
-    return attachments
+    sources = {}
+    if _rolls(image_percent):
+        source = media.pick(IMAGE_KIND)
+        sources[f"photo{source.suffix}"] = source
+    if _rolls(audio_percent):
+        for question in range(1, random.randint(1, 3) + 1):
+            source = media.pick(AUDIO_KIND)
+            sources[f"question_{question}{source.suffix}"] = source
+
+    attachments = {"form.xml": {"content_type": "text/xml", "length": 1000}}
+    for name, source in sources.items():
+        attachments[name] = {"content_type": source.content_type, "length": len(source.content)}
+    return attachments, sources
+
+
+def _rolls(percent):
+    """True for `percent` out of every hundred calls; 0 never fires and 100 always does."""
+    return random.randrange(100) < percent
+
+
+@dataclass(frozen=True)
+class MediaFile:
+    """The bytes one attachment is written from, with what to record about them."""
+
+    kind: str
+    content_type: str
+    suffix: str
+    content: bytes
+
+
+class MediaLibrary:
+    """Where sample attachments get their bytes.
+
+    With no media directory it hands out the generated JPEG and WAV, shared by every attachment of
+    that kind. Given one it draws a random file of the right kind from it instead, so a run can
+    carry real recordings and photos -- useful for anything that reads the media itself rather
+    than just its metadata. A kind the directory holds nothing of falls back to the generated
+    file with a warning, so a directory of audio alone still produces photos.
+    """
+
+    def __init__(self, media_dir=None, warn=None):
+        self._paths = {IMAGE_KIND: [], AUDIO_KIND: []}
+        self._cache = {}
+        if media_dir:
+            self._index(Path(media_dir).expanduser(), warn or (lambda message: None))
+
+    def pick(self, kind):
+        paths = self._paths[kind]
+        return self._read(random.choice(paths)) if paths else _generated_media(kind)
+
+    def _index(self, media_dir, warn):
+        if not media_dir.is_dir():
+            raise CommandError(f"--media_dir is not a directory: {media_dir}")
+        for path in sorted(media_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            kind = _media_kind(mimetypes.guess_type(path.name)[0])
+            if kind:
+                self._paths[kind].append(path)
+        for kind in (IMAGE_KIND, AUDIO_KIND):
+            count = len(self._paths[kind])
+            if count:
+                warn(f"Drawing {kind} attachments from {count} file(s) in {media_dir}.")
+            else:
+                warn(f"No {kind} files found in {media_dir}; using the generated placeholder.")
+
+    def _read(self, path):
+        """Files are cached, since one media directory is drawn from once per attachment."""
+        if path not in self._cache:
+            content_type = mimetypes.guess_type(path.name)[0]
+            self._cache[path] = MediaFile(
+                kind=_media_kind(content_type),
+                content_type=content_type,
+                suffix=path.suffix,
+                content=path.read_bytes(),
+            )
+        return self._cache[path]
+
+
+def _media_kind(content_type):
+    """Which attachment list a content type belongs in, or None if it belongs in neither."""
+    if not content_type:
+        return None
+    for kind in (IMAGE_KIND, AUDIO_KIND):
+        if content_type.startswith(f"{kind}/"):
+            return kind
+    return None
+
+
+@cache
+def _generated_media(kind):
+    if kind == IMAGE_KIND:
+        return MediaFile(IMAGE_KIND, "image/jpeg", ".jpg", _sample_image_bytes())
+    return MediaFile(AUDIO_KIND, "audio/wav", ".wav", _sample_audio_bytes())
 
 
 @cache
