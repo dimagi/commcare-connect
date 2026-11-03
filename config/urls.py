@@ -45,6 +45,7 @@ urlpatterns = [
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
+    path("a/<slug:org_slug>/solicitations/", include("commcare_connect.solicitation.urls", namespace="solicitation")),
     path(
         "a/<slug:org_slug>/microplanning/", include("commcare_connect.microplanning.urls", namespace="microplanning")
     ),
