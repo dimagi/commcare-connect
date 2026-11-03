@@ -113,16 +113,16 @@ class Command(BaseCommand):
         parser.add_argument(
             "--image_percent",
             type=int,
-            default=25,
-            help="Percentage of visits that get a photo. Pass 0 to generate none.",
+            default=0,
+            help="Percentage of visits that get a photo. Off by default.",
         )
         parser.add_argument(
             "--audio_percent",
             type=int,
-            default=25,
+            default=0,
             help=(
                 "Percentage of visits that get one to three audio recordings, with transcripts "
-                "and translations. Pass 0 to generate none."
+                "and translations. Off by default."
             ),
         )
         parser.add_argument(

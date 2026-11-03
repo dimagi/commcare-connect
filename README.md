@@ -183,9 +183,9 @@ flags:
 - `--invited_org_slug` — reuse a specific organization as the invited org. Without it, a new
   invited org with a random slug is created on every run, and the previous one is left behind.
 - `--managed_opportunities` — how many managed opportunities to create (default 3)
-- `--image_percent` — percentage of visits that get a photo (default 25, `0` for none)
+- `--image_percent` — percentage of visits that get a photo (default 0, none)
 - `--audio_percent` — percentage of visits that get one to three audio recordings, each with a
-  stand-in transcript and translation (default 25, `0` for none)
+  stand-in transcript and translation (default 0, none)
 - `--media_dir` — a directory to search (recursively) for image / audio files to use as the
   attachments for generated visits if requested. Otherwise placeholders are used.
 

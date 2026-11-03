@@ -150,6 +150,13 @@ class TestGenerateSampleData:
     """The command is a dev utility, so these cover the attachments it fabricates rather than
     every model it touches: that they exist, carry text, and are backed by real stored files."""
 
+    def test_no_attachments_by_default(self, db):
+        """Both percentages default to off, so a plain run writes nothing to MEDIA_ROOT."""
+        call_command("generate_sample_data", 5, "attachment-sample-org")
+
+        assert not BlobMeta.objects.exists()
+        assert not AudioAttachment.objects.exists()
+
     @pytest.mark.parametrize(
         ("image_percent", "audio_percent", "wants_images", "wants_audio"),
         [
