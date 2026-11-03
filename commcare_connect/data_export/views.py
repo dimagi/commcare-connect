@@ -4,6 +4,8 @@ import io
 import logging
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
+from functools import partial
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import storages
@@ -27,6 +29,7 @@ from commcare_connect.data_export.const import (
     APP_TYPE_BOTH,
     APP_TYPE_DELIVER,
     APP_TYPE_LEARN,
+    ATTACHMENT_FIELDS,
     DELIVER_APP_KEY,
     LEARN_APP_KEY,
     VALID_APP_TYPES,
@@ -52,7 +55,7 @@ from commcare_connect.data_export.serializer import (
     ProgramDataExportSerializer,
     TaskTypeDataSerializer,
     UserVisitDataSerializer,
-    UserVisitDataWithImagesSerializer,
+    UserVisitDataWithAttachmentsSerializer,
     WorkAreaBulkUpdateSerializer,
     WorkAreaDataSerializer,
     WorkAreaGroupDataSerializer,
@@ -64,6 +67,7 @@ from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, 
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
+    AudioAttachment,
     BlobMeta,
     CompletedModule,
     CompletedWork,
@@ -81,6 +85,7 @@ from commcare_connect.program.utils import orgs_ids_with_admin_access_to_opportu
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
+from commcare_connect.utils.itertools import batched
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, LLO_ENTITY_INTERNAL_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
@@ -254,17 +259,35 @@ def _get_opportunity_or_404(user, opp_id):
         raise NotFound()
 
 
-def _get_scoped_blob_meta(request, opportunity):
-    """Resolve the ``blob_id`` query param to its BlobMeta, requiring the blob to belong to a
-    form in ``opportunity``."""
+@dataclass(frozen=True)
+class ScopedAttachment:
+    """A stored attachment the caller is allowed to read, from either attachment model."""
+
+    blob_id: str
+    name: str
+    content_type: str | None
+
+
+def _get_scoped_attachment(request, opportunity):
+    """Resolve the ``blob_id`` query param to an attachment of a visit in ``opportunity``.
+
+    Attachments live in one of two models: images and other form attachments are ``BlobMeta``
+    rows keyed by the form they came from, while audio is an ``AudioAttachment`` row keyed by
+    the visit (see ``_save_attachment`` in ``opportunity.tasks``). ``blob_id`` is unique across
+    both, so the caller needs to know only the id, not which model holds it.
+    """
     blob_id = request.query_params["blob_id"]
     blob_meta = BlobMeta.objects.filter(blob_id=blob_id).first()
-    if blob_meta is None:
+    if blob_meta is not None:
+        # A form with several deliver units creates one UserVisit per unit, all sharing the xform_id.
+        if not UserVisit.objects.filter(xform_id=blob_meta.parent_id, opportunity=opportunity).exists():
+            raise NotFound()
+        return ScopedAttachment(blob_meta.blob_id, blob_meta.name, blob_meta.content_type)
+
+    audio = AudioAttachment.objects.filter(blob_id=blob_id, user_visit__opportunity=opportunity).first()
+    if audio is None:
         raise NotFound()
-    # A form with several deliver units creates one UserVisit per unit, all sharing the xform_id.
-    if not UserVisit.objects.filter(xform_id=blob_meta.parent_id, opportunity=opportunity).exists():
-        raise NotFound()
-    return blob_meta
+    return ScopedAttachment(audio.blob_id, audio.name, audio.content_type)
 
 
 def _get_program_or_404(user, program_id):
@@ -369,13 +392,17 @@ class OpportunityUserDataView(OpportunityScopedDataView):
 class UserVisitDataView(OpportunityScopedDataView):
     serializer_class = UserVisitDataSerializer
 
-    def _include_images(self):
-        return self.request.query_params.get("images", "").lower() == "true"
+    def _requested_attachments(self):
+        """The attachment lists the caller opted into, as ``?images=true`` / ``?audio=true``."""
+        return [field for field in ATTACHMENT_FIELDS if self.request.query_params.get(field, "").lower() == "true"]
 
     def get_serializer_class(self, *args, **kwargs):
-        if self._include_images():
-            return UserVisitDataWithImagesSerializer
-        return UserVisitDataSerializer
+        attachments = self._requested_attachments()
+        if not attachments:
+            return UserVisitDataSerializer
+        # The view instantiates serializers itself (with and without many=True), so the
+        # requested fields are bound here rather than passed through serializer context.
+        return partial(UserVisitDataWithAttachmentsSerializer, include=attachments)
 
     def get_queryset(self, request, opp_id):
         return (
@@ -385,34 +412,37 @@ class UserVisitDataView(OpportunityScopedDataView):
         )
 
     def post_paginate(self, page):
-        if self._include_images():
-            self._prefetch_images(page)
+        self._prefetch_attachments(page, self._requested_attachments())
 
     def get_data_generator(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
-        fieldnames = serializer_class().get_fields().keys()
+        # .fields, not .get_fields(): the serializer drops the attachment fields the caller
+        # did not ask for, and only the bound .fields reflects that.
+        fieldnames = serializer_class().fields.keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
         yield writer.writeheader()
 
         queryset = self.get_queryset(*args, **kwargs)
-        include_images = self._include_images()
+        attachments = self._requested_attachments()
+        visits = queryset.iterator(chunk_size=STREAM_CHUNK_SIZE)
 
-        if not include_images:
-            for obj in queryset.iterator(chunk_size=STREAM_CHUNK_SIZE):
-                yield writer.writerow(serializer_class(obj).data)
-        else:
-            batch = []
-            for obj in queryset.iterator(chunk_size=STREAM_CHUNK_SIZE):
-                batch.append(obj)
-                if len(batch) >= STREAM_CHUNK_SIZE:
-                    self._prefetch_images(batch)
-                    for visit in batch:
-                        yield writer.writerow(serializer_class(visit).data)
-                    batch = []
-            if batch:
-                self._prefetch_images(batch)
-                for visit in batch:
-                    yield writer.writerow(serializer_class(visit).data)
+        if not attachments:
+            for visit in visits:
+                yield writer.writerow(serializer_class(visit).data)
+            return
+
+        # Attachments are fetched a batch at a time so each batch costs one query per
+        # attachment type instead of one per row.
+        for batch in batched(visits, STREAM_CHUNK_SIZE):
+            self._prefetch_attachments(batch, attachments)
+            for visit in batch:
+                yield writer.writerow(serializer_class(visit).data)
+
+    def _prefetch_attachments(self, visits, attachments):
+        if "images" in attachments:
+            self._prefetch_images(visits)
+        if "audio" in attachments:
+            self._prefetch_audio(visits)
 
     def _prefetch_images(self, visits):
         xform_ids = [v.xform_id for v in visits]
@@ -421,6 +451,15 @@ class UserVisitDataView(OpportunityScopedDataView):
             blobs_by_parent[blob.parent_id].append(blob)
         for visit in visits:
             visit._prefetched_images = blobs_by_parent.get(visit.xform_id, [])
+
+    def _prefetch_audio(self, visits):
+        # Audio hangs off the visit, not the form, so it is grouped by visit id rather than
+        # by xform_id the way images are.
+        audio_by_visit = defaultdict(list)
+        for attachment in AudioAttachment.objects.filter(user_visit_id__in=[v.pk for v in visits]):
+            audio_by_visit[attachment.user_visit_id].append(attachment)
+        for visit in visits:
+            visit._prefetched_audio = audio_by_visit.get(visit.pk, [])
 
 
 class CompletedWorkDataView(OpportunityScopedDataView):
@@ -595,11 +634,14 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
         return Response(status=status.HTTP_200_OK)
 
 
-class ImageView(OpportunityDataExportView):
+class AttachmentView(OpportunityDataExportView):
+    """Streams one attachment of a visit in this opportunity — image, audio or any other
+    attachment the form carried — identified by the ``blob_id`` the visit export reports."""
+
     def get(self, request, *args, **kwargs):
-        blob_meta = _get_scoped_blob_meta(request, self.opportunity)
-        attachment = storages["default"].open(blob_meta.blob_id)
-        return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+        scoped = _get_scoped_attachment(request, self.opportunity)
+        attachment = storages["default"].open(scoped.blob_id)
+        return FileResponse(attachment, filename=scoped.name, content_type=scoped.content_type)
 
 
 # Signed URLs are consumed by a follow-up request made immediately after issuance.
@@ -633,10 +675,10 @@ def _get_attachment_signed_url(blob_id, expire=ATTACHMENT_SIGNED_URL_EXPIRY):
 
 class AttachmentSignedUrlView(OpportunityDataExportView):
     def get(self, request, *args, **kwargs):
-        blob_meta = _get_scoped_blob_meta(request, self.opportunity)
+        scoped = _get_scoped_attachment(request, self.opportunity)
         if not _default_storage_supports_signed_urls():
             return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
-        return Response({"attachment_signed_url": _get_attachment_signed_url(blob_meta.blob_id)})
+        return Response({"attachment_signed_url": _get_attachment_signed_url(scoped.blob_id)})
 
 
 class AppStructureView(OpportunityDataExportView):
