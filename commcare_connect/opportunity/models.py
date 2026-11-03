@@ -331,6 +331,7 @@ class Opportunity(BaseModel):
             # max_total is per worker, so with unlimited workers any unit that has one is unlimited too
             if any(pu.max_total for pu in payment_units):
                 return None
+            # No unit has a max_total, so new workers add no visits and only the existing claims count
             unclaimed_workers = 0
         elif not self.total_budget and self.budget_per_user_for_units(payment_units):
             return {}
