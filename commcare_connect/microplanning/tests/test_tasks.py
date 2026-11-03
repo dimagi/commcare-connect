@@ -10,6 +10,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from kombu.exceptions import OperationalError
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import (
@@ -560,6 +561,113 @@ class TestWorkAreaCSVImporter:
             "Work Area Group group-a is in ward Dandi, but these rows give ward Dabaza. "
             "Correct the ward, or use a different group name.",
         }
+
+    # --- adding to an opportunity that already has work areas ---
+
+    @pytest.fixture
+    def sync_delay(self):
+        with mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay") as delay:
+            yield delay
+
+    def existing_group(self, opportunity, *member_squares, **work_area_fields):
+        """Group "group-a" in ward "ward", holding a work area on each square, with its centre point set."""
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward")
+        for x, y in member_squares:
+            WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(x, y), **work_area_fields)
+        group.update_centroid()
+        return WorkAreaGroup.objects.get(pk=group.pk)
+
+    def add_to_group_a(self, opportunity, x=12):
+        """Upload work area "area-new" into group-a, on the square at (x, 10)."""
+        rows = [self.build_row(slug="area-new", group_name="group-a", boundary=square(x, 10))]
+        return WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=self.build_csv_with_groups(rows)).run()
+
+    def test_adding_to_existing_group_moves_its_centre_point(self, opportunity):
+        group = self.existing_group(opportunity, (10, 10))
+
+        self.add_to_group_a(opportunity)
+
+        group.refresh_from_db()
+        assert group.centroid.coords == (11.5, 10.5)
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            pytest.param(WorkAreaStatus.UNASSIGNED, id="had-a-centre-point"),
+            # An inaccessible work area doesn't count towards the centre point, so the group had none.
+            pytest.param(WorkAreaStatus.INACCESSIBLE, id="had-no-centre-point"),
+        ],
+    )
+    def test_sync_queued_for_existing_groups_that_moved(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay, status
+    ):
+        group = self.existing_group(opportunity, (10, 10), status=status)
+        rows = [
+            self.build_row(slug="area-new", group_name="group-a", boundary=square(12, 10)),
+            self.build_row(slug="area-other", group_name="new-group", boundary=square(14, 10)),
+        ]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=self.build_csv_with_groups(rows)).run()
+
+        assert result == {"created": 2}
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
+
+    @pytest.mark.parametrize(
+        "group_name",
+        [
+            pytest.param(None, id="no-group-column"),
+            pytest.param("new-group", id="only-new-groups"),
+            # The new square is between group-a's two members, so the group's centre point stays where it was.
+            pytest.param("group-a", id="centre-point-unchanged"),
+        ],
+    )
+    def test_sync_not_queued(self, opportunity, django_capture_on_commit_callbacks, sync_delay, group_name):
+        self.existing_group(opportunity, (10, 10), (14, 10))
+        row = self.build_row(slug="area-new", group_name=group_name, boundary=square(12, 10))
+        csv_file = self.build_csv_with_groups([row]) if group_name else self.build_csv([row])
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=csv_file).run()
+
+        assert result == {"created": 1}
+        sync_delay.assert_not_called()
+
+    def test_sync_not_queued_when_the_upload_is_rejected(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay
+    ):
+        self.existing_group(opportunity, (10, 10))
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = self.add_to_group_a(opportunity=opportunity, x=10)  # on top of the existing work area
+
+        assert "errors" in result
+        sync_delay.assert_not_called()
+
+    def test_upload_succeeds_when_the_sync_cannot_be_queued(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay
+    ):
+        self.existing_group(opportunity, (10, 10))
+        sync_delay.side_effect = OperationalError("broker unreachable")
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = self.add_to_group_a(opportunity=opportunity)
+
+        assert result == {"created": 1}
+        assert WorkArea.objects.filter(opportunity=opportunity, slug="area-new").exists()
+
+    def test_sync_queued_only_once_the_upload_commits(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay
+    ):
+        group = self.existing_group(opportunity, (10, 10))
+
+        with django_capture_on_commit_callbacks(execute=False) as callbacks:
+            self.add_to_group_a(opportunity)
+        sync_delay.assert_not_called()
+
+        assert len(callbacks) == 1
+        callbacks[0]()
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
 
 
 @pytest.mark.parametrize(

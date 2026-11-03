@@ -365,9 +365,28 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
     def _after_insert(self):
         if not self.group_cache:
             return
+        moved_ids = self._update_group_centroids()
+        if moved_ids:
+            # After commit, so the task reads the new centre points; a rollback discards it. Robust, so
+            # a broker error is logged instead of failing an upload that is already saved. A lambda
+            # rather than partial: Django names a failed robust callback by its __qualname__.
+            opp_id = self.opp_id
+            transaction.on_commit(
+                lambda: sync_work_area_group_cases.delay(opportunity_id=opp_id, work_area_group_ids=moved_ids),
+                robust=True,
+            )
+
+    def _update_group_centroids(self):
+        """Recompute the centre points of the groups the file names, and return the IDs of the
+        existing ones that moved."""
+        # Compared as the "wag_centroid" string HQ gets, so a move too small to show in it needs no sync.
+        before = {group.pk: group_centroid_property(group) for group in self.existing_groups.values()}
         for work_area_group in self.group_cache.values():
             work_area_group.update_centroid(commit=False)
         WorkAreaGroup.objects.bulk_update(self.group_cache.values(), ["centroid"])
+        return sorted(
+            group.pk for group in self.existing_groups.values() if group_centroid_property(group) != before[group.pk]
+        )
 
     def get_implementation_area_name(self, row):
         header = self.OPTIONAL_HEADERS["implementation_area"]
