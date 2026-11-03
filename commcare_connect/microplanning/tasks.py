@@ -14,9 +14,12 @@ from django.db import transaction
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
+from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_create_or_update_cases
 from commcare_connect.connect_id_client import send_message
 from commcare_connect.connect_id_client.models import Message
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.itertools import batched
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
@@ -24,6 +27,7 @@ from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT, WORK_A
 from .exceptions import ImportRejected
 from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from .overlap import Overlap, find_overlapping_work_areas
+from .serializers import group_centroid_property
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +637,81 @@ def send_work_area_assignment_notification(opportunity_access_id: int):
         },
     )
     send_message(message)
+
+
+@celery_app.task(
+    autoretry_for=(CommCareHQAPIException,),
+    retry_kwargs={"max_retries": 5},
+    # Retries wait a random time up to 30 s, then 1, 2, 4 and 5 minutes, to outlast an HQ deploy.
+    retry_backoff=30,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def sync_work_area_group_cases(opportunity_id: int, work_area_group_ids: list[int]):
+    """Send the groups' centre points to the HQ cases of their assigned work areas.
+
+    The centre points are read when the task runs, so a late or repeated run sends the current ones.
+    Cases go 100 per request. A request HQ rejects is logged and skipped, since sending it again
+    gets the same answer; any other HQ error retries the task, which sends every request again.
+    That is safe, because each update only sets a value.
+    """
+    work_areas = list(
+        WorkArea.objects.filter(
+            opportunity_id=opportunity_id,
+            work_area_group_id__in=work_area_group_ids,
+            opportunity_access__isnull=False,
+            case_id__isnull=False,
+        )
+        .select_related("work_area_group")
+        .order_by("pk")
+    )
+    if not work_areas:
+        return
+
+    opportunity = Opportunity.objects.select_related("api_key__hq_server", "api_key__user", "deliver_app").get(
+        pk=opportunity_id
+    )
+    api_key = opportunity.api_key
+    if not (api_key and api_key.hq_server and opportunity.deliver_app):
+        logger.warning(
+            "Not syncing group centre points to HQ for opportunity %s: it has no HQ API key or deliver app",
+            opportunity_id,
+        )
+        return
+
+    # Only wag_centroid is sent: HQ leaves the case's other fields and properties as they are.
+    cases_data = [
+        {
+            "case_id": work_area.case_id,
+            "properties": {"wag_centroid": group_centroid_property(work_area.work_area_group)},
+        }
+        for work_area in work_areas
+    ]
+    for batch in batched(cases_data, HQ_CASE_BULK_CHUNK_SIZE):
+        try:
+            bulk_create_or_update_cases(
+                api_key=api_key, domain=opportunity.deliver_app.cc_domain, cases_data=list(batch)
+            )
+        except CommCareHQAPIException as error:
+            if not _rejected_by_hq(error):
+                raise
+            logger.error(
+                "HQ rejected group centre points for %d cases of opportunity %s (groups %s): %s",
+                len(batch),
+                opportunity_id,
+                work_area_group_ids,
+                error,
+            )
+
+
+def _rejected_by_hq(error: CommCareHQAPIException) -> bool:
+    """Whether HQ answered with a client error other than 429, so the same request would fail again."""
+    cause = error.__cause__
+    return (
+        isinstance(cause, httpx.HTTPStatusError)
+        and cause.response.is_client_error
+        and cause.response.status_code != httpx.codes.TOO_MANY_REQUESTS
+    )
 
 
 @celery_app.task()

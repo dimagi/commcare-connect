@@ -5,14 +5,21 @@ from unittest import mock
 
 import httpx
 import pytest
-from django.contrib.gis.geos import Polygon
+from django.contrib.gis.geos import Point, Polygon
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import (
+    SRID,
+    ImplementationArea,
+    OvertureRelease,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaStatus,
+)
 from commcare_connect.microplanning.tasks import (
     OVERTURE_CATALOG_URL,
     ImplementationAreaCSVImporter,
@@ -21,6 +28,7 @@ from commcare_connect.microplanning.tasks import (
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
+    sync_work_area_group_cases,
     update_overture_release,
 )
 from commcare_connect.microplanning.tests.factories import (
@@ -29,7 +37,11 @@ from commcare_connect.microplanning.tests.factories import (
     WorkAreaGroupFactory,
     square,
 )
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
+from commcare_connect.opportunity.tests.factories import (
+    OpportunityAccessFactory,
+    OpportunityFactory,
+)
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 WA_BASE_HEADER = "Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State"
 WA_ROW = 'area-{n},Ward1,77.1 28.6,"POLYGON((77 28,78 28,78 29,77 29,77 28))",5,6,7,LGA1,State1'
@@ -594,6 +606,146 @@ def test_send_work_area_assignment_notification(opportunity):
     assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
     assert message.data["title"]
     assert message.data["body"]
+
+
+@pytest.mark.django_db
+class TestSyncWorkAreaGroupCases:
+    GROUP_CENTROID = Point(77.5, 28.5, srid=SRID)
+
+    @pytest.fixture
+    def bulk_update(self):
+        with mock.patch("commcare_connect.microplanning.tasks.bulk_create_or_update_cases") as bulk_update:
+            yield bulk_update
+
+    @pytest.fixture
+    def group(self, opportunity):
+        return WorkAreaGroupFactory(opportunity=opportunity, centroid=self.GROUP_CENTROID)
+
+    def assigned_work_area(self, group, status=WorkAreaStatus.NOT_VISITED, **kwargs):
+        return WorkAreaFactory(
+            opportunity=group.opportunity,
+            work_area_group=group,
+            opportunity_access=OpportunityAccessFactory(opportunity=group.opportunity),
+            status=status,
+            **kwargs,
+        )
+
+    def sync_kwargs(self, opportunity, groups):
+        return {"opportunity_id": opportunity.id, "work_area_group_ids": [group.pk for group in groups]}
+
+    def hq_error(self, status_code=None):
+        """The error bulk_create_or_update_cases raises when HQ answers with status_code, or doesn't answer."""
+        request = httpx.Request("POST", "https://hq.example/a/domain/api/case/v2/")
+        if status_code is None:
+            cause = httpx.ConnectError("connection refused", request=request)
+        else:
+            response = httpx.Response(status_code, request=request)
+            cause = httpx.HTTPStatusError("HQ error", request=request, response=response)
+        error = CommCareHQAPIException("Failed to bulk update cases")
+        error.__cause__ = cause
+        return error
+
+    def apply_sync(self, opportunity, group, caplog, level):
+        """Run the task as Celery would, retries included, capturing its log records at level and above."""
+        with caplog.at_level(level, logger="commcare_connect.microplanning.tasks"):
+            return sync_work_area_group_cases.apply(kwargs=self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+    def sent_properties(self, bulk_update):
+        """case_id -> properties of every case the task sent, checking it sent them in one call."""
+        bulk_update.assert_called_once()
+        return {case["case_id"]: case["properties"] for case in bulk_update.call_args.kwargs["cases_data"]}
+
+    def test_sends_only_the_centre_point_to_assigned_work_areas_in_given_groups(self, opportunity, group, bulk_update):
+        assigned = self.assigned_work_area(group)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        self.assigned_work_area(WorkAreaGroupFactory(opportunity=opportunity, centroid=self.GROUP_CENTROID))
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        bulk_update.assert_called_once_with(
+            api_key=opportunity.api_key,
+            domain=opportunity.deliver_app.cc_domain,
+            cases_data=[{"case_id": assigned.case_id, "properties": {"wag_centroid": "28.50000 77.50000"}}],
+        )
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            WorkAreaStatus.NOT_VISITED,
+            WorkAreaStatus.VISITED,
+            WorkAreaStatus.EXPECTED_VISIT_REACHED,
+            WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+            WorkAreaStatus.INACCESSIBLE,
+        ],
+    )
+    def test_sends_every_assigned_status(self, opportunity, group, bulk_update, status):
+        assigned = self.assigned_work_area(group, status=status)
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        assert list(self.sent_properties(bulk_update)) == [assigned.case_id]
+
+    def test_sends_the_centre_point_the_group_has_when_the_task_runs(self, opportunity, group, bulk_update):
+        assigned = self.assigned_work_area(group)
+        WorkAreaGroup.objects.filter(pk=group.pk).update(centroid=Point(36.8, -1.3, srid=SRID))
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        assert self.sent_properties(bulk_update) == {assigned.case_id: {"wag_centroid": "-1.30000 36.80000"}}
+
+    def test_skips_work_areas_without_a_case_and_groups_of_other_opportunities(self, opportunity, group, bulk_update):
+        self.assigned_work_area(group, case_id=None)
+        other_group = WorkAreaGroupFactory(opportunity=OpportunityFactory(), centroid=self.GROUP_CENTROID)
+        self.assigned_work_area(other_group)
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group, other_group]))
+
+        bulk_update.assert_not_called()
+
+    @pytest.mark.parametrize("missing", ["api_key", "deliver_app", "hq_server"])
+    def test_stops_without_hq_setup(self, opportunity, group, bulk_update, caplog, missing):
+        self.assigned_work_area(group)
+        owner = opportunity.api_key if missing == "hq_server" else opportunity
+        setattr(owner, missing, None)
+        owner.save(update_fields=[missing])
+
+        result = self.apply_sync(opportunity=opportunity, group=group, caplog=caplog, level="WARNING")
+
+        assert result.successful()
+        bulk_update.assert_not_called()
+        assert [record.levelname for record in caplog.records] == ["WARNING"]
+        assert str(opportunity.id) in caplog.records[0].getMessage()
+
+    @pytest.mark.parametrize("status_code", [400, 403])
+    def test_logs_and_skips_a_request_hq_rejects(self, opportunity, group, bulk_update, caplog, status_code):
+        rejected = self.assigned_work_area(group)
+        sent = self.assigned_work_area(group)
+        bulk_update.side_effect = [self.hq_error(status_code=status_code), []]
+
+        with mock.patch("commcare_connect.microplanning.tasks.HQ_CASE_BULK_CHUNK_SIZE", 1):
+            result = self.apply_sync(opportunity=opportunity, group=group, caplog=caplog, level="ERROR")
+
+        assert result.successful()
+        sent_case_ids = [call.kwargs["cases_data"][0]["case_id"] for call in bulk_update.call_args_list]
+        assert sent_case_ids == [rejected.case_id, sent.case_id]
+        assert [record.levelname for record in caplog.records] == ["ERROR"]
+
+    @pytest.mark.parametrize(
+        "status_code",
+        [
+            pytest.param(None, id="no-answer"),
+            pytest.param(500, id="server-error"),
+            pytest.param(429, id="too-many-requests"),
+        ],
+    )
+    def test_retries_on_hq_error_then_fails(self, opportunity, group, bulk_update, status_code):
+        self.assigned_work_area(group)
+        bulk_update.side_effect = self.hq_error(status_code=status_code)
+
+        result = sync_work_area_group_cases.apply(kwargs=self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        assert result.failed()
+        assert bulk_update.call_count == 6  # the first try and 5 retries
 
 
 @pytest.mark.django_db
