@@ -36,7 +36,7 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
-from django.utils.translation import ngettext
+from django.utils.translation import gettext_lazy, ngettext
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
@@ -491,7 +491,54 @@ def _get_assignment_mode_context(request, opportunity):
 
 
 @method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
-class WorkAreaImport(View):
+class AreaImportView(View):
+    """Saves an uploaded area CSV and queues its import. An opportunity runs one import at a time."""
+
+    import_task = None
+    # Takes the opportunity ID, returns the cache key that marks its import as running.
+    get_lock_key = None
+    file_prefix = ""
+    started_message = ""
+    # Added to the redirect, so the page polls the matching status endpoint.
+    status_query = ""
+
+    def post(self, request, org_slug, opp_id):
+        redirect_url = reverse(
+            "microplanning:microplanning_home",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+        error = self.get_upload_error(request)
+        if error:
+            messages.error(request, error)
+            return redirect(redirect_url)
+
+        opportunity_id = request.opportunity.id
+        lock_key = self.get_lock_key(opportunity_id)
+        if cache.get(lock_key):
+            messages.error(request, _("An import for this opportunity is already in progress."))
+            return redirect(redirect_url)
+
+        file_name = f"{self.file_prefix}-{opportunity_id}-{uuid.uuid4().hex}.csv"
+        default_storage.save(file_name, ContentFile(request.FILES["csv_file"].read()))
+        task = self.import_task.delay(opp_id=opportunity_id, file_name=file_name)
+        cache.set(lock_key, task.id, timeout=1200)
+        messages.info(request, self.started_message)
+        return redirect(f"{redirect_url}?task_id={task.id}{self.status_query}")
+
+    def get_upload_error(self, request):
+        """Why this upload can't start, or None."""
+        csv_file = request.FILES.get("csv_file")
+        if not csv_file or get_file_extension(csv_file).lower() != "csv":
+            return _("Unsupported file format. Please upload a CSV file.")
+        return None
+
+
+class WorkAreaImport(AreaImportView):
+    import_task = import_work_areas_task
+    get_lock_key = staticmethod(get_import_area_cache_key)
+    file_prefix = "work_area_upload"
+    started_message = gettext_lazy("Work Area upload has been started.")
+
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
@@ -520,38 +567,20 @@ class WorkAreaImport(View):
         )
         return response
 
-    def post(self, request, org_slug, opp_id):
-        redirect_url = reverse(
-            "microplanning:microplanning_home",
-            kwargs={"org_slug": org_slug, "opp_id": opp_id},
-        )
-
-        csv_file = request.FILES.get("csv_file")
-        if not csv_file or get_file_extension(csv_file).lower() != "csv":
-            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
-            return redirect(redirect_url)
-
-        if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            messages.error(request, _("Work Areas already exist for this opportunity."))
-            return redirect(redirect_url)
-
-        lock_key = get_import_area_cache_key(request.opportunity.id)
-
-        if cache.get(lock_key):
-            messages.error(request, _("An import for this opportunity is already in progress."))
-            return redirect(redirect_url)
-
-        file_name = f"work_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(csv_file.read()))
-        task = import_work_areas_task.delay(request.opportunity.id, file_name)
-        cache.set(lock_key, task.id, timeout=1200)
-        messages.info(request, _("Work Area upload has been started."))
-        redirect_url += f"?task_id={task.id}"
-        return redirect(redirect_url)
+    def get_upload_error(self, request):
+        error = super().get_upload_error(request)
+        if not error and WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
+            error = _("Work Areas already exist for this opportunity.")
+        return error
 
 
-@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
-class ImplementationAreaImport(View):
+class ImplementationAreaImport(AreaImportView):
+    import_task = import_implementation_areas_task
+    get_lock_key = staticmethod(get_implementation_area_import_cache_key)
+    file_prefix = "implementation_area_upload"
+    started_message = gettext_lazy("Implementation Area upload has been started.")
+    status_query = "&area_type=implementation_area"
+
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="implementation_area_template.csv"'
@@ -560,32 +589,10 @@ class ImplementationAreaImport(View):
         writer.writerow(["Ward North", "77.1 28.6", "POLYGON((77 28,78 28,78 29,77 29,77 28))"])
         return response
 
-    def post(self, request, org_slug, opp_id):
-        redirect_url = reverse(
-            "microplanning:microplanning_home",
-            kwargs={"org_slug": org_slug, "opp_id": opp_id},
-        )
+    def get_upload_error(self, request):
         if ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            messages.error(request, _("Implementation Areas already exist for this opportunity."))
-            return redirect(redirect_url)
-
-        lock_key = get_implementation_area_import_cache_key(request.opportunity.id)
-        if cache.get(lock_key):
-            messages.error(request, _("An import for this opportunity is already in progress."))
-            return redirect(redirect_url)
-
-        csv_file = request.FILES.get("csv_file")
-        if not csv_file or get_file_extension(csv_file).lower() != "csv":
-            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
-            return redirect(redirect_url)
-
-        file_name = f"implementation_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(csv_file.read()))
-        task = import_implementation_areas_task.delay(request.opportunity.id, file_name)
-        cache.set(lock_key, task.id, timeout=1200)
-        messages.info(request, _("Implementation Area upload has been started."))
-        redirect_url += f"?task_id={task.id}&area_type=implementation_area"
-        return redirect(redirect_url)
+            return _("Implementation Areas already exist for this opportunity.")
+        return super().get_upload_error(request)
 
 
 @require_POST
