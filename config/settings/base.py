@@ -327,22 +327,17 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
-# A bot that fills in this (visually hidden) signup field gets the "verification sent" page and no account.
+# Bots that fill in this off-screen signup field get the "verification sent" page and no account.
 ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD = "website"
-# The password reset form must not mail addresses that have no account: anyone could type any address in.
+# Never mail an address that has no account (anyone can type any address into the reset form).
 ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False
-# Merged over allauth's defaults, action by action. Limits for one action with the same scope share one
-# cache entry in allauth 65, so an action can't combine a per-minute and a per-day limit on the same key.
+# Merged over allauth's defaults. One action can't carry two limits on the same key (they share a cache entry),
+# hence the extra "send_mail" action, which AccountAdapter.send_mail applies to every account mail.
 ACCOUNT_RATE_LIMITS = {
-    # allauth's own is 20/m/ip,5/m/key, which lets one address be sent 300 reset mails an hour.
     "reset_password": "20/m/ip,3/h/key",
-    # Our own action: AccountAdapter.send_mail caps every account mail (confirmation, reset, ...) per address.
     "send_mail": "10/d/key",
 }
-# How many trusted proxies append to X-Forwarded-For before a request reaches Django; allauth keys its
-# per-IP rate limits on the client IP that many hops back. 0 uses REMOTE_ADDR, i.e. the nearest proxy, which
-# puts every client in one bucket. AccountAdapter.get_client_ip falls back to REMOTE_ADDR when the header
-# is shorter than this, so a value that is too high does not break login or signup.
+# Proxies that append to X-Forwarded-For before Django; 0 keys allauth's per-IP limits on REMOTE_ADDR instead.
 ALLAUTH_TRUSTED_PROXY_COUNT = env.int("ALLAUTH_TRUSTED_PROXY_COUNT", default=0)
 
 # django-rest-framework
