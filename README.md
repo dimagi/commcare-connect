@@ -187,6 +187,26 @@ Adding yourself to the generated organization is a separate step, either through
 `/admin/organization/userorganizationmembership/` or the organization's own member admin
 pages.
 
+#### Microplanning, without CommCare HQ
+
+To seed an opportunity with work areas, groups, workers and visits for the Progress Map:
+
+    $ ./manage.py generate_microplanning_data --fake-hq
+
+It prints the Progress Map URL and creates the superuser `mpadmin` with password `mpadmin`.
+`--help` lists the other options.
+
+Assigning, unassigning, excluding and editing an assigned work area all update cases on CommCare
+HQ. `--fake-hq` sends those calls to a stand-in for HQ on `localhost:8001` and gives each worker
+an HQ user there. Run the stand-in in its own terminal:
+
+    $ ./manage.py run_fake_hq
+
+It answers every case update and prints the request with its body, so you can see what Connect
+sends. Start it with `--fail` to answer case updates with an error instead. To see the push
+notification that assignment sends to ConnectID too, start the Celery worker with
+`CONNECTID_URL=http://localhost:8001/connectid`.
+
 ### Test coverage
 
 To run the tests, check your test coverage, and generate an HTML coverage report:

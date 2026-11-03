@@ -13,6 +13,8 @@ inv down                            # docker compose down
 ./manage.py migrate                 # run migrations (dev)
 ./manage.py migrate_multi           # run migrations on both primary + secondary DB (prod)
 ./manage.py runserver               # dev server
+./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
+./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
 
 # JavaScript/CSS
 npm ci                              # install deps
