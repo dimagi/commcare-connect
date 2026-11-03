@@ -61,6 +61,8 @@ class TestPaymentUnits:
         assert pu.name == "Visit"
         assert pu.amount == 500
         assert pu.org_amount == 100
+        rate = pu.pay_rates.get()
+        assert (rate.flw_amount, rate.org_amount) == (500, 100)
         deliver_units = pu.deliver_units.all()
         required = [d for d in deliver_units if not d.optional]
         optional = [d for d in deliver_units if d.optional]

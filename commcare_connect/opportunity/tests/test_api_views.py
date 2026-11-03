@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
     PaymentUnit,
+    PaymentUnitRate,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -325,6 +326,7 @@ def test_opportunity_list_endpoint_v2_daily_max(
 ):
     units = opportunity.paymentunit_set.order_by("pk")
     if not max_dailies:
+        PaymentUnitRate.objects.filter(payment_unit__in=units).delete()
         units.delete()
     for unit, max_daily in zip(units, max_dailies):
         PaymentUnit.objects.filter(pk=unit.pk).update(max_daily=max_daily)

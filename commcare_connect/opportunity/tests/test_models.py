@@ -10,6 +10,7 @@ from django.utils.timezone import now
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
+    SYSTEM_USER,
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
@@ -958,3 +959,37 @@ class TestPaymentUnitRateLookups:
         PaymentUnitRateFactory(payment_unit=unit_without_rates, flw_amount=5, planned_for=date(2026, 3, 1))
         with pytest.raises(IntegrityError), transaction.atomic():
             PaymentUnitRateFactory(payment_unit=unit_without_rates, flw_amount=6, planned_for=date(2026, 3, 1))
+
+
+@pytest.mark.django_db
+class TestInitialPayRate:
+    @pytest.mark.parametrize(
+        "unit_start, opp_start, expected",
+        [
+            (+5, +3, +5),  # unit start in the future
+            (None, +3, +3),  # no unit start, opportunity start in the future
+            (-5, +3, +3),  # unit start in the past, opportunity start in the future (no date checks on the unit)
+            (-5, -10, 0),  # both in the past: today
+            (None, -10, 0),
+        ],
+    )
+    def test_created_with_payment_unit(self, unit_start, opp_start, expected):
+        today = now().date()
+        opp = OpportunityFactory(start_date=today + timedelta(days=opp_start))
+        unit = PaymentUnitFactory(
+            opportunity=opp,
+            amount=4,
+            org_amount=1,
+            start_date=None if unit_start is None else today + timedelta(days=unit_start),
+        )
+        rate = unit.pay_rates.get()
+        assert (rate.flw_amount, rate.org_amount) == (4, 1)
+        assert rate.planned_for == today + timedelta(days=expected)
+        assert rate.applied_on is not None
+        assert rate.created_by == SYSTEM_USER
+
+    def test_resaving_does_not_add_a_row(self):
+        unit = PaymentUnitFactory(amount=4)
+        unit.name = "Renamed"
+        unit.save()
+        assert unit.pay_rates.count() == 1

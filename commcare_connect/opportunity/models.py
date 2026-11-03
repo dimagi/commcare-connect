@@ -708,6 +708,33 @@ class PaymentUnit(models.Model):
     def __str__(self):
         return self.name
 
+    # Creates the Initial Rate from amount/org_amount, so every way of creating a unit gets one (form, automation
+    # API, admin, factories, seed commands). CCCT-3018 replaces this override with an explicit call in each of
+    # those paths.
+    def save(self, *args, **kwargs):
+        adding = self._state.adding
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if adding:
+                self.pay_rates.create(
+                    flw_amount=self.amount,
+                    org_amount=self.org_amount,
+                    planned_for=self.initial_pay_rate_date(),
+                    applied_on=now(),
+                    created_by=SYSTEM_USER,
+                    modified_by=SYSTEM_USER,
+                )
+
+    def initial_pay_rate_date(self):
+        """The planned_for of a new unit's Initial Rate: its start date, else the opportunity's, if in the
+        future; otherwise today. No approval can come before it."""
+        today = now().date()
+        if self.start_date and self.start_date > today:
+            return self.start_date
+        if self.opportunity.start_date > today:
+            return self.opportunity.start_date
+        return today
+
     def pay_rate_on(self, day):
         """The pay rate in effect on `day`: the latest applied, non-cancelled rate planned on or before it."""
         return (
