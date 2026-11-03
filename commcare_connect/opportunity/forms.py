@@ -891,7 +891,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
         )
 
         self.fields["max_users"] = forms.IntegerField(
-            label="Max Connect Workers", initial=int(self.instance.number_of_users)
+            label="Max Connect Workers", initial=self.instance.budgeted_workers
         )
         self.fields["start_date"].disabled = self.is_start_date_readonly
 
