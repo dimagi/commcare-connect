@@ -55,6 +55,7 @@ from commcare_connect.microplanning.views import (
     InaccessibilityReviewAction,
     UserVisitVectorLayer,
     get_metrics_for_microplanning,
+    is_adding_work_areas,
 )
 from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
@@ -143,6 +144,19 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         messages = list(response2.wsgi_request._messages)
         assert "An import for this opportunity is already in progress." in str(messages[1])
         assert mock_delay.call_count == 1  # No new task
+
+    @pytest.mark.usefixtures("work_area_import_lock")
+    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    def test_upload_accepted_when_work_areas_exist(self, mock_delay, client, org_user_admin, opportunity, csv_file):
+        WorkAreaFactory(opportunity=opportunity)
+        mock_delay.return_value = MagicMock(id="task-456")
+        client.force_login(org_user_admin)
+
+        url = self.get_url(org_slug=opportunity.organization.slug, opp_id=opportunity.opportunity_id)
+        response = client.post(url, {"csv_file": csv_file})
+
+        assert mock_delay.call_count == 1
+        assert "Work Area upload has been started." in str(list(response.wsgi_request._messages)[0])
 
     @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
     def test_an_import_that_ends_at_once_leaves_no_lock(
@@ -650,26 +664,72 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         assert ia_response.context["import_status_url"] == ia_status
         assert ia_status.encode() in ia_response.content
 
-    @mock.patch("commcare_connect.microplanning.views.AsyncResult")
-    def test_import_status_renders_errors_as_table(
-        self, mock_async_result, client: Client, organization, org_user_admin, opportunity
-    ):
-        task = mock_async_result.return_value
-        task.ready.return_value = True
-        task.successful.return_value = True
-        task.result = {"errors": {"Centroid must be in 'lon lat' format": [4, 17]}}
+    @pytest.fixture
+    def get_import_status(self, client: Client, org_user_admin, opportunity):
+        """Return a function that fetches the work area upload modal as an org admin: for an upload
+        that finished with task_result, or before any upload."""
         client.force_login(org_user_admin)
         url = reverse(
             "microplanning:import_status",
-            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
         )
 
-        response = client.get(url, {"task_id": str(uuid.uuid4())})
+        def fetch(task_result=None):
+            if task_result is None:
+                return client.get(url)
+            with mock.patch("commcare_connect.microplanning.views.AsyncResult") as async_result:
+                task = async_result.return_value
+                task.ready.return_value = True
+                task.successful.return_value = True
+                task.result = task_result
+                return client.get(url, {"task_id": str(uuid.uuid4())})
+
+        return fetch
+
+    def test_import_status_renders_errors_as_table(self, get_import_status):
+        response = get_import_status(task_result={"errors": {"Centroid must be in 'lon lat' format": [4, 17]}})
 
         content = response.content.decode()
         assert "Centroid must be in &#x27;lon lat&#x27; format" in content  # autoescaped, not marked safe
         assert "4, 17" in content
         assert "Error Description" in content
+
+    @pytest.mark.parametrize(
+        ("has_work_areas", "upload_running", "shown", "labels"),
+        [
+            pytest.param(False, False, True, ["Upload Work Areas"], id="no-work-areas"),
+            pytest.param(True, False, True, ["Add Work Areas"], id="work-areas-exist"),
+            pytest.param(True, True, False, [], id="upload-running"),
+        ],
+    )
+    def test_upload_button(
+        self, get_home, opportunity, work_area_import_lock, has_work_areas, upload_running, shown, labels
+    ):
+        if has_work_areas:
+            WorkAreaFactory(opportunity=opportunity)
+        if upload_running:
+            cache.set(work_area_import_lock, "task-id")
+
+        response = get_home()
+
+        content = response.content.decode()
+        assert response.context["show_area_btn"] is shown
+        assert [text for text in ("Upload Work Areas", "Add Work Areas") if text in content] == labels
+
+    @pytest.mark.parametrize(
+        ("existing", "task_result", "title"),
+        [
+            pytest.param(1, None, "Add Work Areas", id="before-adding"),
+            pytest.param(3, {"created": 3}, "Upload Work Areas", id="after-first-upload"),
+            pytest.param(4, {"created": 3}, "Add Work Areas", id="after-adding"),
+        ],
+    )
+    def test_import_status_title(self, get_import_status, opportunity, existing, task_result, title):
+        WorkAreaFactory.create_batch(size=existing, opportunity=opportunity)
+
+        response = get_import_status(task_result=task_result)
+
+        assert response.context["modal_title"] == title
 
     def test_rerun_and_clear_buttons_shown_post_clustering(self, client, org_user_admin, opportunity):
         """After clustering (groups exist) with no FLW assignments, rerun/clear controls are offered."""
@@ -725,6 +785,22 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
 
         assert response.context["show_clear_work_areas_btn"] is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("existing", "created", "expected"),
+    [
+        pytest.param(0, 0, False, id="no-work-areas"),
+        pytest.param(2, 0, True, id="work-areas-exist"),
+        pytest.param(3, 3, False, id="first-upload-saved"),
+        pytest.param(5, 3, True, id="upload-added-to-existing"),
+    ],
+)
+def test_is_adding_work_areas(opportunity, existing, created, expected):
+    WorkAreaFactory.create_batch(size=existing, opportunity=opportunity)
+
+    assert is_adding_work_areas(opportunity_id=opportunity.id, created=created) is expected
 
 
 @pytest.mark.django_db

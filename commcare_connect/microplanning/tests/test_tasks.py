@@ -41,6 +41,7 @@ from commcare_connect.microplanning.tests.factories import (
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityFactory,
+    UserVisitFactory,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -582,6 +583,21 @@ class TestWorkAreaCSVImporter:
         rows = [self.build_row(slug="area-new", group_name="group-a", boundary=square(x, 10))]
         return WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=self.build_csv_with_groups(rows)).run()
 
+    def test_adding_leaves_existing_work_areas_unchanged(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = self.existing_group(opportunity, (10, 10), opportunity_access=access, status=WorkAreaStatus.VISITED)
+        existing = group.workarea_set.get()
+        UserVisitFactory(opportunity=opportunity, user=access.user, opportunity_access=access, work_area=existing)
+        saved_before = WorkArea.objects.values().get(pk=existing.pk)
+
+        result = self.add_to_group_a(opportunity)
+
+        assert result == {"created": 1}
+        assert WorkArea.objects.values().get(pk=existing.pk) == saved_before
+        assert existing.uservisit_set.count() == 1
+        new = WorkArea.objects.get(opportunity=opportunity, slug="area-new")
+        assert (new.status, new.opportunity_access, new.work_area_group) == (WorkAreaStatus.UNASSIGNED, None, group)
+
     def test_adding_to_existing_group_moves_its_centre_point(self, opportunity):
         group = self.existing_group(opportunity, (10, 10))
 
@@ -699,6 +715,18 @@ def test_import_work_areas_task_bom_csv(opportunity):
 
     assert result["created"] == 1
     assert WorkArea.objects.filter(slug="area-bom").exists()
+
+
+@pytest.mark.django_db
+def test_import_work_areas_task_adds_to_existing_work_areas(opportunity):
+    WorkAreaFactory(opportunity=opportunity, boundary=square(10, 10))
+    file_name = "test-add-upload.csv"
+    default_storage.save(file_name, ContentFile(f"{WA_BASE_HEADER}\n{WA_ROW.format(n=1)}\n".encode()))
+
+    result = import_work_areas_task.apply(args=[opportunity.id, file_name]).get()
+
+    assert result == {"created": 1}
+    assert WorkArea.objects.filter(opportunity=opportunity).count() == 2
 
 
 @pytest.mark.django_db

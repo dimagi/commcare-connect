@@ -513,9 +513,6 @@ class WorkAreaCSVImporter(BaseAreaCSVImporter):
 def import_work_areas_task(self, opp_id, file_name):
     logger.info(f"Starting Work Area import for opportunity: {opp_id}")
     try:
-        if WorkArea.objects.filter(opportunity_id=opp_id).exists():
-            return {"errors": {_("Work Areas already exist for this opportunity"): [0]}}
-
         with default_storage.open(file_name, "rb") as f:
             content = io.StringIO(f.read().decode("utf-8-sig"))
         importer = WorkAreaCSVImporter(opp_id, content)

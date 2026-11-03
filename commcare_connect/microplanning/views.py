@@ -135,7 +135,7 @@ def microplanning_home(request, *args, **kwargs):
     work_area_groups_present = bool(work_area_group_count)
     implementation_areas_present = bool(implementation_area_count)
 
-    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
+    show_area_btn = cache.get(get_import_area_cache_key(opportunity.id)) is None
     show_workarea_groups_btn = areas_present and not work_area_groups_present
     show_clear_work_areas_btn = areas_present and not areas_assigned
     show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
@@ -250,6 +250,7 @@ def microplanning_home(request, *args, **kwargs):
 
     context = {
         "show_area_btn": show_area_btn,
+        "work_areas_present": areas_present,
         "show_implementation_area_btn": show_implementation_area_btn,
         "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
@@ -571,12 +572,6 @@ class WorkAreaImport(AreaImportView):
         )
         return response
 
-    def get_upload_error(self, request):
-        error = super().get_upload_error(request)
-        if not error and WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            error = _("Work Areas already exist for this opportunity.")
-        return error
-
 
 class ImplementationAreaImport(AreaImportView):
     import_task = import_implementation_areas_task
@@ -613,7 +608,7 @@ def clear_implementation_areas(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
-def _area_modal_context(org_slug, opp_id, area_type):
+def _area_modal_context(org_slug, opp_id, area_type, adding=False):
     if area_type == "implementation_area":
         return {
             "modal_title": _("Upload Implementation Area"),
@@ -632,7 +627,7 @@ def _area_modal_context(org_slug, opp_id, area_type):
             ],
         }
     return {
-        "modal_title": _("Upload Work Areas"),
+        "modal_title": _("Add Work Areas") if adding else _("Upload Work Areas"),
         "records_label": _("Work Areas"),
         "success_noun": _("work area(s)"),
         "upload_url": reverse("microplanning:upload_work_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id}),
@@ -683,13 +678,25 @@ def import_status(request, org_slug, opp_id, area_type="work_area"):
             else:
                 result_data = {"errors": {_("Import failed due to an internal error. Please try again."): [0]}}
 
+    adding = area_type == "work_area" and is_adding_work_areas(
+        opportunity_id=request.opportunity.id, created=(result_data or {}).get("created", 0)
+    )
     context = {
         "result_ready": result_ready,
         "result_data": result_data,
         "task_id": task_id,
-        **_area_modal_context(org_slug, opp_id, area_type),
+        **_area_modal_context(org_slug=org_slug, opp_id=opp_id, area_type=area_type, adding=adding),
     }
     return render(request, "microplanning/import_area_modal.html", context)
+
+
+def is_adding_work_areas(opportunity_id: int, created: int) -> bool:
+    """Whether an upload adds to work areas that were already there.
+
+    ``created`` is the number of work areas the upload saved, so a first upload's own rows don't
+    count. While an upload runs its rows aren't committed, so they aren't counted either.
+    """
+    return WorkArea.objects.filter(opportunity_id=opportunity_id).count() > created
 
 
 class WorkAreaVectorLayer(VectorLayer):
