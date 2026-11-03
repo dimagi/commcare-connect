@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock css %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+{% block content %}
+  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <h1 class="title">
+      {% if solicitation.pk %}
+        {{ solicitation.title }}
+      {% else %}
+        {% translate "New solicitation" %}
+      {% endif %}
+    </h1>
+    {# Later steps need a saved solicitation, so they only link once the details are saved. #}
+    <div class="stepper">
+      {% for name, label in step_labels.items %}
+        {% if not forloop.first %}<hr class="border-t-2 border-dashed border-gray-300 w-full">{% endif %}
+        {% with "solicitation:"|add:name as url_name %}
+          <a class="{% if step == name %}active{% endif %}"
+             {% if solicitation.pk %}href="{% url url_name request.org.slug solicitation.solicitation_id %}"{% endif %}>
+            <h6>{{ forloop.counter }}</h6>
+            <span>{{ label }}</span>
+          </a>
+        {% endwith %}
+      {% endfor %}
+    </div>
+    {% block step_content %}
+    {% endblock step_content %}
+  </div>
+{% endblock content %}
