@@ -240,7 +240,10 @@ class Command(BaseCommand):
         for user in users:
             selected_opps = random.sample(all_opportunities, k=random.randint(1, 3))
             for opp in selected_opps:
-                access = OpportunityAccessFactory(user=user, opportunity=opp)
+                # accepted=True to match the invite below, which is already created as accepted.
+                # The worker tables filter on it, so unaccepted access leaves every tab empty
+                # however many visits the worker has.
+                access = OpportunityAccessFactory(user=user, opportunity=opp, accepted=True)
                 all_accesses.append(access)
                 UserInviteFactory(opportunity=opp, opportunity_access=access, status=UserInviteStatus.accepted)
 
