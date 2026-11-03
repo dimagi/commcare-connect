@@ -38,7 +38,11 @@ from commcare_connect.microplanning.models import (
     WorkAreaGroup,
     WorkAreaStatus,
 )
-from commcare_connect.microplanning.tasks import WorkAreaCSVExporter, get_implementation_area_import_cache_key
+from commcare_connect.microplanning.tasks import (
+    WorkAreaCSVExporter,
+    get_implementation_area_import_cache_key,
+    get_import_area_cache_key,
+)
 from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
@@ -155,6 +159,64 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         header_row, sample_row = rows[0], rows[1]
         assert header_row[-1] == "Work Area Group Name"
         assert len(sample_row) == len(header_row)
+
+
+@pytest.mark.django_db
+class TestAreaUploadRefusals(BaseMicroplanningFlagTest):
+    # Upload page name, task the view queues, and the cache key that marks that import as running.
+    UPLOADS = {
+        "work-areas": ("upload_work_areas", "import_work_areas_task", get_import_area_cache_key),
+        "implementation-areas": (
+            "upload_implementation_areas",
+            "import_implementation_areas_task",
+            get_implementation_area_import_cache_key,
+        ),
+    }
+    NOT_CSV = "Unsupported file format. Please upload a CSV file."
+    RUNNING = "An import for this opportunity is already in progress."
+
+    @pytest.fixture(autouse=True)
+    def clear_import_locks(self, opportunity):
+        yield
+        for _, _, get_lock_key in self.UPLOADS.values():
+            cache.delete(get_lock_key(opportunity.id))
+
+    @pytest.mark.parametrize(
+        ("upload", "state", "content_type", "message"),
+        [
+            pytest.param("work-areas", None, "text/plain", NOT_CSV, id="work-areas-not-csv"),
+            pytest.param("implementation-areas", None, "text/plain", NOT_CSV, id="implementation-areas-not-csv"),
+            pytest.param("work-areas", "import-running", "text/csv", RUNNING, id="work-areas-import-running"),
+            pytest.param(
+                "implementation-areas", "import-running", "text/csv", RUNNING, id="implementation-areas-running"
+            ),
+            pytest.param(
+                "implementation-areas",
+                "areas-exist",
+                "text/csv",
+                "Implementation Areas already exist for this opportunity.",
+                id="implementation-areas-exist",
+            ),
+        ],
+    )
+    def test_upload_refused(self, client, org_user_admin, opportunity, upload, state, content_type, message):
+        url_name, task_name, get_lock_key = self.UPLOADS[upload]
+        if state == "import-running":
+            cache.set(get_lock_key(opportunity.id), "running")
+        if state == "areas-exist":
+            ImplementationAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+        url = reverse(
+            f"microplanning:{url_name}",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        with patch(f"commcare_connect.microplanning.views.{task_name}.delay") as delay:
+            csv_file = SimpleUploadedFile("areas.csv", b"a,b\n1,2\n", content_type=content_type)
+            response = client.post(url, {"csv_file": csv_file})
+
+        delay.assert_not_called()
+        assert [str(message) for message in response.wsgi_request._messages] == [message]
 
 
 @pytest.mark.django_db
