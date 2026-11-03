@@ -423,6 +423,7 @@ def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("total_budget", [1000, 0])
 @pytest.mark.parametrize(
     "end_date, workers, visits",
     [
@@ -431,8 +432,11 @@ def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
         (date.today() - timedelta(days=1), 2, 20),
     ],
 )
-def test_units_that_cost_nothing_put_no_limit_on_claims(opportunity: Opportunity, end_date, workers, visits):
-    opportunity.total_budget = 1000
+def test_units_that_cost_nothing_put_no_limit_on_claims(
+    opportunity: Opportunity, total_budget, end_date, workers, visits
+):
+    # The finalize form sets a budget of 0 when the units cost nothing
+    opportunity.total_budget = total_budget
     opportunity.save(update_fields=["total_budget"])
     unit = _budget_unit(opportunity, amount=0)
     for _ in range(2):

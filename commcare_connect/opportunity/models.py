@@ -316,8 +316,8 @@ class Opportunity(BaseModel):
         unit's full ``max_total``; a leftover too small for one more worker funds nothing. Once the
         opportunity has ended no one can claim, so the unclaimed budget funds nothing either.
 
-        Units with neither a claim limit nor a ``max_total`` are left out. Empty when there is no
-        budget, or when the units cost nothing and so have no budget limit.
+        Units with neither a claim limit nor a ``max_total`` are left out. Empty when the units have a
+        price but there is no budget, or when the units cost nothing and so have no budget limit.
         """
         if payment_units is None:
             payment_units = self.paymentunit_set.all()
@@ -327,12 +327,13 @@ class Opportunity(BaseModel):
 
     def _allotted_visits_by_unit(self, payment_units, claims_by_unit, unclaimed_workers):
         """``allotted_visits_by_unit``, but ``None`` when the budget puts no limit on the deliveries."""
-        if not self.total_budget:
-            return {}
         if unclaimed_workers is None:
+            # max_total is per worker, so with unlimited workers any unit that has one is unlimited too
             if any(pu.max_total for pu in payment_units):
                 return None
             unclaimed_workers = 0
+        elif not self.total_budget and self.budget_per_user_for_units(payment_units):
+            return {}
         return {
             pu.pk: (claims_by_unit[pu.pk].visits if pu.pk in claims_by_unit else 0)
             + (pu.max_total or 0) * unclaimed_workers
@@ -347,12 +348,14 @@ class Opportunity(BaseModel):
         """Whole workers the remaining budget can still fund, or ``None`` when it puts no limit on them.
 
         Applies ``ClaimOpportunityView``'s rule: a worker can claim while the remaining budget covers
-        ``budget_per_user()``, which is what ``budget_per_user_for_units`` prices here.
+        ``budget_per_user()``, which is what ``budget_per_user_for_units`` prices here. That rule lets
+        anyone claim when the units cost nothing, even on a budget of 0, which is what the finalize form
+        sets for them.
         """
-        if not self.total_budget or self.has_ended:
+        if self.has_ended:
             return 0
 
-        remaining_budget = self.total_budget - sum(claims.cost for claims in claims_by_unit.values())
+        remaining_budget = (self.total_budget or 0) - sum(claims.cost for claims in claims_by_unit.values())
         budget_per_worker = self.budget_per_user_for_units(payment_units)
         if not budget_per_worker:
             return None if remaining_budget >= 0 else 0
