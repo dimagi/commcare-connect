@@ -37,9 +37,8 @@ class AccountAdapter(DefaultAccountAdapter):
             return super().get_client_ip(request)
         except ImproperlyConfigured:
             logger.warning(
-                "X-Forwarded-For %r is shorter than ALLAUTH_TRUSTED_PROXY_COUNT=%s; rate limiting on REMOTE_ADDR",
+                "X-Forwarded-For %r has fewer hops than ALLAUTH_TRUSTED_PROXY_COUNT; rate limiting on REMOTE_ADDR",
                 request.headers.get("x-forwarded-for"),
-                settings.ALLAUTH_TRUSTED_PROXY_COUNT,
             )
             return request.META["REMOTE_ADDR"]
 
