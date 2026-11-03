@@ -72,7 +72,11 @@ class DryRunRollback(Exception):
     pass
 
 
-payloads = [build_payload(form_id) for form_id in XFORM_IDS]
+# Skip forms a previous committed run already processed, so a re-run doesn't hit the unique constraint
+already_processed = set(UserVisit.objects.filter(xform_id__in=XFORM_IDS).values_list("xform_id", flat=True))
+for form_id in sorted(already_processed):
+    print(f"{form_id}: already has a visit, skipping")
+payloads = [build_payload(form_id) for form_id in XFORM_IDS if form_id not in already_processed]
 try:
     with transaction.atomic():
         for payload in payloads:
