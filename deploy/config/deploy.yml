@@ -24,6 +24,16 @@ builder:
   args:
     APP_RELEASE: "<%= ENV['APP_RELEASE'] || `git rev-parse HEAD`.strip %>"
 
+traefik:
+  args:
+    # Traefik's implicit entrypoint; restated because defining any option on it drops the implicit ":80".
+    entrypoints.http.address: ':80'
+    # Trust X-Forwarded-For from the load balancer's VPC. By default Traefik deletes the header from
+    # untrusted senders, so Django would see the ALB's address alone instead of "client, cloudfront, alb".
+    # allauth_trusted_proxy_count in the Ansible defaults counts those hops. Changing this needs
+    # `kamal traefik reboot`, not just a deploy.
+    entrypoints.http.forwardedheaders.trustedips: '172.31.0.0/16'
+
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
   username: AWS
