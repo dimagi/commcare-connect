@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone as djtimezone
 from faker import Faker
 
@@ -86,7 +87,13 @@ class Command(BaseCommand):
     def clean_sample_data(self, org_ids):
         self.stdout.write("Cleaning up previous sample data...")
         deletions = [
-            lambda: Payment.objects.filter(opportunity_access__opportunity__organization_id__in=org_ids).delete(),
+            # Sample payments for an opportunity nobody was assigned to have no access to match
+            # on, so they have to be found through their invoice or they outlive it -- and
+            # Payment.invoice is DO_NOTHING, so the orphan breaks the invoice delete at commit.
+            lambda: Payment.objects.filter(
+                Q(opportunity_access__opportunity__organization_id__in=org_ids)
+                | Q(invoice__opportunity__organization_id__in=org_ids)
+            ).delete(),
             lambda: PaymentInvoice.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: UserVisit.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: OpportunityClaim.objects.filter(
