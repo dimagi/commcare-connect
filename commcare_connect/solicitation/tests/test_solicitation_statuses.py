@@ -1,0 +1,32 @@
+from datetime import timedelta
+
+import pytest
+from django.utils.timezone import now
+
+from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.tests.factories import SolicitationFactory
+
+Status = Solicitation.Status
+PAST = timedelta(days=-1)
+FUTURE = timedelta(days=1)
+
+pytestmark = pytest.mark.django_db
+
+# (stored status, deadline offset, status once the deadline rule applies)
+DEADLINE_CASES = [
+    (Status.ACTIVE, FUTURE, Status.ACTIVE),
+    (Status.ACTIVE, PAST, Status.CLOSED),
+    (Status.DRAFT, PAST, Status.DRAFT),
+    (Status.CANCELLED, PAST, Status.CANCELLED),
+]
+
+
+@pytest.mark.parametrize("status, deadline_offset, expected_status", DEADLINE_CASES)
+def test_deadline_rule(status, deadline_offset, expected_status):
+    solicitation = SolicitationFactory(status=status, application_deadline=now() + deadline_offset)
+    expected_open = expected_status == Status.ACTIVE
+
+    assert solicitation.effective_status == expected_status
+    assert solicitation.is_open is expected_open
+    assert Solicitation.objects.open().filter(pk=solicitation.pk).exists() is expected_open
+
