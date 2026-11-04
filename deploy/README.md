@@ -87,6 +87,12 @@ The Django settings are configured using the `deploy/roles/connect/templates/con
 settings values are in `deploy/roles/connect/defaults/main.yml`, overridden per environment in the inventory files.
 Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansible Secrets - Production` entries.
 
+ConnectID's env file (`connectid.docker.env.j2`) is the `ConnectID docker.env` 1Password note, plus values from the
+same `secrets` entries appended after it (a later line wins if the note also sets the variable).
+
+`HEALTH_CHECK_TOKENS` is set for both apps from the `health_check_tokens` secret, a list of tokens joined with commas.
+It gates the `/status/` health check pages; leaving the secret out renders an empty value, which leaves them open.
+
 To update the Django settings:
 
 ```bash
