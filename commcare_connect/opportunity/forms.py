@@ -1,3 +1,4 @@
+import copy
 import datetime
 import json
 import logging
@@ -865,7 +866,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
-        self.is_start_date_readonly = self.current_start_date < datetime.date.today()
+        self.is_start_date_readonly = self._is_start_date_locked()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
@@ -926,7 +927,87 @@ class OpportunityFinalizeForm(forms.ModelForm):
             if total_budget_sum + cleaned_data["total_budget"] > program.budget:
                 self.add_error("total_budget", "Budget exceeds the program budget.")
 
+            if "start_date" in self.changed_data:
+                self._validate_start_date_today(start_date)
+            self._validate_dates_cover_payment_units(start_date, end_date)
+            if "start_date" in self.changed_data:
+                self._validate_start_date_before_pay_rate_changes(start_date)
             return cleaned_data
+
+    def save(self, commit=True):
+        opportunity = super().save(commit=commit)
+        if commit and "start_date" in self.changed_data:
+            for unit in opportunity.paymentunit_set.all():
+                unit.opportunity = opportunity
+                unit.sync_initial_pay_rate_date(opportunity.modified_by)
+        return opportunity
+
+    def _is_start_date_locked(self):
+        today = now().date()
+        if self.current_start_date < today:
+            return True
+        # On its start day a visit can be approved at any moment, and that approval needs the pay rate in place.
+        return self.current_start_date == today and self.opportunity.has_payable_visits()
+
+    def _validate_start_date_today(self, start_date):
+        # Visits processed earlier today are trial; they would sit inside the active period
+        if start_date == now().date() and self.opportunity.has_visits():
+            self.add_error("start_date", gettext("Start date can be today only if the opportunity has no visits yet."))
+
+    def _validate_start_date_before_pay_rate_changes(self, start_date):
+        # Same rule as a unit's own start date change, for every unit whose Initial Pay Rate moves with this one
+        # A copy, so validation doesn't change the opportunity itself
+        moved = copy.copy(self.opportunity)
+        moved.start_date = start_date
+        for unit in self.opportunity.paymentunit_set.all():
+            unit.opportunity = moved
+            if change := unit.earliest_pay_rate_change_on_or_before(unit.initial_pay_rate_date()):
+                self.add_error(
+                    "start_date",
+                    gettext(
+                        "A pay rate change is scheduled on %(date)s for payment unit %(name)s. "
+                        "Cancel it or pick an earlier start date."
+                    )
+                    % {"date": change.planned_for, "name": unit.name},
+                )
+
+    def _validate_dates_cover_payment_units(self, start_date, end_date):
+        """Each changed date must leave room for every payment unit. A unit's blank date takes the opportunity's,
+        so each date is checked against both of a unit's dates. Each check is a filter, the unit date it names
+        (as an ordering, so the farthest unit is named) and the message."""
+        checks = {
+            "start_date": [
+                (
+                    {"start_date__lt": start_date},
+                    "start_date",
+                    gettext("Start date can't be after the start date of payment unit %(name)s (%(date)s)."),
+                ),
+                (
+                    {"end_date__lt": start_date},
+                    "end_date",
+                    gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s)."),
+                ),
+            ],
+            "end_date": [
+                (
+                    {"end_date__gt": end_date},
+                    "-end_date",
+                    gettext("End date can't be before the end date of payment unit %(name)s (%(date)s)."),
+                ),
+                (
+                    {"start_date__gt": end_date},
+                    "-start_date",
+                    gettext("End date can't be before the start date of payment unit %(name)s (%(date)s)."),
+                ),
+            ],
+        }
+        for field in ("start_date", "end_date"):
+            if field not in self.changed_data:
+                continue
+            for lookup, order, message in checks[field]:
+                if unit := self.opportunity.paymentunit_set.filter(**lookup).order_by(order).first():
+                    self.add_error(field, message % {"name": unit.name, "date": getattr(unit, order.lstrip("-"))})
+                    break
 
 
 class VisitExportForm(forms.Form):
