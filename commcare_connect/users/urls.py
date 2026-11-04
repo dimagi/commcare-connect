@@ -34,6 +34,38 @@ urlpatterns = [
     path("connect_user_otp/", RetrieveUserOTPView.as_view(), name="connect_user_otp"),
     path("toggles/", UserToggleView.as_view(), name="user_toggle_view"),
     path("internal_features/", views.internal_features, name="internal_features"),
+    path("internal_features/primary_sectors/", views.PrimarySectorListView.as_view(), name="primary_sector_list"),
+    path(
+        "internal_features/primary_sectors/add/",
+        views.PrimarySectorCreateView.as_view(),
+        name="primary_sector_create",
+    ),
+    path(
+        "internal_features/primary_sectors/<int:pk>/edit/",
+        views.PrimarySectorUpdateView.as_view(),
+        name="primary_sector_update",
+    ),
+    path(
+        "internal_features/primary_sectors/<int:pk>/delete/",
+        views.PrimarySectorDeleteView.as_view(),
+        name="primary_sector_delete",
+    ),
+    path("internal_features/delivery_types/", views.DeliveryTypeListView.as_view(), name="delivery_type_list"),
+    path(
+        "internal_features/delivery_types/add/",
+        views.DeliveryTypeCreateView.as_view(),
+        name="delivery_type_create",
+    ),
+    path(
+        "internal_features/delivery_types/<int:pk>/edit/",
+        views.DeliveryTypeUpdateView.as_view(),
+        name="delivery_type_update",
+    ),
+    path(
+        "internal_features/delivery_types/<int:pk>/delete/",
+        views.DeliveryTypeDeleteView.as_view(),
+        name="delivery_type_delete",
+    ),
     path("permission_management/", view=views.permission_management, name="permission_management"),
     path(
         "permission_management_search/", view=views.permission_management_search, name="permission_management_search"

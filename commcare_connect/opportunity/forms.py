@@ -35,6 +35,7 @@ from commcare_connect.opportunity.models import (
     Currency,
     DeliverUnit,
     DeliverUnitFlagRules,
+    DeliveryType,
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
@@ -72,6 +73,7 @@ from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import parse_year_month
+from commcare_connect.utils.forms import ManagedOptionForm
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -2478,3 +2480,12 @@ class AudioAttachmentTranscribeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+
+
+class DeliveryTypeForm(ManagedOptionForm):
+    locked_slug_help_text = _(
+        "Reports, data exports and the Program API identify delivery types by it, so it can't change."
+    )
+
+    class Meta(ManagedOptionForm.Meta):
+        model = DeliveryType

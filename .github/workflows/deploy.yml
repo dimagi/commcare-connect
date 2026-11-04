@@ -217,7 +217,8 @@ jobs:
           gh workflow run playwright_web.yaml \
             --repo dimagi/dimagi-qa-ccc \
             --ref main \
-            -f environment=prod
+            -f environment=prod \
+            -f source=post-deploy
 
       - name: Notify QA trigger failure
         if: ${{ failure() }}

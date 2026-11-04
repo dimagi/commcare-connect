@@ -446,3 +446,7 @@ LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
 
 # HubSpot Settings
 HUBSPOT_API_ID = env("HUBSPOT_API_ID", default="")
+
+# Marketing site: only the production load balancer routes /public/* to it, so the old
+# marketing URLs here redirect there only when this is on (see prelogin/urls.py).
+MARKETING_SITE_ENABLED = env.bool("MARKETING_SITE_ENABLED", default=False)
