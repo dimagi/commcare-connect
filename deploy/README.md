@@ -87,6 +87,10 @@ The Django settings are configured using the `deploy/roles/connect/templates/con
 settings values are in `deploy/roles/connect/defaults/main.yml`, overridden per environment in the inventory files.
 Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansible Secrets - Production` entries.
 
+`HEALTH_CHECK_TOKENS` is set from the `health_check_tokens` secret, a list of tokens joined with commas; leaving the
+secret out renders an empty value. Connect does not read it yet, so it has no effect until Connect serves health check
+pages that are gated by it.
+
 To update the Django settings:
 
 ```bash
