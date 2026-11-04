@@ -13,6 +13,7 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWork,
     CompletedWorkStatus,
+    Opportunity,
     OpportunityAccess,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -25,7 +26,12 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.reports.management.commands.generate_sample_data import SAMPLE_AUDIO_RATE, Command
+from commcare_connect.program.models import Program
+from commcare_connect.reports.management.commands.generate_sample_data import (
+    SAMPLE_AUDIO_RATE,
+    Command,
+    silent_wav_bytes,
+)
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.tests.factories import UserFactory
 
@@ -134,16 +140,11 @@ def _write_jpeg(path, color=(70, 130, 180)):
 
 
 def _write_wav(path, seconds=1):
-    """Longer than the generated placeholder by default, so the bytes are distinguishable."""
+    """Pass a length other than the generated placeholder's so the bytes are distinguishable."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as clip:
-        clip.setnchannels(1)
-        clip.setsampwidth(1)
-        clip.setframerate(SAMPLE_AUDIO_RATE)
-        clip.writeframes(b"\x80" * (SAMPLE_AUDIO_RATE * seconds))
-    path.write_bytes(buffer.getvalue())
-    return buffer.getvalue()
+    content = silent_wav_bytes(seconds)
+    path.write_bytes(content)
+    return content
 
 
 class TestGenerateSampleData:
@@ -227,11 +228,28 @@ class TestGenerateSampleData:
 
     def test_media_dir_ignores_files_that_are_neither(self, db, tmp_path):
         (tmp_path / "notes.txt").write_text("not media")
+        # A macOS AppleDouble fork: an image extension, but no image in it.
+        (tmp_path / "._clinic.jpg").write_bytes(b"\x00\x05\x16\x07")
         _write_jpeg(tmp_path / "clinic.jpg")
 
         _generate(image_percent=100, audio_percent=0, media_dir=str(tmp_path))
 
         assert {blob.name for blob in BlobMeta.objects.all()} == {"photo.jpg"}
+
+    @pytest.mark.parametrize("percent", [-1, 101])
+    def test_percent_out_of_range_fails_loudly(self, db, percent):
+        with pytest.raises(CommandError, match="between 0 and 100"):
+            _generate(image_percent=percent)
+
+    def test_programs_stay_in_the_sample_org(self, db):
+        """Every opportunity needs a program; the plain ones must use the sample org's own rather
+        than one the factory invents in a fresh organization that then supervises them and that
+        cleanup never reaches."""
+        call_command("generate_sample_data", 5, "attachment-sample-org", invited_org_slug="invited-sample-org")
+
+        org = Organization.objects.get(slug="attachment-sample-org")
+        assert set(Program.objects.values_list("organization", flat=True)) == {org.id}
+        assert set(Opportunity.objects.values_list("supervising_organization", flat=True)) == {org.id}
 
     def test_missing_media_dir_fails_loudly(self, db, tmp_path):
         with pytest.raises(CommandError, match="not a directory"):
