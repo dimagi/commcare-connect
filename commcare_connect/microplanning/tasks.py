@@ -679,6 +679,8 @@ def sync_work_area_group_cases(opportunity_id: int, work_area_group_ids: list[in
             case_id__isnull=False,
         )
         .select_related("work_area_group")
+        # Only what the payload needs, so the work area boundaries aren't loaded.
+        .only("case_id", "work_area_group__centroid")
         .order_by("pk")
     )
     if not work_areas:
