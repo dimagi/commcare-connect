@@ -31,6 +31,7 @@ from commcare_connect.opportunity.forms import (
     PaymentUnitForm,
 )
 from commcare_connect.opportunity.models import (
+    SYSTEM_USER,
     AssignedTaskStatus,
     CompletedWorkInvoice,
     CompletedWorkStatus,
@@ -41,6 +42,7 @@ from commcare_connect.opportunity.models import (
     PaymentUnit,
     PaymentUnitRate,
     TaskTypeModeChoices,
+    VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -53,7 +55,9 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    PaymentUnitRateFactory,
     TaskTypeFactory,
+    UserVisitFactory,
 )
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.helpers import eligible_supervising_organizations
@@ -1566,6 +1570,89 @@ class TestPaymentUnitFormDates:
         )
 
         assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+class TestPaymentUnitStartDate:
+    @pytest.fixture
+    def opportunity(self, opportunity):
+        opportunity.start_date = _days_from_today(-10)
+        opportunity.end_date = _days_from_today(60)
+        opportunity.save()
+        return opportunity
+
+    def _unit(self, opportunity, start, visit_status=None):
+        unit = PaymentUnitFactory(opportunity=opportunity, start_date=_days_from_today(start))
+        if visit_status:
+            UserVisitFactory(
+                opportunity=opportunity,
+                deliver_unit=DeliverUnitFactory(payment_unit=unit),
+                status=visit_status,
+                completed_work=None,
+            )
+        return unit
+
+    def _form(self, unit, new_start, **kwargs):
+        start_date = _days_from_today(new_start)
+        return _payment_unit_form(unit.opportunity, {"start_date": start_date or "", **kwargs}, instance=unit)
+
+    def _assert_result(self, form, error):
+        assert form.is_valid() is (error is None), form.errors
+        if error:
+            assert error in form.errors["start_date"][0]
+
+    # The unit starts in 5 days, so any visit it has is trial
+    @pytest.mark.parametrize(
+        "has_visit, new_start, error",
+        [
+            (False, 15, None),
+            (False, 1, None),
+            (False, 0, None),
+            (True, 0, "today only"),
+            (False, -2, "in the past"),
+            (True, 15, None),  # not started: trial visits only
+            (False, None, None),  # start date cleared: uses the opportunity's start, which has passed, so today
+            (True, None, "today only"),
+        ],
+    )
+    def test_start_date_change(self, opportunity, has_visit, new_start, error):
+        unit = self._unit(opportunity, 5, VisitValidationStatus.trial if has_visit else None)
+        self._assert_result(self._form(unit, new_start), error)
+
+    @pytest.mark.parametrize("rate_offset", [0, -1])
+    @pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.over_limit])
+    def test_started_unit_cannot_move(self, opportunity, visit_status, rate_offset):
+        unit = self._unit(opportunity, -2, visit_status)
+        unit.pay_rates.update(planned_for=_days_from_today(rate_offset))
+        self._assert_result(self._form(unit, 8), "already has visits")
+
+    @pytest.mark.parametrize("visit_status", [None, VisitValidationStatus.trial])
+    def test_started_unit_without_payable_visits_can_move(self, opportunity, visit_status):
+        unit = self._unit(opportunity, -2, visit_status)
+        self._assert_result(self._form(unit, 8), None)
+
+    def test_started_unit_other_fields_save(self, opportunity):
+        unit = self._unit(opportunity, -2, VisitValidationStatus.approved)
+        self._assert_result(self._form(unit, -2, name="Renamed"), None)
+
+    @pytest.mark.parametrize("new_start, error", [(10, "A pay rate change is scheduled"), (9, None)])
+    def test_before_scheduled_change(self, opportunity, new_start, error):
+        unit = self._unit(opportunity, 5)
+        PaymentUnitRateFactory(payment_unit=unit, planned_for=_days_from_today(10))
+        self._assert_result(self._form(unit, new_start), error)
+
+    @pytest.mark.parametrize("new_start, planned_for, modified_by", [(15, 15, "pm@example.com"), (5, 5, SYSTEM_USER)])
+    def test_save_moves_initial_pay_rate(self, opportunity, new_start, planned_for, modified_by):
+        unit = self._unit(opportunity, 5)
+        form = self._form(unit, new_start)
+        form.modified_by = "pm@example.com"
+        assert form.is_valid(), form.errors
+
+        form.save()
+
+        rate = unit.pay_rates.get()
+        assert rate.planned_for == _days_from_today(planned_for)
+        assert rate.modified_by == modified_by
 
 
 @pytest.mark.django_db

@@ -788,6 +788,14 @@ class PaymentUnit(models.Model):
     def initial_pay_rate(self):
         return self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
 
+    def earliest_pay_rate_change_on_or_before(self, day):
+        return (
+            self.pay_rates.filter(cancelled_on__isnull=True, planned_for__lte=day)
+            .exclude(pk=self.initial_pay_rate.pk)
+            .order_by("planned_for")
+            .first()
+        )
+
     def sync_initial_pay_rate_date(self, modified_by):
         """Move the Initial Pay Rate to initial_pay_rate_date() when the unit's or opportunity's start date changes."""
         rate = self.initial_pay_rate
