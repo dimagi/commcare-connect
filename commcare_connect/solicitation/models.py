@@ -26,6 +26,10 @@ class SolicitationQuerySet(models.QuerySet):
     def expired(self):
         return self._active().filter(application_deadline__lte=Now())
 
+    def editable(self):
+        """Drafts and open solicitations; closed and cancelled ones are finished."""
+        return self.filter(status=Solicitation.Status.DRAFT) | self.open()
+
 
 class Solicitation(BaseModel):
     """The posting itself — an RFP or EOI shown on the marketplace."""
@@ -86,13 +90,14 @@ class Solicitation(BaseModel):
         return self.effective_status == self.Status.ACTIVE
 
     @property
+    def is_editable(self):
+        """Closed and cancelled solicitations are finished, so only drafts and open ones can be edited."""
+        return self.status == self.Status.DRAFT or self.is_open
+
+    @property
     def structure_locked(self):
         """Questions and criteria are fixed once the solicitation leaves draft, so applicants answer the same form."""
         return self.status != self.Status.DRAFT
-
-
-# Closed and cancelled solicitations are finished, so only these can still be edited.
-EDITABLE_STATUSES = (Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE)
 
 
 class SolicitationEvaluationCriterion(BaseModel):

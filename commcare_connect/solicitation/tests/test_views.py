@@ -180,11 +180,24 @@ class TestSolicitationSteps:
         assert list(solicitation.questions.all()) == [question]
 
     @pytest.mark.parametrize("step", STEPS)
-    @pytest.mark.parametrize("status", [Solicitation.Status.CLOSED, Solicitation.Status.CANCELLED])
-    def test_finished_solicitations_are_not_editable(self, pm_client, program_manager_org, status, step):
-        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+    @pytest.mark.parametrize(
+        "status, deadline_passed",
+        [
+            (Solicitation.Status.CLOSED, False),
+            (Solicitation.Status.CANCELLED, False),
+            # Past its deadline but not yet closed by update_solicitation_statuses.
+            (Solicitation.Status.ACTIVE, True),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_finished_solicitations_are_not_editable(
+        self, pm_client, program_manager_org, status, deadline_passed, method, step
+    ):
+        solicitation = SolicitationFactory(
+            organization=program_manager_org, status=status, deadline_passed=deadline_passed
+        )
 
-        assert pm_client.get(step_url(step, solicitation)).status_code == HTTPStatus.NOT_FOUND
+        assert getattr(pm_client, method)(step_url(step, solicitation)).status_code == HTTPStatus.NOT_FOUND
 
     @pytest.mark.parametrize("step", STEPS)
     @pytest.mark.parametrize("method", ["get", "post"])
@@ -222,7 +235,7 @@ class TestSolicitationSteps:
             (Solicitation.Status.ACTIVE, False, False, True, True),
             (Solicitation.Status.ACTIVE, True, False, True, True),
             # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, True, False),
+            (Solicitation.Status.ACTIVE, False, True, False, False),
             (Solicitation.Status.CLOSED, False, False, False, False),
             (Solicitation.Status.CANCELLED, False, False, False, False),
         ],

@@ -25,7 +25,6 @@ from commcare_connect.solicitation.forms import (
     publish_errors,
 )
 from commcare_connect.solicitation.models import (
-    EDITABLE_STATUSES,
     Solicitation,
     SolicitationApplication,
     SolicitationEvaluationCriterion,
@@ -85,7 +84,7 @@ class SolicitationStepMixin(WaffleSwitchMixin):
     next_step = None
 
     def get_queryset(self):
-        return Solicitation.objects.filter(organization=self.request.org, status__in=EDITABLE_STATUSES)
+        return Solicitation.objects.editable().filter(organization=self.request.org)
 
     def get_context_data(self, **kwargs):
         kwargs["path"] = [
