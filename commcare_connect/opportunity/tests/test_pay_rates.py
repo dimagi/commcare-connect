@@ -21,7 +21,7 @@ def _days_from_today(days):
 
 
 def _backfill():
-    # Units get their Initial Rate on creation, so remove the rows to act like units from before this feature
+    # Units get their Initial Pay Rate on creation, so remove the rows to act like units from before this feature
     PaymentUnitRate.objects.all().delete()
     return backfill_pay_rates(apps)
 

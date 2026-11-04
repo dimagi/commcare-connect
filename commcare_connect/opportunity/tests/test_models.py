@@ -941,7 +941,7 @@ class TestPaymentUnitRateLookups:
         assert unit_without_rates.pay_rate_on(date(2025, 12, 31)) is None
 
     @pytest.mark.parametrize("planned_for_offset, expected_current", [(-1, True), (1, False)])
-    def test_costing_pay_rate_falls_back_to_initial_rate(
+    def test_costing_pay_rate_falls_back_to_initial_pay_rate(
         self, unit_without_rates, planned_for_offset, expected_current
     ):
         rate = PaymentUnitRateFactory(

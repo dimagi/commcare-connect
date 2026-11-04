@@ -708,7 +708,7 @@ class PaymentUnit(models.Model):
     def __str__(self):
         return self.name
 
-    # Creates the Initial Rate from amount/org_amount, so every way of creating a unit gets one (form, automation
+    # Creates the Initial Pay Rate from amount/org_amount, so every way of creating a unit gets one (form, automation
     # API, admin, factories, seed commands). CCCT-3018 replaces this override with an explicit call in each of
     # those paths.
     def save(self, *args, **kwargs):
@@ -726,7 +726,7 @@ class PaymentUnit(models.Model):
                 )
 
     def initial_pay_rate_date(self):
-        """The planned_for of a new unit's Initial Rate: its start date, else the opportunity's, if in the
+        """The planned_for of a new unit's Initial Pay Rate: its start date, else the opportunity's, if in the
         future; otherwise today. No approval can come before it."""
         today = now().date()
         if self.start_date and self.start_date > today:
@@ -756,7 +756,7 @@ class PaymentUnit(models.Model):
     def costing_pay_rate(self):
         """The pay rate used to cost deliveries for budgets, visit limits and the join check.
 
-        The Active Pay Rate, or the Initial Rate before the unit starts. Workers can join and
+        The Active Pay Rate, or the Initial Pay Rate before the unit starts. Workers can join and
         get visit limits before the start date, when no pay rate is active yet, so their
         limits are costed at the rate they will be paid from the start. Never use this for
         money earned; use current_pay_rate.
