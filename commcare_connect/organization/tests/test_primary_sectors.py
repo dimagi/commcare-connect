@@ -39,7 +39,7 @@ class TestPrimarySectorForm:
     def test_rejects_duplicate_name(self, sector, name):
         form = PrimarySectorForm({"name": name, "slug": "other", "description": ""})
         assert not form.is_valid()
-        assert "name" in form.errors
+        assert form.errors["name"] == ["A primary sector with this name already exists."]
 
     @pytest.mark.parametrize("slug", ["health", ""])
     def test_rejects_duplicate_slug(self, sector, slug):
@@ -47,18 +47,18 @@ class TestPrimarySectorForm:
         sector.save()
         form = PrimarySectorForm({"name": "Health", "slug": slug, "description": ""})
         assert not form.is_valid()
-        assert "slug" in form.errors
+        assert form.errors["slug"] == ["A primary sector with this slug already exists."]
 
     @pytest.mark.parametrize("slug", ["Upper", "has space", "dot.ted", "-leading"])
     def test_rejects_invalid_slug(self, slug):
         form = PrimarySectorForm({"name": "Education", "slug": slug, "description": ""})
         assert not form.is_valid()
-        assert "slug" in form.errors
+        assert form.errors["slug"] == ["Use only lowercase letters, numbers, hyphens and underscores."]
 
     def test_rejects_blank_slug_when_name_has_no_slug(self):
         form = PrimarySectorForm({"name": "!!!", "slug": "", "description": ""})
         assert not form.is_valid()
-        assert "slug" in form.errors
+        assert form.errors["slug"] == ["Enter a slug, or a name containing at least one letter or number."]
 
     def test_create_wires_slug_autofill(self):
         form = PrimarySectorForm()
@@ -172,7 +172,9 @@ class TestPrimarySectorViews:
         )
         assert response.status_code == 200
         assert "HX-Redirect" not in response.headers
-        assert 'id="managed-option-form-wrapper"' in response.content.decode()
+        content = response.content.decode()
+        assert 'id="managed-option-form-wrapper"' in content
+        assert "A primary sector with this name already exists." in content
         assert PrimarySector.objects.filter(name__iexact="health").count() == 1
 
     def test_edit_from_modal_redirects_to_list(self, client, settings_admin, sector):
