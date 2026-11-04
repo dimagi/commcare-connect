@@ -191,15 +191,18 @@ class Command(BaseCommand):
         than a foreign key, so nothing deletes it on our behalf. The stored files go too, or
         MEDIA_ROOT grows by a full set of blobs on every run.
         """
-        xform_ids = list(
-            UserVisit.objects.filter(opportunity__organization_id__in=org_ids).values_list("xform_id", flat=True)
-        )
+        xform_ids = UserVisit.objects.filter(opportunity__organization_id__in=org_ids).values("xform_id")
         blobs = BlobMeta.objects.filter(parent_id__in=xform_ids)
         audio = AudioAttachment.objects.filter(user_visit__opportunity__organization_id__in=org_ids)
-        for blob_id in [*blobs.values_list("blob_id", flat=True), *audio.values_list("blob_id", flat=True)]:
-            default_storage.delete(str(blob_id))
+        blob_ids = [*blobs.values_list("blob_id", flat=True), *audio.values_list("blob_id", flat=True)]
+        # Rows first: if a delete fails the files are still there for the rows that survive it.
         blobs.delete()
         audio.delete()
+        for blob_id in blob_ids:
+            default_storage.delete(str(blob_id))
+
+    def _warn(self, message):
+        self.stdout.write(self.style.WARNING(message))
 
     def handle(self, *args, **options):
         num_visits = options["num_visits"]
@@ -208,7 +211,15 @@ class Command(BaseCommand):
         num_managed_opps = options["managed_opportunities"]
         image_percent = options["image_percent"]
         audio_percent = options["audio_percent"]
-        media = MediaLibrary(options["media_dir"], warn=lambda message: self.stdout.write(self.style.WARNING(message)))
+        # Checked here rather than as an argparse type, which call_command's keyword options skip.
+        for name, percent in (("--image_percent", image_percent), ("--audio_percent", audio_percent)):
+            if not 0 <= percent <= 100:
+                raise CommandError(f"{name} must be between 0 and 100, got {percent}")
+        media = MediaLibrary(options["media_dir"], warn=self._warn)
+        if options["media_dir"] and not (image_percent or audio_percent):
+            self._warn(
+                "--media_dir has no effect without --image_percent or --audio_percent; no attachments will be made."
+            )
         BATCH_SIZE = 10000
 
         org, created = Organization.objects.get_or_create(slug=org_slug, defaults={"name": org_slug, "slug": org_slug})
@@ -240,7 +251,10 @@ class Command(BaseCommand):
 
         users = [MobileUserFactory() for _ in range(10)]
         api_key = _sample_api_key()
-        opportunities = [OpportunityFactory(organization=org, api_key=api_key) for _ in range(5)]
+        # The org's own program, or the factory builds a Program in a fresh random Organization for
+        # each one, which then supervises it and is never cleaned up.
+        own_program = ProgramFactory(organization=org)
+        opportunities = [OpportunityFactory(organization=org, api_key=api_key, program=own_program) for _ in range(5)]
 
         managed_opportunities = []
         for _ in range(num_managed_opps):
@@ -327,7 +341,7 @@ class Command(BaseCommand):
                 location=location,
                 time_start=time_start,
                 time_end=time_end,
-                received_on=random_date,
+                received_on=time_end,
             )
             attachments, media_sources = _plan_attachments(media, image_percent, audio_percent)
             if media_sources:
@@ -447,8 +461,16 @@ class Command(BaseCommand):
 
         BlobMeta.objects.bulk_create([row for row, _ in blobs])
         AudioAttachment.objects.bulk_create([row for row, _ in audio])
-        for row, source in [*blobs, *audio]:
-            default_storage.save(str(row.blob_id), ContentFile(source.content, row.name))
+        # Storage is outside the transaction: if a save fails the rows roll back, so take the files
+        # already written with them rather than leaving them orphaned in MEDIA_ROOT.
+        saved = []
+        try:
+            for row, source in [*blobs, *audio]:
+                saved.append(default_storage.save(str(row.blob_id), ContentFile(source.content, row.name)))
+        except Exception:
+            for name in saved:
+                default_storage.delete(name)
+            raise
 
 
 def _sample_api_key():
@@ -550,7 +572,9 @@ class MediaLibrary:
         if not media_dir.is_dir():
             raise CommandError(f"--media_dir is not a directory: {media_dir}")
         for path in sorted(media_dir.rglob("*")):
-            if not path.is_file():
+            # Hidden files are skipped: macOS AppleDouble "._photo.jpg" forks share the real
+            # file's extension but hold no media.
+            if not path.is_file() or path.name.startswith("."):
                 continue
             kind = _media_kind(mimetypes.guess_type(path.name)[0])
             if kind:
