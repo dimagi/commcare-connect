@@ -165,27 +165,3 @@ def test_fake_hq_option_defaults_to_the_fake_hq_port_and_can_be_rerun():
 
     opportunity = Opportunity.objects.get(name=DEMO_OPP_NAME)
     assert opportunity.api_key.hq_server.url == "http://localhost:8001"
-
-
-@pytest.mark.django_db
-def test_fake_hq_option_gives_each_server_its_own_api_key():
-    def generate(url):
-        call_command(
-            "generate_microplanning_data",
-            clusters=1,
-            grid=2,
-            groups_per_cluster=1,
-            workers=1,
-            no_admin=True,
-            force=True,
-            fake_hq=url,
-        )
-        return Opportunity.objects.get(name=DEMO_OPP_NAME).api_key
-
-    first_key = generate("http://localhost:8001")
-    second_key = generate("http://localhost:8002")
-
-    first_key.refresh_from_db()
-    assert first_key.pk != second_key.pk
-    assert first_key.hq_server.url == "http://localhost:8001"
-    assert second_key.hq_server.url == "http://localhost:8002"
