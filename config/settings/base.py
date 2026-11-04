@@ -96,6 +96,7 @@ THIRD_PARTY_APPS = [
     "pghistory",
     "pgtrigger",  # added for pghistory
     "vectortiles",
+    "health_check",
 ]
 
 LOCAL_APPS = [
@@ -289,6 +290,12 @@ LOGGING = {
         },
     },
 }
+
+# Health checks
+# ------------------------------------------------------------------------------
+# Tokens accepted by /status/ as an Authorization: Bearer header or ?token=. Empty leaves the endpoint
+# open. See commcare_connect/health/README.md.
+HEALTH_CHECK_TOKENS = env.list("HEALTH_CHECK_TOKENS", default=[])
 
 # Celery
 # ------------------------------------------------------------------------------
