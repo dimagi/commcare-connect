@@ -31,7 +31,7 @@ def send_solicitation_invite_emails(invitation_ids):
 
 @celery_app.task()
 def update_solicitation_statuses():
-    """Runs every minute to move solicitations to the status their dates imply."""
+    """Runs hourly to move solicitations to the status their dates imply."""
     closed = Solicitation.objects.expired().update(status=Solicitation.Status.CLOSED)
     if closed:
         logger.info("Closed %s expired solicitation(s)", closed)
