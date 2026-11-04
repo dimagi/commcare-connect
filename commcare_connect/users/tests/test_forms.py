@@ -7,6 +7,7 @@ from allauth.account.forms import ResetPasswordForm
 from allauth.core import context
 from django.conf import settings
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.users.forms import ManualUserOTPForm, UserAdminCreationForm, UserSignupForm
@@ -91,6 +92,7 @@ class TestUserSignupForm:
             user, response = form.try_save(request)
         assert user is None
         assert response.status_code == 302  # looks like the real "verification sent" redirect to the bot
+        assert response.url == reverse("account_email_verification_sent")
         assert not User.objects.filter(email="bot@example.com").exists()
         assert mailoutbox == []
 
