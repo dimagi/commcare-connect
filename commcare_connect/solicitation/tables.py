@@ -15,8 +15,8 @@ def details_url(record, table):
 
 
 def invitations_url(record, table):
-    # Invitations are only managed once a solicitation is live.
-    if record.status == Solicitation.Status.ACTIVE:
+    # Invitations are only managed while a solicitation is open.
+    if record.is_open:
         return reverse("solicitation:invitations", args=(table.request.org.slug, record.solicitation_id))
     return None
 

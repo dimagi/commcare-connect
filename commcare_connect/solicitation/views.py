@@ -207,11 +207,10 @@ class InvitationsMixin(WaffleSwitchMixin):
 
     @cached_property
     def solicitation(self):
-        # Organizations are only invited once a solicitation is published.
+        # Organizations are only invited while a solicitation is open: published and before its deadline.
         return get_object_or_404(
-            Solicitation,
+            Solicitation.objects.open(),
             organization=self.request.org,
-            status=Solicitation.Status.ACTIVE,
             solicitation_id=self.kwargs["solicitation_id"],
         )
 

@@ -216,17 +216,26 @@ class TestSolicitationSteps:
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, title_linked, invited_linked",
+        "status, public, deadline_passed, title_linked, invited_linked",
         [
-            (Solicitation.Status.DRAFT, False, True, False),
-            (Solicitation.Status.ACTIVE, False, True, True),
-            (Solicitation.Status.ACTIVE, True, True, True),
-            (Solicitation.Status.CLOSED, False, False, False),
-            (Solicitation.Status.CANCELLED, False, False, False),
+            (Solicitation.Status.DRAFT, False, False, True, False),
+            (Solicitation.Status.ACTIVE, False, False, True, True),
+            (Solicitation.Status.ACTIVE, True, False, True, True),
+            # Past its deadline but not yet closed by update_solicitation_statuses.
+            (Solicitation.Status.ACTIVE, False, True, True, False),
+            (Solicitation.Status.CLOSED, False, False, False, False),
+            (Solicitation.Status.CANCELLED, False, False, False, False),
         ],
     )
-    def test_list_links(self, pm_client, program_manager_org, status, public, title_linked, invited_linked):
-        solicitation = SolicitationFactory(organization=program_manager_org, status=status, public=public)
+    def test_list_links(
+        self, pm_client, program_manager_org, status, public, deadline_passed, title_linked, invited_linked
+    ):
+        solicitation = SolicitationFactory(
+            organization=program_manager_org,
+            status=status,
+            public=public,
+            deadline_passed=deadline_passed,
+        )
 
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
@@ -329,17 +338,26 @@ class TestSolicitationInvitations:
         assert SolicitationInvitation.objects.filter(pk=other.pk).exists()
 
     @pytest.mark.parametrize(
-        "status, public, own_org",
+        "status, public, own_org, deadline_passed",
         [
-            (Solicitation.Status.DRAFT, False, True),
-            (Solicitation.Status.CLOSED, False, True),
-            (Solicitation.Status.CANCELLED, False, True),
-            (Solicitation.Status.ACTIVE, False, False),
+            (Solicitation.Status.DRAFT, False, True, False),
+            (Solicitation.Status.CLOSED, False, True, False),
+            (Solicitation.Status.CANCELLED, False, True, False),
+            (Solicitation.Status.ACTIVE, False, False, False),
+            # Past its deadline but not yet closed by update_solicitation_statuses.
+            (Solicitation.Status.ACTIVE, False, True, True),
         ],
     )
-    def test_only_own_active_solicitations(self, pm_client, program_manager_org, status, public, own_org):
+    def test_only_own_open_solicitations(
+        self, pm_client, program_manager_org, status, public, own_org, deadline_passed
+    ):
         organization = program_manager_org if own_org else OrganizationFactory()
-        solicitation = SolicitationFactory(organization=organization, status=status, public=public)
+        solicitation = SolicitationFactory(
+            organization=organization,
+            status=status,
+            public=public,
+            deadline_passed=deadline_passed,
+        )
         invitation = SolicitationInvitationFactory(solicitation=solicitation)
         # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
         url_args = (program_manager_org.slug, solicitation.solicitation_id)
