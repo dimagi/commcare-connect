@@ -2,6 +2,9 @@ import importlib
 
 import pytest
 from django.apps import apps as django_apps
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.messages.middleware import MessageMiddleware
+from django.contrib.sessions.middleware import SessionMiddleware
 from rest_framework.test import APIClient, APIRequestFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
@@ -206,3 +209,17 @@ def ensure_currency_country_data(db):
         "commcare_connect.opportunity.migrations.0092_currency_country_opportunity_currency_fk"
     )
     migration_module.load_currency_and_country_data(django_apps, schema_editor=None)
+
+
+@pytest.fixture
+def anonymous_request(rf):
+    """Builds a RequestFactory request with the user, session and messages that templates and allauth expect."""
+
+    def make(method="get", path="/", data=None, **extra):
+        request = getattr(rf, method)(path, data or {}, **extra)
+        request.user = AnonymousUser()
+        SessionMiddleware(lambda r: None).process_request(request)
+        MessageMiddleware(lambda r: None).process_request(request)
+        return request
+
+    return make

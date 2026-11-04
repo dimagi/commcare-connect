@@ -105,6 +105,13 @@ Ideally deploy should be done via GitHub actions however it can be run locally a
 inv deploy
 ```
 
+A deploy restarts the app containers only. Changes to Traefik's own arguments (`traefik.args` in
+`config/deploy.yml`, such as the forwarded-header range it trusts) need the proxy restarted as well:
+
+```bash
+kamal traefik reboot -d <destination>
+```
+
 ## Accessing logs
 
 The logs from the Docker containers are shipped to CloudWatch. To access them you will need to use the AWS console.

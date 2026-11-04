@@ -327,6 +327,18 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
+# Bots that fill in this off-screen signup field get the "verification sent" page and no account.
+ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD = "website"
+# Never mail an address that has no account (anyone can type any address into the reset form).
+ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False
+# Merged over allauth's defaults. One action can't carry two limits on the same key (they share a cache entry),
+# hence the extra "send_mail" action, which AccountAdapter.send_mail applies to every account mail.
+ACCOUNT_RATE_LIMITS = {
+    "reset_password": "20/m/ip,3/h/key",
+    "send_mail": "10/d/key",
+}
+# Proxies that append to X-Forwarded-For before Django; 0 keys allauth's per-IP limits on REMOTE_ADDR instead.
+ALLAUTH_TRUSTED_PROXY_COUNT = env.int("ALLAUTH_TRUSTED_PROXY_COUNT", default=0)
 
 # django-rest-framework
 # -------------------------------------------------------------------------------
