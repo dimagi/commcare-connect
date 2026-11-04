@@ -761,7 +761,46 @@ class PaymentUnit(models.Model):
         limits are costed at the rate they will be paid from the start. Never use this for
         money earned; use current_pay_rate.
         """
-        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+        return self.current_pay_rate or self.initial_pay_rate
+
+    @property
+    def initial_pay_rate(self):
+        return self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+
+    def sync_initial_pay_rate_date(self, modified_by):
+        """Move the Initial Pay Rate to initial_pay_rate_date() when the unit's or opportunity's start date changes."""
+        rate = self.initial_pay_rate
+        new_date = self.initial_pay_rate_date()
+        if new_date == rate.planned_for:
+            return
+        if self.is_start_date_locked():
+            raise ValidationError(
+                gettext("Payment unit %(name)s has started, so its Initial Pay Rate can't move.") % {"name": self.name}
+            )
+        rate.planned_for = new_date
+        rate.modified_by = modified_by
+        rate.save(update_fields=["planned_for", "modified_by", "date_modified"])
+
+    def is_start_date_locked(self):
+        """Its Initial Pay Rate date has passed and it has a visit that isn't trial, so visits may already be
+        paid from that date."""
+        return self.initial_pay_rate.planned_for <= now().date() and self.has_payable_visits()
+
+    def has_visits(self):
+        return self._visits().exists()
+
+    def has_payable_visits(self):
+        # Trial visits get no completed work, so they are never paid. Over-limit ones can still be approved.
+        return self._visits().exclude(status=VisitValidationStatus.trial).exists()
+
+    def _visits(self):
+        # Also through completed work: visits paid through this unit stay with it after their deliver unit is
+        # removed. Filtered by opportunity too: a deliver unit can move to another opportunity's unit, keeping
+        # its old visits
+        return UserVisit.objects.filter(
+            Q(deliver_unit__payment_unit=self) | Q(completed_work__payment_unit=self),
+            opportunity_id=self.opportunity_id,
+        )
 
 
 class PaymentUnitRate(BaseModel):

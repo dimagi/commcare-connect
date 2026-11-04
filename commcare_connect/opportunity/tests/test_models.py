@@ -4,6 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
@@ -993,3 +994,64 @@ class TestInitialPayRate:
         unit.name = "Renamed"
         unit.save()
         assert unit.pay_rates.count() == 1
+
+    def test_initial_pay_rate_skips_cancelled(self):
+        unit = PaymentUnitFactory()
+        unit.pay_rates.update(cancelled_on=now())
+        later = PaymentUnitRateFactory(payment_unit=unit, planned_for=now().date() + timedelta(days=8))
+        assert unit.initial_pay_rate == later
+
+    @pytest.mark.parametrize(
+        "status, link, has_visits, has_payable_visits",
+        [
+            (None, "unit", False, False),
+            (VisitValidationStatus.trial, "unit", True, False),
+            (VisitValidationStatus.over_limit, "unit", True, True),
+            (VisitValidationStatus.approved, "unit", True, True),
+            # A deliver unit can move to a new opportunity's unit, keeping its visits from the old opportunity
+            (VisitValidationStatus.approved, "other_opportunity", False, False),
+            # The deliver unit was removed from the unit after the visit was paid through it
+            (VisitValidationStatus.approved, "removed", True, True),
+        ],
+    )
+    def test_has_visits(self, status, link, has_visits, has_payable_visits):
+        unit = PaymentUnitFactory()
+        if status:
+            removed = link == "removed"
+            UserVisitFactory(
+                opportunity=OpportunityFactory() if link == "other_opportunity" else unit.opportunity,
+                deliver_unit=DeliverUnitFactory(payment_unit=None if removed else unit),
+                status=status,
+                completed_work=CompletedWorkFactory(payment_unit=unit) if removed else None,
+            )
+        assert unit.has_visits() is has_visits
+        assert unit.has_payable_visits() is has_payable_visits
+        # The unit's Initial Pay Rate date is today, so only a payable visit locks it
+        assert unit.is_start_date_locked() is has_payable_visits
+
+    def test_sync_initial_pay_rate_date(self):
+        today = now().date()
+        unit = PaymentUnitFactory(start_date=today + timedelta(days=5))
+        unit.start_date = today + timedelta(days=9)
+        unit.save()
+
+        unit.sync_initial_pay_rate_date("pm@example.com")
+
+        rate = unit.pay_rates.get()
+        assert rate.planned_for == unit.start_date
+        assert rate.modified_by == "pm@example.com"
+
+    def test_sync_initial_pay_rate_date_refuses_locked_unit(self):
+        unit = PaymentUnitFactory()  # the opportunity has started, so the Initial Pay Rate date is today
+        UserVisitFactory(
+            opportunity=unit.opportunity,
+            deliver_unit=DeliverUnitFactory(payment_unit=unit),
+            status=VisitValidationStatus.approved,
+            completed_work=None,
+        )
+        unit.start_date = now().date() + timedelta(days=5)
+        unit.save()
+
+        with pytest.raises(ValidationError):
+            unit.sync_initial_pay_rate_date("pm@example.com")
+        assert unit.pay_rates.get().planned_for == now().date()
