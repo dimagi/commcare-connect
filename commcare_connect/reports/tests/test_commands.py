@@ -27,7 +27,11 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
-from commcare_connect.reports.management.commands.generate_sample_data import SAMPLE_AUDIO_RATE, Command
+from commcare_connect.reports.management.commands.generate_sample_data import (
+    SAMPLE_AUDIO_RATE,
+    Command,
+    silent_wav_bytes,
+)
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.tests.factories import UserFactory
 
@@ -136,16 +140,11 @@ def _write_jpeg(path, color=(70, 130, 180)):
 
 
 def _write_wav(path, seconds=1):
-    """Longer than the generated placeholder by default, so the bytes are distinguishable."""
+    """Pass a length other than the generated placeholder's so the bytes are distinguishable."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as clip:
-        clip.setnchannels(1)
-        clip.setsampwidth(1)
-        clip.setframerate(SAMPLE_AUDIO_RATE)
-        clip.writeframes(b"\x80" * (SAMPLE_AUDIO_RATE * seconds))
-    path.write_bytes(buffer.getvalue())
-    return buffer.getvalue()
+    content = silent_wav_bytes(seconds)
+    path.write_bytes(content)
+    return content
 
 
 class TestGenerateSampleData:

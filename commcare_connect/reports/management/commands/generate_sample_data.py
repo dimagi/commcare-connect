@@ -343,9 +343,9 @@ class Command(BaseCommand):
                 time_end=time_end,
                 received_on=time_end,
             )
-            attachments, media_sources = _plan_attachments(media, image_percent, audio_percent)
+            media_sources = _plan_attachments(media, image_percent, audio_percent)
             if media_sources:
-                form_json["attachments"] = attachments
+                form_json["attachments"] = _attachments_json(media_sources)
 
             work = CompletedWorkFactory.build(
                 opportunity_access=opp_access,
@@ -510,7 +510,7 @@ def _build_form_json(*, xform_id, opportunity, user, location, time_start, time_
 
 
 def _plan_attachments(media, image_percent, audio_percent):
-    """One visit's attachments: the ``form_json`` dict HQ reports, and the media behind each name.
+    """One visit's attachments: the media behind each attachment name.
 
     Images and audio are rolled separately, so a run can produce photos without recordings or the
     other way round. Names are ours rather than the source file's, which keeps them unique when
@@ -526,11 +526,15 @@ def _plan_attachments(media, image_percent, audio_percent):
         for question in range(1, random.randint(1, 3) + 1):
             source = media.pick(AUDIO_KIND)
             sources[f"question_{question}{source.suffix}"] = source
+    return sources
 
+
+def _attachments_json(sources):
+    """The ``attachments`` dict HQ reports in form_json, which always lists the form itself."""
     attachments = {"form.xml": {"content_type": "text/xml", "length": 1000}}
     for name, source in sources.items():
         attachments[name] = {"content_type": source.content_type, "length": len(source.content)}
-    return attachments, sources
+    return attachments
 
 
 def _rolls(percent):
@@ -566,7 +570,7 @@ class MediaLibrary:
 
     def pick(self, kind):
         paths = self._paths[kind]
-        return self._read(random.choice(paths)) if paths else _generated_media(kind)
+        return self._read(kind, *random.choice(paths)) if paths else _generated_media(kind)
 
     def _index(self, media_dir, warn):
         if not media_dir.is_dir():
@@ -576,9 +580,10 @@ class MediaLibrary:
             # file's extension but hold no media.
             if not path.is_file() or path.name.startswith("."):
                 continue
-            kind = _media_kind(mimetypes.guess_type(path.name)[0])
+            content_type = mimetypes.guess_type(path.name)[0]
+            kind = _media_kind(content_type)
             if kind:
-                self._paths[kind].append(path)
+                self._paths[kind].append((path, content_type))
         for kind in (IMAGE_KIND, AUDIO_KIND):
             count = len(self._paths[kind])
             if count:
@@ -586,12 +591,11 @@ class MediaLibrary:
             else:
                 warn(f"No {kind} files found in {media_dir}; using the generated placeholder.")
 
-    def _read(self, path):
+    def _read(self, kind, path, content_type):
         """Files are cached, since one media directory is drawn from once per attachment."""
         if path not in self._cache:
-            content_type = mimetypes.guess_type(path.name)[0]
             self._cache[path] = MediaFile(
-                kind=_media_kind(content_type),
+                kind=kind,
                 content_type=content_type,
                 suffix=path.suffix,
                 content=path.read_bytes(),
@@ -613,7 +617,7 @@ def _media_kind(content_type):
 def _generated_media(kind):
     if kind == IMAGE_KIND:
         return MediaFile(IMAGE_KIND, "image/jpeg", ".jpg", _sample_image_bytes())
-    return MediaFile(AUDIO_KIND, "audio/wav", ".wav", _sample_audio_bytes())
+    return MediaFile(AUDIO_KIND, "audio/wav", ".wav", silent_wav_bytes(SAMPLE_AUDIO_SECONDS))
 
 
 @cache
@@ -625,13 +629,13 @@ def _sample_image_bytes():
 
 
 @cache
-def _sample_audio_bytes():
-    """A second of silence as a WAV, built once and shared by every audio attachment."""
+def silent_wav_bytes(seconds):
+    """Silence as a WAV, built once per length and shared by every audio attachment."""
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as clip:
         clip.setnchannels(1)
         clip.setsampwidth(1)
         clip.setframerate(SAMPLE_AUDIO_RATE)
         # 0x80 is the midpoint of 8-bit unsigned PCM, so this is silence rather than a click.
-        clip.writeframes(b"\x80" * (SAMPLE_AUDIO_RATE * SAMPLE_AUDIO_SECONDS))
+        clip.writeframes(b"\x80" * (SAMPLE_AUDIO_RATE * seconds))
     return buffer.getvalue()
