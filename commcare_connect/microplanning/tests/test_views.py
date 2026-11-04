@@ -13,6 +13,7 @@ import pytest
 from django import forms
 from django.contrib.gis.geos import Point, Polygon
 from django.core.cache import cache
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.db.utils import OperationalError
@@ -177,7 +178,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert cache.get(work_area_import_lock) is None
 
     @patch("commcare_connect.microplanning.views.import_work_areas_task.delay", side_effect=RuntimeError("no broker"))
-    def test_lock_is_released_when_the_import_cannot_be_queued(
+    def test_lock_and_file_are_released_when_the_import_cannot_be_queued(
         self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
     ):
         client.force_login(org_user_admin)
@@ -187,6 +188,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
             client.post(url, {"csv_file": csv_file})
 
         assert cache.get(work_area_import_lock) is None
+        assert default_storage.listdir("")[1] == []
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")

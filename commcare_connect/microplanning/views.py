@@ -520,12 +520,15 @@ class AreaImportView(View):
         if not cache.add(lock_key, "running", timeout=1200):
             messages.error(request, _("An import for this opportunity is already in progress."))
             return redirect(redirect_url)
+        file_name = f"{self.file_prefix}-{opportunity_id}-{uuid.uuid4().hex}.csv"
+        saved_name = None
         try:
-            file_name = f"{self.file_prefix}-{opportunity_id}-{uuid.uuid4().hex}.csv"
-            default_storage.save(file_name, ContentFile(request.FILES["csv_file"].read()))
-            task = self.import_task.delay(opp_id=opportunity_id, file_name=file_name)
+            saved_name = default_storage.save(file_name, ContentFile(request.FILES["csv_file"].read()))
+            task = self.import_task.delay(opp_id=opportunity_id, file_name=saved_name)
         except Exception:
             cache.delete(lock_key)
+            if saved_name:
+                _delete_unqueued_upload(saved_name)
             raise
         messages.info(request, self.started_message)
         return redirect(f"{redirect_url}?task_id={task.id}{self.status_query}")
@@ -536,6 +539,14 @@ class AreaImportView(View):
         if not csv_file or get_file_extension(csv_file).lower() != "csv":
             return _("Unsupported file format. Please upload a CSV file.")
         return None
+
+
+def _delete_unqueued_upload(file_name):
+    """Delete an upload whose import was never queued. A failure is logged, so the queuing error is the one raised."""
+    try:
+        default_storage.delete(file_name)
+    except Exception:
+        logger.exception("Failed to delete unqueued upload %s", file_name)
 
 
 class WorkAreaImport(AreaImportView):
