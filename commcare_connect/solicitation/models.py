@@ -113,9 +113,9 @@ class SolicitationAttachment(BaseModel):
 
 
 class SolicitationInvitation(BaseModel):
-    """Grants an organization access to a private (invite-only) solicitation.
+    """Invites an organization to apply to a solicitation.
 
-    Public solicitations need no invitation.
+    Required to apply to a private solicitation; on a public one it just asks a specific organization to apply.
     """
 
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="invitations")

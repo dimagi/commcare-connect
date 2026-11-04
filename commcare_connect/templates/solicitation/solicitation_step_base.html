@@ -12,13 +12,19 @@
 {% block content %}
   <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
     {% include "components/breadcrumbs.html" with path=path %}
-    <h1 class="title">
-      {% if solicitation.pk %}
-        {{ solicitation.title }}
-      {% else %}
-        {% translate "New solicitation" %}
+    <div class="flex justify-between items-center gap-4">
+      <h1 class="title">
+        {% if solicitation.pk %}
+          {{ solicitation.title }}
+        {% else %}
+          {% translate "New solicitation" %}
+        {% endif %}
+      </h1>
+      {% if solicitation.status == "active" %}
+        <a class="button button-md outline-style"
+           href="{% url "solicitation:invitations" request.org.slug solicitation.solicitation_id %}">{% translate "Invited organizations" %}</a>
       {% endif %}
-    </h1>
+    </div>
     {# Later steps need a saved solicitation, so they only link once the details are saved. #}
     <div class="stepper">
       {% for name, label in step_labels.items %}
