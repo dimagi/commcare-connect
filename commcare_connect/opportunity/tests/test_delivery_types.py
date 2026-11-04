@@ -37,6 +37,10 @@ class TestDeliveryTypeInUse:
         factory(delivery_type=delivery_type)
         assert delivery_type.is_in_use()
 
+    def test_referencing_relations_cover_every_reference(self):
+        # A new FK to DeliveryType must be added to REFERENCING_RELATIONS, or a type it uses could be deleted.
+        assert set(DeliveryType.REFERENCING_RELATIONS) == {rel.name for rel in DeliveryType._meta.related_objects}
+
 
 @pytest.mark.django_db
 class TestDeliveryTypeViews:

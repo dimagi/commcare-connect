@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import datetime
+import operator
 from collections import Counter
 from decimal import Decimal
+from functools import reduce
 from uuid import uuid4
 
 import pghistory
@@ -10,7 +12,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
-from django.db.models import Count, F, Q, Sum
+from django.db.models import Count, Exists, F, OuterRef, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
@@ -68,13 +70,23 @@ class DeliveryType(models.Model):
     def __str__(self):
         return self.name
 
-    def is_in_use(self):
-        """Deleting a referenced type would break opportunities, be refused for programs and solicitations, and
-        cascade-delete worker credentials."""
-        return any(
-            related.exists()
-            for related in (self.opportunity_set, self.program_set, self.solicitation_set, self.usercredential_set)
+    # Reverse relations to every model with a delivery_type FK. Deleting a referenced type would break
+    # opportunities, be refused for programs and solicitations, and cascade-delete worker credentials.
+    REFERENCING_RELATIONS = ("opportunity", "program", "solicitation", "usercredential")
+
+    @classmethod
+    def in_use_condition(cls):
+        """True for types that any referencing model points at; usable in filter() and annotate()."""
+        return reduce(
+            operator.or_,
+            (
+                Exists(cls._meta.get_field(name).related_model.objects.filter(delivery_type=OuterRef("pk")))
+                for name in cls.REFERENCING_RELATIONS
+            ),
         )
+
+    def is_in_use(self):
+        return DeliveryType.objects.filter(DeliveryType.in_use_condition(), pk=self.pk).exists()
 
 
 class Currency(models.Model):

@@ -9,7 +9,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, Q, Subquery
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
@@ -48,7 +48,6 @@ from commcare_connect.organization.forms import PrimarySectorForm
 from commcare_connect.organization.models import PrimarySector
 from commcare_connect.organization.tables import PrimarySectorTable
 from commcare_connect.program.models import Program
-from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.users.managed_options import (
     ManagedOptionCreateView,
@@ -56,7 +55,6 @@ from commcare_connect.users.managed_options import (
     ManagedOptionListView,
     ManagedOptionUpdateView,
 )
-from commcare_connect.users.models import UserCredential
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
@@ -482,11 +480,8 @@ class DeliveryTypeListView(DeliveryTypeMixin, ManagedOptionListView):
         return DeliveryType.objects.annotate(
             opportunity_count=_count_referencing(Opportunity),
             program_count=_count_referencing(Program),
-            # Mirrors DeliveryType.is_in_use, so the list can disable Delete without a query per row.
-            in_use=Exists(Opportunity.objects.filter(delivery_type=OuterRef("pk")))
-            | Exists(Program.objects.filter(delivery_type=OuterRef("pk")))
-            | Exists(Solicitation.objects.filter(delivery_type=OuterRef("pk")))
-            | Exists(UserCredential.objects.filter(delivery_type=OuterRef("pk"))),
+            # Annotated so the list can disable Delete without a query per row.
+            in_use=DeliveryType.in_use_condition(),
         ).order_by("name")
 
 
