@@ -564,8 +564,9 @@ class Command(BaseCommand):
         """
         hq_server = HQServer.objects.filter(url=url).first() or self.create_hq_server(name="Fake", url=url)
         api_user, _ = User.objects.get_or_create(username=FAKE_HQ_API_USERNAME, defaults={"name": "Fake HQ API"})
+        # One key per server, so pointing a new run at another URL leaves earlier opportunities alone.
         api_key, _ = HQApiKey.objects.update_or_create(
-            api_key=FAKE_HQ_API_KEY, defaults={"user": api_user, "hq_server": hq_server}
+            api_key=f"{FAKE_HQ_API_KEY}-{hq_server.pk}", defaults={"user": api_user, "hq_server": hq_server}
         )
         opportunity.api_key = api_key
         opportunity.save(update_fields=["api_key"])
