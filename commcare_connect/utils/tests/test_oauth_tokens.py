@@ -147,18 +147,17 @@ class TestRefreshAccessToken:
         with pytest.raises(SocialTokenMissingError):
             refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
 
-    def test_raises_on_non_200_response(self, user, httpx_mock):
+    @pytest.mark.parametrize(
+        "response_kwargs",
+        [
+            pytest.param({"status_code": 400, "text": "invalid_grant"}, id="non_200_response"),
+            pytest.param({"json": {"expires_in": 3600}}, id="200_response_missing_access_token"),
+        ],
+    )
+    def test_raises_on_bad_response(self, user, httpx_mock, response_kwargs):
         past = timezone.now() - datetime.timedelta(minutes=5)
         _make_token(user, expires_at=past)
-        httpx_mock.add_response(url=TOKEN_URL, method="POST", status_code=400, text="invalid_grant")
-
-        with pytest.raises(TokenRefreshError):
-            refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
-
-    def test_raises_when_200_response_missing_access_token(self, user, httpx_mock):
-        past = timezone.now() - datetime.timedelta(minutes=5)
-        _make_token(user, expires_at=past)
-        httpx_mock.add_response(url=TOKEN_URL, method="POST", json={"expires_in": 3600})
+        httpx_mock.add_response(url=TOKEN_URL, method="POST", **response_kwargs)
 
         with pytest.raises(TokenRefreshError):
             refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)

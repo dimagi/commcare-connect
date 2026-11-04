@@ -209,20 +209,17 @@ class TestOpportunityFinalizeForm:
         form = self.get_form(**form_data)
         assert form.is_valid()
 
-    def test_form_invalid_dates(self):
+    @pytest.mark.parametrize(
+        "end_date_offset_days",
+        [
+            pytest.param(-20, id="before_start_date"),
+            pytest.param(40, id="after_program_end_date"),
+        ],
+    )
+    def test_form_invalid_end_date(self, end_date_offset_days):
         form_data = {
             "start_date": timezone.now().date() + timezone.timedelta(days=2),
-            "end_date": timezone.now().date() - timezone.timedelta(days=20),  # Invalid: End date is before start date
-            "total_budget": 5000,
-        }
-        form = self.get_form(**form_data)
-        assert not form.is_valid()
-        assert "end_date" in form.errors
-
-    def test_form_invalid_end_date(self):
-        form_data = {
-            "start_date": timezone.now().date() + timezone.timedelta(days=2),
-            "end_date": timezone.now().date() + timezone.timedelta(days=40),  # Invalid: End date is in the past
+            "end_date": timezone.now().date() + timezone.timedelta(days=end_date_offset_days),
             "total_budget": 5000,
         }
         form = self.get_form(**form_data)
@@ -300,6 +297,22 @@ def program_form_data(delivery_type, **overrides):
     return data
 
 
+def program_edit_data(program, **overrides):
+    """Form data that matches an existing program, with optional overrides."""
+    data = {
+        "name": program.name,
+        "description": program.description,
+        "delivery_type": program.delivery_type_id,
+        "budget": program.budget,
+        "currency": program.currency.code,
+        "country": program.country.code,
+        "start_date": program.start_date,
+        "end_date": program.end_date,
+    }
+    data.update(overrides)
+    return data
+
+
 @pytest.mark.django_db
 @pytest.mark.usefixtures("switch_enable_program_access_redesign_enabled")
 class TestProgramFormFunderEnabled:
@@ -356,27 +369,13 @@ class TestProgramFormFunderLockedOnEdit:
         program.save()
         return program
 
-    def _edit_data(self, program, **overrides):
-        data = {
-            "name": program.name,
-            "description": program.description,
-            "delivery_type": program.delivery_type_id,
-            "budget": program.budget,
-            "currency": program.currency.code,
-            "country": program.country.code,
-            "start_date": program.start_date,
-            "end_date": program.end_date,
-        }
-        data.update(overrides)
-        return data
-
     def test_posted_funder_is_ignored(self, program_manager_org_user_admin, funded_program, funder_org):
         other_funder = OrganizationFactory(funder=True)
         form = ProgramForm(
             user=program_manager_org_user_admin,
             organization=funded_program.organization,
             instance=funded_program,
-            data=self._edit_data(funded_program, funder=other_funder.id),
+            data=program_edit_data(funded_program, funder=other_funder.id),
         )
 
         assert form.is_valid(), form.errors
@@ -498,27 +497,13 @@ class TestProgramFormWatchersOnEdit:
         program.watchers.set([watcher_org])
         return program
 
-    def _edit_data(self, program, **overrides):
-        data = {
-            "name": program.name,
-            "description": program.description,
-            "delivery_type": program.delivery_type_id,
-            "budget": program.budget,
-            "currency": program.currency.code,
-            "country": program.country.code,
-            "start_date": program.start_date,
-            "end_date": program.end_date,
-        }
-        data.update(overrides)
-        return data
-
     def test_watchers_can_be_changed(self, program_manager_org_user_admin, watched_program):
         new_watcher = OrganizationFactory()
         form = ProgramForm(
             user=program_manager_org_user_admin,
             organization=watched_program.organization,
             instance=watched_program,
-            data=self._edit_data(watched_program, watchers=[new_watcher.id]),
+            data=program_edit_data(watched_program, watchers=[new_watcher.id]),
         )
 
         assert form.is_valid(), form.errors
@@ -533,7 +518,7 @@ class TestProgramFormWatchersOnEdit:
             user=program_manager_org_user_admin,
             organization=watched_program.organization,
             instance=watched_program,
-            data=self._edit_data(watched_program, watchers=[funder_org.id]),
+            data=program_edit_data(watched_program, watchers=[funder_org.id]),
         )
 
         assert not form.is_valid()

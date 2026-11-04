@@ -2,7 +2,13 @@ from django.utils.deprecation import MiddlewareMixin
 from django.utils.functional import SimpleLazyObject
 
 from ..organization.models import UserOrganizationMembership as Membership
-from ..program.utils import AccessLevel, is_opportunity_pm, opportunity_access_level_from_request, opportunity_by_id
+from ..program.utils import (
+    AccessLevel,
+    is_opportunity_pm,
+    opportunity_access_level_from_request,
+    opportunity_by_id,
+    org_access_level_from_request,
+)
 from .helpers import get_organization_for_request
 
 
@@ -63,4 +69,5 @@ class OrganizationMiddleware(MiddlewareMixin):
         request.org_membership = SimpleLazyObject(lambda: _get_org_membership(request))
         request.memberships = SimpleLazyObject(lambda: _get_all_memberships(request))
         request.is_opportunity_pm = SimpleLazyObject(lambda: _is_opportunity_pm(request, view_kwargs))
+        request.org_access_level = SimpleLazyObject(lambda: org_access_level_from_request(request))
         request.opp_access_level = SimpleLazyObject(lambda: _opportunity_access_level(request, view_kwargs))

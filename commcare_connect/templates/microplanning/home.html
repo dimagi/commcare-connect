@@ -157,11 +157,9 @@
                 </span>
               </a>
             {% endif %}
-            {% if is_program_manager %}
-              <a href="?assignment_mode=1" class="button button-md primary-dark">
-                <i class="fa-solid fa-users-gear"></i> {% translate "Enter Assignment Mode" %}
-              </a>
-            {% endif %}
+            <a href="?assignment_mode=1" class="button button-md primary-dark">
+              <i class="fa-solid fa-users-gear"></i> {% translate "Enter Assignment Mode" %}
+            </a>
           </div>
         {% endif %}
         {% if inaccessible_mode %}

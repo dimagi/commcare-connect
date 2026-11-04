@@ -97,6 +97,7 @@ dev = [
     "git-build-branch",
     "invoke>=2.2.0",
     "ipdb>=0.13.13",
+    "jscpd==5.4.1",
     "prek>=0.4.3",
     "psycopg2-binary>=2.9.6",
     "pytest>=7.4.0",

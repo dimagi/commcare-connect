@@ -1,11 +1,10 @@
 import pytest
 from django.http import HttpResponse
 from django.urls import clear_url_caches, path, reverse
+from django.utils.decorators import method_decorator
 from django.views import View
 
 from commcare_connect.organization.decorators import (
-    OrgAdminAccessMixin,
-    OrgViewAccessMixin,
     org_admin_access_required,
     org_standard_access_required,
     org_view_access_required,
@@ -33,11 +32,13 @@ class TestAllOrgAccessPermission:
         def dummy_viewer_view(request, org_slug):
             return HttpResponse("OK")
 
-        class DummyAdminMixinView(OrgAdminAccessMixin, View):
+        @method_decorator(org_admin_access_required, name="dispatch")
+        class DummyAdminView(View):
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 
-        class DummyViewerMixinView(OrgViewAccessMixin, View):
+        @method_decorator(org_view_access_required, name="dispatch")
+        class DummyViewerView(View):
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 
@@ -47,8 +48,8 @@ class TestAllOrgAccessPermission:
                 path("admin_fbv/", dummy_admin_view, name="admin_fbv"),
                 path("viewer_fbv/", dummy_viewer_view, name="viewer_fbv"),
                 path("member_fbv/", dummy_member_view, name="member_fbv"),
-                path("admin_cbv/", DummyAdminMixinView.as_view(), name="admin_cbv"),
-                path("viewer_cbv/", DummyViewerMixinView.as_view(), name="viewer_cbv"),
+                path("admin_cbv/", DummyAdminView.as_view(), name="admin_cbv"),
+                path("viewer_cbv/", DummyViewerView.as_view(), name="viewer_cbv"),
             ]
         )
 

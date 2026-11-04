@@ -2,7 +2,6 @@ from functools import wraps
 
 from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
-from django.utils.decorators import method_decorator
 from rest_framework.permissions import BasePermission
 
 from commcare_connect.opportunity.models import Opportunity
@@ -189,59 +188,3 @@ def opportunity_required(view_func):
 
     _inner._has_opportunity_required_decorator = True
     return _inner
-
-
-class OrgViewAccessMixin:
-    """Mixin version of org_view_access_required decorator"""
-
-    @method_decorator(org_view_access_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class OppViewAccessMixin:
-    """Mixin version of opp_view_access_required."""
-
-    @method_decorator(opp_view_access_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class OrgPMRequiredMixin:
-    """Mixin version of org_pm_required decorator"""
-
-    @method_decorator(org_pm_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class OppStandardAccessMixin:
-    """Mixin version of opp_standard_access_required."""
-
-    @method_decorator(opp_standard_access_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class ProgramAdminAccessMixin:
-    @method_decorator(program_admin_access_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class ProgramViewAccessMixin:
-    @method_decorator(program_view_access_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class OrgAdminAccessMixin:
-    @method_decorator(org_admin_access_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-
-class OppPMRequiredMixin:
-    @method_decorator(opportunity_pm_required)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)

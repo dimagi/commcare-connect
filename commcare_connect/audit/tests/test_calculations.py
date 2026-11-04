@@ -87,28 +87,22 @@ def _run(value, sample_size):
     return _FakeCalc(value, sample_size).run(None, None, None)
 
 
-def test_insufficient_data_marks_in_range_true_and_value_none():
-    result = _run(0.4, sample_size=2)  # below min_sample_size=3
-    assert result.has_sufficient_data is False
-    assert result.value is None
-    assert result.in_range is True
-
-
-def test_value_below_lower_bound_is_out_of_range():
-    result = _run(0.4, sample_size=5)
-    assert result.has_sufficient_data is True
-    assert result.value == 0.4
-    assert result.in_range is False
-
-
-def test_value_above_upper_bound_is_out_of_range():
-    result = _run(0.95, sample_size=5)
-    assert result.in_range is False
-
-
-def test_value_inside_bounds_is_in_range():
-    result = _run(0.7, sample_size=5)
-    assert result.in_range is True
+@pytest.mark.parametrize(
+    "value,sample_size,has_sufficient_data,expected_value,in_range",
+    [
+        # Below min_sample_size=3: value is dropped and the result counts as in range.
+        pytest.param(0.4, 2, False, None, True, id="insufficient_data"),
+        pytest.param(0.4, 5, True, 0.4, False, id="below_lower_bound"),
+        pytest.param(0.95, 5, True, 0.95, False, id="above_upper_bound"),
+        pytest.param(0.7, 5, True, 0.7, True, id="inside_bounds"),
+    ],
+)
+def test_run_checks_sample_size_and_bounds(value, sample_size, has_sufficient_data, expected_value, in_range):
+    result = _run(value, sample_size=sample_size)
+    assert result.has_sufficient_data is has_sufficient_data
+    assert result.value == expected_value
+    assert type(result.value) is type(expected_value)
+    assert result.in_range is in_range
 
 
 class _PctCalc(AuditCalculation):

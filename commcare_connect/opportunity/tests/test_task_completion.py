@@ -1,4 +1,3 @@
-import datetime
 import uuid
 from unittest import mock
 
@@ -10,6 +9,7 @@ from rest_framework.test import APIClient
 from commcare_connect.opportunity.api.views.task_completion import complete_task
 from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, TaskTypeModeChoices
 from commcare_connect.opportunity.tests.factories import AssignedTaskFactory
+from commcare_connect.utils.tests.api import add_token_credentials
 
 CALLBACK_URL = "/api/task_completed/"
 
@@ -20,12 +20,7 @@ def _ocs_task(**kwargs):
 
 def _authed_client(user):
     client = APIClient()
-    token, _ = user.oauth2_provider_accesstoken.get_or_create(
-        token="task-callback-token",
-        scope="read write",
-        defaults={"expires": now() + datetime.timedelta(hours=1)},
-    )
-    client.credentials(Authorization=f"Bearer {token}")
+    add_token_credentials(api_client=client, user=user, token="task-callback-token")
     return client
 
 

@@ -52,6 +52,20 @@ class TestWorkAreaGrouper:
 
         return work_areas
 
+    def create_square_work_area(self, opportunity, slug, **kwargs):
+        """Create a one-degree square work area in ward-1, centred on (77.5, 28.5)."""
+        return WorkAreaFactory(
+            opportunity=opportunity,
+            slug=slug,
+            ward="ward-1",
+            centroid=Point(77.5, 28.5, srid=SRID),
+            boundary=Polygon(
+                ((77.0, 28.0), (78.0, 28.0), (78.0, 29.0), (77.0, 29.0), (77.0, 28.0)),
+                srid=SRID,
+            ),
+            **kwargs,
+        )
+
     def test_cluster_adjacent_work_areas(self, opportunity):
         work_areas = self.create_adjacent_work_areas(opportunity, ward="ward-1")
 
@@ -116,17 +130,7 @@ class TestWorkAreaGrouper:
         assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
     def test_cluster_single_work_area(self, opportunity):
-        work_area = WorkAreaFactory(
-            opportunity=opportunity,
-            slug="area-1",
-            ward="ward-1",
-            centroid=Point(77.5, 28.5, srid=SRID),
-            boundary=Polygon(
-                ((77.0, 28.0), (78.0, 28.0), (78.0, 29.0), (77.0, 29.0), (77.0, 28.0)),
-                srid=SRID,
-            ),
-            building_count=100,
-        )
+        work_area = self.create_square_work_area(opportunity=opportunity, slug="area-1", building_count=100)
 
         grouper = WorkAreaGrouper(opportunity_id=opportunity.id)
         grouper.cluster_work_areas()
@@ -153,39 +157,15 @@ class TestWorkAreaGrouper:
 
         assert WorkAreaGroup.objects.filter(opportunity=opportunity).count() == 1
 
-    def test_cluster_excludes_zero_building_count(self, opportunity):
-        work_area = WorkAreaFactory(
-            opportunity=opportunity,
-            slug="zero-buildings",
-            ward="ward-1",
-            centroid=Point(77.5, 28.5, srid=SRID),
-            boundary=Polygon(
-                ((77.0, 28.0), (78.0, 28.0), (78.0, 29.0), (77.0, 29.0), (77.0, 28.0)),
-                srid=SRID,
-            ),
-            building_count=0,
-        )
-
-        grouper = WorkAreaGrouper(opportunity_id=opportunity.id)
-        grouper.cluster_work_areas()
-
-        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
-        work_area.refresh_from_db()
-        assert work_area.work_area_group is None
-
-    def test_cluster_excludes_excluded_work_areas(self, opportunity):
-        work_area = WorkAreaFactory(
-            opportunity=opportunity,
-            slug="excluded-area",
-            ward="ward-1",
-            centroid=Point(77.5, 28.5, srid=SRID),
-            boundary=Polygon(
-                ((77.0, 28.0), (78.0, 28.0), (78.0, 29.0), (77.0, 29.0), (77.0, 28.0)),
-                srid=SRID,
-            ),
-            building_count=100,
-            status=WorkAreaStatus.EXCLUDED,
-        )
+    @pytest.mark.parametrize(
+        "extra_fields",
+        [
+            pytest.param({"building_count": 0}, id="zero_building_count"),
+            pytest.param({"building_count": 100, "status": WorkAreaStatus.EXCLUDED}, id="excluded_status"),
+        ],
+    )
+    def test_cluster_skips_work_area(self, opportunity, extra_fields):
+        work_area = self.create_square_work_area(opportunity=opportunity, slug="skipped-area", **extra_fields)
 
         grouper = WorkAreaGrouper(opportunity_id=opportunity.id)
         grouper.cluster_work_areas()
@@ -239,17 +219,7 @@ class TestWorkAreaGrouper:
         assert wa1.work_area_group == wa2.work_area_group
 
     def test_cluster_single_work_area_exceeding_max_buildings(self, opportunity):
-        work_area = WorkAreaFactory(
-            opportunity=opportunity,
-            slug="large-area",
-            ward="ward-1",
-            centroid=Point(77.5, 28.5, srid=SRID),
-            boundary=Polygon(
-                ((77.0, 28.0), (78.0, 28.0), (78.0, 29.0), (77.0, 29.0), (77.0, 28.0)),
-                srid=SRID,
-            ),
-            building_count=500,
-        )
+        work_area = self.create_square_work_area(opportunity=opportunity, slug="large-area", building_count=500)
 
         grouper = WorkAreaGrouper(opportunity_id=opportunity.id, max_buildings=300)
         grouper.cluster_work_areas()

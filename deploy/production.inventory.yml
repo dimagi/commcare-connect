@@ -16,6 +16,7 @@ webservers:
     deploy_environment: 'production'
     env_file: 'connect.docker.env.j2'
     hubspot_api_id: '503070'
+    marketing_site_enabled: True
     aws_region: 'eu-west-1'
 
 connectid:

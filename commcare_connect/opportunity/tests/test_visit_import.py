@@ -613,27 +613,14 @@ def prepare_opportunity_payment_test_data(opportunity):
 
 
 @pytest.mark.django_db
-def test_update_work_payment_date_partially(opportunity):
-    user, access, payment_units, completed_works = prepare_opportunity_payment_test_data(opportunity)
-
-    payment_dates = [
-        timezone.now() - timedelta(5),
-        timezone.now() - timedelta(3),
-        timezone.now() - timedelta(1),
-    ]
-    for date in payment_dates:
-        PaymentFactory(opportunity_access=access, amount=100, date_paid=date)
-
-    update_work_payment_date(access)
-
-    assert (
-        get_assignable_completed_work_count(access)
-        == CompletedWork.objects.filter(opportunity_access=access, payment_date__isnull=False).count()
-    )
-
-
-@pytest.mark.django_db
-def test_update_work_payment_date_fully(opportunity):
+@pytest.mark.parametrize(
+    "amounts",
+    [
+        pytest.param([100, 100, 100], id="partially"),
+        pytest.param([100, 150, 200], id="fully"),
+    ],
+)
+def test_update_work_payment_date(opportunity, amounts):
     user, access, payment_units, completed_works = prepare_opportunity_payment_test_data(opportunity)
 
     payment_dates = [
@@ -641,15 +628,15 @@ def test_update_work_payment_date_fully(opportunity):
         timezone.now() - timedelta(days=3),
         timezone.now() - timedelta(days=1),
     ]
-    amounts = [100, 150, 200]
     for date, amount in zip(payment_dates, amounts):
         PaymentFactory(opportunity_access=access, amount=amount, date_paid=date)
 
     update_work_payment_date(access)
 
-    assert CompletedWork.objects.filter(
-        opportunity_access=access, payment_date__isnull=False
-    ).count() == get_assignable_completed_work_count(access)
+    assert (
+        get_assignable_completed_work_count(access)
+        == CompletedWork.objects.filter(opportunity_access=access, payment_date__isnull=False).count()
+    )
 
 
 @pytest.mark.django_db

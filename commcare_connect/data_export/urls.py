@@ -5,6 +5,7 @@ from commcare_connect.data_export import views
 app_name = "data_export"
 urlpatterns = [
     path("opp_org_program_list/", views.ProgramOpportunityOrganizationDataView.as_view(), name="opp_org_program_list"),
+    path("opportunity_access/", views.OpportunityAccessCheckView.as_view(), name="opportunity_access"),
     path("opportunity/<int:opp_id>/", views.SingleOpportunityDataView.as_view(), name="opportunity_data"),
     path("opportunity/<int:opp_id>/user_data/", views.OpportunityUserDataView.as_view(), name="opportunity_user_data"),
     path("opportunity/<int:opp_id>/user_visits/", views.UserVisitDataView.as_view(), name="user_visit_data"),

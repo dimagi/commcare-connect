@@ -53,6 +53,11 @@ class TestUser:
         user = User.objects.get(pk=user.pk)
         assert user.show_admin_sidenav == expected
 
+    def test_staff_see_admin_sidenav(self, user):
+        user.is_staff = True
+
+        assert user.show_admin_sidenav
+
 
 @pytest.mark.django_db
 class TestConnectIDUserLink:

@@ -1400,13 +1400,21 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert not saved.case_property
 
-    @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
-    def test_case_property_disabled_when_task_assigned(self, opportunity, status):
+    @pytest.mark.parametrize(
+        "status, disabled",
+        [
+            pytest.param(AssignedTaskStatus.ASSIGNED, True, id="assigned"),
+            pytest.param(AssignedTaskStatus.COMPLETED, True, id="completed"),
+            pytest.param(None, False, id="no_assigned_tasks"),
+        ],
+    )
+    def test_case_property_disabled_only_when_task_assigned(self, opportunity, status, disabled):
         task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
-        AssignedTaskFactory(task_type=task_type, status=status)
+        if status:
+            AssignedTaskFactory(task_type=task_type, status=status)
         form = EditTaskTypeForm(instance=task_type)
-        assert form.fields["case_property"].disabled is True
-        assert form.fields["case_property"].help_text
+        assert form.fields["case_property"].disabled is disabled
+        assert bool(form.fields["case_property"].help_text) is disabled
 
     @pytest.mark.parametrize("status", [AssignedTaskStatus.ASSIGNED, AssignedTaskStatus.COMPLETED])
     def test_case_property_change_ignored_when_task_assigned(self, opportunity, status):
@@ -1420,12 +1428,6 @@ class TestEditTaskTypeForm:
         saved = form.save()
         assert saved.case_property == "original_prop"
         assert saved.name == "New Name"
-
-    def test_case_property_editable_without_assigned_tasks(self, opportunity):
-        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
-        form = EditTaskTypeForm(instance=task_type)
-        assert form.fields["case_property"].disabled is False
-        assert not form.fields["case_property"].help_text
 
     def test_case_property_editable_when_other_task_type_assigned(self, opportunity):
         task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="original_prop")
@@ -1602,28 +1604,21 @@ class TestSupervisingOrganizations:
 
         assert funder_org in eligible_supervising_organizations(program)
 
-    def test_includes_accepted_applicant(self, opportunity):
-        applicant = OrganizationFactory()
-        ProgramApplicationFactory(
-            organization=applicant, program=opportunity.program, status=ProgramApplicationStatus.ACCEPTED
-        )
-
-        assert applicant in eligible_supervising_organizations(opportunity.program)
-
     @pytest.mark.parametrize(
-        "status",
+        "status, eligible",
         [
-            ProgramApplicationStatus.INVITED,
-            ProgramApplicationStatus.APPLIED,
-            ProgramApplicationStatus.REJECTED,
-            ProgramApplicationStatus.DECLINED,
+            (ProgramApplicationStatus.ACCEPTED, True),
+            (ProgramApplicationStatus.INVITED, False),
+            (ProgramApplicationStatus.APPLIED, False),
+            (ProgramApplicationStatus.REJECTED, False),
+            (ProgramApplicationStatus.DECLINED, False),
         ],
     )
-    def test_excludes_applicant_without_accepted_status(self, opportunity, status):
+    def test_applicant_is_eligible_only_when_accepted(self, opportunity, status, eligible):
         applicant = OrganizationFactory()
         ProgramApplicationFactory(organization=applicant, program=opportunity.program, status=status)
 
-        assert applicant not in eligible_supervising_organizations(opportunity.program)
+        assert (applicant in eligible_supervising_organizations(opportunity.program)) is eligible
 
     def test_excludes_unrelated_organization(self, opportunity):
         assert OrganizationFactory() not in eligible_supervising_organizations(opportunity.program)

@@ -106,16 +106,6 @@ def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: A
     assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
 
 
-def test_claim_endpoint_end_date_exceeded(mobile_user: User, api_client: APIClient):
-    opportunity, opportunity_access = _setup_opportunity_and_access(
-        mobile_user, total_budget=1000, end_date=datetime.date.today() - datetime.timedelta(days=100)
-    )
-    api_client.force_authenticate(mobile_user)
-    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_ENDED
-
-
 def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_client: APIClient):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user, total_budget=1000, end_date=datetime.date.today() + datetime.timedelta(days=100)
@@ -131,31 +121,30 @@ def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_clien
     assert response.data == "Opportunity is already claimed"
 
 
-def test_claim_endpoint_less_budget_than_visit(mobile_user: User, api_client: APIClient):
+@pytest.mark.parametrize(
+    "total_budget, days_until_end, budget_per_visit, error_code",
+    [
+        (1000, -100, 10, ErrorCodes.OPPORTUNITY_ENDED),
+        # The budget doesn't cover a single visit.
+        (1, 100, 2, ErrorCodes.OPPORTUNITY_FULL),
+        # The budget covers one visit, but not the worker's full limit of 100 visits.
+        (3, 100, 2, ErrorCodes.OPPORTUNITY_FULL),
+    ],
+    ids=["end_date_exceeded", "less_budget_than_visit", "budget_for_partial_limit"],
+)
+def test_claim_endpoint_rejects_claim(
+    mobile_user: User, api_client: APIClient, total_budget, days_until_end, budget_per_visit, error_code
+):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user,
-        total_budget=1,
-        end_date=datetime.date.today() + datetime.timedelta(days=100),
-        budget_per_visit=2,
+        total_budget=total_budget,
+        end_date=datetime.date.today() + datetime.timedelta(days=days_until_end),
+        budget_per_visit=budget_per_visit,
     )
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
-
-
-def test_claim_endpoint_rejects_budget_for_partial_limit(mobile_user: User, api_client: APIClient):
-    # The budget covers one visit, but not the worker's full limit of 100 visits.
-    opportunity, opportunity_access = _setup_opportunity_and_access(
-        mobile_user,
-        total_budget=3,
-        end_date=datetime.date.today() + datetime.timedelta(days=100),
-        budget_per_visit=2,
-    )
-    api_client.force_authenticate(mobile_user)
-    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
+    assert response.json()["error_code"] == error_code
     assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
 
 

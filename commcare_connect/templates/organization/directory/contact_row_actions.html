@@ -1,0 +1,42 @@
+{% load i18n %}
+<div class="flex items-center gap-3">
+  {% if record.is_archived %}
+    <form method="post"
+          action="{% url 'organization_directory:contact_restore' record.contact_id %}?{{ request.GET.urlencode }}">
+      {% csrf_token %}
+      <button type="submit"
+              class="button-icon"
+              aria-label="{% blocktranslate with name=record.name %}Restore {{ name }}{% endblocktranslate %}"
+              x-data
+              x-tooltip.raw="{% translate 'Restore' %}">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+      </button>
+    </form>
+  {% else %}
+    <button type="button"
+            class="button-icon"
+            hx-get="{% url 'organization_directory:contact_edit' record.contact_id %}?next={{ request.get_full_path|urlencode }}"
+            hx-target="#directory-form"
+            aria-label="{% blocktranslate with name=record.name %}Edit {{ name }}{% endblocktranslate %}"
+            x-data
+            x-tooltip.raw="{% translate 'Edit' %}">
+      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+    </button>
+    {% translate "Archive contact" as archive_title %}
+    {% translate "Archive" as archive_label %}
+    {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? They can be restored from the archived contacts.{% endblocktranslate %}
+    <form x-data
+          x-ref="archiveForm"
+          method="post"
+          action="{% url 'organization_directory:contact_archive' record.contact_id %}?{{ request.GET.urlencode }}">
+      {% csrf_token %}
+      <button type="button"
+              class="button-icon"
+              aria-label="{% blocktranslate with name=record.name %}Archive {{ name }}{% endblocktranslate %}"
+              x-tooltip.raw="{{ archive_label }}"
+              @click="$store.confirmModal.show({ title: '{{ archive_title|escapejs }}', message: '{{ archive_message|escapejs }}', confirmBtnText: '{{ archive_label|escapejs }}', confirmBtnRed: true, formRef: $refs.archiveForm })">
+        <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+      </button>
+    </form>
+  {% endif %}
+</div>
