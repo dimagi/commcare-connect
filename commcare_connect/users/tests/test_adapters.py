@@ -1,7 +1,9 @@
 import logging
+from unittest import mock
 from uuid import uuid4
 
 import pytest
+from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.models import EmailAddress
 from allauth.core import context
 from allauth.core.ratelimit import respond_429
@@ -90,6 +92,17 @@ class TestAccountAdapter:
             for to in aliases:
                 AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
         assert [message.to for message in mailoutbox] == [[aliases[0]], [aliases[1]]]
+
+    @pytest.mark.django_db
+    def test_send_mail_gives_the_budget_back_when_delivery_fails(self, anonymous_request, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "1/d/key"}
+        email = f"{uuid4().hex}@example.com"
+        with context.request_context(anonymous_request("post", "/accounts/signup/")):
+            with mock.patch.object(DefaultAccountAdapter, "send_mail", side_effect=ConnectionError("SES down")):
+                with pytest.raises(ConnectionError):
+                    AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+            AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+        assert [message.to for message in mailoutbox] == [[email]]
 
     @pytest.mark.django_db
     def test_send_mail_outside_a_request_is_not_throttled(self, settings, mailoutbox):

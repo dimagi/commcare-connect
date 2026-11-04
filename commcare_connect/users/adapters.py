@@ -63,27 +63,35 @@ class AccountAdapter(DefaultAccountAdapter):
         one budget for all of them, per address. Skipping is silent to the requester, like allauth's own
         handling of the confirmation cooldown: links already sent stay valid.
         """
-        if not self._within_mail_budget(email):
+        usage = self._consume_mail_budget(email)
+        if usage is None:
             logger.info("Not sending %s to %s: ACCOUNT_RATE_LIMITS['send_mail'] reached", template_prefix, email)
             return
-        super().send_mail(template_prefix, email, context)
+        try:
+            super().send_mail(template_prefix, email, context)
+        except Exception:
+            if usage:
+                usage.rollback()  # a failed delivery must not eat into the address's allowance
+            raise
 
     @staticmethod
-    def _within_mail_budget(email: str) -> bool:
-        """Consumes one unit of the address's ``send_mail`` budget; False when the budget is spent."""
+    def _consume_mail_budget(email: str) -> ratelimit.RateLimitUsage | None:
+        """Takes one unit of the address's ``send_mail`` budget; None when the budget is spent.
+
+        Outside a request (commands, tasks) there is nothing to throttle, so an empty usage is returned.
+        """
         request = allauth_context.request
         if request is None:
-            return True  # commands and tasks, not a visitor: nothing to throttle
+            return ratelimit.RateLimitUsage(usage=[])
         # allauth's public consume() exempts GET requests, but the social-login callback that completes
         # a signup is a GET and sends a confirmation mail, so count those too.
-        usage = ratelimit.consume(
+        return ratelimit.consume(
             request,
             config=account_settings.RATE_LIMITS,
             action="send_mail",
             key=mail_budget_key(email),
             limit_get=True,
         )
-        return usage is not None
 
     def add_message(self, request, level, message_template, message_context=None, extra_tags=""):
         if message_template == "socialaccount/messages/account_connected.txt":
