@@ -234,6 +234,20 @@ class Opportunity(BaseModel):
         """
         return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
 
+    def validate_payment_unit_dates(self, start_date, end_date):
+        """Raise ``ValidationError`` if a payment unit's dates fall outside this opportunity's. Blank dates pass."""
+        errors = {}
+        if start_date and start_date < self.start_date:
+            errors["start_date"] = gettext("Start date can't be before the opportunity's start date (%(date)s).") % {
+                "date": self.start_date
+            }
+        if end_date and self.end_date and end_date > self.end_date:
+            errors["end_date"] = gettext("End date can't be after the opportunity's end date (%(date)s).") % {
+                "date": self.end_date
+            }
+        if errors:
+            raise ValidationError(errors)
+
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
         limit for ``payment_units``, raising ``ValidationError`` if it can't.

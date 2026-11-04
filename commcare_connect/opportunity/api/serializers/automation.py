@@ -39,6 +39,7 @@ class PaymentUnitItemSerializer(serializers.Serializer):
 
         if data["start_date"] and data["end_date"] and data["end_date"] < data["start_date"]:
             raise serializers.ValidationError({"end_date": _("End date cannot be earlier than start date.")})
+        opportunity.validate_payment_unit_dates(data["start_date"], data["end_date"])
 
         required = data.get("required_deliver_units", [])
         optional = data.get("optional_deliver_units", [])
