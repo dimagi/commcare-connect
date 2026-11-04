@@ -761,7 +761,29 @@ class PaymentUnit(models.Model):
         limits are costed at the rate they will be paid from the start. Never use this for
         money earned; use current_pay_rate.
         """
-        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+        return self.current_pay_rate or self.initial_pay_rate
+
+    @property
+    def initial_pay_rate(self):
+        return self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+
+    def move_initial_pay_rate(self, modified_by):
+        """Move the Initial Pay Rate to initial_pay_rate_date() when the unit's or opportunity's start date changes."""
+        rate = self.initial_pay_rate
+        rate.planned_for = self.initial_pay_rate_date()
+        rate.modified_by = modified_by
+        rate.save(update_fields=["planned_for", "modified_by", "date_modified"])
+
+    def has_visits(self):
+        return self._visits().exists()
+
+    def has_payable_visits(self):
+        # Trial visits get no completed work, so they are never paid. Over-limit ones can still be approved.
+        return self._visits().exclude(status=VisitValidationStatus.trial).exists()
+
+    def _visits(self):
+        # Filtered by opportunity too: a deliver unit can move to another opportunity's unit, keeping its old visits
+        return UserVisit.objects.filter(opportunity_id=self.opportunity_id, deliver_unit__payment_unit=self)
 
 
 class PaymentUnitRate(BaseModel):
