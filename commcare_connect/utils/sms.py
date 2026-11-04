@@ -28,6 +28,7 @@ def get_sms_sender(number):
         "+258": "ConnectID",
         "+232": "ConnectID",
         "+233": "ConnectID",
+        "+252": "ConnectID",
         "+44": "ConnectID",
     }
     for code, sender in SMS_SENDERS.items():
