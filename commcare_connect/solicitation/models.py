@@ -23,6 +23,9 @@ class SolicitationQuerySet(models.QuerySet):
     def open(self):
         return self._active().filter(application_deadline__gt=Now())
 
+    def expired(self):
+        return self._active().filter(application_deadline__lte=Now())
+
 
 class Solicitation(BaseModel):
     """The posting itself — an RFP or EOI shown on the marketplace."""

@@ -4,6 +4,7 @@ import pytest
 from django.utils.timezone import now
 
 from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.tasks import update_solicitation_statuses
 from commcare_connect.solicitation.tests.factories import SolicitationFactory
 
 Status = Solicitation.Status
@@ -30,3 +31,13 @@ def test_deadline_rule(status, deadline_offset, expected_status):
     assert solicitation.is_open is expected_open
     assert Solicitation.objects.open().filter(pk=solicitation.pk).exists() is expected_open
 
+
+@pytest.mark.parametrize("status, deadline_offset, expected_status", DEADLINE_CASES)
+def test_update_solicitation_statuses(status, deadline_offset, expected_status):
+    solicitation = SolicitationFactory(status=status, application_deadline=now() + deadline_offset)
+
+    update_solicitation_statuses()
+    update_solicitation_statuses()  # safe to re-run
+
+    solicitation.refresh_from_db()
+    assert solicitation.status == expected_status

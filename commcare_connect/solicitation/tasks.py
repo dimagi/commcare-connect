@@ -1,7 +1,12 @@
+import logging
+
 from django.template.loader import render_to_string
 
-from commcare_connect.solicitation.models import SolicitationInvitation
+from commcare_connect.solicitation.models import Solicitation, SolicitationInvitation
 from commcare_connect.utils.tasks import send_mail_async
+from config import celery_app
+
+logger = logging.getLogger(__name__)
 
 
 def send_solicitation_invite_emails(invitation_ids):
@@ -22,3 +27,11 @@ def send_solicitation_invite_emails(invitation_ids):
             recipient_list=recipient_emails,
             html_message=render_to_string("solicitation/email/invitation.html", context),
         )
+
+
+@celery_app.task()
+def update_solicitation_statuses():
+    """Runs every minute to move solicitations to the status their dates imply."""
+    closed = Solicitation.objects.expired().update(status=Solicitation.Status.CLOSED)
+    if closed:
+        logger.info("Closed %s expired solicitation(s)", closed)
