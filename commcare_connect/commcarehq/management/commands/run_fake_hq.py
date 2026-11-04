@@ -8,6 +8,7 @@ opportunity at it with ``generate_microplanning_data --fake-hq``, and ConnectID 
 
 import json
 import re
+import threading
 import uuid
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -52,6 +53,8 @@ class FakeHQServer(ThreadingHTTPServer):
         self.output = output
         # external_id -> case_id, so a work area keeps one case across updates, as it does on HQ.
         self.case_ids = {}
+        # Handlers run on separate threads; this keeps two requests for one external_id on one case.
+        self.case_ids_lock = threading.Lock()
 
 
 class FakeHQHandler(BaseHTTPRequestHandler):
@@ -95,9 +98,10 @@ class FakeHQHandler(BaseHTTPRequestHandler):
         """A case with exactly the fields ``commcarehq.api.CommCareCase`` takes; any other set breaks it."""
         item = item if isinstance(item, dict) else {}
         external_id = item.get("external_id")
-        case_id = case_id or item.get("case_id") or self.server.case_ids.get(external_id) or str(uuid.uuid4())
-        if external_id:
-            self.server.case_ids[external_id] = case_id
+        with self.server.case_ids_lock:
+            case_id = case_id or item.get("case_id") or self.server.case_ids.get(external_id) or str(uuid.uuid4())
+            if external_id:
+                self.server.case_ids[external_id] = case_id
         now = datetime.now(tz=UTC).isoformat()
         return {
             "domain": domain,
