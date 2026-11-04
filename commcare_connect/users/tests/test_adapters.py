@@ -11,7 +11,12 @@ from allauth.socialaccount.providers.base import AuthProcess
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
-from commcare_connect.users.adapters import AccountAdapter, SocialAccountAdapter, mail_budget_key
+from commcare_connect.users.adapters import (
+    AccountAdapter,
+    SocialAccountAdapter,
+    describe_forwarded_hops,
+    mail_budget_key,
+)
 from commcare_connect.users.models import User
 
 
@@ -41,13 +46,18 @@ class TestAccountAdapter:
 
     def test_too_short_forwarded_header_is_reported_as_an_error(self, rf, settings, caplog):
         settings.ALLAUTH_TRUSTED_PROXY_COUNT = 3
-        request = rf.get("/accounts/login/", REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="203.0.113.5")
+        request = rf.get("/accounts/login/", REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="8.8.8.8, 172.31.4.2")
         with caplog.at_level(logging.ERROR, logger="commcare_connect.users.adapters"):
             AccountAdapter().get_client_ip(request)
         (record,) = caplog.records
         assert record.levelno == logging.ERROR
+        # The message carries the shape of the chain, so it stays useful where Sentry scrubs the addresses.
+        assert record.getMessage() == (
+            "X-Forwarded-For has 2 hop(s) (public, private), fewer than ALLAUTH_TRUSTED_PROXY_COUNT; "
+            "rate limiting on REMOTE_ADDR (private)"
+        )
         assert (record.x_forwarded_for, record.remote_addr, record.path) == (
-            "203.0.113.5",
+            "8.8.8.8, 172.31.4.2",
             "10.0.0.9",
             "/accounts/login/",
         )
@@ -193,3 +203,17 @@ def test_validate_disconnect(user, provider, has_usable_password, other_provider
 )
 def test_mail_budget_key(email, expected):
     assert mail_budget_key(email) == expected
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        (None, []),
+        ("", []),
+        ("8.8.8.8", ["public"]),
+        ("8.8.8.8, 172.31.4.2, 10.0.0.1", ["public", "private", "private"]),
+        ("unknown, 127.0.0.1", ["invalid", "private"]),
+    ],
+)
+def test_describe_forwarded_hops(header, expected):
+    assert describe_forwarded_hops(header) == expected

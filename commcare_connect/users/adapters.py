@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 from typing import Any
 
@@ -38,13 +39,17 @@ class AccountAdapter(DefaultAccountAdapter):
             return super().get_client_ip(request)
         except ImproperlyConfigured:
             remote_addr = request.META.get("REMOTE_ADDR")
+            forwarded_for = request.headers.get("x-forwarded-for")
+            # The address kinds go in the message itself: Sentry and the log formatters hide the addresses,
+            # but "public, private" is enough to work out the real proxy depth and holds no personal data.
+            hop_kinds = describe_forwarded_hops(forwarded_for)
             logger.error(
-                "X-Forwarded-For has fewer hops than ALLAUTH_TRUSTED_PROXY_COUNT; rate limiting on REMOTE_ADDR",
-                extra={
-                    "x_forwarded_for": request.headers.get("x-forwarded-for"),
-                    "remote_addr": remote_addr,
-                    "path": request.path,
-                },
+                "X-Forwarded-For has %d hop(s) (%s), fewer than ALLAUTH_TRUSTED_PROXY_COUNT; "
+                "rate limiting on REMOTE_ADDR (%s)",
+                len(hop_kinds),
+                ", ".join(hop_kinds) or "empty",
+                address_kind(remote_addr),
+                extra={"x_forwarded_for": forwarded_for, "remote_addr": remote_addr, "path": request.path},
             )
             if not remote_addr:
                 raise PermissionDenied("Unable to determine client IP address")
@@ -140,6 +145,22 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if not account.user.has_usable_password():
             raise ValidationError(_("You can't disconnect your CommCare HQ account because it's your sign-in method."))
         super().validate_disconnect(account, accounts)
+
+
+def describe_forwarded_hops(forwarded_for: str | None) -> list[str]:
+    """The kind of each X-Forwarded-For entry, in order, without the addresses themselves."""
+    if not forwarded_for:
+        return []
+    return [address_kind(hop) for hop in forwarded_for.split(",")]
+
+
+def address_kind(value: str | None) -> str:
+    """ "public", "private" (RFC 1918, loopback, link-local) or "invalid" for something that isn't an IP."""
+    try:
+        address = ipaddress.ip_address((value or "").strip())
+    except ValueError:
+        return "invalid"
+    return "public" if address.is_global else "private"
 
 
 GMAIL_DOMAINS = {"gmail.com", "googlemail.com"}
