@@ -32,7 +32,7 @@ def direct_python(text):
         specs.extend(group)
     for group in data.get("dependency-groups", {}).values():
         specs.extend(s for s in group if isinstance(s, str))
-    return {re.split(r"[\[<>=!~;\s]", s, 1)[0].strip().lower() for s in specs if s}
+    return {re.split(r"[\[<>=!~;\s]", s, maxsplit=1)[0].strip().lower() for s in specs if s}
 
 
 def direct_npm(text):
