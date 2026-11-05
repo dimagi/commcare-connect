@@ -17,6 +17,7 @@ Connect uses both [switches](https://waffle.readthedocs.io/en/stable/types/switc
 
 - Switches and flags should be as **short-lived** as possible, existing through the release, but removed once the feature is out.
 - All switches and flags should have a **detailed description** in the note field of the model, describing the feature they control.
+- Exception: `delivery_stats_monthly_export` is a long-lived recipient list, not a release toggle. Its users receive the monthly Delivery Stats CSV email (managed from Internal Features → Delivery Stats Monthly Export). Don't remove it as a stale flag.
 
 ## Configuration Details
 
