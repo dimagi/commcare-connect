@@ -9,7 +9,7 @@
         connectid_env_note: "{{ lookup('community.general.onepassword', 'ConnectID docker.env', subdomain='dimagi', vault='Connect Tech', field='notesPlain') if groups.connectid | default([]) | intersect(ansible_play_hosts) else '' }}"
       run_once: true
       no_log: true
-      tags: always
+      tags: django_settings
 
 - hosts: all
   strategy: free
