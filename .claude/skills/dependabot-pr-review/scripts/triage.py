@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Triage every open Dependabot PR against current origin/main.
+"""Triage every open Dependabot PR against the repo's current default branch.
 
 An old Dependabot queue decays in ways the PR diff cannot show. A PR is obsolete
 when the package was deleted from main, and -- far more often -- when main has
@@ -15,43 +15,13 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 
-try:
-    import tomllib
-except ImportError:  # Python < 3.11
-    try:
-        import tomli as tomllib
-    except ImportError:
-        # Re-exec under any 3.11+ interpreter we can find. The repo being
-        # reviewed is not necessarily the one this skill lives in, so don't
-        # assume a local .venv exists.
-        import os
-        import shutil
+from lockfiles import blob, fetch, parse_npm_lock, parse_uv_lock, remote_for, sh, version_key
 
-        if os.environ.get("_TOML_REEXEC"):
-            sys.exit("needs Python 3.11+ (for tomllib) or `pip install tomli`")
-        root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-        candidates = [os.path.join(root, ".venv/bin/python")] if root else []
-        candidates += [shutil.which(n) for n in ("python3.13", "python3.12", "python3.11", "python3")]
-        for exe in candidates:
-            if not exe or not os.path.exists(exe):
-                continue
-            probe = subprocess.run([exe, "-c", "import tomllib"], capture_output=True)
-            if probe.returncode == 0:
-                os.environ["_TOML_REEXEC"] = "1"
-                os.execv(exe, [exe, os.path.abspath(__file__), *sys.argv[1:]])
-        sys.exit("needs Python 3.11+ (for tomllib) or `pip install tomli`")
-
-
-def show(path):
-    r = subprocess.run(["git", "show", f"origin/main:{path}"], capture_output=True, text=True)
-    return r.stdout if r.returncode == 0 else ""
-
-
-def ver(v):
-    """Comparable tuple; tolerates 'v3.0.1', '25.1', '4'."""
-    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3])
+SHA_PIN = re.compile(r"^[0-9a-f]{40}$")
+# `uses: owner/action@<sha> # v2.21.0` -- the trailing comment is the only
+# record of which release a SHA pin is.
+USES = re.compile(r"uses:\s*['\"]?([^\s'\"@]+)@([^\s'\"#]+)['\"]?(?:\s*#\s*(\S+))?")
 
 
 def main():
@@ -59,49 +29,32 @@ def main():
     ap.add_argument("--repo", default="dimagi/commcare-connect")
     args = ap.parse_args()
 
-    subprocess.run(["git", "fetch", "-q", "origin", "main"], check=False)
+    # Read --repo's default branch, not whatever `origin/main` this checkout has.
+    default = sh("gh", "repo", "view", args.repo, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name").strip()
+    main_sha = fetch(remote_for(args.repo), f"refs/heads/{default}")
 
-    python_pkgs = {p["name"].lower(): p.get("version") for p in tomllib.loads(show("uv.lock")).get("package", [])}
-
-    npm_pkgs = {}
-    for path, meta in json.loads(show("package-lock.json") or "{}").get("packages", {}).items():
-        if path and "version" in meta:
-            npm_pkgs[path.split("node_modules/")[-1]] = meta["version"]
-
-    # An action's "manifest" is every `uses:` line in the workflows.
-    actions = {}
-    grep = subprocess.run(
-        ["git", "grep", "-h", "-oE", r"uses: [^ ]+", "origin/main", "--", "*.yml", "*.yaml"],
-        capture_output=True,
-        text=True,
-    ).stdout
-    for line in grep.splitlines():
-        spec = line.split("uses: ", 1)[-1].strip()
-        if "@" in spec:
-            name, tag = spec.rsplit("@", 1)
-            actions.setdefault(name, set()).add(tag)
+    python_pkgs = parse_uv_lock(blob(main_sha, "uv.lock"))
+    # Dependabot bumps the hoisted copy package.json declares; private copies
+    # nested under other packages would otherwise decide the comparison.
+    npm_pkgs = parse_npm_lock(blob(main_sha, "package-lock.json"), top_level_only=True)
+    actions = workflow_actions(main_sha)
 
     prs = json.loads(
-        subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--repo",
-                args.repo,
-                "--author",
-                "app/dependabot",
-                "--state",
-                "open",
-                "--json",
-                "number,title,createdAt",
-                "--limit",
-                "100",
-            ],
-            capture_output=True,
-            text=True,
-        ).stdout
-        or "[]"
+        sh(
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            args.repo,
+            "--author",
+            "app/dependabot",
+            "--state",
+            "open",
+            "--json",
+            "number,title,createdAt",
+            "--limit",
+            "100",
+        )
     )
 
     rows, review = [], []
@@ -114,30 +67,28 @@ def main():
             continue
 
         pkg, old, new = m.groups()
-        kind = (
-            "py" if pkg.lower() in python_pkgs else "npm" if pkg in npm_pkgs else "action" if pkg in actions else None
-        )
-        if kind is None:
+        if pkg.lower() in python_pkgs:
+            kind, versions = "py", python_pkgs[pkg.lower()]
+        elif pkg in npm_pkgs:
+            kind, versions = "npm", npm_pkgs[pkg]
+        elif pkg in actions:
+            kind, versions = "action", actions[pkg]
+        else:
             rows.append(
                 (n, created, pkg[:40], f"{old}->{new}", "ABSENT", "OBSOLETE - not on main; confirm deliberate removal")
             )
             continue
 
-        # Branch on kind rather than chaining `or`: a uv.lock entry with no
-        # version (an editable or virtual root package) yields None for a
-        # Python package and would otherwise fall through to indexing an empty
-        # action set, crashing the whole run.
-        if kind == "py":
-            cur = python_pkgs.get(pkg.lower())
-        elif kind == "npm":
-            cur = npm_pkgs.get(pkg)
-        else:
-            cur = max(actions[pkg], key=ver)
-        if cur is None:
-            rows.append((n, created, pkg[:40], f"{old}->{new}", "NO VERSION", f"REVIEW ({kind}) - unpinned on main"))
+        if None in versions:
+            # A SHA pin with no version comment: the SHA's digits are not a
+            # version, so this cannot be compared automatically.
+            rows.append((n, created, pkg[:40], f"{old}->{new}", "SHA PIN", f"REVIEW ({kind}) - unversioned pin"))
             review.append(n)
             continue
-        if ver(cur) >= ver(new):
+        # OBSOLETE only if *every* locked copy / call site is already at or past
+        # the target; one lagging copy is still something the PR would move.
+        cur = min(versions, key=version_key)
+        if version_key(cur) >= version_key(new):
             rows.append((n, created, pkg[:40], f"{old}->{new}", cur, "OBSOLETE - main already at/past target"))
         else:
             rows.append((n, created, pkg[:40], f"{old}->{new}", cur, f"REVIEW ({kind})"))
@@ -159,6 +110,28 @@ def main():
         "\nVerify before closing anything: a version string can be misparsed,\n"
         "and 'ABSENT' may mean the package is only a transitive dep."
     )
+
+
+def workflow_actions(ref):
+    """Map each action in the workflows at `ref` to the versions it is used at.
+
+    A SHA pin contributes the version from its trailing `# vX.Y.Z` comment, or
+    None when there is none -- its hex digits must never be read as a version.
+    """
+    grep = subprocess.run(
+        ["git", "grep", "-h", "-E", r"uses:\s*\S+@", ref, "--", ":/*.yml", ":/*.yaml"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    actions = {}
+    for line in grep.splitlines():
+        m = USES.search(line)
+        if not m:
+            continue
+        name, tag, comment = m.groups()
+        version = (comment if comment and version_key(comment) else None) if SHA_PIN.match(tag) else tag
+        actions.setdefault(name, set()).add(version)
+    return actions
 
 
 if __name__ == "__main__":

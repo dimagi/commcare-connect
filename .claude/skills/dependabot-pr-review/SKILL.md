@@ -34,9 +34,10 @@ not proof. The techniques below are ordered by how much they actually settle.
 
 Bundled alongside this file:
 
-- `scripts/triage.py` — compares every open Dependabot PR against `origin/main` and
-  separates the obsolete from the reviewable. Run it first when triaging a queue.
+- `scripts/triage.py` — compares every open Dependabot PR against the `--repo`'s default
+  branch and separates the obsolete from the reviewable. Run it first when triaging a queue.
 - `scripts/lockdiff.py` — structurally diffs `uv.lock` and `package-lock.json` for one PR.
+- `scripts/lockfiles.py` — helpers the two scripts share; not run directly.
 - `references/github-actions.md` — the playbook for `.github/workflows/` bumps, where most
   of the lockfile instincts below invert.
 
@@ -214,8 +215,8 @@ lockfiles structurally against the merge base:
 python <skill-dir>/scripts/lockdiff.py <N> --repo <owner>/<repo>
 ```
 
-It prints every version change marked `[direct]` and `[MAJOR]`, and calls out **transitive
-majors**, which the Dependabot PR body never lists and which are where the surprises live.
+It prints every version change marked `[direct]` and `[MAJOR]` (for 0.x versions a minor
+bump counts as major, as semver treats it), and calls out **transitive majors**, which the Dependabot PR body never lists and which are where the surprises live.
 It also surfaces added/removed packages — that's how you catch a build tool swapping out
 an internal dependency — and flags when the PR is already merged into `main`.
 
@@ -356,9 +357,10 @@ affect views" is not.
 `npm audit` on each and compare, run the test suite, diff a function's output across
 versions. These take minutes and convert a hedge into a finding.
 
-Running the suite is the single highest-value one. If the dependencies are already
-installed — CI installs them from the PR's own lockfile before the review starts — all
-that's missing is a database:
+Running the suite is the single highest-value one — locally. The CI review job
+deliberately installs nothing and cannot run it (dependency code would execute next to its
+secrets); there, the PR's own CI checks are the test evidence. Locally, with the PR's
+dependencies installed, all that's missing is a database:
 
 ```bash
 docker run -d --rm -p 55432:5432 -e POSTGRES_PASSWORD=x --name pgtmp postgis/postgis:15-3.5

@@ -10,84 +10,16 @@ Usage:
 
 Output: a table of every package whose version moved, marked [direct] when it
 is named in pyproject.toml / package.json and [MAJOR] when the leading version
-component changed. Transitive majors are the ones worth attention -- they are
-real upgrades that the Dependabot PR body never lists.
+component changed (or, for 0.x versions, the minor). Transitive majors are the
+ones worth attention -- they are real upgrades that the Dependabot PR body never
+lists.
 """
 
 import argparse
 import json
-import os
 import re
-import subprocess
-import sys
 
-try:
-    import tomllib
-except ImportError:  # Python < 3.11
-    try:
-        import tomli as tomllib
-    except ImportError:
-        # Re-exec under any 3.11+ interpreter we can find. The repo being
-        # reviewed is not necessarily the one this skill lives in, so don't
-        # assume a local .venv exists.
-        import os
-        import shutil
-
-        if os.environ.get("_TOML_REEXEC"):
-            sys.exit("needs Python 3.11+ (for tomllib) or `pip install tomli`")
-        root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-        candidates = [os.path.join(root, ".venv/bin/python")] if root else []
-        candidates += [shutil.which(n) for n in ("python3.13", "python3.12", "python3.11", "python3")]
-        for exe in candidates:
-            if not exe or not os.path.exists(exe):
-                continue
-            probe = subprocess.run([exe, "-c", "import tomllib"], capture_output=True)
-            if probe.returncode == 0:
-                os.environ["_TOML_REEXEC"] = "1"
-                os.execv(exe, [exe, os.path.abspath(__file__), *sys.argv[1:]])
-        sys.exit("needs Python 3.11+ (for tomllib) or `pip install tomli`")
-
-
-def sh(*cmd, check=True):
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if check and r.returncode != 0:
-        sys.exit(f"command failed: {' '.join(cmd)}\n{r.stderr.strip()}")
-    return r.stdout
-
-
-def blob(ref, path):
-    """Return a file's contents at a git ref, or None if absent there."""
-    r = subprocess.run(["git", "show", f"{ref}:{path}"], capture_output=True, text=True)
-    return r.stdout if r.returncode == 0 else None
-
-
-# Both lockfiles can hold several versions of one package: npm nests a private
-# copy under "node_modules/a/node_modules/b", and a uv resolution fork can lock
-# two versions behind different markers. Mapping name -> version would let the
-# last one encountered win, which both hides real changes and invents fake ones
-# as dict ordering shifts. Map to a set of versions instead and compare sets.
-
-
-def parse_uv_lock(text):
-    if not text:
-        return {}
-    out = {}
-    for pkg in tomllib.loads(text).get("package", []):
-        if "version" in pkg:
-            out.setdefault(pkg["name"], set()).add(pkg["version"])
-    return out
-
-
-def parse_npm_lock(text):
-    if not text:
-        return {}
-    out = {}
-    for path, meta in json.loads(text).get("packages", {}).items():
-        if not path or "version" not in meta:
-            continue  # "" is the root project itself
-        # "node_modules/a/node_modules/b" -> "b"
-        out.setdefault(path.split("node_modules/")[-1], set()).add(meta["version"])
-    return out
+from lockfiles import blob, fetch, parse_npm_lock, parse_uv_lock, remote_for, sh, tomllib
 
 
 def direct_python(text):
@@ -111,8 +43,17 @@ def direct_npm(text):
 
 
 def major(v):
-    m = re.match(r"\D*(\d+)", v or "")
-    return m.group(1) if m else None
+    """The compatibility-defining prefix of a version.
+
+    Under semver (and npm's caret ranges) a 0.x minor bump is breaking, so for
+    0.x the minor is part of the "major": 0.3 -> 0.4 counts, 0.3.1 -> 0.3.2 doesn't.
+    """
+    nums = re.findall(r"\d+", v or "")
+    if not nums:
+        return None
+    if nums[0] == "0" and len(nums) > 1:
+        return f"0.{nums[1]}"
+    return nums[0]
 
 
 def majors(versions):
@@ -193,29 +134,21 @@ def main():
     base = sh("gh", "pr", "view", args.pr, "--repo", args.repo, "--json", "baseRefName", "-q", ".baseRefName").strip()
 
     # The PR head is usually not local; fetch it without touching any branch.
-    # Try the configured remote first -- on a CI runner that carries the auth
-    # header actions/checkout installed. Fall back to the HTTPS URL, which is
-    # what works locally when origin is an SSH remote and no key is loaded.
-    ref = f"pull/{args.pr}/head"
-    fetched = subprocess.run(["git", "fetch", "--quiet", "origin", ref], capture_output=True, text=True)
-    if fetched.returncode != 0:
-        fetched = subprocess.run(
-            ["git", "fetch", "--quiet", f"https://github.com/{args.repo}.git", ref], capture_output=True, text=True
-        )
-    if fetched.returncode != 0:
-        sys.exit(f"could not fetch {ref} from origin or https://github.com/{args.repo}.git\n{fetched.stderr.strip()}")
-    head = sh("git", "rev-parse", "FETCH_HEAD").strip()
-    sh("git", "fetch", "--quiet", "origin", base, check=False)
+    # Fetch from --repo itself: origin only when it points there, otherwise
+    # `pull/<N>/head` would be some other repo's PR with the same number.
+    remote = remote_for(args.repo)
+    head = fetch(remote, f"pull/{args.pr}/head")
+    base_sha = fetch(remote, f"refs/heads/{base}")
 
-    merge_base = sh("git", "merge-base", f"origin/{base}", head).strip()
-    print(f"PR #{args.pr}  head {head[:12]}  merge-base {merge_base[:12]} (origin/{base})")
+    merge_base = sh("git", "merge-base", base_sha, head).strip()
+    print(f"PR #{args.pr}  head {head[:12]}  merge-base {merge_base[:12]} ({args.repo} {base})")
 
     if merge_base == head:
-        # origin/<base> already contains this head -- the PR is merged or was
+        # <base> already contains this head -- the PR is merged or was
         # pushed from the base. Every diff below would be empty and that would
         # read as "nothing changed" rather than "already landed".
         print(
-            f"\n  NOTE: origin/{base} already contains this head -- PR is merged "
+            f"\n  NOTE: {base} already contains this head -- PR is merged "
             f"or fully included. Diffs below will be empty; check `gh pr view "
             f"{args.pr} --json state,mergedAt` before reviewing further."
         )

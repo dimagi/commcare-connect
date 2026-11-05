@@ -24,7 +24,9 @@
 #   way to grant write access for these events.
 #
 # Notes:
-# - No concurrency group is set, so runs are independent of one another.
+# - One run per PR at a time: a newer push cancels the in-flight review, and
+#   each run edits the previous review comment instead of adding another, so a
+#   Dependabot rebase doesn't stack up duplicate comments.
 
 name: Claude Dependabot PR Review
 
@@ -50,6 +52,9 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    concurrency:
+      group: claude-dependabot-${{ inputs.pr_number || github.event.pull_request.number }}
+      cancel-in-progress: true
 
     permissions:
       contents: read
@@ -75,10 +80,17 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Via env, never `${{ }}` inside the script: a dispatch input is
+          # free text and would otherwise be spliced into the shell verbatim.
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          PR_NUMBER="${{ inputs.pr_number || github.event.pull_request.number }}"
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::pr_number must be a number."
+            exit 1
+          fi
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          read -r AUTHOR REF < <(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+          read -r AUTHOR REF < <(gh pr view "$PR_NUMBER" --repo "$REPO" \
             --json author,headRefName --jq '"\(.author.login) \(.headRefName)"')
           # workflow_dispatch skips the job-level author gate. The checked-out
           # branch supplies the review skill, so only trust Dependabot's.
@@ -111,6 +123,19 @@ jobs:
             exit 1
           fi
           echo "Found $SKILL ($(wc -l < "$SKILL") lines)"
+
+      # Run the lockfile inventory here, as a fixed step, rather than letting
+      # Claude invoke it: that keeps every code-execution path out of Claude's
+      # tool allowlist. It reads lockfiles as data and runs no dependency code.
+      - name: Inventory lockfile changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 .claude/skills/dependabot-pr-review/scripts/lockdiff.py "$PR_NUMBER" --repo "$REPO" \
+            > /tmp/lockdiff.txt 2>&1 || echo "(lockdiff.py failed; output above)" >> /tmp/lockdiff.txt
+          cat /tmp/lockdiff.txt
 
       # Deliberately no dependency install and no test run in this job. It holds
       # ANTHROPIC_API_KEY and a write-scoped GITHUB_TOKEN, and installed or
@@ -145,8 +170,17 @@ jobs:
           # CI status and job logs come from the github_ci MCP server rather
           # than the CLI, which is narrower and more reliable than parsing
           # `gh run view` output.
+          #
+          # No tool here may run arbitrary commands, because the job holds
+          # secrets and Claude reads untrusted upstream changelogs. That rules
+          # out `sed` (its `e` command), `awk` (`system()`), `sort`
+          # (`--compress-program`), `tar` (`--to-command`), a bare `git:*`
+          # (`-c alias.x='!cmd'`, `fetch --upload-pack`, `grep -O`) and any
+          # script that `Write` could overwrite first. Only read-only git
+          # subcommands are listed; the full-history checkout already has
+          # origin/main, so no fetch is needed.
           claude_args: |
-            --allowedTools "mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(git:*),Bash(python .claude/skills/dependabot-pr-review/scripts/lockdiff.py:*),Bash(diff:*),Bash(base64:*),Bash(unzip:*),Bash(tar:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(sort:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Glob,Grep,WebFetch,WebSearch"
+            --allowedTools "mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(git show:*),Bash(git log:*),Bash(git diff:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git ls-files:*),Bash(diff:*),Bash(base64:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Glob,Grep,WebFetch,WebSearch"
           prompt: |
             Review pull request #${{ steps.pr.outputs.pr_number }} on ${{ github.repository }}.
 
@@ -165,11 +199,12 @@ jobs:
 
             2. Where the skill writes `<skill-dir>`, it means
                `.claude/skills/dependabot-pr-review` — it is checked out here, and the
-               repo root is your working directory. For a grouped bump, inventory it with:
-                 python .claude/skills/dependabot-pr-review/scripts/lockdiff.py ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }}
-               Skip it for a single-package PR, where the diff is already readable.
-               Ignore the skill's references to `scripts/triage.py`: that tool scans the
-               whole open queue and this run reviews one PR.
+               repo root is your working directory. You cannot run the bundled scripts
+               here: `lockdiff.py` has already been run for this PR and its output is in
+               /tmp/lockdiff.txt — read that wherever the skill says to run it. Ignore the
+               skill's references to `scripts/triage.py`: that tool scans the whole open
+               queue and this run reviews one PR. `git fetch` is not available either;
+               the checkout has full history and an up-to-date origin/main.
 
             3. For the skill's CI checks, use the github_ci MCP tools rather than the
                `gh` commands it suggests — `mcp__github_ci__get_ci_status` for check
@@ -179,8 +214,9 @@ jobs:
 
             4. The skill says to print the review to the terminal and not to comment.
                Here, do the opposite: this run exists to post it. Write the review to
-               /tmp/review.md, then post it:
-                 gh pr comment ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }} --body-file /tmp/review.md
+               /tmp/review.md, then post it, replacing the previous automated review on
+               this PR if there is one:
+                 gh pr comment ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }} --edit-last --create-if-none --body-file /tmp/review.md
                Post exactly once, at the end. If you cannot post, print the review to the
                log so the run is still useful.
 
