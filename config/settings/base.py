@@ -359,6 +359,8 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
+    # DRF 3.18 reports many=True errors as {index: errors}; keep the list shape API clients rely on.
+    "LIST_SERIALIZER_ERRORS_AS_DICT": False,
     "DEFAULT_VERSION": "1.0",
     "ALLOWED_VERSIONS": ["1.0", "2.0"],
     "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",
