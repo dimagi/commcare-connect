@@ -1,3 +1,4 @@
+import copy
 import datetime
 import json
 import logging
@@ -26,6 +27,7 @@ from commcare_connect.flags.switch_names import (
 )
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
+    SYSTEM_USER,
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
@@ -864,7 +866,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
-        self.is_start_date_readonly = self.current_start_date < datetime.date.today()
+        self.is_start_date_readonly = self._is_start_date_locked()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
@@ -925,7 +927,67 @@ class OpportunityFinalizeForm(forms.ModelForm):
             if total_budget_sum + cleaned_data["total_budget"] > program.budget:
                 self.add_error("total_budget", "Budget exceeds the program budget.")
 
+            if "start_date" in self.changed_data:
+                self._validate_start_date_today(start_date)
+                self._validate_start_date_covers_payment_units(start_date)
+                self._validate_start_date_before_pay_rate_changes(start_date)
+            if "end_date" in self.changed_data:
+                self._validate_end_date_covers_payment_units(end_date)
             return cleaned_data
+
+    def save(self, commit=True):
+        opportunity = super().save(commit=commit)
+        if commit and "start_date" in self.changed_data:
+            for unit in opportunity.paymentunit_set.all():
+                unit.opportunity = opportunity
+                unit.move_initial_pay_rate(opportunity.modified_by)
+        return opportunity
+
+    def _is_start_date_locked(self):
+        today = now().date()
+        if self.current_start_date < today:
+            return True
+        # On its start day a visit can be approved at any moment, and that approval needs the pay rate in place.
+        return self.current_start_date == today and self.opportunity.has_payable_visits()
+
+    def _validate_start_date_today(self, start_date):
+        # Visits processed earlier today are trial; they would sit inside the active period
+        if start_date == now().date() and self.opportunity.has_visits():
+            self.add_error("start_date", gettext("Start date can be today only if the opportunity has no visits yet."))
+
+    def _validate_start_date_covers_payment_units(self, start_date):
+        unit = self.opportunity.paymentunit_set.filter(start_date__lt=start_date).order_by("start_date").first()
+        if unit:
+            self.add_error(
+                "start_date",
+                gettext("Start date can't be after the start date of payment unit %(name)s (%(date)s).")
+                % {"name": unit.name, "date": unit.start_date},
+            )
+
+    def _validate_start_date_before_pay_rate_changes(self, start_date):
+        # Same rule as a unit's own start date change, for every unit whose Initial Pay Rate moves with this one
+        moved = copy.copy(self.opportunity)
+        moved.start_date = start_date
+        for unit in self.opportunity.paymentunit_set.all():
+            unit.opportunity = moved
+            if change := unit.pay_rate_change_on_or_before(unit.initial_pay_rate_date()):
+                self.add_error(
+                    "start_date",
+                    gettext(
+                        "A pay rate change is scheduled on %(date)s for payment unit %(name)s. "
+                        "Cancel it or pick an earlier start date."
+                    )
+                    % {"date": change.planned_for, "name": unit.name},
+                )
+
+    def _validate_end_date_covers_payment_units(self, end_date):
+        unit = self.opportunity.paymentunit_set.filter(end_date__gt=end_date).order_by("-end_date").first()
+        if unit:
+            self.add_error(
+                "end_date",
+                gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
+                % {"name": unit.name, "date": unit.end_date},
+            )
 
 
 class VisitExportForm(forms.Form):
@@ -1316,6 +1378,7 @@ class PaymentUnitForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
+        self.modified_by = kwargs.pop("modified_by", SYSTEM_USER)
 
         deliver_units = kwargs.pop("deliver_units", [])
         payment_units = kwargs.pop("payment_units", [])
@@ -1447,6 +1510,18 @@ class PaymentUnitForm(forms.ModelForm):
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+        if self.opportunity:
+            # Only new or changed dates, so units made before this rule can still be edited
+            try:
+                self.opportunity.validate_payment_unit_dates(
+                    start_date if "start_date" in self.changed_data else None,
+                    end_date if "end_date" in self.changed_data else None,
+                )
+            except ValidationError as e:
+                self.add_error(None, e)
+        if self.instance.pk and "start_date" in self.changed_data and "start_date" not in self.errors:
+            if error := self._start_date_change_error(start_date):
+                self.add_error("start_date", error)
 
         if cleaned_data.get("no_daily_limit"):
             cleaned_data["max_daily"] = None
@@ -1456,6 +1531,34 @@ class PaymentUnitForm(forms.ModelForm):
         self._validate_budget_covers_claimants(cleaned_data)
 
         return cleaned_data
+
+    def save(self, commit=True):
+        start_date_moved = bool(self.instance.pk) and "start_date" in self.changed_data
+        unit = super().save(commit=commit)
+        if commit and start_date_moved:
+            unit.move_initial_pay_rate(self.modified_by)
+        return unit
+
+    def _start_date_change_error(self, start_date):
+        """The start date moves only before the unit starts, never into the past, and stays before any
+        scheduled pay rate change. The Initial Pay Rate moves with it, so no approval can fall before it."""
+        unit = self.instance
+        today = now().date()
+        if unit.initial_pay_rate.planned_for <= today and unit.has_payable_visits():
+            return _("This payment unit already has visits, so its start date can't be changed.")
+        if start_date and start_date < today:
+            return _("Start date can't be in the past.")
+
+        new_rate_date = PaymentUnit(start_date=start_date, opportunity=self.opportunity).initial_pay_rate_date()
+        if new_rate_date == today and unit.has_visits():
+            # Visits processed earlier today are trial; they would sit inside the active period
+            return _("Start date can be today only if the payment unit has no visits yet.")
+
+        if change := unit.pay_rate_change_on_or_before(new_rate_date):
+            return gettext("A pay rate change is scheduled on %(date)s. Cancel it or pick an earlier start date.") % {
+                "date": change.planned_for
+            }
+        return None
 
     def _validate_budget_covers_claimants(self, cleaned_data):
         """

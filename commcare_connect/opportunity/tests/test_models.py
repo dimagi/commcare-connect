@@ -993,3 +993,44 @@ class TestInitialPayRate:
         unit.name = "Renamed"
         unit.save()
         assert unit.pay_rates.count() == 1
+
+    def test_initial_pay_rate_skips_cancelled(self):
+        unit = PaymentUnitFactory()
+        unit.pay_rates.update(cancelled_on=now())
+        later = PaymentUnitRateFactory(payment_unit=unit, planned_for=now().date() + timedelta(days=8))
+        assert unit.initial_pay_rate == later
+
+    @pytest.mark.parametrize(
+        "status, other_opportunity, has_visits, has_payable_visits",
+        [
+            (None, False, False, False),
+            (VisitValidationStatus.trial, False, True, False),
+            (VisitValidationStatus.over_limit, False, True, True),
+            (VisitValidationStatus.approved, False, True, True),
+            # A deliver unit can move to a new opportunity's unit, keeping its visits from the old opportunity
+            (VisitValidationStatus.approved, True, False, False),
+        ],
+    )
+    def test_has_visits(self, status, other_opportunity, has_visits, has_payable_visits):
+        unit = PaymentUnitFactory()
+        if status:
+            UserVisitFactory(
+                opportunity=OpportunityFactory() if other_opportunity else unit.opportunity,
+                deliver_unit=DeliverUnitFactory(payment_unit=unit),
+                status=status,
+                completed_work=None,
+            )
+        assert unit.has_visits() is has_visits
+        assert unit.has_payable_visits() is has_payable_visits
+
+    def test_move_initial_pay_rate(self):
+        today = now().date()
+        unit = PaymentUnitFactory(start_date=today + timedelta(days=5))
+        unit.start_date = today + timedelta(days=9)
+        unit.save()
+
+        unit.move_initial_pay_rate("pm@example.com")
+
+        rate = unit.pay_rates.get()
+        assert rate.planned_for == unit.start_date
+        assert rate.modified_by == "pm@example.com"

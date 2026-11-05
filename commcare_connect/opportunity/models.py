@@ -234,6 +234,27 @@ class Opportunity(BaseModel):
         """
         return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
 
+    def validate_payment_unit_dates(self, start_date, end_date):
+        """Raise ``ValidationError`` if a payment unit's dates fall outside this opportunity's. Blank dates pass."""
+        errors = {}
+        if start_date and start_date < self.start_date:
+            errors["start_date"] = gettext("Start date can't be before the opportunity's start date (%(date)s).") % {
+                "date": self.start_date
+            }
+        if end_date and self.end_date and end_date > self.end_date:
+            errors["end_date"] = gettext("End date can't be after the opportunity's end date (%(date)s).") % {
+                "date": self.end_date
+            }
+        if errors:
+            raise ValidationError(errors)
+
+    def has_visits(self):
+        return UserVisit.objects.filter(opportunity=self).exists()
+
+    def has_payable_visits(self):
+        # Trial visits get no completed work, so they are never paid
+        return UserVisit.objects.filter(opportunity=self).exclude(status=VisitValidationStatus.trial).exists()
+
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
         limit for ``payment_units``, raising ``ValidationError`` if it can't.
@@ -761,7 +782,37 @@ class PaymentUnit(models.Model):
         limits are costed at the rate they will be paid from the start. Never use this for
         money earned; use current_pay_rate.
         """
-        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+        return self.current_pay_rate or self.initial_pay_rate
+
+    @property
+    def initial_pay_rate(self):
+        return self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+
+    def pay_rate_change_on_or_before(self, day):
+        return (
+            self.pay_rates.filter(cancelled_on__isnull=True, planned_for__lte=day)
+            .exclude(pk=self.initial_pay_rate.pk)
+            .order_by("planned_for")
+            .first()
+        )
+
+    def move_initial_pay_rate(self, modified_by):
+        """Move the Initial Pay Rate to initial_pay_rate_date() when the unit's or opportunity's start date changes."""
+        rate = self.initial_pay_rate
+        rate.planned_for = self.initial_pay_rate_date()
+        rate.modified_by = modified_by
+        rate.save(update_fields=["planned_for", "modified_by", "date_modified"])
+
+    def has_visits(self):
+        return self._visits().exists()
+
+    def has_payable_visits(self):
+        # Trial visits get no completed work, so they are never paid. Over-limit ones can still be approved.
+        return self._visits().exclude(status=VisitValidationStatus.trial).exists()
+
+    def _visits(self):
+        # Filtered by opportunity too: a deliver unit can move to another opportunity's unit, keeping its old visits
+        return UserVisit.objects.filter(opportunity_id=self.opportunity_id, deliver_unit__payment_unit=self)
 
 
 class PaymentUnitRate(BaseModel):
