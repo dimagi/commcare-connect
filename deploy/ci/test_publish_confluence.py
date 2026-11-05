@@ -10,6 +10,7 @@ from publish_confluence import (
     authorization_header,
     build_update_payload,
     credentials_from_env,
+    has_release_heading,
     prepend_release_notes,
     publish,
 )
@@ -109,14 +110,15 @@ def test_publish_prepends_to_page(monkeypatch):
 
 
 class FakeUrlopen:
-    def __init__(self, put_error=None):
+    def __init__(self, put_error=None, page_body=None):
         self.requests = []
         self.put_error = put_error
+        self.page = PAGE if page_body is None else {**PAGE, "body": {"storage": {"value": page_body}}}
 
     def __call__(self, request, timeout):
         self.requests.append((request, timeout))
         if request.get_method() == "GET":
-            return io.BytesIO(json.dumps(PAGE).encode())
+            return io.BytesIO(json.dumps(self.page).encode())
         if self.put_error:
             raise self.put_error
         return io.BytesIO(b"{}")
@@ -132,22 +134,47 @@ def test_publish_raises_on_conflict(monkeypatch):
         publish(BASE_URL, AUTHORIZATION, "3870556169", "<h1>vX</h1>", "M", "vX")
 
 
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        pytest.param("<h1>vX</h1><p>a</p>", True, id="heading"),
+        pytest.param('<h1 id="r">Release <strong>vX</strong>\n</h1>', True, id="heading-with-markup"),
+        pytest.param("<h1>vY</h1><p>Changes since vX</p>", False, id="only-in-another-release-text"),
+        pytest.param("<h1>vY</h1><h2>vX</h2>", False, id="only-in-a-subheading"),
+        pytest.param("<p>old</p>", False, id="absent"),
+    ],
+)
+def test_has_release_heading(body, expected):
+    assert has_release_heading(body, "vX") is expected
+
+
 def test_publish_skips_release_already_on_page(monkeypatch):
-    fake = FakeUrlopen()
+    fake = FakeUrlopen(page_body="<h1>vX</h1><p>old</p>")
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
 
-    published = publish(BASE_URL, AUTHORIZATION, "3870556169", "<h1>old</h1>", "M", "old")
+    published = publish(BASE_URL, AUTHORIZATION, "3870556169", "<h1>vX</h1>", "M", "vX")
 
     assert not published
     assert [request.get_method() for request, _ in fake.requests] == ["GET"]
+
+
+def test_publish_adds_release_another_release_mentions(monkeypatch):
+    # e.g. retrying an older release after a newer one whose notes name it as the previous release
+    fake = FakeUrlopen(page_body="<h1>vY</h1><p>Changes since vX</p>")
+    monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
+
+    published = publish(BASE_URL, AUTHORIZATION, "3870556169", "<h1>vX</h1>", "M", "vX")
+
+    assert published
+    assert [request.get_method() for request, _ in fake.requests] == ["GET", "PUT"]
 
 
 def test_publish_refuses_fragment_without_the_release(monkeypatch):
     fake = FakeUrlopen()
     monkeypatch.setattr(publish_confluence.urllib.request, "urlopen", fake)
 
-    with pytest.raises(PublishError, match="do not mention release vX"):
-        publish(BASE_URL, AUTHORIZATION, "3870556169", "<h1>new</h1>", "M", "vX")
+    with pytest.raises(PublishError, match="no heading for release vX"):
+        publish(BASE_URL, AUTHORIZATION, "3870556169", "<h1>new</h1><p>Changes since vX</p>", "M", "vX")
     assert fake.requests == []
 
 

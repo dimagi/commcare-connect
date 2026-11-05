@@ -10,6 +10,7 @@ Uses urllib rather than httpx, the repo's usual client, so it runs on a bare Git
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -80,20 +81,26 @@ def authorization_header(credentials: OAuthClient) -> str:
 
 
 def publish(base_url: str, authorization: str, page_id: str, fragment: str, message: str, tag: str) -> bool:
-    """Returns False without changing the page when it already mentions the release, so retries are safe.
+    """Returns False without changing the page when it already has a heading for the release, so retries are safe.
 
-    The fragment has to mention the release too, or a retry could not recognise it on the page and would add it again.
+    Only headings count: other releases' notes may mention this tag in their text (as the release before them, say),
+    and that must not stop this release from being added.
+    The fragment needs that heading too, or a retry could not recognise it on the page and would add it again.
     """
-    if tag not in fragment:
-        raise PublishError(f"The release notes do not mention release {tag}, so a retry could add them twice")
+    if not has_release_heading(fragment, tag):
+        raise PublishError(f"The release notes have no heading for release {tag}, so a retry could add them twice")
     page_url = f"{base_url}/wiki/api/v2/pages/{page_id}"
     page = _request("GET", f"{page_url}?body-format=storage", authorization)
     existing_body = page["body"]["storage"]["value"]
-    if tag in existing_body:
+    if has_release_heading(existing_body, tag):
         return False
     new_body = prepend_release_notes(existing_body, fragment)
     _request("PUT", page_url, authorization, build_update_payload(page, new_body, message))
     return True
+
+
+def has_release_heading(body: str, tag: str) -> bool:
+    return re.search(rf"<h1\b[^>]*>(?:(?!</h1>).)*{re.escape(tag)}", body, re.DOTALL) is not None
 
 
 def prepend_release_notes(existing_body: str, fragment: str) -> str:

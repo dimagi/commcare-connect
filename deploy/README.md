@@ -145,7 +145,7 @@ saying what failed. This covers the run failing to start, the notes failing to g
 credentials, or Confluence or Slack rejecting the post. When a release has nothing user-facing, Claude says so
 explicitly and nothing is published. To retry, run **Actions → Release notes → Run workflow**, optionally with a
 release tag. Choose **Publish to** to retry only the target that failed. Re-running is safe for Confluence: the page
-is left alone when it already has that release. Slack has no such check and posts again.
+is left alone when it already has a heading for that release. Slack has no such check and posts again.
 
 Release-notes runs queue one at a time, so back-to-back deploys don't race on the Confluence page.
 
