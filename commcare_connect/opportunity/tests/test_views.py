@@ -2048,6 +2048,35 @@ class TestEditPaymentUnit:
         response = client.get(url)
         assert response.status_code == HTTPStatus.OK
 
+    def test_edit_payment_unit_legacy_integer_id(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
+        DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
+        client.force_login(program_manager_org_user_admin)
+        url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, payment_unit.pk)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
+
+    @pytest.mark.parametrize("bad_id", ["not-a-uuid", "999999999"])
+    def test_edit_payment_unit_invalid_id_returns_404(
+        self, bad_id, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        client.force_login(program_manager_org_user_admin)
+        url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, bad_id)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_edit_payment_unit_from_other_opportunity_returns_404(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        other_payment_unit = PaymentUnitFactory()
+        client.force_login(program_manager_org_user_admin)
+        for identifier in (other_payment_unit.pk, other_payment_unit.payment_unit_id):
+            url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, identifier)
+            response = client.get(url)
+            assert response.status_code == HTTPStatus.NOT_FOUND
+
 
 @pytest.mark.django_db
 def test_update_invoice_invoice_ticket_link_restricted_access(

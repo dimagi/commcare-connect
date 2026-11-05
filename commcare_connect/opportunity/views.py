@@ -1039,7 +1039,9 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     if not request.is_opportunity_pm:
         return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
-    payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
+    payment_unit = get_object_by_uuid_or_int(
+        PaymentUnit.objects.filter(opportunity=request.opportunity), pk, uuid_field="payment_unit_id"
+    )
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
         app=request.opportunity.deliver_app,
