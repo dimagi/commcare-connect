@@ -1,5 +1,4 @@
 import json
-from collections import OrderedDict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.db import IntegrityError, transaction
@@ -357,19 +356,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_budget_per_user(self, obj) -> int:
         return obj.budget_per_user(include_org_pay=False)
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        for key, value in data.items():
-            if isinstance(value, OrderedDict):
-                data[key] = dict(value)
-            elif isinstance(value, list):
-                cleaned_value = []
-                for item in value:
-                    if isinstance(item, OrderedDict):
-                        cleaned_value.append(dict(item))
-                data[key] = cleaned_value
-        return data
 
 
 class TaskTypeDataSerializer(serializers.ModelSerializer):
