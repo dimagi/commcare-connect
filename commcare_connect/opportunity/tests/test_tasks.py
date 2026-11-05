@@ -66,6 +66,7 @@ class TestConnectUserCreation:
     @pytest.mark.django_db
     def test_add_connect_user(self, httpx_mock):
         opportunity = OpportunityFactory()
+        PaymentUnitFactory(opportunity=opportunity)
         with (
             mock.patch("commcare_connect.opportunity.tasks.fetch_users") as fetch_users,
             mock.patch("commcare_connect.opportunity.tasks.invite_user"),
@@ -88,8 +89,9 @@ class TestConnectUserCreation:
         assert len(OpportunityAccess.objects.filter(user=user2.first(), opportunity=opportunity)) == 1
 
     @pytest.mark.django_db
-    def test_add_connect_users_skips_ended_opportunity(self):
-        opportunity = OpportunityFactory(end_date=datetime.date.today() - datetime.timedelta(days=1))
+    def test_add_connect_users_skips_opportunity_without_valid_end_date(self, unusable_end_date):
+        opportunity = OpportunityFactory(end_date=unusable_end_date)
+        PaymentUnitFactory(opportunity=opportunity)
         with mock.patch("commcare_connect.opportunity.tasks.fetch_users") as fetch_users:
             fetch_users.return_value = [
                 ConnectIdUser(username="test", phone_number="+15555555555", name="a"),
