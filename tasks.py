@@ -36,7 +36,10 @@ def down(c: Context):
 def translations(c: Context):
     """Make Django translations"""
     c.run("python manage.py makemessages --all --ignore node_modules --ignore venv")
-    c.run("python manage.py makemessages -d djangojs --all --ignore node_modules --ignore venv")
+    c.run(
+        "python manage.py makemessages -d djangojs --all --ignore node_modules --ignore venv"
+        " --ignore commcare_connect/static/bundles"
+    )
     c.run("python manage.py compilemessages")
 
 

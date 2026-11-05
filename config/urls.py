@@ -32,6 +32,8 @@ urlpatterns = [
         name="sitemap_xml",
     ),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
+    # gettext()/ngettext()/interpolate() for JS, from the djangojs domain (`inv translations`).
+    path("jsi18n/", views.javascript_catalog_view(settings.APP_RELEASE), name="javascript-catalog"),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),

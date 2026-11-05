@@ -1,5 +1,7 @@
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.views.decorators.cache import cache_page
+from django.views.i18n import JavaScriptCatalog
 
 
 def csrf_failure(request, reason=""):
@@ -31,3 +33,15 @@ def assetlinks_json(request):
         },
     ]
     return JsonResponse(assetfile, safe=False)
+
+
+def javascript_catalog_view(release):
+    """Django's JS translation catalog, cached for a day per deploy.
+
+    The release is in the cache key, so a deploy never serves the previous deploy's catalog from the
+    shared cache. Without one (locally, CI) it isn't cached, so translation edits show straight away.
+    """
+    view = JavaScriptCatalog.as_view()
+    if not release:
+        return view
+    return cache_page(60 * 60 * 24, key_prefix=f"jsi18n-{release}")(view)
