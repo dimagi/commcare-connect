@@ -44,6 +44,9 @@ def main():
 def _gate(repo: str) -> tuple[GateDecision, str]:
     head_sha = _gh("api", f"repos/{repo}/commits/main", "--jq", ".sha")
     release_sha = latest_release_sha(repo)
+    if head_sha == release_sha:
+        # Decided already, so a failing CI lookup can't turn a quiet skip into a warning
+        return decide(head_sha, release_sha, None, []), head_sha
     ci_run = _latest_ci_run(repo)
     paths = []
     if ci_run and ci_run["headSha"] != head_sha:

@@ -105,6 +105,20 @@ def test_latest_release_sha_raises_on_other_errors(monkeypatch):
         latest_release_sha("dimagi/commcare-connect")
 
 
+def test_gate_skips_quietly_without_checking_ci_when_main_is_released(monkeypatch):
+    def gh(*args):
+        if args[:2] == ("api", "repos/dimagi/commcare-connect/commits/main"):
+            return "a" * 40
+        raise subprocess.CalledProcessError(1, ["gh", *args], stderr="gh: API rate limit exceeded (HTTP 403)")
+
+    monkeypatch.setattr(scheduled_deploy_gate, "_gh", gh)
+    monkeypatch.setattr(scheduled_deploy_gate, "latest_release_sha", lambda repo: "a" * 40)
+
+    decision, sha = scheduled_deploy_gate._gate("dimagi/commcare-connect")
+
+    assert (decision.deploy, decision.warn, sha) == (False, False, "a" * 40)
+
+
 @pytest.mark.parametrize(
     "compare_status, deploy, warn",
     [("ahead", True, False), ("identical", False, False), ("behind", False, False), ("diverged", False, True)],
