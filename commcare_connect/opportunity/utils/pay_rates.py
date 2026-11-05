@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.utils.timezone import now
 
 BACKFILL_BATCH_SIZE = 1000
@@ -54,8 +55,12 @@ def _save(PaymentUnitRate, batch, dry_run):
 
 
 def _has_payable_visits(UserVisit, unit):
+    # Also through completed work: visits paid through the unit stay with it after their deliver unit is removed
     return (
-        UserVisit.objects.filter(opportunity_id=unit.opportunity_id, deliver_unit__payment_unit=unit)
+        UserVisit.objects.filter(
+            Q(deliver_unit__payment_unit=unit) | Q(completed_work__payment_unit=unit),
+            opportunity_id=unit.opportunity_id,
+        )
         .exclude(status=TRIAL_VISIT_STATUS)
         .exists()
     )

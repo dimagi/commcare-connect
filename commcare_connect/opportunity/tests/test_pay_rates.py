@@ -8,6 +8,7 @@ from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import SYSTEM_USER, PaymentUnitRate, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
+    CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityFactory,
     PaymentUnitFactory,
@@ -63,18 +64,28 @@ class TestBackfillPayRates:
         assert rate.applied_on is not None
         assert rate.created_by == rate.modified_by == SYSTEM_USER
 
-    def test_ignores_visits_from_another_opportunity(self):
-        # A deliver unit can move to a new opportunity's unit, keeping its visits from the old opportunity
+    @pytest.mark.parametrize(
+        "link, expected",
+        [
+            # A deliver unit can move to a new opportunity's unit, keeping its visits from the old opportunity
+            ("other_opportunity", 5),
+            # The deliver unit was removed from the unit after the visit was paid through it
+            ("removed", 0),
+        ],
+    )
+    def test_visits_linked_outside_the_deliver_unit(self, link, expected):
         unit = PaymentUnitFactory(start_date=_days_from_today(5))
+        removed = link == "removed"
         UserVisitFactory(
-            deliver_unit=DeliverUnitFactory(payment_unit=unit),
+            opportunity=unit.opportunity if removed else OpportunityFactory(),
+            deliver_unit=DeliverUnitFactory(payment_unit=None if removed else unit),
             status=VisitValidationStatus.approved,
-            completed_work=None,
+            completed_work=CompletedWorkFactory(payment_unit=unit) if removed else None,
         )
 
         _backfill()
 
-        assert unit.pay_rates.get().planned_for == _days_from_today(5)
+        assert unit.pay_rates.get().planned_for == _days_from_today(expected)
 
     def test_copies_amounts_including_zero(self):
         paid = PaymentUnitFactory(amount=4, org_amount=1)
