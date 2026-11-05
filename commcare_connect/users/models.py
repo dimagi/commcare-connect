@@ -15,6 +15,7 @@ from commcare_connect.utils.permission_const import (
     KPI_REPORT_ACCESS,
     LLO_DIRECTORY_MANAGEMENT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
+    ORG_MANAGEMENT_SETTINGS_ACCESS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
 )
@@ -93,6 +94,7 @@ class User(AbstractUser):
             PRODUCT_FEATURES_ACCESS,
             MANAGE_INTERNAL_PERMISSIONS,
             INVOICE_REPORT_ACCESS,
+            ORG_MANAGEMENT_SETTINGS_ACCESS,
         ]
         return any([self.has_perm(perm) for perm in internal_features])
 
