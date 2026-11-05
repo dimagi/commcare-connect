@@ -39,6 +39,7 @@ from commcare_connect.opportunity.models import (
     OpportunitySupervisingOrganizationEvent,
     PaymentInvoice,
     PaymentUnit,
+    PaymentUnitRate,
     TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -256,6 +257,7 @@ class TestOpportunityChangeForm:
 
     def test_for_incomplete_opp(self, base_form_data, valid_opportunity):
         data = data = base_form_data.copy()
+        PaymentUnitRate.objects.filter(payment_unit__opportunity=valid_opportunity).delete()
         PaymentUnit.objects.filter(opportunity=valid_opportunity).delete()  # making opp incomplete explicitly
         form = OpportunityChangeForm(data=data, instance=valid_opportunity)
         assert not form.is_valid()

@@ -1,10 +1,17 @@
 from datetime import UTC, date, timedelta
 
+from django.utils.timezone import now
 from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.opportunity.models import AssignedTaskStatus, Country, Currency, VisitValidationStatus
+from commcare_connect.opportunity.models import (
+    SYSTEM_USER,
+    AssignedTaskStatus,
+    Country,
+    Currency,
+    VisitValidationStatus,
+)
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
@@ -110,6 +117,20 @@ class PaymentUnitFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.PaymentUnit"
+
+
+class PaymentUnitRateFactory(DjangoModelFactory):
+    payment_unit = SubFactory(PaymentUnitFactory)
+    flw_amount = Faker("pyint", min_value=1, max_value=10)
+    org_amount = 0
+    # The day after the unit's Initial Pay Rate, so the default row doesn't clash with it
+    planned_for = LazyAttribute(lambda o: o.payment_unit.initial_pay_rate_date() + timedelta(days=1))
+    applied_on = LazyFunction(now)
+    created_by = SYSTEM_USER
+    modified_by = SYSTEM_USER
+
+    class Meta:
+        model = "opportunity.PaymentUnitRate"
 
 
 class DeliverUnitFactory(DjangoModelFactory):

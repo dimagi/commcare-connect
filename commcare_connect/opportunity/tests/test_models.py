@@ -4,11 +4,13 @@ from unittest import mock
 
 import pghistory
 import pytest
+from django.db import transaction
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
+    SYSTEM_USER,
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
@@ -35,6 +37,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    PaymentUnitRateFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -914,3 +917,79 @@ def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2
 def test_user_visit_over_limit_reasons_display(status, reasons, expected):
     visit = UserVisit(status=status, over_limit_reasons=reasons)
     assert visit.get_over_limit_reasons_display() == expected
+
+
+@pytest.mark.django_db
+class TestPaymentUnitRateLookups:
+    @pytest.fixture
+    def unit_without_rates(self):
+        unit = PaymentUnitFactory()
+        unit.pay_rates.all().delete()
+        return unit
+
+    def test_pay_rate_on_skips_cancelled_unapplied_and_future_rows(self, unit_without_rates):
+        jan = PaymentUnitRateFactory(
+            payment_unit=unit_without_rates, flw_amount=4, planned_for=date(2026, 1, 1), applied_on=now()
+        )
+        PaymentUnitRateFactory(
+            payment_unit=unit_without_rates, flw_amount=5, planned_for=date(2026, 2, 1), applied_on=None
+        )
+        PaymentUnitRateFactory(
+            payment_unit=unit_without_rates, flw_amount=6, planned_for=date(2026, 2, 1), cancelled_on=now()
+        )
+        assert unit_without_rates.pay_rate_on(date(2026, 2, 15)) == jan
+        assert unit_without_rates.pay_rate_on(date(2025, 12, 31)) is None
+
+    @pytest.mark.parametrize("planned_for_offset, expected_current", [(-1, True), (1, False)])
+    def test_costing_pay_rate_falls_back_to_initial_pay_rate(
+        self, unit_without_rates, planned_for_offset, expected_current
+    ):
+        rate = PaymentUnitRateFactory(
+            payment_unit=unit_without_rates,
+            flw_amount=4,
+            planned_for=now().date() + timedelta(days=planned_for_offset),
+        )
+        assert (unit_without_rates.current_pay_rate == rate) is expected_current
+        assert unit_without_rates.costing_pay_rate == rate
+
+    def test_one_live_rate_per_date(self, unit_without_rates):
+        PaymentUnitRateFactory(
+            payment_unit=unit_without_rates, flw_amount=4, planned_for=date(2026, 3, 1), cancelled_on=now()
+        )
+        PaymentUnitRateFactory(payment_unit=unit_without_rates, flw_amount=5, planned_for=date(2026, 3, 1))
+        with pytest.raises(IntegrityError), transaction.atomic():
+            PaymentUnitRateFactory(payment_unit=unit_without_rates, flw_amount=6, planned_for=date(2026, 3, 1))
+
+
+@pytest.mark.django_db
+class TestInitialPayRate:
+    @pytest.mark.parametrize(
+        "unit_start, opp_start, expected",
+        [
+            (+5, +3, +5),  # unit start in the future
+            (None, +3, +3),  # no unit start, opportunity start in the future
+            (-5, +3, +3),  # unit start in the past, opportunity start in the future (no date checks on the unit)
+            (-5, -10, 0),  # both in the past: today
+            (None, -10, 0),
+        ],
+    )
+    def test_created_with_payment_unit(self, unit_start, opp_start, expected):
+        today = now().date()
+        opp = OpportunityFactory(start_date=today + timedelta(days=opp_start))
+        unit = PaymentUnitFactory(
+            opportunity=opp,
+            amount=4,
+            org_amount=1,
+            start_date=None if unit_start is None else today + timedelta(days=unit_start),
+        )
+        rate = unit.pay_rates.get()
+        assert (rate.flw_amount, rate.org_amount) == (4, 1)
+        assert rate.planned_for == today + timedelta(days=expected)
+        assert rate.applied_on is not None
+        assert rate.created_by == SYSTEM_USER
+
+    def test_resaving_does_not_add_a_row(self):
+        unit = PaymentUnitFactory(amount=4)
+        unit.name = "Renamed"
+        unit.save()
+        assert unit.pay_rates.count() == 1

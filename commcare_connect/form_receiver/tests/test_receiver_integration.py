@@ -997,11 +997,11 @@ def test_receiver_visit_review_status(
     "opportunity, paymentunit_options, visit_status",
     [
         ({}, {"start_date": now().date()}, VisitValidationStatus.approved),
-        ({}, {"start_date": now() + datetime.timedelta(days=2)}, VisitValidationStatus.trial),
+        ({}, {"start_date": now().date() + datetime.timedelta(days=2)}, VisitValidationStatus.trial),
         ({}, {"end_date": now().date()}, VisitValidationStatus.approved),
         ({}, {"end_date": now() - datetime.timedelta(days=2)}, VisitValidationStatus.over_limit),
         ({"opp_options": {"start_date": now().date()}}, {}, VisitValidationStatus.approved),
-        ({"opp_options": {"start_date": now() + datetime.timedelta(days=2)}}, {}, VisitValidationStatus.trial),
+        ({"opp_options": {"start_date": now().date() + datetime.timedelta(days=2)}}, {}, VisitValidationStatus.trial),
         ({"opp_options": {"end_date": now().date()}}, {}, VisitValidationStatus.approved),
     ],
     indirect=["opportunity"],

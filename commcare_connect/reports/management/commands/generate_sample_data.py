@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     PaymentUnit,
+    PaymentUnitRate,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -97,6 +98,7 @@ class Command(BaseCommand):
             lambda: CompletedWork.objects.filter(
                 opportunity_access__opportunity__organization_id__in=org_ids
             ).delete(),
+            lambda: PaymentUnitRate.objects.filter(payment_unit__opportunity__organization_id__in=org_ids).delete(),
             lambda: PaymentUnit.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: UserInvite.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: OpportunityAccess.objects.filter(opportunity__organization_id__in=org_ids).delete(),

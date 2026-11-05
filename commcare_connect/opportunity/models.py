@@ -681,6 +681,10 @@ class Assessment(XFormBaseModel):
     passed = models.BooleanField()
 
 
+# Recorded as the author of pay rate rows the system writes or cancels
+SYSTEM_USER = "system"
+
+
 class PaymentUnit(models.Model):
     payment_unit_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
@@ -703,6 +707,85 @@ class PaymentUnit(models.Model):
 
     def __str__(self):
         return self.name
+
+    # Creates the Initial Pay Rate from amount/org_amount, so every way of creating a unit gets one (form, automation
+    # API, admin, factories, seed commands). CCCT-3018 replaces this override with an explicit call in each of
+    # those paths.
+    def save(self, *args, **kwargs):
+        adding = self._state.adding
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if adding:
+                self.pay_rates.create(
+                    flw_amount=self.amount,
+                    org_amount=self.org_amount,
+                    planned_for=self.initial_pay_rate_date(),
+                    applied_on=now(),
+                    created_by=SYSTEM_USER,
+                    modified_by=SYSTEM_USER,
+                )
+
+    def initial_pay_rate_date(self):
+        """The planned_for of a new unit's Initial Pay Rate: its start date, else the opportunity's, if in the
+        future; otherwise today. No approval can come before it."""
+        today = now().date()
+        if self.start_date and self.start_date > today:
+            return self.start_date
+        if self.opportunity.start_date > today:
+            return self.opportunity.start_date
+        return today
+
+    def pay_rate_on(self, day):
+        """The pay rate in effect on `day`: the latest applied, non-cancelled rate planned on or before it."""
+        return (
+            self.pay_rates.filter(cancelled_on__isnull=True, applied_on__isnull=False, planned_for__lte=day)
+            .order_by("-planned_for")
+            .first()
+        )
+
+    @property
+    def current_pay_rate(self):
+        """The Active Pay Rate: what workers are paid today.
+
+        Use for money actually earned (earned pay, invoices). None before the unit starts,
+        since nothing can be approved then.
+        """
+        return self.pay_rate_on(now().date())
+
+    @property
+    def costing_pay_rate(self):
+        """The pay rate used to cost deliveries for budgets, visit limits and the join check.
+
+        The Active Pay Rate, or the Initial Pay Rate before the unit starts. Workers can join and
+        get visit limits before the start date, when no pay rate is active yet, so their
+        limits are costed at the rate they will be paid from the start. Never use this for
+        money earned; use current_pay_rate.
+        """
+        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
+
+
+class PaymentUnitRate(BaseModel):
+    """One pay rate in a payment unit's pay rate history. Rows are never deleted, except with their opportunity."""
+
+    payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.PROTECT, related_name="pay_rates")
+    flw_amount = models.PositiveIntegerField()
+    org_amount = models.PositiveIntegerField(default=0)
+    planned_for = models.DateField()
+    # User's email, or SYSTEM_USER
+    cancelled_by = models.CharField(max_length=255, blank=True)
+    cancelled_on = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True)
+    # When the change was applied (visit limits scaled); a rate counts only once applied
+    applied_on = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["payment_unit", "planned_for"],
+                condition=Q(cancelled_on__isnull=True),
+                name="unique_live_pay_rate_per_date",
+            ),
+        ]
 
 
 class DeliverUnit(models.Model):
