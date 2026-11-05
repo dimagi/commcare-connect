@@ -177,19 +177,9 @@ jobs:
         working-directory: ./deploy
         run: 'kamal deploy -d ${{ env.DEPLOY_ENV }}'
 
-      - name: Create Sentry release
-        if: ${{ success() }}
-        uses: getsentry/action-release@v3
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        with:
-          environment: ${{ env.DEPLOY_ENV }}
-          release: ${{ env.APP_RELEASE }}
-          projects: ${{ env.SENTRY_PROJECT }}
-          set_commits: manual
-          repo: dimagi/commcare-connect
-          commit: ${{ env.DEPLOY_SHA }}
-
+      # The GitHub release is the record of what production runs: a queued scheduled deploy rechecks against it. Keep
+      # these two steps straight after kamal deploy, so a later step failing can't leave production ahead of the record
+      # and let that deploy ship an older commit over a newer one.
       - id: release_tag
         name: Set release tag
         if: ${{ success() && env.DEPLOY_ENV == 'production' }}
@@ -206,6 +196,19 @@ jobs:
           name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ env.DEPLOY_SHA }}
           generate_release_notes: true
+
+      - name: Create Sentry release
+        if: ${{ success() }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        with:
+          environment: ${{ env.DEPLOY_ENV }}
+          release: ${{ env.APP_RELEASE }}
+          projects: ${{ env.SENTRY_PROJECT }}
+          set_commits: manual
+          repo: dimagi/commcare-connect
+          commit: ${{ env.DEPLOY_SHA }}
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
