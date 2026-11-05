@@ -306,3 +306,17 @@ jobs:
           gh workflow run release-notes.yml --repo "${{ github.repository }}" --ref main \
             -f tag="${{ needs.deploy.outputs.release_tag }}" \
             -f slack_thread_ts="${{ needs.deploy.outputs.slack_ts }}"
+
+      # release-notes.yml reports its own problems, but only once it has started
+      - name: Notify release notes dispatch failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
+              "text": ":warning: Deploy succeeded, but starting the release notes failed. Run *Actions → Release notes* with tag `${{ needs.deploy.outputs.release_tag }}` to publish them. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}

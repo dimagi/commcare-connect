@@ -141,7 +141,7 @@ The Markdown is kept as a workflow artifact. Slack mentions such as `<!channel>`
 posting, so an edited PR body can't ping the channel.
 
 Problems never affect the deploy run. The release-notes run fails, and a warning goes into the deploy's Slack thread
-saying what failed. This covers the notes failing to generate or coming back incomplete, missing Confluence
+saying what failed. This covers the run failing to start, the notes failing to generate or coming back incomplete, missing Confluence
 credentials, or Confluence or Slack rejecting the post. When a release has nothing user-facing, Claude says so
 explicitly and nothing is published. To retry, run **Actions → Release notes → Run workflow**, optionally with a
 release tag. Choose **Publish to** to retry only the target that failed. Re-running is safe for Confluence: the page
