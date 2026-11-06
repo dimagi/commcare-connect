@@ -83,6 +83,9 @@ function initWorkAreaSearch(el) {
     valueField: 'value',
     labelField: 'label',
     searchField: ['label'],
+    // TomSelect shows at most 50 options by default. Show them all, so every area can be
+    // reached by scrolling, not only by typing its name.
+    maxOptions: null,
     plugins: ['remove_button'],
     render: { option: renderOption, item: renderItem },
   });
