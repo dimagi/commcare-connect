@@ -982,13 +982,8 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
     if form.is_valid():
         form.instance.opportunity = request.opportunity
         form.save()
-        required_deliver_units = form.cleaned_data["required_deliver_units"]
-        DeliverUnit.objects.filter(id__in=required_deliver_units, payment_unit__isnull=True).update(
-            payment_unit=form.instance.id
-        )
-        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
-        DeliverUnit.objects.filter(id__in=optional_deliver_units, payment_unit__isnull=True).update(
-            payment_unit=form.instance.id, optional=True
+        link_deliver_units(
+            form.instance, form.cleaned_data["required_deliver_units"], form.cleaned_data["optional_deliver_units"]
         )
         sub_payment_units = form.cleaned_data["payment_units"]
         PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
@@ -1009,7 +1004,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
                 opportunity=request.opportunity,
                 paymentunit_count=PaymentUnit.objects.filter(opportunity=request.opportunity).count(),
                 form=form,
-                form_title=_("Payment Unit Create"),
+                form_title=_("Add Payment Unit"),
             ),
         )
 
@@ -1028,7 +1023,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title=_("Payment Unit Create"),
+            form_title=_("Add Payment Unit"),
             form=form,
             path=path,
         ),
@@ -1067,9 +1062,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     if form.is_valid():
         form.save()
         required_deliver_units = form.cleaned_data["required_deliver_units"]
-        DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=form.instance.id, optional=False)
         optional_deliver_units = form.cleaned_data["optional_deliver_units"]
-        DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=form.instance.id, optional=True)
+        link_deliver_units(form.instance, required_deliver_units, optional_deliver_units)
         sub_payment_units = form.cleaned_data["payment_units"]
         PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
             parent_payment_unit=form.instance.id
@@ -1108,11 +1102,18 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title="Payment Unit Edit",
+            form_title=_("Edit Payment Unit"),
             form=form,
             path=path,
         ),
     )
+
+
+def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):
+    # The form only offers unattached units and units from inactive opportunities, so this may move
+    # a unit off an inactive opportunity's payment unit
+    DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
+    DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
 
 
 @opp_standard_access_required
