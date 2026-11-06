@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import uuid
 from collections import Counter, defaultdict, namedtuple
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -2464,6 +2465,11 @@ class WorkerPageView(OpportunityObjectMixin, TemplateView):
     def dispatch(self, request, *args, **kwargs):
         self.opportunity = self.get_opportunity()
         user_id = request.GET.get("user")
+        if user_id:
+            try:
+                user_id = uuid.UUID(user_id)
+            except ValueError:
+                raise Http404("A valid worker must be specified.") from None
         self.opportunity_access = (
             (
                 OpportunityAccess.objects.filter(opportunity=self.opportunity, user__user_id=user_id)
