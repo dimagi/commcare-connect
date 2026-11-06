@@ -1094,6 +1094,21 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         assert area.work_area_group_id == group.id
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
 
+    @mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay")
+    def test_adding_to_existing_group_queues_hq_sync(
+        self, sync_delay, v2_write_client, opportunity, django_capture_on_commit_callbacks
+    ):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(36.0, -1.3, 0.02))
+        group.update_centroid()
+        payload = [self._item(work_area_group_name="group-a")]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = _post_json(client=v2_write_client, url=self.url(opportunity.id), payload=payload)
+
+        assert response.status_code == 201
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
+
     def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
         WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")
         payload = [self._item(work_area_group_name="group-a")]

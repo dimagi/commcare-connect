@@ -23,6 +23,7 @@ from django.http import Http404
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
 
+from commcare_connect.commcarehq.management.commands.run_fake_hq import FAKE_HQ_URL
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
@@ -46,6 +47,7 @@ from commcare_connect.opportunity.models import (
     Currency,
     DeliverUnit,
     DeliveryType,
+    HQApiKey,
     Opportunity,
     OpportunityAccess,
     PaymentUnit,
@@ -55,7 +57,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program
-from commcare_connect.users.models import User
+from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 
 # Organization.save() derives the slug from the name, so a slug cannot be chosen here.
@@ -63,6 +65,9 @@ DEMO_ORG_NAME = "Microplanning Demo Org"
 DEMO_OPP_NAME = "Microplanning Demo"
 DEMO_ADMIN_USERNAME = "mpadmin"
 DEMO_ADMIN_PASSWORD = "mpadmin"
+# The HQ API key --fake-hq gives the opportunity, and the user it belongs to.
+FAKE_HQ_API_KEY = "fake-hq-api-key"
+FAKE_HQ_API_USERNAME = "fake_hq_api_user"
 
 CLUSTER_NAMES = ["North", "Central", "South", "East", "West", "Northeast", "Northwest", "Southeast"]
 CLUSTER_ORIGIN = (4.0, 5.0)  # lon, lat — southwest corner of the first cluster
@@ -180,6 +185,18 @@ class Command(BaseCommand):
         )
         parser.add_argument("--workers", type=int, default=3, help="Mobile workers to create and assign areas to")
         parser.add_argument(
+            "--fake-hq",
+            nargs="?",
+            const=FAKE_HQ_URL,
+            default=None,
+            metavar="URL",
+            help=(
+                "Send the opportunity's CommCare HQ calls to the fake HQ that `manage.py run_fake_hq` "
+                f"serves (default {FAKE_HQ_URL}), and give each worker an HQ user there, so assigning "
+                "work areas works without HQ"
+            ),
+        )
+        parser.add_argument(
             "--inaccessible-requests",
             type=int,
             default=10,
@@ -244,6 +261,8 @@ class Command(BaseCommand):
 
             payment_units = self.ensure_payment_units(opportunity)
             accesses = self.ensure_workers(opportunity, options["workers"])
+            if options["fake_hq"]:
+                self.connect_fake_hq(opportunity=opportunity, accesses=accesses, url=options["fake_hq"])
             work_areas = self.create_areas(opportunity, accesses, options)
             # Before the visits, so an area awaiting review is one nobody has delivered in.
             inaccessibility_requests = self.create_inaccessibility_requests(
@@ -338,21 +357,20 @@ class Command(BaseCommand):
         return org
 
     def ensure_hq_server(self):
-        """Reuse any HQServer; build one, with the OAuth application it requires, if there is none."""
-        hq_server = HQServer.objects.order_by("id").first()
-        if hq_server:
-            return hq_server
+        """Reuse any HQServer; build one if there is none."""
+        return HQServer.objects.order_by("id").first() or self.create_hq_server(
+            name="Microplanning Demo", url="https://hq.microplanning.example"
+        )
+
+    def create_hq_server(self, *, name, url):
+        """An HQServer, with the OAuth application it requires."""
         application_model = get_application_model()
         application = application_model.objects.create(
-            name="Microplanning Demo OAuth App",
+            name=f"{name} OAuth App",
             client_type=application_model.CLIENT_CONFIDENTIAL,
             authorization_grant_type=application_model.GRANT_CLIENT_CREDENTIALS,
         )
-        return HQServer.objects.create(
-            name="Microplanning Demo HQ",
-            url="https://hq.microplanning.example",
-            oauth_application=application,
-        )
+        return HQServer.objects.create(name=f"{name} HQ", url=url, oauth_application=application)
 
     def ensure_app(self, org, kind, hq_server):
         """A CommCareApp shell.
@@ -537,6 +555,31 @@ class Command(BaseCommand):
             accesses.append(access)
         self.stdout.write(f"Workers: {', '.join(a.user.username for a in accesses)}")
         return accesses
+
+    def connect_fake_hq(self, *, opportunity, accesses, url):
+        """Point the opportunity's HQ API key at the fake HQ, and give each worker an HQ user there.
+
+        Assignment sends cases with the opportunity's API key, and sets each case's owner from the
+        worker's ConnectIDUserLink on that key's HQ server. Without a link, assignment fails.
+        """
+        hq_server = HQServer.objects.filter(url=url).first() or self.create_hq_server(name="Fake", url=url)
+        api_user, _ = User.objects.get_or_create(username=FAKE_HQ_API_USERNAME, defaults={"name": "Fake HQ API"})
+        # One key per server, so pointing a new run at another URL leaves earlier opportunities alone.
+        api_key, _ = HQApiKey.objects.update_or_create(
+            api_key=f"{FAKE_HQ_API_KEY}-{hq_server.pk}", defaults={"user": api_user, "hq_server": hq_server}
+        )
+        opportunity.api_key = api_key
+        opportunity.save(update_fields=["api_key"])
+
+        domain = opportunity.deliver_app.cc_domain
+        for access in accesses:
+            ConnectIDUserLink.objects.update_or_create(
+                user=access.user,
+                commcare_username=f"{access.user.username}@{domain}.commcarehq.org",
+                hq_server=hq_server,
+                defaults={"domain": domain, "hq_user_uuid": f"fake-hq-user-{access.user.pk}"},
+            )
+        self.stdout.write(f"HQ calls go to the fake HQ at {url}. Start it with ./manage.py run_fake_hq")
 
     def create_areas(self, opportunity, accesses, options):
         """One implementation area and N groups of grid^2 work areas per cluster."""
