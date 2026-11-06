@@ -439,6 +439,7 @@ dev = [
     { name = "pytest-django" },
     { name = "pytest-httpx" },
     { name = "ruff" },
+    { name = "time-machine" },
     { name = "xml2json" },
 ]
 production = [
@@ -506,6 +507,7 @@ dev = [
     { name = "pytest-django", specifier = ">=4.5.2" },
     { name = "pytest-httpx", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.16.6" },
+    { name = "time-machine", specifier = ">=3.6.0" },
     { name = "xml2json", git = "https://github.com/dimagi/xml2json?rev=041b1ef" },
 ]
 production = [
@@ -2168,6 +2170,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ab/e2/e9a00f0ccb71718418230718b3d900e71a5d16e701a3dae079a21e9cd8f8/text-unidecode-1.3.tar.gz", hash = "sha256:bad6603bb14d279193107714b288be206cac565dfa49aa5b105294dd5c4aab93", size = 76885, upload-time = "2019-08-30T21:36:45.405Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/a5/c0b6468d3824fe3fde30dbb5e1f687b291608f9473681bbf7dabbf5a87d7/text_unidecode-1.3-py2.py3-none-any.whl", hash = "sha256:1311f10e8b895935241623731c2ba64f4c455287888b18189350b67134a822e8", size = 78154, upload-time = "2019-08-30T21:37:03.543Z" },
+]
+
+[[package]]
+name = "time-machine"
+version = "3.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/1d/48df18d3b2159ae3f49432622e3d7a23e01404cd6b99ee1361c9a4f37826/time_machine-3.6.0.tar.gz", hash = "sha256:92dfc900bbd50d239ad311473ada2201acdca3c3e14562692fd2e31489b57e24", size = 30470, upload-time = "2026-10-25T21:13:46.427Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/44/27ec78c871431d275bfea0375018f5432675d6462713c28dd6a49a2cb82e/time_machine-3.6.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:d08cfae8b47cf680144d5befaade6d7e5e4782856b407277283ed944cbb4419d", size = 29343, upload-time = "2026-10-25T21:12:38.619Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/02/d9fe93c7d77904441704b6b5f719a843025fd9c7d64876cb47f057958b39/time_machine-3.6.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:56a8352426af637b1bf73f8dd0c218470b09934b62e16d7c8ac2bc96980792c8", size = 29738, upload-time = "2026-10-25T21:12:40.011Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/5f/280d1c51dec133fe79af9187a16adcd9cf7e4552f7a2659280b54c16df29/time_machine-3.6.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:426c7cc6952af830960bda4fb1fc1ef0d735a016dc21b3fbc90fa57888e27953", size = 57612, upload-time = "2026-10-25T21:12:41.431Z" },
+    { url = "https://files.pythonhosted.org/packages/42/8e/8d27316cd683f90bab7571977c4c3c62dcf6723d3cae05392589b43e8856/time_machine-3.6.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:eec3e790bcef4427066112f0be677f6d72c7b3f4385be44f439fdf8f110360e0", size = 58973, upload-time = "2026-10-25T21:12:42.642Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/1b/cbc6d2203826796cdaa0d97d6d4ad588e477a77d7078b1f7e0498b9b4576/time_machine-3.6.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:d1f0bb9627216bfe775646c2c4059227fbc0babd7b602fb01e88bf911baf51db", size = 57939, upload-time = "2026-10-25T21:12:43.803Z" },
+    { url = "https://files.pythonhosted.org/packages/65/6c/ff82dfa19947cf6fb82e230cf537d8ae9a58a6e303270a6309f8ffdb90f1/time_machine-3.6.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:658c8864d9e2e8a94ccf3d580153a76be0cf09aeb0df5059beb74b65036ee94a", size = 57058, upload-time = "2026-10-25T21:12:45.145Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/34/7f77ac443961cebcf00bd297a19d9b7fc2f81b718332016177dad6b748b2/time_machine-3.6.0-cp311-cp311-win_amd64.whl", hash = "sha256:4c027a938943a5f58124aac018016ffe50212d9f92be508251753764fef744fc", size = 31572, upload-time = "2026-10-25T21:12:46.292Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/ab/09e646dde49f43837e9627c2bc868df989f44eecdbcf01acf7db6bc0c11d/time_machine-3.6.0-cp311-cp311-win_arm64.whl", hash = "sha256:17ac49ce4dacc60dadb3594bd67d8cd23438fa1e4c94b7fe2544a18ff40585d0", size = 31244, upload-time = "2026-10-25T21:12:47.375Z" },
 ]
 
 [[package]]
