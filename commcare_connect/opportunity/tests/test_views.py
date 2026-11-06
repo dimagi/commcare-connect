@@ -21,6 +21,7 @@ from django_htmx.middleware import HtmxDetails
 from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
@@ -34,6 +35,7 @@ from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWorkStatus,
     FormJsonValidationRules,
+    HQApiKey,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -79,6 +81,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
+    add_api_key,
     get_earned_summary,
     get_export_task_id,
     invoice_pdf_filename,
@@ -4102,3 +4105,16 @@ def test_get_earned_summary(
     assert earned.total == expected_total
     assert earned.percentage == expected_percentage
     assert earned.percentage_tooltip == expected_tooltip
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("valid", [True, False])
+def test_add_api_key_only_signals_a_reload_when_the_key_was_saved(rf, organization, valid):
+    """A rejected key must not close the modal or reload the key select, which would empty it."""
+    user = UserFactory()
+    data = {"hq_server": HQServerFactory().id, "api_key": "a-new-api-key-value" if valid else ""}
+    request = rf.post("/", data)
+    request.user = user
+    response = add_api_key(request, organization.slug)
+    assert (response.headers.get("HX-Trigger") == "reload_api_keys") is valid
+    assert HQApiKey.objects.filter(user=user).exists() is valid

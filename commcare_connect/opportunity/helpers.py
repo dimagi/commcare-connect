@@ -49,7 +49,9 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.utils import opportunities_accessible_to_org
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 
 def inactive_workers_subquery(days_ago):
@@ -915,3 +917,20 @@ def get_opportunity_funnel_progress(opp_id):
         )
         .first()
     )
+
+
+def api_key_owner_has_left(opportunity: Opportunity) -> bool:
+    """True when the opportunity's API key belongs to someone who could no longer manage its program.
+
+    Mirrors who passes `program_admin_access_required`: members of the program's owner or funder organization,
+    and users with ALL_ORG_ACCESS.
+    """
+    api_key = opportunity.api_key
+    if api_key is None or opportunity.program_id is None:
+        return False
+    owner = api_key.user
+    if owner.has_perm(ALL_ORG_ACCESS):
+        return False
+    program = opportunity.program
+    program_org_ids = [org_id for org_id in (program.organization_id, program.funder_id) if org_id]
+    return not UserOrganizationMembership.objects.filter(user=owner, organization_id__in=program_org_ids).exists()

@@ -22,6 +22,12 @@
         <span class="text-sm">{% blocktranslate with name=program.name %}This opportunity will be created under the <strong>{{ name }}</strong> program.{% endblocktranslate %}</span>
       </div>
     {% endif %}
+    {% if api_key_owner_has_left %}
+      <div class="flex items-center gap-2 p-4 rounded-lg border-[0.5px] bg-message-warning text-message-warning-text border-message-warning-border">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span class="text-sm">{% blocktranslate with name=opportunity.api_key.user.name|default:opportunity.api_key.user.email program=opportunity.program.name %}The API key on this opportunity was added by {{ name }}, who no longer has access to the {{ program }} program. Replace it with one of your own keys.{% endblocktranslate %}</span>
+      </div>
+    {% endif %}
     <h6 class="title">
       {% if opportunity_created %}
         Edit Details
@@ -44,7 +50,7 @@
           </button>
         </div>
         <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}"
-              @htmx:after-request="showAddApiKeyModal = !$event.detail.successful; $dispatch('reload_api_keys')">
+              @reload_api_keys="showAddApiKeyModal = false">
           {% crispy api_key_form %}
         </form>
       </div>
