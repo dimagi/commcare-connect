@@ -234,21 +234,21 @@ class Opportunity(BaseModel):
         """
         return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
 
-    def validate_payment_unit_dates(self, start_date, end_date):
+    def validate_payment_unit_dates(self, unit_start_date, unit_end_date):
         errors = {}
-        if start_date and start_date < self.start_date:
+        if unit_start_date and unit_start_date < self.start_date:
             errors["start_date"] = gettext("Start date can't be before the opportunity's start date (%(date)s).") % {
                 "date": self.start_date
             }
-        elif start_date and self.end_date and start_date > self.end_date:
+        elif unit_start_date and self.end_date and unit_start_date > self.end_date:
             errors["start_date"] = gettext("Start date can't be after the opportunity's end date (%(date)s).") % {
                 "date": self.end_date
             }
-        if end_date and self.end_date and end_date > self.end_date:
+        if unit_end_date and self.end_date and unit_end_date > self.end_date:
             errors["end_date"] = gettext("End date can't be after the opportunity's end date (%(date)s).") % {
                 "date": self.end_date
             }
-        elif end_date and end_date < self.start_date:
+        elif unit_end_date and unit_end_date < self.start_date:
             errors["end_date"] = gettext("End date can't be before the opportunity's start date (%(date)s).") % {
                 "date": self.start_date
             }
