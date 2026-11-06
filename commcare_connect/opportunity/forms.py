@@ -606,6 +606,23 @@ class OpportunityInitForm(forms.ModelForm):
             label=_("Supervising Organization"),
         )
 
+    def clean_api_key(self):
+        """Accept the opportunity's current key while its HQ server is unchanged, or one of the user's own keys
+        on the selected HQ server."""
+        hq_server = self.cleaned_data.get("hq_server")
+        if hq_server is None:
+            raise forms.ValidationError(_("Select one of your own API keys for this HQ server."))
+        allowed = Q(pk__in=[])
+        if self.instance.api_key_id and hq_server.pk == self.instance.hq_server_id:
+            allowed |= Q(pk=self.instance.api_key_id)
+        user_pk = getattr(self.user, "pk", None)
+        if user_pk is not None:
+            allowed |= Q(user_id=user_pk, hq_server=hq_server)
+        try:
+            return HQApiKey.objects.select_related("hq_server").filter(allowed).get(pk=self.cleaned_data["api_key"])
+        except (HQApiKey.DoesNotExist, TypeError, ValueError):
+            raise forms.ValidationError(_("Select one of your own API keys for this HQ server."))
+
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
@@ -695,13 +712,7 @@ class OpportunityInitForm(forms.ModelForm):
         if not opportunity.pk and switch_is_active(AUTOMATIC_VISIT_VERIFICATION):
             opportunity.automatic_visit_verification = True
 
-        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
-            id=self.cleaned_data["api_key"],
-            defaults={
-                "hq_server": hq_server,
-                "user": self.user,
-            },
-        )
+        opportunity.api_key = self.cleaned_data["api_key"]
 
         if commit:
             opportunity.save()
@@ -837,13 +848,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         )
 
         opportunity.modified_by = self.user.email
-        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
-            id=self.cleaned_data["api_key"],
-            defaults={
-                "hq_server": hq_server,
-                "user": self.user,
-            },
-        )
+        opportunity.api_key = self.cleaned_data["api_key"]
 
         if commit:
             opportunity.save()

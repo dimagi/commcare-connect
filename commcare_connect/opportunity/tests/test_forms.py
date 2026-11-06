@@ -11,6 +11,7 @@ from django.core.cache import cache
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
@@ -47,6 +48,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     ExchangeRateFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
@@ -393,14 +395,53 @@ class TestOpportunityInitUpdateForm:
             data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
         return data
 
-    def _get_form(self, *, opportunity, data):
+    def _valid_data(self, opportunity):
+        return self._build_form_data(
+            opportunity,
+            learn_payload={"id": opportunity.learn_app.cc_app_id, "name": "learn"},
+            learn_domain=opportunity.learn_app.cc_domain,
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": opportunity.deliver_app.cc_app_id, "name": "deliver"},
+            deliver_domain=opportunity.deliver_app.cc_domain,
+        )
+
+    def _get_form(self, *, opportunity, data, user=None):
         return OpportunityInitUpdateForm(
             data=data,
             instance=opportunity,
-            user=opportunity.api_key.user,
+            user=user or opportunity.api_key.user,
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
+    def test_rejects_key(self, opportunity, case):
+        if case == "another_users_key":
+            change = {"api_key": str(HQApiKeyFactory(hq_server=opportunity.hq_server).id)}
+        else:
+            change = {"hq_server": HQServerFactory().id}
+        data = self._valid_data(opportunity) | change
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert not form.is_valid()
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    def test_rejects_own_key_on_other_hq_server(self, opportunity):
+        user = UserFactory()
+        key = HQApiKeyFactory(user=user)
+        data = self._valid_data(opportunity) | {"api_key": str(key.id)}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data, user=user).errors
+
+    @pytest.mark.parametrize("bad_id", ["999999", "abc"])
+    def test_rejects_unknown_or_malformed_key_id(self, opportunity, bad_id):
+        data = self._valid_data(opportunity) | {"api_key": bad_id}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data).errors
+
+    def test_current_key_owned_by_other_user_is_accepted(self, opportunity):
+        data = self._valid_data(opportunity)
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opportunity.api_key_id
 
     def test_updates_existing_linked_apps(self, opportunity):
         learn_app = opportunity.learn_app
@@ -571,6 +612,11 @@ class TestOpportunityInitForm:
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    def test_rejects_key_owned_by_another_user(self, opportunity):
+        other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
 
     @pytest.mark.parametrize("switch_active", [True, False])
     def test_init_form_sets_automatic_visit_verification_from_global_switch(self, opportunity, switch_active):
