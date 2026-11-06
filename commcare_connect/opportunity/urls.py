@@ -179,6 +179,11 @@ urlpatterns = [
         name="worker_progress_stats",
     ),
     path(
+        "<slug:opp_id>/opportunity_payment_unit_breakdown/",
+        views.opportunity_payment_unit_breakdown,
+        name="payment_unit_breakdown",
+    ),
+    path(
         "<slug:opp_id>/opportunity_funnel_progress_stats/",
         views.opportunity_funnel_progress,
         name="funnel_progress_stats",
