@@ -30,13 +30,18 @@ def create_hq_user_and_link(user, domain, opportunity):
             return False
         hq_user_uuid = response.json().get("id") if response.status_code == 201 else None
         cc_username = f"{user.username.lower()}@{domain}.commcarehq.org"
-        ConnectIDUserLink.objects.create(
-            commcare_username=cc_username,
+        # Concurrent requests (e.g. mobile retries) can both pass the exists() check above.
+        # get_or_create retries in a savepoint on IntegrityError, so the duplicate is treated
+        # as success instead of failing the request.
+        link, created = ConnectIDUserLink.objects.get_or_create(
             user=user,
-            domain=domain,
+            commcare_username=cc_username,
             hq_server=hq_server,
-            hq_user_uuid=hq_user_uuid,
+            defaults={"domain": domain, "hq_user_uuid": hq_user_uuid},
         )
+        if not created and hq_user_uuid and not link.hq_user_uuid:
+            link.hq_user_uuid = hq_user_uuid
+            link.save(update_fields=["hq_user_uuid"])
     return True
 
 
