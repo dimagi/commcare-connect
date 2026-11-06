@@ -31,4 +31,10 @@
 
 .ts-dropdown {
   z-index: 100;
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+
+/* Match the rounded-lg corners of the other form fields. */
+.ts-control {
+  border-radius: 0.5rem;
 }
