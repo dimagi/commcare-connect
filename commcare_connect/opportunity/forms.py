@@ -71,7 +71,11 @@ from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.commcarehq_api import (
+    CommCareHQAccessDenied,
+    CommCareHQAPIException,
+    verify_app_access,
+)
 from commcare_connect.utils.datetime import parse_year_month
 from commcare_connect.utils.forms import ManagedOptionForm
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
@@ -730,8 +734,8 @@ class OpportunityInitForm(forms.ModelForm):
 class OpportunityInitUpdateForm(OpportunityInitForm):
     app_hint_text = "To switch apps, re-select the HQ Server field to see all app choices. All fields are mandatory."
     disabled_app_hint_text = (
-        "Learn and Deliver apps and the API key cannot be changed after Connect Workers have joined. "
-        "You can still edit the learn app description and passing score."
+        "Learn and Deliver apps cannot be changed after Connect Workers have joined. "
+        "You can still replace the API key and edit the learn app description and passing score."
     )
 
     def __init__(self, *args, **kwargs):
@@ -764,7 +768,6 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         if self._has_existing_accesses:
             self._disabled_fields = (
                 "hq_server",
-                "api_key",
                 "learn_app_domain",
                 "learn_app",
                 "deliver_app_domain",
@@ -772,19 +775,31 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
             )
             for field_name in self._disabled_fields:
                 if field_name in self.fields:
-                    self.fields[field_name].disabled = True
+                    field = self.fields[field_name]
+                    field.disabled = True
+                    # htmx sends requests even from disabled elements. A locked select must not reload (and
+                    # blank itself) when the editable api_key changes, so drop all of its htmx wiring.
+                    field.widget.attrs = {
+                        name: value
+                        for name, value in field.widget.attrs.items()
+                        if not name.startswith("hx-") and name != "data-loading-disable"
+                    }
 
     def _set_initial_api_key(self, api_key):
         choices = [API_KEY_PLACEHOLDER_CHOICE]
         if api_key:
-            if not api_key.api_key:
-                api_key_hidden = ""
-            else:
-                api_key_hidden = (
-                    f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}" if len(api_key.api_key) > 8 else api_key.api_key
-                )
-            choices.append((api_key.id, api_key_hidden))
+            owner = api_key.user
+            choices.append((api_key.id, f"{api_key.masked} (added by {owner.name or owner.email})"))
             self.fields["api_key"].initial = api_key.id
+        if self._has_existing_accesses and self.instance.hq_server_id:
+            # Only offered here, where the domain and app selects are locked: on an unlocked form, switching keys
+            # reloads them, and the domain/app endpoints only accept the requesting user's own keys.
+            own_keys = HQApiKey.objects.filter(user=self.user, hq_server_id=self.instance.hq_server_id)
+            if api_key:
+                own_keys = own_keys.exclude(pk=api_key.pk)
+            choices.extend((key.id, key.masked) for key in own_keys.order_by("-date_created"))
+            # hq_server is disabled here, so htmx would not send it and the key list could not reload.
+            self.fields["api_key"].widget.attrs["hx-vals"] = json.dumps({"hq_server": self.instance.hq_server_id})
         self.fields["api_key"].widget.choices = choices
 
     def _set_initial_app(self, app_type, app):
@@ -817,7 +832,25 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
                         field_name,
                         "This field cannot be edited after Connect Workers have joined the opportunity.",
                     )
+        if not self.errors and cleaned_data["api_key"].id != self.instance.api_key_id:
+            self._verify_new_api_key(cleaned_data)
         return cleaned_data
+
+    def _verify_new_api_key(self, cleaned_data):
+        """Prove via HQ that the replacement key can fetch both apps; report the first failure."""
+        api_key = cleaned_data["api_key"]
+        for app_type in ("learn", "deliver"):
+            domain = cleaned_data[f"{app_type}_app_domain"]
+            try:
+                verify_app_access(api_key, domain, cleaned_data[f"{app_type}_app"]["id"])
+            except CommCareHQAccessDenied:
+                self.add_error("api_key", f'This API key cannot access the {app_type} app on domain "{domain}".')
+                return
+            except CommCareHQAPIException:
+                # Unreachable, 5xx, rate limited, ...: not the key's fault, so don't blame it.
+                logger.warning("HQ API key check failed for opportunity %s", self.instance.pk, exc_info=True)
+                self.add_error("api_key", "Could not reach CommCare HQ to check this API key. Please try again.")
+                return
 
     def save(self, commit=True):
         opportunity = self.instance

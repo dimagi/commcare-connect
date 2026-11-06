@@ -107,6 +107,7 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    api_key_owner_has_left,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
@@ -437,6 +438,7 @@ class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
         context["opportunity_created"] = True
+        context["api_key_owner_has_left"] = api_key_owner_has_left(self.object)
         return context
 
 
@@ -3850,12 +3852,15 @@ def exchange_rate_preview(request, org_slug, opp_id):
 def add_api_key(request, org_slug):
     form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s")
 
+    headers = {}
     if form.is_valid():
         api_key = form.save(commit=False)
         api_key.user = request.user
         api_key.save()
         form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-    return HttpResponse(render_crispy_form(form))
+        # Only a saved key closes the modal and reloads the key select; a rejected one keeps its errors on screen.
+        headers["HX-Trigger"] = "reload_api_keys"
+    return HttpResponse(render_crispy_form(form), headers=headers)
 
 
 @require_POST

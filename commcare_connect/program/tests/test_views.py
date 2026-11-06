@@ -458,6 +458,22 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
         assert response.status_code == HTTPStatus.OK
         assert self.program.name.encode() in response.content
 
+    def _init_edit_url(self, org, opportunity):
+        kwargs = {"org_slug": org.slug, "pk": self.program.program_id, "opp_id": opportunity.opportunity_id}
+        return reverse("program:opportunity_init_edit", kwargs=kwargs)
+
+    @pytest.mark.parametrize("owner_is_member", [True, False])
+    def test_opportunity_init_edit_warns_when_api_key_owner_has_left(self, owner_is_member, program_actors):
+        org = program_actors(self.program)["owner"]
+        act_as_admin(self.client, org)
+        opportunity = OpportunityFactory.create(organization=OrganizationFactory(), program=self.program)
+        if owner_is_member:
+            make_membership(org, opportunity.api_key.user, UserOrganizationMembership.Role.MEMBER)
+        response = self.client.get(self._init_edit_url(org, opportunity))
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["api_key_owner_has_left"] is (not owner_is_member)
+        assert (b"no longer has access to the" in response.content) is (not owner_is_member)
+
     def test_opportunity_init_edit_denies_opportunity_from_another_program(self, program_actors):
         """Managing this program doesn't grant access to another program's opportunity via the same URL."""
         org = program_actors(self.program)["owner"]

@@ -3,6 +3,7 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
+import httpx
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from crispy_forms.utils import render_crispy_form
@@ -36,6 +37,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
     PaymentInvoice,
@@ -415,6 +417,47 @@ class TestOpportunityInitUpdateForm:
             program=opportunity.program,
         )
 
+    def _unbound_form(self, opportunity, *, workers_joined, user=None):
+        if workers_joined:
+            OpportunityAccessFactory(opportunity=opportunity)
+        return self._get_form(opportunity=opportunity, data=None, user=user)
+
+    @pytest.mark.parametrize("workers_joined", [True, False])
+    def test_api_key_choices(self, opportunity, workers_joined):
+        admin = UserFactory()
+        own = HQApiKeyFactory(user=admin, hq_server=opportunity.hq_server)
+        HQApiKeyFactory(user=admin)  # other server: excluded
+        form = self._unbound_form(opportunity, workers_joined=workers_joined, user=admin)
+        choices = dict(form.fields["api_key"].widget.choices)
+        values = [v for v in choices if v]
+        # Own keys only sit next to someone else's key when the domain/app selects are locked; otherwise picking
+        # between them would reload those selects with a key the domain endpoints refuse.
+        assert values == ([opportunity.api_key.id, own.id] if workers_joined else [opportunity.api_key.id])
+        assert choices[opportunity.api_key.id] == (
+            f"{opportunity.api_key.masked} (added by {opportunity.api_key.user.name})"
+        )
+        if workers_joined:
+            assert choices[own.id] == own.masked
+
+    @pytest.mark.parametrize("workers_joined", [True, False])
+    def test_htmx_wiring(self, opportunity, workers_joined):
+        """Locked selects lose their reloads; the api_key select keeps its own and, when locked, names the
+        server, because the disabled hq_server select isn't sent."""
+        fields = self._unbound_form(opportunity, workers_joined=workers_joined).fields
+        for name in ("learn_app_domain", "learn_app", "deliver_app_domain", "deliver_app"):
+            assert ("hx-get" in fields[name].widget.attrs) is not workers_joined, name
+        api_key_attrs = fields["api_key"].widget.attrs
+        assert "hx-get" in api_key_attrs
+        expected_vals = {"hq_server": opportunity.hq_server.id} if workers_joined else None
+        assert json.loads(api_key_attrs.get("hx-vals", "null")) == expected_vals
+
+    def test_locked_opportunity_without_hq_server_sends_no_hx_vals(self, opportunity):
+        Opportunity.objects.filter(pk=opportunity.pk).update(hq_server=None)
+        opportunity.refresh_from_db()
+        OpportunityAccessFactory(opportunity=opportunity)
+        attrs = self._get_form(opportunity=opportunity, data=None).fields["api_key"].widget.attrs
+        assert "hx-vals" not in attrs
+
     @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
     def test_rejects_key(self, opportunity, case):
         if case == "another_users_key":
@@ -537,7 +580,7 @@ class TestOpportunityInitUpdateForm:
         form = self._get_form(opportunity=opportunity, data=form_data)
         assert not form.is_valid()
         assert "hq_server" in form.errors
-        assert "api_key" in form.errors
+        assert "api_key" not in form.errors
         assert "learn_app" in form.errors
         assert "deliver_app" in form.errors
 
@@ -546,22 +589,85 @@ class TestOpportunityInitUpdateForm:
         assert learn_app.cc_app_id != "invalid learn-id"
         assert deliver_app.cc_app_id != "invalid deliver-id"
 
+    def _locked_form_data(self, opportunity, api_key_id, learn_description="learn description", learn_score=70):
+        return self._build_form_data(
+            opportunity,
+            learn_payload=None,
+            learn_domain=None,
+            learn_description=learn_description,
+            learn_score=learn_score,
+            deliver_payload=None,
+            deliver_domain=None,
+            include_disabled_fields=False,
+        ) | {"api_key": str(api_key_id)}
+
+    def _rotation_setup(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+        admin = UserFactory()
+        new_key = HQApiKeyFactory(user=admin, hq_server=opportunity.hq_server)
+        data = self._locked_form_data(opportunity, new_key.id)
+        return new_key, self._get_form(opportunity=opportunity, data=data, user=admin)
+
+    @staticmethod
+    def _app_url(opportunity, app):
+        return f"{opportunity.hq_server.url}/a/{app.cc_domain}/api/v0.5/application/{app.cc_app_id}/"
+
+    def test_only_apps_are_locked_after_workers_join(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+        form = self._get_form(opportunity=opportunity, data={})
+        assert form.fields["api_key"].disabled is False
+        assert form.fields["learn_app"].disabled is True
+
+    def test_rotates_key_after_workers_join(self, opportunity, httpx_mock):
+        learn_id, deliver_id = opportunity.learn_app_id, opportunity.deliver_app_id
+        httpx_mock.add_response(url=self._app_url(opportunity, opportunity.learn_app), status_code=200, json={})
+        httpx_mock.add_response(url=self._app_url(opportunity, opportunity.deliver_app), status_code=200, json={})
+        new_key, form = self._rotation_setup(opportunity)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.api_key_id == new_key.id
+        assert (saved.learn_app_id, saved.deliver_app_id) == (learn_id, deliver_id)
+
+    def test_rotation_rejected_when_key_cannot_access_app(self, opportunity, httpx_mock):
+        httpx_mock.add_response(url=self._app_url(opportunity, opportunity.learn_app), status_code=200, json={})
+        httpx_mock.add_response(url=self._app_url(opportunity, opportunity.deliver_app), status_code=403)
+        _, form = self._rotation_setup(opportunity)
+        assert not form.is_valid()
+        assert form.errors["api_key"] == [
+            f'This API key cannot access the deliver app on domain "{opportunity.deliver_app.cc_domain}".'
+        ]
+
+    @pytest.mark.parametrize("failure", ["timeout", 500, 502, 429])
+    def test_rotation_reports_hq_failure_without_blaming_the_key(self, opportunity, httpx_mock, failure):
+        if failure == "timeout":
+            httpx_mock.add_exception(httpx.ConnectTimeout("timed out"))
+        else:
+            httpx_mock.add_response(url=self._app_url(opportunity, opportunity.learn_app), status_code=failure)
+        _, form = self._rotation_setup(opportunity)
+        assert not form.is_valid()
+        assert form.errors["api_key"] == ["Could not reach CommCare HQ to check this API key. Please try again."]
+
+    def test_unchanged_key_makes_no_hq_calls(self, opportunity, httpx_mock):
+        # httpx_mock is requested with no responses registered, so any HQ request fails the test.
+        OpportunityAccessFactory(opportunity=opportunity)
+        data = self._locked_form_data(opportunity, opportunity.api_key_id)
+        form = self._get_form(opportunity=opportunity, data=data)
+        assert form.is_valid(), form.errors
+
+    def test_still_rejects_app_changes_after_workers_join(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+        data = self._valid_data(opportunity) | {"learn_app": json.dumps({"id": "other", "name": "x"})}
+        form = self._get_form(opportunity=opportunity, data=data)
+        assert not form.is_valid()
+        assert "learn_app" in form.errors
+
     def test_updates_learn_details_when_fields_disabled(self, opportunity):
         OpportunityAccessFactory(opportunity=opportunity)
         learn_app = opportunity.learn_app
 
-        form_data = self._build_form_data(
-            opportunity,
-            learn_payload=None,
-            learn_domain=None,
-            learn_description="updated learn description",
-            learn_score=91,
-            deliver_payload=None,
-            deliver_domain=None,
-            include_disabled_fields=False,
-            name="updated opportunity",
+        form_data = self._locked_form_data(
+            opportunity, opportunity.api_key_id, learn_description="updated learn description", learn_score=91
         )
-
         form = self._get_form(opportunity=opportunity, data=form_data)
         assert form.is_valid(), form.errors
 
@@ -1723,12 +1829,12 @@ class SupervisingOrganizationFormTestBase:
             "learn_app_description": "Learn description",
             "learn_app_passing_score": 70,
             "organization": opportunity.organization.pk,
+            "api_key": str(opportunity.api_key.id),
         }
         if include_locked_fields:
             data.update(
                 {
                     "hq_server": opportunity.hq_server.id,
-                    "api_key": str(opportunity.api_key.id),
                     "learn_app_domain": learn_app.cc_domain,
                     "learn_app": json.dumps({"id": learn_app.cc_app_id, "name": learn_app.name}),
                     "deliver_app_domain": deliver_app.cc_domain,
