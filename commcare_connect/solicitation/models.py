@@ -3,6 +3,8 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.functions import Now
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import Country, Currency, DeliveryType
@@ -11,8 +13,28 @@ from commcare_connect.program.models import Program, ProgramApplication
 from commcare_connect.utils.db import BaseModel
 
 
+class SolicitationQuerySet(models.QuerySet):
+    """A solicitation closes at its deadline even before the sweep task updates its stored status,
+    so check openness through open() / Solicitation.is_open, never by comparing status directly."""
+
+    def _active(self):
+        return self.filter(status=Solicitation.Status.ACTIVE)
+
+    def open(self):
+        return self._active().filter(application_deadline__gt=Now())
+
+    def expired(self):
+        return self._active().filter(application_deadline__lte=Now())
+
+    def editable(self):
+        """Drafts and open solicitations; closed and cancelled ones are finished."""
+        return self.filter(status=Solicitation.Status.DRAFT) | self.open()
+
+
 class Solicitation(BaseModel):
     """The posting itself — an RFP or EOI shown on the marketplace."""
+
+    objects = SolicitationQuerySet.as_manager()
 
     class Type(models.TextChoices):
         RFP = "rfp", _("Request for Proposals")
@@ -58,13 +80,24 @@ class Solicitation(BaseModel):
         return self.title
 
     @property
+    def effective_status(self):
+        if self.status == self.Status.ACTIVE and self.application_deadline <= now():
+            return self.Status.CLOSED
+        return self.status
+
+    @property
+    def is_open(self):
+        return self.effective_status == self.Status.ACTIVE
+
+    @property
+    def is_editable(self):
+        """Closed and cancelled solicitations are finished, so only drafts and open ones can be edited."""
+        return self.status == self.Status.DRAFT or self.is_open
+
+    @property
     def structure_locked(self):
         """Questions and criteria are fixed once the solicitation leaves draft, so applicants answer the same form."""
         return self.status != self.Status.DRAFT
-
-
-# Closed and cancelled solicitations are finished, so only these can still be edited.
-EDITABLE_STATUSES = (Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE)
 
 
 class SolicitationEvaluationCriterion(BaseModel):

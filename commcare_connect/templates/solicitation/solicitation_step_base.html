@@ -20,7 +20,7 @@
           {% translate "New solicitation" %}
         {% endif %}
       </h1>
-      {% if solicitation.status == "active" %}
+      {% if solicitation.is_open %}
         <a class="button button-md outline-style"
            href="{% url "solicitation:invitations" request.org.slug solicitation.solicitation_id %}">{% translate "Invited organizations" %}</a>
       {% endif %}
