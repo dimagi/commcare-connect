@@ -8,11 +8,40 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
-class OrganizationFilterSet(django_filters.FilterSet):
+class ToggleFilter(django_filters.BooleanFilter):
+    """A boolean filter shown as a toggle switch, filtering only while it is switched on."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", forms.CheckboxInput(attrs={"class": "simple-toggle"}))
+        super().__init__(*args, **kwargs)
+
+    def filter(self, qs, value):
+        # An unticked checkbox submits False rather than nothing, which would filter on False.
+        return super().filter(qs, True if value else None)
+
+
+class OptInFilterSet(django_filters.FilterSet):
+    """Leaves out the rows behind each boolean filter in `opt_in_filters` until that filter is set."""
+
+    opt_in_filters = ()
+
+    def __init__(self, data=None, *args, **kwargs):
+        # A filterset with no data skips filtering altogether, which would list the opted-out rows
+        # on a plain visit to the listing, so it is always bound.
+        super().__init__(data if data is not None else {}, *args, **kwargs)
+
+    def filter_queryset(self, queryset):
+        for name in self.opt_in_filters:
+            if not self.form.cleaned_data.get(name):
+                queryset = queryset.filter(**{self.filters[name].field_name: False})
+        return super().filter_queryset(queryset)
+
+
+class OrganizationFilterSet(OptInFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search organization, country, sector…")}),
+        widget=forms.TextInput(attrs={"placeholder": _("Search")}),
     )
     countries = django_filters.ModelMultipleChoiceFilter(
         queryset=Country.objects.order_by("name"),
@@ -29,6 +58,9 @@ class OrganizationFilterSet(django_filters.FilterSet):
         label=_("Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
+    test = ToggleFilter(field_name="is_test", label=_("Test"))
+
+    opt_in_filters = ("test",)
 
     class Meta:
         form = CSRFExemptForm
@@ -42,11 +74,11 @@ class OrganizationFilterSet(django_filters.FilterSet):
         ).distinct()
 
 
-class ContactFilterSet(django_filters.FilterSet):
+class ContactFilterSet(OptInFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search name, organization, email…")}),
+        widget=forms.TextInput(attrs={"placeholder": _("Search")}),
     )
     countries = django_filters.ModelMultipleChoiceFilter(
         field_name="organization__countries",
@@ -60,36 +92,14 @@ class ContactFilterSet(django_filters.FilterSet):
         label=_("Organization Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
-    main_poc = django_filters.BooleanFilter(
-        field_name="is_main_poc",
-        label=_("Contacts"),
-        widget=forms.Select(
-            choices=[("", _("Any Contacts")), ("true", _("Main POC Only"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-    archived = django_filters.BooleanFilter(
-        field_name="is_archived",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Active")), ("true", _("Archived"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
+    main_poc = ToggleFilter(field_name="is_main_poc", label=_("Main Point of Contact"))
+    archived = ToggleFilter(field_name="is_archived", label=_("Archived"))
+    organization_test = ToggleFilter(field_name="organization__is_test", label=_("Test"))
+
+    opt_in_filters = ("archived", "organization_test")
 
     class Meta:
         form = CSRFExemptForm
-
-    def __init__(self, data=None, *args, **kwargs):
-        # A filterset with no data skips filtering altogether, which would list archived contacts
-        # on a plain visit to the listing, so it is always bound.
-        super().__init__(data if data is not None else {}, *args, **kwargs)
-
-    def filter_queryset(self, queryset):
-        # Archived contacts are only listed when asked for, so an unset filter shows the active ones.
-        if not self.form.cleaned_data.get("archived"):
-            queryset = queryset.filter(is_archived=False)
-        return super().filter_queryset(queryset)
 
     def filter_by_search_term(self, queryset, name, value):
         return queryset.filter(
