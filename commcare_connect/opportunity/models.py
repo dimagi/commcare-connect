@@ -61,6 +61,17 @@ class HQApiKey(models.Model):
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return self.masked
+
+    @property
+    def masked(self):
+        """The key with all but its first and last four characters hidden, safe to show in the UI.
+
+        Keys too short to keep eight characters back are hidden completely."""
+        value = self.api_key or ""
+        return f"{value[:4]}...{value[-4:]}" if len(value) > 12 else "****"
+
 
 class DeliveryType(models.Model):
     name = models.CharField(max_length=255)
@@ -134,6 +145,15 @@ class OpportunityStatus(models.IntegerChoices):
     fields=["supervising_organization"],
 )
 @pghistory.track(pghistory.UpdateEvent(), fields=["active"])
+# A third, separate tracker for the same reason as above; the labels, model_name and related_name
+# are explicit so they stay unique among the trackers and the generated names stay short and stable.
+@pghistory.track(
+    pghistory.InsertEvent("api_key_insert"),
+    pghistory.UpdateEvent("api_key_update"),
+    fields=["api_key"],
+    model_name="OpportunityApiKeyEvent",
+    obj_field=pghistory.ObjForeignKey(related_name="api_key_events"),
+)
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     organization = models.ForeignKey(
@@ -160,7 +180,7 @@ class Opportunity(BaseModel):
     start_date = models.DateField(default=datetime.date.today)
     end_date = models.DateField(null=True)
     total_budget = models.PositiveBigIntegerField(null=True)
-    api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
+    api_key = models.ForeignKey(HQApiKey, on_delete=models.PROTECT, null=True)
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     auto_approve_visits = models.BooleanField(default=True)
