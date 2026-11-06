@@ -735,13 +735,9 @@ class PaymentUnit(models.Model):
             return self.opportunity.start_date
         return today
 
-    def pay_rate_on(self, day):
-        """The pay rate in effect on `day`: the latest applied, non-cancelled rate planned on or before it."""
-        return (
-            self.pay_rates.filter(cancelled_on__isnull=True, applied_on__isnull=False, planned_for__lte=day)
-            .order_by("-planned_for")
-            .first()
-        )
+    def pay_rate_on(self, day: datetime.date) -> PaymentUnitRate | None:
+        """The pay rate in effect on `day`: the latest applied rate planned on or before it."""
+        return self.pay_rates.filter(applied_on__isnull=False, planned_for__lte=day).order_by("-planned_for").first()
 
     @property
     def current_pay_rate(self):

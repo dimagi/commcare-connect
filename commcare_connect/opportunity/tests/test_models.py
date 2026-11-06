@@ -935,7 +935,11 @@ class TestPaymentUnitRateLookups:
             payment_unit=unit_without_rates, flw_amount=5, planned_for=date(2026, 2, 1), applied_on=None
         )
         PaymentUnitRateFactory(
-            payment_unit=unit_without_rates, flw_amount=6, planned_for=date(2026, 2, 1), cancelled_on=now()
+            payment_unit=unit_without_rates,
+            flw_amount=6,
+            planned_for=date(2026, 2, 1),
+            applied_on=None,
+            cancelled_on=now(),
         )
         assert unit_without_rates.pay_rate_on(date(2026, 2, 15)) == jan
         assert unit_without_rates.pay_rate_on(date(2025, 12, 31)) is None
