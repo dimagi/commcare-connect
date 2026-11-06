@@ -12,6 +12,17 @@ class CommCareTokenException(CommCareHQAPIException):
     pass
 
 
+class CommCareHQUnreachable(CommCareHQAPIException):
+    """HQ could not be reached (timeout or connection error)."""
+
+
+class CommCareHQAccessDenied(CommCareHQAPIException):
+    """HQ refused the request because the API key cannot see the resource (401, 403 or 404)."""
+
+
+ACCESS_DENIED_STATUS_CODES = (401, 403, 404)
+
+
 def get_domains_for_user(api_key):
     response = httpx.get(
         f"{api_key.hq_server.url}/api/v0.5/user_domains/?limit=100",
@@ -48,18 +59,30 @@ async def _get_applications_for_domain(user_email, api_key, domain, hq_server_ur
 
 def get_app_structure(api_key, app):
     """Fetch the full application structure JSON from CommCare HQ."""
+    return _fetch_app(api_key, app.cc_domain, app.cc_app_id, timeout=300).json()
+
+
+def verify_app_access(api_key: HQApiKey, cc_domain: str, cc_app_id: str) -> None:
+    """Raise if the API key cannot fetch the given app from CommCare HQ."""
+    _fetch_app(api_key, cc_domain, cc_app_id, timeout=30)
+
+
+def _fetch_app(api_key, cc_domain, cc_app_id, timeout) -> httpx.Response:
     try:
         response = httpx.get(
-            f"{api_key.hq_server.url}/a/{app.cc_domain}/api/v0.5/application/{app.cc_app_id}/",
+            f"{api_key.hq_server.url}/a/{cc_domain}/api/v0.5/application/{cc_app_id}/",
             headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
-            timeout=300,
+            timeout=timeout,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError:
-        raise CommCareHQAPIException(f"Failed to fetch app structure: {response.text}")
+        message = f"Failed to fetch app structure ({response.status_code}): {response.text}"
+        if response.status_code in ACCESS_DENIED_STATUS_CODES:
+            raise CommCareHQAccessDenied(message)
+        raise CommCareHQAPIException(message)
     except httpx.RequestError as e:
-        raise CommCareHQAPIException(f"Failed to fetch app structure: {e}")
-    return response.json()
+        raise CommCareHQUnreachable(f"Failed to fetch app structure: {e}")
+    return response
 
 
 async def _get_commcare_app_json(client, domain):
