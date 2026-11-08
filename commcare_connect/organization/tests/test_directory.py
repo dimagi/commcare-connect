@@ -546,7 +546,7 @@ class TestContactExportViews:
 
         with mock.patch.object(export_contacts, "apply_async") as apply_async:
             with django_capture_on_commit_callbacks(execute=True):
-                response = client.post(url, {"export_format": "xlsx"})
+                response = client.post(url, {"format": "xlsx"})
 
         task_id = parse_qs(urlparse(response.url).query)["export_task_id"][0]
         apply_async.assert_called_once_with(
@@ -565,7 +565,7 @@ class TestContactExportViews:
     def test_rejects_an_unsupported_format(self, client, user_with_directory_access):
         client.force_login(user_with_directory_access)
 
-        response = client.post(reverse("organization_directory:contact_export"), {"export_format": "pdf"})
+        response = client.post(reverse("organization_directory:contact_export"), {"format": "pdf"})
 
         assert response.status_code == 400
 
