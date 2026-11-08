@@ -67,7 +67,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         method=lambda qs, name, value: qs,
     )
     program = django_filters.ModelChoiceFilter(
-        queryset=Program.objects.all(),
+        queryset=Program.objects.select_related("organization"),
         label="Program",
     )
     organization = django_filters.ModelChoiceFilter(
@@ -76,7 +76,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
     opportunity = django_filters.ModelChoiceFilter(
-        queryset=Opportunity.objects.filter(is_test=False).order_by("name"),
+        queryset=Opportunity.objects.filter(is_test=False).select_related("program__organization").order_by("name"),
         label="Opportunity",
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
@@ -97,6 +97,12 @@ class DeliveryReportFilters(django_filters.FilterSet):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.filters["program"].field.label_from_instance = lambda program: _label_archived_owner(
+            str(program), program.organization
+        )
+        self.filters["opportunity"].field.label_from_instance = lambda opportunity: _label_archived_owner(
+            str(opportunity), opportunity.program.organization
+        )
         self.form.helper = FormHelper()
         self.form.helper.form_class = "form-inline"
         self.form.helper.layout = Layout(
@@ -136,6 +142,13 @@ class DeliveryReportFilters(django_filters.FilterSet):
             "opportunity",
         ]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
+
+
+def _label_archived_owner(label, owner):
+    """The option's label, marked when the organization that owns the program is archived."""
+    if owner.is_archived:
+        return _("%(label)s (organization archived)") % {"label": label}
+    return label
 
 
 class NonModelFilterView(FilterView):
@@ -247,7 +260,9 @@ class RemoveDeliveryStatsRecipientView(View):
 class InvoiceReportFilter(django_filters.FilterSet):
     opportunity_name = django_filters.ModelChoiceFilter(
         field_name="opportunity",
-        queryset=Opportunity.objects.only("id", "name"),
+        queryset=Opportunity.objects.select_related("program__organization").only(
+            "id", "name", "program__organization__is_archived"
+        ),
         label=_("Opportunity"),
         widget=forms.Select(
             attrs={
@@ -291,12 +306,18 @@ class InvoiceReportFilter(django_filters.FilterSet):
 
         if self.request and not self.request.user.has_perm(ALL_ORG_ACCESS):
             self.filters["opportunity_name"].queryset = (
-                Opportunity.objects.filter(program__organization__memberships__user=self.request.user)
+                Opportunity.objects.filter(
+                    program__organization__memberships__user=self.request.user,
+                    program__organization__is_archived=False,
+                )
                 .distinct()
-                .only("id", "name")
+                .select_related("program__organization")
+                .only("id", "name", "program__organization__is_archived")
             )
 
-        self.filters["opportunity_name"].field.label_from_instance = lambda obj: f"{obj.name} - {obj.id}"
+        self.filters["opportunity_name"].field.label_from_instance = lambda obj: _label_archived_owner(
+            f"{obj.name} - {obj.id}", obj.program.organization
+        )
         self.form.helper = FormHelper()
         self.form.helper.form_tag = False
         self.form.helper.disable_csrf = True
@@ -365,7 +386,10 @@ class InvoiceReportView(
             .order_by("-date")
         )
         if not user.has_perm(ALL_ORG_ACCESS):
-            queryset = queryset.filter(opportunity__program__organization__memberships__user=user).distinct()
+            queryset = queryset.filter(
+                opportunity__program__organization__memberships__user=user,
+                opportunity__program__organization__is_archived=False,
+            ).distinct()
         return queryset
 
     def get_queryset(self):
