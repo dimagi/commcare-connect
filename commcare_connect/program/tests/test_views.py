@@ -1,3 +1,4 @@
+from datetime import timedelta
 from http import HTTPStatus
 
 import pytest
@@ -5,6 +6,7 @@ from django.contrib import messages
 from django.http import HttpResponseRedirect
 from django.test import Client
 from django.urls import reverse
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.tests.factories import (
     DeliveryTypeFactory,
@@ -12,6 +14,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
+    UserVisitFactory,
 )
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
@@ -426,6 +429,33 @@ class TestNetworkManagerPendingPayments:
         PaymentFactory.create(opportunity_access=access, amount=150)
 
         assert self._pending_payment_count(opportunity) is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("owner_archived", [True, False])
+def test_network_manager_home_leaves_out_programs_of_an_archived_owner(
+    client: Client, organization: Organization, org_user_admin: User, owner_archived
+):
+    program = ProgramFactory()
+    ProgramApplicationFactory(program=program, organization=organization, status=ProgramApplicationStatus.ACCEPTED)
+    opportunity = OpportunityFactory(program=program, organization=organization)
+    access = OpportunityAccessFactory(opportunity=opportunity, payment_accrued=100)
+    # Pending review, and old enough to make the worker inactive.
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        status="pending",
+        visit_date=now() - timedelta(days=5),
+    )
+    Organization.objects.filter(pk=program.organization_id).update(is_archived=owner_archived)
+    client.force_login(org_user_admin)
+
+    response = client.get(reverse("program:home", kwargs={"org_slug": organization.slug}))
+
+    assert [p.id for p in response.context["programs"]] == ([] if owner_archived else [program.id])
+    for section in response.context["recent_activities"]:
+        listed = [row["opportunity__name"] for row in section["rows"]]
+        assert listed == ([] if owner_archived else [opportunity.name]), section["title"]
 
 
 @pytest.mark.django_db

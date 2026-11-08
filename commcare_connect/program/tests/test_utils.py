@@ -1,7 +1,7 @@
 import pytest
 
 from commcare_connect.opportunity.tests.factories import OpportunityFactory
-from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
@@ -101,6 +101,12 @@ class TestProgramsAccessibleToOrg:
 
     def test_no_org_reaches_nothing(self, program):
         assert not programs_accessible_to_org(None).exists()
+
+    @pytest.mark.parametrize("relationship", ["funder", "watcher"])
+    def test_program_of_an_archived_owner_is_unreachable(self, relationship, orgs, program):
+        Organization.objects.filter(pk=program.organization_id).update(is_archived=True)
+
+        assert not programs_accessible_to_org(orgs[relationship]).exists()
 
     def test_two_relationships_to_one_program_list_it_once(self, program, funder_org):
         """A funder that also watches must not double the row."""
@@ -234,6 +240,14 @@ class TestOpportunitiesAccessibleToOrg:
 
     def test_no_org_reaches_nothing(self, managed_opportunity):
         assert not opportunities_accessible_to_org(None).exists()
+
+    @pytest.mark.parametrize("relationship", ["delivery", "supervisor", "funder", "watcher"])
+    def test_opportunity_of_an_archived_program_owner_is_unreachable(
+        self, relationship, opp_orgs, managed_opportunity
+    ):
+        Organization.objects.filter(pk=managed_opportunity.program.organization_id).update(is_archived=True)
+
+        assert not opportunities_accessible_to_org(opp_orgs[relationship]).exists()
 
     def test_two_relationships_to_one_opportunity_list_it_once(self, program, organization):
         """A delivery org that also watches the program keeps one row."""
