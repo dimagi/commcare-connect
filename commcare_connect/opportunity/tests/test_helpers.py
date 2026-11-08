@@ -120,6 +120,21 @@ def test_get_worker_deliveries(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+def test_get_worker_deliveries_lists_payment_units_in_creation_order(opportunity: Opportunity):
+    first, second = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+    # Changing an indexed column makes Postgres write the row as a new version that an unordered query returns last.
+    first.payment_unit_id = uuid.uuid4()
+    first.save()
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    for payment_unit in (first, second):
+        CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, status=CompletedWorkStatus.pending)
+
+    (delivery,) = get_worker_deliveries(opportunity, {})
+
+    assert delivery.payment_unit_ids == [first.payment_unit_id, second.payment_unit_id]
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "filters,expected_units",
     [
