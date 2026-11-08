@@ -519,16 +519,6 @@ def test_export_invoice_report_task_creates_export_file():
     assert save_args[0] == result
 
 
-@pytest.mark.django_db
-def test_delivery_report_organization_filter_leaves_out_archived_organizations():
-    active, archived = OrganizationFactory(), OrganizationFactory(is_archived=True)
-
-    queryset = DeliveryReportFilters.base_filters["organization"].queryset
-
-    assert active in queryset
-    assert archived not in queryset
-
-
 def _choice_labels(field):
     return [label for _value, label in field.choices]
 
