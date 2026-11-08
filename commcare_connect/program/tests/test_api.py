@@ -233,6 +233,19 @@ class TestProgramApplication:
         application.refresh_from_db()
         assert application.status == ProgramApplicationStatus.APPLIED
 
+    def test_program_of_an_archived_owner_is_not_found(
+        self, api_client, program_manager_org_user_admin, program, organization
+    ):
+        Organization.objects.filter(pk=program.organization_id).update(is_archived=True)
+        api_client.force_authenticate(program_manager_org_user_admin)
+
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/", {"organization": organization.slug}, format="json"
+        )
+
+        assert response.status_code == 404
+        assert not ProgramApplication.objects.filter(program=program).exists()
+
     def test_archived_organization_cannot_be_invited(self, api_client, program_manager_org_user_admin, program):
         archived = OrganizationFactory(is_archived=True)
         api_client.force_authenticate(program_manager_org_user_admin)

@@ -16,6 +16,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentUnitFactory,
 )
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ProgramFactory
 
 
@@ -263,6 +264,20 @@ class TestActivateOpportunity:
         assert response.status_code == 200
         opportunity.refresh_from_db()
         assert opportunity.active is True
+
+    def test_opportunity_of_an_archived_program_owner_is_not_found(
+        self, api_client, program_manager_org_user_admin, program_manager_org, managed_opp_with_deliver_units
+    ):
+        opportunity, du1, du2 = managed_opp_with_deliver_units
+        PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
+        Organization.objects.filter(pk=program_manager_org.pk).update(is_archived=True)
+        api_client.force_authenticate(program_manager_org_user_admin)
+
+        response = api_client.post(f"/api/opportunities/{opportunity.opportunity_id}/activate/")
+
+        assert response.status_code == 404
+        opportunity.refresh_from_db()
+        assert opportunity.active is False
 
     def test_activate_no_payment_units(
         self, api_client, program_manager_org_user_admin, program_manager_org, organization
