@@ -59,7 +59,9 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 class TestConnectUserCreation:
@@ -485,6 +487,27 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert PaymentInvoice.objects.count() == 0
         assert completed_work.invoiced_approved_count == 0
         assert not CompletedWorkInvoice.objects.exists()
+
+    def test_no_invoice_for_an_archived_program_owner(self):
+        opportunity = OpportunityFactory(
+            active=True,
+            is_test=False,
+            start_date=datetime.date(2026, 1, 1),
+            program=ProgramFactory(organization=OrganizationFactory(is_archived=True)),
+        )
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"), org_amount=0)
+        CompletedWorkFactory(
+            opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 5),
+            saved_approved_count=1,
+            invoiced_approved_count=0,
+        )
+
+        generate_automated_service_delivery_invoice()
+
+        assert not PaymentInvoice.objects.filter(opportunity=opportunity).exists()
 
     def test_no_invoice_with_no_approved_work(self):
         opportunity = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
