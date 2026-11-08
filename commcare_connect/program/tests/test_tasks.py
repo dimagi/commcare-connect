@@ -15,6 +15,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentInvoiceFactory,
     UserVisitFactory,
 )
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.tasks import (
     get_org_managed_opps_for_review,
     get_org_opps_for_review,
@@ -63,6 +64,20 @@ class TestGetOrgOppsIdsForReview:
         opps = get_org_opps_for_review(opportunity.organization)
         assert len(opps) == 1
         assert opps[0] == opportunity
+
+    def test_opportunity_of_an_archived_program_owner_is_left_out(self):
+        opportunity = OpportunityFactory(is_test=False)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        UserVisitFactory(
+            opportunity=opportunity,
+            user=access.user,
+            opportunity_access=access,
+            status=VisitValidationStatus.pending,
+            completed_work=CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending),
+        )
+        Organization.objects.filter(pk=opportunity.program.organization_id).update(is_archived=True)
+
+        assert get_org_opps_for_review(opportunity.organization) == []
 
 
 @pytest.mark.django_db
@@ -328,6 +343,15 @@ class TestSendPmInvoiceReviewReminder:
             send_mock.delay.assert_called_once()
         else:
             send_mock.delay.assert_not_called()
+
+    def test_no_email_for_an_archived_pm_org(self, send_mock):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        self._make_invoice(pm_org, InvoiceStatus.PENDING_PM_REVIEW)
+        Organization.objects.filter(pk=pm_org.pk).update(is_archived=True)
+
+        send_pm_invoice_review_reminder()
+
+        send_mock.delay.assert_not_called()
 
     def test_groups_multiple_invoices_into_one_email_per_pm_org(self, send_mock):
         pm_org = ProgramManagerOrgWithUsersFactory()

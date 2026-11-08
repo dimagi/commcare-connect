@@ -142,6 +142,7 @@ def get_org_opps_for_review(organization):
             organization=organization,
             opportunityaccess__completedwork__uservisit__status=VisitValidationStatus.pending,
             is_test=False,
+            program__organization__is_archived=False,
         )
         .distinct()
         .only("name", "id")
@@ -191,9 +192,9 @@ def _send_org_email_for_opportunities(organization, opportunities, recipient_ema
 
 def send_opportunity_expiry_reminder_emails(days_before: int):
     target_date = datetime.date.today() + datetime.timedelta(days=days_before)
-    opportunities = Opportunity.objects.filter(end_date=target_date, active=True).select_related(
-        "program__organization", "organization"
-    )
+    opportunities = Opportunity.objects.filter(
+        end_date=target_date, active=True, program__organization__is_archived=False
+    ).select_related("program__organization", "organization")
 
     # Group by PM org
     pm_orgs = {}
@@ -270,6 +271,7 @@ def send_pm_invoice_review_reminder():
     invoices = PaymentInvoice.objects.filter(
         status__in=[InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.READY_TO_PAY],
         opportunity__is_test=False,
+        opportunity__program__organization__is_archived=False,
     ).select_related(
         "opportunity",
         "opportunity__program__organization",
