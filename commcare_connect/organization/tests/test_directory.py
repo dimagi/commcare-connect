@@ -123,6 +123,29 @@ def test_status_column_shows_a_badge(status, badge_class):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("order_by", ["flws_managed", "-flws_managed"])
+def test_organizations_without_flws_managed_sort_last(order_by):
+    few, many = OrganizationFactory(flws_managed=5), OrganizationFactory(flws_managed=50)
+    unknown = OrganizationFactory(flws_managed=None)
+    table = OrganizationDirectoryTable(Organization.objects.all(), order_by=order_by)
+
+    assert [row.record for row in table.rows] == ([few, many] if order_by == "flws_managed" else [many, few]) + [
+        unknown
+    ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("order_by", ["flws_managed", "-flws_managed"])
+def test_organizations_with_equal_flws_managed_keep_a_stable_order(order_by):
+    first, second = OrganizationFactory.create_batch(2, flws_managed=10)
+    # Changing an indexed column makes Postgres write the row as a new version that an unordered query returns last.
+    Organization.objects.filter(pk=first.pk).update(slug=f"{first.slug}-renamed")
+    table = OrganizationDirectoryTable(Organization.objects.all(), order_by=order_by)
+
+    assert [row.record for row in table.rows] == [first, second]
+
+
+@pytest.mark.django_db
 def test_countries_and_regions_columns_list_them(countries):
     organization = OrganizationFactory(regions="Nyanza, Mwanza")
     organization.countries.add(countries["KEN"], countries["TZA"])

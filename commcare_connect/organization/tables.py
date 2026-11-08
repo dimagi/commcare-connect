@@ -1,4 +1,5 @@
 import django_tables2 as tables
+from django.db.models import F
 from django.template.loader import render_to_string
 from django.utils.functional import lazy
 from django.utils.safestring import SafeString
@@ -112,6 +113,13 @@ class OrganizationDirectoryTable(tables.Table):
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No organizations found.")
+
+    def order_flws_managed(self, queryset, is_descending):
+        # Organizations that haven't said how many FLWs they manage sort last in either direction, and
+        # the primary key keeps equal counts in a stable order across pages.
+        flws_managed = F("flws_managed")
+        ordering = flws_managed.desc(nulls_last=True) if is_descending else flws_managed.asc(nulls_last=True)
+        return queryset.order_by(ordering, "pk"), True
 
 
 class ContactDirectoryTable(tables.Table):
