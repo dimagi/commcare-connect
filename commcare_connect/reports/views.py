@@ -71,7 +71,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         label="Program",
     )
     organization = django_filters.ModelChoiceFilter(
-        queryset=Organization.objects.filter(is_archived=False).order_by("name"),
+        queryset=Organization.objects.order_by("name"),
         label="Organization",
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
@@ -102,6 +102,11 @@ class DeliveryReportFilters(django_filters.FilterSet):
         )
         self.filters["opportunity"].field.label_from_instance = lambda opportunity: _label_archived_owner(
             str(opportunity), opportunity.program.organization
+        )
+        self.filters["organization"].field.label_from_instance = lambda organization: (
+            _("%(organization)s (archived)") % {"organization": organization}
+            if organization.is_archived
+            else str(organization)
         )
         self.form.helper = FormHelper()
         self.form.helper.form_class = "form-inline"

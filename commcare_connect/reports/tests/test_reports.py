@@ -546,6 +546,16 @@ def test_delivery_report_labels_programs_and_opportunities_of_archived_organizat
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("archived, suffix", [(True, " (archived)"), (False, "")])
+def test_delivery_report_labels_archived_organizations(archived, suffix):
+    organization = OrganizationFactory(is_archived=archived)
+
+    fields = DeliveryReportFilters(queryset=CompletedWork.objects.none()).form.fields
+
+    assert f"{organization}{suffix}" in _choice_labels(fields["organization"])
+
+
+@pytest.mark.django_db
 class TestInvoiceReportFilter:
     @pytest.fixture(autouse=True)
     def setup(self):
