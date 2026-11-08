@@ -510,7 +510,7 @@ class TestExportContacts:
             with get_export_storage().open(saved_name) as saved:
                 rows = saved.read().decode().splitlines()
 
-        assert rows[0].startswith("Contact Name,Organization,Role / Title,Main POC")
+        assert rows[0].startswith("Contact Name,Organization,Role / Title,Main Point of Contact")
         assert len(rows) == 2
         assert rows[1].startswith("Grace Wanjiru,")
         assert ",Yes," in rows[1]
