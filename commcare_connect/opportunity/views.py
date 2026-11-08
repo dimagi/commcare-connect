@@ -89,6 +89,7 @@ from commcare_connect.opportunity.forms import (
     DeliverUnitFlagsForm,
     EditAssignedTaskForm,
     EditTaskTypeForm,
+    ExportFormatForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
     InvoiceExportForm,
@@ -99,7 +100,6 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
-    PaymentExportForm,
     PaymentInvoiceInvoiceTicketLinkForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
@@ -863,7 +863,7 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
 @opp_standard_access_required
 @opportunity_required
 def export_users_for_payment(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_payments", org_slug, opp_id)
@@ -1117,7 +1117,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
 @opp_standard_access_required
 @opportunity_required
 def export_user_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_list", request.org.slug, opp_id)
@@ -1131,7 +1131,7 @@ def export_user_status(request, org_slug, opp_id):
 @opp_standard_access_required
 @opportunity_required
 def export_deliver_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:detail", request.org.slug, opp_id)
@@ -1621,7 +1621,7 @@ class OpportunityCompletedWorkTable(OpportunityObjectMixin, SingleTableView):
 @opp_standard_access_required
 @opportunity_required
 def export_completed_work(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:detail", request.org.slug, opp_id)
@@ -3141,7 +3141,7 @@ class WorkerView(BaseWorkerListView):
 
     def get_extra_context(self, opportunity, org_slug):
         context = {
-            "export_form": PaymentExportForm(),
+            "export_form": ExportFormatForm(),
             "search_term": self._get_search_term(),
         }
         if self.request.htmx:
@@ -3297,7 +3297,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             if not (self._payment_import_errors() and self.show_import_outcome):
                 task_id = None
         return {
-            "export_form": PaymentExportForm(),
+            "export_form": ExportFormatForm(),
             "payment_import_task_id": task_id,
         }
 
