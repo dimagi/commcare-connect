@@ -71,7 +71,7 @@
               {% endif %}
             </div>
           </div>
-          {% with applications=program.applications_with_budget|default:program.programapplication_set.all %}
+          {% with applications=program.applications_with_budget %}
             <div class="infocard-dark">
               <i class="fa-solid fa-file-circle-check"></i>
               <div>

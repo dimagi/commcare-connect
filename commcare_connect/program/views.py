@@ -286,7 +286,9 @@ def program_home(request, org_slug):
 def program_manager_home(request, org):
     program_applications_prefetch = Prefetch(
         "programapplication_set",
-        queryset=ProgramApplication.objects.select_related("organization").annotate(
+        queryset=ProgramApplication.objects.filter(organization__is_archived=False)
+        .select_related("organization")
+        .annotate(
             current_budget=Coalesce(
                 Sum(
                     "program__opportunity__total_budget",
@@ -298,14 +300,16 @@ def program_manager_home(request, org):
         to_attr="applications_with_budget",
     )
 
+    active_applicant = Q(programapplication__organization__is_archived=False)
     programs_qs = (
         programs_accessible_to_org(org)
         .order_by("-start_date")
         .annotate(
-            invited=Count("programapplication"),
+            invited=Count("programapplication", filter=active_applicant),
             applied=Count(
                 "programapplication",
-                filter=Q(
+                filter=active_applicant
+                & Q(
                     programapplication__status__in=[
                         ProgramApplicationStatus.APPLIED,
                         ProgramApplicationStatus.ACCEPTED,
@@ -314,7 +318,7 @@ def program_manager_home(request, org):
             ),
             accepted=Count(
                 "programapplication",
-                filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
+                filter=active_applicant & Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
             ),
         )
         .prefetch_related(program_applications_prefetch, "watchers")

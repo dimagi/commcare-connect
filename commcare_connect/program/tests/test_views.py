@@ -317,6 +317,20 @@ class TestProgramHomeListsAccessiblePrograms:
 
         assert archived not in response.context["organizations"]
 
+    def test_applications_from_archived_organizations_are_left_out(self):
+        active, archived = OrganizationFactory(), OrganizationFactory(name="Archived Applicant", is_archived=True)
+        for organization in (active, archived):
+            ProgramApplicationFactory(
+                program=self.program, organization=organization, status=ProgramApplicationStatus.ACCEPTED
+            )
+
+        response = self.home_for(self.program.organization)
+
+        program = response.context["programs"][0]
+        assert [application.organization for application in program.applications_with_budget] == [active]
+        assert (program.invited, program.applied, program.accepted) == (1, 1, 1)
+        assert archived.name not in response.content.decode()
+
     @pytest.mark.parametrize("actor,offered", [("owner", True), ("funder", True), ("watcher", False)])
     def test_manage_controls_are_rendered_only_for_admins(self, actor, offered):
         org = self.actors[actor]
