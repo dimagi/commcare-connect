@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 from django import forms
@@ -108,34 +108,33 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
-    @patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
-    def test_locking_mechanism(self, mock_delay, client, org_user_admin, opportunity, csv_file):
+    @patch("commcare_connect.microplanning.tasks.import_work_areas_task.apply_async")
+    def test_locking_mechanism(
+        self, mock_apply_async, client, org_user_admin, opportunity, csv_file, django_capture_on_commit_callbacks
+    ):
         url = self.get_url(opportunity.organization.slug, opportunity.opportunity_id)
         client.force_login(org_user_admin)
 
-        # Mock celery task
-        mock_task = MagicMock()
-        mock_task.id = "task-123"
-        mock_delay.return_value = mock_task
-
-        # First upload triggers the task
-        response1 = client.post(url, {"csv_file": csv_file})
+        # First upload triggers the task once the request commits
+        with django_capture_on_commit_callbacks(execute=True):
+            response1 = client.post(url, {"csv_file": csv_file})
         assert response1.status_code == 302
         messages = list(response1.wsgi_request._messages)
         assert "Work Area upload has been started." in str(messages[0])
-        assert "task_id=task-123" in response1.url
-        assert mock_delay.call_count == 1
+        assert mock_apply_async.call_count == 1
+        assert f"task_id={mock_apply_async.call_args.kwargs['task_id']}" in response1.url
 
         # Second upload while first is "in progress" is blocked
-        response2 = client.post(url, {"csv_file": csv_file})
+        with django_capture_on_commit_callbacks(execute=True):
+            response2 = client.post(url, {"csv_file": csv_file})
         assert response2.status_code == 302
         messages = list(response2.wsgi_request._messages)
         assert "An import for this opportunity is already in progress." in str(messages[1])
-        assert mock_delay.call_count == 1  # No new task
+        assert mock_apply_async.call_count == 1  # No new task
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
-    @patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
-    def test_flagged_permission_required(self, mock_delay, client, org_user_admin, opportunity, csv_file):
+    @patch("commcare_connect.microplanning.tasks.import_work_areas_task.apply_async")
+    def test_flagged_permission_required(self, mock_apply_async, client, org_user_admin, opportunity, csv_file):
         """
         Ensure upload is only allowed if the opportunity is flagged for microplanning.
         """
@@ -144,7 +143,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
 
         response = client.post(url, {"csv_file": csv_file})
         assert response.status_code == 404
-        assert mock_delay.call_count == 0
+        assert mock_apply_async.call_count == 0
 
     def test_download_template_row_matches_headers(self, client, org_user_admin, opportunity):
         url = self.get_url(opportunity.organization.slug, opportunity.opportunity_id)
@@ -174,16 +173,25 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
-    @patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.delay")
-    def test_locking_and_redirect(self, mock_delay, client, org_user_admin, organization, opportunity, csv_file):
-        mock_delay.return_value = Mock(id="00000000-0000-0000-0000-000000000000")
+    @patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.apply_async")
+    def test_locking_and_redirect(
+        self,
+        mock_apply_async,
+        client,
+        org_user_admin,
+        organization,
+        opportunity,
+        csv_file,
+        django_capture_on_commit_callbacks,
+    ):
         client.force_login(org_user_admin)
         url = self.get_url(organization.slug, opportunity.opportunity_id)
-        response = client.post(url, {"csv_file": csv_file})
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(url, {"csv_file": csv_file})
         assert response.status_code == 302
-        assert "task_id=" in response.url
+        assert f"task_id={mock_apply_async.call_args.kwargs['task_id']}" in response.url
         assert "area_type=implementation_area" in response.url
-        mock_delay.assert_called_once()
+        mock_apply_async.assert_called_once()
         assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None
 
     def test_template_download(self, client, org_user_admin, organization, opportunity):
@@ -2817,38 +2825,43 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
     def work_area(self, opportunity):
         return WorkAreaFactory(opportunity=opportunity)
 
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_valid_building_count_forwards_to_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
-        mock_delay.return_value = MagicMock(id="task-123")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_valid_building_count_forwards_to_task(
+        self, mock_apply_async, client, org_user_admin, opportunity, work_area, django_capture_on_commit_callbacks
+    ):
         client.force_login(org_user_admin)
 
         url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
-        response = client.post(url, {"building_count": 250})
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(url, {"building_count": 250})
 
         assert response.status_code == 200
-        mock_delay.assert_called_once_with(opportunity.id, 250)
-        assert "clustering_task_id=task-123" in response.headers["HX-Push-Url"]
+        mock_apply_async.assert_called_once_with(args=[opportunity.id, 250], task_id=mock.ANY)
+        task_id = mock_apply_async.call_args.kwargs["task_id"]
+        assert f"clustering_task_id={task_id}" in response.headers["HX-Push-Url"]
 
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_empty_building_count_defaults(self, mock_delay, client, org_user_admin, opportunity, work_area):
-        mock_delay.return_value = MagicMock(id="task-123")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_empty_building_count_defaults(
+        self, mock_apply_async, client, org_user_admin, opportunity, work_area, django_capture_on_commit_callbacks
+    ):
         client.force_login(org_user_admin)
 
         url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
-        response = client.post(url, {})
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(url, {})
 
         assert response.status_code == 200
-        mock_delay.assert_called_once_with(opportunity.id, 200)
+        mock_apply_async.assert_called_once_with(args=[opportunity.id, 200], task_id=mock.ANY)
 
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_out_of_range_does_not_start_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_out_of_range_does_not_start_task(self, mock_apply_async, client, org_user_admin, opportunity, work_area):
         client.force_login(org_user_admin)
 
         url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
         response = client.post(url, {"building_count": 500})
 
         assert response.status_code == 200
-        mock_delay.assert_not_called()
+        mock_apply_async.assert_not_called()
         assert "between 100 and 300" in response.content.decode()
         assert response.headers["HX-Retarget"] == "#building-count-field"
 
@@ -2858,29 +2871,28 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
     def url(self, org_slug, opp_id):
         return reverse("microplanning:cluster_work_areas", args=(org_slug, opp_id))
 
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_rerun_replaces_existing_groups(self, mock_delay, client, org_user_admin, opportunity):
-
-        mock_task = MagicMock()
-        mock_task.id = "3f8f2e6c-0000-4000-8000-000000000000"
-        mock_delay.return_value = mock_task
-
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_rerun_replaces_existing_groups(
+        self, mock_apply_async, client, org_user_admin, opportunity, django_capture_on_commit_callbacks
+    ):
         old_group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=old_group)
         client.force_login(org_user_admin)
 
-        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)) + "?rerun=1")
+        url = self.url(opportunity.organization.slug, str(opportunity.opportunity_id)) + "?rerun=1"
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(url)
 
         assert response.status_code == 200
         # Old group is discarded; the async task will produce the new grouping.
         assert not WorkAreaGroup.objects.filter(id=old_group.id).exists()
-        assert mock_delay.call_count == 1
+        assert mock_apply_async.call_count == 1
         # The work area itself survives (SET_NULL), just ungrouped until the task runs.
         work_area.refresh_from_db()
         assert work_area.work_area_group is None
 
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_rerun_blocked_when_assigned(self, mock_delay, client, org_user_admin, opportunity):
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_rerun_blocked_when_assigned(self, mock_apply_async, client, org_user_admin, opportunity):
 
         old_group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -2891,7 +2903,7 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
 
         assert response.status_code == 200
         assert "HX-Redirect" in response.headers
-        assert mock_delay.call_count == 0
+        assert mock_apply_async.call_count == 0
         # Nothing is deleted when assignments exist.
         assert WorkAreaGroup.objects.filter(id=old_group.id).exists()
 

@@ -124,34 +124,38 @@ class TestStartUpload:
         yield
         cache.delete(get_implementation_area_import_cache_key(opportunity.id))
 
-    @mock.patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.delay")
-    def test_stores_the_file_queues_the_import_and_takes_the_lock(self, delay, opportunity):
-        delay.return_value.id = "task-1"
+    @mock.patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.apply_async")
+    def test_stores_the_file_queues_the_import_after_commit_and_takes_the_lock(
+        self, apply_async, opportunity, django_capture_on_commit_callbacks
+    ):
+        with django_capture_on_commit_callbacks() as callbacks:
+            task_id = start_implementation_area_import(
+                opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b")
+            )
+        apply_async.assert_not_called()
+        for callback in callbacks:
+            callback()
 
-        task_id = start_implementation_area_import(
-            opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b")
-        )
-
-        assert task_id == "task-1"
-        opp_id, file_name = delay.call_args.args
+        assert apply_async.call_args.kwargs["task_id"] == task_id
+        opp_id, file_name = apply_async.call_args.kwargs["args"]
         assert opp_id == opportunity.id
         with default_storage.open(file_name) as stored:
             assert stored.read() == b"a,b"
         default_storage.delete(file_name)
-        assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) == "task-1"
+        assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) == task_id
 
-    @mock.patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.delay")
-    def test_refuses_when_areas_exist(self, delay, opportunity):
+    @mock.patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.apply_async")
+    def test_refuses_when_areas_exist(self, apply_async, opportunity):
         ImplementationAreaFactory(opportunity=opportunity)
 
         with pytest.raises(ValidationError, match="Implementation Areas already exist"):
             start_implementation_area_import(opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b"))
-        delay.assert_not_called()
+        apply_async.assert_not_called()
 
-    @mock.patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.delay")
-    def test_refuses_while_an_import_runs(self, delay, opportunity):
+    @mock.patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.apply_async")
+    def test_refuses_while_an_import_runs(self, apply_async, opportunity):
         cache.set(get_implementation_area_import_cache_key(opportunity.id), "running")
 
         with pytest.raises(ValidationError, match="already in progress"):
             start_implementation_area_import(opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b"))
-        delay.assert_not_called()
+        apply_async.assert_not_called()

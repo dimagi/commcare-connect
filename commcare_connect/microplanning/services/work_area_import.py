@@ -1,6 +1,7 @@
 import math
 import uuid
 from collections import defaultdict
+from functools import partial
 from typing import TextIO
 
 from django.core.cache import cache
@@ -29,7 +30,7 @@ class _ImportRejected(Exception):
 
 
 def start_work_area_import(opportunity: Opportunity, csv_file: UploadedFile) -> str:
-    """Store an uploaded work area CSV, queue its import and return the task id.
+    """Store an uploaded work area CSV, queue its import after commit and return the task id.
 
     Raises ValidationError when the upload isn't accepted.
     """
@@ -38,9 +39,12 @@ def start_work_area_import(opportunity: Opportunity, csv_file: UploadedFile) -> 
     check_work_area_upload_can_start(opportunity)
     file_name = f"work_area_upload-{opportunity.id}-{uuid.uuid4().hex}.csv"
     default_storage.save(file_name, ContentFile(csv_file.read()))
-    task = import_work_areas_task.delay(opportunity.id, file_name)
-    cache.set(get_import_area_cache_key(opportunity.id), task.id, timeout=IMPORT_LOCK_TIMEOUT)
-    return task.id
+    task_id = str(uuid.uuid4())
+    cache.set(get_import_area_cache_key(opportunity.id), task_id, timeout=IMPORT_LOCK_TIMEOUT)
+    transaction.on_commit(
+        partial(import_work_areas_task.apply_async, args=[opportunity.id, file_name], task_id=task_id)
+    )
+    return task_id
 
 
 def check_work_area_upload_can_start(opportunity: Opportunity) -> None:

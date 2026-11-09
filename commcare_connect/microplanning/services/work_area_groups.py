@@ -1,5 +1,9 @@
+import uuid
+from functools import partial
+
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils.translation import gettext as _
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
@@ -14,7 +18,7 @@ def clear_work_area_groups_for_opportunity(opportunity: Opportunity) -> None:
 
 
 def start_work_area_clustering(opportunity: Opportunity, max_buildings: int) -> str:
-    """Queue clustering of the opportunity's work areas into groups and return the task id.
+    """Queue clustering of the opportunity's work areas into groups after commit and return the task id.
 
     Raises ValidationError when clustering can't start or is already running.
     """
@@ -24,8 +28,11 @@ def start_work_area_clustering(opportunity: Opportunity, max_buildings: int) -> 
     if cache.lock(get_cluster_area_cache_lock_key(opportunity.id)).locked():
         raise ValidationError(_("Work Area Clustering is already in progress for this opportunity."))
 
-    task = cluster_work_areas_task.delay(opportunity.id, max_buildings)
-    return task.id
+    task_id = str(uuid.uuid4())
+    transaction.on_commit(
+        partial(cluster_work_areas_task.apply_async, args=[opportunity.id, max_buildings], task_id=task_id)
+    )
+    return task_id
 
 
 def check_work_area_clustering_can_start(opportunity: Opportunity) -> None:

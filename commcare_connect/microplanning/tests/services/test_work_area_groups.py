@@ -36,13 +36,17 @@ class TestClearWorkAreaGroupsForOpportunity:
 
 @pytest.mark.django_db
 class TestStartWorkAreaClustering:
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_queues_clustering(self, delay, opportunity):
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_queues_clustering_after_commit(self, apply_async, opportunity, django_capture_on_commit_callbacks):
         WorkAreaFactory(opportunity=opportunity)
-        delay.return_value.id = "task-1"
 
-        assert start_work_area_clustering(opportunity=opportunity, max_buildings=150) == "task-1"
-        delay.assert_called_once_with(opportunity.id, 150)
+        with django_capture_on_commit_callbacks() as callbacks:
+            task_id = start_work_area_clustering(opportunity=opportunity, max_buildings=150)
+        apply_async.assert_not_called()
+        for callback in callbacks:
+            callback()
+
+        apply_async.assert_called_once_with(args=[opportunity.id, 150], task_id=task_id)
 
     @pytest.mark.parametrize(
         ("has_work_areas", "has_groups", "message"),
@@ -51,8 +55,10 @@ class TestStartWorkAreaClustering:
             (True, True, "Work Area Groups already exist"),
         ],
     )
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_refuses_without_work_areas_or_with_groups(self, delay, opportunity, has_work_areas, has_groups, message):
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_refuses_without_work_areas_or_with_groups(
+        self, apply_async, opportunity, has_work_areas, has_groups, message
+    ):
         if has_work_areas:
             WorkAreaFactory(opportunity=opportunity)
         if has_groups:
@@ -60,13 +66,13 @@ class TestStartWorkAreaClustering:
 
         with pytest.raises(ValidationError, match=message):
             start_work_area_clustering(opportunity=opportunity, max_buildings=150)
-        delay.assert_not_called()
+        apply_async.assert_not_called()
 
-    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
-    def test_refuses_while_clustering_runs(self, delay, opportunity):
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.apply_async")
+    def test_refuses_while_clustering_runs(self, apply_async, opportunity):
         WorkAreaFactory(opportunity=opportunity)
 
         with cache.lock(get_cluster_area_cache_lock_key(opportunity.id), timeout=5):
             with pytest.raises(ValidationError, match="already in progress"):
                 start_work_area_clustering(opportunity=opportunity, max_buildings=150)
-        delay.assert_not_called()
+        apply_async.assert_not_called()

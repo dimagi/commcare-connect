@@ -1,4 +1,5 @@
 import uuid
+from functools import partial
 from typing import TextIO
 
 from django.core.cache import cache
@@ -20,7 +21,7 @@ IMPORT_LOCK_TIMEOUT = 1200
 
 
 def start_implementation_area_import(opportunity: Opportunity, csv_file: UploadedFile) -> str:
-    """Store an uploaded implementation area CSV, queue its import and return the task id.
+    """Store an uploaded implementation area CSV, queue its import after commit and return the task id.
 
     Raises ValidationError when the upload isn't accepted.
     """
@@ -29,9 +30,12 @@ def start_implementation_area_import(opportunity: Opportunity, csv_file: Uploade
     check_implementation_area_upload_can_start(opportunity)
     file_name = f"implementation_area_upload-{opportunity.id}-{uuid.uuid4().hex}.csv"
     default_storage.save(file_name, ContentFile(csv_file.read()))
-    task = import_implementation_areas_task.delay(opportunity.id, file_name)
-    cache.set(get_implementation_area_import_cache_key(opportunity.id), task.id, timeout=IMPORT_LOCK_TIMEOUT)
-    return task.id
+    task_id = str(uuid.uuid4())
+    cache.set(get_implementation_area_import_cache_key(opportunity.id), task_id, timeout=IMPORT_LOCK_TIMEOUT)
+    transaction.on_commit(
+        partial(import_implementation_areas_task.apply_async, args=[opportunity.id, file_name], task_id=task_id)
+    )
+    return task_id
 
 
 def check_implementation_area_upload_can_start(opportunity: Opportunity) -> None:
