@@ -452,11 +452,11 @@ def test_units_that_cost_nothing_put_no_limit_on_claims(
 def test_budget_capacity_reads_units_and_claims_once(opportunity: Opportunity, django_assert_num_queries):
     _claimed_two_unit_opportunity(opportunity, claims=3)
 
-    # Payment units, claim limits by unit, claim count
+    # Payment units, claim limits by unit, claim count: shared by both figures
     with django_assert_num_queries(3):
-        capacity = opportunity.budget_capacity()
+        workers, visits = opportunity.max_workers, opportunity.allotted_visits
 
-    assert capacity == (3 + 7, 30 + 70 + 30 + 70)
+    assert (workers, visits) == (3 + 7, 30 + 70 + 30 + 70)
 
 
 @pytest.mark.django_db

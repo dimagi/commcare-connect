@@ -95,11 +95,6 @@ class OpportunityStatus(models.IntegerChoices):
     INACTIVE = 2, gettext_lazy("Inactive")
 
 
-class BudgetCapacity(NamedTuple):
-    workers: int | None
-    visits: int | None
-
-
 class UnitClaims(NamedTuple):
     visits: int
     cost: int
@@ -281,30 +276,32 @@ class Opportunity(BaseModel):
     @property
     def max_workers(self):
         """Workers who have claimed, plus the whole workers the remaining budget can still fund. ``None``
-        when the budget puts no limit on claims."""
-        return self.budget_capacity().workers
+        when the budget puts no limit on claims. Calculated once per instance, together with
+        ``allotted_visits``."""
+        return self._budget_capacity[0]
 
     @property
     def allotted_visits(self):
         """Deliveries the budget funds across all workers, as a whole number. ``None`` when the budget puts
-        no limit on them."""
-        return self.budget_capacity().visits
+        no limit on them. Calculated once per instance, together with ``max_workers``."""
+        return self._budget_capacity[1]
 
-    def budget_capacity(self):
-        """The workers and deliveries the budget funds, from a single read of the payment units and claims.
+    @cached_property
+    def _budget_capacity(self):
+        """``(max_workers, allotted_visits)``, from a single read of the payment units and claims.
 
         Workers who have claimed count with the visits in their claim limits. On top of them come the
         whole workers the remaining budget can still fund, each getting every unit's full ``max_total``.
-        Either figure is ``None`` when the budget puts no limit on it.
+        Cached, so it goes stale if the payment units, claims, budget or end date change afterwards;
+        fetch the opportunity again to recalculate.
         """
         payment_units = list(self.paymentunit_set.all())
         claims_by_unit = self._claims_by_unit()
         unclaimed_workers = self._unclaimed_worker_count(payment_units, claims_by_unit)
         visits_by_unit = self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers)
-        return BudgetCapacity(
-            workers=None if unclaimed_workers is None else self._claimed_worker_count() + unclaimed_workers,
-            visits=None if visits_by_unit is None else sum(visits_by_unit.values()),
-        )
+        workers = None if unclaimed_workers is None else self._claimed_worker_count() + unclaimed_workers
+        visits = None if visits_by_unit is None else sum(visits_by_unit.values())
+        return workers, visits
 
     def allotted_visits_by_unit(self, payment_units=None):
         """Deliveries the budget funds for each payment unit across all workers.
