@@ -1,0 +1,77 @@
+{% extends "solicitation/solicitation_step_base.html" %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+{% load static %}
+{% block javascript %}
+  {# Not deferred: it defines an x-data helper, so it has to run before Alpine starts. #}
+  <script src="{% static 'js/solicitation_formset.js' %}"></script>
+  {{ block.super }}
+{% endblock javascript %}
+{% block step_content %}
+  <form method="post" class="flex flex-col gap-6">
+    {% csrf_token %}
+    {% if step == "details" %}
+      {% if not solicitation.structure_locked %}
+        <p class="hint flex items-center gap-2">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          {% translate "Each step is saved as a draft. Nothing is visible to applicants until you publish it." %}
+        </p>
+      {% endif %}
+      <div class="card_bg">{% crispy form %}</div>
+    {% else %}
+      {% with formset=form %}
+        <div x-data="formsetRows()" class="flex flex-col gap-4">
+          <div class="flex justify-between items-center">
+            <h2 class="title-sm">{{ step_label }}</h2>
+            {% if not solicitation.structure_locked %}
+              <button type="button"
+                      class="button-icon primary-dark"
+                      aria-label="{% translate "Add" %}"
+                      @click="addRow()">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+            {% endif %}
+          </div>
+          {% if solicitation.structure_locked %}
+            <p class="hint">{% translate "Criteria and questions can't change once a solicitation is published." %}</p>
+          {% else %}
+            <div class="rounded-lg warning-light p-4 flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <div>
+                {% if step == "criteria" %}
+                  <p>{% translate "Weights must add up to 100% before you can publish." %}</p>
+                {% endif %}
+                <p>{% translate "Once published, criteria and questions can't be changed." %}</p>
+              </div>
+            </div>
+          {% endif %}
+          {{ formset.management_form }}
+          {{ formset|as_crispy_errors }}
+          {% if not solicitation.structure_locked %}
+            <template x-ref="emptyRow">
+              {% include "solicitation/partials/formset_row.html" with form=formset.empty_form %}
+            </template>
+          {% endif %}
+          <div x-ref="rows" class="flex flex-col gap-4">
+            {% for row in formset %}
+              {% include "solicitation/partials/formset_row.html" with form=row %}
+            {% endfor %}
+          </div>
+        </div>
+      {% endwith %}
+    {% endif %}
+    <div class="flex gap-3 justify-end">
+      {# Leaves without saving this step; earlier steps are already saved. #}
+      {% if previous_step_url %}
+        <a class="button button-md outline-style" href="{{ previous_step_url }}">{% translate "Back" %}</a>
+      {% endif %}
+      <a class="button button-md outline-style"
+         href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
+      {% if not solicitation.structure_locked %}
+        <button type="submit" class="button button-md primary-dark">{% translate "Save and continue" %}</button>
+      {% elif step == "details" %}
+        <button type="submit" class="button button-md primary-dark">{% translate "Save" %}</button>
+      {% endif %}
+    </div>
+  </form>
+{% endblock step_content %}

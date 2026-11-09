@@ -1,3 +1,4 @@
+import itertools
 import json
 from unittest import mock
 
@@ -21,11 +22,13 @@ from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
+    square,
 )
 from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
+    AudioAttachmentFactory,
     BlobMetaFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
@@ -530,8 +533,27 @@ class TestLabsRecordDataViewAuthorization:
         assert record.experiment == "original", "Cross-org record must not be overwritten"
 
 
+def _attach_image(visit):
+    return BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+
+
+def _attach_audio(visit):
+    return AudioAttachmentFactory(user_visit=visit)
+
+
+# Images are BlobMeta rows keyed by the form, audio is an AudioAttachment row keyed by the
+# visit, and every endpoint below resolves either from the blob_id alone.
+ATTACHMENT_FACTORIES = [_attach_image, _attach_audio]
+ATTACHMENT_URL_NAMES = [
+    "data_export:attachment_export",
+    # The legacy name for the same view, kept for callers written before it served audio.
+    "data_export:image_export",
+    "data_export:attachment_signed_url",
+]
+
+
 @pytest.mark.django_db
-class TestImageView:
+class TestAttachmentView:
     def test_returns_image_bytes(self, api_client, opportunity, org_user_member):
         visit = UserVisitFactory(opportunity=opportunity)
         blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
@@ -569,15 +591,40 @@ class TestImageView:
         response = api_client.get(url, {"blob_id": blob_meta.blob_id})
         assert response.status_code == 404
 
+    # Audio is an AudioAttachment row rather than a BlobMeta, so it is resolved by a
+    # separate lookup; the legacy "image" path serves it too.
+    @pytest.mark.parametrize("url_name", ["data_export:attachment_export", "data_export:image_export"])
+    def test_returns_audio_bytes(self, api_client, opportunity, org_user_member, url_name):
+        visit = UserVisitFactory(opportunity=opportunity)
+        audio = AudioAttachmentFactory(user_visit=visit, name="q1.m4a")
+        storages["default"].save(audio.blob_id, ContentFile(b"audiobytes"))
+        add_export_credentials(api_client, org_user_member)
+        url = reverse(url_name, kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": audio.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"audiobytes"
+        assert response["Content-Type"] == "audio/mp4"
+        assert "q1.m4a" in response["Content-Disposition"]
+
+    def test_non_member_audio_returns_404(self, api_client, opportunity, user):
+        audio = AudioAttachmentFactory(user_visit=UserVisitFactory(opportunity=opportunity))
+        add_export_credentials(api_client, user)
+        url = reverse("data_export:attachment_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": audio.blob_id})
+        assert response.status_code == 404
+
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("url_name", ["data_export:image_export", "data_export:attachment_signed_url"])
-def test_blob_from_other_accessible_opportunity_returns_404(api_client, opportunity, org_user_member, url_name):
+@pytest.mark.parametrize("url_name", ATTACHMENT_URL_NAMES)
+@pytest.mark.parametrize("attach", ATTACHMENT_FACTORIES, ids=["image", "audio"])
+def test_attachment_from_other_accessible_opportunity_returns_404(
+    api_client, opportunity, org_user_member, url_name, attach
+):
     other_visit = UserVisitFactory(opportunity__organization=opportunity.organization)
-    blob_meta = BlobMetaFactory(parent_id=other_visit.xform_id, content_type="image/jpeg")
+    attachment = attach(other_visit)
     add_export_credentials(api_client, org_user_member)
     url = reverse(url_name, kwargs={"opp_id": opportunity.id})
-    response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+    response = api_client.get(url, {"blob_id": attachment.blob_id})
     assert response.status_code == 404
 
 
@@ -612,15 +659,15 @@ class TestAttachmentSignedUrlView:
         response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
         assert response.status_code == 501
 
-    def test_returns_signed_url(self, api_client, opportunity, org_user_member):
-        visit = UserVisitFactory(opportunity=opportunity)
-        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+    @pytest.mark.parametrize("attach", ATTACHMENT_FACTORIES, ids=["image", "audio"])
+    def test_returns_signed_url(self, api_client, opportunity, org_user_member, attach):
+        attachment = attach(UserVisitFactory(opportunity=opportunity))
         add_export_credentials(api_client, org_user_member)
         with (
             mock.patch("commcare_connect.data_export.views._default_storage_supports_signed_urls", return_value=True),
             mock.patch("commcare_connect.data_export.views._get_attachment_signed_url", return_value="https://signed"),
         ):
-            response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+            response = api_client.get(self._url(opportunity), {"blob_id": attachment.blob_id})
         assert response.status_code == 200
         assert response.json() == {"attachment_signed_url": "https://signed"}
 
@@ -1005,12 +1052,15 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
     def url(self, opp_id):
         return reverse("data_export:work_area_bulk_create", kwargs={"opp_id": opp_id})
 
+    # Each item gets its own square, so items in one payload never overlap each other.
+    _boundary_offsets = itertools.count()
+
     def _item(self, **overrides):
         item = {
             "slug": "area-1",
             "ward": "ward-a",
             "centroid": "36.8 -1.29",
-            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+            "boundary": square(36.8 + 0.05 * next(self._boundary_offsets), -1.3, 0.02).wkt,
             "building_count": 5,
             "expected_visit_count": 10,
             "target_population": 100,
@@ -1035,7 +1085,7 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         assert area.case_properties == {"lga": "lga-1", "state": "state-1"}
 
     def test_resolves_existing_work_area_group_by_name(self, v2_write_client, opportunity):
-        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="original-ward")
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
         payload = [self._item(work_area_group_name="group-a")]
         response = _post_json(v2_write_client, self.url(opportunity.id), payload)
         assert response.status_code == 201
@@ -1043,6 +1093,46 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.work_area_group_id == group.id
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+
+    @mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay")
+    def test_adding_to_existing_group_queues_hq_sync(
+        self, sync_delay, v2_write_client, opportunity, django_capture_on_commit_callbacks
+    ):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(36.0, -1.3, 0.02))
+        group.update_centroid()
+        payload = [self._item(work_area_group_name="group-a")]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = _post_json(client=v2_write_client, url=self.url(opportunity.id), payload=payload)
+
+        assert response.status_code == 201
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
+
+    def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
+        WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")
+        payload = [self._item(work_area_group_name="group-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area Group group-a is in ward ward-b, but these rows give ward ward-a. "
+            "Correct the ward, or use a different group name."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_new_group_spanning_wards_rejected(self, v2_write_client, opportunity):
+        payload = [
+            self._item(slug="area-1", work_area_group_name="new-group", ward="ward-a"),
+            self._item(slug="area-2", work_area_group_name="new-group", ward="ward-b"),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area Group new-group is in ward ward-a, but these rows give ward ward-b. "
+            "Correct the ward, or use a different group name."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
     def test_creates_missing_work_area_group_by_name(self, v2_write_client, opportunity):
         payload = [self._item(work_area_group_name="new-group", ward="ward-b")]
@@ -1096,6 +1186,34 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.implementation_area_id is None
         assert area.implementation_area_name == "not-created-yet"
+
+    def test_overlapping_items_rejected(self, v2_write_client, opportunity):
+        payload = [
+            self._item(slug="area-1", boundary=square(36.8, -1.3, 0.02).wkt),
+            self._item(slug="area-2", boundary=square(36.81, -1.3, 0.02).wkt),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Areas area-1 and area-2 overlap each other by 50.0%. "
+            "Correct one boundary or remove one work area, then upload again."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_item_overlapping_existing_work_area_rejected(self, v2_write_client, opportunity):
+        existing = WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(36.8, -1.3, 0.02))
+        payload = [
+            self._item(slug="area-1", work_area_group_name="new-group"),
+            self._item(slug="area-2", boundary=square(36.8, -1.3, 0.02).wkt, work_area_group_name="new-group"),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area area-2 overlaps existing Work Area existing by 100.0%. "
+            "Correct the boundary or remove the work area, then upload again."
+        ]
+        assert list(WorkArea.objects.filter(opportunity=opportunity)) == [existing]
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db(transaction=True)

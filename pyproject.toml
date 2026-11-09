@@ -13,6 +13,7 @@ dependencies = [
     "django-crispy-forms>=2.0",
     "django-environ>=0.10.0",
     "django-filter>=24.3",
+    "django-health-check>=4.8.0",
     "django-htmx>=1.19.0",
     "django-oauth-toolkit>=3.3.0",
     "django-pghistory>=3.9.1",
@@ -118,4 +119,6 @@ production = [
 [tool.djlint]
 profile = "django"
 indent = 2
+# waffle_tags block tags, so templates gated by them indent correctly
+custom_blocks = "switch,flag"
 ignore = "H006,H016,H020,H021,H023,H030,H031,T002,T003"

@@ -394,6 +394,7 @@ dependencies = [
     { name = "django-crispy-forms" },
     { name = "django-environ" },
     { name = "django-filter" },
+    { name = "django-health-check" },
     { name = "django-htmx" },
     { name = "django-oauth-toolkit" },
     { name = "django-pghistory" },
@@ -460,6 +461,7 @@ requires-dist = [
     { name = "django-crispy-forms", specifier = ">=2.0" },
     { name = "django-environ", specifier = ">=0.10.0" },
     { name = "django-filter", specifier = ">=24.3" },
+    { name = "django-health-check", specifier = ">=4.8.0" },
     { name = "django-htmx", specifier = ">=1.19.0" },
     { name = "django-oauth-toolkit", specifier = ">=3.3.0" },
     { name = "django-pghistory", specifier = ">=3.9.1" },
@@ -771,6 +773,19 @@ wheels = [
 ]
 
 [[package]]
+name = "django-health-check"
+version = "4.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "dnspython" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/3a/d0ed4f7fc42832f0d6201c343d59633fc49adba4a5567cba97bb1edede7d/django_health_check-4.8.0.tar.gz", hash = "sha256:3f7e8fd0e85ebb2a62bdaf96bd0e990f93b4c6bbaca68778df79b2cf1810884b", size = 24669, upload-time = "2026-10-02T11:40:15.45Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/5d/9cde569955ecb9c9c669e6143a4976987243fa749702e12f235ec14e84cd/django_health_check-4.8.0-py3-none-any.whl", hash = "sha256:d377aba46a029c8eac5ce6170cce5b67a8ecd70180b1212c9eb302f22691da7a", size = 30752, upload-time = "2026-10-02T11:40:14.256Z" },
+]
+
+[[package]]
 name = "django-htmx"
 version = "1.27.0"
 source = { registry = "https://pypi.org/simple" }
@@ -954,6 +969,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d4/07/87ae14f39953ab60b9e9cbf21dbfb6a30b3e5a7022304595c2f8469b6d10/djlint-1.46.0-cp311-cp311-win_amd64.whl", hash = "sha256:230082cc06d224d8ae978d89865a662c0baa8efee909763a23a048b1ef7ba9d7", size = 1164705, upload-time = "2026-09-07T17:37:28.807Z" },
     { url = "https://files.pythonhosted.org/packages/7c/4e/0a87371804314d7b2c0ee57f49afee67ad5240b9b6213280e09a9e767887/djlint-1.46.0-cp311-cp311-win_arm64.whl", hash = "sha256:3a560dd7ba939cbc6ab48cb9d299ffdb1daeb08d852bcd68850e5d20eaf1e573", size = 1024368, upload-time = "2026-09-07T17:37:30.142Z" },
     { url = "https://files.pythonhosted.org/packages/32/9b/e6a581ba9acb9303931b894a5c6479f6a64200e09c3c095564835a9b9b2b/djlint-1.46.0-py3-none-any.whl", hash = "sha256:3f7d12e2063df7d99476cbdfc74f481b13f05eb6260cd6dbdc3c185f6d7047bf", size = 160268, upload-time = "2026-09-07T17:38:43.443Z" },
+]
+
+[[package]]
+name = "dnspython"
+version = "2.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/49/900383b471c645a3c397f47b3211d1fcecb3a540c98f683494cdf86b33de/dnspython-2.9.2.tar.gz", hash = "sha256:8d4d39a513e649d634004ce4d39ade2352efcea472a0247535a5c2d18a9d7ba9", size = 455484, upload-time = "2026-11-03T23:56:53.601Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/0c/5346358b3a20275d256978c35203ddc2c8617f78c1b23795b79ba22ced6d/dnspython-2.9.2-py3-none-any.whl", hash = "sha256:af15f7d385a6ae2fb35a796fde2138004c8c42c7389090e2addc83e3b3340fd8", size = 360455, upload-time = "2026-11-03T23:56:52.088Z" },
 ]
 
 [[package]]

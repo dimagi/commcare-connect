@@ -13,6 +13,8 @@ from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 HQ_CASE_BULK_CHUNK_SIZE = 100
+# Seconds HQ gets to answer one request of up to HQ_CASE_BULK_CHUNK_SIZE cases.
+HQ_CASE_BULK_TIMEOUT = 30
 
 
 class GetCaseDataAPIFilters(TypedDict):
@@ -141,7 +143,7 @@ def bulk_create_or_update_cases(
     url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
     headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
     cases = []
-    with httpx.Client(headers=headers) as client:
+    with httpx.Client(headers=headers, timeout=HQ_CASE_BULK_TIMEOUT) as client:
         for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
             chunk = [{**case_data, "create": create} for case_data in cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]]
             try:

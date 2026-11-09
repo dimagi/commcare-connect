@@ -36,7 +36,7 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
-from django.utils.translation import ngettext
+from django.utils.translation import gettext_lazy, ngettext
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
@@ -54,6 +54,7 @@ from commcare_connect.microplanning.const import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
     REQUIRED_DELIVER_UNIT_SLUGS,
+    WORK_AREA_MAX_OVERLAP_RATIO,
     WORK_AREA_STATUS_COLORS,
     WORKAREA_MIN_ZOOM,
 )
@@ -134,7 +135,7 @@ def microplanning_home(request, *args, **kwargs):
     work_area_groups_present = bool(work_area_group_count)
     implementation_areas_present = bool(implementation_area_count)
 
-    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
+    show_area_btn = cache.get(get_import_area_cache_key(opportunity.id)) is None
     show_workarea_groups_btn = areas_present and not work_area_groups_present
     show_clear_work_areas_btn = areas_present and not areas_assigned
     show_rerun_clear_work_area_groups_btn = areas_present and not areas_assigned and work_area_groups_present
@@ -249,6 +250,7 @@ def microplanning_home(request, *args, **kwargs):
 
     context = {
         "show_area_btn": show_area_btn,
+        "work_areas_present": areas_present,
         "show_implementation_area_btn": show_implementation_area_btn,
         "implementation_areas_present": implementation_areas_present,
         "show_workarea_groups_btn": show_workarea_groups_btn,
@@ -490,7 +492,69 @@ def _get_assignment_mode_context(request, opportunity):
 
 
 @method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
-class WorkAreaImport(View):
+class AreaImportView(View):
+    """Saves an uploaded area CSV and queues its import. An opportunity runs one import at a time."""
+
+    import_task = None
+    # Takes the opportunity ID, returns the cache key that marks its import as running.
+    get_lock_key = None
+    file_prefix = ""
+    started_message = ""
+    # Added to the redirect, so the page polls the matching status endpoint.
+    status_query = ""
+
+    def post(self, request, org_slug, opp_id):
+        redirect_url = reverse(
+            "microplanning:microplanning_home",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+        error = self.get_upload_error(request)
+        if error:
+            messages.error(request, error)
+            return redirect(redirect_url)
+
+        opportunity_id = request.opportunity.id
+        lock_key = self.get_lock_key(opportunity_id)
+        # Taken before the task is queued, because the task clears it when it ends. add() lets only one
+        # of two uploads sent at the same moment through.
+        if not cache.add(lock_key, "running", timeout=1200):
+            messages.error(request, _("An import for this opportunity is already in progress."))
+            return redirect(redirect_url)
+        file_name = f"{self.file_prefix}-{opportunity_id}-{uuid.uuid4().hex}.csv"
+        saved_name = None
+        try:
+            saved_name = default_storage.save(file_name, ContentFile(request.FILES["csv_file"].read()))
+            task = self.import_task.delay(opp_id=opportunity_id, file_name=saved_name)
+        except Exception:
+            cache.delete(lock_key)
+            if saved_name:
+                _delete_unqueued_upload(saved_name)
+            raise
+        messages.info(request, self.started_message)
+        return redirect(f"{redirect_url}?task_id={task.id}{self.status_query}")
+
+    def get_upload_error(self, request):
+        """Why this upload can't start, or None."""
+        csv_file = request.FILES.get("csv_file")
+        if not csv_file or get_file_extension(csv_file).lower() != "csv":
+            return _("Unsupported file format. Please upload a CSV file.")
+        return None
+
+
+def _delete_unqueued_upload(file_name):
+    """Delete an upload whose import was never queued. A failure is logged, so the queuing error is the one raised."""
+    try:
+        default_storage.delete(file_name)
+    except Exception:
+        logger.exception("Failed to delete unqueued upload %s", file_name)
+
+
+class WorkAreaImport(AreaImportView):
+    import_task = import_work_areas_task
+    get_lock_key = staticmethod(get_import_area_cache_key)
+    file_prefix = "work_area_upload"
+    started_message = gettext_lazy("Work Area upload has been started.")
+
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
@@ -519,38 +583,14 @@ class WorkAreaImport(View):
         )
         return response
 
-    def post(self, request, org_slug, opp_id):
-        redirect_url = reverse(
-            "microplanning:microplanning_home",
-            kwargs={"org_slug": org_slug, "opp_id": opp_id},
-        )
 
-        csv_file = request.FILES.get("csv_file")
-        if not csv_file or get_file_extension(csv_file).lower() != "csv":
-            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
-            return redirect(redirect_url)
+class ImplementationAreaImport(AreaImportView):
+    import_task = import_implementation_areas_task
+    get_lock_key = staticmethod(get_implementation_area_import_cache_key)
+    file_prefix = "implementation_area_upload"
+    started_message = gettext_lazy("Implementation Area upload has been started.")
+    status_query = "&area_type=implementation_area"
 
-        if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            messages.error(request, _("Work Areas already exist for this opportunity."))
-            return redirect(redirect_url)
-
-        lock_key = get_import_area_cache_key(request.opportunity.id)
-
-        if cache.get(lock_key):
-            messages.error(request, _("An import for this opportunity is already in progress."))
-            return redirect(redirect_url)
-
-        file_name = f"work_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(csv_file.read()))
-        task = import_work_areas_task.delay(request.opportunity.id, file_name)
-        cache.set(lock_key, task.id, timeout=1200)
-        messages.info(request, _("Work Area upload has been started."))
-        redirect_url += f"?task_id={task.id}"
-        return redirect(redirect_url)
-
-
-@method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
-class ImplementationAreaImport(View):
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="implementation_area_template.csv"'
@@ -559,32 +599,10 @@ class ImplementationAreaImport(View):
         writer.writerow(["Ward North", "77.1 28.6", "POLYGON((77 28,78 28,78 29,77 29,77 28))"])
         return response
 
-    def post(self, request, org_slug, opp_id):
-        redirect_url = reverse(
-            "microplanning:microplanning_home",
-            kwargs={"org_slug": org_slug, "opp_id": opp_id},
-        )
+    def get_upload_error(self, request):
         if ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            messages.error(request, _("Implementation Areas already exist for this opportunity."))
-            return redirect(redirect_url)
-
-        lock_key = get_implementation_area_import_cache_key(request.opportunity.id)
-        if cache.get(lock_key):
-            messages.error(request, _("An import for this opportunity is already in progress."))
-            return redirect(redirect_url)
-
-        csv_file = request.FILES.get("csv_file")
-        if not csv_file or get_file_extension(csv_file).lower() != "csv":
-            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
-            return redirect(redirect_url)
-
-        file_name = f"implementation_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(csv_file.read()))
-        task = import_implementation_areas_task.delay(request.opportunity.id, file_name)
-        cache.set(lock_key, task.id, timeout=1200)
-        messages.info(request, _("Implementation Area upload has been started."))
-        redirect_url += f"?task_id={task.id}&area_type=implementation_area"
-        return redirect(redirect_url)
+            return _("Implementation Areas already exist for this opportunity.")
+        return super().get_upload_error(request)
 
 
 @require_POST
@@ -601,7 +619,7 @@ def clear_implementation_areas(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
-def _area_modal_context(org_slug, opp_id, area_type):
+def _area_modal_context(org_slug, opp_id, area_type, adding=False):
     if area_type == "implementation_area":
         return {
             "modal_title": _("Upload Implementation Area"),
@@ -620,7 +638,7 @@ def _area_modal_context(org_slug, opp_id, area_type):
             ],
         }
     return {
-        "modal_title": _("Upload Work Areas"),
+        "modal_title": _("Add Work Areas") if adding else _("Upload Work Areas"),
         "records_label": _("Work Areas"),
         "success_noun": _("work area(s)"),
         "upload_url": reverse("microplanning:upload_work_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id}),
@@ -630,15 +648,19 @@ def _area_modal_context(org_slug, opp_id, area_type):
             _("Ward – name of the ward"),
             _("Centroid – longitude and latitude separated by space (e.g. 77.123 28.456)"),
             _("Boundary – Polygon in WKT format"),
+            _(
+                "Boundaries must not overlap each other or existing work areas by more than %(percent)d%% "
+                "of the smaller work area"
+            )
+            % {"percent": round(WORK_AREA_MAX_OVERLAP_RATIO * 100)},
             _("Building Count – positive integer"),
             _("Expected Visit Count – positive integer"),
             _("LGA – name of the LGA the work area is in"),
             _("State – name of the state the work area is in"),
             _("Implementation Area – (optional) name of the matching Implementation Area"),
             _(
-                "Work Area Group Name (optional): Enter a group name for every row to assign work areas directly "
-                "and skip automatic clustering. Leave this column blank for every row to use automatic clustering. "
-                "Do not mix blank and filled values."
+                "Work Area Group Name – (optional) leave all rows blank to use automatic clustering, or "
+                "fill group name in all rows to skip it. Rows sharing a group name must share a Ward."
             ),
         ],
     }
@@ -667,13 +689,25 @@ def import_status(request, org_slug, opp_id, area_type="work_area"):
             else:
                 result_data = {"errors": {_("Import failed due to an internal error. Please try again."): [0]}}
 
+    adding = area_type == "work_area" and is_adding_work_areas(
+        opportunity_id=request.opportunity.id, created=(result_data or {}).get("created", 0)
+    )
     context = {
         "result_ready": result_ready,
         "result_data": result_data,
         "task_id": task_id,
-        **_area_modal_context(org_slug, opp_id, area_type),
+        **_area_modal_context(org_slug=org_slug, opp_id=opp_id, area_type=area_type, adding=adding),
     }
     return render(request, "microplanning/import_area_modal.html", context)
+
+
+def is_adding_work_areas(opportunity_id: int, created: int) -> bool:
+    """Whether an upload adds to work areas that were already there.
+
+    ``created`` is the number of work areas the upload saved, so a first upload's own rows don't
+    count. While an upload runs its rows aren't committed, so they aren't counted either.
+    """
+    return WorkArea.objects.filter(opportunity_id=opportunity_id).count() > created
 
 
 class WorkAreaVectorLayer(VectorLayer):

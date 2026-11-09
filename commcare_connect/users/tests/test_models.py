@@ -24,7 +24,13 @@ class TestUser:
 
     @pytest.mark.parametrize(
         "codename",
-        ["otp_access", "demo_users_access", "kpi_report_access", "product_features_access"],
+        [
+            "otp_access",
+            "demo_users_access",
+            "kpi_report_access",
+            "product_features_access",
+            "org_management_settings_access",
+        ],
     )
     def test_show_internal_features_with_permission(self, user, codename):
         perm = Permission.objects.get(codename=codename)
@@ -36,7 +42,8 @@ class TestUser:
         "codenames, expected",
         [
             ([], False),
-            (["all_org_access", "org_management_settings_access", "workspace_entity_management_access"], False),
+            (["all_org_access", "workspace_entity_management_access"], False),
+            (["org_management_settings_access"], True),
             (["otp_access"], True),
             (["llo_directory_management_access"], True),
         ],

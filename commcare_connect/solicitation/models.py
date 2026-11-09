@@ -57,6 +57,15 @@ class Solicitation(BaseModel):
     def __str__(self):
         return self.title
 
+    @property
+    def structure_locked(self):
+        """Questions and criteria are fixed once the solicitation leaves draft, so applicants answer the same form."""
+        return self.status != self.Status.DRAFT
+
+
+# Closed and cancelled solicitations are finished, so only these can still be edited.
+EDITABLE_STATUSES = (Solicitation.Status.DRAFT, Solicitation.Status.ACTIVE)
+
 
 class SolicitationEvaluationCriterion(BaseModel):
     """Internal-only scored dimension. Never shown to applicants or on public pages."""
@@ -104,9 +113,9 @@ class SolicitationAttachment(BaseModel):
 
 
 class SolicitationInvitation(BaseModel):
-    """Grants an organization access to a private (invite-only) solicitation.
+    """Invites an organization to apply to a solicitation.
 
-    Public solicitations need no invitation.
+    Required to apply to a private solicitation; on a public one it just asks a specific organization to apply.
     """
 
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="invitations")

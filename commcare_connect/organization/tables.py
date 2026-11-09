@@ -5,14 +5,22 @@ from django.utils.safestring import SafeString
 from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
+from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
 from commcare_connect.organization.models import (
     ORGANIZATION_STATUS_DEFINITIONS,
     Contact,
     Organization,
     OrganizationInvite,
+    PrimarySector,
     UserOrganizationMembership,
 )
-from commcare_connect.utils.tables import DMYTColumn, IndexColumn, SpreadsheetSafeColumn, select_column
+from commcare_connect.utils.tables import (
+    DMYTColumn,
+    IndexColumn,
+    ManagedOptionTable,
+    SpreadsheetSafeColumn,
+    select_column,
+)
 
 ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
 ROLE_BADGE_TEMPLATE = "organization/role_badge.html"
@@ -139,3 +147,10 @@ class ContactExportTable(tables.Table):
 
     def value_is_main_poc(self, value):
         return _("Yes") if value else _("No")
+
+
+class PrimarySectorTable(ManagedOptionTable):
+    organization_count = columns.Column(verbose_name=_("Organizations"), attrs=STAT_COLUMN_ATTRS)
+
+    class Meta(ManagedOptionTable.Meta):
+        model = PrimarySector

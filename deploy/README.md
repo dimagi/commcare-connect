@@ -87,6 +87,10 @@ The Django settings are configured using the `deploy/roles/connect/templates/con
 settings values are in `deploy/roles/connect/defaults/main.yml`, overridden per environment in the inventory files.
 Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansible Secrets - Production` entries.
 
+`HEALTH_CHECK_TOKENS` is set from the `health_check_tokens` secret, a list of tokens joined with commas; leaving the
+secret out renders an empty value, which leaves the `/status/` health check pages open. See
+`commcare_connect/health/README.md`.
+
 To update the Django settings:
 
 ```bash
@@ -99,6 +103,13 @@ Ideally deploy should be done via GitHub actions however it can be run locally a
 
 ```bash
 inv deploy
+```
+
+A deploy restarts the app containers only. Changes to Traefik's own arguments (`traefik.args` in
+`config/deploy.yml`, such as the forwarded-header range it trusts) need the proxy restarted as well:
+
+```bash
+kamal traefik reboot -d <destination>
 ```
 
 ## Accessing logs
