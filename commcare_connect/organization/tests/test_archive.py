@@ -87,6 +87,21 @@ class TestArchiveOrganization:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("change, archived", [(archive_organization, True), (restore_organization, False)])
+def test_admins_are_notified_once_the_change_is_saved(django_capture_on_commit_callbacks, change, archived):
+    organization = OrganizationFactory(is_archived=not archived)
+
+    with mock.patch("commcare_connect.organization.archive.send_archived_state_notification") as notify:
+        with django_capture_on_commit_callbacks(execute=False) as callbacks:
+            change(organization, user_email=STAFF_EMAIL, reason="")
+        notify.assert_not_called()
+        for callback in callbacks:
+            callback()
+
+    notify.assert_called_once_with(organization.pk, archived)
+
+
+@pytest.mark.django_db
 class TestRestoreOrganization:
     def test_restores_the_organization_and_leaves_its_contacts_archived(self):
         organization = OrganizationFactory(is_archived=True)

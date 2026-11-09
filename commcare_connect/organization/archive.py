@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+from functools import partial
 
 from django.db import models, transaction
 from django.db.models import BooleanField, DecimalField, Exists, ExpressionWrapper, OuterRef, Q, QuerySet
@@ -16,6 +17,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.organization.tasks import send_archived_state_notification
 from commcare_connect.program.models import Program
 from commcare_connect.program.utils import opportunities_linked_to_org
 
@@ -118,6 +120,7 @@ def _set_archived(organization: Organization, *, archived: bool, user_email: str
     organization.modified_by = user_email
     _append_system_note(organization, "Archived" if archived else "Restored", user_email, reason)
     organization.save(update_fields=["is_archived", "notes", "modified_by", "date_modified"])
+    transaction.on_commit(partial(send_archived_state_notification, organization.pk, archived), robust=True)
 
 
 def _append_system_note(organization: Organization, action: str, user_email: str, reason: str) -> None:
