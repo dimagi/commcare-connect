@@ -30,12 +30,14 @@ saying who made the change. Because the triggers run in the database, every writ
 | `OrganizationCountry`, `OrganizationPrimarySector` (through models) | Rows added and removed | `OrganizationCountryEvent`, `OrganizationPrimarySectorEvent` | `events` |
 | `Program` | `funder` | `ProgramFunderEvent` | `funder_events` |
 | `ProgramWatcher` (through model) | Rows added and removed | `ProgramWatcherEvent` | `events` |
-| `Opportunity` | `active`; `supervising_organization` | `OpportunityActiveEvent`; `OpportunitySupervisingOrganizationEvent` | `active_events`; `supervising_organization_events` |
+| `Opportunity` | `active`; `supervising_organization`; `api_key` | `OpportunityActiveEvent`; `OpportunitySupervisingOrganizationEvent`; `OpportunityApiKeyEvent` | `active_events`; `supervising_organization_events`; `api_key_events` |
 | `AssignedTask` | `due_date` | `AssignedTaskDueDateEvent` | `due_date_events` |
 | `PaymentInvoice` | `status` | `PaymentInvoiceStatusEvent` | `status_events` |
 | `WorkArea` | Status, assignment and expected-visit fields | `WorkAreaExpectedVisitCountWorkAreaGroupStatusOpportunityAccessExcludedReasonEvent` | `expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events` |
 
 The decorators on the models are the source of truth; check them before relying on this table.
+
+Opportunities created before the `api_key` tracker was added have no `api_key_insert` baseline event, so their first rotation's event doesn't record which key it replaced.
 
 ## Adding tracking to a model
 
