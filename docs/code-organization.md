@@ -14,15 +14,29 @@ When no rule fits, follow the closest one, say which in the PR description, and 
 
 Each app splits this code by what it does:
 
-| Package          | Holds                                                                                                 | Test                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `services`       | Operations that change state or enforce business rules: billing, approvals, HQ sync, emails           | Does it write to the database or an external system, or enforce a rule? |
-| `queries`        | Read-only code: lookups, report and table data, calculations that run queries                         | Does it only read and shape data?                                       |
-| `permissions`    | Access levels and visibility                                                                          | Does it decide who may see or do something?                             |
-| `exports`        | Files people download (CSV/XLSX, PDFs) and the template context those files need                      | Does it turn data it was given into a file?                             |
-| `utils`          | Pure functions with domain knowledge that neither read nor write data, e.g. `generate_invoice_number` | Does it work only on the values it was given?                           |
-| `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                                            | Is it a plain data container?                                           |
-| `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`                           | Is it caught outside the module that raises it?                         |
+| Package          | Holds                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `services`       | Operations that change state or enforce business rules: billing, approvals, HQ sync, emails           |
+| `queries`        | Read-only code: lookups, report and table data, calculations that run queries                         |
+| `permissions`    | Access levels and visibility                                                                          |
+| `exports`        | Files people download (CSV/XLSX, PDFs) and the template context those files need                      |
+| `utils`          | Pure functions with domain knowledge that neither read nor write data, e.g. `generate_invoice_number` |
+| `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                                            |
+| `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`                           |
+
+To decide where a function goes, ask these questions in order. The first yes decides. If different parts of a function get different answers, split the function.
+
+1. **Does Django, DRF, Celery or another library call it for us?** It is a thin layer (see [Thin layers](#thin-layers)).
+2. **Does it change state?** That means writing rows (other than a model saving its own row), writing files to storage, calling an external system, sending a message, or dispatching a task. It goes in `services`. A check that guards the change lives in the same services module, and the service calls it.
+3. **Does it decide whether a user may see or do something?** It goes in `permissions`.
+4. **Does it turn data into a file people download?** It goes in `exports`. It returns the file's content. Saving it to storage is the caller's job.
+5. **Does it read the database?** That means calling a manager, a queryset method or a related manager, or iterating a queryset. It goes in `queries`. A filter or annotation on one model's rows that two modules use, or that mirrors a model property, is a method on that model's `QuerySet` instead.
+6. **Is it worked out from one instance's own fields, as a value the domain uses** (a status, a derived date, an allowed transition)? It is a model method or property.
+7. **Otherwise it is pure, so it is a utility.**
+   - While its one caller is not a thin layer, it stays private in that caller's module. When a second module needs it, or its only caller is a thin layer, it moves to a `utils` package.
+   - That is the app's `utils/` if it has domain knowledge, or `commcare_connect/utils/<topic>.py` if it would work in another project.
+
+Which role may call which: services may call permissions, queries, exports and utils. Permissions and exports may call queries and utils. Queries may call `QuerySet` methods and utils. Only thin layers and other services call services.
 
 An app's `utils` is pure. `commcare_connect/utils/` is different: it holds generic code that would work in another project and may use the database (see [Code shared between apps](#code-shared-between-apps)).
 
