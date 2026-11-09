@@ -140,6 +140,12 @@ Rendering an email's templates and sending it is a service. The generic render-a
 
 Exports don't use the ORM directly. The caller gets the data from `queries` and passes it in. When the caller can't easily pass everything in, such as the context for each PDF in a batch, the export calls a `queries` function. A context builder may call `queries` too, but doesn't write its own queries.
 
+### File imports
+
+- Reading an uploaded file into rows is a utility. It takes bytes or a file object and returns rows, or raises a parse error defined in `exceptions.py`.
+- Checking the rows against the database and saving them is a service, in `services/<topic>_import.py`.
+- The view or task only opens the file and calls the service.
+
 ## Thin layers
 
 Views, forms, tables, filter sets, serializers, admin classes, view decorators, Celery tasks and management commands are thin layers.
