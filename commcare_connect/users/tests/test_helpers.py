@@ -63,6 +63,15 @@ class TestCreateHqUserAndLink:
         assert link.hq_server == opportunity.hq_server
         assert link.hq_user_uuid == hq_user_uuid
 
+    def test_rejects_email_style_username_without_calling_hq(self, mobile_user, opportunity, httpx_mock, caplog):
+        domain = "test-domain"
+        mobile_user.username = "someone@example.com"
+
+        assert not create_hq_user_and_link(mobile_user, domain, opportunity)
+        assert not httpx_mock.get_requests()
+        assert not ConnectIDUserLink.objects.filter(user=mobile_user, domain=domain).exists()
+        assert "someone@example.com" in caplog.text
+
     def test_skips_creation_when_link_exists(self, mobile_user, opportunity):
         domain = "test-domain"
         ConnectIDUserLink.objects.create(

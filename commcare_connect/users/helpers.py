@@ -1,9 +1,13 @@
+import logging
+
 import httpx
 
 from commcare_connect.opportunity.models import HQApiKey
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+logger = logging.getLogger(__name__)
 
 
 def get_organization_for_request(request, view_kwargs):
@@ -25,6 +29,17 @@ def create_hq_user_and_link(user, domain, opportunity):
     hq_server = opportunity.hq_server
     api_key = opportunity.api_key
     if not ConnectIDUserLink.objects.filter(user=user, domain=domain, hq_server=hq_server).exists():
+        if "@" in user.username:
+            # CommCare HQ appends "@<domain>.commcarehq.org" to bare usernames but rejects
+            # usernames that already carry a different email domain. Stripping the domain
+            # could collide with (and, via the "already taken" path, link to) another HQ user.
+            logger.error(
+                "Cannot create HQ mobile worker for user %s in domain %s (opportunity %s): username contains '@'",
+                user.username,
+                domain,
+                opportunity.id,
+            )
+            return False
         response = _create_hq_user(user, domain, api_key)
         if response is None:
             return False
