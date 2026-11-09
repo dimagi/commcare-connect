@@ -1,0 +1,4 @@
+{# Options for the API key select, swapped in after the user adds a key. Keeps the opportunity's current key selected. #}
+{% for value, label in choices %}
+  <option value="{{ value }}" {% if value == selected %}selected{% endif %}>{{ label }}</option>
+{% endfor %}

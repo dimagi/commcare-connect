@@ -107,6 +107,7 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    api_key_owner_has_left,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
@@ -472,6 +473,8 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        if "api_key" in context["form"].fields:
+            context.update(api_key_replacement_context(self.object))
         context["active_events"] = self.active_history_events
         return context
 
@@ -481,6 +484,14 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
         if self.active_history_events:
             form_kwargs.update({"latest_active_history_event": self.active_history_events[0]})
         return form_kwargs
+
+
+def api_key_replacement_context(opportunity):
+    """Context for the add-key modal and the departed-owner warning on pages that edit an opportunity's key."""
+    return {
+        "api_key_form": HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s"),
+        "api_key_owner_has_left": api_key_owner_has_left(opportunity),
+    }
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")

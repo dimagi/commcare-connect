@@ -28,7 +28,11 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm
+from commcare_connect.opportunity.forms import (
+    AddBudgetExistingUsersForm,
+    AutomatedPaymentInvoiceForm,
+    HQApiKeyCreateForm,
+)
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -82,6 +86,7 @@ from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
     add_api_key,
+    api_key_replacement_context,
     get_earned_summary,
     get_export_task_id,
     invoice_pdf_filename,
@@ -99,6 +104,7 @@ from commcare_connect.users.tests.factories import (
 from commcare_connect.users.tests.test_connections import _create_social_app
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
+from commcare_connect.utils.test_utils import make_membership
 
 
 @pytest.mark.django_db
@@ -2828,6 +2834,16 @@ class TestOpportunityEditActiveHistory:
         assert event_toggling_inactive is not None
         assert event_toggling_inactive.pgh_context is not None
         assert event_toggling_inactive.pgh_context.metadata["username"] == org_user_admin.username
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("owner_is_member", [True, False])
+def test_api_key_replacement_context(opportunity, owner_is_member):
+    if owner_is_member:
+        make_membership(opportunity.program.organization, opportunity.api_key.user, "member")
+    context = api_key_replacement_context(opportunity)
+    assert isinstance(context["api_key_form"], HQApiKeyCreateForm)
+    assert context["api_key_owner_has_left"] is (not owner_is_member)
 
 
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
