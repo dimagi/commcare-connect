@@ -81,6 +81,25 @@ To test that SSH, 1Password and AWS are all working you can run (instance ID fro
 ssh -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p" connect@i-08bbcc89fcb90b8c7
 ```
 
+## Staging
+
+Staging runs the `autostaging` branch: `main` with every branch listed in
+[`commcare-connect-staging.yml`](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml)
+merged in. The `rebuild-staging` workflow rebuilds and deploys it when a listed branch gets a push or the list changes,
+and removes branches from the list once they are merged to `main`. A conflict stops the rebuild and is posted to the
+staging deploy Slack channel; staging keeps its current version until the list builds again.
+
+To add your current branch (needs `gh` logged in with permission to run workflows in `dimagi/staging-branches`):
+
+```bash
+inv staging-add
+```
+
+It checks the branch is pushed, runs a trial build to catch conflicts, and puts a compatibility branch (one that merges
+two listed branches) above the branches it contains. Options: `--branch <name>`, `--yes`, `--skip-trial`.
+
+`deploy/rebuildstaging --no-push` runs the same build locally without pushing.
+
 ## Updating Django Settings
 
 The Django settings are configured using the `deploy/roles/connect/templates/connect.docker.env.j2` file. The plain text
