@@ -77,8 +77,16 @@ Functions that build ORM expressions without running them (`Subquery`, `Coalesce
 
 ### Code shared between apps
 
+Apps are ordered by what their models import. Each app's `models.py` imports only apps to its left:
+
+`utils` → `commcarehq` → `users` → `organization` → `opportunity` → `program`, `microplanning`, `audit` → `solicitation`, `flags`
+
+Client apps that import no app (`connect_id_client`, `jira_service_desk`, `commcarehq_provider`, `ocs_provider`) sit at the left with `utils`. Entry-point apps (`form_receiver`, `data_export`, `reports`, `multidb`, `web`, `prelogin`, `deid`) sit at the right.
+
+- Code lives in the app whose feature it serves, unless it uses models from an app further right. Then it moves right, to the first app that is at or past all of them. Other apps import it from there.
+- Models and role modules import other apps only from their left. Thin layers may import any app. Existing code breaks this in many places. Don't add new imports that point right.
+- String foreign keys and imports inside a class body or function may point right, such as `Opportunity.program`. Don't add new ones without a reason.
 - Code that imports no app from this repo goes in `commcare_connect/utils/<topic>.py`. It may import Django and third-party packages, including their models. It must not import this repo's apps, because five apps' models import `utils/db.py` and an app import there causes circular imports. The one exception is a module that holds only constants, such as `flags/switch_names.py`, when there's no other way.
-- Code that depends on an app's models stays in that app. Other apps import it from there.
 - An app doesn't write another app's models directly, whether from a view, form or task. It calls a service in the app that owns the model.
 - An operation that spans apps, such as merging two organizations, is a service in the app that starts it. That service calls the other apps' services for their models.
 
@@ -87,7 +95,7 @@ Functions that build ORM expressions without running them (`Subquery`, `Coalesce
 Reusable filters and annotations are methods on a custom `QuerySet`, exposed with `QuerySet.as_manager()` or `Manager.from_queryset()`, e.g. `Opportunity.objects.accessible_to(org)`. Put them on the `QuerySet`, not only the `Manager`, so they can be chained after `.filter()`. `queries` holds the larger builders that call them.
 
 - A filter that limits rows to what a user may see is a `QuerySet` method. `permissions` calls it when it needs the check.
-- A filter that depends on another app's models goes in the `queries` of the app that owns that relation. For example, users who hold a work area go in `microplanning/queries.py`, not on `User`.
+- A filter that depends on another app's models goes in the `queries` of the app the app order picks (see [Code shared between apps](#code-shared-between-apps)). For example, users who hold a work area go in `microplanning/queries.py`, not on `User`.
 
 ### Emails
 
