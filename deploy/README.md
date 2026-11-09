@@ -86,8 +86,10 @@ ssh -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-Start
 Staging runs the `autostaging` branch: `main` with every branch listed in
 [`commcare-connect-staging.yml`](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml)
 merged in. The `rebuild-staging` workflow rebuilds and deploys it when a listed branch gets a push or the list changes,
-and removes branches from the list once they are merged to `main`. A conflict stops the rebuild and is posted to the
-staging deploy Slack channel; staging keeps its current version until the list builds again.
+and removes branches from the list once they are merged to `main`. A git conflict, or a migration problem found by
+`makemigrations --check` (such as two branches adding a migration to the same app), stops the rebuild before
+`autostaging` is pushed and is posted to the staging deploy Slack channel; staging keeps its current version until the
+list builds again.
 
 To add your current branch (needs `gh` logged in with permission to run workflows in `dimagi/staging-branches`):
 
