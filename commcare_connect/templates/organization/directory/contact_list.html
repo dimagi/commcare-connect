@@ -27,8 +27,9 @@
            aria-hidden="true"></i>
       </button>
       {% url 'organization_directory:contact_export' as contact_export_url %}
+      {% querystring as export_qs %}
       {% translate "Exports the contacts matching the current filters." as export_help_text %}
-      {% include "components/worker_page/export_modal.html" with modal_name="showContactExportModal" modal_title=_("Export Contacts") export_url=contact_export_url|add:"?"|add:request.GET.urlencode export_form=export_form export_help_text=export_help_text %}
+      {% include "components/worker_page/export_modal.html" with modal_name="showContactExportModal" modal_title=_("Export Contacts") export_url=contact_export_url|add:export_qs export_form=export_form export_help_text=export_help_text %}
     </div>
   {% endif %}
   <button type="button"
