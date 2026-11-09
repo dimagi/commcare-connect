@@ -10,19 +10,30 @@ Follow the rules in new code. When you touch existing code that breaks them and 
 
 When no rule fits, follow the closest one, say which in the PR description, and add the case to this doc in the same PR.
 
+## Terms
+
+- **Caller:** a module, not a function. Test modules don't count.
+- **Reused:** used by two or more modules. Tests don't count.
+- **Topic:** the business noun the code is about, such as a model or workflow: `invoices`, `payments`, `assignments`, `work_areas`. Not a page (`dashboard`) and not a kind of code (`aggregates`, `helpers`).
+- **Pure:** makes no manager, queryset or related-manager calls, doesn't iterate a queryset, and calls no external system. Reading attributes of model instances it was given counts as pure; the caller loads relations with `select_related`. Reading the clock or generating random values is allowed.
+- **Change state / write:** see step 2 under [Roles](#roles). Reading and filling a cache for a cached read is part of the read, so it goes in `queries`.
+- **Connect concept:** code that names opportunities, visits, payment units, invoices, work areas, programs and the like. Code without one would make sense in any Django project.
+- **Small** (a refactor done in the same PR): one `refactor:` commit with no behaviour change, touching only files the PR already changes plus their tests, under about 150 changed lines. Anything bigger is a separate PR.
+- **Plain data type:** a dataclass, NamedTuple or TypedDict that holds values. Methods that compute from its own fields are fine (`Money.__add__`). Anything that queries is not a plain data type.
+
 ## Roles
 
 Each app splits this code by what it does:
 
-| Package          | Holds                                                                                                 |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `services`       | Operations that change state or enforce business rules: billing, approvals, HQ sync, emails           |
-| `queries`        | Read-only code: lookups, report and table data, calculations that run queries                         |
-| `permissions`    | Access levels and visibility                                                                          |
-| `exports`        | Files people download (CSV/XLSX, PDFs) and the template context those files need                      |
-| `utils`          | Pure functions with domain knowledge that neither read nor write data, e.g. `generate_invoice_number` |
-| `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                                            |
-| `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`                           |
+| Package          | Holds                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| `services`       | Operations that change state or enforce business rules: billing, approvals, HQ sync, emails |
+| `queries`        | Read-only code: lookups, report and table data, calculations that run queries               |
+| `permissions`    | Access levels and visibility                                                                |
+| `exports`        | Files people download (CSV/XLSX, PDFs) and the template context those files need            |
+| `utils`          | Pure functions that name a Connect concept, e.g. `generate_invoice_number`                  |
+| `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                                  |
+| `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`                 |
 
 To decide where a function goes, ask these questions in order. The first yes decides. If different parts of a function get different answers, split the function.
 
@@ -34,13 +45,13 @@ To decide where a function goes, ask these questions in order. The first yes dec
 6. **Is it worked out from one instance's own fields, as a value the domain uses** (a status, a derived date, an allowed transition)? It is a model method or property.
 7. **Otherwise it is pure, so it is a utility.**
    - While its one caller is not a thin layer, it stays private in that caller's module. When a second module needs it, or its only caller is a thin layer, it moves to a `utils` package.
-   - That is the app's `utils/` if it has domain knowledge, or `commcare_connect/utils/<topic>.py` if it would work in another project.
+   - That is the app's `utils/` if it names a Connect concept, or `commcare_connect/utils/<topic>.py` if it doesn't.
 
 Which role may call which: services may call permissions, queries, exports and utils. Permissions and exports may call queries and utils. Queries may call `QuerySet` methods and utils. Only thin layers and other services call services.
 
 An app's `utils` is pure. `commcare_connect/utils/` is different: it holds generic code that would work in another project and may use the database (see [Code shared between apps](#code-shared-between-apps)).
 
-Start a role as one module (`queries.py`) while the app covers one topic. Turn it into a package with one module per topic (`services/billing.py`, `services/approvals.py`) when a second, unrelated topic arrives. `opportunity` already covers many topics, so its roles start as packages.
+Start a role as one module (`queries.py`) while the app covers one topic. When it passes about 300 lines, turn it into a package with one module per topic (`services/billing.py`, `services/approvals.py`). Decide this per role in each app. `opportunity` already covers many topics, so its roles start as packages.
 
 `helpers.py` goes away. Don't add new ones, and move code out of the existing ones into its role module. The same applies to any module that mixes roles, such as `opportunity/visit_import.py`: split it by role when you change it.
 
@@ -65,8 +76,8 @@ A pure calculation worked out from one model instance's fields, such as a derive
 
 Any other utility with one caller stays as a private function in the caller's module. When a second module needs it, move it to `utils/`:
 
-- The app's `utils/` package if it has domain knowledge, e.g. `generate_invoice_number`. Other apps import it from there.
-- `commcare_connect/utils/<topic>.py` if it would work in another project.
+- The app's `utils/` package if it names a Connect concept, e.g. `generate_invoice_number`. Other apps import it from there.
+- `commcare_connect/utils/<topic>.py` if it names no Connect concept.
 
 Functions that build ORM expressions without running them (`Subquery`, `Coalesce`, annotations) count as utilities.
 
