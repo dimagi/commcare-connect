@@ -25,15 +25,15 @@ When no rule fits, follow the closest one, say which in the PR description, and 
 
 Each app splits this code by what it does:
 
-| Package          | Holds                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| `services`       | Operations that change state or enforce business rules: billing, approvals, HQ sync, emails |
-| `queries`        | Read-only code: lookups, report and table data, calculations that run queries               |
-| `permissions`    | Access levels and visibility                                                                |
-| `exports`        | Files people download (CSV/XLSX, PDFs) and the template context those files need            |
-| `utils`          | Pure functions that name a Connect concept, e.g. `generate_invoice_number`                  |
-| `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                                  |
-| `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`                 |
+| Package          | Holds                                                                            |
+| ---------------- | -------------------------------------------------------------------------------- |
+| `services`       | Operations that change state: billing, approvals, HQ sync, emails                |
+| `queries`        | Read-only code: lookups, report and table data, calculations that run queries    |
+| `permissions`    | Access levels and visibility                                                     |
+| `exports`        | Files people download (CSV/XLSX, PDFs) and the template context those files need |
+| `utils`          | Pure functions that name a Connect concept, e.g. `generate_invoice_number`       |
+| `dataclasses.py` | Plain data types, e.g. `Money`, `LineItem`                                       |
+| `exceptions.py`  | Exception classes that other modules catch, e.g. `TaskAlreadyAssignedError`      |
 
 To decide where a function goes, ask these questions in order. The first yes decides. If different parts of a function get different answers, split the function.
 
@@ -83,6 +83,13 @@ Any other utility with one caller stays as a private function in the caller's mo
 
 - Raised and caught in one module: stays in that module.
 - Caught in another module: the app's `exceptions.py`.
+
+### Checks
+
+A check that guards a change lives next to that change in `services`, and the service calls it (see step 2 under [Roles](#roles)).
+
+- Checks raise `django.core.exceptions.ValidationError`. When the error is about one input, pass a dict keyed by the form field name. Forms call the check in `clean()`, and serializers call it in `validate()`. The service calls the same check again before it writes.
+- Forms and serializers check the shape of the input themselves: required fields, types, ranges, and consistency between fields such as start ≤ end. Checks that need the database, or other objects' state, are service checks called from `clean()` or `validate()`.
 
 ### Code shared between apps
 
