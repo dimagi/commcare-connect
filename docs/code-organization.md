@@ -12,7 +12,7 @@ Where code goes. Read this file first, then the topic files your change needs.
 | [`tests.md`](code-organization/tests.md)                                 | tests                                                                             |
 | [`javascript.md`](code-organization/javascript.md)                       | JavaScript                                                                        |
 
-Most existing code predates these rules, so examples name where code should live, not always where it is today. All code your branch adds or changes follows these rules, even when nearby code doesn't. When you touch code that breaks them and the fix is small, fix it in its own `refactor:` commit; larger fixes get a separate PR. When no rule fits, follow the closest one, say which in the PR description, and add the case to these docs.
+Most existing code predates these rules, so examples name where code should live, not always where it is today. All code your branch adds or changes follows these rules, even when nearby code doesn't. When you touch code that breaks them, ask the user whether to refactor it. If they agree and the fix is small, do it in its own `refactor:` commit; larger fixes get a separate PR. When no rule fits, follow the closest one, say which in the PR description, and add the case to these docs.
 
 ## Terms
 
