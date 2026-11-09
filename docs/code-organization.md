@@ -49,7 +49,7 @@ To decide where a function goes, ask these questions in order. The first yes dec
 
 Which role may call which: services may call permissions, queries, exports and utils. Permissions and exports may call queries and utils. Queries may call `QuerySet` methods and utils. Only thin layers and other services call services.
 
-An app's `utils` is pure. `commcare_connect/utils/` is different: it holds generic code that would work in another project and may use the database (see [Code shared between apps](#code-shared-between-apps)).
+An app's `utils` is pure. `commcare_connect/utils/` is different: it holds code that names no Connect concept and may use the database (see [Code shared between apps](#code-shared-between-apps)).
 
 Start a role as one module (`queries.py`) while the app covers one topic. When it passes about 300 lines, turn it into a package with one module per topic (`services/billing.py`, `services/approvals.py`). Decide this per role in each app. `opportunity` already covers many topics, so its roles start as packages.
 
@@ -102,7 +102,7 @@ Client apps that import no app (`connect_id_client`, `jira_service_desk`, `commc
 - Code lives in the app whose feature it serves, unless it uses models from an app further right. Then it moves right, to the first app that is at or past all of them. Other apps import it from there.
 - Models and role modules import other apps only from their left. Thin layers may import any app. Existing code breaks this in many places. Don't add new imports that point right.
 - String foreign keys and imports inside a class body or function may point right, such as `Opportunity.program`. Don't add new ones without a reason.
-- Code that imports no app from this repo goes in `commcare_connect/utils/<topic>.py`. It may import Django and third-party packages, including their models. It must not import this repo's apps, because five apps' models import `utils/db.py` and an app import there causes circular imports. The one exception is a module that holds only constants, such as `flags/switch_names.py`, when there's no other way.
+- Code that names no Connect concept and imports no app from this repo goes in `commcare_connect/utils/<topic>.py`. Code that names a Connect concept goes in the app the concept belongs to, even when it imports no app; other apps import it from there. `commcare_connect/utils/` may import Django and third-party packages, including their models. It must not import this repo's apps, because five apps' models import `utils/db.py` and an app import there causes circular imports. The one exception is a module that holds only constants, such as `flags/switch_names.py`, when there's no other way.
 - An app doesn't write another app's models directly, whether from a view, form or task. It calls a service in the app that owns the model. Reading another app's models is fine anywhere a read is allowed.
 - An operation that spans apps, such as merging two organizations, is a service in the app that starts it. That service calls the other apps' services for their models.
 
@@ -150,7 +150,7 @@ Base classes, mixins, columns and field factories go with their kind: form code 
 
 - Used in one module: stays in that module.
 - Used by another app and depends on the owning app's models, e.g. a currency field: stays in the owning app's module. Other apps import it from there.
-- Generic: `commcare_connect/utils/<kind>.py`. `utils/forms.py` and `utils/tables.py` already exist. Check them before writing a new column or field, e.g. `select_column`.
+- Generic: `commcare_connect/utils/<topic>.py`, where a framework layer can be the topic (`forms.py`, `tables.py`, `email.py`). `utils/forms.py` and `utils/tables.py` already exist. Check them before writing a new column or field, e.g. `select_column`.
 
 ## Models
 
