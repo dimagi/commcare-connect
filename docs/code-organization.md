@@ -131,6 +131,10 @@ A function that takes one model's queryset and returns it filtered or annotated 
 - A filter that limits rows to what a user may see is a `QuerySet` method. `permissions` calls it when it needs the check.
 - A filter that depends on another app's models goes in the `queries` of the app the app order picks (see [Code shared between apps](#code-shared-between-apps)). For example, users who hold a work area go in `microplanning/queries.py`, not on `User`.
 
+### Caches
+
+The app whose data a cache holds owns the cache key and the function that clears it, next to the cached read in its `queries`. Other apps call that function.
+
 ### Celery tasks
 
 Services dispatch the background work they need with `transaction.on_commit(partial(task.delay, ...))`, so every caller gets it. Import the task inside the function, because `tasks.py` imports services at module level. A task calls one service and handles only Celery concerns.
