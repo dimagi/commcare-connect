@@ -70,6 +70,8 @@ Two exceptions keep small code next to its caller:
 
 A module of classes that each calculate a value by running queries, such as `audit/chc_indicators.py`, is a `queries` module.
 
+A request body for an external system is a private function of the service that sends it. The format belongs to the integration, not to the model, so it isn't a model method.
+
 ### Utilities
 
 A pure calculation worked out from one model instance's fields, such as a derived date or status, is a method or property on that model.
@@ -137,6 +139,7 @@ Rendering an email's templates and sending it is a service. The generic render-a
 - Built the same way by many views, such as breadcrumb trails: a function in the `utils` of the app that owns the objects it names, e.g. `opportunity/utils/breadcrumbs.py`. Other apps import it from there.
 - A display value worked out from one object: a model property or a template filter.
 - Needed on every page: `web/context_processors.py`.
+- JSON for our own pages, such as GeoJSON or htmx JSON, follows the same rules: the view builds it, its reads come from `queries`, and pure shaping that a second module needs goes in the app's `utils/`.
 
 Exports don't use the ORM directly. The caller gets the data from `queries` and passes it in. When the caller can't easily pass everything in, such as the context for each PDF in a batch, the export calls a `queries` function. A context builder may call `queries` too, but doesn't write its own queries.
 
