@@ -67,3 +67,26 @@ SEARCH_KIND_FILTERS = {
 class InaccessibilityReviewAction(TextChoices):
     APPROVE = "approve", "Approve"
     DENY = "deny", "Deny"
+
+
+# Columns of the work area and implementation area CSV uploads, keyed by the field they fill.
+WORK_AREA_CSV_HEADERS = {
+    "slug": "Area Slug",
+    "ward": "Ward",
+    "centroid": "Centroid",
+    "boundary": "Boundary",
+    "building_count": "Building Count",
+    "visit_count": "Expected Visit Count",
+    "target_population": "Target Population",
+    "lga": "LGA",
+    "state": "State",
+}
+# Optional work area columns. A sheet may omit either one entirely.
+WORK_AREA_CSV_IMPLEMENTATION_AREA_HEADER = "Implementation Area"
+WORK_AREA_CSV_GROUP_NAME_HEADER = "Work Area Group Name"
+
+IMPLEMENTATION_AREA_CSV_HEADERS = {
+    "name": "Implementation Area Name",
+    "centroid": "Centroid",
+    "boundary": "Boundary",
+}

@@ -1,5 +1,9 @@
-class ImportRejected(Exception):
-    """Raised inside run()'s transaction to undo everything saved so far."""
+class AreaCSVColumnsError(Exception):
+    """An area CSV is missing required columns, so its rows can't be read."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
 
 
 class InaccessibilityRequestNotPendingError(Exception):

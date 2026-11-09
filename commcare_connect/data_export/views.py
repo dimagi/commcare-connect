@@ -59,8 +59,15 @@ from commcare_connect.data_export.serializer import (
     WorkAreaGroupWriteSerializer,
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.microplanning.const import (
+    IMPLEMENTATION_AREA_CSV_HEADERS,
+    WORK_AREA_CSV_GROUP_NAME_HEADER,
+    WORK_AREA_CSV_HEADERS,
+    WORK_AREA_CSV_IMPLEMENTATION_AREA_HEADER,
+)
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
-from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
+from commcare_connect.microplanning.services.implementation_area_import import import_implementation_areas
+from commcare_connect.microplanning.services.work_area_import import import_work_areas
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -835,11 +842,14 @@ class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
 
 
 class CSVImporterBulkCreateView(APIView):
-    csv_importer_class = None
+    csv_headers = {}
     item_name = "items"
 
+    def import_csv(self, opportunity_id, csv_source):
+        raise NotImplementedError
+
     def get_fieldnames(self):
-        return list(self.csv_importer_class.HEADERS.values())
+        return list(self.csv_headers.values())
 
     def row_from_item(self, item):
         raise NotImplementedError
@@ -867,7 +877,7 @@ class CSVImporterBulkCreateView(APIView):
             )
 
         csv_source = self.items_to_csv(items)
-        result = self.csv_importer_class(self.opportunity.id, csv_source).run()
+        result = self.import_csv(opportunity_id=self.opportunity.id, csv_source=csv_source)
 
         if "errors" in result:
             return Response({"errors": list(result["errors"].keys())}, status=status.HTTP_400_BAD_REQUEST)
@@ -875,14 +885,17 @@ class CSVImporterBulkCreateView(APIView):
 
 
 class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView):
-    csv_importer_class = WorkAreaCSVImporter
+    csv_headers = WORK_AREA_CSV_HEADERS
     item_name = "Work Areas"
+
+    def import_csv(self, opportunity_id, csv_source):
+        return import_work_areas(opportunity_id=opportunity_id, csv_source=csv_source)
 
     def get_fieldnames(self):
         return [
-            *WorkAreaCSVImporter.HEADERS.values(),
-            WorkAreaCSVImporter.GROUP_NAME_HEADER,
-            WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+            *WORK_AREA_CSV_HEADERS.values(),
+            WORK_AREA_CSV_GROUP_NAME_HEADER,
+            WORK_AREA_CSV_IMPLEMENTATION_AREA_HEADER,
         ]
 
     def row_from_item(self, item):
@@ -904,8 +917,11 @@ class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
 class ImplementationAreaBulkCreateView(
     MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView
 ):
-    csv_importer_class = ImplementationAreaCSVImporter
+    csv_headers = IMPLEMENTATION_AREA_CSV_HEADERS
     item_name = "Implementation Areas"
+
+    def import_csv(self, opportunity_id, csv_source):
+        return import_implementation_areas(opportunity_id=opportunity_id, csv_source=csv_source)
 
     def row_from_item(self, item):
         return {

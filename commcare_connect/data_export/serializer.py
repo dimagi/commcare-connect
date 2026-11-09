@@ -15,7 +15,7 @@ from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
+from commcare_connect.microplanning.utils import parse_lon_lat_centroid
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,

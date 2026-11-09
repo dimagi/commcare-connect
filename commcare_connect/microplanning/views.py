@@ -37,11 +37,15 @@ from waffle.decorators import waffle_flag
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.buildings import buildings_overlay_config
 from commcare_connect.microplanning.const import (
+    IMPLEMENTATION_AREA_CSV_HEADERS,
     INACCESSIBILITY_LEGEND,
     MAX_AUTOZOOM_ZOOM,
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
     REQUIRED_DELIVER_UNIT_SLUGS,
+    WORK_AREA_CSV_GROUP_NAME_HEADER,
+    WORK_AREA_CSV_HEADERS,
+    WORK_AREA_CSV_IMPLEMENTATION_AREA_HEADER,
     WORK_AREA_MAX_OVERLAP_RATIO,
     WORK_AREA_STATUS_COLORS,
     WORKAREA_MIN_ZOOM,
@@ -112,9 +116,7 @@ from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.ratios import pct
 
 from .tasks import (
-    ImplementationAreaCSVImporter,
     WorkAreaCSVExporter,
-    WorkAreaCSVImporter,
     get_implementation_area_import_cache_key,
     get_import_area_cache_key,
     import_implementation_areas_task,
@@ -470,9 +472,9 @@ class WorkAreaImport(View):
         writer = csv.writer(response)
         writer.writerow(
             [
-                *WorkAreaCSVImporter.HEADERS.values(),
-                WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
-                WorkAreaCSVImporter.GROUP_NAME_HEADER,
+                *WORK_AREA_CSV_HEADERS.values(),
+                WORK_AREA_CSV_IMPLEMENTATION_AREA_HEADER,
+                WORK_AREA_CSV_GROUP_NAME_HEADER,
             ]
         )
         writer.writerow(
@@ -528,7 +530,7 @@ class ImplementationAreaImport(View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="implementation_area_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(ImplementationAreaCSVImporter.HEADERS.values())
+        writer.writerow(IMPLEMENTATION_AREA_CSV_HEADERS.values())
         writer.writerow(["Ward North", "77.1 28.6", "POLYGON((77 28,78 28,78 29,77 29,77 28))"])
         return response
 
