@@ -54,6 +54,19 @@ def map_work_areas(opportunity: Opportunity) -> QuerySet[WorkArea]:
     )
 
 
+def approved_visit_count(work_area: WorkArea) -> int:
+    """The work area's approved visits, the count the map shows as visits completed."""
+    return UserVisit.objects.filter(
+        opportunity=work_area.opportunity,
+        work_area=work_area,
+        status=VisitValidationStatus.approved,
+    ).count()
+
+
+def has_assigned_work_areas(opportunity: Opportunity) -> bool:
+    return WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
+
+
 def work_area_detail(opportunity: Opportunity, work_area_id: int) -> dict | None:
     """One work area's map fields, or None if it isn't in this opportunity."""
     return map_work_areas(opportunity).filter(id=work_area_id).values(*MAP_WORK_AREA_FIELDS).first()

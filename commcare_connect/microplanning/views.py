@@ -70,9 +70,11 @@ from commcare_connect.microplanning.models import (
 )
 from commcare_connect.microplanning.queries import (
     MAP_WORK_AREA_FIELDS,
+    approved_visit_count,
     assignee_options,
     assignee_work_area_totals,
     denied_inaccessibility_work_area_ids,
+    has_assigned_work_areas,
     implementation_area_boundaries,
     located_user_visits,
     map_work_areas,
@@ -109,7 +111,7 @@ from commcare_connect.microplanning.services.work_areas import (
     save_work_area_changes,
 )
 from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
-from commcare_connect.opportunity.models import BlobMeta, UserVisit, VisitValidationStatus
+from commcare_connect.opportunity.models import BlobMeta
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
     opportunity_required,
@@ -139,7 +141,7 @@ def microplanning_home(request, *args, **kwargs):
     work_area_count = WorkArea.objects.filter(opportunity_id=opportunity.id).count()
     work_area_group_count = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).count()
     implementation_area_count = ImplementationArea.objects.filter(opportunity_id=opportunity.id).count()
-    areas_assigned = WorkArea.objects.filter(opportunity_id=opportunity.id, opportunity_access__isnull=False).exists()
+    areas_assigned = has_assigned_work_areas(opportunity)
 
     areas_present = bool(work_area_count)
     work_area_groups_present = bool(work_area_group_count)
@@ -1006,11 +1008,7 @@ class ModifyWorkAreaUpdateView(UpdateView):
             )
             return super().form_invalid(form)
 
-        visits_completed = UserVisit.objects.filter(
-            opportunity=work_area.opportunity,
-            work_area=work_area,
-            status=VisitValidationStatus.approved,
-        ).count()
+        visits_completed = approved_visit_count(work_area)
         response = HttpResponse(status=204)
         response["HX-Trigger"] = json.dumps(
             {

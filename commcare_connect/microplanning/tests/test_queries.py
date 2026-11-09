@@ -6,9 +6,11 @@ from django.utils import formats, timezone, translation
 
 from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.queries import (
+    approved_visit_count,
     assignee_options,
     assignee_work_area_totals,
     denied_inaccessibility_work_area_ids,
+    has_assigned_work_areas,
     implementation_area_boundaries,
     pending_inaccessibility_requests,
     work_area_bounds,
@@ -327,3 +329,21 @@ def test_assignee_work_area_totals(opportunity):
     WorkAreaFactory(opportunity=opportunity)
 
     assert assignee_work_area_totals(opportunity, access.id) == {"buildings": 8, "visits": 10, "work_areas": 2}
+
+
+@pytest.mark.django_db
+def test_approved_visit_count_counts_only_approved_visits(opportunity):
+    work_area = WorkAreaFactory(opportunity=opportunity)
+    for status in (VisitValidationStatus.approved, VisitValidationStatus.rejected):
+        UserVisitFactory(opportunity=opportunity, work_area=work_area, status=status)
+
+    assert approved_visit_count(work_area) == 1
+
+
+@pytest.mark.django_db
+def test_has_assigned_work_areas(opportunity):
+    WorkAreaFactory(opportunity=opportunity)
+    assert not has_assigned_work_areas(opportunity)
+
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=OpportunityAccessFactory(opportunity=opportunity))
+    assert has_assigned_work_areas(opportunity)
