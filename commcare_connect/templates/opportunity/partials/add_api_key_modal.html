@@ -1,5 +1,5 @@
 {% load crispy_forms_tags %}
-{# Needs `showAddApiKeyModal` in an enclosing x-data. Dispatches reload_api_keys, which reloads the key select. #}
+{# Needs `showAddApiKeyModal` in an enclosing x-data. A saved key fires reload_api_keys, which reloads the key select. #}
 <div x-cloak
      x-show="showAddApiKeyModal"
      x-transition.opacity
@@ -14,7 +14,7 @@
       </button>
     </div>
     <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}"
-          @htmx:after-request="showAddApiKeyModal = !$event.detail.successful; $dispatch('reload_api_keys')">
+          @reload_api_keys="showAddApiKeyModal = false">
       {% crispy api_key_form %}
     </form>
   </div>
