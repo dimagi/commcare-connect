@@ -53,7 +53,7 @@ An app's `utils` is pure. `commcare_connect/utils/` is different: it holds code 
 
 Start a role as one module (`queries.py`) while the app covers one topic. When it passes about 300 lines, turn it into a package with one module per topic (`services/billing.py`, `services/approvals.py`). Decide this per role in each app. `opportunity` already covers many topics, so its roles start as packages.
 
-`helpers.py` goes away. Don't add new ones, and move code out of the existing ones into its role module. The same applies to any module that mixes roles, such as `opportunity/visit_import.py`: split it by role when you change it.
+`helpers.py` goes away. Don't add new ones, and move code out of the existing ones into its role module. The same applies to any module that mixes roles, such as `opportunity/visit_import.py`: split it by role when you change it. Decide the role of each public function. Each private helper goes with the public function it serves, whatever the helper does, and moves out only when another module needs it.
 
 Clients for external systems stay in the app that owns the integration, as their own module: `commcarehq/`, `ocs_provider/`, `connect_id_client/`.
 
@@ -139,6 +139,7 @@ Views, forms, tables, filter sets, serializers, admin classes, view decorators, 
 Thin layers take input, call services, queries, permissions and exports, and return output. They don't contain the logic themselves. They keep only code that works with the request, the form, the task's arguments or the response. Anything else moves out, even when the thin layer is its only caller: a pure function goes to the app's `utils/`, and code that reads the database goes to `queries`, except for simple reads. That keeps the logic testable without a request, a worker or a command line, and reusable by all of them.
 
 - Thin layers may run simple reads themselves: `get_object_or_404`, or a `.get()`, `.filter()`, `.exists()` or `.count()` on one model using values from the request, or a related manager such as `organization.flag_set`. Reads that use `annotate`, `aggregate`, `Subquery`, `Prefetch` or raw SQL, or that repeat a filter written elsewhere, go in `queries`.
+- When two thin layers hold copies of the same logic that differ, the logic still moves out. If the difference isn't intended, merge the copies into one service. If it is, write two service functions that share private helpers, with no behaviour flags.
 - Tasks only handle Celery concerns: retries, progress reporting, file storage and failures.
 - Management commands only handle arguments and output. Code shared between commands goes in the app's role modules, not in another command module.
 - A filter set or form may build choice querysets, using `QuerySet` methods.
@@ -161,6 +162,8 @@ Abstract models and model mixins follow the same placement as functions. One app
 ## Migrations
 
 Data migrations don't import production code. Keep the logic in the migration and use `apps.get_model`. The only exception is generic code in `commcare_connect/utils/` that uses no models, such as `batched`.
+
+Before you move or delete a function, grep `*/migrations/*.py` for imports of it. Copy it into each migration that imports it, in the same commit.
 
 ## JavaScript
 
