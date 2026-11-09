@@ -2,6 +2,7 @@ import csv
 import json
 import logging
 import uuid
+from collections import defaultdict
 from http import HTTPStatus
 
 import pghistory
@@ -85,7 +86,8 @@ from commcare_connect.microplanning.queries import (
 from commcare_connect.microplanning.services.implementation_areas import clear_implementation_areas_for_opportunity
 from commcare_connect.microplanning.services.inaccessibility_requests import review_work_area_inaccessibility_request
 from commcare_connect.microplanning.services.work_area_assignment import (
-    assign_work_areas_and_sync_to_hq,
+    assign_work_areas_to_workers,
+    check_assignees,
     unassign_work_areas_for_opportunity,
 )
 from commcare_connect.microplanning.services.work_area_groups import (
@@ -99,7 +101,7 @@ from commcare_connect.microplanning.services.work_areas import (
     save_work_area_changes,
 )
 from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
-from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
+from commcare_connect.opportunity.models import BlobMeta, UserVisit, VisitValidationStatus
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
     opportunity_required,
@@ -117,7 +119,6 @@ from .tasks import (
     get_import_area_cache_key,
     import_implementation_areas_task,
     import_work_areas_task,
-    send_work_area_assignment_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -1095,17 +1096,10 @@ def save_assignment(request, org_slug, opp_id):
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return JsonResponse({"error": _("Invalid request body")}, status=400)
 
-    valid_accesses = {
-        access.id: access
-        for access in OpportunityAccess.objects.filter(
-            id__in=assignee_ids,
-            opportunity=request.opportunity,
-        ).select_related("user")
-    }
-
-    invalid_ids = assignee_ids - valid_accesses.keys()
-    if invalid_ids:
-        return JsonResponse({"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400)
+    try:
+        check_assignees(opportunity=request.opportunity, access_ids=assignee_ids)
+    except ValidationError as e:
+        return JsonResponse({"error": e.message}, status=400)
 
     try:
         all_wa_ids = [int(wa_id) for entry in assignments for wa_id in entry.get("work_area_ids", [])]
@@ -1115,36 +1109,19 @@ def save_assignment(request, org_slug, opp_id):
     if len(all_wa_ids) != len(requested_wa_ids):
         return JsonResponse({"error": _("Duplicate work area IDs in request")}, status=400)
 
-    work_area_to_access = {
-        int(wa_id): valid_accesses[int(entry["assignee_id"])]
-        for entry in assignments
-        for wa_id in entry.get("work_area_ids", [])
-    }
-
-    all_work_areas = list(
-        WorkArea.objects.filter(
-            id__in=requested_wa_ids,
-            opportunity=request.opportunity,
-        ).select_for_update()
-    )
-
-    found_ids = {wa.id for wa in all_work_areas}
-    invalid_wa_ids = requested_wa_ids - found_ids
-    if invalid_wa_ids:
-        return JsonResponse(
-            {"error": _("Invalid work area IDs: %(ids)s") % {"ids": sorted(invalid_wa_ids)}}, status=400
+    work_area_ids_by_access_id = defaultdict(list)
+    for entry in assignments:
+        work_area_ids_by_access_id[int(entry["assignee_id"])].extend(
+            int(wa_id) for wa_id in entry.get("work_area_ids", [])
         )
-
-    for work_area in all_work_areas:
-        work_area.opportunity_access = work_area_to_access[work_area.id]
-        if work_area.status == WorkAreaStatus.UNASSIGNED:
-            work_area.status = WorkAreaStatus.NOT_VISITED
-
-    result = assign_work_areas_and_sync_to_hq(request.opportunity, all_work_areas, request.user)
-    assigned_ids = set(result["assigned_ids"])
-    notified_access_ids = {work_area_to_access[wa.id].id for wa in all_work_areas if wa.id in assigned_ids}
-    for access_id in notified_access_ids:
-        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
+    try:
+        result = assign_work_areas_to_workers(
+            opportunity=request.opportunity,
+            work_area_ids_by_access_id=dict(work_area_ids_by_access_id),
+            user=request.user,
+        )
+    except ValidationError as e:
+        return JsonResponse({"error": e.message}, status=400)
 
     if result["failed_ids"]:
         return JsonResponse(

@@ -1,10 +1,13 @@
 from unittest.mock import patch
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from commcare_connect.microplanning.models import WorkAreaStatus
 from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
+    assign_work_areas_to_workers,
+    check_assignees,
     unassign_work_areas_for_opportunity,
 )
 from commcare_connect.microplanning.tests.factories import (
@@ -290,3 +293,54 @@ class TestUnassignWorkAreas:
         still_assigned = {wa.id for wa in work_areas if wa.status == WorkAreaStatus.NOT_VISITED}
         assert unassigned == set(result["unassigned_ids"])
         assert still_assigned == set(result["failed_ids"])
+
+
+@pytest.mark.django_db
+class TestAssignWorkAreasToWorkers:
+    @patch("commcare_connect.microplanning.tasks.send_work_area_assignment_notification.delay")
+    @patch("commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas")
+    def test_assigns_and_notifies_each_worker_once(
+        self, mock_bulk_hq, notify, org_user_admin, opportunity, django_capture_on_commit_callbacks
+    ):
+        access_a = OpportunityAccessFactory(opportunity=opportunity)
+        access_b = OpportunityAccessFactory(opportunity=opportunity)
+        wa1, wa2, wa3 = WorkAreaFactory.create_batch(3, opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = assign_work_areas_to_workers(
+                opportunity=opportunity,
+                work_area_ids_by_access_id={access_a.id: [wa1.id, wa2.id], access_b.id: [wa3.id]},
+                user=org_user_admin,
+            )
+
+        assert sorted(result["assigned_ids"]) == sorted([wa1.id, wa2.id, wa3.id])
+        for work_area, access in ((wa1, access_a), (wa2, access_a), (wa3, access_b)):
+            work_area.refresh_from_db()
+            assert work_area.opportunity_access_id == access.id
+            assert work_area.status == WorkAreaStatus.NOT_VISITED
+        assert sorted(call.args[0] for call in notify.call_args_list) == sorted([access_a.id, access_b.id])
+
+    def test_work_area_outside_the_opportunity_is_rejected(self, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        other_work_area = WorkAreaFactory()
+
+        with pytest.raises(ValidationError, match="Invalid work area IDs"):
+            assign_work_areas_to_workers(
+                opportunity=opportunity,
+                work_area_ids_by_access_id={access.id: [other_work_area.id]},
+                user=org_user_admin,
+            )
+
+
+@pytest.mark.django_db
+class TestCheckAssignees:
+    def test_returns_the_accesses_by_id(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+
+        assert check_assignees(opportunity=opportunity, access_ids={access.id}) == {access.id: access}
+
+    def test_access_from_another_opportunity_is_rejected(self, opportunity):
+        other_access = OpportunityAccessFactory()
+
+        with pytest.raises(ValidationError, match="Invalid assignee IDs"):
+            check_assignees(opportunity=opportunity, access_ids={other_access.id})

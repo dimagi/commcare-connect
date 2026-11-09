@@ -1,17 +1,75 @@
 import logging
 
 import pghistory
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils.translation import gettext as _
 
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
 from commcare_connect.microplanning.const import HQ_ASSIGN_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
-from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
 logger = logging.getLogger(__name__)
+
+
+def assign_work_areas_to_workers(
+    opportunity: Opportunity, work_area_ids_by_access_id: dict[int, list[int]], user: User
+) -> dict:
+    """Assign each worker the listed work areas, sync them to HQ and notify the workers.
+
+    Raises ValidationError when a worker or work area isn't in the opportunity. Returns
+    assign_work_areas_and_sync_to_hq's result; a work area whose HQ sync failed keeps its old
+    assignment.
+    """
+    accesses = check_assignees(opportunity=opportunity, access_ids=set(work_area_ids_by_access_id))
+    work_area_to_access = {
+        work_area_id: accesses[access_id]
+        for access_id, work_area_ids in work_area_ids_by_access_id.items()
+        for work_area_id in work_area_ids
+    }
+    requested_ids = set(work_area_to_access)
+
+    work_areas = list(WorkArea.objects.filter(id__in=requested_ids, opportunity=opportunity).select_for_update())
+
+    invalid_ids = requested_ids - {work_area.id for work_area in work_areas}
+    if invalid_ids:
+        raise ValidationError(_("Invalid work area IDs: %(ids)s") % {"ids": sorted(invalid_ids)})
+
+    for work_area in work_areas:
+        work_area.opportunity_access = work_area_to_access[work_area.id]
+        if work_area.status == WorkAreaStatus.UNASSIGNED:
+            work_area.status = WorkAreaStatus.NOT_VISITED
+
+    result = assign_work_areas_and_sync_to_hq(opportunity, work_areas, user)
+    assigned_ids = set(result["assigned_ids"])
+    notified_access_ids = {work_area_to_access[wa.id].id for wa in work_areas if wa.id in assigned_ids}
+    _notify_workers_of_assignment(notified_access_ids)
+    return result
+
+
+def check_assignees(opportunity: Opportunity, access_ids: set[int]) -> dict[int, OpportunityAccess]:
+    """The opportunity's accesses with these ids, by id. Raises ValidationError if any id isn't one."""
+    accesses = {
+        access.id: access
+        for access in OpportunityAccess.objects.filter(id__in=access_ids, opportunity=opportunity).select_related(
+            "user"
+        )
+    }
+    invalid_ids = access_ids - accesses.keys()
+    if invalid_ids:
+        raise ValidationError(_("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)})
+    return accesses
+
+
+def _notify_workers_of_assignment(access_ids: set[int]) -> None:
+    from commcare_connect.microplanning.tasks import send_work_area_assignment_notification
+
+    for access_id in access_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
 
 def assign_work_areas_and_sync_to_hq(opportunity: Opportunity, work_areas: list[WorkArea], user: User) -> dict:
