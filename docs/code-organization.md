@@ -6,7 +6,7 @@ Where code goes. Most of this doc covers code that isn't a view, model, form, ta
 
 This doc describes how code should look. Most existing code was written before these rules and doesn't look like this yet, so the examples name where code should live, not always where it lives today. Follow the doc, not the current location.
 
-Follow the rules in new code. When you touch existing code that breaks them and the fix is small, refactor it in the same PR, in its own `refactor:` commit. Leave larger refactors for a separate PR.
+All code your branch adds or changes follows these rules, even when the code around it doesn't. Check it against this doc, not against nearby code. When you touch existing code that breaks them and the fix is small, refactor it in the same PR, in its own `refactor:` commit. Leave larger refactors for a separate PR.
 
 When no rule fits, follow the closest one, say which in the PR description, and add the case to this doc in the same PR.
 
