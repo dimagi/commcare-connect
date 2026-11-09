@@ -848,24 +848,38 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         return opportunity
 
 
+API_KEY_NOT_ALLOWED = _("Select one of your own API keys for this HQ server.")
+
+
 def _allowed_api_key(key_id, *, user, hq_server, opportunity):
-    """The posted key, if it is the opportunity's current key on an unchanged HQ server, or one of the user's own
-    keys on `hq_server`. Raises ValidationError otherwise."""
-    error = forms.ValidationError(_("Select one of your own API keys for this HQ server."))
+    """The posted HQ API key, if the user may put it on the opportunity. Raises ValidationError otherwise.
+
+    The user may pick one of their own keys on the selected HQ server. While the opportunity stays on its HQ
+    server they may also keep its current key, which can belong to a colleague.
+    """
     if hq_server is None:
-        raise error
-    allowed = Q(pk__in=[])
-    # Opportunities from before hq_server was recorded have none, so fall back to the server of their key.
-    current_server_id = opportunity.hq_server_id or (opportunity.api_key.hq_server_id if opportunity.api_key else None)
-    if opportunity.api_key_id and hq_server.pk == current_server_id:
-        allowed |= Q(pk=opportunity.api_key_id)
-    user_pk = getattr(user, "pk", None)
-    if user_pk is not None:
-        allowed |= Q(user_id=user_pk, hq_server=hq_server)
+        raise forms.ValidationError(API_KEY_NOT_ALLOWED)
+
+    allowed_keys = _own_api_keys(user, hq_server.pk)
+    if hq_server.pk == _current_hq_server_id(opportunity):
+        allowed_keys |= HQApiKey.objects.filter(pk=opportunity.api_key_id)
+
     try:
-        return HQApiKey.objects.select_related("hq_server", "user").filter(allowed).get(pk=key_id)
-    except (HQApiKey.DoesNotExist, TypeError, ValueError):
-        raise error
+        return allowed_keys.select_related("hq_server", "user").get(pk=key_id)
+    except (HQApiKey.DoesNotExist, TypeError, ValueError):  # unknown id, or one that isn't a number
+        raise forms.ValidationError(API_KEY_NOT_ALLOWED)
+
+
+def _own_api_keys(user, hq_server_id):
+    return HQApiKey.objects.filter(user=user, hq_server_id=hq_server_id)
+
+
+def _current_hq_server_id(opportunity):
+    """The opportunity's HQ server. Opportunities from before hq_server was recorded have none, so the server of
+    their key stands in."""
+    if opportunity.hq_server_id:
+        return opportunity.hq_server_id
+    return opportunity.api_key.hq_server_id if opportunity.api_key else None
 
 
 class OpportunityFinalizeForm(forms.ModelForm):
