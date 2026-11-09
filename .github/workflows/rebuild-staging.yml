@@ -140,23 +140,33 @@ jobs:
           set -o pipefail
           ./deploy/rebuildstaging --no-push 2>&1 | tee build.log
 
-      - name: Install Geo Dependencies
+      - name: Install app dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y binutils gdal-bin libproj-dev
+          # git-build-branch leaves the original branch checked out
+          git checkout autostaging
+          uv sync --frozen
+
+      # The checks below catch a broken combination of branches before autostaging is pushed, rather than in
+      # the deploy. They need no database service: makemigrations only warns when it can't reach one.
+      - name: Run Django checks
+        id: django-check
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          set -o pipefail
+          uv run python manage.py check 2>&1 | tee check.log
 
       - name: Check migrations
         id: migrations
         env:
           DJANGO_SETTINGS_MODULE: config.settings.test
-          # makemigrations only warns when it can't reach the database, so no database service is needed
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: |
-          # Two staged branches that each add a migration to the same app give it two leaf nodes. Catch that
-          # here, before autostaging is pushed, rather than in the deploy's migrate step.
+          # Two staged branches that each add a migration to the same app give it two leaf nodes
           set -o pipefail
-          git checkout autostaging
-          uv sync --frozen
           uv run python manage.py makemigrations --check --dry-run 2>&1 | tee migrations.log
 
       - name: Push if the code changed
@@ -179,30 +189,35 @@ jobs:
         run: gh workflow run deploy.yml --ref main -f environment=staging -f deploy_type=adhoc
 
       - name: Build Slack message
-        if: failure() && (steps.build.outcome == 'failure' || steps.migrations.outcome == 'failure')
+        id: slack-message
+        if: failure()
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          MIGRATIONS_OUTCOME: ${{ steps.migrations.outcome }}
+          FAILED_STEP: >-
+            ${{ steps.build.outcome == 'failure' && 'build'
+                || steps.django-check.outcome == 'failure' && 'check'
+                || steps.migrations.outcome == 'failure' && 'migrations'
+                || 'other' }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
-          if [ "$MIGRATIONS_OUTCOME" = "failure" ]; then
-            # Conflicting leaf nodes raise a CommandError; missing migrations print "Migrations for '<app>':"
-            DETAILS=$(grep -E -A3 "CommandError|Migrations for" migrations.log | head -20 || true)
-          else
-            DETAILS=$(sed 's/\x1b\[[0-9;]*m//g' build.log | grep -E 'conflicts with|NOT FOUND|=> ' | sort -u | head -20 || true)
+          # Run main's copy of the report, not one a staged branch may have changed, since it gets the Slack token
+          git checkout --quiet --force main
+          case "$FAILED_STEP" in
+            build) LOG=build.log ;;
+            check) LOG=check.log ;;
+            migrations) LOG=migrations.log ;;
+            *) LOG="" ;;
+          esac
+          if ! uv run --no-project --with httpx --with pyyaml python -m deploy.staging_report \
+              --step "$FAILED_STEP" ${LOG:+--log "$LOG"} --config "artifacts/staging-branches/$STAGING_CONFIG" \
+              --run-url "$RUN_URL" --output slack-payload.json; then
+            # Still report the failure, without the details, if the report itself breaks
+            jq -n --arg url "$RUN_URL" '{text: "Staging rebuild failed", blocks: [{type: "section", text: {
+              type: "mrkdwn", text: ("*Staging rebuild failed.* <" + $url + "|View run>")}}]}' > slack-payload.json
           fi
-          jq -n --arg details "${DETAILS:-See the run log}" --arg url "$RUN_URL" --arg config "$STAGING_CONFIG" '{
-            text: "Staging rebuild failed",
-            blocks: [
-              {type: "section", text: {type: "mrkdwn",
-                text: "*Staging rebuild failed.* Staging keeps its current version until the branch list builds."}},
-              {type: "section", text: {type: "mrkdwn", text: ("```" + $details + "```")}},
-              {type: "context", elements: [{type: "mrkdwn",
-                text: ("<" + $url + "|View run> · <https://github.com/dimagi/staging-branches/blob/main/" + $config + "|Edit branch list>")}]}
-            ]
-          }' > slack-payload.json
 
-      - name: Post conflicts to Slack
-        if: failure() && (steps.build.outcome == 'failure' || steps.migrations.outcome == 'failure')
+      - name: Post failure to Slack
+        if: failure() && steps.slack-message.outcome == 'success'
         uses: slackapi/slack-github-action@v1.24.0
         with:
           channel-id: 'C09TVKX4N2C'
