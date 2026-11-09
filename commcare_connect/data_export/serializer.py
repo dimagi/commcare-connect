@@ -10,11 +10,11 @@ from rest_framework import serializers
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
 from commcare_connect.data_export.const import OPPORTUNITY_ACCESS_CHECK_MAX_IDS
-from commcare_connect.microplanning.helpers import (
+from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tasks import parse_lon_lat_centroid, send_work_area_assignment_notification
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,

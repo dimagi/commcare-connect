@@ -70,11 +70,6 @@ from commcare_connect.microplanning.filters import (
     WorkAreaMapFilterSet,
 )
 from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
-from commcare_connect.microplanning.helpers import (
-    assign_work_areas_and_sync_to_hq,
-    exclude_work_areas_for_opportunity,
-    unassign_work_areas_for_opportunity,
-)
 from commcare_connect.microplanning.models import (
     ImplementationArea,
     InaccessibilityRequestStatus,
@@ -91,6 +86,11 @@ from commcare_connect.microplanning.queries import (
     work_area_detail,
     work_area_search_options,
 )
+from commcare_connect.microplanning.services.work_area_assignment import (
+    assign_work_areas_and_sync_to_hq,
+    unassign_work_areas_for_opportunity,
+)
+from commcare_connect.microplanning.services.work_areas import exclude_work_areas_for_opportunity
 from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tasks import send_push_notification_task

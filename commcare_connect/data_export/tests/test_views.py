@@ -838,7 +838,9 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         area.refresh_from_db()
         assert area.target_population == 99
 
-    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    @mock.patch(
+        "commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas"
+    )
     def test_pm_admin_assign_flips_status_syncs_hq_and_notifies(
         self, mock_hq_sync, api_client, managed_opportunity, program_manager_org_user_admin
     ):
@@ -897,7 +899,9 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
 
         payload = [{"id": area.id, "opportunity_access": access.id}]
         with (
-            mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas"),
+            mock.patch(
+                "commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas"
+            ),
             mock.patch("commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"),
         ):
             response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
@@ -910,7 +914,9 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
             assert response.status_code == 404
             assert area.opportunity_access_id is None
 
-    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    @mock.patch(
+        "commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas"
+    )
     def test_hq_failure_during_assignment_rolls_back(
         self, mock_hq_sync, api_client, managed_opportunity, program_manager_org_user_admin
     ):
@@ -928,7 +934,7 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         assert area.opportunity_access_id is None
         assert area.status == WorkAreaStatus.UNASSIGNED
 
-    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @mock.patch("commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases")
     def test_explicit_null_opportunity_access_unassigns(
         self, mock_hq_unassign, api_client, managed_opportunity, program_manager_org_user_admin
     ):

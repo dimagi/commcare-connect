@@ -1468,7 +1468,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
         )
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
         self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
@@ -1839,7 +1839,7 @@ class TestAssignmentAccess:
         for url in urls:
             assert client.get(url).status_code == (200 if allowed else 404), url
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas")
     def test_save_assignment(
         self, mock_hq_sync, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed
     ):
@@ -2052,7 +2052,7 @@ class TestSaveAssignment:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas")
     def test_assigns_work_areas_and_syncs_to_hq(
         self,
         mock_hq_sync,
@@ -2082,7 +2082,7 @@ class TestSaveAssignment:
             wa.refresh_from_db()
             assert wa.opportunity_access_id == access.id
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.services.work_area_assignment.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_rolls_back_db(
         self,
         mock_hq_sync,
