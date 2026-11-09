@@ -39,7 +39,8 @@ from commcare_connect.microplanning.models import (
     WorkAreaGroup,
     WorkAreaStatus,
 )
-from commcare_connect.microplanning.tasks import WorkAreaCSVExporter, get_implementation_area_import_cache_key
+from commcare_connect.microplanning.services.implementation_area_import import get_implementation_area_import_cache_key
+from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
@@ -107,7 +108,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
     def test_locking_mechanism(self, mock_delay, client, org_user_admin, opportunity, csv_file):
         url = self.get_url(opportunity.organization.slug, opportunity.opportunity_id)
         client.force_login(org_user_admin)
@@ -133,7 +134,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert mock_delay.call_count == 1  # No new task
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
     def test_flagged_permission_required(self, mock_delay, client, org_user_admin, opportunity, csv_file):
         """
         Ensure upload is only allowed if the opportunity is flagged for microplanning.
@@ -173,7 +174,7 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
-    @patch("commcare_connect.microplanning.views.import_implementation_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.import_implementation_areas_task.delay")
     def test_locking_and_redirect(self, mock_delay, client, org_user_admin, organization, opportunity, csv_file):
         mock_delay.return_value = Mock(id="00000000-0000-0000-0000-000000000000")
         client.force_login(org_user_admin)

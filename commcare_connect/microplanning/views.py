@@ -12,8 +12,6 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
 from django.db import connection, transaction
 from django.db.models import (
     F,
@@ -87,6 +85,11 @@ from commcare_connect.microplanning.queries import (
     work_area_search_options,
     work_areas_for_download,
 )
+from commcare_connect.microplanning.services.implementation_area_import import (
+    check_implementation_area_upload_can_start,
+    get_implementation_area_import_cache_key,
+    start_implementation_area_import,
+)
 from commcare_connect.microplanning.services.implementation_areas import clear_implementation_areas_for_opportunity
 from commcare_connect.microplanning.services.inaccessibility_requests import review_work_area_inaccessibility_request
 from commcare_connect.microplanning.services.work_area_assignment import (
@@ -99,6 +102,7 @@ from commcare_connect.microplanning.services.work_area_groups import (
     clear_work_area_groups_for_opportunity,
     start_work_area_clustering,
 )
+from commcare_connect.microplanning.services.work_area_import import get_import_area_cache_key, start_work_area_import
 from commcare_connect.microplanning.services.work_areas import (
     clear_work_areas_for_opportunity,
     exclude_work_areas_for_opportunity,
@@ -117,10 +121,6 @@ from commcare_connect.utils.ratios import pct
 
 from .tasks import (
     WorkAreaCSVExporter,
-    get_implementation_area_import_cache_key,
-    get_import_area_cache_key,
-    import_implementation_areas_task,
-    import_work_areas_task,
 )
 
 logger = logging.getLogger(__name__)
@@ -505,22 +505,14 @@ class WorkAreaImport(View):
             messages.error(request, _("Unsupported file format. Please upload a CSV file."))
             return redirect(redirect_url)
 
-        if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            messages.error(request, _("Work Areas already exist for this opportunity."))
+        try:
+            task_id = start_work_area_import(opportunity=request.opportunity, csv_file=csv_file)
+        except ValidationError as e:
+            messages.error(request, e.message)
             return redirect(redirect_url)
 
-        lock_key = get_import_area_cache_key(request.opportunity.id)
-
-        if cache.get(lock_key):
-            messages.error(request, _("An import for this opportunity is already in progress."))
-            return redirect(redirect_url)
-
-        file_name = f"work_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(csv_file.read()))
-        task = import_work_areas_task.delay(request.opportunity.id, file_name)
-        cache.set(lock_key, task.id, timeout=1200)
         messages.info(request, _("Work Area upload has been started."))
-        redirect_url += f"?task_id={task.id}"
+        redirect_url += f"?task_id={task_id}"
         return redirect(redirect_url)
 
 
@@ -539,13 +531,11 @@ class ImplementationAreaImport(View):
             "microplanning:microplanning_home",
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
-        if ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-            messages.error(request, _("Implementation Areas already exist for this opportunity."))
-            return redirect(redirect_url)
-
-        lock_key = get_implementation_area_import_cache_key(request.opportunity.id)
-        if cache.get(lock_key):
-            messages.error(request, _("An import for this opportunity is already in progress."))
+        # Unlike the work area upload, the existing-data checks come before the file format check.
+        try:
+            check_implementation_area_upload_can_start(request.opportunity)
+        except ValidationError as e:
+            messages.error(request, e.message)
             return redirect(redirect_url)
 
         csv_file = request.FILES.get("csv_file")
@@ -553,12 +543,14 @@ class ImplementationAreaImport(View):
             messages.error(request, _("Unsupported file format. Please upload a CSV file."))
             return redirect(redirect_url)
 
-        file_name = f"implementation_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
-        default_storage.save(file_name, ContentFile(csv_file.read()))
-        task = import_implementation_areas_task.delay(request.opportunity.id, file_name)
-        cache.set(lock_key, task.id, timeout=1200)
+        try:
+            task_id = start_implementation_area_import(opportunity=request.opportunity, csv_file=csv_file)
+        except ValidationError as e:
+            messages.error(request, e.message)
+            return redirect(redirect_url)
+
         messages.info(request, _("Implementation Area upload has been started."))
-        redirect_url += f"?task_id={task.id}&area_type=implementation_area"
+        redirect_url += f"?task_id={task_id}&area_type=implementation_area"
         return redirect(redirect_url)
 
 

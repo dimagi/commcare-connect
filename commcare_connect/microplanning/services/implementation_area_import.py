@@ -1,14 +1,49 @@
+import uuid
 from typing import TextIO
 
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils.translation import gettext as _
 
 from commcare_connect.microplanning.exceptions import AreaCSVColumnsError
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea
 from commcare_connect.microplanning.utils import parse_implementation_area_csv
+from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.itertools import batched
 
 INSERT_BATCH_SIZE = 5000
+IMPORT_LOCK_TIMEOUT = 1200
+
+
+def start_implementation_area_import(opportunity: Opportunity, csv_file: UploadedFile) -> str:
+    """Store an uploaded implementation area CSV, queue its import and return the task id.
+
+    Raises ValidationError when the upload isn't accepted.
+    """
+    from commcare_connect.microplanning.tasks import import_implementation_areas_task
+
+    check_implementation_area_upload_can_start(opportunity)
+    file_name = f"implementation_area_upload-{opportunity.id}-{uuid.uuid4().hex}.csv"
+    default_storage.save(file_name, ContentFile(csv_file.read()))
+    task = import_implementation_areas_task.delay(opportunity.id, file_name)
+    cache.set(get_implementation_area_import_cache_key(opportunity.id), task.id, timeout=IMPORT_LOCK_TIMEOUT)
+    return task.id
+
+
+def check_implementation_area_upload_can_start(opportunity: Opportunity) -> None:
+    """Raise ValidationError if the opportunity has implementation areas or an import is running."""
+    if ImplementationArea.objects.filter(opportunity_id=opportunity.id).exists():
+        raise ValidationError(_("Implementation Areas already exist for this opportunity."))
+    if cache.get(get_implementation_area_import_cache_key(opportunity.id)):
+        raise ValidationError(_("An import for this opportunity is already in progress."))
+
+
+def get_implementation_area_import_cache_key(opp_id: int) -> str:
+    return f"implementation_area_import_lock_{opp_id}"
 
 
 def import_uploaded_implementation_areas(opportunity_id: int, csv_source: TextIO) -> dict:

@@ -1,9 +1,14 @@
 import csv
 import io
 import itertools
+from unittest import mock
 
 import pytest
 from django.contrib.gis.geos import Polygon
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
@@ -11,8 +16,10 @@ from commcare_connect.microplanning.const import WORK_AREA_CSV_GROUP_NAME_HEADER
 from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.services.work_area_import import (
     _overlap_percent,
+    get_import_area_cache_key,
     import_uploaded_work_areas,
     import_work_areas,
+    start_work_area_import,
 )
 from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
@@ -581,3 +588,42 @@ def test_import_uploaded_work_areas_refuses_when_work_areas_exist(opportunity):
 
     assert result == {"errors": {"Work Areas already exist for this opportunity": [0]}}
     assert WorkArea.objects.filter(opportunity=opportunity).count() == 1
+
+
+@pytest.mark.django_db
+class TestStartUpload:
+    @pytest.fixture(autouse=True)
+    def clear_lock(self, opportunity):
+        cache.delete(get_import_area_cache_key(opportunity.id))
+        yield
+        cache.delete(get_import_area_cache_key(opportunity.id))
+
+    @mock.patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
+    def test_stores_the_file_queues_the_import_and_takes_the_lock(self, delay, opportunity):
+        delay.return_value.id = "task-1"
+
+        task_id = start_work_area_import(opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b"))
+
+        assert task_id == "task-1"
+        opp_id, file_name = delay.call_args.args
+        assert opp_id == opportunity.id
+        with default_storage.open(file_name) as stored:
+            assert stored.read() == b"a,b"
+        default_storage.delete(file_name)
+        assert cache.get(get_import_area_cache_key(opportunity.id)) == "task-1"
+
+    @mock.patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
+    def test_refuses_when_areas_exist(self, delay, opportunity):
+        WorkAreaFactory(opportunity=opportunity)
+
+        with pytest.raises(ValidationError, match="Work Areas already exist"):
+            start_work_area_import(opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b"))
+        delay.assert_not_called()
+
+    @mock.patch("commcare_connect.microplanning.tasks.import_work_areas_task.delay")
+    def test_refuses_while_an_import_runs(self, delay, opportunity):
+        cache.set(get_import_area_cache_key(opportunity.id), "running")
+
+        with pytest.raises(ValidationError, match="already in progress"):
+            start_work_area_import(opportunity=opportunity, csv_file=SimpleUploadedFile("areas.csv", b"a,b"))
+        delay.assert_not_called()

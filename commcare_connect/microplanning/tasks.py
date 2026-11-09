@@ -20,9 +20,12 @@ from .const import (
     WORK_AREA_CSV_IMPLEMENTATION_AREA_HEADER,
 )
 from .models import OvertureRelease
-from .services.implementation_area_import import import_uploaded_implementation_areas
+from .services.implementation_area_import import (
+    get_implementation_area_import_cache_key,
+    import_uploaded_implementation_areas,
+)
 from .services.work_area_groups import get_cluster_area_cache_lock_key
-from .services.work_area_import import import_uploaded_work_areas
+from .services.work_area_import import get_import_area_cache_key, import_uploaded_work_areas
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +33,6 @@ logger = logging.getLogger(__name__)
 # reader rather than in const.py, which is for constants more than one module shares.
 OVERTURE_CATALOG_URL = "https://stac.overturemaps.org/catalog.json"
 OVERTURE_CATALOG_TIMEOUT = 10
-
-
-def get_import_area_cache_key(opp_id: int):
-    return f"work_area_import_lock_{opp_id}"
-
-
-def get_implementation_area_import_cache_key(opp_id: int):
-    return f"implementation_area_import_lock_{opp_id}"
 
 
 @celery_app.task(bind=True)
