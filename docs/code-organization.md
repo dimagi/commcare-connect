@@ -122,6 +122,10 @@ A function that takes one model's queryset and returns it filtered or annotated 
 - A filter that limits rows to what a user may see is a `QuerySet` method. `permissions` calls it when it needs the check.
 - A filter that depends on another app's models goes in the `queries` of the app the app order picks (see [Code shared between apps](#code-shared-between-apps)). For example, users who hold a work area go in `microplanning/queries.py`, not on `User`.
 
+### Celery tasks
+
+Services dispatch the background work they need with `transaction.on_commit(partial(task.delay, ...))`, so every caller gets it. Import the task inside the function, because `tasks.py` imports services at module level. A task calls one service and handles only Celery concerns.
+
 ### Emails
 
 Rendering an email's templates and sending it is a service. The generic render-and-send function goes in `commcare_connect/utils/email.py`. The function that picks the recipients and builds the context goes in the app's `services`. Celery tasks only queue the send.
