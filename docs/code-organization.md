@@ -84,6 +84,12 @@ Any other utility with one caller stays as a private function in the caller's mo
 - Raised and caught in one module: stays in that module.
 - Caught in another module: the app's `exceptions.py`.
 
+### Constants
+
+- Constants and enums used by more than one module go in the app's `const.py`.
+- Constants used by one module stay at the top of that module.
+- `TextChoices` used for a model field, and constants a model needs, stay in `models.py`. `const.py` may import its own app's models, so models can't import from it.
+
 ### Checks
 
 A check that guards a change lives next to that change in `services`, and the service calls it (see step 2 under [Roles](#roles)).
