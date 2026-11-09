@@ -65,7 +65,7 @@ These go in their role module or package even when only one place calls them. A 
 
 Two exceptions keep small code next to its caller:
 
-- A single-object lookup used in one module, such as a `.get()` that raises a domain error when the row is missing, stays a private function in that module.
+- A single-object lookup used in one role module, such as a `.get()` that raises a domain error when the row is missing, stays a private function in that module. Thin layers run simple reads themselves (see [Thin layers](#thin-layers)).
 - A helper that only serves functions in one role module stays private in that module, even when it writes.
 
 A module of classes that each calculate a value by running queries, such as `audit/chc_indicators.py`, is a `queries` module.
@@ -121,7 +121,7 @@ Rendering an email's templates and sending it is a service. The generic render-a
 - A display value worked out from one object: a model property or a template filter.
 - Needed on every page: `web/context_processors.py`.
 
-Exports don't query or write. The caller gets the data from `queries` and passes it in. A context builder may call `queries` too, but doesn't write its own queries.
+Exports don't use the ORM directly. The caller gets the data from `queries` and passes it in. When the caller can't easily pass everything in, such as the context for each PDF in a batch, the export calls a `queries` function. A context builder may call `queries` too, but doesn't write its own queries.
 
 ## Thin layers
 
@@ -129,8 +129,9 @@ Views, forms, tables, filter sets, serializers, admin classes, view decorators, 
 
 ### No business logic
 
-Thin layers take input, call services, queries, permissions and exports, and return output. They don't contain the logic themselves. They keep only code that works with the request, the form, the task's arguments or the response. Anything else moves out, even when the thin layer is its only caller: a pure function goes to the app's `utils/`, and code that reads the database goes to `queries`. That keeps the logic testable without a request, a worker or a command line, and reusable by all of them.
+Thin layers take input, call services, queries, permissions and exports, and return output. They don't contain the logic themselves. They keep only code that works with the request, the form, the task's arguments or the response. Anything else moves out, even when the thin layer is its only caller: a pure function goes to the app's `utils/`, and code that reads the database goes to `queries`, except for simple reads. That keeps the logic testable without a request, a worker or a command line, and reusable by all of them.
 
+- Thin layers may run simple reads themselves: `get_object_or_404`, or a `.get()`, `.filter()`, `.exists()` or `.count()` on one model using values from the request, or a related manager such as `organization.flag_set`. Reads that use `annotate`, `aggregate`, `Subquery`, `Prefetch` or raw SQL, or that repeat a filter written elsewhere, go in `queries`.
 - Tasks only handle Celery concerns: retries, progress reporting, file storage and failures.
 - Management commands only handle arguments and output. Code shared between commands goes in the app's role modules, not in another command module.
 - A filter set or form may build choice querysets, using `QuerySet` methods.
