@@ -9,6 +9,7 @@ def run_git(cwd, *args):
 
 def commit(repo, *, filename, content="change\n"):
     path = repo / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     run_git(repo, "add", filename)
     run_git(repo, "commit", "--quiet", "-m", f"edit {filename}")
