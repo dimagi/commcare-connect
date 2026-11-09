@@ -122,6 +122,9 @@ jobs:
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install git-build-branch
         run: uv tool install git-build-branch==0.1.20
@@ -136,6 +139,25 @@ jobs:
         run: |
           set -o pipefail
           ./deploy/rebuildstaging --no-push 2>&1 | tee build.log
+
+      - name: Install Geo Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils gdal-bin libproj-dev
+
+      - name: Check migrations
+        id: migrations
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          # makemigrations only warns when it can't reach the database, so no database service is needed
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          # Two staged branches that each add a migration to the same app give it two leaf nodes. Catch that
+          # here, before autostaging is pushed, rather than in the deploy's migrate step.
+          set -o pipefail
+          git checkout autostaging
+          uv sync --frozen
+          uv run python manage.py makemigrations --check --dry-run 2>&1 | tee migrations.log
 
       - name: Push if the code changed
         id: push
@@ -157,11 +179,17 @@ jobs:
         run: gh workflow run deploy.yml --ref main -f environment=staging -f deploy_type=adhoc
 
       - name: Build Slack message
-        if: failure() && steps.build.outcome == 'failure'
+        if: failure() && (steps.build.outcome == 'failure' || steps.migrations.outcome == 'failure')
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MIGRATIONS_OUTCOME: ${{ steps.migrations.outcome }}
         run: |
-          DETAILS=$(sed 's/\x1b\[[0-9;]*m//g' build.log | grep -E 'conflicts with|NOT FOUND|=> ' | sort -u | head -20 || true)
+          if [ "$MIGRATIONS_OUTCOME" = "failure" ]; then
+            # Conflicting leaf nodes raise a CommandError; missing migrations print "Migrations for '<app>':"
+            DETAILS=$(grep -E -A3 "CommandError|Migrations for" migrations.log | head -20 || true)
+          else
+            DETAILS=$(sed 's/\x1b\[[0-9;]*m//g' build.log | grep -E 'conflicts with|NOT FOUND|=> ' | sort -u | head -20 || true)
+          fi
           jq -n --arg details "${DETAILS:-See the run log}" --arg url "$RUN_URL" --arg config "$STAGING_CONFIG" '{
             text: "Staging rebuild failed",
             blocks: [
@@ -174,7 +202,7 @@ jobs:
           }' > slack-payload.json
 
       - name: Post conflicts to Slack
-        if: failure() && steps.build.outcome == 'failure'
+        if: failure() && (steps.build.outcome == 'failure' || steps.migrations.outcome == 'failure')
         uses: slackapi/slack-github-action@v1.24.0
         with:
           channel-id: 'C09TVKX4N2C'
