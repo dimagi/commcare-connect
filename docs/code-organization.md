@@ -172,7 +172,7 @@ Thin layers take input, call services, queries, permissions and exports, and ret
 - Thin layers may run simple reads themselves: `get_object_or_404`, or a `.get()`, `.filter()`, `.exists()` or `.count()` on one model using values from the request, or a related manager such as `organization.flag_set`. Reads that use `annotate`, `aggregate`, `Subquery`, `Prefetch` or raw SQL, or that repeat a filter written elsewhere, go in `queries`.
 - When two thin layers hold copies of the same logic that differ, the logic still moves out. If the difference isn't intended, merge the copies into one service. If it is, write two service functions that share private helpers, with no behaviour flags.
 - Tasks only handle Celery concerns: retries, progress reporting, file storage and failures.
-- Management commands only handle arguments and output. Code shared between commands goes in the app's role modules, not in another command module.
+- Management commands only handle arguments and output. Business logic shared between commands goes in the app's role modules, not in another command module. Plumbing shared between commands (base command classes, prompts, output helpers) goes in `<app>/management/base.py`, which is outside `commands/`, so Django doesn't list it as a command. Connecting to another database or system is a client, in its own module.
 - A filter set or form may build choice querysets, using `QuerySet` methods.
 - Access guards (view decorators and DRF permission classes) live in the app's `decorators.py` and call `permissions`.
 - Signal receivers go in `<app>/signals.py`, connected in `AppConfig.ready()`. For our own models, call a service directly instead of sending a signal.
