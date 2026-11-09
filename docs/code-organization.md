@@ -74,7 +74,7 @@ A module of classes that each calculate a value by running queries, such as `aud
 
 A pure calculation worked out from one model instance's fields, such as a derived date or status, is a method or property on that model.
 
-Any other utility with one caller stays as a private function in the caller's module. When a second module needs it, move it to `utils/`:
+Any other utility with one caller stays as a private function in the caller's module, unless that caller is a thin layer. When a second module needs it, or its only caller is a thin layer, move it to `utils/`:
 
 - The app's `utils/` package if it names a Connect concept, e.g. `generate_invoice_number`. Other apps import it from there.
 - `commcare_connect/utils/<topic>.py` if it names no Connect concept.
@@ -129,7 +129,7 @@ Views, forms, tables, filter sets, serializers, admin classes, view decorators, 
 
 ### No business logic
 
-Thin layers take input, call services, queries, permissions and exports, and return output. They don't contain the logic themselves. That keeps the logic testable without a request, a worker or a command line, and reusable by all of them.
+Thin layers take input, call services, queries, permissions and exports, and return output. They don't contain the logic themselves. They keep only code that works with the request, the form, the task's arguments or the response. Anything else moves out, even when the thin layer is its only caller: a pure function goes to the app's `utils/`, and code that reads the database goes to `queries`. That keeps the logic testable without a request, a worker or a command line, and reusable by all of them.
 
 - Tasks only handle Celery concerns: retries, progress reporting, file storage and failures.
 - Management commands only handle arguments and output. Code shared between commands goes in the app's role modules, not in another command module.
