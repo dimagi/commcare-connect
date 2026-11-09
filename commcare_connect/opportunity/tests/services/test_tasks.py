@@ -5,6 +5,7 @@ from unittest import mock
 import pytest
 from django.utils.timezone import now
 
+from commcare_connect.connect_id_client.models import Message
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, TaskTypeModeChoices
 from commcare_connect.opportunity.services.tasks import (
@@ -12,10 +13,13 @@ from commcare_connect.opportunity.services.tasks import (
     complete_ocs_task,
     complete_task,
     delete_assigned_tasks,
+    send_task_assigned_message,
+    send_task_completed_message,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
+    OpportunityFactory,
     TaskTypeFactory,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -372,3 +376,48 @@ class TestDeleteAssignedTasks:
             delete_assigned_tasks(task_ids=[task_a.pk, task_b.pk], opportunity=access.opportunity)
 
         mock_update.assert_called_once_with({access: {"properties": {"prop_a": "", "prop_b": ""}}})
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "send_notification, title, body, key",
+    [
+        (
+            send_task_assigned_message,
+            "New Task Assigned",
+            "A task has been assigned to you. You must complete it before continuing Delivery activities.",
+            "task_assignment",
+        ),
+        (
+            send_task_completed_message,
+            "Task Completed",
+            "You have completed the task '{task_name}'.",
+            "task_completion",
+        ),
+    ],
+    ids=["assignment", "completion"],
+)
+@mock.patch("commcare_connect.opportunity.services.tasks.send_message")
+def test_send_task_message(send_message_patch, send_notification, title, body, key):
+    opportunity = OpportunityFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app)
+    assigned_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+
+    send_notification(assigned_task.pk)
+
+    assert send_message_patch.call_count == 1
+    send_message_patch.assert_called_with(
+        Message(
+            usernames=[access.user.username],
+            data={
+                "action": "ccc_generic_opportunity",
+                "title": title,
+                "body": body.format(task_name=task_type.name),
+                "opportunity_uuid": str(opportunity.opportunity_id),
+                "opportunity_status": "delivery",
+                "key": key,
+                "session_endpoint_id": "cc_app_home",
+            },
+        )
+    )

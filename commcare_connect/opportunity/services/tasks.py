@@ -7,6 +7,8 @@ from uuid import UUID
 from django.db import IntegrityError, transaction
 
 from commcare_connect.commcarehq import api as commcarehq_api
+from commcare_connect.connect_id_client import send_message
+from commcare_connect.connect_id_client.models import Message
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -167,3 +169,49 @@ def _reset_hq_case_properties(hq_updates: dict[tuple[int, str], OpportunityAcces
         )
     if to_reset:
         commcarehq_api.bulk_update_usercases(to_reset)
+
+
+def send_task_assigned_message(assigned_task_id: int) -> None:
+    """Tell the worker on their phone that a task was assigned to them."""
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+    ).get(pk=assigned_task_id)
+    _send_task_message(
+        assigned_task=assigned_task,
+        title="New Task Assigned",
+        body="A task has been assigned to you. You must complete it before continuing Delivery activities.",
+        key="task_assignment",
+    )
+
+
+def send_task_completed_message(assigned_task_id: int) -> None:
+    """Tell the worker on their phone that they completed a task."""
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+        "task_type",
+    ).get(pk=assigned_task_id)
+    _send_task_message(
+        assigned_task=assigned_task,
+        title="Task Completed",
+        body=f"You have completed the task '{assigned_task.task_type.name}'.",
+        key="task_completion",
+    )
+
+
+def _send_task_message(*, assigned_task: AssignedTask, title: str, body: str, key: str) -> None:
+    access = assigned_task.opportunity_access
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": title,
+            "body": body,
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": key,
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)

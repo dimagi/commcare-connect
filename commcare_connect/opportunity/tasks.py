@@ -38,7 +38,6 @@ from commcare_connect.opportunity.export import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
-    AssignedTask,
     AudioAttachment,
     BlobMeta,
     CompletedWorkStatus,
@@ -59,6 +58,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.services.tasks import send_task_assigned_message, send_task_completed_message
 from commcare_connect.opportunity.utils import finance_request as finance_request_utils
 from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
@@ -931,47 +931,12 @@ def _send_auto_invoice_created_notification(invoice_ids):
 
 @celery_app.task()
 def send_task_assignment_notification(assigned_task_id: int):
-    assigned_task = AssignedTask.objects.select_related(
-        "opportunity_access__user",
-        "opportunity_access__opportunity",
-    ).get(pk=assigned_task_id)
-    access = assigned_task.opportunity_access
-    message = Message(
-        usernames=[access.user.username],
-        data={
-            "action": "ccc_generic_opportunity",
-            "title": "New Task Assigned",
-            "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
-            "opportunity_uuid": str(access.opportunity.opportunity_id),
-            "opportunity_status": "delivery",
-            "key": "task_assignment",
-            "session_endpoint_id": "cc_app_home",
-        },
-    )
-    send_message(message)
+    send_task_assigned_message(assigned_task_id)
 
 
 @celery_app.task()
 def send_task_completion_notification(assigned_task_id: int):
-    assigned_task = AssignedTask.objects.select_related(
-        "opportunity_access__user",
-        "opportunity_access__opportunity",
-        "task_type",
-    ).get(pk=assigned_task_id)
-    access = assigned_task.opportunity_access
-    message = Message(
-        usernames=[access.user.username],
-        data={
-            "action": "ccc_generic_opportunity",
-            "title": "Task Completed",
-            "body": f"You have completed the task '{assigned_task.task_type.name}'.",
-            "opportunity_uuid": str(access.opportunity.opportunity_id),
-            "opportunity_status": "delivery",
-            "key": "task_completion",
-            "session_endpoint_id": "cc_app_home",
-        },
-    )
-    send_message(message)
+    send_task_completed_message(assigned_task_id)
 
 
 @celery_app.task()
