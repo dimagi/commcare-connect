@@ -9,9 +9,9 @@ from django.utils import timezone
 from django.utils.timezone import localdate
 
 from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
-from commcare_connect.microplanning.helpers import pct, ratio
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import DeliverUnit, Opportunity, UserVisit, VisitValidationStatus
+from commcare_connect.utils.ratios import pct, ratio
 
 WEEK_DAYS = 7
 

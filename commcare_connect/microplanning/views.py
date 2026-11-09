@@ -76,7 +76,6 @@ from commcare_connect.microplanning.helpers import (
     denied_inaccessibility_work_area_ids,
     exclude_work_areas_for_opportunity,
     map_work_areas,
-    pct,
     pending_inaccessibility_requests,
     unassign_work_areas_for_opportunity,
     work_area_detail,
@@ -100,6 +99,7 @@ from commcare_connect.organization.decorators import (
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.file import get_file_extension
+from commcare_connect.utils.ratios import pct
 
 from .tasks import (
     ImplementationAreaCSVImporter,
