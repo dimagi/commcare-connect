@@ -163,7 +163,7 @@ Exports don't use the ORM directly. The caller gets the data from `queries` and 
 
 ## Thin layers
 
-Views, forms, tables, filter sets, serializers, admin classes, view decorators, Celery tasks and management commands are thin layers.
+Views, forms, tables, filter sets, serializers, admin classes, view decorators, Celery tasks and management commands are thin layers, as is anything else Django or a library calls for us.
 
 ### No business logic
 
@@ -174,7 +174,10 @@ Thin layers take input, call services, queries, permissions and exports, and ret
 - Tasks only handle Celery concerns: retries, progress reporting, file storage and failures.
 - Management commands only handle arguments and output. Code shared between commands goes in the app's role modules, not in another command module.
 - A filter set or form may build choice querysets, using `QuerySet` methods.
-- A view decorator that checks access calls a function in `permissions`.
+- Access guards (view decorators and DRF permission classes) live in the app's `decorators.py` and call `permissions`.
+- Signal receivers go in `<app>/signals.py`, connected in `AppConfig.ready()`. For our own models, call a service directly instead of sending a signal.
+- Middleware goes in the app the app order picks (see [Code shared between apps](#code-shared-between-apps)). Generic middleware goes in `commcare_connect/utils/middleware.py`.
+- Audit context (`pghistory.context(...)`) is set by the entry point (middleware, view, task or command), not by services.
 
 ### Shared base classes, mixins and fields
 
