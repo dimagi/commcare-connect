@@ -103,7 +103,7 @@ Client apps that import no app (`connect_id_client`, `jira_service_desk`, `commc
 - Models and role modules import other apps only from their left. Thin layers may import any app. Existing code breaks this in many places. Don't add new imports that point right.
 - String foreign keys and imports inside a class body or function may point right, such as `Opportunity.program`. Don't add new ones without a reason.
 - Code that imports no app from this repo goes in `commcare_connect/utils/<topic>.py`. It may import Django and third-party packages, including their models. It must not import this repo's apps, because five apps' models import `utils/db.py` and an app import there causes circular imports. The one exception is a module that holds only constants, such as `flags/switch_names.py`, when there's no other way.
-- An app doesn't write another app's models directly, whether from a view, form or task. It calls a service in the app that owns the model.
+- An app doesn't write another app's models directly, whether from a view, form or task. It calls a service in the app that owns the model. Reading another app's models is fine anywhere a read is allowed.
 - An operation that spans apps, such as merging two organizations, is a service in the app that starts it. That service calls the other apps' services for their models.
 
 ### QuerySet methods and ORM expressions
