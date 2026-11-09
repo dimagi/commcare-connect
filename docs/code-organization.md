@@ -128,9 +128,14 @@ A function that takes one model's queryset and returns it filtered or annotated 
 
 Services dispatch the background work they need with `transaction.on_commit(partial(task.delay, ...))`, so every caller gets it. Import the task inside the function, because `tasks.py` imports services at module level. A task calls one service and handles only Celery concerns.
 
-### Emails
+### Notifications
 
-Rendering an email's templates and sending it is a service. The generic render-and-send function goes in `commcare_connect/utils/email.py`. The function that picks the recipients and builds the context goes in the app's `services`. Celery tasks only queue the send.
+This covers email, SMS and push.
+
+- The service of the app whose event it is picks the recipients and builds the message.
+- The service queues the send after commit (see [Celery tasks](#celery-tasks)). Email goes through `utils/tasks.send_mail_async`, SMS through `utils/sms.send_sms`, and push through `connect_id_client.main.send_message`.
+- Rendering an email's text and HTML templates is generic code, in `commcare_connect/utils/email.py`.
+- App tasks don't build messages.
 
 ### Template context
 
