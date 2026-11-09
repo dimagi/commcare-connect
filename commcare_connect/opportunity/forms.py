@@ -606,6 +606,16 @@ class OpportunityInitForm(forms.ModelForm):
             label=_("Supervising Organization"),
         )
 
+    def clean_api_key(self):
+        """Accept the opportunity's current key while its HQ server is unchanged, or one of the user's own keys
+        on the selected HQ server."""
+        return _allowed_api_key(
+            self.cleaned_data["api_key"],
+            user=self.user,
+            hq_server=self.cleaned_data.get("hq_server"),
+            opportunity=self.instance,
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
@@ -695,13 +705,7 @@ class OpportunityInitForm(forms.ModelForm):
         if not opportunity.pk and switch_is_active(AUTOMATIC_VISIT_VERIFICATION):
             opportunity.automatic_visit_verification = True
 
-        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
-            id=self.cleaned_data["api_key"],
-            defaults={
-                "hq_server": hq_server,
-                "user": self.user,
-            },
-        )
+        opportunity.api_key = self.cleaned_data["api_key"]
 
         if commit:
             opportunity.save()
@@ -837,17 +841,31 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         )
 
         opportunity.modified_by = self.user.email
-        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
-            id=self.cleaned_data["api_key"],
-            defaults={
-                "hq_server": hq_server,
-                "user": self.user,
-            },
-        )
+        opportunity.api_key = self.cleaned_data["api_key"]
 
         if commit:
             opportunity.save()
         return opportunity
+
+
+def _allowed_api_key(key_id, *, user, hq_server, opportunity):
+    """The posted key, if it is the opportunity's current key on an unchanged HQ server, or one of the user's own
+    keys on `hq_server`. Raises ValidationError otherwise."""
+    error = forms.ValidationError(_("Select one of your own API keys for this HQ server."))
+    if hq_server is None:
+        raise error
+    allowed = Q(pk__in=[])
+    # Opportunities from before hq_server was recorded have none, so fall back to the server of their key.
+    current_server_id = opportunity.hq_server_id or (opportunity.api_key.hq_server_id if opportunity.api_key else None)
+    if opportunity.api_key_id and hq_server.pk == current_server_id:
+        allowed |= Q(pk=opportunity.api_key_id)
+    user_pk = getattr(user, "pk", None)
+    if user_pk is not None:
+        allowed |= Q(user_id=user_pk, hq_server=hq_server)
+    try:
+        return HQApiKey.objects.select_related("hq_server", "user").filter(allowed).get(pk=key_id)
+    except (HQApiKey.DoesNotExist, TypeError, ValueError):
+        raise error
 
 
 class OpportunityFinalizeForm(forms.ModelForm):
