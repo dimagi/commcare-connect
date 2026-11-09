@@ -160,6 +160,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         uses: anthropics/claude-code-action@v1.0.269
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: 'dependabot[bot]'
           # Unlocks the github_ci MCP tools listed in --allowedTools below.
