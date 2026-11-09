@@ -218,8 +218,14 @@ JavaScript lives in `.js` files, not in templates.
 - Setup used by several modules of one app: a fixture in the app's `tests/conftest.py`.
 - Setup used by several apps: a fixture in `commcare_connect/conftest.py`.
 - Builder functions that aren't fixtures, e.g. a function that builds form JSON: the app's `tests/helpers.py`.
+- Builders and custom assertions used by several apps: the `tests/helpers.py` of the app that owns the model they build or check. Other apps import them from there.
+- Factories: the `tests/factories.py` of the model's app. Factories for third-party models go in the app that integrates them, e.g. `SocialApp` in `users`.
 
-Test modules don't import from other test modules. Move the shared code to a `conftest.py` or `tests/helpers.py`.
+Don't share setup through test base classes. Use fixtures, applied with `usefixtures` on the class.
+
+Test modules don't import from other test modules. Move the shared code to a `conftest.py` or `tests/helpers.py`. `tests/helpers.py` and `tests/factories.py` aren't test modules, so other modules may import them.
+
+Test modules mirror the module they test, e.g. `opportunity/services/billing.py` → `opportunity/tests/services/test_billing.py`. When code moves, move its tests in the same `refactor:` commit. An app with a single `tests.py` keeps it until it needs a second test module, then switches to a `tests/` package.
 
 Factories create consistent related objects themselves, e.g. a `UserVisitFactory` given `opportunity_access` takes its `user` and `opportunity` from it with `factory.SelfAttribute`. Tests don't pass values that equal a factory's defaults.
 
