@@ -158,7 +158,7 @@ jobs:
           # Makes a bare `gh pr view <N>` resolve to this repo even if an
           # explicit --repo is ever missed.
           GH_REPO: ${{ github.repository }}
-        uses: anthropics/claude-code-action@v1.0.206
+        uses: anthropics/claude-code-action@v1.0.269
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: 'dependabot[bot]'
