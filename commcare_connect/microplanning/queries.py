@@ -1,8 +1,13 @@
-from django.db.models import Count, F, Q, QuerySet
+from django.contrib.gis.db.models import Extent, Union
+from django.contrib.gis.db.models.fields import PointField
+from django.contrib.gis.db.models.functions import AsGeoJSON
+from django.db.models import CharField, Count, F, FloatField, Func, Q, QuerySet, Sum, Value
+from django.db.models.functions import Cast
 from django.utils import formats, timezone
 from django.utils.translation import gettext
 
 from commcare_connect.microplanning.const import SEARCH_KIND_FILTERS
+from commcare_connect.microplanning.coverage_progress import IN_SCOPE_WORK_AREA, annotate_approved_visit_counts
 from commcare_connect.microplanning.models import (
     ImplementationArea,
     InaccessibilityRequestStatus,
@@ -11,7 +16,13 @@ from commcare_connect.microplanning.models import (
     WorkAreaInaccessibilityRequest,
     WorkAreaStatus,
 )
-from commcare_connect.opportunity.models import BlobMeta, Opportunity, VisitValidationStatus
+from commcare_connect.opportunity.models import (
+    BlobMeta,
+    Opportunity,
+    OpportunityAccess,
+    UserVisit,
+    VisitValidationStatus,
+)
 
 MAP_WORK_AREA_FIELDS = (
     "id",
@@ -46,6 +57,132 @@ def map_work_areas(opportunity: Opportunity) -> QuerySet[WorkArea]:
 def work_area_detail(opportunity: Opportunity, work_area_id: int) -> dict | None:
     """One work area's map fields, or None if it isn't in this opportunity."""
     return map_work_areas(opportunity).filter(id=work_area_id).values(*MAP_WORK_AREA_FIELDS).first()
+
+
+def work_area_bounds(queryset: QuerySet[WorkArea]) -> tuple[float, float, float, float] | None:
+    """``[xmin, ymin, xmax, ymax]`` covering ``queryset``, or None when it is empty.
+
+    Mapbox's ``fitBounds`` takes this shape directly, so it doubles as the "where should the map
+    look?" answer — no separate centroid needed.
+    """
+    return queryset.aggregate(extent=Extent("boundary"))["extent"]
+
+
+def work_areas_for_download(opportunity: Opportunity) -> QuerySet[WorkArea]:
+    """Work areas for the CSV download: all but excluded ones, with their group's name."""
+    return (
+        WorkArea.objects.filter(opportunity=opportunity)
+        .exclude(status=WorkAreaStatus.EXCLUDED)
+        .annotate(group_name=F("work_area_group__name"))
+    )
+
+
+def work_area_group_boundaries(opportunity: Opportunity) -> QuerySet:
+    """Each work area group's id and the GeoJSON union of its work areas' boundaries."""
+    return (
+        WorkArea.objects.filter(opportunity_id=opportunity.id, work_area_group__isnull=False)
+        .values(group_id=F("work_area_group__id"))
+        .annotate(geojson=AsGeoJSON(Union("boundary")))
+    )
+
+
+def implementation_area_boundaries(opportunity: Opportunity) -> QuerySet:
+    """Each implementation area's name and its boundary as GeoJSON."""
+    return (
+        ImplementationArea.objects.filter(opportunity_id=opportunity.id)
+        .values("name")
+        .annotate(geojson=AsGeoJSON("boundary"))
+    )
+
+
+def work_area_progress_counts(opportunity: Opportunity) -> dict:
+    """Work area counts and visit totals behind the progress map's metric tiles."""
+    qs = annotate_approved_visit_counts(WorkArea.objects.filter(opportunity=opportunity), opportunity, ncwa=True)
+
+    # Work Areas Done counts an area still awaiting review, since raising the request is as far
+    # as the worker can take it. The Inaccessible Work Areas tile counts only the areas whose
+    # inaccessibility request was accepted.
+    inaccessible_or_requested = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
+    has_evc_target = Q(expected_visit_count__gt=0)
+    visited_children_found = Q(hsd_count__gte=1)
+    visited_no_children_found = Q(ncwa_count__gte=1)
+
+    # Every count but excluded is scoped to the in-scope areas.
+    return qs.aggregate(
+        excluded=Count("id", filter=Q(status=WorkAreaStatus.EXCLUDED)),
+        in_scope=Count("id", filter=IN_SCOPE_WORK_AREA),
+        done=Count(
+            "id",
+            # An OR filter, so an area meeting several conditions (e.g. inaccessible with an
+            # approved visit already on file) is still counted once.
+            filter=IN_SCOPE_WORK_AREA
+            & (visited_children_found | visited_no_children_found | inaccessible_or_requested),
+        ),
+        unvisited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.NOT_VISITED)),
+        visited_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_children_found),
+        visited_no_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_no_children_found),
+        evc_reached=Count(
+            "id",
+            # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
+            filter=IN_SCOPE_WORK_AREA & has_evc_target & Q(hsd_count__gte=F("expected_visit_count")),
+        ),
+        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.INACCESSIBLE)),
+        total_expected_visits=Sum("expected_visit_count", filter=IN_SCOPE_WORK_AREA),
+        total_hsd_visits=Sum("hsd_count", filter=IN_SCOPE_WORK_AREA),
+    )
+
+
+def assignee_options(opportunity: Opportunity) -> list[dict]:
+    """Workers who can be given work areas: accepted and not suspended."""
+    return list(
+        OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
+        .select_related("user")
+        .values("id", "user__name", "user__username", "user__user_id")
+    )
+
+
+def assignee_work_area_totals(opportunity: Opportunity, opportunity_access_id: int | str) -> dict:
+    """Buildings, expected visits and number of work areas assigned to one worker."""
+    return WorkArea.objects.filter(
+        opportunity=opportunity,
+        opportunity_access_id=opportunity_access_id,
+    ).aggregate(
+        buildings=Sum("building_count"),
+        visits=Sum("expected_visit_count"),
+        work_areas=Count("id"),
+    )
+
+
+def located_user_visits(opportunity: Opportunity) -> QuerySet[UserVisit]:
+    """The opportunity's visits that recorded a location."""
+    return UserVisit.objects.filter(
+        opportunity=opportunity,
+        location__isnull=False,
+    ).exclude(location="")
+
+
+def user_visit_map_points(queryset: QuerySet[UserVisit]) -> QuerySet:
+    """Each visit's location as a point, with its work area and visit id.
+
+    The user visit location is assumed to be a string in the format:
+    <lat> <lng> <altitude> <accuracy>
+    """
+    return (
+        queryset.annotate(
+            lat=Cast(Func(F("location"), Value(" "), Value(1), function="split_part"), output_field=FloatField()),
+            lon=Cast(Func(F("location"), Value(" "), Value(2), function="split_part"), output_field=FloatField()),
+        )
+        .annotate(
+            location_point=Func(
+                Func(F("lon"), F("lat"), function="ST_MakePoint"),
+                Value(4326),
+                function="ST_SetSRID",
+                output_field=PointField(srid=4326),
+            ),
+            visit_uuid=Cast("user_visit_id", output_field=CharField()),
+        )
+        .values("location_point", "work_area_id", "visit_uuid")
+    )
 
 
 def work_area_search_options(opportunity: Opportunity) -> list[dict]:

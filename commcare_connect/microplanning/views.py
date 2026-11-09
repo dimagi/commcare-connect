@@ -10,25 +10,14 @@ from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.gis.db.models import Extent, Union
-from django.contrib.gis.db.models.fields import PointField
-from django.contrib.gis.db.models.functions import AsGeoJSON
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection, transaction
 from django.db.models import (
-    CharField,
-    Count,
     F,
-    FloatField,
-    Func,
-    Q,
-    Sum,
     TextChoices,
-    Value,
 )
-from django.db.models.functions import Cast
 from django.db.utils import OperationalError
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -59,9 +48,7 @@ from commcare_connect.microplanning.const import (
     WORKAREA_MIN_ZOOM,
 )
 from commcare_connect.microplanning.coverage_progress import (
-    IN_SCOPE_WORK_AREA,
     CoverageProgressReport,
-    annotate_approved_visit_counts,
     missing_deliver_units,
 )
 from commcare_connect.microplanning.filters import (
@@ -80,11 +67,20 @@ from commcare_connect.microplanning.models import (
 )
 from commcare_connect.microplanning.queries import (
     MAP_WORK_AREA_FIELDS,
+    assignee_options,
+    assignee_work_area_totals,
     denied_inaccessibility_work_area_ids,
+    implementation_area_boundaries,
+    located_user_visits,
     map_work_areas,
     pending_inaccessibility_requests,
+    user_visit_map_points,
+    work_area_bounds,
     work_area_detail,
+    work_area_group_boundaries,
+    work_area_progress_counts,
     work_area_search_options,
+    work_areas_for_download,
 )
 from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
@@ -365,39 +361,8 @@ def _get_work_areas_blocked_message(work_area_count, areas_assigned):
 
 
 def get_metrics_for_microplanning(opportunity):
-    qs = annotate_approved_visit_counts(WorkArea.objects.filter(opportunity=opportunity), opportunity, ncwa=True)
-
-    # Work Areas Done counts an area still awaiting review, since raising the request is as far
-    # as the worker can take it. The Inaccessible Work Areas tile counts only the areas whose
-    # inaccessibility request was accepted.
-    inaccessible_or_requested = Q(status__in=(WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE))
-    has_evc_target = Q(expected_visit_count__gt=0)
-    visited_children_found = Q(hsd_count__gte=1)
-    visited_no_children_found = Q(ncwa_count__gte=1)
-
     # Every tile but Excluded Work Areas is scoped to the in-scope areas.
-    agg = qs.aggregate(
-        excluded=Count("id", filter=Q(status=WorkAreaStatus.EXCLUDED)),
-        in_scope=Count("id", filter=IN_SCOPE_WORK_AREA),
-        done=Count(
-            "id",
-            # An OR filter, so an area meeting several conditions (e.g. inaccessible with an
-            # approved visit already on file) is still counted once.
-            filter=IN_SCOPE_WORK_AREA
-            & (visited_children_found | visited_no_children_found | inaccessible_or_requested),
-        ),
-        unvisited=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.NOT_VISITED)),
-        visited_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_children_found),
-        visited_no_children_found=Count("id", filter=IN_SCOPE_WORK_AREA & visited_no_children_found),
-        evc_reached=Count(
-            "id",
-            # Ignore areas with no target; 0 >= 0 would otherwise mark them as delivered.
-            filter=IN_SCOPE_WORK_AREA & has_evc_target & Q(hsd_count__gte=F("expected_visit_count")),
-        ),
-        inaccessible=Count("id", filter=IN_SCOPE_WORK_AREA & Q(status=WorkAreaStatus.INACCESSIBLE)),
-        total_expected_visits=Sum("expected_visit_count", filter=IN_SCOPE_WORK_AREA),
-        total_hsd_visits=Sum("hsd_count", filter=IN_SCOPE_WORK_AREA),
-    )
+    agg = work_area_progress_counts(opportunity)
 
     in_scope_count = agg["in_scope"] or 0
 
@@ -456,11 +421,7 @@ def _get_assignment_mode_context(request, opportunity):
     opp_id = opportunity.opportunity_id
     return {
         "assignment_form": AssignmentModeForm(opportunity=opportunity),
-        "assignees_json": list(
-            OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
-            .select_related("user")
-            .values("id", "user__name", "user__username", "user__user_id")
-        ),
+        "assignees_json": assignee_options(opportunity),
         "group_work_areas_url": reverse(
             "microplanning:get_work_areas_for_assignment",
             args=[org_slug, opp_id],
@@ -728,31 +689,10 @@ class UserVisitVectorLayer(VectorLayer):
     def get_queryset(self):
         """
         Returns the user visits with location_point annotated.
-
-        The user visit location is assumed to be a string in the format:
-        <lat> <lng> <altitude> <accuracy>
         """
-        qs = UserVisit.objects.filter(
-            opportunity=self.opportunity,
-            location__isnull=False,
-        ).exclude(location="")
+        qs = located_user_visits(self.opportunity)
         qs = UserVisitMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
-        return (
-            qs.annotate(
-                lat=Cast(Func(F("location"), Value(" "), Value(1), function="split_part"), output_field=FloatField()),
-                lon=Cast(Func(F("location"), Value(" "), Value(2), function="split_part"), output_field=FloatField()),
-            )
-            .annotate(
-                location_point=Func(
-                    Func(F("lon"), F("lat"), function="ST_MakePoint"),
-                    Value(4326),
-                    function="ST_SetSRID",
-                    output_field=PointField(srid=4326),
-                ),
-                visit_uuid=Cast("user_visit_id", output_field=CharField()),
-            )
-            .values("location_point", "work_area_id", "visit_uuid")
-        )
+        return user_visit_map_points(qs)
 
 
 @method_decorator([opp_admin_access_required, opportunity_required, waffle_flag(MICROPLANNING)], name="dispatch")
@@ -775,19 +715,13 @@ def workareas_group_geojson(request, org_slug, opp_id):
     # This view aggregates group boundaries for map display.
     # To be removed in https://dimagi.atlassian.net/browse/CCCT-2213 for a better performant alternative
 
-    qs = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
-
     group_features = [
         {
             "type": "Feature",
             "geometry": json.loads(g["geojson"]),
             "properties": {"group_id": g["group_id"]},
         }
-        for g in (
-            qs.filter(work_area_group__isnull=False)
-            .values(group_id=F("work_area_group__id"))
-            .annotate(geojson=AsGeoJSON(Union("boundary")))
-        )
+        for g in work_area_group_boundaries(request.opportunity)
     ]
     return JsonResponse({"group_features": group_features})
 
@@ -812,15 +746,6 @@ def workareas_bounds(request, org_slug, opp_id):
     queryset = WorkArea.objects.filter(opportunity=request.opportunity)
     filtered = WorkAreaMapFilterSet(request.GET, queryset=queryset, opportunity=request.opportunity).qs
     return JsonResponse({"bounds": work_area_bounds(filtered)})
-
-
-def work_area_bounds(queryset):
-    """``[xmin, ymin, xmax, ymax]`` covering ``queryset``, or None when it is empty.
-
-    Mapbox's ``fitBounds`` takes this shape directly, so it doubles as the "where should the map
-    look?" answer — no separate centroid needed.
-    """
-    return queryset.aggregate(extent=Extent("boundary"))["extent"]
 
 
 @require_GET
@@ -858,11 +783,7 @@ def implementation_areas_geojson(request, org_slug, opp_id):
             "geometry": json.loads(ia["geojson"]),
             "properties": {"name": ia["name"]},
         }
-        for ia in (
-            ImplementationArea.objects.filter(opportunity_id=request.opportunity.id)
-            .values("name")
-            .annotate(geojson=AsGeoJSON("boundary"))
-        )
+        for ia in implementation_area_boundaries(request.opportunity)
     ]
     return JsonResponse({"implementation_area_features": features})
 
@@ -1049,10 +970,9 @@ def clear_work_area_groups(request, org_slug, opp_id):
 @waffle_flag(MICROPLANNING)
 def download_work_areas(request, org_slug, opp_id):
     opportunity = request.opportunity
-    base_qs = WorkArea.objects.filter(opportunity=opportunity).exclude(status=WorkAreaStatus.EXCLUDED)
-    filterset = WorkAreaMapFilterSet(request.GET, queryset=base_qs, opportunity=opportunity)
-    queryset = filterset.qs.annotate(group_name=F("work_area_group__name"))
-    response = StreamingHttpResponse(WorkAreaCSVExporter.rows(queryset), content_type="text/csv")
+    queryset = work_areas_for_download(opportunity)
+    filterset = WorkAreaMapFilterSet(request.GET, queryset=queryset, opportunity=opportunity)
+    response = StreamingHttpResponse(WorkAreaCSVExporter.rows(filterset.qs), content_type="text/csv")
     response["Content-Disposition"] = f'attachment; filename="work_area_summary_{opportunity.opportunity_id}.csv"'
     return response
 
@@ -1165,14 +1085,7 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
     if not assignee_id:
         return JsonResponse({"error": "assignee_id required"}, status=400)
 
-    stats = WorkArea.objects.filter(
-        opportunity=request.opportunity,
-        opportunity_access_id=assignee_id,
-    ).aggregate(
-        buildings=Sum("building_count"),
-        visits=Sum("expected_visit_count"),
-        work_areas=Count("id"),
-    )
+    stats = assignee_work_area_totals(request.opportunity, assignee_id)
     return JsonResponse(
         {
             "assigned_buildings": stats["buildings"] or 0,

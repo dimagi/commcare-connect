@@ -1,20 +1,28 @@
 import datetime
+import json
 
 import pytest
 from django.utils import formats, timezone, translation
 
-from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkAreaStatus
+from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.queries import (
+    assignee_options,
+    assignee_work_area_totals,
     denied_inaccessibility_work_area_ids,
+    implementation_area_boundaries,
     pending_inaccessibility_requests,
+    work_area_bounds,
     work_area_detail,
+    work_area_group_boundaries,
     work_area_search_options,
+    work_areas_for_download,
 )
 from commcare_connect.microplanning.tests.factories import (
     ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
+    square,
 )
 from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import BlobMetaFactory, OpportunityAccessFactory, UserVisitFactory
@@ -241,3 +249,81 @@ class TestDeniedInaccessibilityWorkAreaIds:
         )
 
         assert denied_inaccessibility_work_area_ids(opportunity) == [work_area.id]
+
+
+@pytest.mark.django_db
+class TestWorkAreaBounds:
+    def test_covers_every_work_area(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, boundary=square(1, 2))
+        WorkAreaFactory(opportunity=opportunity, boundary=square(5, 7))
+
+        assert work_area_bounds(WorkArea.objects.filter(opportunity=opportunity)) == (1.0, 2.0, 6.0, 8.0)
+
+    def test_is_none_when_empty(self, opportunity):
+        assert work_area_bounds(WorkArea.objects.filter(opportunity=opportunity)) is None
+
+
+@pytest.mark.django_db
+def test_work_areas_for_download_skips_excluded_and_carries_group_name(opportunity):
+    group = WorkAreaGroupFactory(opportunity=opportunity)
+    grouped = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+    ungrouped = WorkAreaFactory(opportunity=opportunity)
+    WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.EXCLUDED)
+    WorkAreaFactory()
+
+    rows = {work_area.id: work_area.group_name for work_area in work_areas_for_download(opportunity)}
+
+    assert rows == {grouped.id: group.name, ungrouped.id: None}
+
+
+@pytest.mark.django_db
+def test_work_area_group_boundaries_unions_each_groups_work_areas(opportunity):
+    group = WorkAreaGroupFactory(opportunity=opportunity)
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(0, 0))
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(1, 0))
+    WorkAreaFactory(opportunity=opportunity)
+
+    [row] = work_area_group_boundaries(opportunity)
+
+    assert row["group_id"] == group.id
+    geometry = json.loads(row["geojson"])
+    assert geometry["type"] == "Polygon"
+    xs = [x for x, _ in geometry["coordinates"][0]]
+    assert (min(xs), max(xs)) == (0, 2)
+
+
+@pytest.mark.django_db
+def test_implementation_area_boundaries_lists_the_opportunitys_areas(opportunity):
+    area = ImplementationAreaFactory(opportunity=opportunity)
+    ImplementationAreaFactory()
+
+    [row] = implementation_area_boundaries(opportunity)
+
+    assert row["name"] == area.name
+    assert json.loads(row["geojson"])["type"] == "Polygon"
+
+
+@pytest.mark.django_db
+def test_assignee_options_lists_only_active_workers(opportunity):
+    active = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    OpportunityAccessFactory(opportunity=opportunity, accepted=False)
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True)
+
+    assert assignee_options(opportunity) == [
+        {
+            "id": active.id,
+            "user__name": active.user.name,
+            "user__username": active.user.username,
+            "user__user_id": active.user.user_id,
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_assignee_work_area_totals(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, building_count=3, expected_visit_count=4)
+    WorkAreaFactory(opportunity=opportunity, opportunity_access=access, building_count=5, expected_visit_count=6)
+    WorkAreaFactory(opportunity=opportunity)
+
+    assert assignee_work_area_totals(opportunity, access.id) == {"buildings": 8, "visits": 10, "work_areas": 2}
