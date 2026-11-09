@@ -2816,7 +2816,7 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
     def work_area(self, opportunity):
         return WorkAreaFactory(opportunity=opportunity)
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
     def test_valid_building_count_forwards_to_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
         mock_delay.return_value = MagicMock(id="task-123")
         client.force_login(org_user_admin)
@@ -2828,7 +2828,7 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
         mock_delay.assert_called_once_with(opportunity.id, 250)
         assert "clustering_task_id=task-123" in response.headers["HX-Push-Url"]
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
     def test_empty_building_count_defaults(self, mock_delay, client, org_user_admin, opportunity, work_area):
         mock_delay.return_value = MagicMock(id="task-123")
         client.force_login(org_user_admin)
@@ -2839,7 +2839,7 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
         assert response.status_code == 200
         mock_delay.assert_called_once_with(opportunity.id, 200)
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
     def test_out_of_range_does_not_start_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
         client.force_login(org_user_admin)
 
@@ -2857,7 +2857,7 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
     def url(self, org_slug, opp_id):
         return reverse("microplanning:cluster_work_areas", args=(org_slug, opp_id))
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
     def test_rerun_replaces_existing_groups(self, mock_delay, client, org_user_admin, opportunity):
 
         mock_task = MagicMock()
@@ -2878,7 +2878,7 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.work_area_group is None
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.tasks.cluster_work_areas_task.delay")
     def test_rerun_blocked_when_assigned(self, mock_delay, client, org_user_admin, opportunity):
 
         old_group = WorkAreaGroupFactory(opportunity=opportunity)

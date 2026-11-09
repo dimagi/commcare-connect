@@ -88,7 +88,11 @@ from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.services.work_area_groups import clear_work_area_groups_for_opportunity
+from commcare_connect.microplanning.services.work_area_groups import (
+    check_work_area_clustering_can_start,
+    clear_work_area_groups_for_opportunity,
+    start_work_area_clustering,
+)
 from commcare_connect.microplanning.services.work_areas import (
     clear_work_areas_for_opportunity,
     exclude_work_areas_for_opportunity,
@@ -109,8 +113,6 @@ from .tasks import (
     ImplementationAreaCSVImporter,
     WorkAreaCSVExporter,
     WorkAreaCSVImporter,
-    cluster_work_areas_task,
-    get_cluster_area_cache_lock_key,
     get_implementation_area_import_cache_key,
     get_import_area_cache_key,
     import_implementation_areas_task,
@@ -803,19 +805,18 @@ def cluster_work_areas(request, org_slug, opp_id):
 
     rerun = request.GET.get("rerun") is not None
     if rerun:
-        if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
+        try:
+            clear_work_area_groups_for_opportunity(request.opportunity)
+        except ValidationError:
             messages.error(
                 request, _("Clustering cannot be re-run because Work Areas have already been assigned to FLWs.")
             )
             return HttpResponse(headers={"HX-Redirect": redirect_url})
-        WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
 
-    if not WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
-        messages.error(request, _("Please upload Work Areas for this opportunity."))
-        return HttpResponse(headers={"HX-Redirect": redirect_url})
-
-    if WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).exists():
-        messages.error(request, _("Work Area Groups already exist for this opportunity."))
+    try:
+        check_work_area_clustering_can_start(request.opportunity)
+    except ValidationError as e:
+        messages.error(request, e.message)
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
     form = ClusterWorkAreasForm(request.POST)
@@ -827,17 +828,19 @@ def cluster_work_areas(request, org_slug, opp_id):
         response.headers["HX-Reswap"] = "outerHTML"
         return response
 
-    lock_key = get_cluster_area_cache_lock_key(request.opportunity.id)
-    if cache.lock(lock_key).locked():
-        messages.error(request, _("Work Area Clustering is already in progress for this opportunity."))
+    try:
+        task_id = start_work_area_clustering(
+            opportunity=request.opportunity, max_buildings=form.cleaned_data["building_count"]
+        )
+    except ValidationError as e:
+        messages.error(request, e.message)
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
-    task = cluster_work_areas_task.delay(request.opportunity.id, form.cleaned_data["building_count"])
-    redirect_url += f"?clustering_task_id={task.id}"
+    redirect_url += f"?clustering_task_id={task_id}"
     response = render(
         request,
         "microplanning/cluster_work_area_modal_status.html",
-        context={"clustering_task_id": task.id},
+        context={"clustering_task_id": task_id},
     )
     response.headers["HX-Push-Url"] = redirect_url
     return response

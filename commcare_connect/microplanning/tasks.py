@@ -24,6 +24,7 @@ from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT, WORK_A
 from .exceptions import ImportRejected
 from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
 from .overlap import Overlap, find_overlapping_work_areas
+from .services.work_area_groups import get_cluster_area_cache_lock_key
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,6 @@ def get_import_area_cache_key(opp_id: int):
 
 def get_implementation_area_import_cache_key(opp_id: int):
     return f"implementation_area_import_lock_{opp_id}"
-
-
-def get_cluster_area_cache_lock_key(opp_id: int):
-    return f"work_area_clustering_cache_lock_key_{opp_id}"
 
 
 def _overlap_percent(ratio):
