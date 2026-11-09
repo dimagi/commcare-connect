@@ -81,6 +81,13 @@ Any other utility with one caller stays as a private function in the caller's mo
 - The app's `utils/` package if it names a Connect concept, e.g. `generate_invoice_number`. Other apps import it from there.
 - `commcare_connect/utils/<topic>.py` if it names no Connect concept.
 
+### Classes
+
+Classes follow the same placement as functions. Classify a class by what its public methods do, using the questions under [Roles](#roles), and split it if they get different answers.
+
+- A value type whose methods compute only from its own fields goes in `dataclasses.py`, e.g. `Money`.
+- A class used by one module stays in that module.
+
 ### Exceptions
 
 - Raised and caught in one module: stays in that module.
