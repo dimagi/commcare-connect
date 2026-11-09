@@ -12,7 +12,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import connection, transaction
+from django.db import transaction
 from django.db.models import (
     F,
 )
@@ -116,6 +116,7 @@ from commcare_connect.organization.decorators import (
 )
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.db import set_local_statement_timeout
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.ratios import pct
 
@@ -1257,8 +1258,7 @@ def coverage_progress(request, *args, **kwargs):
     filterset = CoverageProgressFilterSet(request.GET, queryset=WorkArea.objects.none())
     date_filter = filterset.to_date_filter()
     try:
-        with connection.cursor() as cursor:
-            cursor.execute("SET LOCAL statement_timeout = %s", [STATEMENT_TIMEOUT])
+        set_local_statement_timeout(STATEMENT_TIMEOUT)
         report = CoverageProgressReport(opportunity, date_filter)
         header = report.header()
         ward_table = CoverageWardTable(report.ward_rows())

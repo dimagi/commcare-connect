@@ -1,12 +1,16 @@
 import uuid
 
 import pytest
-from django.db import models
+from django.db import connection, models, transaction
 from django.http import Http404
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import API_UUID
-from commcare_connect.utils.db import get_object_by_uuid_or_int, get_object_or_list_by_uuid_or_int
+from commcare_connect.utils.db import (
+    get_object_by_uuid_or_int,
+    get_object_or_list_by_uuid_or_int,
+    set_local_statement_timeout,
+)
 
 
 class Example(models.Model):
@@ -122,3 +126,12 @@ class TestGetObjectByUuidOrInt:
         qs = Example.objects.filter(pk=obj2.pk)
         fetched = get_object_by_uuid_or_int(qs, str(obj2.pk), uuid_field="example_id")
         assert fetched.pk == obj2.pk
+
+
+@pytest.mark.django_db
+def test_set_local_statement_timeout_lasts_until_the_transaction_ends():
+    with transaction.atomic():
+        set_local_statement_timeout("7s")
+        with connection.cursor() as cursor:
+            cursor.execute("SHOW statement_timeout")
+            assert cursor.fetchone()[0] == "7s"

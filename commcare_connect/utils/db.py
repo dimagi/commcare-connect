@@ -2,7 +2,7 @@ import uuid
 
 import waffle
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import connection, models
 from django.db.models import QuerySet
 from django.http import Http404
 from django.shortcuts import get_list_or_404, get_object_or_404
@@ -89,3 +89,9 @@ def get_list_by_uuid_or_int(queryset: QuerySet, lookup_list: list[str], uuid_fie
         return get_list_or_404(queryset, **{f"{uuid_field}__in": lookup_list_uuid})
     except ValueError:
         raise Http404(f"No {queryset.model._meta.object_name} matches the given query.")
+
+
+def set_local_statement_timeout(timeout: str) -> None:
+    """Cancel any query that runs longer than ``timeout`` (e.g. "30s") until the transaction ends."""
+    with connection.cursor() as cursor:
+        cursor.execute("SET LOCAL statement_timeout = %s", [timeout])
