@@ -85,6 +85,7 @@ CHECKBOX_CLASS = "simple-toggle"
 DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
 APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
+ADD_API_KEY_BUTTON = HTML('{% include "opportunity/partials/add_api_key_button.html" %}')
 
 
 class HQApiKeyCreateForm(forms.ModelForm):
@@ -476,12 +477,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("hq_server"),
                     Column(
                         Field("api_key", wrapper_class="flex-1"),
-                        HTML(
-                            "<button class='button-icon primary-dark'"
-                            "type='button' @click='showAddApiKeyModal = true'>"
-                            "<i class='fa-solid fa-plus'></i>"
-                            "</button>"
-                        ),
+                        ADD_API_KEY_BUTTON,
                         css_class="flex items-center gap-1",
                     ),
                 ),
@@ -770,13 +766,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
     def _set_initial_api_key(self, api_key):
         choices = [API_KEY_PLACEHOLDER_CHOICE]
         if api_key:
-            if not api_key.api_key:
-                api_key_hidden = ""
-            else:
-                api_key_hidden = (
-                    f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}" if len(api_key.api_key) > 8 else api_key.api_key
-                )
-            choices.append((api_key.id, api_key_hidden))
+            choices.append((api_key.id, api_key.masked))
             self.fields["api_key"].initial = api_key.id
         self.fields["api_key"].widget.choices = choices
 
