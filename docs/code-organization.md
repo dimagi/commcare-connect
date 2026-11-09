@@ -139,6 +139,8 @@ The app whose data a cache holds owns the cache key and the function that clears
 
 Services dispatch the background work they need with `transaction.on_commit(partial(task.delay, ...))`, so every caller gets it. Import the task inside the function, because `tasks.py` imports services at module level. A task calls one service and handles only Celery concerns.
 
+Services don't catch transient errors, such as network errors or lock timeouts. The task decides whether to retry, and each task with `autoretry_for` has a test that it retries.
+
 ### Notifications
 
 This covers email, SMS and push.
@@ -175,6 +177,7 @@ Thin layers take input, call services, queries, permissions and exports, and ret
 
 - Thin layers may run simple reads themselves: `get_object_or_404`, or a `.get()`, `.filter()`, `.exists()` or `.count()` on one model using values from the request, or a related manager such as `organization.flag_set`. Reads that use `annotate`, `aggregate`, `Subquery`, `Prefetch` or raw SQL, or that repeat a filter written elsewhere, go in `queries`.
 - When two thin layers hold copies of the same logic that differ, the logic still moves out. If the difference isn't intended, merge the copies into one service. If it is, write two service functions that share private helpers, with no behaviour flags.
+- When a view and a service would share a name, the view keeps the URL-facing name and the service gets the full name, e.g. `accept_invite` and `accept_organization_invite`.
 - Tasks only handle Celery concerns: retries, progress reporting, file storage and failures.
 - Management commands only handle arguments and output. Business logic shared between commands goes in the app's role modules, not in another command module. Plumbing shared between commands (base command classes, prompts, output helpers) goes in `<app>/management/base.py`, which is outside `commands/`, so Django doesn't list it as a command. Connecting to another database or system is a client, in its own module.
 - A filter set or form may build choice querysets, using `QuerySet` methods.
@@ -228,5 +231,7 @@ Test modules don't import from other test modules. Move the shared code to a `co
 Test modules mirror the module they test, e.g. `opportunity/services/billing.py` → `opportunity/tests/services/test_billing.py`. When code moves, move its tests in the same `refactor:` commit. An app with a single `tests.py` keeps it until it needs a second test module, then switches to a `tests/` package.
 
 Factories create consistent related objects themselves, e.g. a `UserVisitFactory` given `opportunity_access` takes its `user` and `opportunity` from it with `factory.SelfAttribute`. Tests don't pass values that equal a factory's defaults.
+
+Patch at the boundary, such as the HTTP client or a task's `.delay`, not internal functions, so moving internals doesn't break tests.
 
 Use `pytest.mark.parametrize` when tests differ only in inputs and expected values. Keep separate tests when each case needs its own setup or explanation.
