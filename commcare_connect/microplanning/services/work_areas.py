@@ -1,9 +1,11 @@
 import logging
 
 import pghistory
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils.translation import gettext as _
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases, create_or_update_case_by_work_area
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import Opportunity
@@ -93,3 +95,43 @@ def _bulk_exclude(work_areas: list[WorkArea], user: User, exclusion_reason: str)
         work_areas,
         fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
     )
+
+
+def save_work_area_changes(work_area: WorkArea, previous_group_id: int | None, changed_fields: list[str]) -> None:
+    """Save an edited work area's visit count and group, then refresh what depends on them.
+
+    Recomputes the status when the visit count changed and the centroids of the groups it joined
+    or left, and syncs an assigned area to HQ. An HQ error propagates and rolls back the save.
+    """
+    group_changed = work_area.work_area_group_id != previous_group_id
+    with transaction.atomic():
+        work_area.save(update_fields=["expected_visit_count", "work_area_group"])
+        if "expected_visit_count" in changed_fields:
+            work_area.update_status()
+
+        if group_changed and work_area.work_area_group:
+            work_area.work_area_group.update_centroid()
+
+        if changed_fields and work_area.opportunity_access_id:
+            create_or_update_case_by_work_area(work_area)
+
+    if group_changed and previous_group_id:
+        WorkAreaGroup.objects.get(id=previous_group_id).update_centroid()
+
+
+def clear_work_areas_for_opportunity(opportunity: Opportunity) -> None:
+    """Delete the opportunity's work areas and work area groups so a new file can be uploaded.
+
+    Raises ValidationError while any work area is assigned or has visits.
+    """
+    work_areas = WorkArea.objects.filter(opportunity_id=opportunity.id)
+
+    access_ids = list(work_areas.select_for_update().values_list("opportunity_access_id", flat=True))
+    if any(access_id is not None for access_id in access_ids):
+        raise ValidationError(_("Work Areas cannot be cleared as they are assigned to users."))
+
+    if work_areas.filter(uservisit__isnull=False).exists():
+        raise ValidationError(_("Visits have been recorded against these Work Areas. They cannot be cleared."))
+
+    work_areas.delete()
+    WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).delete()

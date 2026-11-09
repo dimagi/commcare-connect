@@ -684,7 +684,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert any(t.name == self.template_name for t in response.templates)
         assert response.context["work_area"] == work_area
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.services.work_areas.create_or_update_case_by_work_area")
     def test_successful_field_updates(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -708,7 +708,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert group.centroid.x == 77.5
         assert group.centroid.y == 28.5
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.services.work_areas.create_or_update_case_by_work_area")
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
@@ -751,7 +751,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.expected_visit_count == 10  # unchanged
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.services.work_areas.create_or_update_case_by_work_area")
     def test_hq_sync_failure_returns_form_error(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -788,7 +788,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
             (WorkAreaStatus.VISITED, 3, 5, 5, WorkAreaStatus.VISITED),
         ],
     )
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.services.work_areas.create_or_update_case_by_work_area")
     def test_expected_visit_count_change_reevaluates_status(
         self,
         mock_sync,
@@ -825,7 +825,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.status == expected_status
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.services.work_areas.create_or_update_case_by_work_area")
     def test_successful_group_field_update_for_centroid_recalculation(
         self, mock_sync, client, org_user_admin, opportunity
     ):

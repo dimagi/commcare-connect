@@ -10,6 +10,7 @@ from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection, transaction
@@ -32,7 +33,6 @@ from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 from waffle.decorators import waffle_flag
 
-from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.buildings import buildings_overlay_config
 from commcare_connect.microplanning.const import (
@@ -82,12 +82,18 @@ from commcare_connect.microplanning.queries import (
     work_area_search_options,
     work_areas_for_download,
 )
+from commcare_connect.microplanning.services.implementation_areas import clear_implementation_areas_for_opportunity
 from commcare_connect.microplanning.services.inaccessibility_requests import review_work_area_inaccessibility_request
 from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.services.work_areas import exclude_work_areas_for_opportunity
+from commcare_connect.microplanning.services.work_area_groups import clear_work_area_groups_for_opportunity
+from commcare_connect.microplanning.services.work_areas import (
+    clear_work_areas_for_opportunity,
+    exclude_work_areas_for_opportunity,
+    save_work_area_changes,
+)
 from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.organization.decorators import (
@@ -556,10 +562,7 @@ class ImplementationAreaImport(View):
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def clear_implementation_areas(request, org_slug, opp_id):
-    # Delete the opportunity's Implementation Areas so a fresh set can be uploaded. Work Areas
-    # keep their implementation_area_name (the FK is set null via SET_NULL) and re-link on the
-    # next Implementation Area upload.
-    ImplementationArea.objects.filter(opportunity_id=request.opportunity.id).delete()
+    clear_implementation_areas_for_opportunity(request.opportunity)
     messages.success(request, _("Implementation Areas cleared. You can now upload a new file."))
     redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
     return HttpResponse(headers={"HX-Redirect": redirect_url})
@@ -928,19 +931,11 @@ def exclude_work_areas(request, org_slug, opp_id):
 @waffle_flag(MICROPLANNING)
 def clear_work_areas(request, org_slug, opp_id):
     redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
-    work_areas = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
-
-    access_ids = list(work_areas.select_for_update().values_list("opportunity_access_id", flat=True))
-    if any(access_id is not None for access_id in access_ids):
-        messages.error(request, _("Work Areas cannot be cleared as they are assigned to users."))
+    try:
+        clear_work_areas_for_opportunity(request.opportunity)
+    except ValidationError as e:
+        messages.error(request, e.message)
         return HttpResponse(headers={"HX-Redirect": redirect_url})
-
-    if work_areas.filter(uservisit__isnull=False).exists():
-        messages.error(request, _("Visits have been recorded against these Work Areas. They cannot be cleared."))
-        return HttpResponse(headers={"HX-Redirect": redirect_url})
-
-    work_areas.delete()
-    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
 
     messages.success(request, _("Work Areas and Work Area Groups cleared. You can now upload a new file."))
     return HttpResponse(headers={"HX-Redirect": redirect_url})
@@ -955,11 +950,12 @@ def clear_work_area_groups(request, org_slug, opp_id):
         "microplanning:microplanning_home",
         kwargs={"org_slug": org_slug, "opp_id": opp_id},
     )
-    if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
-        messages.error(request, _("Work Areas already assigned to users. Work Area Groups cannot be cleared."))
+    try:
+        clear_work_area_groups_for_opportunity(request.opportunity)
+    except ValidationError as e:
+        messages.error(request, e.message)
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
-    WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
     messages.success(request, _("Work Area Groups have been cleared for this opportunity."))
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
@@ -996,21 +992,13 @@ class ModifyWorkAreaUpdateView(UpdateView):
     def form_valid(self, form):
         work_area = form.save(commit=False)
         reason = form.cleaned_data.pop("reason", "")
-        old_wag_id = form.initial.get("work_area_group")
-        updated_wag = work_area.work_area_group
-        updated_wag_id = getattr(updated_wag, "id", None)
         try:
-            with transaction.atomic(), pghistory.context(reason=reason):
-                work_area.save(update_fields=["expected_visit_count", "work_area_group"])
-                if "expected_visit_count" in form.changed_data:
-                    work_area.update_status()
-
-                if updated_wag_id != old_wag_id and updated_wag:
-                    updated_wag.update_centroid()
-
-                if form.has_changed() and work_area.opportunity_access_id:
-                    # let exception bubble up if case update fails, to avoid saving work area without case sync
-                    create_or_update_case_by_work_area(work_area)
+            with pghistory.context(reason=reason):
+                save_work_area_changes(
+                    work_area=work_area,
+                    previous_group_id=form.initial.get("work_area_group"),
+                    changed_fields=form.changed_data,
+                )
         except CommCareHQAPIException as e:
             logger.info(f"Failed to update case for work area {work_area.id} after form submission. Error: {e}")
             form.add_error(
@@ -1037,11 +1025,6 @@ class ModifyWorkAreaUpdateView(UpdateView):
                 }
             }
         )
-
-        if updated_wag_id != old_wag_id and old_wag_id:
-            old_wag = WorkAreaGroup.objects.get(id=old_wag_id)
-            old_wag.update_centroid()
-
         return response
 
 

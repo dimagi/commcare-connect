@@ -2,15 +2,20 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.gis.geos import Polygon
+from django.core.exceptions import ValidationError
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.models import SRID, WorkAreaStatus
-from commcare_connect.microplanning.services.work_areas import exclude_work_areas_for_opportunity
+from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.services.work_areas import (
+    clear_work_areas_for_opportunity,
+    exclude_work_areas_for_opportunity,
+    save_work_area_changes,
+)
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
     WorkAreaGroupFactory,
 )
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -333,3 +338,83 @@ class TestExcludeWorkAreas:
         assert (group_b.centroid.x, group_b.centroid.y) == (60.5, 40.5)
         assert a_keep.work_area_group_id == group_a.id
         assert b_keep.work_area_group_id == group_b.id
+
+
+HQ_SYNC = "commcare_connect.microplanning.services.work_areas.create_or_update_case_by_work_area"
+
+
+@pytest.mark.django_db
+class TestSaveWorkAreaChanges:
+    def test_moving_to_another_group_recomputes_both_centroids(self, opportunity):
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        new_group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=old_group, boundary=_unit_square(0, 0))
+        WorkAreaFactory(opportunity=opportunity, work_area_group=old_group, boundary=_unit_square(10, 10))
+        old_group.update_centroid()
+
+        work_area.work_area_group = new_group
+        with patch(HQ_SYNC) as hq_sync:
+            save_work_area_changes(
+                work_area=work_area, previous_group_id=old_group.id, changed_fields=["work_area_group"]
+            )
+
+        old_group.refresh_from_db()
+        new_group.refresh_from_db()
+        assert (old_group.centroid.x, old_group.centroid.y) == (10.5, 10.5)
+        assert (new_group.centroid.x, new_group.centroid.y) == (0.5, 0.5)
+        hq_sync.assert_not_called()  # unassigned areas have no case to update
+
+    @pytest.fixture
+    def assigned_work_area(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, expected_visit_count=3)
+        work_area.expected_visit_count = 5
+        return work_area
+
+    def test_assigned_area_is_synced_to_hq(self, assigned_work_area):
+        work_area = assigned_work_area
+        with patch(HQ_SYNC) as hq_sync:
+            save_work_area_changes(
+                work_area=work_area, previous_group_id=None, changed_fields=["expected_visit_count"]
+            )
+
+        hq_sync.assert_called_once_with(work_area)
+        work_area.refresh_from_db()
+        assert work_area.expected_visit_count == 5
+
+    def test_hq_failure_rolls_back_the_save(self, assigned_work_area):
+        work_area = assigned_work_area
+        with patch(HQ_SYNC, side_effect=CommCareHQAPIException("HQ down")), pytest.raises(CommCareHQAPIException):
+            save_work_area_changes(
+                work_area=work_area, previous_group_id=None, changed_fields=["expected_visit_count"]
+            )
+
+        work_area.refresh_from_db()
+        assert work_area.expected_visit_count == 3
+
+
+@pytest.mark.django_db
+class TestClearWorkAreasForOpportunity:
+    def test_deletes_work_areas_and_groups(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, work_area_group=WorkAreaGroupFactory(opportunity=opportunity))
+        other_work_area = WorkAreaFactory()
+
+        clear_work_areas_for_opportunity(opportunity)
+
+        assert list(WorkArea.objects.all()) == [other_work_area]
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+
+    def test_refuses_while_assigned(self, opportunity):
+        WorkAreaFactory(opportunity=opportunity, opportunity_access=OpportunityAccessFactory(opportunity=opportunity))
+
+        with pytest.raises(ValidationError, match="assigned"):
+            clear_work_areas_for_opportunity(opportunity)
+
+        assert WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_refuses_once_visits_are_recorded(self, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity)
+        UserVisitFactory(opportunity=opportunity, work_area=work_area)
+
+        with pytest.raises(ValidationError, match="Visits have been recorded"):
+            clear_work_areas_for_opportunity(opportunity)
