@@ -1,3 +1,4 @@
+from django.db.models import TextChoices
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.models import WorkAreaStatus
@@ -61,3 +62,8 @@ SEARCH_KIND_FILTERS = {
     "wag": "work_area_group",
     "ia": "implementation_area",
 }
+
+
+class InaccessibilityReviewAction(TextChoices):
+    APPROVE = "approve", "Approve"
+    DENY = "deny", "Deny"

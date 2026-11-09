@@ -2,7 +2,6 @@ import csv
 import json
 import logging
 import uuid
-from functools import partial
 from http import HTTPStatus
 
 import pghistory
@@ -16,7 +15,6 @@ from django.core.files.storage import default_storage
 from django.db import connection, transaction
 from django.db.models import (
     F,
-    TextChoices,
 )
 from django.db.utils import OperationalError
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
@@ -46,11 +44,13 @@ from commcare_connect.microplanning.const import (
     WORK_AREA_MAX_OVERLAP_RATIO,
     WORK_AREA_STATUS_COLORS,
     WORKAREA_MIN_ZOOM,
+    InaccessibilityReviewAction,
 )
 from commcare_connect.microplanning.coverage_progress import (
     CoverageProgressReport,
     missing_deliver_units,
 )
+from commcare_connect.microplanning.exceptions import InaccessibilityRequestNotPendingError
 from commcare_connect.microplanning.filters import (
     CoverageProgressFilterSet,
     UserVisitMapFilterSet,
@@ -82,6 +82,7 @@ from commcare_connect.microplanning.queries import (
     work_area_search_options,
     work_areas_for_download,
 )
+from commcare_connect.microplanning.services.inaccessibility_requests import review_work_area_inaccessibility_request
 from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
@@ -89,7 +90,6 @@ from commcare_connect.microplanning.services.work_area_assignment import (
 from commcare_connect.microplanning.services.work_areas import exclude_work_areas_for_opportunity
 from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
-from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
     opportunity_required,
@@ -1248,22 +1248,6 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     )
 
 
-class InaccessibilityReviewAction(TextChoices):
-    APPROVE = "approve", "Approve"
-    DENY = "deny", "Deny"
-
-
-_ACTION_TO_NEW_STATUS = {
-    InaccessibilityReviewAction.APPROVE: WorkAreaStatus.INACCESSIBLE,
-    InaccessibilityReviewAction.DENY: WorkAreaStatus.NOT_VISITED,
-}
-
-_ACTION_TO_REQUEST_STATUS = {
-    InaccessibilityReviewAction.APPROVE: InaccessibilityRequestStatus.APPROVED,
-    InaccessibilityReviewAction.DENY: InaccessibilityRequestStatus.DENIED,
-}
-
-
 @require_POST
 @opp_admin_access_required
 @opportunity_required
@@ -1274,19 +1258,15 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     except ValueError:
         return HttpResponseBadRequest("Invalid action", content_type="text/plain")
 
-    new_status = _ACTION_TO_NEW_STATUS[action]
-
     work_area = get_object_or_404(
         WorkArea.objects.select_for_update(),
         id=work_area_id,
         opportunity=request.opportunity,
     )
-    inacc_request = (
-        WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user")
-        .filter(work_area=work_area, status=InaccessibilityRequestStatus.PENDING)
-        .first()
-    )
-    if inacc_request is None or work_area.status != WorkAreaStatus.REQUEST_FOR_INACCESSIBLE:
+    try:
+        with pghistory.context(username=request.user.username, user_email=request.user.email):
+            new_status = review_work_area_inaccessibility_request(work_area=work_area, action=action)
+    except InaccessibilityRequestNotPendingError:
         # The work area is not in a state this action can act on, for any number of reasons, so
         # the panel is working from stale data either way. Its error box shows the body as text,
         # so this has to be a message rather than an error page.
@@ -1295,35 +1275,12 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
             content=_("Invalid request. Please reload the page and try again."),
             content_type="text/plain",
         )
-
-    work_area.status = new_status
-    inacc_request.status = _ACTION_TO_REQUEST_STATUS[action]
-    try:
-        with transaction.atomic():
-            with pghistory.context(username=request.user.username, user_email=request.user.email):
-                work_area.save(update_fields=["status"])
-            inacc_request.save(update_fields=["status"])
-            if work_area.work_area_group and action == InaccessibilityReviewAction.APPROVE:
-                work_area.work_area_group.update_centroid()
-            if work_area.opportunity_access_id:
-                create_or_update_case_by_work_area(work_area)
-
     except CommCareHQAPIException as e:
         logger.info(f"Failed to sync work area {work_area.id} to HQ after review action. Error: {e}")
         return HttpResponse(
             status=500,
             content=_("Failed to sync work area status. Please try again."),
             content_type="text/plain",
-        )
-
-    if action == InaccessibilityReviewAction.DENY:
-        transaction.on_commit(
-            partial(
-                send_push_notification_task.delay,
-                [inacc_request.opportunity_access.user_id],
-                "Inaccessibility Request Denied",
-                "Your request to mark a work area inaccessible has been declined.",
-            )
         )
 
     response = HttpResponse(status=204)

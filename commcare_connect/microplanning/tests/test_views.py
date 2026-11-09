@@ -27,6 +27,7 @@ from commcare_connect.microplanning.const import (
     NO_CHILDREN_WORK_AREA_UNIT_SLUG,
     SEARCH_KIND_FILTERS,
     SERVICE_DELIVERY_UNIT_SLUG,
+    InaccessibilityReviewAction,
 )
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm
@@ -48,7 +49,6 @@ from commcare_connect.microplanning.tests.factories import (
 from commcare_connect.microplanning.views import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
-    InaccessibilityReviewAction,
     UserVisitVectorLayer,
     get_metrics_for_microplanning,
 )
@@ -1620,8 +1620,10 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
         old_wag_centroid_value = work_area.work_area_group.centroid
 
         with (
-            patch("commcare_connect.microplanning.views.send_push_notification_task") as mock_notif,
-            patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area"),
+            patch("commcare_connect.opportunity.tasks.send_push_notification_task.delay") as mock_notify,
+            patch(
+                "commcare_connect.microplanning.services.inaccessibility_requests.create_or_update_case_by_work_area"
+            ),
             django_capture_on_commit_callbacks(execute=True),
         ):
             response = client.post(url, {"action": action})
@@ -1646,12 +1648,12 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
             assert work_area.work_area_group.centroid == old_wag_centroid_value
 
         if expect_notify:
-            mock_notif.delay.assert_called_once()
-            notified_user_ids = mock_notif.delay.call_args[0][0]
+            mock_notify.assert_called_once()
+            notified_user_ids = mock_notify.call_args[0][0]
             assert notified_user_ids == [inacc_request.opportunity_access.user_id]
             assert inacc_request.opportunity_access.user_id != org_user_admin.id
         else:
-            mock_notif.delay.assert_not_called()
+            mock_notify.assert_not_called()
 
     def test_action_invalid_action_returns_400(self, client, org_user_admin, pending_wa, organization):
         work_area, _ = pending_wa
@@ -1665,7 +1667,7 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         with patch(
-            "commcare_connect.microplanning.views.create_or_update_case_by_work_area",
+            "commcare_connect.microplanning.services.inaccessibility_requests.create_or_update_case_by_work_area",
             side_effect=CommCareHQAPIException("HQ unavailable"),
         ):
             response = client.post(url, {"action": "approve"})
