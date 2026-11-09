@@ -79,8 +79,6 @@ Any other utility with one caller stays as a private function in the caller's mo
 - The app's `utils/` package if it names a Connect concept, e.g. `generate_invoice_number`. Other apps import it from there.
 - `commcare_connect/utils/<topic>.py` if it names no Connect concept.
 
-Functions that build ORM expressions without running them (`Subquery`, `Coalesce`, annotations) count as utilities.
-
 ### Exceptions
 
 - Raised and caught in one module: stays in that module.
@@ -101,10 +99,13 @@ Client apps that import no app (`connect_id_client`, `jira_service_desk`, `commc
 - An app doesn't write another app's models directly, whether from a view, form or task. It calls a service in the app that owns the model.
 - An operation that spans apps, such as merging two organizations, is a service in the app that starts it. That service calls the other apps' services for their models.
 
-### QuerySet filters and annotations
+### QuerySet methods and ORM expressions
 
-Reusable filters and annotations are methods on a custom `QuerySet`, exposed with `QuerySet.as_manager()` or `Manager.from_queryset()`, e.g. `Opportunity.objects.accessible_to(org)`. Put them on the `QuerySet`, not only the `Manager`, so they can be chained after `.filter()`. `queries` holds the larger builders that call them.
+A function that takes one model's queryset and returns it filtered or annotated is a method on a custom `QuerySet` once two modules use it. While one module uses it, it stays private in that module. Expose the `QuerySet` with `QuerySet.as_manager()` or `Manager.from_queryset()`, e.g. `Opportunity.objects.accessible_to(org)`. Put these methods on the `QuerySet`, not only the `Manager`, so they can be chained after `.filter()`. `queries` holds the larger builders that call them.
 
+- A function that builds an expression for another query (`Subquery`, `Case`, `Q` with lookups) goes in `queries`. A `Q` or `Case` that refers to no model, only field names and values, is pure, so it may be a utility.
+- Near-identical builders, such as a family of `Subquery` functions, stay together in one module, placed where the most-shared one would go.
+- An SQL version of a model property is a `QuerySet` method next to the property, with a test that checks the two agree.
 - A filter that limits rows to what a user may see is a `QuerySet` method. `permissions` calls it when it needs the check.
 - A filter that depends on another app's models goes in the `queries` of the app the app order picks (see [Code shared between apps](#code-shared-between-apps)). For example, users who hold a work area go in `microplanning/queries.py`, not on `User`.
 
