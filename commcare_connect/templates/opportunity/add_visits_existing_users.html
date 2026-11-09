@@ -15,7 +15,7 @@
   <div class="md:max-w-screen-lg mx-auto flex flex-col gap-6"
     {# djlint:on #}
     x-data="opportunityBudgetComponent('{{ request.GET.active_tab|default:"existing_workers" }}', {{ tabs|safe }})"
-    x-clock
+    x-cloak
     x-effect="setTab(selectedTab)">
     {% include "components/breadcrumbs.html" with path=path %}
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
