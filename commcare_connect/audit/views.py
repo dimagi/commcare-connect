@@ -16,7 +16,8 @@ from commcare_connect.audit.tables import AuditReportEntryTable, AuditReportTabl
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.models import AssignedTask, TaskType
+from commcare_connect.opportunity.models import TaskType
+from commcare_connect.opportunity.services.tasks import assign_task
 from commcare_connect.organization.decorators import opp_standard_access_required, opportunity_required
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
@@ -221,7 +222,7 @@ def _assign_audit_tasks(task_types, opportunity_access, assigned_by, due_date):
     failed = []
     for task_type in task_types:
         try:
-            AssignedTask.assign(
+            assign_task(
                 task_type=task_type,
                 opportunity_access=opportunity_access,
                 due_date=due_date,

@@ -11,6 +11,7 @@ from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import AssignedTask, TaskTypeModeChoices
 from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
     TaskTypeFactory,
@@ -537,7 +538,7 @@ def test_assign_audit_tasks_treats_already_assigned_as_success(audit_opp):
     assigner = UserFactory()
     ok_type = TaskTypeFactory(opportunity=audit_opp, name="OK")
     dup_type = TaskTypeFactory(opportunity=audit_opp, name="Dup")
-    AssignedTask.assign(task_type=dup_type, opportunity_access=access, due_date=date.today())
+    AssignedTaskFactory(task_type=dup_type, opportunity_access=access)
 
     assigned, failed = _assign_audit_tasks([ok_type, dup_type], access, assigner, date.today() + timedelta(days=7))
 

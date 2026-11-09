@@ -26,7 +26,6 @@ from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_
 from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
-from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -3261,80 +3260,66 @@ class TestCreateTask:
         org = org or opportunity.program.organization
         return reverse("opportunity:create_task", args=(org.slug, opportunity.opportunity_id))
 
-    def test_create_task_success(self, client, program_manager_org_user_admin, opportunity, access):
+    @pytest.fixture
+    def pm_client(self, client, program_manager_org_user_admin):
         client.force_login(program_manager_org_user_admin)
+        return client
+
+    @pytest.fixture
+    def due_date(self):
+        return date.today() + timedelta(days=7)
+
+    def _post(self, client, *, opportunity, task, access, due_date):
+        data = {"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()}
+        response = client.post(self._url(opportunity), data=data)
+        assert response.status_code == HTTPStatus.OK
+        return response
+
+    def _messages(self, response):
+        return [str(m) for m in get_messages(response.wsgi_request)]
+
+    def test_create_task_success(self, pm_client, program_manager_org_user_admin, opportunity, access, due_date):
         task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
-        due_date = date.today() + timedelta(days=7)
 
         with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
-            response = client.post(
-                self._url(opportunity),
-                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-            )
+            response = self._post(pm_client, opportunity=opportunity, task=task, access=access, due_date=due_date)
 
-        assert response.status_code == HTTPStatus.OK
         assert "HX-Redirect" in response
         assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
         assert assigned.due_date == due_date
         assert assigned.status == AssignedTaskStatus.ASSIGNED
         assert assigned.assigned_by == program_manager_org_user_admin
         mock_update.assert_called_once_with({access: {"properties": {"some_prop": "1"}}})
-        msgs = list(get_messages(response.wsgi_request))
-        assert any("successfully" in str(m) for m in msgs)
+        assert any("successfully" in m for m in self._messages(response))
 
-    def test_create_task_already_assigned_shows_error(
-        self, client, program_manager_org_user_admin, opportunity, access
-    ):
-        client.force_login(program_manager_org_user_admin)
+    def test_create_task_already_assigned_shows_error(self, pm_client, opportunity, access, due_date):
         task = TaskTypeFactory(app=opportunity.deliver_app)
-        due_date = date.today() + timedelta(days=7)
+        AssignedTaskFactory(task_type=task, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
 
-        with mock.patch.object(AssignedTask, "assign", side_effect=TaskAlreadyAssignedError):
-            response = client.post(
-                self._url(opportunity),
-                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-            )
+        response = self._post(pm_client, opportunity=opportunity, task=task, access=access, due_date=due_date)
 
-        assert response.status_code == HTTPStatus.OK
-        msgs = list(get_messages(response.wsgi_request))
-        assert any("already assigned" in str(m) for m in msgs)
+        assert any("already assigned" in m for m in self._messages(response))
 
-    def test_create_task_hq_failure_shows_error_and_no_row(
-        self, client, program_manager_org_user_admin, opportunity, access
-    ):
-        client.force_login(program_manager_org_user_admin)
+    def test_create_task_hq_failure_shows_error_and_no_row(self, pm_client, opportunity, access, due_date):
         task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
-        due_date = date.today() + timedelta(days=7)
 
         with mock.patch(
             "commcare_connect.commcarehq.api.bulk_update_usercases",
             side_effect=CommCareHQAPIException("boom"),
         ):
-            response = client.post(
-                self._url(opportunity),
-                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-            )
+            response = self._post(pm_client, opportunity=opportunity, task=task, access=access, due_date=due_date)
 
-        assert response.status_code == HTTPStatus.OK
         assert "HX-Redirect" in response
         assert not AssignedTask.objects.filter(task_type=task, opportunity_access=access).exists()
-        msgs = list(get_messages(response.wsgi_request))
-        assert any("CommCare HQ" in str(m) for m in msgs)
+        assert any("CommCare HQ" in m for m in self._messages(response))
 
-    def test_create_task_ocs_failure_shows_error(self, client, program_manager_org_user_admin, opportunity, access):
-        client.force_login(program_manager_org_user_admin)
+    def test_create_task_ocs_failure_shows_error(self, pm_client, opportunity, access, due_date):
         task = TaskTypeFactory(app=opportunity.deliver_app)
-        due_date = date.today() + timedelta(days=7)
 
-        with mock.patch.object(AssignedTask, "assign", side_effect=OcsApiError("boom")):
-            response = client.post(
-                self._url(opportunity),
-                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-            )
+        with mock.patch("commcare_connect.opportunity.views.assign_task", side_effect=OcsApiError("boom")):
+            response = self._post(pm_client, opportunity=opportunity, task=task, access=access, due_date=due_date)
 
-        assert response.status_code == HTTPStatus.OK
-        msgs = list(get_messages(response.wsgi_request))
-        assert any("chatbot" in str(m).lower() for m in msgs)
+        assert any("chatbot" in m.lower() for m in self._messages(response))
 
     def test_create_task_invalid_form(self, client, program_manager_org_user_admin, opportunity):
         _create_social_app("ocs")
@@ -3345,20 +3330,12 @@ class TestCreateTask:
         assert AssignedTask.objects.count() == 0
 
     @pytest.mark.django_db(transaction=True)
-    def test_create_task_schedules_push_notification(
-        self, client, program_manager_org_user_admin, opportunity, access
-    ):
-        client.force_login(program_manager_org_user_admin)
+    def test_create_task_schedules_push_notification(self, pm_client, opportunity, access, due_date):
         task = TaskTypeFactory(app=opportunity.deliver_app)
-        due_date = date.today() + timedelta(days=7)
 
         with mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch:
-            response = client.post(
-                self._url(opportunity),
-                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-            )
+            self._post(pm_client, opportunity=opportunity, task=task, access=access, due_date=due_date)
 
-        assert response.status_code == HTTPStatus.OK
         assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
         delay_patch.assert_called_once_with(assigned.pk)
 

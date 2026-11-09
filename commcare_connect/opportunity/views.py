@@ -149,6 +149,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.services.tasks import assign_task, delete_assigned_tasks
 from commcare_connect.opportunity.tables import (
     AssignedTaskListTable,
     CompletedWorkTable,
@@ -4116,7 +4117,7 @@ def create_task(request, org_slug, opp_id):
     due_date = form.cleaned_data["due_date"]
 
     try:
-        AssignedTask.assign(
+        assign_task(
             task_type=task,
             opportunity_access=access,
             due_date=due_date,
@@ -4150,7 +4151,7 @@ def delete_tasks(request, org_slug, opp_id):
     redirect_url = _task_redirect_url(request, org_slug, opp_id)
 
     try:
-        deleted_count = AssignedTask.bulk_delete(task_ids, request.opportunity)
+        deleted_count = delete_assigned_tasks(task_ids=task_ids, opportunity=request.opportunity)
     except CommCareHQAPIException:
         logger.exception("Task deletion failed: could not update CommCare HQ for opportunity %s", opp_id)
         messages.error(request, _("Task deletion failed: could not update CommCare HQ. Please try again."))

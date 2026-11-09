@@ -9,7 +9,7 @@ import pghistory
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
-from django.db import IntegrityError, models, transaction
+from django.db import models, transaction
 from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
@@ -18,10 +18,8 @@ from django.utils.timezone import now
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.commcarehq.models import HQServer
-from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils import ocs_api
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 # Max length for CharFields backed by a TextChoices enum.
@@ -543,43 +541,6 @@ class AssignedTask(XFormBaseModel):
             ),
         ]
 
-    @classmethod
-    def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> AssignedTask:
-        from commcare_connect.commcarehq.api import bulk_update_usercases
-        from commcare_connect.opportunity.tasks import send_task_assignment_notification
-
-        with transaction.atomic():
-            try:
-                assigned_task = cls.objects.create(
-                    task_type=task_type,
-                    opportunity_access=opportunity_access,
-                    status=AssignedTaskStatus.ASSIGNED,
-                    due_date=due_date,
-                    assigned_by=assigned_by,
-                )
-            except IntegrityError:
-                raise TaskAlreadyAssignedError(f"Task type '{task_type}' could not be assigned.")
-
-            if task_type.mode == TaskTypeModeChoices.OCS:
-                assigned_task.trigger_ocs_bot(assigned_by)
-            elif task_type.case_property:
-                bulk_update_usercases({opportunity_access: {"properties": {task_type.case_property: "1"}}})
-            transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
-        return assigned_task
-
-    def trigger_ocs_bot(self, assigned_by):
-        task_user = self.opportunity_access.user
-
-        session_id, channel_id = ocs_api.trigger_bot(
-            assigned_by,
-            identifier=task_user.username or task_user.phone_number,
-            experiment=self.task_type.ocs_chatbot_id,
-            participant_data={"connectTaskId": str(self.assigned_task_id)},
-        )
-        self.ocs_session_id = session_id
-        self.connect_channel_id = channel_id
-        self.save(update_fields=["ocs_session_id", "connect_channel_id"])
-
     def mark_completed(
         self,
         *,
@@ -588,12 +549,10 @@ class AssignedTask(XFormBaseModel):
         duration=None,
         app_build_id=None,
         app_build_version=None,
-    ):
-        """Mark this task complete and notify the assignee."""
-        from commcare_connect.opportunity.tasks import send_task_completion_notification
-
+    ) -> bool:
+        """Mark this task complete. Returns False, changing nothing, if it already was."""
         if self.status == AssignedTaskStatus.COMPLETED:
-            return
+            return False
 
         self.status = AssignedTaskStatus.COMPLETED
         self.completed_at = completed_at or now()
@@ -612,58 +571,7 @@ class AssignedTask(XFormBaseModel):
                 "date_modified",
             ]
         )
-
-        access = self.opportunity_access
-        if not access.last_active or access.last_active < self.completed_at:
-            access.last_active = self.completed_at
-            access.save(update_fields=["last_active"])
-
-        transaction.on_commit(lambda: send_task_completion_notification.delay(self.pk))
-
-    @classmethod
-    def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
-        from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_update_usercases
-
-        tasks = list(
-            cls.objects.filter(
-                pk__in=task_ids,
-                opportunity_access__opportunity=opportunity,
-            )
-            .exclude(status=AssignedTaskStatus.COMPLETED)
-            .select_related("task_type", "opportunity_access")
-        )
-        if not tasks:
-            return 0
-
-        hq_updates: dict[tuple[int, str], OpportunityAccess] = {}
-        for task in tasks:
-            if prop := task.task_type.case_property:
-                hq_updates.setdefault((task.opportunity_access_id, prop), task.opportunity_access)
-
-        with transaction.atomic():
-            deleted_count, _ = (
-                cls.objects.filter(pk__in=[t.pk for t in tasks]).exclude(status=AssignedTaskStatus.COMPLETED).delete()
-            )
-            if hq_updates:
-                still_assigned = set(
-                    cls.objects.filter(
-                        opportunity_access_id__in={access_id for access_id, _ in hq_updates},
-                        status=AssignedTaskStatus.ASSIGNED,
-                        task_type__case_property__in={p for _, p in hq_updates},
-                    ).values_list("opportunity_access_id", "task_type__case_property")
-                )
-                to_reset: dict[OpportunityAccess, dict] = {}
-                for access_id, prop in hq_updates.keys() - still_assigned:
-                    access = hq_updates[access_id, prop]
-                    to_reset.setdefault(access, {"properties": {}})["properties"][prop] = ""
-                if len(to_reset) > HQ_CASE_BULK_CHUNK_SIZE:
-                    raise ListTooLongError(
-                        f"Too many HQ case property resets ({len(to_reset)}); split the delete into smaller batches."
-                    )
-                if to_reset:
-                    bulk_update_usercases(to_reset)
-
-        return deleted_count
+        return True
 
 
 class Assessment(XFormBaseModel):

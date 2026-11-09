@@ -46,6 +46,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.services.tasks import complete_task
 from commcare_connect.opportunity.tasks import (
     download_inaccessibility_request_attachments,
     download_user_visit_attachments,
@@ -180,7 +181,8 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
             except AssignedTask.DoesNotExist:
                 continue
 
-            assigned_task.mark_completed(
+            complete_task(
+                assigned_task,
                 completed_at=xform.metadata.timeEnd,
                 xform_id=xform.id,
                 duration=xform.metadata.duration,
