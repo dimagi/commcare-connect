@@ -2,7 +2,7 @@ import json
 from collections import OrderedDict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -15,7 +15,7 @@ from commcare_connect.microplanning.services.work_area_assignment import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
 )
-from commcare_connect.microplanning.tasks import parse_lon_lat_centroid, send_work_area_assignment_notification
+from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
@@ -630,16 +630,11 @@ class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
             # instances, so this is how the view recovers failed_ids/skipped counts.
             self.assign_result = result
             failed_ids = set(result["failed_ids"])
-            notified_access_ids = set()
             for wa in to_assign:
                 if wa.id in failed_ids:
                     orig_access_id, orig_status = original_access_status[wa.id]
                     wa.opportunity_access_id = orig_access_id
                     wa.status = orig_status
-                else:
-                    notified_access_ids.add(wa.opportunity_access_id)
-            for access_id in notified_access_ids:
-                transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
         if to_unassign:
             result = unassign_work_areas_for_opportunity(

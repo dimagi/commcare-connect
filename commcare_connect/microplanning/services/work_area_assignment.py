@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 
 import pghistory
 from django.core.exceptions import ValidationError
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 def assign_work_areas_to_workers(
     opportunity: Opportunity, work_area_ids_by_access_id: dict[int, list[int]], user: User
 ) -> dict:
-    """Assign each worker the listed work areas, sync them to HQ and notify the workers.
+    """Assign each worker the listed work areas and sync them to HQ.
 
     Raises ValidationError when a worker or work area isn't in the opportunity. Returns
     assign_work_areas_and_sync_to_hq's result; a work area whose HQ sync failed keeps its old
@@ -44,11 +45,7 @@ def assign_work_areas_to_workers(
         if work_area.status == WorkAreaStatus.UNASSIGNED:
             work_area.status = WorkAreaStatus.NOT_VISITED
 
-    result = assign_work_areas_and_sync_to_hq(opportunity, work_areas, user)
-    assigned_ids = set(result["assigned_ids"])
-    notified_access_ids = {work_area_to_access[wa.id].id for wa in work_areas if wa.id in assigned_ids}
-    _notify_workers_of_assignment(notified_access_ids)
-    return result
+    return assign_work_areas_and_sync_to_hq(opportunity, work_areas, user)
 
 
 def check_assignees(opportunity: Opportunity, access_ids: set[int]) -> dict[int, OpportunityAccess]:
@@ -65,16 +62,9 @@ def check_assignees(opportunity: Opportunity, access_ids: set[int]) -> dict[int,
     return accesses
 
 
-def _notify_workers_of_assignment(access_ids: set[int]) -> None:
-    from commcare_connect.microplanning.tasks import send_work_area_assignment_notification
-
-    for access_id in access_ids:
-        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
-
-
 def assign_work_areas_and_sync_to_hq(opportunity: Opportunity, work_areas: list[WorkArea], user: User) -> dict:
     """Persist work-area assignments and push the new owners to HQ, one HQ POST per chunk in
-    its own savepoint.
+    its own savepoint. Workers with newly synced areas are notified after commit.
 
     Each ``work_area`` must already have its target ``opportunity_access``/``status`` set in
     memory.
@@ -96,7 +86,17 @@ def assign_work_areas_and_sync_to_hq(opportunity: Opportunity, work_areas: list[
             failed_ids.extend(wa.id for wa in chunk)
             continue
         assigned_ids.extend(wa.id for wa in chunk)
+
+    assigned = set(assigned_ids)
+    _notify_workers_of_assignment({wa.opportunity_access_id for wa in work_areas if wa.id in assigned})
     return {"assigned_ids": assigned_ids, "failed_ids": failed_ids}
+
+
+def _notify_workers_of_assignment(access_ids: set[int]) -> None:
+    from commcare_connect.microplanning.tasks import send_work_area_assignment_notification
+
+    for access_id in access_ids:
+        transaction.on_commit(partial(send_work_area_assignment_notification.delay, access_id))
 
 
 def unassign_work_areas_for_opportunity(opportunity: Opportunity, work_area_ids: list[int], user: User) -> dict:
