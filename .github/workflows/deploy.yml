@@ -50,7 +50,7 @@ jobs:
       slack_ts: ${{ steps.slack.outputs.ts }}
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.DEPLOY_BRANCH }}
 
