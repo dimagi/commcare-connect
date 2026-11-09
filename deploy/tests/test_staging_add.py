@@ -3,69 +3,7 @@ import subprocess
 import pytest
 
 from deploy import staging_add as staging
-
-
-@pytest.fixture
-def repo(tmp_path, monkeypatch):
-    """A clone with a local bare `origin`, isolated from the developer's git config."""
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    for key, value in {
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@example.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@example.com",
-    }.items():
-        monkeypatch.setenv(key, value)
-    origin = tmp_path / "origin.git"
-    clone = tmp_path / "clone"
-    run_git(tmp_path, "init", "--quiet", "--bare", "-b", "main", str(origin))
-    run_git(tmp_path, "init", "--quiet", "-b", "main", str(clone))
-    run_git(clone, "remote", "add", "origin", str(origin))
-    commit(clone, filename="base.txt")
-    push(clone, "main")
-    return clone
-
-
-def run_git(cwd, *args):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
-
-
-def commit(repo, *, filename, content="change\n"):
-    path = repo / filename
-    path.write_text(content)
-    run_git(repo, "add", filename)
-    run_git(repo, "commit", "--quiet", "-m", f"edit {filename}")
-
-
-def branch(repo, *, name, start="main", files=()):
-    """Create a branch from `start`, commit one file per name in `files`, and push it."""
-    run_git(repo, "checkout", "--quiet", "-b", name, start)
-    for filename in files or [f"{name.replace('/', '_')}.txt"]:
-        commit(repo, filename=filename)
-    push(repo, name)
-    run_git(repo, "checkout", "--quiet", "main")
-
-
-def merge_branch(repo, *, name, merging):
-    """Create a compatibility branch: the first branch with the others merged in."""
-    run_git(repo, "checkout", "--quiet", "-b", name, merging[0])
-    for other in merging[1:]:
-        run_git(repo, "merge", "--quiet", "--no-edit", other)
-    push(repo, name)
-    run_git(repo, "checkout", "--quiet", "main")
-
-
-def add_commit_to(repo, *, name, filename):
-    run_git(repo, "checkout", "--quiet", name)
-    commit(repo, filename=filename)
-    push(repo, name)
-    run_git(repo, "checkout", "--quiet", "main")
-
-
-def push(repo, *branches):
-    run_git(repo, "push", "--quiet", "origin", *branches)
-    run_git(repo, "fetch", "--quiet", "origin")
+from deploy.tests.git_helpers import add_commit_to, branch, commit, merge_branch, push, run_git
 
 
 def find_before(repo, *, branches, new_branch, pr_bases=None):
