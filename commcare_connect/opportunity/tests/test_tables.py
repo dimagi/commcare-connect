@@ -5,7 +5,6 @@ import pytest
 from django.test import RequestFactory
 from django_tables2 import RequestConfig
 
-from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWork,
@@ -14,6 +13,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
 )
+from commcare_connect.opportunity.queries.tasks import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.tables import (
     InvoiceDeliveriesTable,
     InvoiceLineItemsTable,

@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     DeliveryType,
+    Opportunity,
     OpportunityAccess,
     OpportunityStatus,
     TaskType,
@@ -239,7 +240,21 @@ TASK_STATUS_CHOICES = [
 ]
 
 
-class TasksFilterSet(django_filters.FilterSet):
+class TaskFilterSetMixin:
+    """Takes the opportunity, stops the assigned-date pickers at today and lists its active task types."""
+
+    def __init__(self, *args, opportunity: Opportunity | None = None, **kwargs):
+        self.opportunity = opportunity
+        super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
+        if self.opportunity:
+            active_tasks = TaskType.objects.active_for(self.opportunity)
+            self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
+
+
+class TasksFilterSet(TaskFilterSetMixin, django_filters.FilterSet):
     worker_name = django_filters.MultipleChoiceFilter(
         label="Worker Name",
         choices=[],
@@ -287,15 +302,8 @@ class TasksFilterSet(django_filters.FilterSet):
         form = CSRFExemptForm
 
     def __init__(self, *args, **kwargs):
-        self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
-        today = date.today().isoformat()
-        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
-        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
         if self.opportunity:
-            active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
-            self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
-
             worker_queryset = (
                 User.objects.filter(
                     opportunityaccess__opportunity=self.opportunity,
@@ -309,7 +317,7 @@ class TasksFilterSet(django_filters.FilterSet):
             ]
 
 
-class UserTasksFilterSet(django_filters.FilterSet):
+class UserTasksFilterSet(TaskFilterSetMixin, django_filters.FilterSet):
     task_status = django_filters.MultipleChoiceFilter(
         label=_("Task Status"),
         choices=TASK_STATUS_CHOICES,
@@ -351,14 +359,7 @@ class UserTasksFilterSet(django_filters.FilterSet):
         form = CSRFExemptForm
 
     def __init__(self, *args, **kwargs):
-        self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
-        today = date.today().isoformat()
-        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
-        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
-        if self.opportunity:
-            active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
-            self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
         self.form.helper.layout = Layout(
             "task_status",
             "task_type",

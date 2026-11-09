@@ -341,6 +341,11 @@ class TaskTypeModeChoices(models.TextChoices):
     OCS = "ocs", gettext("Open Chat Studio")
 
 
+class TaskTypeQuerySet(models.QuerySet):
+    def active_for(self, opportunity: Opportunity) -> TaskTypeQuerySet:
+        return self.filter(opportunity=opportunity, is_active=True)
+
+
 class TaskType(models.Model):
     task_type_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
@@ -359,6 +364,8 @@ class TaskType(models.Model):
         max_length=CHOICE_FIELD_MAX_LENGTH,
     )
     ocs_chatbot_id = models.CharField(max_length=255, null=True, blank=True)
+
+    objects = TaskTypeQuerySet.as_manager()
 
     def __str__(self):
         return self.name

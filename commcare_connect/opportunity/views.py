@@ -114,7 +114,6 @@ from commcare_connect.opportunity.helpers import (
     get_payment_report_data,
     get_worker_learn_table_data,
     get_worker_table_data,
-    get_worker_tasks_base_queryset,
     get_worker_work_area_table_data,
 )
 from commcare_connect.opportunity.models import (
@@ -149,6 +148,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.queries.tasks import get_assigned_task_counts, get_worker_tasks_base_queryset
 from commcare_connect.opportunity.services.tasks import assign_task, delete_assigned_tasks
 from commcare_connect.opportunity.tables import (
     AssignedTaskListTable,
@@ -3722,10 +3722,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             **panel_type_2,
         },
     ]
-    if (
-        switch_is_active(WORKER_VISITS_TASKS)
-        and TaskType.objects.filter(opportunity=request.opportunity, is_active=True).exists()
-    ):
+    if switch_is_active(WORKER_VISITS_TASKS) and TaskType.objects.active_for(request.opportunity).exists():
         connect_worker_panels.append(
             {
                 "icon": "fa-list-check",
@@ -4020,11 +4017,7 @@ class AssignedTaskListView(OpportunityObjectMixin, FilterMixin, OrgContextSingle
         context = super().get_context_data(**kwargs)
         opportunity = self.get_opportunity()
 
-        counts = AssignedTask.objects.filter(opportunity_access__opportunity=opportunity).aggregate(
-            total_tasks=Count("id"),
-            open_tasks=Count("id", filter=Q(status=AssignedTaskStatus.ASSIGNED)),
-            complete_tasks=Count("id", filter=Q(status=AssignedTaskStatus.COMPLETED)),
-        )
+        counts = get_assigned_task_counts(opportunity)
 
         context["opportunity"] = opportunity
         context.update(counts)

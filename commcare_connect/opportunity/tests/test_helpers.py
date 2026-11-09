@@ -13,7 +13,6 @@ from commcare_connect.opportunity.helpers import (
     get_opportunity_worker_progress,
     get_worker_learn_table_data,
     get_worker_table_data,
-    get_worker_tasks_base_queryset,
     get_worker_work_area_table_data,
 )
 from commcare_connect.opportunity.models import (
@@ -24,6 +23,7 @@ from commcare_connect.opportunity.models import (
     UserInviteStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.queries.tasks import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     AssignedTaskFactory,
@@ -635,20 +635,6 @@ def _filter_worker_tasks(opportunity, filters):
     qs = get_worker_tasks_base_queryset(opportunity)
     filterset = TasksFilterSet(data=filters, queryset=qs, opportunity=opportunity)
     return list(filterset.qs)
-
-
-@pytest.mark.django_db
-def test_get_worker_tasks_base_queryset(opportunity):
-    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
-    UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    AssignedTaskFactory(opportunity_access=access)
-    AssignedTaskFactory(opportunity_access=access)
-
-    result = list(get_worker_tasks_base_queryset(opportunity))
-    assert len(result) == 2
-    assert result[0].user is not None
-    assert result[0].task_name is not None
-    assert result[0].status == UserInviteStatus.accepted
 
 
 @pytest.mark.django_db

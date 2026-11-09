@@ -27,7 +27,6 @@ from commcare_connect.flags.switch_names import (
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
-    AssignedTaskStatus,
     AudioAttachment,
     CommCareApp,
     Country,
@@ -53,6 +52,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.queries.tasks import get_assignable_task_types
 from commcare_connect.opportunity.tables import header_with_tooltip, value_with_icon_tooltip
 from commcare_connect.opportunity.utils import finance_request as finance_request_utils
 from commcare_connect.opportunity.utils.invoice import (
@@ -2188,13 +2188,7 @@ class CreateTaskForm(forms.Form):
         self.ocs_task_ids_json = "[]"
         ocs_task_id_strings = []
         if opportunity is not None:
-            task_qs = TaskType.objects.filter(app=opportunity.deliver_app, is_active=True)
-            if access is not None:
-                already_assigned = AssignedTask.objects.filter(
-                    opportunity_access=access,
-                    status=AssignedTaskStatus.ASSIGNED,
-                ).values_list("task_type_id", flat=True)
-                task_qs = task_qs.exclude(pk__in=already_assigned)
+            task_qs = get_assignable_task_types(opportunity=opportunity, access=access)
             self.fields["task"].queryset = task_qs
             self.fields["access"].queryset = OpportunityAccess.objects.filter(
                 opportunity=opportunity,

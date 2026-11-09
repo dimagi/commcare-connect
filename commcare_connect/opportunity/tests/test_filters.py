@@ -9,8 +9,8 @@ from commcare_connect.opportunity.filters import (
     TasksFilterSet,
     UserTasksFilterSet,
 )
-from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, Opportunity
+from commcare_connect.opportunity.queries.tasks import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,

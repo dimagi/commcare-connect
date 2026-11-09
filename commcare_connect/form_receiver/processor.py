@@ -46,6 +46,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.queries.tasks import has_blocking_pending_task
 from commcare_connect.opportunity.services.tasks import complete_task
 from commcare_connect.opportunity.tasks import (
     download_inaccessibility_request_attachments,
@@ -508,7 +509,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.status = VisitValidationStatus.rejected
             if completed_work is not None:
                 completed_work.status = CompletedWorkStatus.rejected
-        if _has_blocking_pending_task(access, app):
+        if has_blocking_pending_task(access=access, app=app):
             flags.append(["pending_task", "Worker has an incomplete assigned task."])
             user_visit.status = VisitValidationStatus.rejected
             if completed_work is not None:
@@ -592,16 +593,6 @@ def check_visit_over_limit(
     if payment_unit.max_daily is not None and counts["daily"] >= payment_unit.max_daily:
         reasons.append(OverLimitReasonChoices.max_daily)
     return bool(reasons), reasons
-
-
-def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
-    return AssignedTask.objects.filter(
-        opportunity_access=access,
-        status=AssignedTaskStatus.ASSIGNED,
-        task_type__app=app,
-        task_type__archived__isnull=True,
-        task_type__is_active=True,
-    ).exists()
 
 
 def get_or_create_deliver_unit(app, unit_data):

@@ -107,6 +107,7 @@ Organization
 | `views.py`                      | Web UI: create, edit, finalize, dashboard                             |
 | `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports          |
 | `services/tasks.py`             | Assign, complete and delete `AssignedTask`s; HQ, OCS and push updates |
+| `queries/tasks.py`              | Task reads: worker task table, counts, assignable and blocking tasks  |
 | `forms.py`                      | Django forms for opportunity creation/editing                         |
 | `export.py`                     | Exports: visits, payments, user status, work status                   |
 | `visit_import.py`               | Bulk visit/payment import, exchange rates                             |
