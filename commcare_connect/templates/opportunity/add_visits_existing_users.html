@@ -59,10 +59,8 @@
                 <tr>
                   <th>
                     <input type="checkbox"
-                           name="selected_users"
                            id="select_all_users"
-                           value="{{ opp_claim.id }}"
-                           x-model="selected_users"
+                           aria-label="{% trans 'Select all workers' %}"
                            @click="toggleSelectAll()"
                            :checked="selected_users.length === {{ opportunity_claims|length }}"
                            class="simple-checkbox {% if form.selected_users.errors %}is-invalid{% endif %}" />

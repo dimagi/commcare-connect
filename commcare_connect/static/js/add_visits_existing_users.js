@@ -41,12 +41,10 @@ function handleExistingBudgetComponent(perVisitCosts) {
       const checkboxes = document.querySelectorAll(
         'input[name="selected_users"]',
       );
-      if (this.selected_users.length === checkboxes.length - 1) {
+      if (this.selected_users.length === checkboxes.length) {
         this.selected_users = [];
       } else {
-        this.selected_users = Array.from(checkboxes)
-          .filter((cb) => cb.id !== 'select_all_users')
-          .map((cb) => cb.value);
+        this.selected_users = Array.from(checkboxes).map((cb) => cb.value);
       }
     },
     totalVisits() {
