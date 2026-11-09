@@ -320,6 +320,9 @@ class Opportunity(BaseModel):
             payment_units = self.paymentunit_set.all()
         claims_by_unit = self._claims_by_unit()
         unclaimed_workers = self._unclaimed_worker_count(payment_units, claims_by_unit)
+        # None (no limit) becomes {} here, the same as "priced units, no budget". Callers show both as
+        # no limit. That's safe because the dashboard requires a truthy total_budget (is_setup_complete),
+        # so the no-budget case never reaches them.
         return self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers) or {}
 
     def _allotted_visits_by_unit(self, payment_units, claims_by_unit, unclaimed_workers):
