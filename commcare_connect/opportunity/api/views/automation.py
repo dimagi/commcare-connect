@@ -11,7 +11,7 @@ from commcare_connect.opportunity.api.serializers.automation import (
     PaymentUnitResponseSerializer,
     UserInviteSerializer,
 )
-from commcare_connect.opportunity.models import Opportunity, PaymentUnit
+from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.tasks import add_connect_users
 from commcare_connect.organization.decorators import user_is_org_admin
 
@@ -49,6 +49,12 @@ class OpportunityActivateView(OpportunityAPIView):
     def post(self, request, opportunity_id):
         opportunity = self.get_opportunity()
 
+        if not opportunity.is_setup_complete:
+            return Response(
+                {"non_field_errors": [_("Opportunity setup is not complete and cannot be activated.")]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if opportunity.active:
             return Response(
                 {"non_field_errors": [_("Opportunity is already active.")]},
@@ -58,12 +64,6 @@ class OpportunityActivateView(OpportunityAPIView):
         if opportunity.has_ended:
             return Response(
                 {"non_field_errors": [_("Opportunity has ended and cannot be activated.")]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not PaymentUnit.objects.filter(opportunity=opportunity).exists():
-            return Response(
-                {"non_field_errors": [_("At least one payment unit must exist before activating.")]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

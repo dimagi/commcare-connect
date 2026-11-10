@@ -1,5 +1,4 @@
 import json
-from collections import OrderedDict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.db import IntegrityError, transaction
@@ -9,7 +8,7 @@ from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
-from commcare_connect.data_export.const import OPPORTUNITY_ACCESS_CHECK_MAX_IDS
+from commcare_connect.data_export.const import ATTACHMENT_FIELDS, OPPORTUNITY_ACCESS_CHECK_MAX_IDS
 from commcare_connect.microplanning.helpers import (
     assign_work_areas_and_sync_to_hq,
     unassign_work_areas_for_opportunity,
@@ -187,17 +186,51 @@ class UserVisitDataSerializer(serializers.ModelSerializer):
         return obj.username
 
 
-class UserVisitDataWithImagesSerializer(UserVisitDataSerializer):
+class UserVisitDataWithAttachmentsSerializer(UserVisitDataSerializer):
+    """Visit rows plus the attachment lists the caller asked for.
+
+    ``include`` names which of ``ATTACHMENT_FIELDS`` to keep; the rest are dropped, so a
+    caller only pays for — and a CSV header only carries — the attachments requested.
+    Both fields read a prefetched list when the view supplied one (see
+    ``UserVisitDataView``), falling back to a per-row query otherwise.
+    """
+
     images = serializers.SerializerMethodField()
+    audio = serializers.SerializerMethodField()
 
     class Meta(UserVisitDataSerializer.Meta):
-        fields = UserVisitDataSerializer.Meta.fields + ["images"]
+        fields = UserVisitDataSerializer.Meta.fields + list(ATTACHMENT_FIELDS)
+
+    def __init__(self, *args, include=ATTACHMENT_FIELDS, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in ATTACHMENT_FIELDS:
+            if field not in include:
+                self.fields.pop(field)
 
     def get_images(self, obj):
         blobs = getattr(obj, "_prefetched_images", None)
         if blobs is None:
             blobs = obj.images
         return [{"blob_id": b.blob_id, "name": b.name, "parent_id": b.parent_id} for b in blobs]
+
+    def get_audio(self, obj):
+        # Only AudioAttachment rows, which is where audio has landed since migration 0136.
+        # Audio received before that is still a BlobMeta row with an audio/* content type and
+        # carries no transcript or translation; it is deliberately not listed here, though the
+        # attachment endpoint will still serve it by blob_id.
+        attachments = getattr(obj, "_prefetched_audio", None)
+        if attachments is None:
+            attachments = obj.audio
+        return [
+            {
+                "blob_id": a.blob_id,
+                "name": a.name,
+                "content_type": a.content_type,
+                "transcript": a.transcript,
+                "translation": a.translation,
+            }
+            for a in attachments
+        ]
 
 
 class CompletedWorkDataSerializer(serializers.ModelSerializer):
@@ -357,19 +390,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_budget_per_user(self, obj) -> int:
         return obj.budget_per_user(include_org_pay=False)
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        for key, value in data.items():
-            if isinstance(value, OrderedDict):
-                data[key] = dict(value)
-            elif isinstance(value, list):
-                cleaned_value = []
-                for item in value:
-                    if isinstance(item, OrderedDict):
-                        cleaned_value.append(dict(item))
-                data[key] = cleaned_value
-        return data
 
 
 class TaskTypeDataSerializer(serializers.ModelSerializer):

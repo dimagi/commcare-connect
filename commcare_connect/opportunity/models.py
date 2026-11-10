@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import datetime
+import operator
 from collections import Counter
 from decimal import Decimal
+from functools import reduce
 from typing import NamedTuple
 from uuid import uuid4
 
@@ -11,7 +13,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
-from django.db.models import Count, F, Q, Sum
+from django.db.models import Count, Exists, F, OuterRef, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
@@ -68,6 +70,24 @@ class DeliveryType(models.Model):
 
     def __str__(self):
         return self.name
+
+    # Reverse relations to every model with a delivery_type FK. Deleting a referenced type would break
+    # opportunities, be refused for programs and solicitations, and cascade-delete worker credentials.
+    REFERENCING_RELATIONS = ("opportunity", "program", "solicitation", "usercredential")
+
+    @classmethod
+    def in_use_condition(cls):
+        """True for types that any referencing model points at; usable in filter() and annotate()."""
+        return reduce(
+            operator.or_,
+            (
+                Exists(cls._meta.get_field(name).related_model.objects.filter(delivery_type=OuterRef("pk")))
+                for name in cls.REFERENCING_RELATIONS
+            ),
+        )
+
+    def is_in_use(self):
+        return DeliveryType.objects.filter(DeliveryType.in_use_condition(), pk=self.pk).exists()
 
 
 class Currency(models.Model):
@@ -789,6 +809,8 @@ class PaymentUnit(models.Model):
     amount = models.PositiveIntegerField()
     org_amount = models.PositiveIntegerField(default=0)
     name = models.CharField(max_length=255)
+    # Shown to workers in the mobile app in place of the internal name, when set
+    display_name = models.CharField(max_length=30, blank=True, default="")
     description = models.TextField()
     max_total = models.IntegerField(null=True)
     # None means the payment unit has no daily limit
@@ -815,6 +837,8 @@ class DeliverUnit(models.Model):
     )
     slug = models.SlugField(max_length=100)
     name = models.CharField(max_length=255)
+    # Shown to workers in the mobile app in place of the internal name, when set
+    display_name = models.CharField(max_length=30, blank=True, default="")
     payment_unit = models.ForeignKey(
         PaymentUnit,
         on_delete=models.DO_NOTHING,
@@ -1284,6 +1308,19 @@ class UserVisit(XFormBaseModel):
 
             flags = [FlagLabels.get_label(flag) for flag, _ in self.flag_reason.get("flags", [])]
             return flags
+        return []
+
+    def get_over_limit_reasons_display(self) -> list[str]:
+        """Labels for every limit that barred this visit, for showing to users.
+
+        Reasons are kept when a reviewer later changes the visit's status, so they are shown
+        whatever the status. Visits that went over limit before reasons were recorded have
+        none stored, so they get an explicit "not recorded" label rather than an empty list.
+        """
+        if self.over_limit_reasons:
+            return [OverLimitReasonChoices(reason).label for reason in self.over_limit_reasons]
+        if self.status == VisitValidationStatus.over_limit:
+            return [gettext("Not recorded (visit predates over-limit reason tracking)")]
         return []
 
     @property

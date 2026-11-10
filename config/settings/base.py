@@ -73,7 +73,7 @@ DJANGO_APPS = [
     "django.contrib.sites",
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
-    "django.contrib.staticfiles",
+    "config.apps.StaticFilesConfig",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
     "django.contrib.gis",
@@ -96,6 +96,7 @@ THIRD_PARTY_APPS = [
     "pghistory",
     "pgtrigger",  # added for pghistory
     "vectortiles",
+    "health_check",
 ]
 
 LOCAL_APPS = [
@@ -290,6 +291,12 @@ LOGGING = {
     },
 }
 
+# Health checks
+# ------------------------------------------------------------------------------
+# Tokens accepted by /status/ as an Authorization: Bearer header or ?token=. Empty leaves the endpoint
+# open. See commcare_connect/health/README.md.
+HEALTH_CHECK_TOKENS = env.list("HEALTH_CHECK_TOKENS", default=[])
+
 # Celery
 # ------------------------------------------------------------------------------
 if USE_TZ:
@@ -327,6 +334,18 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
+# Bots that fill in this off-screen signup field get the "verification sent" page and no account.
+ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD = "website"
+# Never mail an address that has no account (anyone can type any address into the reset form).
+ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False
+# Merged over allauth's defaults. One action can't carry two limits on the same key (they share a cache entry),
+# hence the extra "send_mail" action, which AccountAdapter.send_mail applies to every account mail.
+ACCOUNT_RATE_LIMITS = {
+    "reset_password": "20/m/ip,3/h/key",
+    "send_mail": "10/d/key",
+}
+# Proxies that append to X-Forwarded-For before Django; 0 keys allauth's per-IP limits on REMOTE_ADDR instead.
+ALLAUTH_TRUSTED_PROXY_COUNT = env.int("ALLAUTH_TRUSTED_PROXY_COUNT", default=0)
 
 # django-rest-framework
 # -------------------------------------------------------------------------------
@@ -336,6 +355,8 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # No BrowsableAPIRenderer outside local dev: its pages load DRF's bundled Bootstrap 3, which is end-of-life.
+    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
@@ -446,3 +467,7 @@ LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
 
 # HubSpot Settings
 HUBSPOT_API_ID = env("HUBSPOT_API_ID", default="")
+
+# Marketing site: only the production load balancer routes /public/* to it, so the old
+# marketing URLs here redirect there only when this is on (see prelogin/urls.py).
+MARKETING_SITE_ENABLED = env.bool("MARKETING_SITE_ENABLED", default=False)

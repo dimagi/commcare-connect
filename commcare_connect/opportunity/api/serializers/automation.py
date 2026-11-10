@@ -184,6 +184,8 @@ class UserInviteSerializer(serializers.Serializer):
 
     def validate(self, data):
         opportunity = self.context["opportunity"]
+        if not opportunity.is_setup_complete:
+            raise serializers.ValidationError(_("Please finish setting up the opportunity before inviting users."))
         if not opportunity.active:
             raise serializers.ValidationError(_("Opportunity must be active to invite users."))
         if opportunity.has_ended:

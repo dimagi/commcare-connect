@@ -77,7 +77,9 @@ class UserVisitExporter:
         )
         if status and "all" not in status:
             user_visits = user_visits.filter(status__in=status)
-        user_visits = user_visits.order_by("visit_date")
+        user_visits = user_visits.select_related("user", "deliver_unit", "completed_work__payment_unit").order_by(
+            "visit_date"
+        )
         self._get_table_metadata()
 
         dataset = Dataset(title="Export User Visits", headers=self.headers)

@@ -21,7 +21,6 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunitySupervisingOrganizationEvent,
-    OverLimitReasonChoices,
     Payment,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,
@@ -118,7 +117,7 @@ class UserVisitAdmin(admin.ModelAdmin):
 
     @admin.display(description="Over Limit Reasons")
     def get_over_limit_reasons(self, obj):
-        return ", ".join(OverLimitReasonChoices(reason).label for reason in obj.over_limit_reasons)
+        return ", ".join(obj.get_over_limit_reasons_display())
 
 
 @admin.register(Assessment)

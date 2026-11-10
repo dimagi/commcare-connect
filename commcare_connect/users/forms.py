@@ -1,3 +1,4 @@
+from allauth.account import app_settings as account_settings
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 from crispy_forms.helper import FormHelper
@@ -41,6 +42,12 @@ class UserSignupForm(SignupForm):
     Default fields will be added automatically.
     Check UserSocialSignupForm for accounts created from social.
     """
+
+    @property
+    def honeypot_field(self):
+        """The bot trap allauth adds under ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD, for the template to render."""
+        name = account_settings.SIGNUP_FORM_HONEYPOT_FIELD
+        return self[name] if name else None
 
 
 class UserSocialSignupForm(SocialSignupForm):

@@ -20,6 +20,12 @@ django_admin_url: admin/
 django_email_backend: anymail.backends.amazon_ses.EmailBackend
 deploy_environment: staging
 django_allow_registrations: True
+# Proxies that append to X-Forwarded-For before Django. Staging: the load balancer, then Traefik on the
+# host (which only keeps the chain because deploy/config/deploy.yml tells it to trust the ALB's VPC).
+# Production adds CloudFront in front and overrides this in its inventory.
+allauth_trusted_proxy_count: 2
 commcare_hq_url: https://staging.commcarehq.org
 # HubSpot tracking on the public pages; production only.
 hubspot_api_id: ''
+# Redirect the old marketing URLs to /public/; only production routes it to the marketing site.
+marketing_site_enabled: False

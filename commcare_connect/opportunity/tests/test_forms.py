@@ -1510,32 +1510,99 @@ class TestPaymentUnitFormBudgetValidation:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
 
 
+def _payment_unit_form(opportunity, data=None, instance=None, deliver_units=None):
+    deliver_units = deliver_units or [DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)]
+    if data is not None:
+        data = {
+            "name": "Bonus",
+            "description": "Bonus payment unit",
+            "amount": 5,
+            "org_amount": 0,
+            "max_total": 10,
+            "max_daily": 5,
+            "required_deliver_units": [str(deliver_units[0].id)],
+            **data,
+        }
+    return PaymentUnitForm(
+        data=data,
+        deliver_units=deliver_units,
+        payment_units=[],
+        org_slug=opportunity.organization.slug,
+        opportunity=opportunity,
+        instance=instance,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "display_name, expect_valid",
+    [
+        pytest.param("", True, id="blank"),
+        pytest.param("Household visit", True, id="set"),
+        pytest.param("x" * 30, True, id="max_length"),
+        pytest.param("x" * 31, False, id="too_long"),
+    ],
+)
+def test_payment_unit_form_display_name(opportunity, display_name, expect_valid):
+    form = _payment_unit_form(opportunity, {"display_name": display_name})
+
+    assert form.is_valid() == expect_valid, form.errors
+    if expect_valid:
+        assert form.instance.display_name == display_name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "initial, submitted, selected, expected",
+    [
+        pytest.param("", "", True, "", id="blank"),
+        pytest.param("", "ANC visit", True, "ANC visit", id="set"),
+        pytest.param("ANC visit", "", True, "", id="cleared"),
+        # An unticked deliver unit's input is disabled, so the browser submits nothing for it
+        pytest.param("ANC visit", None, False, "ANC visit", id="unselected_keeps_name"),
+        pytest.param("", "x" * 31, True, None, id="too_long"),
+    ],
+)
+def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submitted, selected, expected):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None, display_name=initial)
+    other_deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    field = f"deliver_unit_display_name_{deliver_unit.pk}"
+    data = {"required_deliver_units": [str((deliver_unit if selected else other_deliver_unit).id)]}
+    if submitted is not None:
+        data[field] = submitted
+    form = _payment_unit_form(opportunity, data, deliver_units=[deliver_unit, other_deliver_unit])
+
+    assert form.fields[field].initial == initial
+    rows = form.fields["required_deliver_units"].deliver_unit_rows
+    assert [row["selected"] for row in rows] == [selected, not selected]
+    assert form.is_valid() == (expected is not None), form.errors
+    if expected is not None:
+        form.instance.opportunity = opportunity
+        form.save()
+        deliver_unit.refresh_from_db()
+        assert deliver_unit.display_name == expected
+        assert deliver_unit.payment_unit is None
+
+
+@pytest.mark.django_db
+def test_payment_unit_form_rejects_deliver_unit_both_required_and_optional(opportunity):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+
+    form = _payment_unit_form(
+        opportunity,
+        {"required_deliver_units": [str(deliver_unit.id)], "optional_deliver_units": [str(deliver_unit.id)]},
+        deliver_units=[deliver_unit],
+    )
+
+    assert not form.is_valid()
+    assert form.errors["optional_deliver_units"] == ["A deliver unit cannot be both required and optional."]
+
+
 @pytest.mark.django_db
 class TestPaymentUnitFormDailyLimit:
-    def _form(self, opportunity, data=None, instance=None):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        if data is not None:
-            data = {
-                "name": "Bonus",
-                "description": "Bonus payment unit",
-                "amount": 5,
-                "org_amount": 0,
-                "max_total": 10,
-                "required_deliver_units": [str(deliver_unit.id)],
-                **data,
-            }
-        return PaymentUnitForm(
-            data=data,
-            deliver_units=[deliver_unit],
-            payment_units=[],
-            org_slug=opportunity.organization.slug,
-            opportunity=opportunity,
-            instance=instance,
-        )
-
     @override_switch(OPTIONAL_DAILY_LIMIT, active=False)
     def test_daily_limit_required_when_switch_off(self, opportunity):
-        form = self._form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
+        form = _payment_unit_form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
 
         assert "no_daily_limit" not in form.fields
         assert not form.is_valid()
@@ -1551,7 +1618,7 @@ class TestPaymentUnitFormDailyLimit:
         ],
     )
     def test_valid_daily_limit_when_switch_on(self, opportunity, data, expected_max_daily):
-        form = self._form(opportunity, data)
+        form = _payment_unit_form(opportunity, data)
 
         assert form.is_valid(), form.errors
         assert form.instance.max_daily == expected_max_daily
@@ -1569,7 +1636,7 @@ class TestPaymentUnitFormDailyLimit:
         ],
     )
     def test_invalid_daily_limit_when_switch_on(self, opportunity, data, expected_error):
-        form = self._form(opportunity, data)
+        form = _payment_unit_form(opportunity, data)
 
         assert not form.is_valid()
         assert form.errors["max_daily"] == [expected_error]
@@ -1579,7 +1646,7 @@ class TestPaymentUnitFormDailyLimit:
     def test_no_daily_limit_initial_for_existing_unit(self, opportunity, max_daily, expected_initial):
         unit = PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=10)
 
-        form = self._form(opportunity, instance=unit)
+        form = _payment_unit_form(opportunity, instance=unit)
 
         assert form.fields["no_daily_limit"].initial is expected_initial
 

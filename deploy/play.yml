@@ -1,6 +1,17 @@
+# Read the 1Password items once per run instead of once per host, so `op` asks for approval once.
+# set_fact with run_once sets the facts on every host in the play; they aren't written to the fact cache.
+- hosts: all
+  gather_facts: false
+  tasks:
+    - name: Read secrets from 1Password
+      set_fact:
+        secrets: "{{ (lookup('community.general.onepassword', secrets_file, subdomain='dimagi', vault='Connect Tech', field='secrets_yaml') | from_yaml).secrets }}"
+        connectid_env_note: "{{ lookup('community.general.onepassword', 'ConnectID docker.env', subdomain='dimagi', vault='Connect Tech', field='notesPlain') if groups.connectid | default([]) | intersect(ansible_play_hosts) else '' }}"
+      run_once: true
+      no_log: true
+      tags: django_settings
+
 - hosts: all
   strategy: free
-  vars:
-    secrets: "{{ (lookup('community.general.onepassword', secrets_file, subdomain='dimagi', vault='Connect Tech', field='secrets_yaml') | from_yaml).secrets }}"
   roles:
     - role: connect

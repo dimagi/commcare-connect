@@ -23,6 +23,10 @@ DEBUG_TOOLBAR_CONFIG = {
 }
 INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]
 
+# django-rest-framework
+# ------------------------------------------------------------------------------
+REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] += ("rest_framework.renderers.BrowsableAPIRenderer",)  # noqa: F405
+
 # django-allauth
 # ------------------------------------------------------------------------------
 ACCOUNT_EMAIL_VERIFICATION = "optional"
