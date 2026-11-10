@@ -1,4 +1,4 @@
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags i18n %}
 {# Needs `showAddApiKeyModal` in an enclosing x-data. A saved key fires reload_api_keys, which reloads the key select. #}
 <div x-cloak
      x-show="showAddApiKeyModal"
@@ -6,10 +6,10 @@
      class="modal-backdrop">
   <div @click.away="showAddApiKeyModal = false" x-transition class="modal">
     <div class="header flex justify-between items-center mb-2">
-      <h2 class="title">Create API Key</h2>
+      <h2 class="title">{% translate "Create API Key" %}</h2>
       <button @click="showAddApiKeyModal = false"
               class="button-icon"
-              aria-label="Close">
+              aria-label="{% translate 'Close' %}">
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>

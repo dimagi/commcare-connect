@@ -905,7 +905,8 @@ def fixed_server_api_key_choices(opportunity, user):
     current_key = opportunity.api_key
     if current_key:
         owner = current_key.user
-        choices = [(current_key.id, f"{current_key.masked} (added by {owner.name or owner.email})")]
+        label = gettext("{key} (added by {owner})").format(key=current_key.masked, owner=owner.name or owner.email)
+        choices = [(current_key.id, label)]
     else:
         # A placeholder stops the browser preselecting one of the user's keys.
         choices = [("", _("Select an API key"))]
@@ -981,12 +982,17 @@ def _verify_api_key_access(form, api_key, apps):
     errors = app_access_errors(api_key, [(domain, app_id) for _app_type, domain, app_id in apps])
     for (app_type, domain, _app_id), error in zip(apps, errors):
         if isinstance(error, CommCareHQAccessDenied):
-            form.add_error("api_key", f'This API key cannot access the {app_type} app on domain "{domain}".')
+            form.add_error(
+                "api_key",
+                gettext('This API key cannot access the {app_type} app on domain "{domain}".').format(
+                    app_type=app_type, domain=domain
+                ),
+            )
             return
         if error:
             # Unreachable, 5xx, rate limited, ...: not the key's fault, so don't blame it.
             logger.warning("HQ API key check failed for opportunity %s", form.instance.pk, exc_info=error)
-            form.add_error("api_key", "Could not reach CommCare HQ to check this API key. Please try again.")
+            form.add_error("api_key", gettext("Could not reach CommCare HQ to check this API key. Please try again."))
             return
 
 
