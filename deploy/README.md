@@ -130,7 +130,9 @@ cancels the scheduled one. Once it has the group, it checks `main` against the l
   need a CI run of their own.
 - **The check itself fails** (for example a GitHub API error): the run skips and posts a warning.
 
-The deploy is pinned to the commit that was checked, so anything merged while it runs waits for the next slot.
+The deploy is pinned to the commit that was checked, so anything merged while it runs waits for the next slot. To
+retry a failed scheduled deploy, start a manual deploy or use **Re-run all jobs**. **Re-run failed jobs** reuses the
+old commit without checking it again, so the deploy refuses to run when production already has something newer.
 
 Every scheduled run posts to the production deploy channel. The deploy's own Slack messages show `(automatic)` for
 these runs, and `(scheduled)` or `(adhoc)` for manual deploys. A slot with no message means the run never started (the

@@ -73,6 +73,26 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.DEPLOY_BRANCH }}
 
+      # Only scheduled-deploy.yml passes ref, after checking it. Re-running that run's failed jobs reuses the same ref
+      # without checking it again, which would roll production back if a newer commit has shipped since.
+      - name: Check the commit is newer than production
+        if: ${{ inputs.ref }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+        run: |
+          if ! release=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> "$RUNNER_TEMP/err"); then
+            grep -q 'HTTP 404' "$RUNNER_TEMP/err" && exit 0  # no release yet
+            cat "$RUNNER_TEMP/err" >&2
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$release...$REF" --jq .status)
+          if [ "$status" != ahead ]; then
+            echo "::error::${REF:0:7} is $status compared to the latest release ($release), so deploying it would not" \
+              "move production forward. If this is a re-run of a scheduled deploy, start a manual deploy instead."
+            exit 1
+          fi
+
       - name: Set release identifier
         run: |
           # Sentry release versions cannot contain slashes, so sanitize the ref name
