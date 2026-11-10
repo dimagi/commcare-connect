@@ -112,7 +112,7 @@ The work splits into 8 tickets:
 
 **Deployment and Release:**
 
-- Migrations are additive apart from renaming `HQServer` to `ExternalServer` (a `RenameModel`, so no data moves); they run with `migrate_multi`. Data migrations register the beat task and create the `external_schedule` flag and the `interviews` delivery type. Code that imports `HQServer` ships in the same deploy as the rename.
+- Migrations are additive apart from renaming `HQServer` to `ExternalServer` (a `RenameModel`, so no data moves); they run with `migrate_multi`. Data migrations register the beat task and create the `external_schedule` flag and the `external` delivery type. Code that imports `HQServer` ships in the same deploy as the rename.
 - Mobile: opportunities with no deliver app are hidden from clients below the new mobile API version (_Add version_), so older apps never see `deliver_app: null`.
 - OCS must be configured with the Connect OAuth client and the `/api/external_unit_completed/` URL, and an `ExternalServer` record (`service=ocs`, `url` = the OCS base URL) created for that OAuth application, before the feature is used.
 - All tickets are released together, so there is no interim state to support (for example no locked schedule before editing exists).
@@ -141,16 +141,12 @@ The work splits into 8 tickets:
 
 - Add `Opportunity.has_deliver_app` (`deliver_app_id is not None`).
 - Schedule toggle: a waffle flag `EXTERNAL_SCHEDULE = "external_schedule"` (`flags/flag_names.py`), created by data migration with a note describing it, decides whether an opportunity can have a schedule. `schedule_enabled(opportunity)` is true when the flag is active for the opportunity, its program or its organization (`Flag.is_active_for`).
-  - It is turned on for interview opportunities: when an opportunity is created with the `interviews` delivery type (a `DeliveryType` with slug `interviews`, added by the same data migration if it doesn't exist), `OpportunityInitForm.save` and the program API's create both add it to the flag's `opportunities` through one helper. The delivery type can't be changed after creation, so this runs only on create.
+  - It is turned on for external opportunities: when an opportunity is created with the `external` delivery type (a `DeliveryType` with slug `external`, added by the same data migration if it doesn't exist), `OpportunityInitForm.save` and the program API's create both add it to the flag's `opportunities` through one helper. The delivery type can't be changed after creation, so this runs only on create.
   - Any other opportunity, or its program or organization, can be added to the flag by hand on Internal Features → Toggles & Switches or in the admin, so test opportunities can be set up without the delivery type.
-  - It gates the UI only: the "This opportunity uses a Deliver app" checkbox (below), the Schedule step, the Configure Schedule menu item, the Schedule resources tab and dashboard chip, the external units group on the payment unit form (Ticket 3) and the Interviews worker tabs (Ticket 4). Turning it off on an opportunity with a running schedule hides these but doesn't stop the schedule; pause the schedule first.
-  - A missing flag row or `interviews` delivery type means the toggle is off; nothing errors.
+  - It gates the UI only: the "This opportunity uses a Deliver app" checkbox (below), the Schedule step, the Configure Schedule menu item, the Schedule resources tab and dashboard chip, the external units group on the payment unit form (Ticket 3) and the External worker tabs (Ticket 4). Turning it off on an opportunity with a running schedule hides these but doesn't stop the schedule; pause the schedule first.
+  - A missing flag row or `external` delivery type means the toggle is off; nothing errors.
 - Guard with it: `get_application` (`commcarehq/views.py`), `OpportunityChangeForm.clean_active`, `sync_learn_modules_and_deliver_units` and its callers, `verification_flags_config`, `UserVisit.hq_link` (returns `None` for external unit visits), the HQ link in `user_task_details`, and `ClaimOpportunityView`, which skips `create_hq_user_and_link` when the opportunity has no Deliver app.
-- Patch every query that filters `DeliverUnit` or `TaskType` by `app=opportunity.deliver_app`, because once external units exist `filter(app=None)` returns every opportunity's external units:
-  - `opportunity/views.py`: `OpportunityDashboard`, `verification_flags_config`, `TaskTypesConfig`, `deliver_unit_table`
-  - `opportunity/forms.py`: `DeliverUnitFlagsForm`, `FormJsonValidationRulesForm`, `CreateTaskForm`
-  - `program/api/serializers.py`: `get_deliver_app`
-  - `opportunity/api/serializers/automation.py`: the payment unit deliver-unit validation, which must accept the opportunity's external units and reject other opportunities' units
+- Queries that filter `DeliverUnit` or `TaskType` by `app=opportunity.deliver_app` are patched in Ticket 3, with the model change that would make them leak. Until then `DeliverUnit.app` is required, so `filter(app=None)` returns nothing.
 - The other callers of the Deliver app's domain (work-area case sync, attachment downloads, usercase updates for relearn tasks) only run when a Deliver app exists, so they are unchanged.
 - Hide, not grey out, everything that needs the Deliver app when there is none: the Deliver app link and resource chip, the Deliver units tab of `opportunity_resource_modal.html`, "sync deliver units", Verification Rules in the opportunity menu, microplanning, and the Deliver worker tab.
 - Tasks are disabled when there is no Deliver app: hide Configure Task Types in the opportunity menu, the Tasks worker tab and the Tasks tab on the single-worker page, and reject task type creation and task assignment. `TaskType.app` stays required.
@@ -164,14 +160,13 @@ The work splits into 8 tickets:
 - Every page and task above works for an opportunity with `deliver_app=None`, with no 500s.
 - `get_application` still lists apps for a domain that contains an opportunity without a Deliver app.
 - Tests parametrized over "with" and "without Deliver app" using a new `opportunity_without_deliver_app` fixture.
-- Two opportunities without a Deliver app never see each other's external units in any page, form or API listed above, and the automation API rejects another opportunity's unit.
 - A Program Manager can create, edit and activate an opportunity with no Deliver app, through the web and the program API.
 - An opportunity with no Deliver app shows no Tasks UI, and task types can't be created on it.
 - "This opportunity uses a Deliver app" is on for a new opportunity. Turning it off saves the opportunity with no Deliver app; the checkbox can't be changed once workers have joined.
-- An opportunity created with the `interviews` delivery type, through the web or the program API, is added to the `external_schedule` flag; one with any other delivery type is not.
+- An opportunity created with the `external` delivery type, through the web or the program API, is added to the `external_schedule` flag; one with any other delivery type is not.
 - Adding an opportunity, its program or its organization to the flag by hand shows the schedule UI; removing it hides that UI with no 500s.
 - With the flag off, the create and edit forms have no Deliver app checkbox and require a Deliver app.
-- With the flag row or the `interviews` delivery type missing, opportunity creation works and the toggle reads as off.
+- With the flag row or the `external` delivery type missing, opportunity creation works and the toggle reads as off.
 - Deliver-only menu items, tabs and links are not rendered (rather than shown disabled) when there is no Deliver app.
 - Older clients never receive an opportunity with `deliver_app: null`; new clients receive it, and can claim it (no HQ user is created).
 
@@ -199,10 +194,15 @@ Data model:
 
 - `DeliverUnit`:
   - Add `unit_type` (choices `form` / `external`, default `form`). The service that runs an external unit comes from its schedule's `provider`.
-  - Add `opportunity` (FK, nullable, `CASCADE`).
+  - Add `opportunity` (FK, nullable, `CASCADE`), set only on external units. Existing form units are not backfilled and stay `null`: a `CommCareApp` and its form units are shared by every opportunity in the organization that uses that app (`_build_commcare_app` uses `get_or_create` on app, domain and organization), so a form unit has no single opportunity. Form units keep reaching opportunities through `deliver_app`.
   - Make `app` nullable.
   - Add a check constraint: `form` requires `app`; `external` requires `opportunity` and no `app`.
 - Add `Opportunity.available_deliver_units()`: the Deliver app's form units plus the opportunity's external units.
+- Patch every query that filters `DeliverUnit` or `TaskType` by `app=opportunity.deliver_app`, because external units have `app=None`, so on an opportunity with no Deliver app `filter(app=None)` would return every opportunity's external units:
+  - `opportunity/views.py`: `OpportunityDashboard`, `verification_flags_config`, `TaskTypesConfig`, `deliver_unit_table`
+  - `opportunity/forms.py`: `DeliverUnitFlagsForm`, `FormJsonValidationRulesForm`, `CreateTaskForm`
+  - `program/api/serializers.py`: `get_deliver_app`
+  - `opportunity/api/serializers/automation.py`: the payment unit deliver-unit validation, which must accept the opportunity's external units and reject other opportunities' units
 - New `ExternalSchedule`:
   - `opportunity` (OneToOne)
   - `provider` (CharField, a registry key such as `ocs`, validated against the registry): the one service every step of this schedule runs on. Chosen when the schedule is created (preselected and not shown while only one provider is configured), and fixed once any session exists.
@@ -293,6 +293,7 @@ Schedule page and payment unit linking:
 
 - Migrations run with `migrate_multi`; existing `DeliverUnit` rows backfill to `unit_type=form` and existing `HQServer` rows become `ExternalServer` rows with `service=commcare_hq`.
 - The `DeliverUnit` check constraint rejects invalid combinations.
+- Two opportunities without a Deliver app never see each other's external units in any page, form or API in the query list above, and the automation API rejects another opportunity's unit.
 - `delete_opportunity` deletes an opportunity that has a schedule, steps, sessions and external units in payment units, without a `ProtectedError`.
 - Constraints enforce one schedule per opportunity, unique step order per schedule, one session per FLW per step and at most one open session per FLW per opportunity.
 - The registry rejects an unknown provider key on `ExternalSchedule`, and the provider can't be changed once the schedule has sessions.
@@ -329,24 +330,24 @@ Schedule page and payment unit linking:
 - `trigger_external_session(session_id, trigger_token)` locks the session and returns unless it is still `triggering` and its `trigger_token` matches. It then repeats the payable check for today: if the claim, claim limit or payment unit has ended, or the limit is used up, since the session was scheduled, it marks the session `cancelled` (conditional on its token), logs the reason and makes no provider call. Before every provider call, Celery retries included, it repeats that check and increments `attempts` in its own committed update, so the count survives a failed call and a worker retired by recovery stops at its next attempt; if `attempts` has already reached `MAX_TRIGGER_ATTEMPTS`, it marks the session `failed` instead of calling. It then calls `provider.trigger(session)` for the schedule's provider and records the result with a conditional update, `filter(pk=..., status=triggering, trigger_token=trigger_token).update(status=triggered, external_ref=..., provider_data=..., triggered_at=now)`. If no row matches, a completion or a newer worker has already won, so it does nothing; a `completed` session stays `completed`. Marking the session `failed` uses the same conditional update.
 - `ProviderTransientError` retries with `autoretry_for` + `retry_backoff`. Every retry is another provider call and increments `attempts`, so `attempts` is the single cap: at `MAX_TRIGGER_ATTEMPTS` (a module constant, initially 3) the session is marked `failed` with `last_error`. Each failed call overwrites `last_error`. `ProviderNotConfigured` marks the session `failed` without retrying.
 - Sessions are cancelled when the FLW is suspended or the opportunity ends, and reopened through `schedule_next_step` when the FLW is un-suspended or their claim's end date is extended. Extending `Opportunity.end_date` alone doesn't change existing claims (`OpportunityClaim.end_date` is copied at claim time), so it reopens nothing; Program Managers extend workers' claims as today with `AddBudgetExistingUsersForm` (which updates `OpportunityClaim.end_date` and the claim limits' `end_date`), and that form's `save()` dispatches `replan_external_sessions(schedule_id)` on commit (Ticket 8), which calls `schedule_next_step` for every claimed worker with no open session.
-- Worker views, both labelled with the provider's noun ("Interviews"):
+- Worker views, both labelled with the provider's noun ("Interviews" for OCS); this spec calls them the External tabs:
 
   - The worker list (`BaseWorkerListView.tabs`) gets a tab, shown when the schedule toggle is on and the opportunity has a schedule: one row per claimed worker with progress ("1 of 3"), current step, status, since when, and an Attention column. Filters: All, Needs attention (failed, or in progress for more than 7 days), In progress, Waiting, Finished.
   - The Attention column names the issue as a badge, not an icon, with the detail in a tooltip (`x-tooltip`), and the badge links to where the issue is fixed:
 
     | Issue                 | When                                                     | Tooltip detail                      | Links to                                                                                                  |
     | --------------------- | -------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
-    | No reply in 7+ days   | `triggered` for more than 7 days                         | the step and when it started        | the worker's Interviews tab with that session selected (Re-trigger, Skip)                                 |
-    | Couldn't start        | `failed` with `ProviderTransientError` or another error  | the step, attempts and `last_error` | the worker's Interviews tab with that session selected (Re-trigger)                                       |
+    | No reply in 7+ days   | `triggered` for more than 7 days                         | the step and when it started        | the worker's External tab with that session selected (Re-trigger, Skip)                                   |
+    | Couldn't start        | `failed` with `ProviderTransientError` or another error  | the step, attempts and `last_error` | the worker's External tab with that session selected (Re-trigger)                                         |
     | OCS connection        | `failed` with `ProviderNotConfigured` (credentials)      | whose connection failed             | the connection card on the schedule page                                                                  |
     | No funded claim limit | Waiting: no funded `OpportunityClaimLimit` for the step  | the step and payment unit           | that payment unit's edit page                                                                             |
     | Payment window closed | Waiting: past the claim, claim limit or payment unit end | which end date passed               | the payment unit's edit page, or the Add Budget page for existing workers when it is the claim's end date |
 
     The issue label for a provider credential failure uses the provider's name ("OCS connection"). A worker with no issue shows a dash. The waiting reason comes from the pure selection function behind `schedule_next_step`, run for the page's rows with their claims, claim limits and payment units prefetched, so it adds no per-row queries.
 
-  - The single-worker Interviews tab accepts `?session=<external_id>` next to `?user=` and opens with that session selected, so the badge lands on the session and its actions.
+  - The single-worker External tab accepts `?session=<external_id>` next to `?user=` and opens with that session selected, so the badge lands on the session and its actions.
   - The single-worker page gets a tab next to Visits (`components/worker_page/visit_task_tabs.html`): a card per step with its status, dates and, when it failed, the last error and attempts. Once a step has been triggered, its details also show the provider's `external_links` (for OCS, OCS session data). Re-trigger (in progress or failed) and Skip (any open session) both ask for confirmation. Re-trigger warns that the worker may see two chats. Skip opens a warning modal (`components/confirm_modal.html` gains an optional `warning`, rendered in the `message-warning` style above the message, with a red confirm button) listing what is lost, computed for that session: the step won't be paid and the skip can't be undone; when the step is a required unit of a payment unit with other required units, the worker can no longer earn that payment unit; when the session is `triggered`, the open chat stays but a completion from it is not recorded. It also names the step that will be scheduled next and points to Re-trigger as the alternative.
-  - The single-worker tab has filters, following `opportunity/user_tasks.html`: a filter icon button on the tab bar, with a count badge when filters are applied, opens a Filters modal rendering a `UserExternalSessionsFilterSet` (django-filter, through `FilterMixin`) with Status, Step (retired steps included and marked) and "Needs attention only" (failed, or in progress for more than 7 days). Filters are GET parameters next to `?user=`, so a filtered view can be linked, and the table is loaded by htmx with them. An empty result shows "No interviews match these filters" with a Clear action.
+  - The single-worker tab has filters, following `opportunity/user_tasks.html`: a filter icon button on the tab bar, with a count badge when filters are applied, opens a Filters modal rendering a `UserExternalSessionsFilterSet` (django-filter, through `FilterMixin`) with Status, Step (retired steps included and marked) and "Needs attention only" (failed, or in progress for more than 7 days). Filters are GET parameters next to `?user=`, so a filtered view can be linked, and the table is loaded by htmx with them. An empty result shows "No sessions match these filters" with a Clear action.
   - Statuses as Program Managers see them: Scheduled (with the due date), Starting (`triggering`), In progress (`triggered`), Completed, Failed, Skipped, Cancelled, and Waiting when nothing could be scheduled.
 
 - Sessions `triggered` for more than 7 days are flagged. Re-trigger moves the session back to `scheduled`, due now, resets `attempts` to `0`, clears `last_error` and `trigger_token`. Skip marks it `skipped` (unpaid) and calls `schedule_next_step`.
@@ -365,9 +366,9 @@ Schedule page and payment unit linking:
 - A trigger that keeps failing makes exactly `MAX_TRIGGER_ATTEMPTS` provider calls (Celery retries included), then ends `failed` with `last_error` set.
 - Re-triggering a `failed` session resets `attempts` to `0` and allows a fresh set of attempts.
 - A failed trigger is visible on the worker page and can be re-triggered.
-- Each Attention badge shows its issue type and tooltip, and links to its fix: a session issue opens the worker's Interviews tab with that session selected, a credential failure opens the connection card, and a waiting reason opens the payment unit's edit page or the Add Budget page for existing workers.
+- Each Attention badge shows its issue type and tooltip, and links to its fix: a session issue opens the worker's External tab with that session selected, a credential failure opens the connection card, and a waiting reason opens the payment unit's edit page or the Add Budget page for existing workers.
 - Skip only takes effect after the warning modal is confirmed, and the modal lists the set payment unit it breaks when the step is a required unit of one.
-- On the single-worker Interviews tab, each filter (status, step, needs attention) narrows the rows, filters combine, and the badge shows how many are applied.
+- On the single-worker External tab, each filter (status, step, needs attention) narrows the rows, filters combine, and the badge shows how many are applied.
 - A suspended and then un-suspended FLW resumes at the step they were on.
 - Extending a worker's claim end date with `AddBudgetExistingUsersForm` reopens their cancelled session through the replan; extending only the opportunity's end date does not.
 - The trigger task is tested with a fake provider registered in the test, so it does not depend on OCS.
@@ -454,7 +455,7 @@ The completion endpoint:
 
 Everything below goes on the opportunity API itself: new fields on `OpportunitySerializer` (`opportunity/api/serializers/mobile.py`), returned by `GET /api/opportunity/`, which the app already loads. There is no new endpoint, so the app gets the activity in the same response as the opportunity.
 
-- `delivery_type` (the `DeliveryType` slug, e.g. `interviews`; `null` when unset), the same delivery type that turns on the schedule toggle on the web (Ticket 1), so the app shows features by delivery type rather than by a new opportunity-type field. Also `payment_units[].unit_type` (`form` | `external`).
+- `delivery_type` (the `DeliveryType` slug, e.g. `external`; `null` when unset), the same delivery type that turns on the schedule toggle on the web (Ticket 1), so the app shows features by delivery type rather than by a new opportunity-type field. Also `payment_units[].unit_type` (`form` | `external`).
 - `activity` (a nested object on each opportunity): the requesting FLW's open session on that opportunity (`scheduled`, `triggering`, `triggered` or `failed`; the `one_open_external_session` constraint means there is at most one), or `null` when there is none (no schedule, waiting for a funded claim limit, or every step done). Fields: `external_id`, `provider`, `label` (the step's name), `noun` (the provider's `display_noun`, e.g. "Interview"), `status`, `scheduled_for` and `launch`.
 - `launch` is where the provider's `launch_descriptor(session)` goes, e.g. `{"type": "connect_channel", "channel_id": ...}` for OCS. It is `null` until the session is `triggered` (a `scheduled`, `triggering` or `failed` session has nothing to open yet). CommCare launches stay on `learn_app` and `deliver_app` and have no launch descriptor.
 - No progress field. The worker's progress comes from the existing `delivery_progress` endpoint (`DeliveryProgressView`), which already returns their deliveries (built from `CompletedWork`), payments, accrued amount and claim limits; completed external units create `CompletedWork` like form visits, so it needs no change.
@@ -462,7 +463,7 @@ Everything below goes on the opportunity API itself: new fields on `OpportunityS
 ```json
 {
   "deliver_app": null,
-  "delivery_type": "interviews",
+  "delivery_type": "external",
   "activity": {
     "external_id": "9b2f…",
     "provider": "ocs",
@@ -493,7 +494,7 @@ Everything below goes on the opportunity API itself: new fields on `OpportunityS
 
 **Changes:**
 
-- What "Start" opens comes from data the app already receives, with no opportunity-type field: with a `deliver_app`, the Deliver app as today, with the activity shown alongside when `activity` is set; with `deliver_app: null`, the activity, opened by its `launch`. `delivery_type` decides which features and labels are shown (for example the interview screens for `interviews`), not how anything is launched.
+- What "Start" opens comes from data the app already receives, with no opportunity-type field: with a `deliver_app`, the Deliver app as today, with the activity shown alongside when `activity` is set; with `deliver_app: null`, the activity, opened by its `launch`. `delivery_type` decides which features and labels are shown (for example the external activity screens for `external`), not how anything is launched.
 - Show the activity with its `noun`, `label` and status. There is no new progress UI; the existing delivery progress screens, fed by `delivery_progress`, cover it. Opening it is driven by `launch.type`: one renderer per launch type, not per provider. v1 implements `connect_channel` (opens the chat via `channel_id`). With `launch: null` (scheduled, starting or failed) it shows the status and due date without an open action, and an unknown type is shown the same way. With `activity: null` no activity is shown.
 - Label external payment units and visits.
 
@@ -528,7 +529,7 @@ There is no locked phase: the schedule stays editable from setup onwards. This t
   - For each `scheduled` session, locked with `select_for_update(skip_locked=True)` (a session the beat task is claiming is skipped and triggers with the version it read): re-run the selection rule from `schedule_next_step`. If it picks the same step, update `scheduled_for`; otherwise cancel this session and create or reopen the picked one.
   - For each claimed, unsuspended FLW on a running opportunity with no open session, call `schedule_next_step(access)`. This also starts schedules for FLWs who claimed before the schedule existed.
   - It reuses the pure selection function from Ticket 4, so the outcome of an edit can be unit tested without the database.
-- Edits that change what comes next ask for confirmation in a dialog with the number of workers and `scheduled` sessions they re-plan, e.g. "The new order applies to 7 workers whose next interview hasn't started". Provider config edits don't confirm.
+- Edits that change what comes next ask for confirmation in a dialog with the number of workers and `scheduled` sessions they re-plan, e.g. "The new order applies to 7 workers whose next step hasn't started". Provider config edits don't confirm.
 - Retired steps are listed in a collapsed "Retired steps" section below the steps table, with how many sessions are done and how many are still finishing.
 - In the step modal, "Remove step" becomes "Retire step" once the step has sessions, with a confirmation that says what is cancelled and what is still paid. When retiring is rejected (a required unit of a set), a dialog explains why and links to the payment unit.
 - Track `ExternalStep` and `ExternalSchedule` with pghistory, so mid-run changes can be traced to the Program Manager who made them.
