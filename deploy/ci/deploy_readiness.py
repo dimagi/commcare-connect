@@ -13,11 +13,6 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-# ci.yml has paths-ignore: ['docs/**'], so commits touching only these get no CI run of their own
-CI_IGNORED_PREFIXES = ("docs/",)
-# The compare API lists at most this many files; a list this long may be missing some
-COMPARE_FILE_LIMIT = 300
-
 
 @dataclass(frozen=True)
 class ReadinessDecision:
@@ -41,25 +36,16 @@ def _check_readiness(repo: str) -> tuple[ReadinessDecision, str]:
     release_status = _release_status(repo, head_sha)
     if release_status not in (None, "ahead"):
         # Decided already, so a failing CI lookup can't turn a quiet skip into a warning
-        return decide(head_sha, release_status, None, []), head_sha
-    ci_run = _latest_ci_run(repo)
-    paths = []
-    if ci_run and ci_run["headSha"] != head_sha:
-        compare = f"repos/{repo}/compare/{ci_run['headSha']}...{head_sha}"
-        # A rename's old path counts too: moving code into docs/ still changes code
-        paths = _gh("api", compare, "--jq", ".files[] | .filename, (.previous_filename // empty)").splitlines()
-    return decide(head_sha, release_status, ci_run, paths), head_sha
+        return decide(head_sha, release_status, None), head_sha
+    return decide(head_sha, release_status, _latest_ci_run(repo)), head_sha
 
 
-def decide(
-    head_sha: str, release_status: str | None, ci_run: dict | None, paths_since_ci_run: list[str]
-) -> ReadinessDecision:
+def decide(head_sha: str, release_status: str | None, ci_run: dict | None) -> ReadinessDecision:
     """Decide whether main's head commit should be deployed.
 
     release_status is the compare API's status for latest-release...head_sha, or None when there is no release yet.
-    Deploys only when head_sha is ahead of the release and CI passed on it. A passing run on an older commit also
-    counts, provided paths_since_ci_run (the files changed between that run's commit and head_sha) are all ones CI
-    ignores. An already released head is skipped without a warning; every other skip asks for one.
+    ci_run is the latest CI run on main. Deploys only when head_sha is ahead of the release and that run is for
+    head_sha and passed. An already released head is skipped without a warning; every other skip asks for one.
     """
     short_sha = head_sha[:7]
     if release_status == "identical":
@@ -77,19 +63,12 @@ def decide(
         return _skip(f"no CI run found for main ({short_sha})")
 
     run_url = ci_run["url"]
+    if ci_run["headSha"] != head_sha:
+        return _skip(f"CI has not been run on main ({short_sha}); latest run is for an older commit: {run_url}")
     if ci_run["status"] != "completed":
         return _skip(f"CI on main ({short_sha}) is {ci_run['status']}: {run_url}")
     if ci_run["conclusion"] != "success":
         return _skip(f"CI on main ({short_sha}) finished with {ci_run['conclusion']}: {run_url}")
-    if len(paths_since_ci_run) >= COMPARE_FILE_LIMIT:
-        return _skip(
-            f"too many files changed on main ({short_sha}) since the latest CI run to check: {run_url}"
-            " - please deploy manually"
-        )
-    # A run for a different commit with no files between them means main moved while we looked: not verified
-    run_is_for_other_commit = ci_run["headSha"] != head_sha and not paths_since_ci_run
-    if run_is_for_other_commit or not all(path.startswith(CI_IGNORED_PREFIXES) for path in paths_since_ci_run):
-        return _skip(f"CI has not been run on main ({short_sha}); latest run is for an older commit: {run_url}")
     return ReadinessDecision(deploy=True, warn=False, reason="")
 
 

@@ -2,7 +2,7 @@ import subprocess
 
 import deploy_readiness
 import pytest
-from deploy_readiness import COMPARE_FILE_LIMIT, ReadinessDecision, _write_outputs, decide, latest_release_sha
+from deploy_readiness import ReadinessDecision, _write_outputs, decide, latest_release_sha
 
 RUN_URL = "https://github.com/dimagi/commcare-connect/actions/runs/1"
 
@@ -12,55 +12,31 @@ def ci_run(sha, status="completed", conclusion="success"):
 
 
 @pytest.mark.parametrize(
-    "head, release_status, run, paths, deploy, warn, reason_part",
+    "head, release_status, run, deploy, warn, reason_part",
     [
-        pytest.param("a" * 40, "identical", None, [], False, False, "nothing to deploy", id="nothing-new"),
+        pytest.param("a" * 40, "identical", None, False, False, "nothing to deploy", id="nothing-new"),
         # The release has commits main doesn't, e.g. main was reset after a deploy
-        pytest.param("a" * 40, "behind", None, [], False, True, "isn't in main's history", id="release-ahead-of-main"),
-        pytest.param("b" * 40, "diverged", None, [], False, True, "isn't in main's history", id="diverged"),
-        pytest.param("b" * 40, "ahead", ci_run("b" * 40), [], True, False, "", id="green"),
-        pytest.param(
-            "b" * 40, "ahead", ci_run("b" * 40, conclusion="failure"), [], False, True, "failure", id="failed"
-        ),
+        pytest.param("a" * 40, "behind", None, False, True, "isn't in main's history", id="release-ahead-of-main"),
+        pytest.param("b" * 40, "diverged", None, False, True, "isn't in main's history", id="diverged"),
+        pytest.param("b" * 40, "ahead", ci_run("b" * 40), True, False, "", id="green"),
+        pytest.param("b" * 40, "ahead", ci_run("b" * 40, conclusion="failure"), False, True, "failure", id="failed"),
         pytest.param(
             "b" * 40,
             "ahead",
             ci_run("b" * 40, status="in_progress", conclusion=None),
-            [],
             False,
             True,
             "in_progress",
             id="in-progress",
         ),
-        pytest.param("b" * 40, "ahead", None, [], False, True, "no CI run", id="no-run"),
-        pytest.param("c" * 40, "ahead", ci_run("b" * 40), ["docs/x.md"], True, False, "", id="docs-only-since-run"),
-        pytest.param(
-            "c" * 40,
-            "ahead",
-            ci_run("b" * 40),
-            ["docs/x.md", "commcare_connect/a.py"],
-            False,
-            True,
-            "not been run",
-            id="code-since-run",
-        ),
-        pytest.param("b" * 40, None, ci_run("b" * 40), [], True, False, "", id="no-release-yet"),
-        pytest.param(
-            "c" * 40,
-            "ahead",
-            ci_run("b" * 40),
-            ["docs/x.md"] * COMPARE_FILE_LIMIT,
-            False,
-            True,
-            "too many files",
-            id="compare-truncated",
-        ),
-        # main moved between reading HEAD and reading the CI run: the compare comes back empty
-        pytest.param("b" * 40, "ahead", ci_run("c" * 40), [], False, True, "not been run", id="run-for-other-sha"),
+        pytest.param("b" * 40, "ahead", None, False, True, "no CI run", id="no-run"),
+        pytest.param("b" * 40, None, ci_run("b" * 40), True, False, "", id="no-release-yet"),
+        # A passing run for an older commit doesn't vouch for main's head, whatever changed since
+        pytest.param("c" * 40, "ahead", ci_run("b" * 40), False, True, "not been run", id="run-for-older-commit"),
     ],
 )
-def test_decide(head, release_status, run, paths, deploy, warn, reason_part):
-    decision = decide(head, release_status, run, paths)
+def test_decide(head, release_status, run, deploy, warn, reason_part):
+    decision = decide(head, release_status, run)
 
     assert isinstance(decision, ReadinessDecision)
     assert (decision.deploy, decision.warn) == (deploy, warn)
@@ -68,15 +44,15 @@ def test_decide(head, release_status, run, paths, deploy, warn, reason_part):
 
 
 @pytest.mark.parametrize(
-    "run, paths",
+    "run",
     [
-        pytest.param(ci_run("b" * 40, conclusion="failure"), [], id="failed"),
-        pytest.param(ci_run("b" * 40, status="queued", conclusion=None), [], id="queued"),
-        pytest.param(ci_run("a" * 40), ["config/settings/base.py"], id="code-since-run"),
+        pytest.param(ci_run("b" * 40, conclusion="failure"), id="failed"),
+        pytest.param(ci_run("b" * 40, status="queued", conclusion=None), id="queued"),
+        pytest.param(ci_run("a" * 40), id="run-for-older-commit"),
     ],
 )
-def test_warning_names_commit_and_run(run, paths):
-    decision = decide("b" * 40, "ahead", run, paths)
+def test_warning_names_commit_and_run(run):
+    decision = decide("b" * 40, "ahead", run)
 
     assert decision.warn
     assert "bbbbbbb" in decision.reason
@@ -84,7 +60,7 @@ def test_warning_names_commit_and_run(run, paths):
 
 
 def test_warning_without_run_names_commit():
-    decision = decide("b" * 40, "ahead", None, [])
+    decision = decide("b" * 40, "ahead", None)
 
     assert "bbbbbbb" in decision.reason
 
