@@ -108,7 +108,7 @@ invoices give the same results as today.
 
 ## 6. Data model
 
-Model and lookup (6.1–6.2), the first pay rate (6.3–6.5), and retiring the old fields (6.6–6.7).
+Model and lookup (6.1–6.2), the first pay rate (6.3–6.4), date rules (6.5), and retiring the old fields (6.6–6.7).
 
 ### 6.1 New model: `PaymentUnitRate`
 
@@ -141,7 +141,7 @@ class PaymentUnitRate(BaseModel):
   the job runs late, `effective_on` is later. It is set by:
   - the job on the 1st, to the day it runs (section [10](#10-applying-a-scheduled-change))
   - an Initial Rate, when it is created (section [6.3](#63-first-pay-rate-of-a-payment-unit))
-  - in-place changes, which keep it (sections [9.1](#91-payment-units-with-no-visits) and [9.2](#92-payment-units-that-havent-started-yet))
+  - in-place changes, which keep it (section [9.1](#91-payment-units-with-no-visits))
 
 A pay rate's **status** is worked out, not stored:
 
@@ -167,11 +167,6 @@ class PaymentUnit(models.Model):
     @property
     def current_pay_rate(self):
         return self.pay_rate_on(date.today())
-
-    @property
-    def budget_pay_rate(self):
-        # Before the unit starts there is no active pay rate yet, so budgets use the Initial Rate
-        return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
 ```
 
 **A pay rate counts only from the day it takes effect** (`effective_on`), not from its `planned_for`.
@@ -181,74 +176,72 @@ class PaymentUnit(models.Model):
 - If the job cancels the change instead (section [11.4](#114-no-overspend-funding-check)), nobody ever earned the new
   pay rate.
 
-**Budgets before the unit starts.** Until a payment unit (or its opportunity) starts, `current_pay_rate` finds nothing,
-but workers can already join and get limits. So budget totals, visit limits and the join check use `budget_pay_rate`.
-Earned pay uses `current_pay_rate`, since nothing can be approved before the unit starts.
-
 ### 6.3 First pay rate of a payment unit
 
-Every payment unit needs an Initial Rate row, with `planned_for` on or before the first approval it covers. New
-payment units get it when created. `planned_for` is:
+Every payment unit gets an Initial Rate row when it is created, from its pay. `planned_for` and `effective_on` are
+both the day it is created, and never change.
 
-- the unit's `start_date`, if set and in the future
-- otherwise, the opportunity's start date, if in the future
-- otherwise, today
+The pay rate and the unit's dates are kept separate:
 
-`effective_on` is set to `planned_for` straight away, since limits already match this pay rate; otherwise the job on the 1st would treat
-it as a change.
+- **Pay rate:** what a delivery pays.
+- **Unit and opportunity dates:** when work can be paid. Visits before the start date are trial and never paid
+  (section [6.5](#65-changing-payment-unit-and-opportunity-dates)).
+
+`effective_on` is set straight away, since limits already match this pay rate; otherwise the job on the 1st would
+treat it as a change.
 
 ### 6.4 Data migration for existing payment units
 
-The **pay rate backfill** creates one row for **every** existing payment unit, in all opportunities (active, ended and not started yet), from
-its current `amount` and `org_amount`. `effective_on` is set to `planned_for`, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `planned_for` is:
+The **pay rate backfill** creates one row for **every** existing payment unit, in all opportunities (active, ended
+and not started yet), from its current `amount` and `org_amount`. `effective_on` is set, for the same reason as
+section [6.3](#63-first-pay-rate-of-a-payment-unit). `planned_for` and `effective_on` are both:
 
-- the payment unit's `start_date`, if set. Visits submitted before it are marked "trial" and never paid, so no
-  approval comes before it. If `start_date` is in the future but the unit already has visits (its start was moved
-  after it started, which section [6.5](#65-changing-a-payment-units-start-date) now prevents), the day the backfill
-  runs instead, so the unit has an active pay rate for new approvals.
-- otherwise, the opportunity's start date. All work happens after the opportunity starts.
+- the opportunity's start date, if it has passed. Payment units have no created date, and no approval comes before
+  the opportunity starts.
+- otherwise, today, so the unit has an Active Pay Rate straight away (section [6.3](#63-first-pay-rate-of-a-payment-unit)).
 
-### 6.5 Changing a payment unit's start date
+### 6.5 Changing payment unit and opportunity dates
 
-The Initial Rate starts on its `planned_for` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), and every
-approval must fall on or after it. Today a PM can edit `start_date` at any time, which could break this.
+Visits before a unit's start date are marked trial and never paid. Once a visit may be paid, moving the start date
+later would leave it before the start. Today a PM can edit start dates at any time, which could break this.
 
-**Rule.** A PM can change `start_date` only if:
+**Payment unit start date.** A PM can change it only if:
 
-- the payment unit **hasn't started yet**: its current `start_date` is in the future, or it has no visits at all, and
-- the new date is **after today**, or **today** if the unit has no visits at all, and
-- the new date is **before any pay rate change** that isn't cancelled. Otherwise the Initial Rate would move after
-  that change, and the old pay rate would come back from the new start date.
+- the unit has **no visit that may be paid** (any visit that isn't trial), and
+- the new date is **after today**, or **today** if the unit has no visits at all.
 
-When the date changes, the Initial Rate's `planned_for` moves with it in the same save.
+Otherwise the form shows an error: the unit already has visits, or the date is in the past.
 
-Otherwise the form shows an error: the unit has already started, or (if only the last rule fails) the PM must cancel
-the pay rate change first.
+**Opportunity start date.** A PM can change it only if:
 
-**Opportunity start date.** When the opportunity's start date changes, each unit's Initial Rate `planned_for` is
-worked out again with the rule in section [6.3](#63-first-pay-rate-of-a-payment-unit), in the same save. The
-opportunity form already only allows this before the opportunity starts, so no unit has approved work yet. It also allows it on the start day itself, which is now locked too: moving the
-start date then would leave that day's approvals with no active pay rate.
+- it **hasn't passed** yet. On the start day itself, it is locked once the opportunity has a visit that isn't trial.
+- the new date is today only if the opportunity has no visits at all.
+
+**Dates within the opportunity.**
+
+- **Payment unit form:** a new or changed start or end date must fall between the opportunity's start and end dates.
+  Dates that haven't changed aren't checked, so existing units outside the range can still be edited.
+- **Opportunity form:** a changed start date can't be after any unit's start or end date. A changed end date can't
+  be before any unit's start or end date.
 
 **Why these rules**
 
-- **Before the unit starts:** its visits are only trial visits, which are never paid. There is no approved work for
-  the Initial Rate to cover, so it can move freely.
+- **Locked once a visit may be paid:** a non-trial visit could already be approved, so moving the start later would
+  leave paid work before it. Trial visits are never paid, so they don't lock it.
 - **Today, only with no visits:** visits processed earlier today are already marked trial. Moving the start date to
   today would put them inside the active period while they stay trial, which is misleading.
-- **Never a past date:** the unit didn't really start then, so the history would show a wrong start date for the
-  Initial Rate.
+- **Never a past date:** the unit didn't really start then.
 
 **Example.** Today is November 5. The unit starts on November 10.
 
-| Change                                             | Allowed?          | Why                                                                     |
-| -------------------------------------------------- | ----------------- | ----------------------------------------------------------------------- |
-| Move to November 20                                | Yes               | Not started yet. The Initial Rate moves to November 20.                 |
-| Move to November 6                                 | Yes               | Not started yet, and the new date is after today.                       |
-| Move to November 5 (today)                         | Only if no visits | Visits processed earlier today would be trial inside the active period. |
-| Move to November 3                                 | No                | The new date is in the past.                                            |
-| On November 12, with visits, move to November 20   | No                | Already started. Visits approved November 10–12 would have no pay rate. |
-| On November 12, no visits yet, move to November 20 | Yes               | No visits, so nothing to cover. The Initial Rate moves to November 20.  |
+| Change                                                  | Allowed?          | Why                                                                     |
+| ------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------- |
+| Move to November 20                                     | Yes               | Not started yet, so any visits are trial.                               |
+| Move to November 6                                      | Yes               | Not started yet, and the new date is after today.                       |
+| Move to November 5 (today)                              | Only if no visits | Visits processed earlier today would be trial inside the active period. |
+| Move to November 3                                      | No                | The new date is in the past.                                            |
+| On November 12, with non-trial visits, move to Nov 20   | No                | Visits from November 10–12 may be paid, and would fall before it.       |
+| On November 12, only trial visits, move to November 20  | Yes               | Its visits came before November 10, so none can be paid.                |
 
 ### 6.6 Removing `amount` and `org_amount` from `PaymentUnit`
 
@@ -449,11 +442,8 @@ changes in Part 1.
 **Who:** PM users with admin access to the opportunity, the same users who can edit payment units today. No new
 permissions.
 
-**When it takes effect:** the 1st of next month; the PM does not choose the date. Two exceptions, checked in this
-order, change the pay rate in place instead:
-
-- the unit hasn't started yet (section [9.2](#92-payment-units-that-havent-started-yet))
-- the unit has no visits: the change takes effect immediately (section [9.1](#91-payment-units-with-no-visits))
+**When it takes effect:** the 1st of next month; the PM does not choose the date. One exception changes the pay rate in
+place instead: the unit has no visits, so the change takes effect immediately (section [9.1](#91-payment-units-with-no-visits)).
 
 **Scheduling, editing and cancelling**
 
@@ -483,8 +473,10 @@ rate row, which the job also locks, so a change can't be edited or cancelled whi
 
 If a payment unit has **no visits** (Trial and Over Limit visits don't count), a change takes effect **immediately**.
 Nobody has earned anything at the old pay rate, so it **edits the active pay rate in place**, usually the Initial
-Rate. `planned_for` and `effective_on` don't change, so the
-pay rate still moves with the start date (section [6.5](#65-changing-a-payment-units-start-date)).
+Rate. `planned_for` and `effective_on` don't change.
+
+This includes units that haven't started yet, since all their visits are trial. Workers aren't notified before the
+unit starts.
 
 - **Modal:** the effective date shows today. Before saving, the PM confirms that the change takes effect immediately
   and can't be cancelled, and that workers are notified now (if worker pay changes). The visit limit warning (section
@@ -493,7 +485,6 @@ pay rate still moves with the start date (section [6.5](#65-changing-a-payment-u
   is no shortfall. If worker pay changed, workers are notified. No NM banner.
 
 **Avoiding race conditions:** lock first, then check again that the unit still hasn't started or still has no visits.
-Section [9.2](#92-payment-units-that-havent-started-yet) uses the same function.
 
 ```python
 @transaction.atomic
@@ -509,7 +500,7 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
     started = not not_started(payment_unit)
     if started and has_visits(payment_unit):
         raise ValidationError("This payment unit now has visits. Schedule the change for the 1st instead.")
-    previous = payment_unit.budget_pay_rate  # loaded before the edit, so it keeps the old amounts
+    previous = payment_unit.current_pay_rate  # loaded before the edit, so it keeps the old amounts
     if previous.flw_amount + previous.org_amount == 0 and flw_amount + org_amount > 0:
         # Raised from zero: limits aren't scaled, so the budget must cover them at the new cost (section 11.7)
         if needed_from_zero(payment_unit, flw_amount + org_amount) > opportunity.remaining_budget:
@@ -521,21 +512,10 @@ def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
     pay_rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
     scale_visit_limits(payment_unit, previous, pay_rate)
     if started and previous.flw_amount != pay_rate.flw_amount:  # no notification before the unit starts
-        # planned_for stays the original start date, so the message shows today
+        # planned_for stays the original date, so the message shows today
         transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk, date.today()))
     return pay_rate
 ```
-
-### 9.2 Payment units that haven't started yet
-
-Until the Initial Rate's `planned_for` (section [6.3](#63-first-pay-rate-of-a-payment-unit)), the unit hasn't
-started and no pay rate is active.
-
-- The Initial Rate shows as **Scheduled** ("Takes effect `<planned_for>`"), with Edit but no Cancel (cancelling
-  would leave the unit with no pay rate). The modal shows `planned_for` as the effective date.
-- A change **edits the Initial Rate in place** through `change_pay_rate_in_place` (section [9.1](#91-payment-units-with-no-visits)), so if the cost goes up,
-  joined workers' limits are scaled on save under the same locks. There are no approved deliveries, so no shortfall.
-- Workers are not notified and there is no NM banner.
 
 ## 10. Applying a scheduled change
 
@@ -758,8 +738,8 @@ The message also shows the budget needed to keep workers' visits: Σ over worker
 
 Visit limits stay as they are. The PM can add visits with Add Budget.
 
-> **Note:** a decrease never raises limits. If an in-place change (sections [9.1](#91-payment-units-with-no-visits)
-> and [9.2](#92-payment-units-that-havent-started-yet)) raises the pay rate by mistake and is then lowered, workers
+> **Note:** a decrease never raises limits. If an in-place change (section [9.1](#91-payment-units-with-no-visits))
+> raises the pay rate by mistake and is then lowered, workers
 > keep the reduced limits. The PM restores them by hand: Add Budget → Increase Visits for existing workers, and the
 > payment unit's max visits per worker for new ones.
 
@@ -822,7 +802,7 @@ worker pay + org pay already earned (at the pay rates that applied)
   deliveries approved can go above the visit limit. Without it, the second part would go negative and cancel out pay
   they really earned, making the budget look bigger than it is.
 - Only claimed budget uses this formula. Other budget checks (joining, the payment unit form, new workers' limits)
-  keep max visits per worker × cost, with the cost from `budget_pay_rate` (section [6.2](#62-looking-up-a-pay-rate)).
+  keep max visits per worker × cost, with the cost from `current_pay_rate` (section [6.2](#62-looking-up-a-pay-rate)).
 
 ### 11.7 Special case: pay rate raised from zero
 
@@ -850,8 +830,6 @@ Screenshots from the Claude design are included below. This section only lists w
 
 - Worker pay and org pay are no longer on the form. They are only shown, read-only, in the Pay Rates card.
 - Cancel Change asks for confirmation first.
-- For a payment unit that hasn't started yet, the Initial Rate shows as Scheduled with Edit only, no Cancel Change
-  (section [9.2](#92-payment-units-that-havent-started-yet)).
 - **Schedule Rate Change** is **disabled** when a change is already scheduled, with the tooltip: "A change is already
   scheduled for `<Effective date>`. Edit or cancel it instead."
 - The funding warning (section [12.4](#124-banners)) is also shown on the Pay Rates card.
@@ -862,7 +840,7 @@ Screenshots from the Claude design are included below. This section only lists w
 
 - The same modal, pre-filled, is used for **Edit**.
 - Setting worker pay or org pay to 0 asks the PM to confirm before saving.
-- **Effective date** is shown, not editable: the 1st of next month, today (section [9.1](#91-payment-units-with-no-visits)), or the Initial Rate's `planned_for` (section [9.2](#92-payment-units-that-havent-started-yet)).
+- **Effective date** is shown, not editable: the 1st of next month, or today (section [9.1](#91-payment-units-with-no-visits)).
 - Messages: section [11.3](#113-message-before-confirming); funding error, which stops the save: section [11.4](#114-no-overspend-funding-check).
 
 ### 12.3 Payment units list
@@ -885,7 +863,6 @@ Screenshots from the Claude design are included below. This section only lists w
 
   For an org pay change, the second sentence says "Org pay changes from … to …". If both change, it shows both.
 - If several changes are coming, one line per opportunity and payment unit.
-- Not shown for an Initial Rate (section [9.2](#92-payment-units-that-havent-started-yet)).
 
 **Funding warning banner (PMs and NMs)**
 
@@ -942,7 +919,7 @@ few hours."
 | Workers with different visit limits | Each worker's remaining visits are scaled separately (section [11.2](#112-what-a-pay-rate-increase-does)).                            |
 | New workers join before the 1st     | They get limits at the old cost, then are scaled on the 1st like everyone else.                                                       |
 | Budget added before the 1st         | Scaled down on the 1st like the rest of the worker's money (section [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)). |
-| Workers join before the unit starts | Limits are priced at the Initial Rate (section [6.2](#62-looking-up-a-pay-rate)).                                                     |
+| Workers join before the unit starts | Limits are priced at the Initial Rate (section [6.3](#63-first-pay-rate-of-a-payment-unit)).                                          |
 
 **Earned pay and invoices**
 
@@ -955,7 +932,6 @@ few hours."
 | Case                                  | Behaviour                                                                                                                           |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Payment unit with no visits           | Active pay rate is edited in place, takes effect immediately (section [9.1](#91-payment-units-with-no-visits)).                     |
-| Payment unit hasn't started yet       | Initial Rate shows as Scheduled, is edited in place, can't be cancelled (section [9.2](#92-payment-units-that-havent-started-yet)). |
 | Payment unit with child payment units | Each unit has its own pay rate. Changing a parent does not change its children.                                                     |
 | Pay rate set to 0                     | Allowed (same as today). The modal asks the PM to confirm.                                                                          |
 | Pay rate raised from 0                | Limits are not scaled; funded from the remaining budget (section [11.7](#117-special-case-pay-rate-raised-from-zero)).              |
@@ -963,14 +939,14 @@ few hours."
 ## 14. Implementation tickets (proposed, to be created after approval)
 
 1. Pay rate history model and migration
-2. Restrict editing a payment unit's start date
+2. Restrict editing payment unit and opportunity dates
 3. Read pay rates from the history
 4. Add-only earned pay, earned pay records, and invoices bill them
 5. Pay Rates card and Rate History (read-only)
 6. Schedule, edit and cancel
 7. Job on the 1st
 8. Upcoming pay rate changes: list column, banners and Add Budget note
-9. Immediate change for payment units with no visits or not started yet (sections [9.1](#91-payment-units-with-no-visits) and [9.2](#92-payment-units-that-havent-started-yet))
+9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
 10. Drop `amount` and `org_amount` from `PaymentUnit`, and `invoiced_approved_count` from `CompletedWork`
 
 ### 14.1 Releases
@@ -979,7 +955,7 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 
 | Release       | Tickets    | Notes                                                                                                                                                                                                                                                                                                                               |
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Foundation | 1, 2, 3    | Nothing new for PMs except the start date rule. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
+| 1. Foundation | 1, 2, 3    | Nothing new for PMs except the date rules. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
 | 2. Earned pay | 4          | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.2](#72-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
 | 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
 | 4. Follow-up  | 10         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
