@@ -1973,7 +1973,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 class TestAddPaymentUnitView:
     def test_org_amount_field_visible_for_managed_opportunity(self, client):
         managed_opportunity = OpportunityFactory()
-        organization = managed_opportunity.organization
+        organization = managed_opportunity.program.organization
         organization.program_manager = True
         organization.save()
 
@@ -1992,7 +1992,7 @@ class TestAddPaymentUnitView:
 
     def test_add_payment_unit_form_with_managed_opportunity(self, client):
         managed_opportunity = OpportunityFactory()
-        organization = managed_opportunity.organization
+        organization = managed_opportunity.program.organization
         organization.program_manager = True
         organization.save()
 
@@ -2026,28 +2026,22 @@ class TestEditPaymentUnit:
     def _url(self, org_slug, opp_id, payment_unit_id):
         return reverse("opportunity:edit_payment_unit", args=(org_slug, opp_id, payment_unit_id))
 
-    def test_edit_payment_unit_managed_as_non_pm_redirects(
-        self, client, organization, org_user_member, managed_opportunity
+    @pytest.mark.parametrize(
+        "org_fixture, user_fixture, expected",
+        [
+            ("organization", "org_user_member", HTTPStatus.NOT_FOUND),
+            ("program_manager_org", "program_manager_org_user_admin", HTTPStatus.OK),
+        ],
+    )
+    def test_only_program_managers_can_edit(
+        self, request, client, managed_opportunity, org_fixture, user_fixture, expected
     ):
+        org = request.getfixturevalue(org_fixture)
         payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
         DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
-        client.force_login(org_user_member)
-        url = self._url(organization.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.FOUND
-        assert response.url == reverse(
-            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
-        )
-
-    def test_edit_payment_unit_managed_as_pm(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
-    ):
-        payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
-        DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
-        client.force_login(program_manager_org_user_admin)
-        url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.OK
+        client.force_login(request.getfixturevalue(user_fixture))
+        response = client.get(self._url(org.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id))
+        assert response.status_code == expected
 
 
 @pytest.mark.django_db
@@ -2520,22 +2514,20 @@ class TestVerificationFlagsConfig:
             "form_json-MAX_NUM_FORMS": 1000,
         }
 
-    def test_get_managed_opportunity_as_non_pm_redirects(
-        self, client, organization, org_user_member, managed_opportunity
+    @pytest.mark.parametrize(
+        "org_fixture, user_fixture, expected",
+        [
+            ("organization", "org_user_member", HTTPStatus.NOT_FOUND),
+            ("program_manager_org", "program_manager_org_user_admin", HTTPStatus.OK),
+        ],
+    )
+    def test_get_is_for_program_managers(
+        self, request, client, managed_opportunity, org_fixture, user_fixture, expected
     ):
-        client.force_login(org_user_member)
-        response = client.get(self.url(organization.slug, managed_opportunity.opportunity_id))
-        assert response.status_code == HTTPStatus.FOUND
-        assert response.url == reverse(
-            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
-        )
-
-    def test_get_managed_opportunity_as_pm(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
-    ):
-        client.force_login(program_manager_org_user_admin)
-        response = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id))
-        assert response.status_code == HTTPStatus.OK
+        org = request.getfixturevalue(org_fixture)
+        client.force_login(request.getfixturevalue(user_fixture))
+        response = client.get(self.url(org.slug, managed_opportunity.opportunity_id))
+        assert response.status_code == expected
 
     def test_post_managed_opportunity_as_pm_saves(
         self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
@@ -2796,17 +2788,41 @@ def test_visit_export_count_boundary_dates(
     assert "2 visits match your filters." in response.content.decode()
 
 
+def _edit_url(opportunity):
+    """The Edit page as the program's owner org, which is a program manager for it."""
+    org_slug = opportunity.program.organization.slug
+    return reverse("opportunity:edit", kwargs={"org_slug": org_slug, "opp_id": opportunity.opportunity_id})
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    [
+        "opportunity:edit",
+        "opportunity:add_payment_unit",
+        "opportunity:add_payment_units",
+        "opportunity:verification_flags_config",
+    ],
+)
+def test_pm_only_pages_deny_the_delivering_org(client, org_user_admin, opportunity, url_name):
+    """The opportunity menu only links these for program managers, so the delivering org can't open them by URL."""
+    client.force_login(org_user_admin)
+    response = client.get(reverse(url_name, args=(opportunity.organization.slug, opportunity.opportunity_id)))
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
 @pytest.mark.django_db
 class TestOpportunityEditActiveHistory:
-    def test_edit_context_includes_active_events(self, client, org_user_admin, opportunity):
-        client.force_login(org_user_admin)
+    @pytest.fixture
+    def program_admin(self, opportunity):
+        return MembershipFactory.create(organization=opportunity.program.organization).user
+
+    def test_edit_context_includes_active_events(self, client, program_admin, opportunity):
+        client.force_login(program_admin)
         opportunity.active = False
         opportunity.save()
 
-        url = reverse(
-            "opportunity:edit",
-            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
-        )
+        url = _edit_url(opportunity)
         response = client.get(url)
 
         assert response.status_code == 200
@@ -2815,13 +2831,10 @@ class TestOpportunityEditActiveHistory:
         event_toggling_inactive = response.context["active_events"].filter(active=False).first()
         assert event_toggling_inactive is not None
 
-    def test_edit_active_toggle_records_user_in_context(self, client, org_user_admin, opportunity):
-        client.force_login(org_user_admin)
+    def test_edit_active_toggle_records_user_in_context(self, client, program_admin, opportunity):
+        client.force_login(program_admin)
 
-        url = reverse(
-            "opportunity:edit",
-            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
-        )
+        url = _edit_url(opportunity)
         post_data = {
             "name": opportunity.name,
             "description": opportunity.description,
@@ -2842,7 +2855,7 @@ class TestOpportunityEditActiveHistory:
         event_toggling_inactive = OpportunityActiveEvent.objects.filter(pgh_obj=opportunity, active=False).first()
         assert event_toggling_inactive is not None
         assert event_toggling_inactive.pgh_context is not None
-        assert event_toggling_inactive.pgh_context.metadata["username"] == org_user_admin.username
+        assert event_toggling_inactive.pgh_context.metadata["username"] == program_admin.username
 
 
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):

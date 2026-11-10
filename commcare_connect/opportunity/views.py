@@ -440,7 +440,7 @@ class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
         return context
 
 
-@method_decorator(opp_standard_access_required, name="dispatch")
+@method_decorator(opportunity_pm_required, name="dispatch")
 class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_edit.html"
@@ -951,7 +951,7 @@ def claim_task_outcome(request, session_key, task_id):
     return True
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def add_payment_units(request, org_slug=None, opp_id=None):
     if request.POST:
@@ -965,7 +965,7 @@ def add_payment_units(request, org_slug=None, opp_id=None):
     )
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
     deliver_units = DeliverUnit.objects.filter(
@@ -1029,11 +1029,9 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
     )
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
-    if not request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
     payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
@@ -1387,11 +1385,9 @@ class AudioAttachmentTranscribe(SuccessMessageMixin, OpportunityObjectMixin, Upd
         return self.get_visit_details_url()
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def verification_flags_config(request, org_slug=None, opp_id=None):
-    if not request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
     verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=request.opportunity).first()
     form = OpportunityVerificationFlagsConfigForm(
         instance=verification_flags, data=request.POST or None, opportunity=request.opportunity
