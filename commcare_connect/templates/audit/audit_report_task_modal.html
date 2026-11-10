@@ -1,11 +1,12 @@
 {% load i18n %}
-<div x-data="{ open: true, confirm: false, error: '' }"
-     x-ref="modal"
-     x-show="open"
-     x-cloak
-     @click.self="open = false"
-     @keydown.escape.window="open = false"
-     @htmx:after-request="if (!event.detail.successful) { error = event.detail.xhr.responseText || '{% trans "Something went wrong. Please try again." %}'; confirm = false; }"
+{# Appended to <body> by the Review button and removed on close; state in static/js/audit_task_modal.js. #}
+<div data-audit-task-modal
+     data-error-fallback="{% trans "Something went wrong. Please try again." %}"
+     x-data="auditTaskModal()"
+     @click.self="close()"
+     @keydown.escape.window="close()"
+     @htmx:before-request="startSaving()"
+     @htmx:after-request="finishSaving($event)"
      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
   <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl overflow-hidden relative">
     <div class="metric-container px-6 py-4">
@@ -18,8 +19,8 @@
           method="post"
           hx-post="{% url 'opportunity:audit:audit_report_task_action' org_slug=org_slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id entry_id=entry.audit_report_entry_id %}"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-          hx-target="#modal-root"
-          hx-swap="innerHTML">
+          hx-target="closest [data-audit-task-modal]"
+          hx-swap="outerHTML">
       <input type="hidden" name="action" x-ref="actionInput" />
       <div class="grid grid-cols-2 gap-6 p-6">
         <div>
@@ -66,14 +67,17 @@
       <div class="px-6 pb-6 flex justify-end gap-2">
         <button type="button"
                 class="button button-md outline-style"
-                @click="open = false">{% trans "Cancel" %}</button>
+                :disabled="saving"
+                @click="close()">{% trans "Cancel" %}</button>
         <button type="button"
                 class="button button-md outline-style"
+                :disabled="saving"
                 @click="$refs.actionInput.value = 'none'; $refs.form.requestSubmit()">
           {% trans "No Action Needed" %}
         </button>
         <button type="button"
                 class="button button-md primary-dark"
+                :disabled="saving"
                 @click="confirm = true">{% trans "Complete Review" %}</button>
       </div>
       <!-- Confirmation overlay -->
@@ -87,9 +91,11 @@
           <div class="flex justify-end gap-2">
             <button type="button"
                     class="button button-md outline-style"
+                    :disabled="saving"
                     @click="confirm=false">{% trans "Cancel" %}</button>
             <button type="button"
                     class="button button-md primary-dark"
+                    :disabled="saving"
                     @click="$refs.actionInput.value = 'tasks_assigned'; $refs.form.requestSubmit()">
               {% trans "Assign Tasks" %}
             </button>

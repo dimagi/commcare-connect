@@ -439,6 +439,7 @@ def test_modal_submit_assigns_tasks(client, program_manager_org_user_admin, audi
         data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
     )
     assert response.status_code == 200
+    assert response.headers["HX-Trigger"] == "refreshDetail"
     entry.refresh_from_db()
     assert entry.reviewed is True
     assert entry.review_action == AuditReportEntry.ReviewAction.TASKS_ASSIGNED
@@ -454,6 +455,7 @@ def test_modal_submit_no_action(client, program_manager_org_user_admin, audit_op
 
     response = client.post(_action_url(audit_opp, report, entry), data={"action": "none"})
     assert response.status_code == 200
+    assert response.headers["HX-Trigger"] == "refreshDetail"
     entry.refresh_from_db()
     assert entry.reviewed is True
     assert entry.review_action == AuditReportEntry.ReviewAction.NONE
@@ -499,6 +501,7 @@ def test_modal_submit_rejects_already_reviewed(client, program_manager_org_user_
         data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
     )
     assert response.status_code == 400
+    assert "HX-Trigger" not in response.headers
     assert AssignedTask.objects.count() == 0
 
 
@@ -592,6 +595,7 @@ def test_modal_submit_partial_failure_keeps_successes_and_returns_400(
         )
 
     assert response.status_code == 400
+    assert "HX-Trigger" not in response.headers
     body = response.content.decode()
     assert "New" in body
     assert "OCS" in body and "Chatbot session could not be started" in body
