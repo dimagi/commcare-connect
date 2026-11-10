@@ -98,7 +98,7 @@ invoices for past months, should keep the pay rate that applied at the time.
   (section [9.1](#91-payment-units-with-no-visits)).
 - **Existing opportunities.** The feature applies to all active opportunities, including ones already running.
 - **Pay rate decreases.** Visit limits stay as they are; the PM sees a message saying so (section [11.3](#113-message-before-confirming)).
-- **Changes that can't be funded.** Cover the extra from the remaining budget; if it isn't enough, block the
+- **Funding a pay rate increase.** Cover the extra from the remaining budget. If that isn't enough, block the
   change when scheduling or cancel it on the 1st, and email all opportunity admins (section [11.4](#114-no-overspend-funding-check)).
 
 ## Part 1: Foundation
@@ -255,7 +255,7 @@ Otherwise the form shows an error: the unit already has visits, or the date is i
 
 ### 6.7 Protecting pay rate history
 
-Earned pay and invoices depend on pay rate rows, so they are never deleted in normal use: no delete in the app, and
+Earned pay records (section [7.1](#71-earned-pay-records)) and invoices depend on pay rate rows, so they are never deleted in normal use: no delete in the app, and
 `on_delete=PROTECT` on `payment_unit`.
 
 **Exception:** `delete_opportunity` (stale and test opportunities) and the dev-only `generate_sample_data` delete
@@ -272,11 +272,12 @@ saved_payment_accrued = approved_count * payment_unit.amount
 New rule: **only add to earned pay for newly approved deliveries**, at the pay rate active today.
 
 ```python
-# Before this run, the updater locks its works when loading them and sets their status in memory
+# Runs for each work after its new status is set (in memory; everything is saved together at the end)
+# set_totals(work, records) sets the work's saved amounts and approved count to the sum of those earned pay records
 if completed_work.status != CompletedWorkStatus.approved:
     set_totals(completed_work, records=[])  # 0 while not approved, as today
 elif completed_work.saved_payment_accrued == 0 and completed_work.earned_pay_records.exists():
-    # Re-approved (only rejection zeroes the totals of work with records), however the status changed
+    # Approved again: its totals were 0 while it wasn't approved, so bring them back from its records
     set_totals(completed_work, completed_work.earned_pay_records.all())
 
 new_deliveries = approved_count - completed_work.saved_approved_count
@@ -386,6 +387,15 @@ has one approved delivery, and empty otherwise.
   approval date isn't known) are billed under the month of the next invoice. After the 2nd, everything still unbilled
   was approved this month, so that month is right. Run on the 1st, work approved that morning would be billed under
   the previous month.
+
+**Example.** The September invoice runs on October 2, and the backfill runs on October 10. A work has 3 approved
+deliveries: 2 were on the September invoice, and 1 was approved on October 5 and isn't billed yet.
+
+- Step 1 creates a record for the 2 billed deliveries, linked to the September invoice row.
+- Step 2 creates a record for the other delivery. The work has more than one delivery, so `earned_on` is empty. The
+  November 2 invoice bills it under October, which is right.
+- Had the backfill run on October 1, a delivery approved that morning would be billed on the October 2 invoice,
+  under September.
 
 ## 8. Invoices
 
@@ -604,9 +614,10 @@ def apply_pay_rate_change(pay_rate_id):
 - **Visits, new workers and Add Budget increases** wait for the job's locks, then work with the scaled limits. Add
   Budget adds to or subtracts from the scaled limit.
 - **Editing the payment unit:** the form saves only the fields the PM changed, so it can't overwrite the scaled max.
-- **Add Budget decreases** check "not below visits already done" against limits read before the job. In rare cases a
-  decrease could leave a limit just below the visits done. This can already happen today with any limit change, so
-  it is accepted.
+- **Add Budget decreases** check that a limit doesn't go below the visits already done, but don't lock the limits. If
+  the job scales a limit down between the check and the save, the decrease is taken off the scaled limit and can
+  leave it just below the visits done. This can already happen today if a visit arrives between the check and the
+  save, so it is accepted.
 
 ### 10.1 Notifications
 
@@ -643,7 +654,7 @@ payment unit's max visits per worker (`max_total`).
 
 ```
 scaled limit = deliveries approved + floor((limit − deliveries approved) × old cost ÷ new cost)
-new limit    = the higher of: scaled limit, deliveries completed; never above the current limit
+new limit    = scaled limit, but not below the deliveries completed, and never above the current limit
 ```
 
 - **Deliveries approved:** approved (agreed) before the change; their pay is already recorded at the old pay rate.
@@ -947,7 +958,8 @@ few hours."
 7. Job on the 1st
 8. Upcoming pay rate changes: list column, banners and Add Budget note
 9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
-10. Drop `amount` and `org_amount` from `PaymentUnit`, and `invoiced_approved_count` from `CompletedWork`
+10. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and make an
+    invoice row's record required
 
 ### 14.1 Releases
 
