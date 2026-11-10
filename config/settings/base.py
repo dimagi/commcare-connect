@@ -189,6 +189,9 @@ WHITENOISE_MANIFEST_STRICT = False  # don't 500 on missing staticfiles
 # ------------------------------------------------------------------------------
 MEDIA_ROOT = str(APPS_DIR / "media")
 MEDIA_URL = "/media/"
+# Largest request body Django will load into memory. DRF 3.18 reads JSON and form bodies through
+# request.body, so this also caps API payloads such as work area bulk uploads and HQ form submissions.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
