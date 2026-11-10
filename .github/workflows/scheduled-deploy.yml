@@ -1,0 +1,72 @@
+# Deploys production every Monday, Wednesday and Friday at 12:00 UTC (GitHub may start it a few minutes late).
+#
+# To stop scheduled deploys, disable this workflow in the Actions tab (workflow page, "..." menu, Disable workflow)
+# and enable it again when they should resume. Manual deploys via the Deploy workflow are unaffected.
+#
+# Once the run holds the production deploy group, it deploys only when main is ahead of the latest release and CI
+# passed on it. Every run posts to the production deploy channel: a failed, running or missing CI run skips the deploy
+# with a warning, and nothing to deploy skips it with an info message.
+name: Scheduled production deploy
+
+on:
+  schedule:
+    - cron: '0 12 * * 1,3,5'
+
+# The called deploy.yml can't have more permissions than these
+permissions:
+  id-token: write
+  contents: write
+  actions: write
+
+# The group manual production deploys take in deploy.yml (deploy-<environment>); keep the name and
+# cancel-in-progress: false the same in both, or one could cancel the other's deploy halfway. Holding it for the whole
+# run means no other production deploy can start between the readiness check and the deploy.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      deploy: ${{ steps.ready.outputs.deploy }}
+      sha: ${{ steps.ready.outputs.sha }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - id: ready
+        name: Check main is ready to deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python deploy/ci/deploy_readiness.py --repo "${{ github.repository }}"
+
+      # Posts every skip, warn or not, so each scheduled run leaves a message in the channel
+      - name: Notify deploy skipped
+        if: ${{ steps.ready.outputs.deploy != 'true' || failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: ${{ vars.SLACK_PRODUCTION_DEPLOY_CHANNEL }}
+          # toJSON escapes quotes and newlines in the reason, which would otherwise break the JSON
+          payload: |
+            {
+              "text": ${{ toJSON(format('{0} Scheduled production deploy skipped: {1} <{2}/{3}/actions/runs/{4}|View Run>', steps.ready.outputs.warn == 'false' && ':information_source:' || ':warning:', steps.ready.outputs.reason || 'checking main failed', github.server_url, github.repository, github.run_id)) }}
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+  deploy:
+    needs: readiness
+    # An empty ref would leave the deploy unpinned, and asking for the group this run already holds
+    if: ${{ needs.readiness.outputs.deploy == 'true' && needs.readiness.outputs.sha != '' }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      # Not 'scheduled': manual deploys use that for the regular release cadence, and Slack shows this value
+      deploy_type: automatic
+      # The commit the readiness check approved, so anything merged since waits for the next slot
+      ref: ${{ needs.readiness.outputs.sha }}
+    secrets: inherit

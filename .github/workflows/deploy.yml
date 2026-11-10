@@ -33,10 +33,29 @@ on:
         options:
           - scheduled
           - adhoc
+  # Called by scheduled-deploy.yml
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      deploy_type:
+        required: true
+        type: string
+      ref:
+        description: 'Commit to deploy instead of the deploy branch head (callers holding the deploy group only)'
+        required: false
+        type: string
 
-# One deploy per environment at a time; later runs wait rather than cancel a deploy in progress
+# One deploy per environment at a time; later runs wait rather than cancel a deploy in progress.
+# scheduled-deploy.yml holds deploy-production for its whole run and passes ref. Asking for the same group again here
+# would make GitHub cancel the run as a deadlock, so a call with ref gets a group of its own. Pass ref only while
+# holding the deploy group, or that deploy runs unguarded. Keep cancel-in-progress: false here and in
+# scheduled-deploy.yml, or one could cancel the other's deploy halfway.
 concurrency:
-  group: deploy-${{ inputs.environment || 'staging' }}
+  group: >-
+    ${{ inputs.ref && format('deploy-called-{0}', github.run_id)
+    || format('deploy-{0}', inputs.environment || 'staging') }}
   cancel-in-progress: false
 
 jobs:
@@ -52,7 +71,7 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.DEPLOY_BRANCH }}
+          ref: ${{ inputs.ref || env.DEPLOY_BRANCH }}
 
       - name: Set release identifier
         run: |
@@ -97,7 +116,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}* (${{ inputs.deploy_type || 'push' }})"
                   }
                 },
                 {
@@ -167,7 +186,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}* (${{ inputs.deploy_type || 'push' }})"
                   }
                 },
                 {
