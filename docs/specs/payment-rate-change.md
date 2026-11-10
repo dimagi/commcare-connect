@@ -113,6 +113,7 @@ Model and lookup (6.1–6.2), the first pay rate (6.3–6.4), date rules (6.5), 
 ### 6.1 New model: `PaymentUnitRate`
 
 ```python
+@pghistory.track(pghistory.UpdateEvent(), fields=["flw_amount", "org_amount"])
 class PaymentUnitRate(BaseModel):
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.PROTECT, related_name="pay_rates")
     flw_amount = models.PositiveIntegerField()  # worker pay
@@ -136,6 +137,8 @@ class PaymentUnitRate(BaseModel):
 
 - **Who and when:** `BaseModel` gives `created_by` (who scheduled it), `modified_by` (who edited it last),
   `date_created` and `date_modified`.
+- **Edits:** each change to the amounts of an existing row (editing a scheduled change, or a change in place,
+  section [9.1](#91-payment-units-with-no-visits)) is saved as an event with the old and new amounts, who made it, and when.
 - **System cancellations** (section [11.4](#114-no-overspend-funding-check)): `cancelled_by` is `"system"` and `cancellation_reason` says why.
 - **`effective_on`** is the day a pay rate took effect (limits scaled). `planned_for` is only the day it is due; if
   the job runs late, `effective_on` is later. It is set by:
@@ -484,7 +487,7 @@ place instead: the unit has no visits, so the change takes effect immediately (s
 | Edit     | a scheduled change, before its date | once the change is applied, cancelled or its date has come                  |
 | Cancel   | a scheduled change, before its date | once applied or due, and always for the Initial Rate                        |
 
-- Editing updates the same row; the last edit wins and `modified_by` records who.
+- Editing updates the same row; each edit is kept as an event (section [6.1](#61-new-model-paymentunitrate)).
 - Cancelling sets `cancelled_by` and `cancelled_on`; the row stays in the history as "Cancelled".
 
 **When a change is blocked** (checked on schedule and on edit)
@@ -504,7 +507,8 @@ rate row, which the job also locks, so a change can't be edited or cancelled whi
 
 If a payment unit has **no visits** (Trial and Over Limit visits don't count), a change takes effect **immediately**.
 Nobody has earned anything at the old pay rate, so it **edits the active pay rate in place**, usually the Initial
-Rate. `planned_for` and `effective_on` don't change.
+Rate. `planned_for` and `effective_on` don't change. The old amounts are kept as an event (section
+[6.1](#61-new-model-paymentunitrate)).
 
 This includes units that haven't started yet, since all their visits are trial. Workers aren't notified before the
 unit starts.
@@ -865,6 +869,7 @@ Screenshots from the Claude design are included below. This section only lists w
 - **Schedule Rate Change** is **disabled** when a change is already scheduled, with the tooltip: "A change is already
   scheduled for `<Effective date>`. Edit or cancel it instead."
 - The funding warning (section [12.4](#124-banners)) is also shown on the Pay Rates card.
+- Rate History: an edited pay rate lists its edits (old → new amounts, who, when).
 
 ### 12.2 Schedule Rate Change modal
 
@@ -929,7 +934,7 @@ few hours."
 | Case                                          | Behaviour                                                                       |
 | --------------------------------------------- | ------------------------------------------------------------------------------- |
 | Change scheduled on the last day of the month | Takes effect the next day. The banner is shown till the end of the last day.    |
-| Several PMs edit the scheduled change         | Last edit wins. History shows the last editor only.                             |
+| Several PMs edit the scheduled change         | Last edit wins. Each edit is shown in the history.                              |
 | Cancel, then schedule again in the same month | Allowed. The cancelled row stays in history and a new scheduled row is created. |
 | Opportunity ends before the effective date    | Scheduling is blocked (section [9](#9-scheduling-a-change)).                    |
 
@@ -975,7 +980,7 @@ few hours."
 3. Read pay rates from the history
 4. Add-only earned pay, earned pay records, and invoices bill them
 5. Pay Rates card and Rate History (read-only)
-6. Schedule, edit and cancel
+6. Schedule, edit and cancel, and record edits with pghistory
 7. Job on the 1st
 8. Upcoming pay rate changes: list column, banners and Add Budget note
 9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
