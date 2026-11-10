@@ -3,111 +3,19 @@
 {% load crispy_forms_tags %}
 {% load i18n %}
 {% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
+{% block javascript %}
+  {# Not deferred: these define x-data components, so they have to run before Alpine starts. #}
+  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% static 'js/add_visits_existing_users.js' %}"></script>
+  {{ block.super }}
+{% endblock javascript %}
 {% block content %}
-  {% block extra_js %}
-    <script>
-   function opportunityBudgetComponent(initialTab, availableTabs) {
-    // extract the available tabs.
-    const tabs = availableTabs.map(t => t.key);
-    return {
-      selectedTab: tabs.includes(initialTab) ? initialTab : 'existing_workers',
-      setTab(tab) {
-        this.selectedTab = tab;
-
-        // set tab on url
-        const url = new URL(window.location);
-        url.searchParams.set('active_tab', tab);
-        window.history.pushState({}, '', url);
-      }
-    }
-  }
-
-  function handleExistingBudgetComponent(perVisitCosts) {
-    return {
-      modalOpen: false,
-      numberOfVisits: null,
-      adjustmentType: null,
-      perVisitCosts: perVisitCosts,
-      selected_users: [],
-      end_date: '',
-      openModal() {
-        this.modalOpen = true;
-      },
-      closeModal() {
-        this.modalOpen = false;
-      },
-      isSelected(id) {
-      return this.selected_users.includes(id);
-    },
-      toggleSelectAll() {
-      const checkboxes = document.querySelectorAll('input[name="selected_users"]');
-      if (this.selected_users.length === checkboxes.length - 1) {
-        this.selected_users = [];
-      } else {
-        this.selected_users = Array.from(checkboxes)
-          .filter(cb => cb.id !== 'select_all_users')
-          .map(cb => cb.value);
-      }
-    },
-      totalVisits() {
-        return this.selected_users.length * (parseInt(this.numberOfVisits) || 0);
-      },
-      calculatedBudget() {
-        const numberOfVisits = parseInt(this.numberOfVisits) || 0;
-        const selectedCost = this.selected_users.reduce(
-          (total, id) => total + (this.perVisitCosts[id] || 0),
-          0
-        );
-        return numberOfVisits * selectedCost;
-      },
-      // Validation methods
-      hasnumberOfVisitsOrEndDate() {
-        return Boolean(this.numberOfVisits > 0 || this.end_date);
-      },
-      hasValidVisitsAndAdjustment() {
-        if (this.numberOfVisits > 0 && !this.adjustmentType) {
-          return false;
-        }
-        if (this.adjustmentType && !(this.numberOfVisits > 0)) {
-          return false;
-        }
-        return true;
-      },
-      isFormValid() {
-        return this.selected_users.length > 0 &&
-               this.hasnumberOfVisitsOrEndDate() &&
-               this.hasValidVisitsAndAdjustment();
-      },
-      getValidationErrors() {
-        const errors = [];
-        if (this.selected_users.length === 0) {
-          errors.push('Please select at least one worker');
-        }
-        if (!this.hasnumberOfVisitsOrEndDate()) {
-          errors.push('Please specify either number of visits (>0) or end date');
-        }
-        if (!this.hasValidVisitsAndAdjustment()) {
-          if (this.numberOfVisits > 0 && !this.adjustmentType) {
-            errors.push('Please select an adjustment type (Increase or Decrease)');
-          }
-          if (this.adjustmentType && !(this.numberOfVisits > 0)) {
-            errors.push('Please specify the number of visits (>0)');
-          }
-        }
-        return errors;
-      }
-    };
-}
-
-
-    </script>
-  {% endblock extra_js %}
   {# H025: djlint flags the root content div as an orphan in {% extends %} templates; it is properly closed within this file #}
   {# djlint:off H025 #}
   <div class="md:max-w-screen-lg mx-auto flex flex-col gap-6"
     {# djlint:on #}
     x-data="opportunityBudgetComponent('{{ request.GET.active_tab|default:"existing_workers" }}', {{ tabs|safe }})"
-    x-clock
+    x-cloak
     x-effect="setTab(selectedTab)">
     {% include "components/breadcrumbs.html" with path=path %}
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
@@ -151,10 +59,8 @@
                 <tr>
                   <th>
                     <input type="checkbox"
-                           name="selected_users"
                            id="select_all_users"
-                           value="{{ opp_claim.id }}"
-                           x-model="selected_users"
+                           aria-label="{% trans 'Select all workers' %}"
                            @click="toggleSelectAll()"
                            :checked="selected_users.length === {{ opportunity_claims|length }}"
                            class="simple-checkbox {% if form.selected_users.errors %}is-invalid{% endif %}" />
@@ -248,12 +154,8 @@
                 </div>
                 <!-- Success Messages -->
                 <div x-show="isFormValid()">
-                  <div x-show="numberOfVisits && adjustmentType">
-                    You are about to <span x-text="adjustmentType === 'increase_visits' ? 'increase' : 'decrease'"></span>
-                    by <b x-text="totalVisits()"></b> visit(s) which will result in a
-                    budget <span x-text="adjustmentType === 'increase_visits' ? 'increase' : 'decrease'"></span> of
-                    <b x-text="calculatedBudget()"></b> to this Opportunity.
-                  </div>
+                  <div x-show="numberOfVisits && adjustmentType"
+                       x-html="adjustmentSummary()"></div>
                   <div x-show="!!end_date" class="mt-2">
                     {% trans "You are changing the end date for the selected workers to" %} <b x-text="new Date(end_date).toLocaleDateString()"></b>.
                   </div>

@@ -606,6 +606,16 @@ class OpportunityInitForm(forms.ModelForm):
             label=_("Supervising Organization"),
         )
 
+    def clean_api_key(self):
+        """Accept the opportunity's current key while its HQ server is unchanged, or one of the user's own keys
+        on the selected HQ server."""
+        return _allowed_api_key(
+            self.cleaned_data["api_key"],
+            user=self.user,
+            hq_server=self.cleaned_data.get("hq_server"),
+            opportunity=self.instance,
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
@@ -695,13 +705,7 @@ class OpportunityInitForm(forms.ModelForm):
         if not opportunity.pk and switch_is_active(AUTOMATIC_VISIT_VERIFICATION):
             opportunity.automatic_visit_verification = True
 
-        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
-            id=self.cleaned_data["api_key"],
-            defaults={
-                "hq_server": hq_server,
-                "user": self.user,
-            },
-        )
+        opportunity.api_key = self.cleaned_data["api_key"]
 
         if commit:
             opportunity.save()
@@ -837,17 +841,45 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         )
 
         opportunity.modified_by = self.user.email
-        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
-            id=self.cleaned_data["api_key"],
-            defaults={
-                "hq_server": hq_server,
-                "user": self.user,
-            },
-        )
+        opportunity.api_key = self.cleaned_data["api_key"]
 
         if commit:
             opportunity.save()
         return opportunity
+
+
+API_KEY_NOT_ALLOWED = _("Select one of your own API keys for this HQ server.")
+
+
+def _allowed_api_key(key_id, *, user, hq_server, opportunity):
+    """The posted HQ API key, if the user may put it on the opportunity. Raises ValidationError otherwise.
+
+    The user may pick one of their own keys on the selected HQ server. While the opportunity stays on its HQ
+    server they may also keep its current key, which can belong to a colleague.
+    """
+    if hq_server is None:
+        raise forms.ValidationError(API_KEY_NOT_ALLOWED)
+
+    allowed_keys = _own_api_keys(user, hq_server.pk)
+    if hq_server.pk == _current_hq_server_id(opportunity):
+        allowed_keys |= HQApiKey.objects.filter(pk=opportunity.api_key_id)
+
+    try:
+        return allowed_keys.select_related("hq_server", "user").get(pk=key_id)
+    except (HQApiKey.DoesNotExist, TypeError, ValueError):  # unknown id, or one that isn't a number
+        raise forms.ValidationError(API_KEY_NOT_ALLOWED)
+
+
+def _own_api_keys(user, hq_server_id):
+    return HQApiKey.objects.filter(user=user, hq_server_id=hq_server_id)
+
+
+def _current_hq_server_id(opportunity):
+    """The opportunity's HQ server. Opportunities from before hq_server was recorded have none, so the server of
+    their key stands in."""
+    if opportunity.hq_server_id:
+        return opportunity.hq_server_id
+    return opportunity.api_key.hq_server_id if opportunity.api_key else None
 
 
 class OpportunityFinalizeForm(forms.ModelForm):
