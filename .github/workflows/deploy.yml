@@ -33,10 +33,29 @@ on:
         options:
           - scheduled
           - adhoc
+  # Called by scheduled-deploy.yml
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      deploy_type:
+        required: true
+        type: string
+      ref:
+        description: 'Commit to deploy instead of the deploy branch head (callers holding the deploy group only)'
+        required: false
+        type: string
 
-# One deploy per environment at a time; later runs wait rather than cancel a deploy in progress
+# One deploy per environment at a time; later runs wait rather than cancel a deploy in progress.
+# scheduled-deploy.yml holds deploy-production for its whole run and passes ref. Asking for the same group again here
+# would make GitHub cancel the run as a deadlock, so a call with ref gets a group of its own. Pass ref only while
+# holding the deploy group, or that deploy runs unguarded. Keep cancel-in-progress: false here and in
+# scheduled-deploy.yml, or one could cancel the other's deploy halfway.
 concurrency:
-  group: deploy-${{ inputs.environment || 'staging' }}
+  group: >-
+    ${{ inputs.ref && format('deploy-called-{0}', github.run_id)
+    || format('deploy-{0}', inputs.environment || 'staging') }}
   cancel-in-progress: false
 
 jobs:
@@ -52,7 +71,27 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.DEPLOY_BRANCH }}
+          ref: ${{ inputs.ref || env.DEPLOY_BRANCH }}
+
+      # Only scheduled-deploy.yml passes ref, after checking it. Re-running that run's failed jobs reuses the same ref
+      # without checking it again, which would roll production back if a newer commit has shipped since.
+      - name: Check the commit is newer than production
+        if: ${{ inputs.ref }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+        run: |
+          if ! release=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> "$RUNNER_TEMP/err"); then
+            grep -q 'HTTP 404' "$RUNNER_TEMP/err" && exit 0  # no release yet
+            cat "$RUNNER_TEMP/err" >&2
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$release...$REF" --jq .status)
+          if [ "$status" != ahead ]; then
+            echo "::error::${REF:0:7} is $status compared to the latest release ($release), so deploying it would not" \
+              "move production forward. If this is a re-run of a scheduled deploy, start a manual deploy instead."
+            exit 1
+          fi
 
       - name: Set release identifier
         run: |
@@ -89,7 +128,7 @@ jobs:
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && vars.SLACK_PRODUCTION_DEPLOY_CHANNEL || vars.SLACK_STAGING_DEPLOY_CHANNEL }}
           payload: |
             {
               "blocks": [
@@ -97,7 +136,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}* (${{ inputs.deploy_type || 'push' }})"
                   }
                 },
                 {
@@ -128,19 +167,8 @@ jobs:
         working-directory: ./deploy
         run: 'kamal deploy -d ${{ env.DEPLOY_ENV }}'
 
-      - name: Create Sentry release
-        if: ${{ success() }}
-        uses: getsentry/action-release@v3
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        with:
-          environment: ${{ env.DEPLOY_ENV }}
-          release: ${{ env.APP_RELEASE }}
-          projects: ${{ env.SENTRY_PROJECT }}
-          set_commits: manual
-          repo: dimagi/commcare-connect
-          commit: ${{ env.DEPLOY_SHA }}
-
+      # The GitHub release is the record of what production runs, which the scheduled deploy's readiness check uses.
+      # Keep these two steps straight after kamal deploy, so a later step failing can't leave production ahead of it.
       - name: Set release tag
         if: ${{ success() && env.DEPLOY_ENV == 'production' }}
         run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
@@ -154,11 +182,24 @@ jobs:
           target_commitish: ${{ env.DEPLOY_SHA }}
           generate_release_notes: true
 
+      - name: Create Sentry release
+        if: ${{ success() }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        with:
+          environment: ${{ env.DEPLOY_ENV }}
+          release: ${{ env.APP_RELEASE }}
+          projects: ${{ env.SENTRY_PROJECT }}
+          set_commits: manual
+          repo: dimagi/commcare-connect
+          commit: ${{ env.DEPLOY_SHA }}
+
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && vars.SLACK_PRODUCTION_DEPLOY_CHANNEL || vars.SLACK_STAGING_DEPLOY_CHANNEL }}
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {
@@ -167,7 +208,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}*"
+                      "text": "*CommCare Connect Deploy to ${{ env.DEPLOY_ENV }}* (${{ inputs.deploy_type || 'push' }})"
                   }
                 },
                 {
@@ -224,7 +265,7 @@ jobs:
         if: ${{ failure() }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: 'C09HWCJSVJ6'
+          channel-id: ${{ vars.SLACK_PRODUCTION_DEPLOY_CHANNEL }}
           payload: |
             {
               "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",

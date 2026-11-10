@@ -189,6 +189,9 @@ WHITENOISE_MANIFEST_STRICT = False  # don't 500 on missing staticfiles
 # ------------------------------------------------------------------------------
 MEDIA_ROOT = str(APPS_DIR / "media")
 MEDIA_URL = "/media/"
+# Largest request body Django will load into memory. DRF 3.18 reads JSON and form bodies through
+# request.body, so this also caps API payloads such as work area bulk uploads and HQ form submissions.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
@@ -359,6 +362,8 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
+    # DRF 3.18 reports many=True errors as {index: errors}; keep the list shape API clients rely on.
+    "LIST_SERIALIZER_ERRORS_AS_DICT": False,
     "DEFAULT_VERSION": "1.0",
     "ALLOWED_VERSIONS": ["1.0", "2.0"],
     "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",

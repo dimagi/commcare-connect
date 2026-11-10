@@ -22,6 +22,7 @@ class TestAuditEventAdmin:
             "admin:program_programfunderevent_changelist",
             "admin:program_programwatcherevent_changelist",
             "admin:opportunity_opportunitysupervisingorganizationevent_changelist",
+            "admin:opportunity_opportunityapikeyevent_changelist",
         ],
     )
     def test_changelist_renders(self, admin_client, url_name, funded_program, opportunity):
