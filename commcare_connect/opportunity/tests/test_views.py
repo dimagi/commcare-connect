@@ -21,19 +21,25 @@ from django_htmx.middleware import HtmxDetails
 from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm
+from commcare_connect.opportunity.forms import (
+    AddBudgetExistingUsersForm,
+    AutomatedPaymentInvoiceForm,
+    HQApiKeyCreateForm,
+)
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     CompletedWorkStatus,
     FormJsonValidationRules,
+    HQApiKey,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -79,6 +85,8 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
+    add_api_key,
+    api_key_replacement_context,
     get_export_task_id,
     invoice_pdf_filename,
     link_deliver_units,
@@ -96,6 +104,7 @@ from commcare_connect.users.tests.factories import (
 from commcare_connect.users.tests.test_connections import _create_social_app
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
+from commcare_connect.utils.test_utils import make_membership
 
 
 @pytest.mark.django_db
@@ -2857,6 +2866,16 @@ class TestOpportunityEditActiveHistory:
         assert event_toggling_inactive.pgh_context.metadata["username"] == program_admin.username
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("owner_is_member", [True, False])
+def test_api_key_replacement_context(opportunity, owner_is_member):
+    if owner_is_member:
+        make_membership(opportunity.program.organization, opportunity.api_key.user, "member")
+    context = api_key_replacement_context(opportunity)
+    assert isinstance(context["api_key_form"], HQApiKeyCreateForm)
+    assert context["api_key_owner_has_left"] is (not owner_is_member)
+
+
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
     opportunity = OpportunityFactory(
         organization=organization,
@@ -4085,3 +4104,16 @@ def test_get_export_task_id_requires_standard_access(rf, opportunity, access_lev
         "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
     ):
         assert get_export_task_id(request, opportunity) == expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("valid", [True, False])
+def test_add_api_key_only_signals_a_reload_when_the_key_was_saved(rf, organization, valid):
+    """A rejected key must not close the modal or reload the key select, which would empty it."""
+    user = UserFactory()
+    data = {"hq_server": HQServerFactory().id, "api_key": "a-new-api-key-value" if valid else ""}
+    request = rf.post("/", data)
+    request.user = user
+    response = add_api_key(request, organization.slug)
+    assert (response.headers.get("HX-Trigger") == "reload_api_keys") is valid
+    assert HQApiKey.objects.filter(user=user).exists() is valid

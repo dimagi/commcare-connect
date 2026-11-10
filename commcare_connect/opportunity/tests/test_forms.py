@@ -3,14 +3,17 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
+import httpx
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from crispy_forms.utils import render_crispy_form
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
+from django.urls import reverse
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
@@ -35,6 +38,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
     PaymentInvoice,
@@ -47,6 +51,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     ExchangeRateFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
@@ -79,6 +84,39 @@ def valid_opportunity(organization):
     )
     PaymentUnitFactory(opportunity=opp)
     return opp
+
+
+def _request_for(org, opportunity, role=UserOrganizationMembership.Role.ADMIN):
+    user = UserFactory()
+    return make_request(user, org=org, membership=make_membership(org, user, role), opportunity=opportunity)
+
+
+def _change_form(opportunity, request, **overrides):
+    data = {
+        "name": opportunity.name,
+        "description": "Updated description",
+        "short_description": "Updated short",
+        "active": True,
+        "currency": opportunity.currency.code,
+        "country": opportunity.country,
+        "is_test": opportunity.is_test,
+        "delivery_type": opportunity.delivery_type_id,
+        "supervising_organization": opportunity.supervising_organization_id,
+    }
+    data.update(overrides)
+    return OpportunityChangeForm(data=data, instance=opportunity, request=request)
+
+
+def _mock_hq_app(httpx_mock, hq_server, cc_domain, cc_app_id, status=200):
+    """HQ answers `status` when the app is fetched from `hq_server`, the server of the key being checked."""
+    url = f"{hq_server.url}/a/{cc_domain}/api/v0.5/application/{cc_app_id}/"
+    httpx_mock.add_response(url=url, status_code=status, json={})
+
+
+def _mock_hq_apps(httpx_mock, opportunity, learn_status=200, deliver_status=200):
+    """HQ answers `learn_status` and `deliver_status` when asked for the opportunity's current apps."""
+    for app, status in ((opportunity.learn_app, learn_status), (opportunity.deliver_app, deliver_status)):
+        _mock_hq_app(httpx_mock, opportunity.hq_server, app.cc_domain, app.cc_app_id, status)
 
 
 @pytest.mark.django_db
@@ -393,14 +431,61 @@ class TestOpportunityInitUpdateForm:
             data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
         return data
 
-    def _get_form(self, *, opportunity, data):
+    def _valid_data(self, opportunity):
+        return self._build_form_data(
+            opportunity,
+            learn_payload={"id": opportunity.learn_app.cc_app_id, "name": "learn"},
+            learn_domain=opportunity.learn_app.cc_domain,
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": opportunity.deliver_app.cc_app_id, "name": "deliver"},
+            deliver_domain=opportunity.deliver_app.cc_domain,
+        )
+
+    def _get_form(self, *, opportunity, data, user=None):
         return OpportunityInitUpdateForm(
             data=data,
             instance=opportunity,
-            user=opportunity.api_key.user,
+            user=user or opportunity.api_key.user,
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
+    def test_rejects_key(self, opportunity, case):
+        if case == "another_users_key":
+            change = {"api_key": str(HQApiKeyFactory(hq_server=opportunity.hq_server).id)}
+        else:
+            change = {"hq_server": HQServerFactory().id}
+        data = self._valid_data(opportunity) | change
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert not form.is_valid()
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    def test_rejects_own_key_on_other_hq_server(self, opportunity):
+        user = UserFactory()
+        key = HQApiKeyFactory(user=user)
+        data = self._valid_data(opportunity) | {"api_key": str(key.id)}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data, user=user).errors
+
+    @pytest.mark.parametrize("bad_id", ["999999", "abc"])
+    def test_rejects_unknown_or_malformed_key_id(self, opportunity, bad_id):
+        data = self._valid_data(opportunity) | {"api_key": bad_id}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data).errors
+
+    def test_current_key_owned_by_other_user_is_accepted(self, opportunity):
+        data = self._valid_data(opportunity)
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opportunity.api_key_id
+
+    def test_legacy_opportunity_without_hq_server_keeps_its_key(self, opportunity):
+        """Opportunities from before hq_server was recorded keep their key on the server it belongs to."""
+        data = self._valid_data(opportunity) | {"hq_server": opportunity.api_key.hq_server_id}
+        Opportunity.objects.filter(pk=opportunity.pk).update(hq_server=None)
+        opportunity.refresh_from_db()
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
 
     def test_updates_existing_linked_apps(self, opportunity):
         learn_app = opportunity.learn_app
@@ -571,6 +656,11 @@ class TestOpportunityInitForm:
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    def test_rejects_key_owned_by_another_user(self, opportunity):
+        other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
 
     @pytest.mark.parametrize("switch_active", [True, False])
     def test_init_form_sets_automatic_visit_verification_from_global_switch(self, opportunity, switch_active):
@@ -1998,29 +2088,10 @@ class TestSupervisingOrganizationOnChangeForm:
         )
         return opportunity
 
-    def _request_for(self, org, opportunity, role=UserOrganizationMembership.Role.ADMIN):
-        user = UserFactory()
-        return make_request(user, org=org, membership=make_membership(org, user, role), opportunity=opportunity)
-
-    def _form(self, opportunity, request, **overrides):
-        data = {
-            "name": opportunity.name,
-            "description": "Updated description",
-            "short_description": "Updated short",
-            "active": True,
-            "currency": opportunity.currency.code,
-            "country": opportunity.country,
-            "is_test": opportunity.is_test,
-            "delivery_type": opportunity.delivery_type_id,
-            "supervising_organization": opportunity.supervising_organization_id,
-        }
-        data.update(overrides)
-        return OpportunityChangeForm(data=data, instance=opportunity, request=request)
-
     def test_program_manager_can_reassign(self, managed_opportunity):
-        request = self._request_for(managed_opportunity.program.organization, managed_opportunity)
+        request = _request_for(managed_opportunity.program.organization, managed_opportunity)
 
-        form = self._form(
+        form = _change_form(
             managed_opportunity,
             request,
             supervising_organization=managed_opportunity.organization.pk,
@@ -2034,9 +2105,9 @@ class TestSupervisingOrganizationOnChangeForm:
 
     def test_delivering_organization_cannot_see_or_set_it(self, managed_opportunity):
         original = managed_opportunity.supervising_organization
-        request = self._request_for(managed_opportunity.organization, managed_opportunity)
+        request = _request_for(managed_opportunity.organization, managed_opportunity)
 
-        form = self._form(
+        form = _change_form(
             managed_opportunity,
             request,
             supervising_organization=managed_opportunity.organization.pk,
@@ -2052,7 +2123,7 @@ class TestSupervisingOrganizationOnChangeForm:
     def test_absent_for_unmanaged_opportunity(self, opportunity):
         opportunity.managed = False
         opportunity.save()
-        request = self._request_for(opportunity.program.organization, opportunity)
+        request = _request_for(opportunity.program.organization, opportunity)
 
         form = OpportunityChangeForm(instance=opportunity, request=request)
 
@@ -2062,3 +2133,109 @@ class TestSupervisingOrganizationOnChangeForm:
         form = OpportunityChangeForm(instance=managed_opportunity)
 
         assert "supervising_organization" not in form.fields
+
+
+@pytest.mark.django_db
+class TestApiKeyOnChangeForm:
+    """The Edit page lets opportunity admins replace the HQ API key without touching the apps."""
+
+    @pytest.fixture
+    def opp(self, opportunity):
+        for app, domain in ((opportunity.learn_app, "learn-domain"), (opportunity.deliver_app, "deliver-domain")):
+            app.cc_domain = domain
+            app.save(update_fields=["cc_domain"])
+        return opportunity
+
+    def _replacement_form(self, opportunity, httpx_mock, deliver_status=200):
+        """A form submitting a new key of the admin's own, with HQ answering for both apps."""
+        _mock_hq_apps(httpx_mock, opportunity, deliver_status=deliver_status)
+        request = _request_for(opportunity.program.organization, opportunity)
+        new_key = HQApiKeyFactory(user=request.user, hq_server=opportunity.hq_server)
+        return new_key, _change_form(opportunity, request, api_key=str(new_key.id))
+
+    @pytest.mark.parametrize(
+        "org, role, shown",
+        [
+            ("program", UserOrganizationMembership.Role.ADMIN, True),
+            ("program", UserOrganizationMembership.Role.MEMBER, False),
+            # The delivering org can edit the opportunity, but the key belongs to whoever runs the program.
+            ("delivering", UserOrganizationMembership.Role.ADMIN, False),
+        ],
+    )
+    def test_only_program_admins_see_the_field(self, opp, org, role, shown):
+        organization = opp.program.organization if org == "program" else opp.organization
+        form = OpportunityChangeForm(instance=opp, request=_request_for(organization, opp, role))
+        assert ("api_key" in form.fields) is shown
+
+    @pytest.mark.parametrize("missing", ["request", "hq_server"])
+    def test_absent_without(self, opp, missing):
+        request = None if missing == "request" else _request_for(opp.program.organization, opp)
+        if missing == "hq_server":
+            opp.hq_server = None
+        form = OpportunityChangeForm(instance=opp, request=request)
+        assert "api_key" not in form.fields
+
+    def test_choices_are_current_key_then_own_keys_on_the_server(self, opp):
+        request = _request_for(opp.program.organization, opp)
+        own = HQApiKeyFactory(user=request.user, hq_server=opp.hq_server)
+        HQApiKeyFactory(user=request.user)  # other server: excluded
+        field = OpportunityChangeForm(instance=opp, request=request).fields["api_key"]
+        assert [value for value, _ in field.widget.choices if value] == [opp.api_key_id, own.id]
+        assert field.initial == opp.api_key_id
+        assert field.widget.attrs["hx-get"] == reverse(
+            "program:opportunity_api_key_options",
+            args=(request.org.slug, opp.program.program_id, opp.opportunity_id),
+        )
+
+    def test_without_a_current_key_nothing_is_preselected(self, opp):
+        Opportunity.objects.filter(pk=opp.pk).update(api_key=None)
+        opp.refresh_from_db()
+        request = _request_for(opp.program.organization, opp)
+        HQApiKeyFactory(user=request.user, hq_server=opp.hq_server)
+        field = OpportunityChangeForm(instance=opp, request=request).fields["api_key"]
+        assert field.widget.choices[0] == ("", "Select an API key")
+
+    def test_server_name_is_not_rendered_as_a_template(self, opp):
+        opp.hq_server.name = "HQ {{ 1|add:1 }}"
+        form = OpportunityChangeForm(instance=opp, request=_request_for(opp.program.organization, opp))
+        assert "HQ {{ 1|add:1 }}" in render_crispy_form(form)
+
+    def test_replaces_key_after_workers_join(self, opp, httpx_mock):
+        OpportunityAccessFactory(opportunity=opp)
+        apps = (opp.learn_app_id, opp.deliver_app_id)
+        new_key, form = self._replacement_form(opp, httpx_mock)
+
+        assert form.is_valid(), form.errors
+        form.save()
+        saved = Opportunity.objects.values_list("api_key_id", "learn_app_id", "deliver_app_id").get(pk=opp.pk)
+        assert saved == (new_key.id, *apps)
+
+    def test_rejects_key_hq_refuses(self, opp, httpx_mock):
+        _, form = self._replacement_form(opp, httpx_mock, deliver_status=403)
+        assert form.errors["api_key"] == ['This API key cannot access the deliver app on domain "deliver-domain".']
+
+    @pytest.mark.parametrize("failure", ["timeout", 500, 502, 429])
+    def test_reports_hq_failure_without_blaming_the_key(self, opp, httpx_mock, failure):
+        if failure == "timeout":
+            httpx_mock.add_exception(httpx.ConnectTimeout("timed out"), is_reusable=True)
+            request = _request_for(opp.program.organization, opp)
+            new_key = HQApiKeyFactory(user=request.user, hq_server=opp.hq_server)
+            form = _change_form(opp, request, api_key=str(new_key.id))
+        else:
+            _, form = self._replacement_form(opp, httpx_mock, deliver_status=failure)
+        assert form.errors["api_key"] == ["Could not reach CommCare HQ to check this API key. Please try again."]
+
+    @pytest.mark.parametrize("case", ["another_users_key", "own_key_on_other_server"])
+    def test_rejects_keys_that_are_not_allowed(self, opp, case):
+        request = _request_for(opp.program.organization, opp)
+        owner = {"hq_server": opp.hq_server} if case == "another_users_key" else {"user": request.user}
+        form = _change_form(opp, request, api_key=str(HQApiKeyFactory(**owner).id))
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    @pytest.mark.parametrize("posted", ["current", "", None])
+    def test_keeping_the_key_makes_no_hq_calls(self, opp, httpx_mock, posted):
+        # httpx_mock has no responses registered, so any HQ request fails the test.
+        overrides = {} if posted is None else {"api_key": str(opp.api_key_id) if posted == "current" else posted}
+        form = _change_form(opp, _request_for(opp.program.organization, opp), **overrides)
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opp.api_key_id
