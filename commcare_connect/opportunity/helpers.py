@@ -935,3 +935,22 @@ def api_key_owner_has_left(opportunity: Opportunity) -> bool:
         return False
     # Checked last: the owner isn't the request user, so their permission cache is cold and this costs queries.
     return not owner.has_perm(ALL_ORG_ACCESS)
+
+
+def opportunities_orphaned_by_removal(membership: UserOrganizationMembership):
+    """The opportunities whose API key would belong to someone who has left once `membership` is removed.
+
+    The rule is `api_key_owner_has_left`'s: the key's owner must stay in the program's owner or funder organization,
+    or hold ALL_ORG_ACCESS. Archived opportunities are left out, since no one maintains their key.
+    """
+    user, organization = membership.user, membership.organization
+    if user.has_perm(ALL_ORG_ACCESS):
+        return Opportunity.objects.none()
+    remaining_org_ids = UserOrganizationMembership.objects.filter(user=user).exclude(organization=organization)
+    remaining_org_ids = remaining_org_ids.values("organization_id")
+    return (
+        Opportunity.objects.filter(api_key__user=user, archived=False)
+        .filter(Q(program__organization=organization) | Q(program__funder=organization))
+        .exclude(Q(program__organization__in=remaining_org_ids) | Q(program__funder__in=remaining_org_ids))
+        .order_by("name")
+    )

@@ -23,6 +23,7 @@ from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.opportunity.helpers import opportunities_orphaned_by_removal
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
@@ -143,11 +144,37 @@ def remove_members(request, org_slug):
         messages.error(request, message=gettext("You cannot remove yourself from the organization."))
         return redirect(redirect_url)
 
+    memberships = UserOrganizationMembership.objects.filter(
+        pk__in=membership_ids, organization__slug=org_slug
+    ).select_related("user", "organization")
+    blocking_messages = api_key_removal_blocks(memberships)
+    if blocking_messages:
+        for message in blocking_messages:
+            messages.error(request, message=message)
+        return redirect(redirect_url)
+
     if membership_ids:
-        UserOrganizationMembership.objects.filter(pk__in=membership_ids, organization__slug=org_slug).delete()
+        memberships.delete()
         messages.success(request, message=gettext("Selected members have been removed from the organization."))
 
     return redirect(redirect_url)
+
+
+def api_key_removal_blocks(memberships):
+    """One message per member whose removal would leave opportunities with an API key no one here manages."""
+    blocks = []
+    for membership in memberships:
+        opportunity_names = list(opportunities_orphaned_by_removal(membership).values_list("name", flat=True))
+        if opportunity_names:
+            blocks.append(
+                gettext(
+                    "{name} can't be removed because their HQ API key is used by these opportunities: "
+                    "{opportunities}. Replace the API key on each one first."
+                ).format(
+                    name=membership.user.name or membership.user.email, opportunities=", ".join(opportunity_names)
+                )
+            )
+    return blocks
 
 
 def accept_invite(request, org_slug, token):

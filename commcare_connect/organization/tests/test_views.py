@@ -10,12 +10,14 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import localtime
 
+from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityFactory
 from commcare_connect.organization.models import (
     Organization,
     OrganizationInvite,
     TeamSizeRange,
     UserOrganizationMembership,
 )
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.tables import DATE_TIME_FORMAT
@@ -26,6 +28,25 @@ from commcare_connect.utils.test_utils import check_basic_permissions
 class TestRemoveMembersView:
     def url(self, org_slug):
         return reverse("organization:remove_members", args=(org_slug,))
+
+    def test_member_whose_api_key_is_in_use_blocks_the_removal(
+        self, client, org_user_admin, org_user_member, organization
+    ):
+        """Nobody selected is removed, and the message names the opportunities whose key needs replacing."""
+        api_key = HQApiKeyFactory(user=org_user_member)
+        for name in ["Opp B", "Opp A"]:
+            OpportunityFactory(name=name, program=ProgramFactory(organization=organization), api_key=api_key)
+        UserOrganizationMembership.objects.create(user=UserFactory(), organization=organization)
+        selected = UserOrganizationMembership.objects.filter(organization=organization).exclude(user=org_user_admin)
+        membership_ids = list(selected.values_list("id", flat=True))
+
+        messages = self._remove_members(client, org_user_admin, organization, membership_ids)
+
+        assert messages == [
+            f"{org_user_member.name} can't be removed because their HQ API key is used by these opportunities: "
+            "Opp A, Opp B. Replace the API key on each one first."
+        ]
+        assert selected.count() == len(membership_ids) == 2
 
     def test_non_admin_cannot_access(self, client, org_user_member, organization):
         client.force_login(org_user_member)
