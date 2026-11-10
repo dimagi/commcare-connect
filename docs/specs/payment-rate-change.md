@@ -81,7 +81,7 @@ invoices for past months, should keep the pay rate that applied at the time.
 ### 5.2 Key changes
 
 1. **Pay rate history is the single source of truth.** A new table keeps one row per pay rate, with the date it
-   takes effect. The pay rate on any day is the latest applied row that started on or before that day.
+   takes effect. The pay rate on any day is the latest row that had taken effect by that day.
 2. **Add to earned pay, don't recalculate it.** Each worker's earned (accrued) pay is only increased for deliveries
    approved since the last update, at the pay rate active that day. Earned pay already recorded is never changed.
    Each addition is kept as its own record.
@@ -121,7 +121,7 @@ class PaymentUnitRate(BaseModel):
     cancelled_by = models.CharField(max_length=255, blank=True)  # user's email, or "system"
     cancelled_on = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.TextField(blank=True)  # filled in when the system cancels a change
-    applied_on = models.DateTimeField(null=True, blank=True)  # when the change was applied (limits scaled)
+    effective_on = models.DateField(null=True, blank=True)  # the day it took effect (limits scaled)
 
     class Meta:
         constraints = [
@@ -137,20 +137,20 @@ class PaymentUnitRate(BaseModel):
 - **Who and when:** `BaseModel` gives `created_by` (who scheduled it), `modified_by` (who edited it last),
   `date_created` and `date_modified`.
 - **System cancellations** (section [11.4](#114-no-overspend-funding-check)): `cancelled_by` is `"system"` and `cancellation_reason` says why.
-- **`applied_on`** is when a change was applied (limits scaled). `planned_for` is only the day it
-  is due. It is set by:
-  - the job on the 1st (section [10](#10-applying-a-scheduled-change))
+- **`effective_on`** is the day a pay rate took effect (limits scaled). `planned_for` is only the day it is due; if
+  the job runs late, `effective_on` is later. It is set by:
+  - the job on the 1st, to the day it runs (section [10](#10-applying-a-scheduled-change))
   - an Initial Rate, when it is created (section [6.3](#63-first-pay-rate-of-a-payment-unit))
   - in-place changes, which keep it (sections [9.1](#91-payment-units-with-no-visits) and [9.2](#92-payment-units-that-havent-started-yet))
 
 A pay rate's **status** is worked out, not stored:
 
-| Status    | Rule                                                                         |
-| --------- | ---------------------------------------------------------------------------- |
-| Scheduled | not cancelled, and `planned_for` is in the future or it isn't applied yet    |
-| Active    | the latest non-cancelled, applied pay rate with `planned_for` ≤ today        |
-| Ended     | an older non-cancelled, applied pay rate when a newer active pay rate exists |
-| Cancelled | `cancelled_on` is set                                                        |
+| Status    | Rule                                                            |
+| --------- | --------------------------------------------------------------- |
+| Scheduled | not cancelled, and `effective_on` isn't set yet                 |
+| Active    | the latest (by `planned_for`) pay rate that has taken effect    |
+| Ended     | an older pay rate that took effect, when a newer one is active  |
+| Cancelled | `cancelled_on` is set                                           |
 
 **Active Pay Rate:** the pay rate workers are paid at today (the Active status above; section
 [6.2](#62-looking-up-a-pay-rate)).
@@ -162,11 +162,7 @@ A pay rate's **status** is worked out, not stored:
 ```python
 class PaymentUnit(models.Model):
     def pay_rate_on(self, day):
-        return (
-            self.pay_rates.filter(cancelled_on__isnull=True, applied_on__isnull=False, planned_for__lte=day)
-            .order_by("-planned_for")
-            .first()
-        )
+        return self.pay_rates.filter(effective_on__lte=day).order_by("-planned_for").first()
 
     @property
     def current_pay_rate(self):
@@ -178,7 +174,7 @@ class PaymentUnit(models.Model):
         return self.current_pay_rate or self.pay_rates.filter(cancelled_on__isnull=True).earliest("planned_for")
 ```
 
-**A pay rate counts only once it is applied** (`applied_on` set), not when its date comes.
+**A pay rate counts only from the day it takes effect** (`effective_on`), not from its `planned_for`.
 
 - If the pay rate job runs late, approvals, budget checks and new workers keep the old pay rate until the change is
   applied, so earned pay and visit limits always match.
@@ -198,13 +194,13 @@ payment units get it when created. `planned_for` is:
 - otherwise, the opportunity's start date, if in the future
 - otherwise, today
 
-`applied_on` is set straight away, since limits already match this pay rate; otherwise the job on the 1st would treat
+`effective_on` is set to `planned_for` straight away, since limits already match this pay rate; otherwise the job on the 1st would treat
 it as a change.
 
 ### 6.4 Data migration for existing payment units
 
 The **pay rate backfill** creates one row for **every** existing payment unit, in all opportunities (active, ended and not started yet), from
-its current `amount` and `org_amount`. `applied_on` is set, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `planned_for` is:
+its current `amount` and `org_amount`. `effective_on` is set to `planned_for`, for the same reason as section [6.3](#63-first-pay-rate-of-a-payment-unit). `planned_for` is:
 
 - the payment unit's `start_date`, if set. Visits submitted before it are marked "trial" and never paid, so no
   approval comes before it. If `start_date` is in the future but the unit already has visits (its start was moved
@@ -487,7 +483,7 @@ rate row, which the job also locks, so a change can't be edited or cancelled whi
 
 If a payment unit has **no visits** (Trial and Over Limit visits don't count), a change takes effect **immediately**.
 Nobody has earned anything at the old pay rate, so it **edits the active pay rate in place**, usually the Initial
-Rate. `planned_for` and `applied_on` don't change, so the
+Rate. `planned_for` and `effective_on` don't change, so the
 pay rate still moves with the start date (section [6.5](#65-changing-a-payment-units-start-date)).
 
 - **Modal:** the effective date shows today. Before saving, the PM confirms that the change takes effect immediately
@@ -567,7 +563,7 @@ For each change:
    [11.4](#114-no-overspend-funding-check)).
 3. **Scales visit limits** if the cost per delivery went up (section [11.2](#112-what-a-pay-rate-increase-does)).
 4. **Notifies workers** if worker pay changed.
-5. **Records `applied_on`.**
+5. **Records `effective_on`** as today.
 
 **Reliability**
 
@@ -584,7 +580,7 @@ For each change:
 def apply_pay_rate_changes():
     to_apply = PaymentUnitRate.objects.filter(
         cancelled_on__isnull=True,
-        applied_on__isnull=True,
+        effective_on__isnull=True,
         planned_for__lte=date.today(),
     )
     for pay_rate_id in to_apply.values_list("pk", flat=True):
@@ -605,7 +601,7 @@ def apply_pay_rate_change(pay_rate_id):
         list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
         payment_unit = PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
         pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
-        if pay_rate.applied_on or pay_rate.cancelled_on:
+        if pay_rate.effective_on or pay_rate.cancelled_on:
             return  # already applied, or cancelled in the meantime
         previous = payment_unit.pay_rate_on(pay_rate.planned_for - timedelta(days=1))
         if not opportunity.active or opportunity.has_ended:
@@ -616,8 +612,8 @@ def apply_pay_rate_change(pay_rate_id):
             cancel_unfunded_change(pay_rate, shortfall)  # also emails the opportunity admins
             return
         scale_visit_limits(payment_unit, previous, pay_rate)
-        pay_rate.applied_on = now()
-        pay_rate.save(update_fields=["applied_on"])
+        pay_rate.effective_on = date.today()
+        pay_rate.save(update_fields=["effective_on"])
         if previous.flw_amount != pay_rate.flw_amount:
             notify = partial(send_pay_rate_change_notification.delay, pay_rate.pk, pay_rate.planned_for)
             transaction.on_commit(notify)
