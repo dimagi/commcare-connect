@@ -3,10 +3,11 @@ from unittest import mock
 
 import pytest
 from django.urls import reverse
+from django_htmx.middleware import HtmxDetails
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
-from commcare_connect.audit.views import _assign_audit_tasks
+from commcare_connect.audit.views import _assign_audit_tasks, _detail_template
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import AssignedTask, TaskTypeModeChoices
@@ -267,6 +268,9 @@ def test_detail_lists_all_workers_in_one_table(client, program_manager_org_user_
     assert rendered_rows[0] == flagged_entry.opportunity_access.user.name
     # Progress indicator "0 of 1 workers reviewed" — only flagged rows are counted.
     assert "0 of 1" in html
+    # The same URL serves the full page or just the body, so caches must not mix them up.
+    assert "HX-Request" in response["Vary"]
+    assert "HX-History-Restore-Request" in response["Vary"]
 
 
 @pytest.mark.django_db
@@ -674,3 +678,19 @@ def test_export_404_when_flag_disabled(client, program_manager_org_user_admin, a
     )
     response = client.get(url)
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "headers, template",
+    [
+        ({}, "audit/audit_report_detail.html"),
+        ({"HX-Request": "true"}, "audit/audit_report_body.html"),
+        # Going back to a filtered URL whose snapshot htmx no longer has needs the whole page.
+        ({"HX-Request": "true", "HX-History-Restore-Request": "true"}, "audit/audit_report_detail.html"),
+    ],
+)
+def test_detail_template_for_request(rf, headers, template):
+    request = rf.get("/", headers=headers)
+    request.htmx = HtmxDetails(request)
+
+    assert _detail_template(request) == template
