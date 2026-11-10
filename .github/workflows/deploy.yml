@@ -48,6 +48,7 @@ jobs:
       DEPLOY_BRANCH: ${{ (inputs.environment || 'staging') == 'production' && 'main' || 'autostaging' }}
     outputs:
       slack_ts: ${{ steps.slack.outputs.ts }}
+      release_tag: ${{ steps.release_tag.outputs.tag }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v7
@@ -141,9 +142,13 @@ jobs:
           repo: dimagi/commcare-connect
           commit: ${{ env.DEPLOY_SHA }}
 
-      - name: Set release tag
+      - id: release_tag
+        name: Set release tag
         if: ${{ success() && env.DEPLOY_ENV == 'production' }}
-        run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
+        run: |
+          RELEASE_TAG="$(date -u +'%Y-%m-%d_%H-%M-%S')"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
         if: ${{ success() && env.DEPLOY_ENV == 'production' }}
@@ -229,6 +234,39 @@ jobs:
             {
               "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
               "text": ":warning: Deploy succeeded, but triggering the QA Playwright suite failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
+  # Release notes run as their own workflow run, so they don't hold the deploy concurrency group and
+  # a release-notes failure can't turn the deploy red
+  release-notes:
+    name: Start release notes
+    needs: deploy
+    if: ${{ success() && inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch release-notes.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release-notes.yml --repo "${{ github.repository }}" --ref main \
+            -f tag="${{ needs.deploy.outputs.release_tag }}" \
+            -f slack_thread_ts="${{ needs.deploy.outputs.slack_ts }}"
+
+      # release-notes.yml reports its own problems, but only once it has started
+      - name: Notify release notes dispatch failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: ${{ vars.SLACK_PRODUCTION_DEPLOY_CHANNEL }}
+          payload: |
+            {
+              "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
+              "text": ":warning: Deploy succeeded, but starting the release notes failed. Run *Actions → Release notes* with tag `${{ needs.deploy.outputs.release_tag }}` to publish them. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
             }
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}

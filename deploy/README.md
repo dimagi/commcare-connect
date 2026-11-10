@@ -112,6 +112,34 @@ A deploy restarts the app containers only. Changes to Traefik's own arguments (`
 kamal traefik reboot -d <destination>
 ```
 
+### Release notes
+
+After every successful production deploy, the deploy starts `.github/workflows/release-notes.yml` as a separate
+run. Claude writes the notes for the PRs listed in the GitHub release's generated notes (every PR in the commits
+since the previous release, including ones merged into another PR's branch), using the `connect-web-release-notes`
+skill from [dimagi-claude-workflows](https://github.com/dimagi/dimagi-claude-workflows).
+It runs in a job of its own, with no publishing credentials. A second job then:
+
+- prepends the notes to the [Web Release Notes](https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/3870556169/Web+Release+Notes)
+  Confluence page (`deploy/ci/publish_confluence.py`),
+- posts a summary to `#connect-product-feed`.
+
+Publishing to Confluence uses an Atlassian service account with permission to edit that page (an OAuth 2.0
+credential with the `read:page:confluence` and `write:page:confluence` scopes, stored as `CONFLUENCE_CLIENT_ID`
+and `CONFLUENCE_CLIENT_SECRET` repository secrets).
+
+The Markdown is kept as a workflow artifact. Slack mentions such as `<!channel>` are stripped from the summary before
+posting, so an edited PR body can't ping the channel.
+
+Problems never affect the deploy run. The release-notes run fails, and a warning goes into the deploy's Slack thread
+saying what failed. This covers the run failing to start, the notes failing to generate or coming back incomplete, missing Confluence
+credentials, or Confluence or Slack rejecting the post. When a release has nothing user-facing, Claude says so
+explicitly and nothing is published. To retry, run **Actions → Release notes → Run workflow**, optionally with a
+release tag. Choose **Publish to** to retry only the target that failed. Re-running is safe for Confluence: the page
+is left alone when it already has a heading for that release. Slack has no such check and posts again.
+
+Release-notes runs queue one at a time, so back-to-back deploys don't race on the Confluence page.
+
 ## Accessing logs
 
 The logs from the Docker containers are shipped to CloudWatch. To access them you will need to use the AWS console.
