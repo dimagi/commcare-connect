@@ -27,7 +27,7 @@
       {% endif %}
       <!--User visit export modal-->
       <div x-show="showVisitExportModal" class="modal-backdrop">
-        <div x-clock x-data="{ selectedForm: 'nm_review' }"  class="modal">
+        <div x-cloak x-data="{ selectedForm: 'nm_review' }"  class="modal">
           <div class="header text-lg font-semibold text-brand-deep-purple">
             <h1>Export</h1>
             <button @click="showVisitExportModal = false">
