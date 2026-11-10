@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0152_deliverunit_display_name_paymentunit_display_name'),
+        ('opportunity', '0151_invoicefinancerequest'),
         ('pghistory', '0007_auto_20250421_0444'),
     ]
 

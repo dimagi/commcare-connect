@@ -8,11 +8,9 @@ env:
 on:
   pull_request:
     branches: ['main', 'ui-main']
-    paths-ignore: ['docs/**']
 
   push:
     branches: ['main']
-    paths-ignore: ['docs/**']
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
