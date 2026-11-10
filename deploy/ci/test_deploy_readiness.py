@@ -1,14 +1,15 @@
+import json
 import subprocess
 
 import deploy_readiness
 import pytest
-from deploy_readiness import ReadinessDecision, _write_outputs, decide, latest_release_sha
+from deploy_readiness import ReadinessDecision, _write_outputs, decide, latest_release_sha, wait_for_ci_run
 
 RUN_URL = "https://github.com/dimagi/commcare-connect/actions/runs/1"
 
 
 def ci_run(sha, status="completed", conclusion="success"):
-    return {"headSha": sha, "status": status, "conclusion": conclusion, "url": RUN_URL}
+    return {"databaseId": 1, "headSha": sha, "status": status, "conclusion": conclusion, "url": RUN_URL}
 
 
 @pytest.mark.parametrize(
@@ -96,6 +97,61 @@ def test_readiness_skips_quietly_without_checking_ci_when_main_is_released(monke
     decision, sha = deploy_readiness._check_readiness("dimagi/commcare-connect")
 
     assert (decision.deploy, decision.warn, sha) == (False, False, "a" * 40)
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    fake = FakeClock()
+    monkeypatch.setattr(deploy_readiness.time, "monotonic", fake.monotonic)
+    monkeypatch.setattr(deploy_readiness.time, "sleep", fake.sleep)
+    return fake
+
+
+def fake_gh_run_view(monkeypatch, states):
+    """Make `gh run view` return each of states in turn, and record its calls."""
+    calls = []
+
+    def gh(*args):
+        calls.append(args)
+        return json.dumps(states[min(len(calls), len(states)) - 1])
+
+    monkeypatch.setattr(deploy_readiness, "_gh", gh)
+    return calls
+
+
+def test_wait_for_ci_run_returns_completed_run_without_polling(monkeypatch, clock):
+    calls = fake_gh_run_view(monkeypatch, [])
+
+    assert wait_for_ci_run("dimagi/commcare-connect", ci_run("b" * 40)) == ci_run("b" * 40)
+    assert calls == []
+
+
+def test_wait_for_ci_run_polls_until_run_completes(monkeypatch, clock):
+    running = ci_run("b" * 40, status="in_progress", conclusion=None)
+    calls = fake_gh_run_view(monkeypatch, [running, ci_run("b" * 40)])
+
+    assert wait_for_ci_run("dimagi/commcare-connect", running) == ci_run("b" * 40)
+    assert calls[0][:3] == ("run", "view", "1")
+    assert len(calls) == 2
+
+
+def test_wait_for_ci_run_gives_up_after_the_wait_limit(monkeypatch, clock):
+    running = ci_run("b" * 40, status="in_progress", conclusion=None)
+    fake_gh_run_view(monkeypatch, [running])
+
+    assert wait_for_ci_run("dimagi/commcare-connect", running) == running
+    assert clock.now >= deploy_readiness.CI_WAIT_MINUTES * 60
 
 
 def test_write_outputs_keeps_a_multiline_reason_on_one_line(monkeypatch, tmp_path):

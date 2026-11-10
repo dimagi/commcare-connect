@@ -3,15 +3,21 @@
 Run by .github/workflows/scheduled-deploy.yml, whose run holds the production deploy concurrency group from this check
 through the deploy, so no other deploy can change what production runs in between.
 
-Deploys only when main is ahead of the latest release and CI passed on it; otherwise skips. Every skip is posted to
-Slack, as a warning when it needs a person's attention.
+Deploys only when main is ahead of the latest release and CI passed on it; otherwise skips. When CI on main is still
+running, waits up to CI_WAIT_MINUTES for it to finish first. Every skip is posted to Slack, as a warning when it needs
+a person's attention.
 """
 
 import argparse
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
+
+# CI on main usually takes 5-10 minutes. The wait holds the production deploy group, so manual deploys queue behind it.
+CI_WAIT_MINUTES = 20
+CI_POLL_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -37,7 +43,10 @@ def _check_readiness(repo: str) -> tuple[ReadinessDecision, str]:
     if release_status not in (None, "ahead"):
         # Decided already, so a failing CI lookup can't turn a quiet skip into a warning
         return decide(head_sha, release_status, None), head_sha
-    return decide(head_sha, release_status, _latest_ci_run(repo)), head_sha
+    ci_run = _latest_ci_run(repo)
+    if ci_run and ci_run["headSha"] == head_sha:
+        ci_run = wait_for_ci_run(repo, ci_run)
+    return decide(head_sha, release_status, ci_run), head_sha
 
 
 def decide(head_sha: str, release_status: str | None, ci_run: dict | None) -> ReadinessDecision:
@@ -109,10 +118,21 @@ def _latest_ci_run(repo: str) -> dict | None:
             "--limit",
             "1",
             "--json",
-            "headSha,status,conclusion,url",
+            "databaseId,headSha,status,conclusion,url",
         )
     )
     return runs[0] if runs else None
+
+
+def wait_for_ci_run(repo: str, ci_run: dict) -> dict:
+    """Poll ci_run until it completes or CI_WAIT_MINUTES pass, and return its latest state."""
+    deadline = time.monotonic() + CI_WAIT_MINUTES * 60
+    while ci_run["status"] != "completed" and time.monotonic() < deadline:
+        print(f"Waiting for CI run {ci_run['url']} ({ci_run['status']})")
+        time.sleep(CI_POLL_SECONDS)
+        fields = "databaseId,headSha,status,conclusion,url"
+        ci_run = json.loads(_gh("run", "view", str(ci_run["databaseId"]), "--repo", repo, "--json", fields))
+    return ci_run
 
 
 def _write_outputs(decision: ReadinessDecision, sha: str):

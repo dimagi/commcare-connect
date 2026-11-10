@@ -125,8 +125,10 @@ cancels the scheduled one. Once it has the group, it checks `main` against the l
   channel.
 - **The latest release isn't in `main`'s history** (it has commits `main` doesn't, for example after `main` was reset):
   the run skips and posts a warning, so someone can decide whether to deploy by hand.
-- **CI on `main` failed, is still running, or hasn't run:** the run skips the deploy and posts a warning to the
-  production deploy channel. It doesn't retry, and the next slot tries again.
+- **CI on `main` is still running:** the run waits up to 20 minutes for it to finish, then carries on as below. While
+  it waits it holds the production deploy group, so a manual production deploy queues behind it.
+- **CI on `main` failed, was still running after the wait, or hasn't run:** the run skips the deploy and posts a
+  warning to the production deploy channel. It doesn't retry, and the next slot tries again.
 - **The check itself fails** (for example a GitHub API error): the run skips and posts a warning.
 
 The deploy is pinned to the commit that was checked, so anything merged while it runs waits for the next slot. To

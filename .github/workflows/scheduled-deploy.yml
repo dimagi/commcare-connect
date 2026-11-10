@@ -4,8 +4,9 @@
 # and enable it again when they should resume. Manual deploys via the Deploy workflow are unaffected.
 #
 # Once the run holds the production deploy group, it deploys only when main is ahead of the latest release and CI
-# passed on it. Every run posts to the production deploy channel: a failed, running or missing CI run skips the deploy
-# with a warning, and nothing to deploy skips it with an info message.
+# passed on it, waiting up to 20 minutes for a CI run that is still going. Every run posts to the production deploy
+# channel: a failed, still running or missing CI run skips the deploy with a warning, and nothing to deploy skips it
+# with an info message.
 name: Scheduled production deploy
 
 on:
