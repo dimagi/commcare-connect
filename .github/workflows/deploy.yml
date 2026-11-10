@@ -89,7 +89,7 @@ jobs:
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && vars.SLACK_PRODUCTION_DEPLOY_CHANNEL || vars.SLACK_STAGING_DEPLOY_CHANNEL }}
           payload: |
             {
               "blocks": [
@@ -158,7 +158,7 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: ${{ env.DEPLOY_ENV == 'production' && 'C09HWCJSVJ6' || 'C09TVKX4N2C' }}
+          channel-id: ${{ env.DEPLOY_ENV == 'production' && vars.SLACK_PRODUCTION_DEPLOY_CHANNEL || vars.SLACK_STAGING_DEPLOY_CHANNEL }}
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {
@@ -224,7 +224,7 @@ jobs:
         if: ${{ failure() }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: 'C09HWCJSVJ6'
+          channel-id: ${{ vars.SLACK_PRODUCTION_DEPLOY_CHANNEL }}
           payload: |
             {
               "thread_ts": "${{ needs.deploy.outputs.slack_ts }}",
