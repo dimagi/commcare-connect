@@ -275,9 +275,10 @@ New rule: **only add to earned pay for newly approved deliveries**, at the pay r
 # Runs for each work after its new status is set (in memory; everything is saved together at the end)
 # set_totals(work, records) sets the work's saved amounts and approved count to the sum of those earned pay records
 if completed_work.status != CompletedWorkStatus.approved:
+    completed_work.earned_pay_records.filter(invoice_row__isnull=True).delete()  # section 7.3
     set_totals(completed_work, records=[])  # 0 while not approved, as today
-elif completed_work.saved_payment_accrued == 0 and completed_work.earned_pay_records.exists():
-    # Approved again: its totals were 0 while it wasn't approved, so bring them back from its records
+elif completed_work.saved_approved_count == 0 and completed_work.earned_pay_records.exists():
+    # Approved again with billed records left (old work rejected after it was invoiced): bring its totals back
     set_totals(completed_work, completed_work.earned_pay_records.all())
 
 new_deliveries = approved_count - completed_work.saved_approved_count
@@ -311,10 +312,8 @@ commits, and the nightly job doesn't take it.
 
 In managed opportunities `approved_count` only counts visits that are approved **and** agreed.
 
-**Work that stops being approved.** A visit rejected later, or the completed work status import, can move approved
-work out of "approved". As today, its pay stops counting: its totals are 0 and its unbilled records aren't invoiced
-(section [8](#8-invoices)). Its records are kept, so if it is approved again its totals come back, with nothing added
-twice. Amounts already invoiced aren't reversed.
+**Work that stops being approved.** Its records are deleted and its totals are 0. Paid or invoiced work can't stop
+being approved (section [7.3](#73-rejecting-approved-work)).
 
 Effects:
 
@@ -350,7 +349,8 @@ class EarnedPayRecord(BaseModel):
     earned_on = models.DateTimeField(null=True)  # empty only for old records whose date isn't known
 ```
 
-- Records are only added, never changed or deleted (like pay rate rows, section [6.7](#67-protecting-pay-rate-history)).
+- Records are only added, never changed. They are deleted only when their work stops being approved (section
+  [7.3](#73-rejecting-approved-work)).
 - Each record has one pay rate, so its amount ÷ deliveries is always a real pay rate.
 - USD amounts aren't stored; they come from the exchange rate.
 - The totals on the work (`saved_payment_accrued` and the others) stay. For new work they equal the sum of its
@@ -397,6 +397,27 @@ deliveries: 2 were on the September invoice, and 1 was approved on October 5 and
 - Had the backfill run on October 1, a delivery approved that morning would be billed on the October 2 invoice,
   under September.
 
+### 7.3 Rejecting approved work
+
+Approved work can stop being approved in two ways:
+
+- **Completed work status import:** it sets the work's status directly. It doesn't change the work's visits.
+- **A visit is rejected** (by the NM or the visit status import): one rejected visit rejects the whole work. Agreed
+  visits can't be rejected, but a work can have extra visits that weren't agreed, such as a duplicate.
+
+**Rules**
+
+- **Paid or invoiced work can't stop being approved.** Paid: its `payment_date` is set. Invoiced: one of its records
+  has an invoice row.
+  - The completed work status import skips it and lists it as locked, like agreed visits in the visit status import.
+  - Rejecting one of its visits is refused: the NM sees an error, and the visit status import lists it as locked.
+- **Other work:** its earned pay records are deleted and its totals become 0. None of them were billed or paid. If it
+  is approved again, it gets new records at the pay rate active then.
+- **Old work rejected after it was invoiced** (before this rule) keeps its billed records, so they aren't billed or
+  paid again if it is approved again.
+- **The import's status sticks.** Existing bug: when `auto_approve_payments` is on, the recalculation after the
+  import sets the work back to approved, since its visits are still approved and agreed (ticket 11).
+
 ## 8. Invoices
 
 Invoices bill **earned pay records** (section [7.1](#71-earned-pay-records)) that aren't on an invoice yet, instead of
@@ -411,7 +432,7 @@ multiplying by the current pay rate, so they always match earned pay and never l
   class CompletedWorkInvoice(BaseModel):
       earned_pay_record = models.OneToOneField(
           EarnedPayRecord, on_delete=models.PROTECT, null=True, related_name="invoice_row"
-      )  # made required once the earned pay backfill has run (ticket 10)
+      )  # made required once the earned pay backfill has run (ticket 12)
   ```
 
 - **What is billed:**
@@ -419,7 +440,7 @@ multiplying by the current pay rate, so they always match earned pay and never l
   - each row goes under the month its record was earned
   - a backfilled record with no date goes under the invoice's month, as additional deliveries do today
   - cancelling an invoice deletes its rows, so their records become unbilled again
-- `invoiced_approved_count` is no longer needed (dropped in ticket 10).
+- `invoiced_approved_count` is no longer needed (dropped in ticket 12).
 - **Lines** are grouped by month, payment unit and pay rate (amount ÷ deliveries, so backfilled records group the same
   way): "N verified visits x `<currency>` `<rate>`". A month with two pay rates has two
   lines. Additional deliveries are part of these lines, under the month they were approved; the existing "Additional
@@ -958,7 +979,10 @@ few hours."
 7. Job on the 1st
 8. Upcoming pay rate changes: list column, banners and Add Budget note
 9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
-10. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and make an
+10. Block rejecting paid or invoiced work, and delete earned pay records of rejected work (section
+    [7.3](#73-rejecting-approved-work))
+11. Existing bug: keep the status set by the completed work status import (section [7.3](#73-rejecting-approved-work))
+12. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and make an
     invoice row's record required
 
 ### 14.1 Releases
@@ -968,9 +992,9 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 | Release       | Tickets    | Notes                                                                                                                                                                                                                                                                                                                               |
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Foundation | 1, 2, 3    | Nothing new for PMs except the date rules. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
-| 2. Earned pay | 4          | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.2](#72-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
+| 2. Earned pay | 4, 10, 11  | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.2](#72-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
 | 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
-| 4. Follow-up  | 10         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
+| 4. Follow-up  | 12         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
 
 > **Note:** releases 1 and 2 can ship together if needed. The combined release is then not safe to roll back either.
 
@@ -979,17 +1003,16 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 
 ## 15. Future improvements
 
-- **Drop copied columns from invoice rows.** Once every row is linked to a record (ticket 10), read `completed_work`,
+- **Drop copied columns from invoice rows.** Once every row is linked to a record (ticket 12), read `completed_work`,
   `billed_count`, local amounts and `month` from the record, and derive `is_delta`.
-- **Drop the cached earned pay totals from `CompletedWork`.** Once the earned pay backfill has run (ticket 10),
+- **Drop the cached earned pay totals from `CompletedWork`.** Once the earned pay backfill has run (ticket 12),
   `saved_payment_accrued`, `saved_org_payment_accrued` and their USD versions are just sums of the work's earned pay
   records. Read them from the records instead, after checking that worker totals, reports and exports stay fast.
 - **Let the PM choose what a raise does.** In the change modal, either scale visit limits down (as now) or add the
   budget needed to keep them. Today the PM does the second with Add Budget, before or after the change (section
   [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)).
-- **Keep approved work approved.** Today a visit rejected after its work was approved, such as a duplicate, rejects
-  the whole work and removes its pay, and the completed work status import can do the same. Instead, the rejected
-  visit could leave the work approved, and the import could refuse approved → rejected. Once done, the "Work that
-  stops being approved" rules in section [7](#7-updating-earned-pay-the-key-change) are no longer needed.
-- **Credit billed work that is rejected later.** Today and with this change, rejecting work after it was invoiced
-  doesn't change the invoice. A credit on the next invoice could reverse it.
+- **Keep approved work approved.** A rejected extra visit, such as a duplicate, could leave its work approved
+  instead of rejecting it (section [7.3](#73-rejecting-approved-work)).
+- **Reject paid work with a credit.** Paid or invoiced work can't be rejected (section
+  [7.3](#73-rejecting-approved-work)), for example if it turns out to be fraud. A credit on the next invoice could
+  allow it.
