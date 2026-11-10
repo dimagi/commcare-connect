@@ -445,7 +445,7 @@ class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
         return context
 
 
-@method_decorator(opp_standard_access_required, name="dispatch")
+@method_decorator(opportunity_pm_required, name="dispatch")
 class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_edit.html"
@@ -952,7 +952,7 @@ def claim_task_outcome(request, session_key, task_id):
     return True
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def add_payment_units(request, org_slug=None, opp_id=None):
     if request.POST:
@@ -966,7 +966,7 @@ def add_payment_units(request, org_slug=None, opp_id=None):
     )
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
     deliver_units = DeliverUnit.objects.filter(
@@ -982,13 +982,8 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
     if form.is_valid():
         form.instance.opportunity = request.opportunity
         form.save()
-        required_deliver_units = form.cleaned_data["required_deliver_units"]
-        DeliverUnit.objects.filter(id__in=required_deliver_units, payment_unit__isnull=True).update(
-            payment_unit=form.instance.id
-        )
-        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
-        DeliverUnit.objects.filter(id__in=optional_deliver_units, payment_unit__isnull=True).update(
-            payment_unit=form.instance.id, optional=True
+        link_deliver_units(
+            form.instance, form.cleaned_data["required_deliver_units"], form.cleaned_data["optional_deliver_units"]
         )
         sub_payment_units = form.cleaned_data["payment_units"]
         PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
@@ -1009,7 +1004,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
                 opportunity=request.opportunity,
                 paymentunit_count=PaymentUnit.objects.filter(opportunity=request.opportunity).count(),
                 form=form,
-                form_title=_("Payment Unit Create"),
+                form_title=_("Add Payment Unit"),
             ),
         )
 
@@ -1028,18 +1023,16 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title=_("Payment Unit Create"),
+            form_title=_("Add Payment Unit"),
             form=form,
             path=path,
         ),
     )
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
-    if not request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
     payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
@@ -1067,9 +1060,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     if form.is_valid():
         form.save()
         required_deliver_units = form.cleaned_data["required_deliver_units"]
-        DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=form.instance.id, optional=False)
         optional_deliver_units = form.cleaned_data["optional_deliver_units"]
-        DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=form.instance.id, optional=True)
+        link_deliver_units(form.instance, required_deliver_units, optional_deliver_units)
         sub_payment_units = form.cleaned_data["payment_units"]
         PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
             parent_payment_unit=form.instance.id
@@ -1108,11 +1100,18 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         "components/form.html",
         dict(
             title=f"{request.org.slug} - {request.opportunity.name}",
-            form_title="Payment Unit Edit",
+            form_title=_("Edit Payment Unit"),
             form=form,
             path=path,
         ),
     )
+
+
+def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):
+    # The form only offers unattached units and units from inactive opportunities, so this may move
+    # a unit off an inactive opportunity's payment unit
+    DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
+    DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
 
 
 @opp_standard_access_required
@@ -1387,11 +1386,9 @@ class AudioAttachmentTranscribe(SuccessMessageMixin, OpportunityObjectMixin, Upd
         return self.get_visit_details_url()
 
 
-@opp_standard_access_required
+@opportunity_pm_required
 @opportunity_required
 def verification_flags_config(request, org_slug=None, opp_id=None):
-    if not request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
     verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=request.opportunity).first()
     form = OpportunityVerificationFlagsConfigForm(
         instance=verification_flags, data=request.POST or None, opportunity=request.opportunity
@@ -2355,6 +2352,10 @@ def delete_user_invites(request, org_slug, opp_id):
 def resend_user_invites(request, org_slug, opp_id):
     if request.opportunity.has_ended:
         messages.error(request, _("This opportunity has ended. You cannot resend invites."))
+        redirect_url = reverse("opportunity:detail", args=(org_slug, opp_id))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+    if not request.opportunity.is_setup_complete:
+        messages.error(request, _("Please finish setting up the opportunity before resending invites."))
         redirect_url = reverse("opportunity:detail", args=(org_slug, opp_id))
         return HttpResponse(headers={"HX-Redirect": redirect_url})
     invite_ids = request.POST.getlist("user_invite_ids")

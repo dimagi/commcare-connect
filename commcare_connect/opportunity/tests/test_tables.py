@@ -243,9 +243,7 @@ def test_worker_delivery_table_counts(over_limit):
     assert [row["value"] for row in delivered["rows"]] == [6, 1, over_limit]
     assert delivered["over_limit"] == bool(over_limit)
     assert table.has_over_limit == bool(over_limit)
-    index = table.rows[0].get_cell("index")
-    assert strip_tags(index).strip() == "1"
-    assert '@click="open = !open"' not in index
+    assert table.rows[0].get_cell("payment_unit") == "Visit"
 
 
 def test_worker_delivery_table_summary_row():
@@ -271,10 +269,9 @@ def test_worker_delivery_table_summary_row():
     table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
     summary = table.rows[0]
 
-    index = summary.get_cell("index")
-    assert strip_tags(index).strip() == "1"
-    assert '@click="open = !open"' in index
-    assert summary.get_cell("payment_unit") == "2 payment units"
+    payment_unit = summary.get_cell("payment_unit")
+    assert strip_tags(payment_unit).strip() == "2 payment units"
+    assert '@click="open = !open"' in payment_unit
     summary_counts_url = _rendered_context(lambda: summary.get_cell("pending"))["counts_url"]
     assert _payment_unit_ids(summary_counts_url) == [str(unit_id) for unit_id in record.payment_unit_ids]
 

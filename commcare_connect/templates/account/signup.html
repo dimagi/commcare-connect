@@ -31,6 +31,8 @@
         </div>
         {% for error in form.email.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
       </div>
+      {# Bot trap: moved off-screen by allauth's widget attrs, never shown to people #}
+      {% if form.honeypot_field %}{{ form.honeypot_field }}{% endif %}
       {% translate "Password" as password_label %}
       {% include "account/password_field.html" with field=form.password1 placeholder=password_label x_model="password" %}
       {% translate "Confirm Password" as confirm_password_label %}

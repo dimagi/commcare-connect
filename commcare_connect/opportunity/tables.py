@@ -20,6 +20,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
+    DeliveryType,
     InvoiceStatus,
     LearnModule,
     OpportunityAccess,
@@ -43,6 +44,7 @@ from commcare_connect.utils.tables import (
     DurationColumn,
     GroupedTable,
     IndexColumn,
+    ManagedOptionTable,
     OrgContextTable,
     merge_attrs,
     select_column,
@@ -1523,20 +1525,14 @@ class WorkerDeliveryTable(OrgContextTable):
     def has_over_limit(self):
         return any(record.over_limit for record in self.data)
 
-    def render_index(self, record, bound_column, bound_row):
-        value = bound_column.column.render(value=None, record=record, bound_column=bound_column, bound_row=bound_row)
+    def render_payment_unit(self, value, record):
         if not record.sub_rows:
-            # An invisible chevron keeps the number aligned with the expandable rows' numbers.
-            return format_html(
-                '<span class="flex items-center gap-2">'
-                '<i class="fa-solid fa-chevron-down text-xs invisible" aria-hidden="true"></i>{}</span>',
-                value,
-            )
+            return value
         return format_html(
             '<button type="button" @click="open = !open" class="flex items-center gap-2 cursor-pointer" '
             ':aria-expanded="open">'
-            '<i class="fa-solid fa-chevron-down text-xs transition-transform duration-200" '
-            ":class=\"{{'rotate-180': open}}\"></i>{}</button>",
+            '{}<i class="fa-solid fa-chevron-down text-xs transition-transform duration-200" '
+            ":class=\"{{'rotate-180': open}}\"></i></button>",
             value,
         )
 
@@ -1989,3 +1985,11 @@ class TaskTable(OpportunityContextTable):
         else:
             badge_class = "badge badge-sm bg-slate-100 text-slate-500"
         return format_html('<span class="{}">{}</span>', badge_class, record.get_mode_display())
+
+
+class DeliveryTypeTable(ManagedOptionTable):
+    program_count = columns.Column(verbose_name=gettext_lazy("Programs"), attrs=STAT_COLUMN_ATTRS)
+    opportunity_count = columns.Column(verbose_name=gettext_lazy("Opportunities"), attrs=STAT_COLUMN_ATTRS)
+
+    class Meta(ManagedOptionTable.Meta):
+        model = DeliveryType
