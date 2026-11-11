@@ -101,7 +101,6 @@ Some words mean several unrelated things here. Work out which one you are in bef
 ## Code Style
 
 - **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
-- **Type hints**: add them to function and method parameters and return values where you can. Don't annotate local variables or class attributes
 - **JS/CSS**: prettier (tab-width 2, single-quote)
 - **Templates**: djlint owns them, not prettier — `djlint-reformat-django` will rewrite your formatting on commit. `templates/prelogin/home.html` is excluded from both djlint hooks
 - **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus django-upgrade (--target-version 5.2), djlint (templates) and eslint (`commcare_connect/static/**/*.js`); ruff's UP rules cover what pyupgrade used to
