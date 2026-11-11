@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
@@ -30,15 +31,31 @@ class Command(BaseCommand):
         except WorkbookError as error:
             raise CommandError(str(error))
         plan = build_import_plan(workbook)
-        output_path = None
         if commit:
-            execute_import_plan(plan, user)
-            output_path = output_path_for(workbook.path, timezone.localtime())
-            write_results(workbook, plan, output_path)
-        self.stdout.write(render_report(plan, committed=commit, output_path=output_path), ending="")
+            self._commit(workbook, plan, user)
+        else:
+            self.stdout.write(render_report(plan, committed=False, output_path=None), ending="")
 
     def _get_user(self, user_email):
         users = list(User.objects.filter(email__iexact=user_email)[:2])
         if len(users) != 1:
             raise CommandError(f"Expected exactly one user with email {user_email}, found {len(users)}.")
         return users[0]
+
+    def _commit(self, workbook, plan, user):
+        """Saves the plan's records and the workbook copy, then prints the report even if the copy fails."""
+        output_path = output_path_for(workbook.path, timezone.localtime())
+        self._check_output_path(output_path)
+        execute_import_plan(plan, user)
+        try:
+            write_results(workbook, plan, output_path)
+        except OSError as error:
+            self.stdout.write(render_report(plan, committed=True, output_path=None), ending="")
+            raise CommandError(f"The records were saved, but the workbook copy {output_path} wasn't written: {error}")
+        self.stdout.write(render_report(plan, committed=True, output_path=output_path), ending="")
+
+    def _check_output_path(self, output_path):
+        if output_path.exists():
+            raise CommandError(f"The output copy {output_path} already exists; wait a minute and run again.")
+        if not os.access(output_path.parent, os.W_OK):
+            raise CommandError(f"Can't write the output copy into {output_path.parent}.")
