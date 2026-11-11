@@ -7,7 +7,7 @@ Where code goes. Read this file first, then the topic files your change needs.
 | [`cross-app.md`](code-organization/cross-app.md)                         | code that uses or writes more than one app's models, or `commcare_connect/utils/` |
 | [`queries.md`](code-organization/queries.md)                             | database reads, `QuerySet` methods, ORM expressions or caches                     |
 | [`services.md`](code-organization/services.md)                           | writes, validation checks, Celery tasks, notifications or file imports            |
-| [`thin-layers.md`](code-organization/thin-layers.md)                     | views, forms, tables, serializers, admin, tasks, commands, templates, exports     |
+| [`thin-layers.md`](code-organization/thin-layers.md)                     | views, forms, tables, serializers, admin, commands, templates, exports            |
 | [`models-and-migrations.md`](code-organization/models-and-migrations.md) | models or migrations                                                              |
 | [`tests.md`](code-organization/tests.md)                                 | tests                                                                             |
 | [`javascript.md`](code-organization/javascript.md)                       | JavaScript                                                                        |
