@@ -741,6 +741,19 @@ class TestAddBudgetNewUsersForm:
 
 @pytest.mark.django_db
 class TestAutomatedPaymentInvoiceForm:
+    def _billable_work(self, opportunity):
+        """One approved, unbilled delivery approved in October 2025, worth 100 to the worker and 20 to the org."""
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=20)
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=opportunity,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+        return cw
+
     def test_form_initialization(self, valid_opportunity):
         valid_opportunity.start_date = datetime.date(2025, 1, 15)
         valid_opportunity.save()
@@ -858,16 +871,7 @@ class TestAutomatedPaymentInvoiceForm:
 
     def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
-        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-            invoiced_approved_count=0,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+        cw = self._billable_work(valid_opportunity)
 
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
@@ -953,15 +957,7 @@ class TestAutomatedPaymentInvoiceForm:
         Saving anyway would hand the NM an invoice for a figure they never reviewed.
         """
         ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1), currency_code="USD", rate=1.0)
-        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+        self._billable_work(valid_opportunity)
 
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
@@ -991,15 +987,7 @@ class TestAutomatedPaymentInvoiceForm:
         then be 0 rather than the 120 that was posted, so it never claims money it has no rows for.
         """
         ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
-        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+        self._billable_work(valid_opportunity)
 
         form = AutomatedPaymentInvoiceForm(
             opportunity=valid_opportunity,
