@@ -754,6 +754,22 @@ class PaymentUnit(models.Model):
     def __str__(self):
         return self.name
 
+    def has_visits_today(self):
+        # Trial is decided when a visit is processed, so this looks at when it was processed
+        return self._visits().filter(date_created__date=now().date()).exists()
+
+    def has_payable_visits(self):
+        # Trial visits get no completed work, so they are never paid. Over-limit ones can still be approved.
+        return self._visits().exclude(status=VisitValidationStatus.trial).exists()
+
+    def _visits(self):
+        # Completed work keeps paid visits with this unit after their deliver unit is removed from it, and
+        # the opportunity filter drops visits a deliver unit brought from another opportunity's unit
+        return UserVisit.objects.filter(
+            Q(deliver_unit__payment_unit=self) | Q(completed_work__payment_unit=self),
+            opportunity_id=self.opportunity_id,
+        )
+
 
 class DeliverUnit(models.Model):
     app = models.ForeignKey(

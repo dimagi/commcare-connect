@@ -1578,6 +1578,29 @@ class PaymentUnitForm(forms.ModelForm):
 
         return cleaned_data
 
+    def clean_start_date(self):
+        start_date = self.cleaned_data.get("start_date")
+        if self.instance.pk and "start_date" in self.changed_data:
+            if error := self._start_date_change_error(start_date):
+                raise ValidationError(error)
+        return start_date
+
+    def _start_date_change_error(self, start_date):
+        """A start date can change only while none of the unit's visits may be paid, and never to a past date.
+        Otherwise a visit that may be paid could end up dated before the unit's start."""
+        unit = self.instance
+        today = now().date()
+        if unit.has_payable_visits():
+            return _("This payment unit already has visits, so its start date can't be changed.")
+        if not start_date:
+            return _("Start date can't be cleared once it has been set.")
+        if start_date < today:
+            return _("Start date can't be in the past.")
+        if start_date == today and unit.has_visits_today():
+            # Visits processed earlier today are trial; they would sit inside the active period
+            return _("Start date can be today only if the payment unit has no visits for today.")
+        return None
+
     def _validate_budget_covers_claimants(self, cleaned_data):
         """
         Reject the create/edit if the budget can't give every existing claimant the full limit.

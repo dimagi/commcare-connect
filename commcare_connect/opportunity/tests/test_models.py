@@ -933,3 +933,33 @@ class TestOpportunityApiKey:
         assert event.pgh_label == "api_key_update"
         assert event.api_key_id == new_key.id
         assert event.pgh_context.metadata["user_email"] == "admin@example.com"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status, link, has_visits_today, has_payable_visits",
+    [
+        (None, "unit", False, False),
+        (VisitValidationStatus.trial, "unit", True, False),
+        (VisitValidationStatus.trial, "yesterday", False, False),
+        (VisitValidationStatus.over_limit, "unit", True, True),
+        (VisitValidationStatus.approved, "unit", True, True),
+        # A deliver unit can move to a new opportunity's unit, keeping its visits from the old opportunity
+        (VisitValidationStatus.approved, "other_opportunity", False, False),
+        # The deliver unit was removed from the unit after the visit was paid through it
+        (VisitValidationStatus.approved, "removed", True, True),
+    ],
+)
+def test_payment_unit_has_visits(status, link, has_visits_today, has_payable_visits):
+    unit = PaymentUnitFactory()
+    if status:
+        removed = link == "removed"
+        UserVisitFactory(
+            opportunity=OpportunityFactory() if link == "other_opportunity" else unit.opportunity,
+            deliver_unit=DeliverUnitFactory(payment_unit=None if removed else unit),
+            status=status,
+            completed_work=CompletedWorkFactory(payment_unit=unit) if removed else None,
+            date_created=now() - timedelta(days=1 if link == "yesterday" else 0),
+        )
+    assert unit.has_visits_today() is has_visits_today
+    assert unit.has_payable_visits() is has_payable_visits
