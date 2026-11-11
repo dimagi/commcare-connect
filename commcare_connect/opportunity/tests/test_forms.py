@@ -33,6 +33,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     PaymentUnitForm,
+    fixed_server_api_key_choices,
     reloaded_api_key_selection,
 )
 from commcare_connect.opportunity.models import (
@@ -2216,3 +2217,21 @@ def test_reloaded_api_key_selection(pending, expected):
 def test_reloaded_api_key_selection_without_a_current_key():
     choices = [("", "Select an API key"), (2, "mine")]
     assert reloaded_api_key_selection(choices, None, Opportunity()) == ""
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("current_is_own", [False, True])
+def test_fixed_server_api_key_choices(opportunity, current_is_own):
+    """The current key comes first, labelled with who added it, then the user's other keys on the server, newest
+    first."""
+    current = opportunity.api_key
+    user = current.user if current_is_own else UserFactory()
+    older = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    newer = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    HQApiKeyFactory(user=user)  # another server
+    owner = current.user
+    assert fixed_server_api_key_choices(opportunity, user) == [
+        (current.id, f"{current.masked} (added by {owner.name or owner.email})"),
+        (newer.id, newer.masked),
+        (older.id, older.masked),
+    ]
