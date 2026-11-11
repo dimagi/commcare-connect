@@ -164,3 +164,16 @@ class TestTrialBuild:
         result = staging.run_trial(repo=repo, branches=["main", "a", "new"])
 
         assert result.succeeded, result.output
+
+
+def test_find_new_run_skips_runs_that_existed_before_the_dispatch(monkeypatch):
+    started_at = staging.datetime(2026, 11, 11, 9, 0, 0, tzinfo=staging.UTC)
+    earlier_run = {"databaseId": 1, "createdAt": "2026-11-11T09:00:05Z"}
+    new_run = {"databaseId": 2, "createdAt": "2026-11-11T09:00:03Z"}
+    listings = iter([[earlier_run], [earlier_run, new_run]])
+    monkeypatch.setattr(staging, "list_add_runs", lambda *, user: next(listings))
+    monkeypatch.setattr(staging.time, "sleep", lambda seconds: None)
+
+    run_id = staging.find_new_run(started_at=started_at, user="me", existing_ids={1})
+
+    assert run_id == 2
