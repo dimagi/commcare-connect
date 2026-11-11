@@ -1410,6 +1410,12 @@ class PaymentUnitForm(forms.ModelForm):
             self.fields["max_daily"].required = True
         elif self.instance.pk:
             self.fields["no_daily_limit"].initial = self.instance.max_daily is None
+        # A paid visit could fall before any new start date, so the field is locked rather than left to fail
+        if self.instance.pk and self.instance.has_payable_visits():
+            self.fields["start_date"].disabled = True
+            self.fields["start_date"].help_text = gettext(
+                "Start date can't be changed because this payment unit already has visits."
+            )
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1621,12 +1627,10 @@ class PaymentUnitForm(forms.ModelForm):
         return start_date
 
     def _start_date_change_error(self, start_date):
-        """A start date can change only while none of the unit's visits may be paid, and never to a past date.
-        Otherwise a visit that may be paid could end up dated before the unit's start."""
+        """Once a visit may be paid the field is locked (see __init__). Before that, a start date can't be cleared
+        or moved into the past."""
         unit = self.instance
         today = now().date()
-        if unit.has_payable_visits():
-            return _("This payment unit already has visits, so its start date can't be changed.")
         if not start_date:
             return _("Start date can't be cleared once it has been set.")
         if start_date < today:

@@ -1747,14 +1747,22 @@ class TestPaymentUnitStartDate:
         self._assert_result(self._form(unit, new_start), error)
 
     @pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.over_limit])
-    def test_started_unit_cannot_move(self, opportunity, visit_status):
+    def test_started_unit_start_date_locked(self, opportunity, visit_status):
         unit = self._unit(opportunity, -2, visit_status)
-        self._assert_result(self._form(unit, 8), "already has visits")
+        form = self._form(unit, 8)
+
+        assert form.fields["start_date"].disabled
+        assert "already has visits" in form.fields["start_date"].help_text
+        self._assert_result(form, None)
+        assert form.cleaned_data["start_date"] == _days_from_today(-2)
 
     @pytest.mark.parametrize("visit_status", [None, VisitValidationStatus.trial])
     def test_started_unit_without_payable_visits_can_move(self, opportunity, visit_status):
         unit = self._unit(opportunity, -2, visit_status)
-        self._assert_result(self._form(unit, 8), None)
+        form = self._form(unit, 8)
+
+        assert not form.fields["start_date"].disabled
+        self._assert_result(form, None)
 
     def test_started_unit_other_fields_save(self, opportunity):
         unit = self._unit(opportunity, -2, VisitValidationStatus.approved)
