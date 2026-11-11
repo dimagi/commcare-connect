@@ -89,7 +89,7 @@ CHECKBOX_CLASS = "simple-toggle"
 DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
 APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
-ADD_API_KEY_BUTTON = HTML('{% include "opportunity/partials/add_api_key_button.html" %}')
+API_KEY_FIELD_TEMPLATE = "opportunity/partials/api_key_field.html"
 
 
 class HQApiKeyCreateForm(forms.ModelForm):
@@ -423,11 +423,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
     def _api_key_layout(self):
         return Row(
             HTML('{% include "opportunity/partials/api_key_section_header.html" %}'),
-            Column(
-                Field("api_key", wrapper_class="flex-1"),
-                ADD_API_KEY_BUTTON,
-                css_class="flex items-center gap-1",
-            ),
+            Field("api_key", template=API_KEY_FIELD_TEMPLATE),
             css_class="grid grid-cols-2 gap-4 p-6 card_bg",
         )
 
@@ -535,11 +531,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("currency"),
                     Field("country"),
                     Field("hq_server"),
-                    Column(
-                        Field("api_key", wrapper_class="flex-1"),
-                        ADD_API_KEY_BUTTON,
-                        css_class="flex items-center gap-1",
-                    ),
+                    Field("api_key", template=API_KEY_FIELD_TEMPLATE),
                 ),
                 css_class="grid grid-cols-2 gap-4 card_bg",
             ),
