@@ -1874,6 +1874,28 @@ def test_invoice_pdf_filename(invoice_number, expected):
 
 
 @pytest.mark.django_db
+class TestDownloadInvoiceLineItemsView(BaseTestInvoiceView):
+    @pytest.mark.parametrize(
+        "start_date, end_date",
+        [
+            ("2026-10-01", "2026-11-02/"),
+            ("not-a-date", "2026-11-02"),
+            ("2026-13-01", "2026-11-02"),
+        ],
+    )
+    def test_invalid_date_format_returns_bad_request(self, client, setup_invoice, start_date, end_date):
+        opportunity = setup_invoice["opportunity"]
+        client.force_login(setup_invoice["user"])
+        url = reverse(
+            "opportunity:download_invoice_line_items",
+            args=(opportunity.organization.slug, opportunity.opportunity_id),
+        )
+        response = client.get(url, {"start_date": start_date, "end_date": end_date})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+@pytest.mark.django_db
 class TestDownloadInvoiceView(BaseTestInvoiceView):
     @staticmethod
     def _url(opportunity, invoice_id):
