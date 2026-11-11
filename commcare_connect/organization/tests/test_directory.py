@@ -5,10 +5,9 @@ import pytest
 from django.contrib.auth.models import Permission
 from django.urls import reverse
 
-from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
-from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
+from commcare_connect.organization.models import Contact, Organization, OrganizationStatus
 from commcare_connect.organization.tables import OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
@@ -24,19 +23,6 @@ def user_with_directory_access(db):
     user = UserFactory()
     user.user_permissions.add(Permission.objects.get(codename="llo_directory_management_access"))
     return user
-
-
-@pytest.fixture
-def sectors(db):
-    return {
-        "health": PrimarySector.objects.create(name="Health", slug="health", description=""),
-        "wash": PrimarySector.objects.create(name="WASH", slug="wash", description=""),
-    }
-
-
-@pytest.fixture
-def countries(db):
-    return {code: Country.objects.get(code=code) for code in ("KEN", "TZA", "IND")}
 
 
 @pytest.mark.django_db

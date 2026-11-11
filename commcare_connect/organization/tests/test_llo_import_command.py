@@ -4,7 +4,9 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from commcare_connect.organization.llo_import.workbook import CONTACT_COLUMNS, CONTACTS_TAB
-from commcare_connect.organization.tests.llo_import_helpers import make_workbook
+from commcare_connect.organization.models import Contact, Organization
+from commcare_connect.organization.tests.llo_import_helpers import contact_values, make_workbook, organization_values
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 def test_unknown_user_email_fails(tmp_path, db):
@@ -24,9 +26,14 @@ def test_missing_column_fails_cleanly(tmp_path, user):
         call_command("import_llo_contacts", path, user_email=user.email)
 
 
-def test_reports_row_counts(tmp_path, user, capsys):
-    path = make_workbook(tmp_path, [{"Email Address": "a@x.org"}], [])
+def test_dry_run_writes_nothing(tmp_path, user, capsys):
+    OrganizationFactory(name="Acme")
+    path = make_workbook(tmp_path, [contact_values()], [organization_values(**{"Organization Name": "New Org"})])
+    files_before = set(tmp_path.iterdir())
+    counts_before = (Organization.objects.count(), Contact.objects.count())
 
     call_command("import_llo_contacts", path, user_email=user.email)
 
-    assert "Read 1 contact rows and 0 organization rows." in capsys.readouterr().out
+    assert "DRY RUN" in capsys.readouterr().out
+    assert (Organization.objects.count(), Contact.objects.count()) == counts_before
+    assert set(tmp_path.iterdir()) == files_before
