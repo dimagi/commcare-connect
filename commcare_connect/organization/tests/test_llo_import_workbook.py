@@ -6,7 +6,7 @@ import pytest
 from openpyxl.styles import Font
 
 from commcare_connect.organization.llo_import.execution import execute_import_plan
-from commcare_connect.organization.llo_import.planning import Status, build_import_plan
+from commcare_connect.organization.llo_import.planning import build_import_plan
 from commcare_connect.organization.llo_import.workbook import (
     CONNECT_ID_COLUMN,
     CONTACT_COLUMNS,
@@ -184,24 +184,18 @@ def test_does_not_write_name_match_when_several_rows_share_the_name(tmp_path, us
     assert _results(output_path, ORGANIZATIONS_TAB) == {2: (None, None), 3: (None, None)}
 
 
-def test_keeps_existing_organization_id(tmp_path, user):
+def test_keeps_existing_organization_id_and_status(tmp_path, user):
     organization = OrganizationFactory(name="Acme")
     path = make_workbook(
         tmp_path,
         [contact_values()],
-        [organization_values(**{CONNECT_ID_COLUMN: "kept"})],
-        extra_org_headers=(CONNECT_ID_COLUMN,),
+        [organization_values(**{CONNECT_ID_COLUMN: organization.slug, IMPORT_STATUS_COLUMN: "Created"})],
+        extra_org_headers=(CONNECT_ID_COLUMN, IMPORT_STATUS_COLUMN),
     )
-    workbook = load_workbook(path)
-    plan = build_import_plan(workbook)
-    plan.organizations[0].organization = organization
-    plan.organizations[0].source = None
-    plan.organizations[0].status = Status.ALREADY_EXISTED
-    output_path = tmp_path / "copy.xlsx"
 
-    write_results(workbook, plan, output_path)
+    output_path = _execute_and_write(path, user)
 
-    assert _results(output_path, ORGANIZATIONS_TAB)[2][0] == "kept"
+    assert _results(output_path, ORGANIZATIONS_TAB) == {2: (organization.slug, "Created")}
 
 
 def test_reuses_existing_result_columns(tmp_path, user, countries, sectors):

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import openpyxl
 
 if TYPE_CHECKING:
-    from commcare_connect.organization.llo_import.planning import ImportPlan, OrganizationPlan
+    from commcare_connect.organization.llo_import.planning import ImportPlan
 
 CONTACTS_TAB = "Contacts"
 ORGANIZATIONS_TAB = "Organizations"
@@ -137,35 +137,18 @@ def write_results(workbook: LLOWorkbook, plan: "ImportPlan", output_path: Path) 
             )
 
     for organization_plan in plan.organizations:
-        if organization_plan.status not in _WRITTEN_STATUSES or organization_plan.organization is None:
+        if organization_plan.status not in _WRITTEN_STATUSES or organization_plan.source is None:
             continue
-        for row_number in _organization_rows(workbook, organization_plan):
-            _write_row(
-                organizations_sheet,
-                organization_columns,
-                row_number,
-                organization_plan.organization.slug,
-                organization_plan.status,
-                keep_existing_id=True,
-            )
+        _write_row(
+            organizations_sheet,
+            organization_columns,
+            organization_plan.source.row.number,
+            organization_plan.organization.slug,
+            organization_plan.status,
+            keep_existing_id=True,
+        )
 
     workbook.book.save(output_path)
-
-
-def _organization_rows(workbook: LLOWorkbook, organization_plan: "OrganizationPlan") -> list[int]:
-    if organization_plan.source is not None:
-        return [organization_plan.source.row.number]
-    name = organization_plan.organization.name
-    return _single_row_by_name(workbook, name)
-
-
-def _single_row_by_name(workbook: LLOWorkbook, name: str) -> list[int]:
-    matches = [row.number for row in workbook.organizations if _stripped(row.values.get("Organization Name")) == name]
-    return matches if len(matches) == 1 else []
-
-
-def _stripped(value):
-    return value.strip() if isinstance(value, str) else value
 
 
 def _result_columns(sheet) -> tuple[int, int]:
@@ -196,3 +179,7 @@ def _write_row(sheet, columns, row_number, connect_id, status, keep_existing_id=
         return
     id_cell.value = connect_id
     sheet.cell(row=row_number, column=columns[1], value=_STATUS_TEXT[status])
+
+
+def _stripped(value):
+    return value.strip() if isinstance(value, str) else value
