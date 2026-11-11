@@ -3894,8 +3894,8 @@ def invoice_items(request, *args, **kwargs):
 @opp_standard_access_required
 @opportunity_required
 def download_invoice_line_items(request, org_slug, opp_id):
-    start_date_str = request.GET.get("start_date", "").strip("/ ")
-    end_date_str = request.GET.get("end_date", "").strip("/ ")
+    start_date_str = request.GET.get("start_date", None)
+    end_date_str = request.GET.get("end_date", None)
     invoice_id = request.GET.get("invoice_id", None)
 
     if not start_date_str or not end_date_str:

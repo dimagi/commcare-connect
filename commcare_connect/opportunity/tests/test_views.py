@@ -1876,19 +1876,14 @@ def test_invoice_pdf_filename(invoice_number, expected):
 @pytest.mark.django_db
 class TestDownloadInvoiceLineItemsView(BaseTestInvoiceView):
     @pytest.mark.parametrize(
-        "start_date, end_date, expected_status",
+        "start_date, end_date",
         [
-            # Stray slashes and whitespace are stripped before parsing.
-            ("2026-10-01", "2026-11-02/", HTTPStatus.OK),
-            ("2026-10-01/", "2026-11-02", HTTPStatus.OK),
-            (" 2026-10-01 ", "2026-11-02 ", HTTPStatus.OK),
-            # Anything still unparseable is rejected.
-            ("not-a-date", "2026-11-02", HTTPStatus.BAD_REQUEST),
-            ("2026-13-01", "2026-11-02", HTTPStatus.BAD_REQUEST),
-            ("2026-10-01", "/", HTTPStatus.BAD_REQUEST),
+            ("2026-10-01", "2026-11-02/"),
+            ("not-a-date", "2026-11-02"),
+            ("2026-13-01", "2026-11-02"),
         ],
     )
-    def test_date_parsing(self, client, setup_invoice, start_date, end_date, expected_status):
+    def test_invalid_date_format_returns_bad_request(self, client, setup_invoice, start_date, end_date):
         opportunity = setup_invoice["opportunity"]
         client.force_login(setup_invoice["user"])
         url = reverse(
@@ -1897,9 +1892,7 @@ class TestDownloadInvoiceLineItemsView(BaseTestInvoiceView):
         )
         response = client.get(url, {"start_date": start_date, "end_date": end_date})
 
-        assert response.status_code == expected_status
-        if expected_status == HTTPStatus.OK:
-            assert "invoice_line_items_2026-10-01_2026-11-02.csv" in response["Content-Disposition"]
+        assert response.status_code == HTTPStatus.BAD_REQUEST
 
 
 @pytest.mark.django_db
