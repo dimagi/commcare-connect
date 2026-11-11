@@ -169,14 +169,21 @@ def _result_columns(sheet) -> tuple[int, int]:
     existing = {
         cell.value.strip(): cell.column for cell in sheet[1] if isinstance(cell.value, str) and cell.value.strip()
     }
+    last_column = _last_column_in_use(sheet)
     columns = []
     for header in (CONNECT_ID_COLUMN, IMPORT_STATUS_COLUMN):
         column = existing.get(header)
         if column is None:
-            column = sheet.max_column + 1
+            last_column += 1
+            column = last_column
             sheet.cell(row=1, column=column, value=header)
         columns.append(column)
     return tuple(columns)
+
+
+def _last_column_in_use(sheet) -> int:
+    """Returns the rightmost column holding a value, ignoring columns that only carry formatting."""
+    return max((cell.column for row in sheet.iter_rows() for cell in row if cell.value is not None), default=0)
 
 
 def _write_row(sheet, columns, row_number, connect_id, status, keep_existing_id=False):

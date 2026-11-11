@@ -3,6 +3,7 @@ from pathlib import Path
 
 import openpyxl
 import pytest
+from openpyxl.styles import Font
 
 from commcare_connect.organization.llo_import.execution import execute_import_plan
 from commcare_connect.organization.llo_import.planning import Status, build_import_plan
@@ -208,19 +209,25 @@ def test_reuses_existing_result_columns(tmp_path, user, countries, sectors):
     assert _results(second_copy, CONTACTS_TAB) == _results(first_copy, CONTACTS_TAB)
 
 
-def test_appends_after_trailing_unnamed_columns(tmp_path, user, countries, sectors):
+@pytest.mark.parametrize("trailing_cell, first_result_column", [("value", 27), ("formatting only", 17)])
+def test_appends_after_last_column_in_use(tmp_path, user, countries, sectors, trailing_cell, first_result_column):
     path, book = _single_row_workbook(tmp_path)
-    book[ORGANIZATIONS_TAB].cell(row=2, column=26, value="scratch")
+    cell = book[ORGANIZATIONS_TAB].cell(row=2, column=26)
+    if trailing_cell == "value":
+        cell.value = "scratch"
+    else:
+        cell.font = Font(bold=True)
     book.save(path)
     output_path = _execute_and_write(path, user)
 
     sheet = openpyxl.load_workbook(output_path)[ORGANIZATIONS_TAB]
-    assert sheet.cell(row=2, column=26).value == "scratch"
-    assert (sheet.cell(row=1, column=27).value, sheet.cell(row=1, column=28).value) == (
-        CONNECT_ID_COLUMN,
-        IMPORT_STATUS_COLUMN,
+    assert sheet.cell(row=2, column=26).value == ("scratch" if trailing_cell == "value" else None)
+    headers = (
+        sheet.cell(row=1, column=first_result_column).value,
+        sheet.cell(row=1, column=first_result_column + 1).value,
     )
-    assert sheet.cell(row=2, column=28).value == "Created"
+    assert headers == (CONNECT_ID_COLUMN, IMPORT_STATUS_COLUMN)
+    assert sheet.cell(row=2, column=first_result_column + 1).value == "Created"
 
 
 def test_does_not_modify_input_and_keeps_other_tabs(tmp_path, user, countries, sectors):
