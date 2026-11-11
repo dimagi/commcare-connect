@@ -101,11 +101,9 @@ def open_pr_bases():
             ]
         )
     except StagingAddError as error:
-        print(
-            f"Warning: couldn't list open PRs, so a branch stacked on another may be placed wrongly.\n{error}",
-            file=sys.stderr,
-        )
-        return {}
+        raise StagingAddError(
+            f"Couldn't list open PRs, which is needed to place a branch stacked on another.\n{error}"
+        ) from error
     return {pr["headRefName"]: pr["baseRefName"] for pr in json.loads(output) if pr["baseRefName"] != TRUNK}
 
 
