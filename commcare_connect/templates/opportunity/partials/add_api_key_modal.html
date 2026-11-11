@@ -1,5 +1,6 @@
 {% load crispy_forms_tags i18n %}
 {# Needs `showAddApiKeyModal` in an enclosing x-data. A saved key fires reload_api_keys, which reloads the key select. #}
+{# A form built with a fixed hq_server passes it on, so the re-rendered form stays pinned to that server. #}
 <div x-cloak
      x-show="showAddApiKeyModal"
      x-transition.opacity
@@ -13,7 +14,7 @@
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>
-    <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}"
+    <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}{% if api_key_form.fixed_hq_server %}?hq_server={{ api_key_form.fixed_hq_server.pk }}{% endif %}"
           @reload_api_keys="showAddApiKeyModal = false">
       {% crispy api_key_form %}
     </form>

@@ -85,6 +85,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.views import (
     OpportunityList,
     WorkerPaymentsView,
+    _fixed_hq_server,
     add_api_key,
     api_key_replacement_context,
     get_earned_summary,
@@ -2843,6 +2844,7 @@ def test_api_key_replacement_context(opportunity, owner_is_member):
         make_membership(opportunity.program.organization, opportunity.api_key.user, "member")
     context = api_key_replacement_context(opportunity)
     assert isinstance(context["api_key_form"], HQApiKeyCreateForm)
+    assert context["api_key_form"].fixed_hq_server == opportunity.hq_server
     assert context["api_key_owner_has_left"] is (not owner_is_member)
 
 
@@ -4134,3 +4136,19 @@ def test_add_api_key_only_signals_a_reload_when_the_key_was_saved(rf, organizati
     response = add_api_key(request, organization.slug)
     assert (response.headers.get("HX-Trigger") == "reload_api_keys") is valid
     assert HQApiKey.objects.filter(user=user).exists() is valid
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, pinned",
+    [
+        ("?hq_server={pk}", True),
+        ("", False),
+        ("?hq_server=", False),
+        ("?hq_server=abc", False),
+        ("?hq_server=999999", False),  # no such server
+    ],
+)
+def test_fixed_hq_server(rf, query, pinned):
+    server = HQServerFactory()
+    assert _fixed_hq_server(rf.post("/" + query.format(pk=server.pk))) == (server if pinned else None)

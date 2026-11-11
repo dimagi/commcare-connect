@@ -90,15 +90,26 @@ DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
 APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
 API_KEY_FIELD_TEMPLATE = "opportunity/partials/api_key_field.html"
+FIXED_HQ_SERVER_FIELD_TEMPLATE = "opportunity/partials/fixed_hq_server_field.html"
 
 
 class HQApiKeyCreateForm(forms.ModelForm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, fixed_hq_server=None, **kwargs):
+        """`fixed_hq_server` pins the key to that server, for pages whose key select only lists that server's
+        keys. The server is then shown as text rather than offered as a choice."""
         super().__init__(*args, **kwargs)
+        self.fixed_hq_server = fixed_hq_server
+        server_layout = Field("hq_server")
+        if fixed_hq_server:
+            server_field = self.fields["hq_server"]
+            # Narrowing the queryset also rejects a post naming any other server.
+            server_field.queryset = server_field.queryset.filter(pk=fixed_hq_server.pk)
+            server_field.initial = fixed_hq_server.pk
+            server_layout = Field("hq_server", template=FIXED_HQ_SERVER_FIELD_TEMPLATE)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Field("hq_server"),
+            server_layout,
             Field("api_key"),
             Div(Submit("submit", "Save", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )

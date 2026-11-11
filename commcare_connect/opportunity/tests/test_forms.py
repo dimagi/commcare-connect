@@ -27,6 +27,7 @@ from commcare_connect.opportunity.forms import (
     AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     EditTaskTypeForm,
+    HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityInitForm,
     OpportunityInitUpdateForm,
@@ -2172,3 +2173,27 @@ class TestApiKeyOnChangeForm:
         form = _change_form(opp, _request_for(opp.program.organization, opp), **overrides)
         assert form.is_valid(), form.errors
         assert form.save().api_key_id == opp.api_key_id
+
+
+@pytest.mark.django_db
+class TestHQApiKeyCreateForm:
+    def test_pinned_server_is_shown_not_offered(self):
+        server = HQServerFactory(name="Pinned HQ")
+        HQServerFactory(name="Other HQ")  # must not be offered
+        form = HQApiKeyCreateForm(fixed_hq_server=server)
+        assert list(form.fields["hq_server"].queryset) == [server]
+        html = render_crispy_form(form)
+        assert "<select" not in html  # the only other field, api_key, is a text input
+        assert "Pinned HQ" in html
+        assert "Other HQ" not in html
+        assert 'type="hidden"' in html
+        assert f'value="{server.pk}"' in html
+
+    @pytest.mark.parametrize("pinned, valid", [(True, False), (False, True)])
+    def test_another_server_is_rejected_only_when_pinned(self, pinned, valid):
+        server, other = HQServerFactory(), HQServerFactory()
+        form = HQApiKeyCreateForm(
+            data={"hq_server": other.id, "api_key": "a-new-api-key-value"},
+            fixed_hq_server=server if pinned else None,
+        )
+        assert form.is_valid() is valid
