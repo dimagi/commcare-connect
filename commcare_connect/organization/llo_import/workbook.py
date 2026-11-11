@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +74,9 @@ def _read_sheet(sheet, tab_name, required_columns) -> list[SheetRow]:
         if isinstance(cell.value, str) and cell.value.strip():
             headers[cell.column] = cell.value.strip()
 
+    duplicates = sorted(header for header, count in Counter(headers.values()).items() if count > 1)
+    if duplicates:
+        raise WorkbookError(f"Duplicate column(s) on the {tab_name} tab: {', '.join(duplicates)}")
     missing = [column for column in required_columns if column not in headers.values()]
     if missing:
         raise WorkbookError(f"Missing column(s) on the {tab_name} tab: {', '.join(missing)}")
