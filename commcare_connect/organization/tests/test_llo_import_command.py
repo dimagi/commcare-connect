@@ -1,11 +1,15 @@
 import csv
+import re
 
 import openpyxl
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.utils import timezone
 
+from commcare_connect.organization.llo_import.results import results_path_for
 from commcare_connect.organization.llo_import.workbook import CONTACT_COLUMNS, CONTACTS_TAB
+from commcare_connect.organization.management.commands import import_llo_contacts
 from commcare_connect.organization.models import Contact, Organization
 from commcare_connect.organization.tests.llo_import_helpers import contact_values, make_workbook, organization_values
 from commcare_connect.users.tests.factories import OrganizationFactory
@@ -73,6 +77,44 @@ def test_rerun_creates_nothing(tmp_path, user, countries, sectors, capsys):
 
     assert (Organization.objects.count(), Contact.objects.count()) == counts_before
     assert "Skipped: email already in Connect" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("problem", ["exists", "read-only folder"])
+def test_commit_fails_before_writing_when_results_file_cannot_be_saved(
+    tmp_path, user, countries, sectors, monkeypatch, problem
+):
+    now = timezone.localtime()
+    monkeypatch.setattr(timezone, "localtime", lambda *args, **kwargs: now)
+    path = make_workbook(tmp_path, [contact_values()], [organization_values()])
+    results = results_path_for(path, now)
+    if problem == "exists":
+        results.write_text("earlier results")
+    else:
+        tmp_path.chmod(0o555)
+
+    try:
+        with pytest.raises(CommandError, match=re.escape(str(results.parent))):
+            call_command("import_llo_contacts", path, user_email=user.email, commit=True)
+    finally:
+        tmp_path.chmod(0o755)
+
+    assert not Organization.objects.exists()
+    assert not Contact.objects.exists()
+
+
+def test_failed_results_save_still_prints_report(tmp_path, user, countries, sectors, capsys, monkeypatch):
+    path = make_workbook(tmp_path, [contact_values()], [organization_values()])
+
+    def fail_write(plan, output_path):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(import_llo_contacts, "write_results", fail_write)
+
+    with pytest.raises(CommandError, match="records were saved, but the results file .* wasn't written: disk full"):
+        call_command("import_llo_contacts", path, user_email=user.email, commit=True)
+
+    assert "Results file: not written" in capsys.readouterr().out
+    assert Contact.objects.get().email == "ada@x.org"
 
 
 def _commit_directory(tmp_path, user):
