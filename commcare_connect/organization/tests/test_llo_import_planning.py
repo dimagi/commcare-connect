@@ -2,7 +2,13 @@ import uuid
 
 import pytest
 
-from commcare_connect.organization.llo_import.mapping import EMAIL_COLUMN, MAIN_POC_COLUMN, NAME_COLUMN
+from commcare_connect.organization.llo_import.mapping import (
+    EMAIL_COLUMN,
+    FORMULA_REASON,
+    MAIN_POC_COLUMN,
+    NAME_COLUMN,
+    Problem,
+)
 from commcare_connect.organization.llo_import.planning import Status
 from commcare_connect.organization.llo_import.workbook import CONNECT_ID_COLUMN
 from commcare_connect.organization.tests.llo_import_helpers import contact_values, organization_values, plan_for
@@ -185,3 +191,23 @@ def test_collects_all_problems(tmp_path, db):
     plan = plan_for(tmp_path, [contact_values(**{"Contact Full Name": None, "Main POC?": "maybe"})])
 
     assert [problem.column for problem in plan.contacts[0].problems] == [NAME_COLUMN, MAIN_POC_COLUMN]
+
+
+def test_duplicated_invalid_email_reports_both_problems(tmp_path, db):
+    OrganizationFactory(name="Acme")
+
+    plan = plan_for(tmp_path, [contact_values(**{"Email Address": "not-an-email"})] * 2)
+
+    for contact in plan.contacts:
+        assert contact.problems == [
+            Problem(EMAIL_COLUMN, "not-an-email", "same email on Contacts rows 2, 3"),
+            Problem(EMAIL_COLUMN, "not-an-email", "Enter a valid email address."),
+        ]
+
+
+def test_formula_cell_reports_only_the_formula(tmp_path, db):
+    OrganizationFactory(name="Acme")
+
+    plan = plan_for(tmp_path, [contact_values(**{"Email Address": "=A1"})])
+
+    assert plan.contacts[0].problems == [Problem(EMAIL_COLUMN, "=A1", FORMULA_REASON)]
