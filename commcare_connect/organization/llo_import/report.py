@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from commcare_connect.organization.llo_import.planning import ContactPlan, Impor
 from commcare_connect.organization.llo_import.workbook import CONTACTS_TAB, ORGANIZATIONS_TAB
 
 CREATING = (Status.TO_CREATE, Status.CREATED)
+LINE_BREAK = re.compile(r"\r\n?|\n")
 
 
 def render_report(plan: ImportPlan, committed: bool, output_path: Path | None) -> str:
@@ -151,5 +153,5 @@ def _problem_text(location: str, problem: Problem) -> str:
     if problem.column:
         parts.append(f'column "{problem.column}"')
     if problem.value:
-        parts.append(f'value "{problem.value.replace(chr(10), " / ")}"')
+        parts.append(f'value "{LINE_BREAK.sub(" / ", problem.value)}"')
     return f"{', '.join(parts)}: {problem.reason}"

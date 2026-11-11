@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from commcare_connect.organization.llo_import.planning import ImportPlan
 from commcare_connect.organization.llo_import.report import render_report
 from commcare_connect.organization.llo_import.workbook import CONNECT_ID_COLUMN
@@ -87,3 +89,13 @@ def test_lists_existing_organizations_with_their_new_contacts(tmp_path):
     assert "Existing organizations (marked Already existed)" in report
     assert f"Acme ({acme.slug}) — contacts to create: Contacts rows 2, 3" in report
     assert f"Beta ({beta.slug}) — no contacts to create" in report
+
+
+@pytest.mark.parametrize("line_break", ["\n", "\r\n", "\r"])
+def test_problem_values_keep_to_one_line(tmp_path, db, line_break):
+    OrganizationFactory(name="Acme")
+    plan = plan_for(tmp_path, [contact_values(**{"Main POC?": f"Yes{line_break}No"})])
+
+    report = render_report(plan, committed=False, output_path=None)
+
+    assert 'value "Yes / No": must be Yes, No or empty' in report
