@@ -545,48 +545,68 @@ show credits. The rules above keep today's behaviour until product answers.
 
 ## 8. Invoices
 
-Invoices bill **earned pay records** (section [7.1](#71-earned-pay-records)) that aren't on an invoice yet, instead of
-multiplying by the current pay rate, so they always match earned pay and never look up a pay rate.
+Invoices bill **live earnings** (section [7.1](#71-models)) that aren't on an invoice yet, instead of multiplying by
+the current pay rate. So they always match recorded pay and never look up a pay rate. Invoices already created keep
+their amounts; the backfill only links their rows to earnings.
 
-- **One invoice row (`CompletedWorkInvoice`) per record,** linked to it and copying its amounts. This replaces one row
-  per invoice and piece of work, so a delivery and its duplicate at different pay rates get two rows, and
-  `unique_together = ("invoice", "completed_work")` is dropped (ticket 4). Copying the amounts could be dropped
-  later (section [15](#15-future-improvements)).
+**What gets billed**
 
-  ```python
-  class CompletedWorkInvoice(BaseModel):
-      earned_pay_record = models.OneToOneField(
-          EarnedPayRecord, on_delete=models.PROTECT, null=True, related_name="invoice_row"
-      )  # made required once the earned pay backfill has run (ticket 12)
-  ```
+The same rules as today, so the current invoicing approach doesn't change:
 
-- **What is billed:**
-  - every unbilled record (no invoice row) of approved work, earned on or before the invoice's end date
-  - each row goes under the month its record was earned
-  - a backfilled record with no date goes under the invoice's month, as additional deliveries do today
-  - cancelling an invoice deletes its rows, so their records become unbilled again
-- `invoiced_approved_count` is no longer needed (dropped in ticket 12).
-- **Lines** are grouped by month, payment unit and pay rate (amount ÷ deliveries, so backfilled records group the same
-  way): "N verified visits x `<currency>` `<rate>`". A month with two pay rates has two
-  lines. Additional deliveries are part of these lines, under the month they were approved; the existing "Additional
-  Deliveries" count on the invoice form stays.
+- live earnings with no invoice row, approved within the invoice's dates
+- plus earlier ones on work already invoiced (additional deliveries)
+- each under the month of its `approved_on`
+
+Backfilled earnings with no `approved_on` (section [7.3](#73-pay-record-backfill)):
+
+- **A duplicate delivery** (not the work's first) is billed as additional deliveries are today: with its work's
+  first billing, or on the next invoice if the work is already invoiced, under the invoice's month. This keeps
+  today's invoicing for old pay. New duplicate deliveries have an approval date, so they are billed under the month
+  they were approved.
+- **A work's first delivery** is never billed, as today: a work with no `status_modified_date` never falls within an
+  invoice's dates.
+
+**Reversals aren't billed.** Section [7.4](#74-rejecting-approved-work)'s block means only unbilled earnings are
+reversed, and an earning with a reversal is never billed. Old work's backfilled reversals (section
+[7.3](#73-pay-record-backfill)) aren't credited, as today. Credit lines are future work (section
+[15](#15-future-improvements)).
+
+**Invoice rows**
+
+- **One invoice row (`CompletedWorkInvoice`) per invoice, work, month and pay rate:** as today, but split by month and
+  pay rate.
+- Each earning points to its row (`PayRecord.invoice_row`). The row's `billed_count` and amounts are the sum of its
+  earnings.
+- `unique_together = ("invoice", "completed_work")` is dropped (ticket 4). Line items don't change.
+- **Cancelling an invoice** deletes its rows, which clears `invoice_row` on their earnings, so they are unbilled again.
+- **`invoiced_approved_count` is still kept up to date** in both modes, until ticket 12 drops it: billing sets it to
+  the work's billed earnings, and cancelling rolls it back. This keeps the switch able to go back off.
+
+**Behind the `PAY_RECORDS` switch** (section [7.3](#73-pay-record-backfill)): billing an invoice, the billable preview
+and its export, and cancelling an invoice. Showing and exporting existing invoices reads their rows, so it works the
+same either way.
+
+**What the invoice shows**
+
+- **Lines** are grouped by month, payment unit and pay rate: "N verified visits x `<currency>` `<rate>`". A month with
+  two pay rates has two lines. Additional deliveries are part of these lines, under the month they were approved; the
+  existing "Additional Deliveries" count on the invoice form stays.
 - **Export:** one row per invoice row, as today, plus a pay rate column (and an org pay rate column when org pay is
-  shown), worked out as pay ÷ deliveries.
-- Invoices already created keep their amounts; the earned pay backfill only links their rows to records.
+  shown), worked out as amount ÷ `billed_count`.
 
-**Example.** Worker pay goes from 4 to 5 on October 1. One worker's records:
+**Example.** Worker pay goes from 4 to 5 on October 1. One worker's earnings:
 
-| Record         | Earned on | Deliveries | Worker pay |
-| -------------- | --------- | ---------- | ---------- |
-| Delivery A     | Sep 12    | 1          | 4          |
-| Delivery B     | Sep 30    | 1          | 4          |
-| Duplicate of A | Oct 1     | 1          | 5          |
-| Delivery C     | Oct 8     | 1          | 5          |
+| Earning        | Approved on | Worker pay |
+| -------------- | ----------- | ---------- |
+| Delivery A     | Sep 12      | 4          |
+| Delivery B     | Sep 30      | 4          |
+| Duplicate of A | Oct 1       | 5          |
+| Delivery C     | Oct 8       | 5          |
 
-- **October 2 invoice (September):** A and B, as one line: "2 verified visits x USD 4". The duplicate was earned
+- **October 2 invoice (September):** A and B, as one line: "2 verified visits x USD 4". The duplicate was approved
   after the end date, so it waits for the next invoice.
 - **November 2 invoice (October):** the duplicate of A and C, as one line under October: "2 verified visits x USD
-  5". The duplicate is billed at the pay rate it earned, as part of the normal line.
+  5". The duplicate is billed at the pay rate it was approved at, as part of the normal line.
 
 ## Part 2: Scheduling and applying pay rate changes
 
@@ -1109,8 +1129,8 @@ few hours."
 10. Block rejecting paid or invoiced work, and reverse the pay of other rejected work (section
     [7.4](#74-rejecting-approved-work))
 11. Existing bug: keep the status set by the completed work status import (section [7.4](#74-rejecting-approved-work))
-12. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and make an
-    invoice row's record required
+12. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and remove
+    today's pay and invoice code with the `PAY_RECORDS` switch
 
 ### 14.1 Releases
 
@@ -1130,8 +1150,8 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 
 ## 15. Future improvements
 
-- **Drop copied columns from invoice rows.** Once every row is linked to a record (ticket 12), read `completed_work`,
-  `billed_count`, local amounts and `month` from the record, and derive `is_delta`.
+- **Drop copied columns from invoice rows.** `billed_count` and the local amounts are sums of the row's pay records,
+  and `is_delta` can be derived. Read them from the records instead.
 - **Drop the cached totals from `CompletedWork`.** `saved_payment_accrued`, `saved_org_payment_accrued` and their USD
   versions are sums of the work's pay records. Read them from the records instead, after checking that worker
   totals, reports and exports stay fast.
@@ -1142,6 +1162,7 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
   instead of rejecting it, so only deliveries whose own visits are rejected lose their pay (section
   [7.4](#74-rejecting-approved-work)). Product is checking whether work-level rejection is needed.
 - **Reject paid work with a credit.** Paid or invoiced work can't be rejected (section
-  [7.4](#74-rejecting-approved-work)), for example if it turns out to be fraud. A credit on the next invoice could
-  allow it.
+  [7.4](#74-rejecting-approved-work)), for example if it turns out to be fraud. Billing its reversal as a credit line
+  on the next invoice would allow it.
+- **Show each delivery on invoices.** List the approval date and pay rate of each delivery an invoice bills.
 - **Group visits by delivery** in the UI, for example in the worker's visit list.
