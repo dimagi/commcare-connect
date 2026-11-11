@@ -104,123 +104,16 @@ jobs:
   rebuild-staging:
     needs: check-branch
     if: needs.check-branch.outputs.should-rebuild == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
     # On the job, not the workflow, so pushes to unlisted branches never queue here and can't replace
     # a waiting rebuild. A replaced waiting rebuild is harmless: the newer one builds the latest state.
+    # Set here rather than on each called job so build, publish and report run as one unit.
     concurrency:
       group: rebuild-staging
       cancel-in-progress: false
+    # The most the called jobs may use; each job narrows it
     permissions:
       contents: write
       actions: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          # Full history needed for merging branches
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Install git-build-branch
-        run: uv tool install git-build-branch==0.1.20
-
-      - name: Configure git
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-
-      - name: Build autostaging
-        id: build
-        run: |
-          set -o pipefail
-          ./deploy/rebuildstaging --no-push 2>&1 | tee build.log
-
-      - name: Install app dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y binutils gdal-bin libproj-dev
-          # git-build-branch leaves the original branch checked out
-          git checkout autostaging
-          uv sync --frozen
-
-      # The checks below catch a broken combination of branches before autostaging is pushed, rather than in
-      # the deploy. They need no database service: makemigrations only warns when it can't reach one.
-      - name: Run Django checks
-        id: django-check
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings.test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: |
-          set -o pipefail
-          uv run python manage.py check 2>&1 | tee check.log
-
-      - name: Check migrations
-        id: migrations
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings.test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: |
-          # Two staged branches that each add a migration to the same app give it two leaf nodes
-          set -o pipefail
-          uv run python manage.py makemigrations --check --dry-run 2>&1 | tee migrations.log
-
-      - name: Push if the code changed
-        id: push
-        run: |
-          # Every build makes new merge commits, so compare trees to avoid deploying identical code
-          if git rev-parse -q --verify origin/autostaging > /dev/null \
-              && [ "$(git rev-parse 'autostaging^{tree}')" = "$(git rev-parse 'origin/autostaging^{tree}')" ]; then
-            echo "autostaging is unchanged, nothing to deploy"
-            exit 0
-          fi
-          git push --force origin autostaging
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy
-        if: steps.push.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # A push made with GITHUB_TOKEN doesn't start deploy.yml, so start it explicitly
-        run: gh workflow run deploy.yml --ref main -f environment=staging -f deploy_type=adhoc
-
-      - name: Build Slack message
-        id: slack-message
-        if: failure()
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          FAILED_STEP: >-
-            ${{ steps.build.outcome == 'failure' && 'build'
-                || steps.django-check.outcome == 'failure' && 'check'
-                || steps.migrations.outcome == 'failure' && 'migrations'
-                || 'other' }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-        run: |
-          # Run main's copy of the report, not one a staged branch may have changed, since it gets the Slack token
-          git checkout --quiet --force main
-          case "$FAILED_STEP" in
-            build) LOG=build.log ;;
-            check) LOG=check.log ;;
-            migrations) LOG=migrations.log ;;
-            *) LOG="" ;;
-          esac
-          if ! uv run --no-project --with httpx --with pyyaml python -m deploy.staging_report \
-              --step "$FAILED_STEP" ${LOG:+--log "$LOG"} --config "artifacts/staging-branches/$STAGING_CONFIG" \
-              --run-url "$RUN_URL" --output slack-payload.json; then
-            # Still report the failure, without the details, if the report itself breaks
-            jq -n --arg url "$RUN_URL" '{text: "Staging rebuild failed", blocks: [{type: "section", text: {
-              type: "mrkdwn", text: ("*Staging rebuild failed.* <" + $url + "|View run>")}}]}' > slack-payload.json
-          fi
-
-      - name: Post failure to Slack
-        if: failure() && steps.slack-message.outcome == 'success'
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          channel-id: 'C09TVKX4N2C'
-          payload-file-path: ./slack-payload.json
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    uses: ./.github/workflows/rebuild-staging-jobs.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
