@@ -50,7 +50,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import UserOrganizationMembership
-from commcare_connect.program.utils import opportunities_accessible_to_org
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_administered_by
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 
@@ -929,28 +929,33 @@ def api_key_owner_has_left(opportunity: Opportunity) -> bool:
     if api_key is None:
         return False
     owner = api_key.user
-    program = opportunity.program
-    program_org_ids = [org_id for org_id in (program.organization_id, program.funder_id) if org_id]
-    if UserOrganizationMembership.objects.filter(user=owner, organization_id__in=program_org_ids).exists():
+    owner_org_ids = UserOrganizationMembership.objects.filter(user=owner).values("organization_id")
+    if programs_administered_by(owner_org_ids).filter(pk=opportunity.program_id).exists():
         return False
     # Checked last: the owner isn't the request user, so their permission cache is cold and this costs queries.
     return not owner.has_perm(ALL_ORG_ACCESS)
 
 
-def opportunities_orphaned_by_removal(membership: UserOrganizationMembership):
+def opportunities_orphaned_by_removal(membership: UserOrganizationMembership) -> list[Opportunity]:
     """The opportunities whose API key would belong to someone who has left once `membership` is removed.
 
-    The rule is `api_key_owner_has_left`'s: the key's owner must stay in the program's owner or funder organization,
-    or hold ALL_ORG_ACCESS. Archived opportunities are left out, since no one maintains their key.
+    The rule is `api_key_owner_has_left`'s: the key's owner must stay in an organization that administers the
+    program, or hold ALL_ORG_ACCESS. Archived opportunities are left out, since no one maintains their key.
     """
     user, organization = membership.user, membership.organization
-    if user.has_perm(ALL_ORG_ACCESS):
-        return Opportunity.objects.none()
-    remaining_org_ids = UserOrganizationMembership.objects.filter(user=user).exclude(organization=organization)
-    remaining_org_ids = remaining_org_ids.values("organization_id")
-    return (
-        Opportunity.objects.filter(api_key__user=user, archived=False)
-        .filter(Q(program__organization=organization) | Q(program__funder=organization))
-        .exclude(Q(program__organization__in=remaining_org_ids) | Q(program__funder__in=remaining_org_ids))
+    remaining_org_ids = (
+        UserOrganizationMembership.objects.filter(user=user)
+        .exclude(organization=organization)
+        .values("organization_id")
+    )
+    opportunities = list(
+        Opportunity.objects.filter(
+            api_key__user=user, archived=False, program__in=programs_administered_by([organization.id])
+        )
+        .exclude(program__in=programs_administered_by(remaining_org_ids))
         .order_by("name")
     )
+    # Checked last, as in api_key_owner_has_left: the user's permission cache is cold and this costs queries.
+    if opportunities and user.has_perm(ALL_ORG_ACCESS):
+        return []
+    return opportunities

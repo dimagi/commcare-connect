@@ -148,9 +148,9 @@ def remove_members(request, org_slug):
         pk__in=membership_ids, organization__slug=org_slug
     ).select_related("user", "organization")
     blocking_messages = api_key_removal_blocks(memberships)
+    for message in blocking_messages:
+        messages.error(request, message=message)
     if blocking_messages:
-        for message in blocking_messages:
-            messages.error(request, message=message)
         return redirect(redirect_url)
 
     if membership_ids:
@@ -164,7 +164,7 @@ def api_key_removal_blocks(memberships):
     """One message per member whose removal would leave opportunities with an API key no one here manages."""
     blocks = []
     for membership in memberships:
-        opportunity_names = list(opportunities_orphaned_by_removal(membership).values_list("name", flat=True))
+        opportunity_names = [opportunity.name for opportunity in opportunities_orphaned_by_removal(membership)]
         if opportunity_names:
             blocks.append(
                 gettext(

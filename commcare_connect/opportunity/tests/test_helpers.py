@@ -965,32 +965,31 @@ def test_api_key_owner_has_left(case, expected):
 
 
 @pytest.mark.parametrize(
-    "case, orphaned",
+    "removed_from, still_member_of, owns_key, all_org_access, archived, orphaned",
     [
-        ("owner_org", True),
-        ("funder_org", True),
-        ("still_in_other_program_org", False),
-        ("owner_has_all_org_access", False),
-        ("archived", False),
-        ("unrelated_org", False),
-        ("key_owned_by_someone_else", False),
+        pytest.param("organization", None, True, False, False, True, id="owner_org"),
+        pytest.param("funder", None, True, False, False, True, id="funder_org"),
+        pytest.param("organization", "funder", True, False, False, False, id="still_in_other_program_org"),
+        pytest.param("organization", None, True, True, False, False, id="all_org_access"),
+        pytest.param("organization", None, True, False, True, False, id="archived"),
+        pytest.param(None, None, True, False, False, False, id="unrelated_org"),
+        pytest.param("organization", None, False, False, False, False, id="key_owned_by_someone_else"),
     ],
 )
-def test_opportunities_orphaned_by_removal(case, orphaned):
-    opportunity = _opportunity_in_funded_program(archived=case == "archived")
-    program, owner = opportunity.program, opportunity.api_key.user
-    removed_from = program.funder if case == "funder_org" else program.organization
-    if case == "unrelated_org":
-        removed_from = OrganizationFactory()
-    if case == "key_owned_by_someone_else":
-        owner = MobileUserFactory()
-    if case == "still_in_other_program_org":
-        UserOrganizationMembership.objects.create(user=owner, organization=program.funder)
-    if case == "owner_has_all_org_access":
-        owner = grant_all_org_access(owner)
-    membership = UserOrganizationMembership.objects.create(user=owner, organization=removed_from)
+def test_opportunities_orphaned_by_removal(
+    removed_from, still_member_of, owns_key, all_org_access, archived, orphaned
+):
+    opportunity = _opportunity_in_funded_program(archived=archived)
+    program = opportunity.program
+    user = opportunity.api_key.user if owns_key else MobileUserFactory()
+    if all_org_access:
+        user = grant_all_org_access(user)
+    if still_member_of:
+        UserOrganizationMembership.objects.create(user=user, organization=getattr(program, still_member_of))
+    organization = getattr(program, removed_from) if removed_from else OrganizationFactory()
+    membership = UserOrganizationMembership.objects.create(user=user, organization=organization)
 
-    assert list(opportunities_orphaned_by_removal(membership)) == ([opportunity] if orphaned else [])
+    assert opportunities_orphaned_by_removal(membership) == ([opportunity] if orphaned else [])
 
 
 def _opportunity_in_funded_program(**kwargs):
