@@ -10,7 +10,7 @@ A check that guards a change lives in the service's module, and the service call
 
 ## Celery tasks
 
-Services dispatch the tasks they need with `transaction.on_commit(partial(task.delay, ...))`, importing the task inside the function, because `tasks.py` imports services. Services let transient errors (network errors, lock timeouts) propagate. The task decides whether to retry, and each task with `autoretry_for` has a test that it retries.
+Services dispatch the tasks they need with `task.delay_on_commit(...)`, importing the task inside the function, because `tasks.py` imports services. Services let transient errors (network errors, lock timeouts) propagate. The task decides whether to retry, and each task with `autoretry_for` has a test that it retries.
 
 ## Notifications
 

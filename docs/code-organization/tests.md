@@ -9,5 +9,5 @@ Read [`../code-organization.md`](../code-organization.md) first.
 - Test modules may import `tests/helpers.py` and `tests/factories.py`, but never other test modules.
 - Test modules mirror the code they test (`opportunity/services/billing.py` → `opportunity/tests/services/test_billing.py`) and move with it in the same `refactor:` commit. A single `tests.py` becomes a `tests/` package when a second test module is needed.
 - Factories build consistent related objects themselves, e.g. a `UserVisitFactory` given `opportunity_access` takes `user` and `opportunity` from it with `factory.SelfAttribute`. Don't pass values that equal a factory's defaults.
-- Patch at the boundary (the HTTP client, a task's `.delay`), not internal functions, so moving internals doesn't break tests.
+- Patch at the boundary (the HTTP client, a task's `.delay_on_commit`), not internal functions, so moving internals doesn't break tests.
 - Use `pytest.mark.parametrize` when tests differ only in inputs and expected values. Keep separate tests when each case needs its own setup or explanation.
