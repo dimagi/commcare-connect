@@ -29,6 +29,19 @@ def test_missing_column_fails_cleanly(tmp_path, user):
         call_command("import_llo_contacts", path, user_email=user.email)
 
 
+@pytest.mark.parametrize(
+    "file_name, content",
+    [("missing.xlsx", None), ("directory.txt", b"not a workbook"), ("corrupt.xlsx", b"not a zip file")],
+)
+def test_unreadable_file_fails_cleanly(tmp_path, user, file_name, content):
+    path = tmp_path / file_name
+    if content is not None:
+        path.write_bytes(content)
+
+    with pytest.raises(CommandError, match=f"Can't read the workbook {re.escape(str(path))}"):
+        call_command("import_llo_contacts", path, user_email=user.email)
+
+
 def test_dry_run_writes_nothing(tmp_path, user, capsys):
     OrganizationFactory(name="Acme")
     path = make_workbook(tmp_path, [contact_values()], [organization_values(**{"Organization Name": "New Org"})])

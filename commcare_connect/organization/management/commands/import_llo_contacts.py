@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
+from zipfile import BadZipFile
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+from openpyxl.utils.exceptions import InvalidFileException
 
 from commcare_connect.organization.llo_import.execution import execute_import_plan
 from commcare_connect.organization.llo_import.planning import build_import_plan
@@ -30,6 +32,8 @@ class Command(BaseCommand):
             workbook = load_workbook(path)
         except WorkbookError as error:
             raise CommandError(str(error))
+        except (FileNotFoundError, InvalidFileException, BadZipFile) as error:
+            raise CommandError(f"Can't read the workbook {path}: {error}")
         plan = build_import_plan(workbook)
         if commit:
             self._commit(workbook, plan, user)

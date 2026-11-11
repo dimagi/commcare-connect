@@ -87,6 +87,13 @@ def test_missing_tab_or_column_raises(tmp_path, missing):
         load_workbook(path)
 
 
+def test_duplicate_headers_raise(tmp_path):
+    path = make_workbook(tmp_path, [], [], extra_contact_headers=(" Email Address ", "Phone Number"))
+
+    with pytest.raises(WorkbookError, match="Duplicate column.* Contacts tab: Email Address, Phone Number"):
+        load_workbook(path)
+
+
 def test_result_columns_are_included_when_present(tmp_path):
     path = make_workbook(
         tmp_path,
