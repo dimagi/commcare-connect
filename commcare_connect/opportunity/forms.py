@@ -917,6 +917,15 @@ def fixed_server_api_key_choices(opportunity, user):
     return choices + [(key.id, key.masked) for key in own_keys]
 
 
+def reloaded_api_key_selection(choices, pending, opportunity):
+    """The option to select when the key list reloads: the admin's unsaved pick, if it is still offered, so adding
+    another key doesn't silently put the opportunity's current key back. Otherwise the current key."""
+    offered = {str(value) for value, _label in choices}
+    if pending is not None and str(pending) in offered:
+        return str(pending)
+    return str(opportunity.api_key_id or "")
+
+
 def _fixed_server_api_key_attrs(opportunity, org_slug):
     # The HQ server can't change here, so the list reloads from the opportunity rather than a server select.
     return {

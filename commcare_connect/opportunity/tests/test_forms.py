@@ -33,6 +33,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     PaymentUnitForm,
+    reloaded_api_key_selection,
 )
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
@@ -2197,3 +2198,21 @@ class TestHQApiKeyCreateForm:
             fixed_hq_server=server if pinned else None,
         )
         assert form.is_valid() is valid
+
+
+@pytest.mark.parametrize(
+    "pending, expected",
+    [
+        ("2", "2"),  # the admin's unsaved pick survives the reload
+        (None, "1"),  # nothing sent: the opportunity's key
+        ("99", "1"),  # no longer offered: the opportunity's key
+    ],
+)
+def test_reloaded_api_key_selection(pending, expected):
+    opportunity = Opportunity(api_key_id=1)
+    assert reloaded_api_key_selection([(1, "current"), (2, "mine")], pending, opportunity) == expected
+
+
+def test_reloaded_api_key_selection_without_a_current_key():
+    choices = [("", "Select an API key"), (2, "mine")]
+    assert reloaded_api_key_selection(choices, None, Opportunity()) == ""

@@ -17,6 +17,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitForm,
     OpportunityInitUpdateForm,
     fixed_server_api_key_choices,
+    reloaded_api_key_selection,
 )
 from commcare_connect.opportunity.models import (
     Opportunity,
@@ -195,11 +196,10 @@ def opportunity_api_key_options(request, org_slug, pk, opp_id):
         opp_id,
         uuid_field="opportunity_id",
     )
-    return render(
-        request,
-        "opportunity/partials/api_key_options.html",
-        {"choices": fixed_server_api_key_choices(opportunity, request.user), "selected": opportunity.api_key_id},
-    )
+    choices = fixed_server_api_key_choices(opportunity, request.user)
+    # htmx sends the select's own value with the reload, which is the admin's unsaved pick.
+    selected = reloaded_api_key_selection(choices, request.GET.get("api_key"), opportunity)
+    return render(request, "opportunity/partials/api_key_options.html", {"choices": choices, "selected": selected})
 
 
 @program_admin_access_required

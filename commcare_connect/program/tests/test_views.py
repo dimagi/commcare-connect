@@ -581,4 +581,7 @@ def test_opportunity_api_key_options(client, program_actors, actor, expected):
         assert was_denied(response), f"{actor} reached the API key options: {response.status_code}"
         return
     assert [value for value, _ in response.context["choices"]] == [opportunity.api_key_id, new_key.id]
-    assert f'value="{opportunity.api_key_id}" selected' in response.content.decode()
+    assert response.context["selected"] == str(opportunity.api_key_id)
+    # htmx sends the admin's unsaved pick as the select's value; the reload keeps it.
+    response = client.get(url, {"api_key": new_key.id})
+    assert response.context["selected"] == str(new_key.id)
