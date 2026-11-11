@@ -430,46 +430,90 @@ don't move.
 - Worker totals, reports and exports already read the stored amounts, so they don't change.
 - `saved_approved_count` no longer decides new pay. The visit links do.
 
-### 7.3 Earned pay backfill
+### 7.3 Pay record backfill
 
-We don't need to know when old deliveries were approved: today's code prices deliveries at one pay rate each time it
-invoices them, so the amounts can come from existing invoice rows and the current pay rate. A re-runnable management
-command (not a migration), run right after the deploy:
+#### 7.3.1 Backfill approach
 
-1. For each existing invoice row, creates a record with the same deliveries, amounts and exchange rate, and links the
-   row to it.
-2. For each **approved** piece of work, creates one record for the deliveries no record covers yet:
-   - **Deliveries:** approved deliveries minus those already in its records (from step 1, or from approvals since
-     the deploy).
-   - **Pay:** the current pay rate, which is what today's invoicing would bill.
-   - **Exchange rate:** the one on the work's approval date.
-   - It locks the work like the updater (section [7](#7-updating-earned-pay-the-key-change)), so a live approval
-     can't add the same deliveries at the same time.
-3. For each piece of work that **isn't approved**, sets `saved_approved_count` to the deliveries in its records (0 if
-   it has none). Today's code counts deliveries on work that isn't approved too; left as is, they would never be paid
-   once the work is approved, since pay is only added for deliveries above the count.
-4. Skips what it has already handled, so it is safe to run again.
+Old pay is rebuilt from existing invoice rows and the current pay rate. Old approval dates aren't needed to get the
+amounts right: today's code prices deliveries at one pay rate each time it invoices them. Old pay isn't rebuilt from
+visits alone, because invoice rows are the only record of what was actually billed and for how much, including pay
+edited after invoicing.
 
-Backfilled records have no pay rate link. We don't guess dates: `earned_on` is the work's `status_modified_date` if it
-has one approved delivery, and empty otherwise.
+The backfill runs four steps:
 
-**When to run it**
+1. **Turn invoice rows into earnings.** Each existing invoice row becomes one earning per billed delivery, linked to
+   the row:
+   - **Amounts:** the row's amounts ÷ `billed_count`.
+   - **Exchange rate:** the row's.
+   - **`pay_rate`:** the unit's pay rate if the amounts match it, and empty otherwise (pay was edited after that
+     invoice).
+   - **On a rerun,** a new invoice row is linked to the work's existing unbilled earnings first, and earnings are only
+     created for deliveries that don't have one. Otherwise an invoice created while the switch was off would bill
+     those deliveries again.
+2. **Link visits to deliveries.** For each work with approved, agreed visits, invoiced or not, group the visits into
+   deliveries with the same matching as section [7.2](#72-updating-pay). Works with more than one delivery are
+   grouped the same way.
+   - The first N deliveries take the work's N earnings from step 1.
+   - On approved work, the rest get new earnings at the current pay rate (what today's invoicing would bill).
+   - If fewer deliveries match than were billed, the extra earnings stay without a delivery.
 
-- **Immediately after the deploy.** Until it runs, old deliveries that aren't invoiced yet have no records, so an
-  invoice created in between would leave them out until a later invoice.
-- **Deploy after the invoice run on the 2nd and before the month ends.** Records with no `earned_on` (step 2, when the
-  approval date isn't known) are billed under the month of the next invoice. After the 2nd, everything still unbilled
-  was approved this month, so that month is right. Run on the 1st, work approved that morning would be billed under
-  the previous month.
+   Every approved, agreed visit must be linked: the updater treats any such visit with no delivery as unpaid, and it
+   runs on every recalculation of approved work, including the nightly job.
+3. **Reverse pay on old work rejected after it was invoiced.** Before this release, a work could be invoiced and then
+   rejected (section [7.4](#74-rejecting-approved-work) blocks this from now on). Today such a work shows no pay,
+   since only approved work earns. But its invoice row is still there, and step 1 turns that row into earnings,
+   which would suddenly give the worker pay for rejected work. So each of those earnings gets a matching reversal,
+   and the work's total goes back to 0, as today.
 
-**Example.** The September invoice runs on October 2, and the backfill runs on October 10. A work has 3 approved
-deliveries: 2 were on the September invoice, and 1 was approved on October 5 and isn't billed yet.
+   The invoice itself isn't touched: it keeps the amount it billed, and no credit is added to a later invoice. That
+   is also how it works today; credit lines are future work (section [15](#15-future-improvements)).
 
-- Step 1 creates a record for the 2 billed deliveries, linked to the September invoice row.
-- Step 2 creates a record for the other delivery. The work has more than one delivery, so `earned_on` is empty. The
-  November 2 invoice bills it under October, which is right.
-- Had the backfill run on October 1, a delivery approved that morning would be billed on the October 2 invoice,
-  under September.
+   For example, a work had 2 deliveries billed at 4 on the September invoice, and was rejected in October. Step 1
+   gives it two earnings of +4, and step 3 adds two reversals of −4. The worker's total stays 0, and the September
+   invoice stays at 8.
+4. **Set the cached totals.**
+
+**Approval dates of backfilled earnings**
+
+- **A work's first delivery** gets the work's `status_modified_date` as its `approved_on`. That is when today's code
+  counted the pay as earned, and the date today's invoicing bills by.
+- **Later deliveries on the same work (duplicates)** get no `approved_on`. Additional deliveries don't update the
+  work's date, so theirs isn't known. They are billed as additional deliveries are today (section
+  [8](#8-invoices)).
+
+So invoicing doesn't change. The agree-date rule in section [7.2](#72-updating-pay) only applies to new deliveries.
+
+#### 7.3.2 Switch for deployment
+
+The new code can't run before the backfill has run: on work with no pay records yet, it could pay a delivery twice
+(example below). Running the backfill in a data migration would avoid that, but it is too slow for a deploy. So a
+`PAY_RECORDS` waffle switch decides which code runs:
+
+- **Off**, as deployed: pay and invoices work exactly as today. Totals are count × pay rate, invoices bill by
+  `invoiced_approved_count`, and no deliveries or pay records are created.
+- **On:** pay is recorded per delivery (section [7.2](#72-updating-pay)), and invoices bill pay records (section
+  [8](#8-invoices)).
+
+**Rollout**
+
+1. Deploy with the switch off. Nothing changes for users.
+2. Run the backfill. It builds the deliveries and pay records, then turns the switch on.
+3. It runs once more, to catch what happened while it was running: work approved in the meantime gets its earnings,
+   and any invoice created in the meantime gets earnings linked to its rows.
+
+Today's code and the switch are removed in ticket 12.
+
+**What goes wrong without it.** Delivery A was billed on the September invoice. The new code is deployed, and before
+the backfill runs, the worker submits a new visit on the same work. The new code recalculates the work, finds A's
+visit with no delivery, treats it as unpaid, and gives A a new, unbilled earning. Then the backfill adds A's earning
+from the September invoice row. A now has two earnings, and the next invoice bills it again. The row lock doesn't
+help: the two happen one after the other, not at the same time.
+
+**Turning it back off** is for emergencies only. Today's code takes over, since both counts are kept up to date, but
+it reprices pay at the current pay rate. Rerun the backfill before turning the switch on again.
+
+> **Note:** the backfill is a re-runnable management command, not a migration. It runs under the same row lock as the
+> updater, and skips what it has already handled, so it is safe to run again.
 
 ### 7.4 Rejecting approved work
 
@@ -1075,7 +1119,7 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 | Release       | Tickets    | Notes                                                                                                                                                                                                                                                                                                                               |
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Foundation | 1, 2, 3    | Nothing new for PMs except the date rules. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
-| 2. Earned pay | 4, 10, 11  | Deliveries and pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.3](#73-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
+| 2. Earned pay | 4, 10, 11  | Deliveries and pay records, and invoices bill them. Deploy with the `PAY_RECORDS` switch off, then run the pay record backfill (section [7.3](#73-pay-record-backfill)), which turns it on. Editing pay on the form no longer reprices work already approved. Add the `UserVisit.delivery` index with `AddIndexConcurrently` in its own migration, so building it doesn't block form submissions. To roll back, turn the switch off (section [7.3](#73-pay-record-backfill)); the code itself is not safe to roll back. |
 | 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
 | 4. Follow-up  | 12         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
 
