@@ -188,16 +188,36 @@ def test_maps_organization_row():
             ["Nigeria", "Chad", "Congo, the Democratic Republic of the"],
         ),
         ("Nigeria ", ["Nigeria"]),
+        ("Nigeria,\nChad", ["Nigeria", "Chad"]),
+        ("Nigeria\r\nChad, Mali", ["Nigeria", "Chad", "Mali"]),
     ],
 )
 def test_split_countries(value, expected):
     assert split_countries(value) == expected
 
 
-def test_split_sectors():
-    value = "Health, WASH (Water, Sanitation, Hygiene), Education"
-
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Health, WASH (Water, Sanitation, Hygiene), Education",
+        "Health\nWASH (Water, Sanitation, Hygiene)\r\nEducation",
+    ],
+)
+def test_split_sectors(value):
     assert split_sectors(value) == ["Health", "WASH (Water, Sanitation, Hygiene)", "Education"]
+
+
+def test_unreadable_countries_are_a_problem(monkeypatch):
+    import csv
+
+    def raise_error(*args, **kwargs):
+        raise csv.Error("bad")
+
+    monkeypatch.setattr(csv, "reader", raise_error)
+
+    organization = map_org()
+
+    assert Problem("Countries of Operation", "Nigeria, Chad", "the names couldn't be read") in organization.problems
 
 
 def test_unknown_country_and_sector_are_problems():
@@ -230,6 +250,8 @@ def test_duplicate_countries_are_kept_once():
             ([], ["None yet, but has deployed Connect"]),
         ),
         ("A https://a.example/x\nB https://a.example/x", None, (["https://a.example/x"], [])),
+        ("See (https://x.org),", None, (["https://x.org"], [])),
+        ("HTTPS://X.ORG/a", None, (["HTTPS://X.ORG/a"], [])),
     ],
 )
 def test_eoi_links(text, hyperlink, expected):
@@ -284,8 +306,19 @@ def test_team_size():
     ]
 
 
+@pytest.mark.parametrize("value", [50.0, "50", "50.0"])
+def test_whole_numbers_are_read(value):
+    assert map_org(**{"No. of FLWs Managed": value}).form_data["flws_managed"] == 50
+
+
+@pytest.mark.parametrize("value", ["1_000", "1e3", "+5", "50.5"])
+def test_malformed_whole_numbers_are_problems(value):
+    organization = map_org(**{"No. of FLWs Managed": value})
+
+    assert organization.problems == [Problem("No. of FLWs Managed", value, "must be a whole number")]
+
+
 def test_whole_numbers():
-    assert map_org(**{"No. of FLWs Managed": 50.0}).form_data["flws_managed"] == 50
 
     organization = map_org(**{"No. of FLWs Managed": 50.5, "Year of Establishment": "about 1990"})
 

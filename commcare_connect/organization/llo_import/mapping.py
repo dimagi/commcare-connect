@@ -47,7 +47,10 @@ UNKNOWN_NAME_REASONS = {
 FORMULA_REASON = "formulas aren't read; replace the formula with its value"
 ADDRESS_SEPARATORS = re.compile(r"[,;\s]+")
 HYPERLINK_FORMULA = re.compile(r'^=HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
-URL_IN_TEXT = re.compile(r"https?://\S+")
+URL_IN_TEXT = re.compile(r"https?://\S+", re.IGNORECASE)
+URL_TRAILING_PUNCTUATION = ".,;:)]"
+LINE_BREAKS = re.compile(r"[\r\n]+")
+WHOLE_NUMBER = re.compile(r"\d+(\.0+)?")
 
 
 @dataclass(frozen=True)
@@ -125,7 +128,7 @@ def map_organization_row(row: SheetRow, countries: dict[str, str], sectors: dict
 
 
 def split_countries(value: str) -> list[str]:
-    parsed = next(csv.reader([value], skipinitialspace=True), [])
+    parsed = next(csv.reader([LINE_BREAKS.sub(",", value)], skipinitialspace=True), [])
     return [name.strip() for name in parsed if name.strip()]
 
 
@@ -133,7 +136,7 @@ def split_sectors(value: str) -> list[str]:
     names = []
     current = []
     depth = 0
-    for character in value:
+    for character in LINE_BREAKS.sub(",", value):
         if character == "," and depth == 0:
             names.append("".join(current))
             current = []
@@ -158,7 +161,7 @@ def eoi_links(text: str, hyperlink: str | None) -> tuple[list[str], list[str]]:
     for line in (line.strip() for line in text.splitlines()):
         if not line:
             continue
-        line_urls = URL_IN_TEXT.findall(line)
+        line_urls = [url.rstrip(URL_TRAILING_PUNCTUATION) for url in URL_IN_TEXT.findall(line)]
         if not line_urls and hyperlink_unused:
             line_urls = [hyperlink]
             hyperlink_unused = False
@@ -218,21 +221,21 @@ def _read_whole_number(row: SheetRow, column: str, problems: list[Problem]) -> i
     text = _text_without_formula(row, column, problems)
     if not text:
         return ""
-    try:
-        number = float(text)
-    except ValueError:
-        number = None
-    if number is None or not number.is_integer():
-        if not text.startswith("="):
-            problems.append(Problem(column, text, "must be a whole number"))
+    if not WHOLE_NUMBER.fullmatch(text):
+        problems.append(Problem(column, text, "must be a whole number"))
         return ""
-    return int(number)
+    return int(float(text))
 
 
 def _look_up_names(row: SheetRow, column: str, split, known: dict, problems: list[Problem]) -> list:
     reason = UNKNOWN_NAME_REASONS[column]
     keys = []
-    for name in split(_text_without_formula(row, column, problems)):
+    try:
+        names = split(_text_without_formula(row, column, problems))
+    except csv.Error:
+        problems.append(Problem(column, cell_text(row.values.get(column)), "the names couldn't be read"))
+        return []
+    for name in names:
         if name not in known:
             problems.append(Problem(column, name, reason))
         elif known[name] not in keys:
