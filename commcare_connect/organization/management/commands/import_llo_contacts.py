@@ -1,0 +1,31 @@
+from pathlib import Path
+
+from django.core.management.base import BaseCommand, CommandError
+
+from commcare_connect.organization.llo_import.workbook import WorkbookError, load_workbook
+from commcare_connect.users.models import User
+
+
+class Command(BaseCommand):
+    help = "Import contacts and organizations from the LLO Directory workbook."
+
+    def add_arguments(self, parser):
+        parser.add_argument("path", type=Path, help="Path to the LLO Directory .xlsx workbook")
+        parser.add_argument("--user-email", required=True, help="Email of the user the records are attributed to")
+        parser.add_argument("--commit", action="store_true", help="Write to the database and save an output copy")
+
+    def handle(self, path, user_email, commit=False, **options):
+        self._get_user(user_email)
+        try:
+            workbook = load_workbook(path)
+        except WorkbookError as error:
+            raise CommandError(str(error))
+        self.stdout.write(
+            f"Read {len(workbook.contacts)} contact rows and {len(workbook.organizations)} organization rows."
+        )
+
+    def _get_user(self, user_email):
+        users = list(User.objects.filter(email__iexact=user_email)[:2])
+        if len(users) != 1:
+            raise CommandError(f"Expected exactly one user with email {user_email}, found {len(users)}.")
+        return users[0]
