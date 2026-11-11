@@ -5,14 +5,22 @@ from unittest import mock
 
 import httpx
 import pytest
-from django.contrib.gis.geos import Polygon
+from django.contrib.gis.geos import Point, Polygon
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from kombu.exceptions import OperationalError
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-from commcare_connect.microplanning.models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import (
+    SRID,
+    ImplementationArea,
+    OvertureRelease,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaStatus,
+)
 from commcare_connect.microplanning.tasks import (
     OVERTURE_CATALOG_URL,
     ImplementationAreaCSVImporter,
@@ -21,6 +29,7 @@ from commcare_connect.microplanning.tasks import (
     cluster_work_areas_task,
     import_work_areas_task,
     send_work_area_assignment_notification,
+    sync_work_area_group_cases,
     update_overture_release,
 )
 from commcare_connect.microplanning.tests.factories import (
@@ -29,7 +38,12 @@ from commcare_connect.microplanning.tests.factories import (
     WorkAreaGroupFactory,
     square,
 )
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
+from commcare_connect.opportunity.tests.factories import (
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    UserVisitFactory,
+)
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 WA_BASE_HEADER = "Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State"
 WA_ROW = 'area-{n},Ward1,77.1 28.6,"POLYGON((77 28,78 28,78 29,77 29,77 28))",5,6,7,LGA1,State1'
@@ -549,6 +563,128 @@ class TestWorkAreaCSVImporter:
             "Correct the ward, or use a different group name.",
         }
 
+    # --- adding to an opportunity that already has work areas ---
+
+    @pytest.fixture
+    def sync_delay(self):
+        with mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay") as delay:
+            yield delay
+
+    def existing_group(self, opportunity, *member_squares, **work_area_fields):
+        """Group "group-a" in ward "ward", holding a work area on each square, with its centre point set."""
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward")
+        for x, y in member_squares:
+            WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(x, y), **work_area_fields)
+        group.update_centroid()
+        return WorkAreaGroup.objects.get(pk=group.pk)
+
+    def add_to_group_a(self, opportunity, x=12):
+        """Upload work area "area-new" into group-a, on the square at (x, 10)."""
+        rows = [self.build_row(slug="area-new", group_name="group-a", boundary=square(x, 10))]
+        return WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=self.build_csv_with_groups(rows)).run()
+
+    def test_adding_leaves_existing_work_areas_unchanged(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = self.existing_group(opportunity, (10, 10), opportunity_access=access, status=WorkAreaStatus.VISITED)
+        existing = group.workarea_set.get()
+        UserVisitFactory(opportunity=opportunity, user=access.user, opportunity_access=access, work_area=existing)
+        saved_before = WorkArea.objects.values().get(pk=existing.pk)
+
+        result = self.add_to_group_a(opportunity)
+
+        assert result == {"created": 1}
+        assert WorkArea.objects.values().get(pk=existing.pk) == saved_before
+        assert existing.uservisit_set.count() == 1
+        new = WorkArea.objects.get(opportunity=opportunity, slug="area-new")
+        assert (new.status, new.opportunity_access, new.work_area_group) == (WorkAreaStatus.UNASSIGNED, None, group)
+
+    def test_adding_to_existing_group_moves_its_centre_point(self, opportunity):
+        group = self.existing_group(opportunity, (10, 10))
+
+        self.add_to_group_a(opportunity)
+
+        group.refresh_from_db()
+        assert group.centroid.coords == (11.5, 10.5)
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            pytest.param(WorkAreaStatus.UNASSIGNED, id="had-a-centre-point"),
+            # An inaccessible work area doesn't count towards the centre point, so the group had none.
+            pytest.param(WorkAreaStatus.INACCESSIBLE, id="had-no-centre-point"),
+        ],
+    )
+    def test_sync_queued_for_existing_groups_that_moved(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay, status
+    ):
+        group = self.existing_group(opportunity, (10, 10), status=status)
+        rows = [
+            self.build_row(slug="area-new", group_name="group-a", boundary=square(12, 10)),
+            self.build_row(slug="area-other", group_name="new-group", boundary=square(14, 10)),
+        ]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=self.build_csv_with_groups(rows)).run()
+
+        assert result == {"created": 2}
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
+
+    @pytest.mark.parametrize(
+        "group_name",
+        [
+            pytest.param(None, id="no-group-column"),
+            pytest.param("new-group", id="only-new-groups"),
+            # The new square is between group-a's two members, so the group's centre point stays where it was.
+            pytest.param("group-a", id="centre-point-unchanged"),
+        ],
+    )
+    def test_sync_not_queued(self, opportunity, django_capture_on_commit_callbacks, sync_delay, group_name):
+        self.existing_group(opportunity, (10, 10), (14, 10))
+        row = self.build_row(slug="area-new", group_name=group_name, boundary=square(12, 10))
+        csv_file = self.build_csv_with_groups([row]) if group_name else self.build_csv([row])
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = WorkAreaCSVImporter(opp_id=opportunity.id, csv_source=csv_file).run()
+
+        assert result == {"created": 1}
+        sync_delay.assert_not_called()
+
+    def test_sync_not_queued_when_the_upload_is_rejected(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay
+    ):
+        self.existing_group(opportunity, (10, 10))
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = self.add_to_group_a(opportunity=opportunity, x=10)  # on top of the existing work area
+
+        assert "errors" in result
+        sync_delay.assert_not_called()
+
+    def test_upload_succeeds_when_the_sync_cannot_be_queued(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay
+    ):
+        self.existing_group(opportunity, (10, 10))
+        sync_delay.side_effect = OperationalError("broker unreachable")
+
+        with django_capture_on_commit_callbacks(execute=True):
+            result = self.add_to_group_a(opportunity=opportunity)
+
+        assert result == {"created": 1}
+        assert WorkArea.objects.filter(opportunity=opportunity, slug="area-new").exists()
+
+    def test_sync_queued_only_once_the_upload_commits(
+        self, opportunity, django_capture_on_commit_callbacks, sync_delay
+    ):
+        group = self.existing_group(opportunity, (10, 10))
+
+        with django_capture_on_commit_callbacks(execute=False) as callbacks:
+            self.add_to_group_a(opportunity)
+        sync_delay.assert_not_called()
+
+        assert len(callbacks) == 1
+        callbacks[0]()
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
+
 
 @pytest.mark.parametrize(
     "ratio, expected",
@@ -582,6 +718,18 @@ def test_import_work_areas_task_bom_csv(opportunity):
 
 
 @pytest.mark.django_db
+def test_import_work_areas_task_adds_to_existing_work_areas(opportunity):
+    WorkAreaFactory(opportunity=opportunity, boundary=square(10, 10))
+    file_name = "test-add-upload.csv"
+    default_storage.save(file_name, ContentFile(f"{WA_BASE_HEADER}\n{WA_ROW.format(n=1)}\n".encode()))
+
+    result = import_work_areas_task.apply(args=[opportunity.id, file_name]).get()
+
+    assert result == {"created": 1}
+    assert WorkArea.objects.filter(opportunity=opportunity).count() == 2
+
+
+@pytest.mark.django_db
 def test_send_work_area_assignment_notification(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity)
     with mock.patch("commcare_connect.microplanning.tasks.send_message") as send_message_mock:
@@ -594,6 +742,146 @@ def test_send_work_area_assignment_notification(opportunity):
     assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
     assert message.data["title"]
     assert message.data["body"]
+
+
+@pytest.mark.django_db
+class TestSyncWorkAreaGroupCases:
+    GROUP_CENTROID = Point(77.5, 28.5, srid=SRID)
+
+    @pytest.fixture
+    def bulk_update(self):
+        with mock.patch("commcare_connect.microplanning.tasks.bulk_create_or_update_cases") as bulk_update:
+            yield bulk_update
+
+    @pytest.fixture
+    def group(self, opportunity):
+        return WorkAreaGroupFactory(opportunity=opportunity, centroid=self.GROUP_CENTROID)
+
+    def assigned_work_area(self, group, status=WorkAreaStatus.NOT_VISITED, **kwargs):
+        return WorkAreaFactory(
+            opportunity=group.opportunity,
+            work_area_group=group,
+            opportunity_access=OpportunityAccessFactory(opportunity=group.opportunity),
+            status=status,
+            **kwargs,
+        )
+
+    def sync_kwargs(self, opportunity, groups):
+        return {"opportunity_id": opportunity.id, "work_area_group_ids": [group.pk for group in groups]}
+
+    def hq_error(self, status_code=None):
+        """The error bulk_create_or_update_cases raises when HQ answers with status_code, or doesn't answer."""
+        request = httpx.Request("POST", "https://hq.example/a/domain/api/case/v2/")
+        if status_code is None:
+            cause = httpx.ConnectError("connection refused", request=request)
+        else:
+            response = httpx.Response(status_code, request=request)
+            cause = httpx.HTTPStatusError("HQ error", request=request, response=response)
+        error = CommCareHQAPIException("Failed to bulk update cases")
+        error.__cause__ = cause
+        return error
+
+    def apply_sync(self, opportunity, group, caplog, level):
+        """Run the task as Celery would, retries included, capturing its log records at level and above."""
+        with caplog.at_level(level, logger="commcare_connect.microplanning.tasks"):
+            return sync_work_area_group_cases.apply(kwargs=self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+    def sent_properties(self, bulk_update):
+        """case_id -> properties of every case the task sent, checking it sent them in one call."""
+        bulk_update.assert_called_once()
+        return {case["case_id"]: case["properties"] for case in bulk_update.call_args.kwargs["cases_data"]}
+
+    def test_sends_only_the_centre_point_to_assigned_work_areas_in_given_groups(self, opportunity, group, bulk_update):
+        assigned = self.assigned_work_area(group)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        self.assigned_work_area(WorkAreaGroupFactory(opportunity=opportunity, centroid=self.GROUP_CENTROID))
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        bulk_update.assert_called_once_with(
+            api_key=opportunity.api_key,
+            domain=opportunity.deliver_app.cc_domain,
+            cases_data=[{"case_id": assigned.case_id, "properties": {"wag_centroid": "28.50000 77.50000"}}],
+        )
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            WorkAreaStatus.NOT_VISITED,
+            WorkAreaStatus.VISITED,
+            WorkAreaStatus.EXPECTED_VISIT_REACHED,
+            WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+            WorkAreaStatus.INACCESSIBLE,
+        ],
+    )
+    def test_sends_every_assigned_status(self, opportunity, group, bulk_update, status):
+        assigned = self.assigned_work_area(group, status=status)
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        assert list(self.sent_properties(bulk_update)) == [assigned.case_id]
+
+    def test_sends_the_centre_point_the_group_has_when_the_task_runs(self, opportunity, group, bulk_update):
+        assigned = self.assigned_work_area(group)
+        WorkAreaGroup.objects.filter(pk=group.pk).update(centroid=Point(36.8, -1.3, srid=SRID))
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        assert self.sent_properties(bulk_update) == {assigned.case_id: {"wag_centroid": "-1.30000 36.80000"}}
+
+    def test_skips_work_areas_without_a_case_and_groups_of_other_opportunities(self, opportunity, group, bulk_update):
+        self.assigned_work_area(group, case_id=None)
+        other_group = WorkAreaGroupFactory(opportunity=OpportunityFactory(), centroid=self.GROUP_CENTROID)
+        self.assigned_work_area(other_group)
+
+        sync_work_area_group_cases(**self.sync_kwargs(opportunity=opportunity, groups=[group, other_group]))
+
+        bulk_update.assert_not_called()
+
+    @pytest.mark.parametrize("missing", ["api_key", "deliver_app", "hq_server"])
+    def test_stops_without_hq_setup(self, opportunity, group, bulk_update, caplog, missing):
+        self.assigned_work_area(group)
+        owner = opportunity.api_key if missing == "hq_server" else opportunity
+        setattr(owner, missing, None)
+        owner.save(update_fields=[missing])
+
+        result = self.apply_sync(opportunity=opportunity, group=group, caplog=caplog, level="WARNING")
+
+        assert result.successful()
+        bulk_update.assert_not_called()
+        assert [record.levelname for record in caplog.records] == ["WARNING"]
+        assert str(opportunity.id) in caplog.records[0].getMessage()
+
+    @pytest.mark.parametrize("status_code", [400, 403])
+    def test_logs_and_skips_a_request_hq_rejects(self, opportunity, group, bulk_update, caplog, status_code):
+        rejected = self.assigned_work_area(group)
+        sent = self.assigned_work_area(group)
+        bulk_update.side_effect = [self.hq_error(status_code=status_code), []]
+
+        with mock.patch("commcare_connect.microplanning.tasks.HQ_CASE_BULK_CHUNK_SIZE", 1):
+            result = self.apply_sync(opportunity=opportunity, group=group, caplog=caplog, level="ERROR")
+
+        assert result.successful()
+        sent_case_ids = [call.kwargs["cases_data"][0]["case_id"] for call in bulk_update.call_args_list]
+        assert sent_case_ids == [rejected.case_id, sent.case_id]
+        assert [record.levelname for record in caplog.records] == ["ERROR"]
+
+    @pytest.mark.parametrize(
+        "status_code",
+        [
+            pytest.param(None, id="no-answer"),
+            pytest.param(500, id="server-error"),
+            pytest.param(429, id="too-many-requests"),
+        ],
+    )
+    def test_retries_on_hq_error_then_fails(self, opportunity, group, bulk_update, status_code):
+        self.assigned_work_area(group)
+        bulk_update.side_effect = self.hq_error(status_code=status_code)
+
+        result = sync_work_area_group_cases.apply(kwargs=self.sync_kwargs(opportunity=opportunity, groups=[group]))
+
+        assert result.failed()
+        assert bulk_update.call_count == 6  # the first try and 5 retries
 
 
 @pytest.mark.django_db

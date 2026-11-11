@@ -82,6 +82,8 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
     from sentry_sdk.integrations.redis import RedisIntegration
 
+    from commcare_connect.utils.sentry import make_traces_sampler
+
     ignore_logger("django.security.DisallowedHost")
     sentry_logging = LoggingIntegration(
         level=logging.INFO,  # Capture info and above as breadcrumbs
@@ -98,7 +100,7 @@ if SENTRY_DSN:
         integrations=integrations,
         environment=env("DEPLOY_ENVIRONMENT", default="production"),
         release=APP_RELEASE,
-        traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
+        traces_sampler=make_traces_sampler(env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0)),
     )
 
 # CommCareConnect

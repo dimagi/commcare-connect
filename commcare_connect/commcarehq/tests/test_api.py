@@ -249,23 +249,31 @@ class TestBulkUpdateUsercases:
 
 @pytest.mark.django_db
 class TestBulkCreateOrUpdateCases:
+    def send(self, httpx_mock, cases_data, create=False):
+        """Send cases_data to a fake HQ, and return the requests it got."""
+        httpx_mock.add_response(json={"cases": []}, is_reusable=True)
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        bulk_create_or_update_cases(api_key=api_key, domain=DOMAIN, cases_data=cases_data, create=create)
+        return httpx_mock.get_requests()
+
     @pytest.mark.parametrize("create", [False, None, True])
     def test_injects_create_flag_into_every_row(self, httpx_mock, create):
-        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
-        httpx_mock.add_response(json={"cases": []})
+        requests = self.send(httpx_mock, cases_data=[{"case_id": "case-1"}, {"case_id": "case-2"}], create=create)
 
-        bulk_create_or_update_cases(
-            api_key,
-            DOMAIN,
-            [{"case_id": "case-1"}, {"case_id": "case-2"}],
-            create=create,
-        )
-
-        payload = json.loads(httpx_mock.get_requests()[0].content)
-        assert payload == [
+        assert json.loads(requests[0].content) == [
             {"case_id": "case-1", "create": create},
             {"case_id": "case-2", "create": create},
         ]
+
+    def test_sends_100_cases_per_request(self, httpx_mock):
+        requests = self.send(httpx_mock, cases_data=[{"case_id": f"case-{n}"} for n in range(201)])
+
+        assert [len(json.loads(request.content)) for request in requests] == [100, 100, 1]
+
+    def test_gives_hq_30_seconds_per_request(self, httpx_mock):
+        requests = self.send(httpx_mock, cases_data=[{"case_id": "case-1"}])
+
+        assert requests[0].extensions["timeout"] == {"connect": 30, "read": 30, "write": 30, "pool": 30}
 
 
 def _make_link(opportunity, user, hq_user_uuid=None):

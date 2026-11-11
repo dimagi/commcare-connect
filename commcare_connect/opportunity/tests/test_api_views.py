@@ -296,7 +296,7 @@ def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
     expected_daily_max_visits_per_user,
 ):
     capped, uncapped = opportunity.paymentunit_set.order_by("pk")
-    PaymentUnit.objects.filter(pk=capped.pk).update(max_daily=5, max_total=20)
+    PaymentUnit.objects.filter(pk=capped.pk).update(max_daily=5, max_total=20, display_name="Home visit")
     PaymentUnit.objects.filter(pk=uncapped.pk).update(max_daily=None, max_total=1)
     api_client.force_authenticate(mobile_user_with_connect_link)
 
@@ -304,6 +304,7 @@ def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
 
     assert response.status_code == 200
     assert [unit["max_daily"] for unit in response.data[0]["payment_units"]] == expected_max_daily
+    assert [unit["display_name"] for unit in response.data[0]["payment_units"]] == ["Home visit", ""]
     assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
 
 
