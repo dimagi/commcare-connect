@@ -49,7 +49,7 @@ class Suspect:
     def mention(self):
         if self.slack_id:
             return f"<@{self.slack_id}>"
-        return self.owner or "owner unknown"
+        return slack_escape(self.owner) or "owner unknown"
 
 
 def main():
@@ -211,10 +211,10 @@ def slack_payload(*, step, details, suspects, run_url):
     config_url = f"https://github.com/{staging.CONFIG_REPO}/blob/main/{staging.CONFIG_FILE}"
     blocks = [
         section(f"{HEADLINES[step]} Staging keeps its current version until the branch list builds."),
-        section(f"```{details or 'See the run log'}```"),
+        section(f"```{code_block_text(details) or 'See the run log'}```"),
     ]
     if suspects:
-        lines = "\n".join(f"• `{suspect.branch}`: {suspect.mention()}" for suspect in suspects)
+        lines = "\n".join(f"• `{slack_escape(suspect.branch)}`: {suspect.mention()}" for suspect in suspects)
         blocks.append(section(f"*Likely cause:*\n{lines}"))
     links = f"<{run_url}|View run> · <{config_url}|Edit branch list>"
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": links}]})
@@ -223,6 +223,18 @@ def slack_payload(*, step, details, suspects, run_url):
 
 def section(text):
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+
+
+def slack_escape(text):
+    """Make text from logs, branch names or the branch list show literally, so it can't add mentions or links."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def code_block_text(text):
+    """Escaped text for a ``` block, with any ``` in it changed so it can't end the block early."""
+    escaped = slack_escape(text).replace("```", "ˋˋˋ")
+    # Escaping lengthens the text, so trim again to stay under Slack's block limit
+    return escaped[:MAX_DETAIL_CHARS]
 
 
 # Git
