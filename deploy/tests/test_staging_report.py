@@ -136,6 +136,25 @@ def test_slack_payload_lists_suspects():
     assert "```boom```" in texts
 
 
+def test_slack_payload_shows_outside_text_literally():
+    suspects = [
+        report.Suspect(branch="cs/<!channel>", owner="", slack_id="U1"),
+        report.Suspect(branch="b", owner="<https://evil|Pawan>", slack_id=""),
+    ]
+    details = "boom\n```\n<!channel> & <https://evil|View run>"
+    payload = report.slack_payload(step="check", details=details, suspects=suspects, run_url="https://run")
+    texts = [block.get("text", {}).get("text", "") for block in payload["blocks"]]
+    assert "```boom\nˋˋˋ\n&lt;!channel&gt; &amp; &lt;https://evil|View run&gt;```" in texts
+    assert "*Likely cause:*\n• `cs/&lt;!channel&gt;`: <@U1>\n• `b`: &lt;https://evil|Pawan&gt;" in texts
+
+
+def test_escaped_details_still_fit_in_a_slack_block():
+    payload = report.slack_payload(
+        step="check", details="<" * report.MAX_DETAIL_CHARS, suspects=[], run_url="https://run"
+    )
+    assert len(payload["blocks"][1]["text"]["text"]) == report.MAX_DETAIL_CHARS + len("``````")
+
+
 def test_other_failures_name_no_branches(repo):
     assert report.suspect_branches(repo=repo, step="other", output="", branches=["a"]) == []
     assert report.failure_details(step="other", output="anything") == ""
