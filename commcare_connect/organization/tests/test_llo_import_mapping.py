@@ -40,7 +40,7 @@ def test_maps_all_fields():
     assert contact.name == "Ada Obi"
     assert contact.email == "ada@x.org"
     assert contact.organization_name == "Acme Health"
-    assert contact.is_main_poc is True
+    assert contact.is_main_poc
     assert contact.connect_id == ""
     assert contact.form_data == {
         "name": "Ada Obi",
@@ -64,7 +64,7 @@ def test_connect_id_is_read():
 def test_main_poc_values(cell, expected):
     contact = map_contact_row(make_row(**{"Main POC?": cell}))
 
-    assert contact.is_main_poc is expected
+    assert contact.is_main_poc == expected
     assert contact.form_data["is_main_poc"] == str(expected)
     assert contact.problems == []
 
@@ -74,7 +74,7 @@ def test_unknown_main_poc_value_is_a_problem():
 
     assert [problem.column for problem in contact.problems] == ["Main POC?"]
     assert contact.problems[0].value == "yes please"
-    assert contact.is_main_poc is False
+    assert not contact.is_main_poc
 
 
 @pytest.mark.parametrize("phone", [2348012345678.0, 2348012345678])
