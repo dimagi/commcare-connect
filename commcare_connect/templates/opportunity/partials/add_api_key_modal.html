@@ -5,9 +5,14 @@
      x-show="showAddApiKeyModal"
      x-transition.opacity
      class="modal-backdrop">
-  <div @click.away="showAddApiKeyModal = false" x-transition class="modal">
+  <div @click.away="showAddApiKeyModal = false"
+       x-transition
+       class="modal"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="add-api-key-modal-title">
     <div class="header flex justify-between items-center mb-2">
-      <h2 class="title">{% translate "Create API Key" %}</h2>
+      <h2 id="add-api-key-modal-title" class="title">{% translate "Create API Key" %}</h2>
       <button @click="showAddApiKeyModal = false"
               class="button-icon"
               aria-label="{% translate 'Close' %}">
