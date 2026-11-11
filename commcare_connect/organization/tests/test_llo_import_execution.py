@@ -77,7 +77,7 @@ def test_contact_conflict_at_save_time_is_blocked(tmp_path, user):
         (
             lambda: ContactFactory(email="ada@x.org"),
             Status.NOT_NEEDED,
-            "a contact with this email is already in Connect",
+            "This email already belongs to",
         ),
         (lambda: OrganizationFactory(name="ACME"), Status.BLOCKED, BLOCKED_ORGANIZATION_REASON),
     ],
@@ -95,7 +95,8 @@ def test_organization_rolled_back_when_no_contact_saves(
     organization_plan = plan.organizations[0]
     assert (organization_plan.status, organization_plan.organization) == (organization_status, None)
     assert plan.contacts[0].status == Status.BLOCKED
-    assert [problem.reason for problem in plan.contacts[0].problems] == [contact_reason]
+    [problem] = plan.contacts[0].problems
+    assert problem.reason.startswith(contact_reason)
 
 
 def test_never_changes_existing_records(tmp_path, user, countries, sectors):
