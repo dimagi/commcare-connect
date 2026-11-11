@@ -2262,6 +2262,13 @@ class TestInvoiceCreateView:
         assert response.status_code == HTTPStatus.NOT_FOUND
         assert not opportunity.paymentinvoice_set.exists()
 
+    @pytest.mark.parametrize("invoice_type", ["service_delivery", "custom"])
+    def test_create_invoice_page_has_bill_to(self, client, nm_user_admin, nm_organization, opportunity, invoice_type):
+        client.force_login(nm_user_admin)
+        response = client.get(self._url(nm_organization, opportunity), {"invoice_type": invoice_type})
+        assert response.status_code == HTTPStatus.OK
+        assert 'name="bill_to"' in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestInvoiceUpdateStatus:

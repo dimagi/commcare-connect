@@ -29,6 +29,7 @@ from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
+    BillToAddress,
     CommCareApp,
     Country,
     CredentialConfiguration,
@@ -1888,6 +1889,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         widget=forms.Textarea(attrs={"rows": 3}),
         required=False,
     )
+    # Not in Meta.fields: read-only mode swaps in a text field, and ModelForm would otherwise put the FK's pk in
+    # self.initial for it. empty_label=None because the initial value is only set after construction.
+    bill_to = forms.ModelChoiceField(label=_("Bill to"), queryset=BillToAddress.objects.none(), empty_label=None)
 
     class Meta:
         model = PaymentInvoice
@@ -1925,6 +1929,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["end_date"].widget.attrs["max"] = localdate() - datetime.timedelta(days=1)
 
+        self._prepare_bill_to_field()
         self.prepare_fields()
 
         self.helper = FormHelper(self)
@@ -2005,6 +2010,20 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             )
             self.fields["date_of_expense"].required = True
 
+    def _prepare_bill_to_field(self):
+        if self.read_only:
+            self.fields["bill_to"] = forms.CharField(
+                label=gettext("Bill to"),
+                required=False,
+                widget=forms.Textarea(attrs={"rows": 4}),
+                initial=f"{self.instance.bill_to.name}\n{self.instance.bill_to.address}",
+            )
+            return
+        # Always non-empty: the default can't be deactivated (see BillToAddress).
+        addresses = BillToAddress.objects.filter(is_active=True).order_by("-is_default", "name")
+        self.fields["bill_to"].queryset = addresses
+        self.fields["bill_to"].initial = addresses.filter(is_default=True).first()
+
     def _amount_usd_tooltip_html(self):
         return render_to_string("opportunity/partials/amount_usd_tooltip.html")
 
@@ -2013,6 +2032,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             invoice_form_fields = self.service_delivery_invoice_fields
         else:
             invoice_form_fields = self.custom_invoice_fields
+        invoice_form_fields = [Div(Field("bill_to"), css_class="grid grid-cols-3 gap-6"), *invoice_form_fields]
 
         if not self.read_only:
             invoice_form_fields.append(
@@ -2231,6 +2251,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
         instance.service_delivery = self.is_service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
+        instance.bill_to = self.cleaned_data["bill_to"]
         instance.status = self.status
 
         if not commit:
