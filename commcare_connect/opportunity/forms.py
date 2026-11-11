@@ -908,15 +908,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field(
-                    "start_date",
-                    help=(
-                        gettext("Start date can't be changed once it has passed, or once the opportunity has visits.")
-                        if self.is_start_date_readonly
-                        else None
-                    ),
-                    wrapper_class="flex-1",
-                ),
+                Field("start_date", wrapper_class="flex-1"),
                 Field("end_date", wrapper_class="flex-1"),
                 Field(
                     "max_users",
@@ -932,6 +924,10 @@ class OpportunityFinalizeForm(forms.ModelForm):
             label="Max Connect Workers", initial=int(self.instance.number_of_users)
         )
         self.fields["start_date"].disabled = self.is_start_date_readonly
+        if self.is_start_date_readonly:
+            self.fields["start_date"].help_text = gettext(
+                "Start date can't be changed once it has passed, or once the opportunity has visits."
+            )
 
     def clean(self):
         cleaned_data = super().clean()

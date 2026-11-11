@@ -279,7 +279,9 @@ class TestOpportunityFinalizeForm:
         if has_visit:
             UserVisitFactory(opportunity=self.opportunity, status=VisitValidationStatus.approved)
 
-        assert self.get_form().fields["start_date"].disabled is locked
+        form = self.get_form()
+        assert form.fields["start_date"].disabled is locked
+        assert bool(form.fields["start_date"].help_text) is locked
 
     @pytest.mark.parametrize("visit_days_ago, valid", [(None, True), (0, False), (1, True)])
     def test_start_date_today_needs_no_visits_today(self, visit_days_ago, valid):
