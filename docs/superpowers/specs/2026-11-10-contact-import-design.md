@@ -21,6 +21,8 @@ command will be run more than once as the sheet is corrected.
 - A dry run (the default) that writes nothing and prints a report of what would be created and what is blocked and
   why, precise enough to fix the sheet from.
 - Safe reruns: rows already imported are skipped and reported, not errors.
+- Record each imported row's Connect ID and whether it was created or already existed, in a results file the
+  team can match back to the sheet.
 
 ## Non-goals
 
@@ -30,7 +32,9 @@ command will be run more than once as the sheet is corrected.
   that contacts need.
 - Reading any tab other than Contacts and Organizations.
 - Creating primary sectors or countries. Those lists are managed in Connect.
-- A UI, or a downloadable/CSV report.
+- A UI, or a downloadable/CSV report. (The results file with Connect IDs, below, is not a report.)
+- Writing to the workbook or the shared Google Sheet. The command writes a separate results file; people copy the
+  IDs back into the sheet.
 
 ## Anti-goals
 
@@ -183,6 +187,39 @@ line that is not a link (including text such as `None yet, but has deployed Conn
 There are no warnings and no partial imports: an optional field may be empty, but a value that is present and
 can't be mapped blocks its record, in any field.
 
+## Recording the result
+
+So that the team can tell which rows are in Connect, a real run writes a CSV results file with one line per sheet
+row that is now in Connect. The team copies the Connect IDs back into the directory.
+
+| Column | Contacts | Organizations |
+|---|---|---|
+| Tab | `Contacts` | `Organizations` |
+| Row | The Contacts-tab row number | The Organizations-tab row number; empty for an existing organization with no row on the tab |
+| Name | Contact Full Name, as in the sheet | Organization Name |
+| Email | Email Address, as in the sheet | empty |
+| Connect ID | The contact's `contact_id` | The organization's `slug` (unique, and kept when the organization is renamed) |
+| Status | `Created`, or `Already existed` | `Created`, or `Already existed` |
+
+- Name and Email identify the row as well as its number, so the line can still be matched after rows in the sheet
+  are reordered.
+- `Created` = this import made the record. `Already existed` = the row matched a record that was already in
+  Connect: a contact whose email was already there (its ID is the existing contact's), or an existing organization
+  a contact was linked to.
+- Only rows now in Connect are listed. Blocked rows are in the printed report with their reasons.
+- **A row whose `Connect ID` column is filled in is not attempted again.** The workbook may carry a `Connect ID`
+  column on either tab, filled from earlier results files. Such a row is not validated or created, and the report
+  counts it as already imported. Its ID must still exist in the Connect the command runs against, so a sheet filled
+  in from a run against another environment (e.g. staging) isn't silently treated as imported; an ID that isn't
+  found blocks the row.
+- A contact whose organization's Organizations-tab row has a Connect ID is linked to that organization by its slug,
+  not by name. (Claude's call: the slug is exact, and avoids name ambiguity.)
+- Only the real run writes the file. The dry run writes nothing.
+- The file is saved next to the workbook, named after it with a timestamp, e.g.
+  `Connect LLO Directory - imported 2026-11-11 1430.csv`; the report names it. The workbook is never modified. The
+  command stops before saving any record if that file already exists or can't be written, and if writing it fails
+  after the records are saved it still prints the report and says so.
+
 ## The report
 
 Printed to the terminal as plain text, to be copied and shared with the team by hand. It must read on its own
@@ -215,6 +252,8 @@ row and column needed to fix it.
 - An organization is created only when at least one of its contacts imports, and is rolled back with them if none
   can be saved.
 - "Differs only in case" hints, against both Connect and the Organizations tab.
+- A contact is linked by slug when its organization's Organizations-tab row has a Connect ID.
+- The results file's name and location (next to the input, with a timestamp), and listing only imported rows.
 - Reasons for blocking are reported together, not just the first.
 - Several sheet rows marked Main POC for one organization: all are reported (mirrors the duplicate-email rule).
 - `--user-email` for attribution and audit history.
