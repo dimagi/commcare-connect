@@ -47,3 +47,36 @@ def test_commit_creates_records(tmp_path, user, countries, sectors, capsys):
     assert "REAL RUN" in capsys.readouterr().out
     organization = Organization.objects.get(name="Acme")
     assert Contact.objects.get(email="ada@x.org").organization == organization
+
+
+def test_commit_writes_workbook_copy(tmp_path, user, countries, sectors, capsys):
+    path, bytes_before = _commit_directory(tmp_path, user)
+
+    copy = _only_copy(tmp_path)
+    assert copy.name in capsys.readouterr().out
+    sheet = openpyxl.load_workbook(copy)[CONTACTS_TAB]
+    assert [cell.value for cell in sheet[2]][-2:] == [str(Contact.objects.get().contact_id), "Created"]
+    assert path.read_bytes() == bytes_before
+
+
+def test_rerun_on_output_creates_nothing(tmp_path, user, countries, sectors, capsys):
+    _commit_directory(tmp_path, user)
+    counts_before = (Organization.objects.count(), Contact.objects.count())
+    capsys.readouterr()
+
+    call_command("import_llo_contacts", _only_copy(tmp_path), user_email=user.email, commit=True)
+
+    assert (Organization.objects.count(), Contact.objects.count()) == counts_before
+    assert "already imported" in capsys.readouterr().out.lower()
+
+
+def _commit_directory(tmp_path, user):
+    path = make_workbook(tmp_path, [contact_values()], [organization_values()])
+    bytes_before = path.read_bytes()
+    call_command("import_llo_contacts", path, user_email=user.email, commit=True)
+    return path, bytes_before
+
+
+def _only_copy(tmp_path):
+    (copy,) = tmp_path.glob("directory - imported *.xlsx")
+    return copy

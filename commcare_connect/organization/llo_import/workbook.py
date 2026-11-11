@@ -1,12 +1,19 @@
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import openpyxl
+
+if TYPE_CHECKING:
+    from commcare_connect.organization.llo_import.planning import ImportPlan, OrganizationPlan
 
 CONTACTS_TAB = "Contacts"
 ORGANIZATIONS_TAB = "Organizations"
 CONNECT_ID_COLUMN = "Connect ID"
 IMPORT_STATUS_COLUMN = "Connect Import Status"
+_STATUS_TEXT = {"created": "Created", "already_existed": "Already existed"}
+_WRITTEN_STATUSES = frozenset(_STATUS_TEXT)
 
 CONTACT_COLUMNS = (
     "Contact Full Name",
@@ -100,3 +107,81 @@ def _blank_to_none(value):
     if isinstance(value, str) and not value.strip():
         return None
     return value
+
+
+def output_path_for(path: Path, now: datetime) -> Path:
+    """Names the workbook copy next to the input, stamped with the given time."""
+    path = Path(path)
+    return path.with_name(f"{path.stem} - imported {now:%Y-%m-%d %H%M}{path.suffix}")
+
+
+def write_results(workbook: LLOWorkbook, plan: "ImportPlan", output_path: Path) -> None:
+    """Writes the Connect ID and import status of each planned row into the workbook and saves it to output_path."""
+    contacts_sheet = workbook.book[CONTACTS_TAB]
+    organizations_sheet = workbook.book[ORGANIZATIONS_TAB]
+    contact_columns = _result_columns(contacts_sheet)
+    organization_columns = _result_columns(organizations_sheet)
+
+    for contact_plan in plan.contacts:
+        if contact_plan.status in _WRITTEN_STATUSES and contact_plan.contact is not None:
+            _write_row(
+                contacts_sheet,
+                contact_columns,
+                contact_plan.source.row.number,
+                str(contact_plan.contact.contact_id),
+                contact_plan.status,
+            )
+
+    for organization_plan in plan.organizations:
+        if organization_plan.status not in _WRITTEN_STATUSES or organization_plan.organization is None:
+            continue
+        for row_number in _organization_rows(workbook, organization_plan):
+            _write_row(
+                organizations_sheet,
+                organization_columns,
+                row_number,
+                organization_plan.organization.slug,
+                organization_plan.status,
+                keep_existing_id=True,
+            )
+
+    workbook.book.save(output_path)
+
+
+def _organization_rows(workbook: LLOWorkbook, organization_plan: "OrganizationPlan") -> list[int]:
+    if organization_plan.source is not None:
+        return [organization_plan.source.row.number]
+    name = organization_plan.organization.name
+    return _single_row_by_name(workbook, name)
+
+
+def _single_row_by_name(workbook: LLOWorkbook, name: str) -> list[int]:
+    matches = [row.number for row in workbook.organizations if _stripped(row.values.get("Organization Name")) == name]
+    return matches if len(matches) == 1 else []
+
+
+def _stripped(value):
+    return value.strip() if isinstance(value, str) else value
+
+
+def _result_columns(sheet) -> tuple[int, int]:
+    """Returns the column numbers of the ID and status columns, appending whichever header is missing."""
+    existing = {
+        cell.value.strip(): cell.column for cell in sheet[1] if isinstance(cell.value, str) and cell.value.strip()
+    }
+    columns = []
+    for header in (CONNECT_ID_COLUMN, IMPORT_STATUS_COLUMN):
+        column = existing.get(header)
+        if column is None:
+            column = sheet.max_column + 1
+            sheet.cell(row=1, column=column, value=header)
+        columns.append(column)
+    return tuple(columns)
+
+
+def _write_row(sheet, columns, row_number, connect_id, status, keep_existing_id=False):
+    id_cell = sheet.cell(row=row_number, column=columns[0])
+    if keep_existing_id and _stripped(id_cell.value):
+        return
+    id_cell.value = connect_id
+    sheet.cell(row=row_number, column=columns[1], value=_STATUS_TEXT[status])
