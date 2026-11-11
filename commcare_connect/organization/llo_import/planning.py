@@ -289,16 +289,23 @@ def _contact_form_problems(
 
 
 def form_problems(form, field_columns: dict[str, str], reported: list[Problem], ignored_fields=()) -> list[Problem]:
-    """Turns the form's errors into problems, skipping columns that already have a problem."""
+    """Turns the form's errors into problems not already reported.
+
+    An error is skipped when its field was left empty by mapping and a reported problem on its column says why.
+    """
     reported_columns = {problem.column for problem in reported}
+    seen = {(problem.column, problem.reason) for problem in reported}
     problems = []
     for field_name, messages in form.errors.items():
         column = field_columns.get(field_name)
-        if field_name in ignored_fields or (column is not None and column in reported_columns):
-            continue
         value = form.data.get(field_name)
-        value = value if isinstance(value, str) and value else None
-        problems.extend(Problem(column, value, message) for message in messages)
+        if field_name in ignored_fields or (not value and column is not None and column in reported_columns):
+            continue
+        text = value if isinstance(value, str) and value else None
+        for message in messages:
+            if (column, message) not in seen:
+                seen.add((column, message))
+                problems.append(Problem(column, text, message))
     return problems
 
 

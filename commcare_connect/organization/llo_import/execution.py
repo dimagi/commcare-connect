@@ -2,12 +2,7 @@ import pghistory
 from django.db import IntegrityError, transaction
 
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
-from commcare_connect.organization.llo_import.mapping import (
-    EMAIL_COLUMN,
-    MAIN_POC_COLUMN,
-    ORGANIZATION_COLUMN,
-    Problem,
-)
+from commcare_connect.organization.llo_import.mapping import MAIN_POC_COLUMN, ORGANIZATION_COLUMN, Problem
 from commcare_connect.organization.llo_import.planning import (
     BLOCKED_ORGANIZATION_REASON,
     CONTACT_FIELD_COLUMNS,
@@ -20,8 +15,6 @@ from commcare_connect.organization.llo_import.planning import (
 )
 from commcare_connect.organization.models import Contact, Organization
 from commcare_connect.users.models import User
-
-EMAIL_TAKEN_REASON = "a contact with this email is already in Connect"
 
 
 class _NoContactSaved(Exception):
@@ -94,11 +87,9 @@ def _create_contact(contact_plan: ContactPlan, organization: Organization, user:
 
 
 def _conflict_problems(contact_plan: ContactPlan, organization: Organization) -> list[Problem]:
-    """Finds records added since planning that the contact would clash with or change."""
+    """Finds a main contact added since planning that the contact would replace."""
     row = contact_plan.source
     problems = []
-    if Contact.objects.filter(email__iexact=row.email).exists():
-        problems.append(Problem(EMAIL_COLUMN, row.email, EMAIL_TAKEN_REASON))
     if row.is_main_poc and Contact.objects.filter(organization=organization, is_main_poc=True).exists():
         reason = f"{organization.name} already has a main contact in Connect"
         problems.append(Problem(MAIN_POC_COLUMN, "Yes", reason))
