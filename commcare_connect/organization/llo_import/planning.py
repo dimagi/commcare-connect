@@ -193,7 +193,7 @@ class _Planner:
         if existing := Organization.objects.filter(name__iexact=row.name).first():
             problems.append(Problem(ORGANIZATION_COLUMN, row.name, f"differs only in case from '{existing.name}'"))
         form = OrganizationDirectoryForm(data=row.form_data)
-        problems.extend(_form_problems(form, ORGANIZATION_FIELD_COLUMNS, problems))
+        problems.extend(form_problems(form, ORGANIZATION_FIELD_COLUMNS, problems))
         return self._plan_organization(("row", row.row.number), row, None, problems)
 
     def _plan_organization(self, key, source, organization, problems=None) -> OrganizationPlan:
@@ -283,12 +283,12 @@ def _contact_form_problems(
     organization = organization_plan.organization if organization_plan else None
     if organization is None:
         form = ContactForm(data=row.form_data)
-        return _form_problems(form, CONTACT_FIELD_COLUMNS, reported, ignored_fields=("organization",))
+        return form_problems(form, CONTACT_FIELD_COLUMNS, reported, ignored_fields=("organization",))
     form = ContactForm(data={**row.form_data, "organization": organization.pk})
-    return _form_problems(form, CONTACT_FIELD_COLUMNS, reported)
+    return form_problems(form, CONTACT_FIELD_COLUMNS, reported)
 
 
-def _form_problems(form, field_columns: dict[str, str], reported: list[Problem], ignored_fields=()) -> list[Problem]:
+def form_problems(form, field_columns: dict[str, str], reported: list[Problem], ignored_fields=()) -> list[Problem]:
     """Turns the form's errors into problems, skipping columns that already have a problem."""
     reported_columns = {problem.column for problem in reported}
     problems = []

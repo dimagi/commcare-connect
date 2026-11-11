@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from commcare_connect.organization.llo_import.execution import execute_import_plan
 from commcare_connect.organization.llo_import.planning import build_import_plan
 from commcare_connect.organization.llo_import.report import render_report
 from commcare_connect.organization.llo_import.workbook import WorkbookError, load_workbook
@@ -17,13 +18,15 @@ class Command(BaseCommand):
         parser.add_argument("--commit", action="store_true", help="Write to the database and save an output copy")
 
     def handle(self, path, user_email, commit=False, **options):
-        self._get_user(user_email)
+        user = self._get_user(user_email)
         try:
             workbook = load_workbook(path)
         except WorkbookError as error:
             raise CommandError(str(error))
         plan = build_import_plan(workbook)
-        self.stdout.write(render_report(plan, committed=False, output_path=None), ending="")
+        if commit:
+            execute_import_plan(plan, user)
+        self.stdout.write(render_report(plan, committed=commit, output_path=None), ending="")
 
     def _get_user(self, user_email):
         users = list(User.objects.filter(email__iexact=user_email)[:2])
