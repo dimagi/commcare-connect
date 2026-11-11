@@ -37,3 +37,13 @@ def test_dry_run_writes_nothing(tmp_path, user, capsys):
     assert "DRY RUN" in capsys.readouterr().out
     assert (Organization.objects.count(), Contact.objects.count()) == counts_before
     assert set(tmp_path.iterdir()) == files_before
+
+
+def test_commit_creates_records(tmp_path, user, countries, sectors, capsys):
+    path = make_workbook(tmp_path, [contact_values()], [organization_values()])
+
+    call_command("import_llo_contacts", path, user_email=user.email, commit=True)
+
+    assert "REAL RUN" in capsys.readouterr().out
+    organization = Organization.objects.get(name="Acme")
+    assert Contact.objects.get(email="ada@x.org").organization == organization
