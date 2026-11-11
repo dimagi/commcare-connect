@@ -66,7 +66,7 @@ def main():
     payload = slack_payload(
         step=args.step, details=failure_details(step=args.step, output=output), suspects=suspects, run_url=args.run_url
     )
-    Path(args.output).write_text(json.dumps(payload))
+    Path(args.payload_file).write_text(json.dumps(payload))
 
 
 def parse_args():
@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument("--log", help="That step's output")
     parser.add_argument("--config", required=True, help="The staging branch list (YAML)")
     parser.add_argument("--run-url", required=True)
-    parser.add_argument("--output", required=True, help="Where to write the Slack payload")
+    parser.add_argument("--payload-file", required=True, help="Where to write the Slack payload")
     return parser.parse_args()
 
 

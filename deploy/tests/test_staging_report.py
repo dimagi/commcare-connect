@@ -129,7 +129,10 @@ def test_failure_details(step, output, expected):
 
 
 def test_slack_payload_lists_suspects():
-    suspects = [report.Suspect(branch="a", owner="Charl", slack_id="U1"), report.Suspect("b", "", "")]
+    suspects = [
+        report.Suspect(branch="a", owner="Charl", slack_id="U1"),
+        report.Suspect(branch="b", owner="", slack_id=""),
+    ]
     payload = report.slack_payload(step="migrations", details="boom", suspects=suspects, run_url="https://run")
     texts = [block.get("text", {}).get("text", "") for block in payload["blocks"]]
     assert "*Likely cause:*\n• `a`: <@U1>\n• `b`: owner unknown" in texts

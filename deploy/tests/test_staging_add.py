@@ -121,7 +121,7 @@ class TestTrialBuild:
         run_git(repo, "checkout", "--quiet", "main")
 
         added, result = staging.trial_added_failures(
-            repo=repo, branches=["main", "a"], new_branches=["main", "a", "new"]
+            repo=repo, branches=["main", "a"], proposed_branches=["main", "a", "new"]
         )
 
         assert added == {"new"}
@@ -136,7 +136,7 @@ class TestTrialBuild:
         branch(repo, name="new")
 
         added, result = staging.trial_added_failures(
-            repo=repo, branches=["main", "a", "b", "gone"], new_branches=["main", "a", "b", "gone", "new"]
+            repo=repo, branches=["main", "a", "b", "gone"], proposed_branches=["main", "a", "b", "gone", "new"]
         )
 
         assert added == set()

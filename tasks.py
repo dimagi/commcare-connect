@@ -184,8 +184,10 @@ def _staging_add(*, branch, yes, skip_trial):
 
 def _check_trial_build(*, repo, branches, new_branch, before):
     print("Running trial builds with and without the branch (this takes a moment)...")
-    new_branches = staging.branches_with(branches=branches, new_branch=new_branch, before=before)
-    added_failures, result = staging.trial_added_failures(repo=repo, branches=branches, new_branches=new_branches)
+    proposed_branches = staging.branches_with(branches=branches, new_branch=new_branch, before=before)
+    added_failures, result = staging.trial_added_failures(
+        repo=repo, branches=branches, proposed_branches=proposed_branches
+    )
     if result.failed_unexpectedly:
         raise Exit(f"The trial build failed:\n{result.output}\nRerun with --skip-trial to add anyway.", code=1)
     if added_failures:

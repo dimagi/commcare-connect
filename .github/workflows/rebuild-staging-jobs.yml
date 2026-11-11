@@ -214,7 +214,7 @@ jobs:
           fi
           if [ ! -f "$CONFIG" ] || ! uv run --no-project --with httpx --with pyyaml python -m deploy.staging_report \
               --step "$FAILED_STEP" "${LOG_ARGS[@]}" --config "$CONFIG" \
-              --run-url "$RUN_URL" --output slack-payload.json; then
+              --run-url "$RUN_URL" --payload-file slack-payload.json; then
             # Still report the failure, without the details, if there's nothing to report on or the report breaks
             jq -n --arg url "$RUN_URL" '{text: "Staging rebuild failed", blocks: [{type: "section", text: {
               type: "mrkdwn", text: ("*Staging rebuild failed.* <" + $url + "|View run>")}}]}' > slack-payload.json

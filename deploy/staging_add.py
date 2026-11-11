@@ -186,14 +186,14 @@ def branches_with(*, branches, new_branch, before):
     return [*branches[:index], new_branch, *branches[index:]]
 
 
-def trial_added_failures(*, repo, branches, new_branches):
+def trial_added_failures(*, repo, branches, proposed_branches):
     """Build both lists and return (failures only the new list has, result for the new list).
 
     Comparing with the current list means a staging that is already broken doesn't block adding
     a branch that adds no problems of its own.
     """
     current = run_trial(repo=repo, branches=branches)
-    proposed = run_trial(repo=repo, branches=new_branches)
+    proposed = run_trial(repo=repo, branches=proposed_branches)
     return proposed.failures - current.failures, proposed
 
 
