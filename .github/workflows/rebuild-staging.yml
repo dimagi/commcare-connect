@@ -10,9 +10,9 @@ name: Rebuild staging branch
 
 on:
   workflow_dispatch:
-  # push: # Until this is proven to work, let's not trigger it on every push.
-  #   branches:
-  #     - '**'
+  push:
+    branches:
+      - '**'
 
 permissions:
   contents: read
