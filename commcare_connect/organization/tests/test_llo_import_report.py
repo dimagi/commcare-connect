@@ -68,3 +68,22 @@ def test_real_run_names_output_file():
 
     assert report.startswith("REAL RUN")
     assert str(output_path) in report
+
+
+def test_lists_existing_organizations_with_their_new_contacts(tmp_path):
+    acme = OrganizationFactory(name="Acme")
+    beta = OrganizationFactory(name="Beta")
+    plan = plan_for(
+        tmp_path,
+        [
+            contact_values(),
+            contact_values(**{"Email Address": "bo@x.org"}),
+            contact_values(**{"Email Address": "cy@x.org", "Organization Name": "Beta", "Main POC?": "maybe"}),
+        ],
+    )
+
+    report = render_report(plan, committed=False, output_path=None)
+
+    assert "Existing organizations (marked Already existed)" in report
+    assert f"Acme ({acme.slug}) — contacts to create: Contacts rows 2, 3" in report
+    assert f"Beta ({beta.slug}) — no contacts to create" in report

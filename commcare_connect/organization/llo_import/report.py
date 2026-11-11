@@ -15,6 +15,7 @@ def render_report(plan: ImportPlan, committed: bool, output_path: Path | None) -
         _header(plan, committed, output_path),
         _totals(plan, to_create),
         _section(f"Organizations {to_create}", _new_organization_lines(plan)),
+        _section("Existing organizations (marked Already existed)", _existing_organization_lines(plan, to_create)),
         _section(
             "Blocked organizations",
             _records_with_problems(
@@ -70,6 +71,17 @@ def _new_organization_lines(plan: ImportPlan) -> list[str]:
         f"{_organization_label(organization)} — for Contacts rows {_contact_rows(organization, *CREATING)}"
         for organization in _with_status(plan.organizations, *CREATING)
     ]
+
+
+def _existing_organization_lines(plan: ImportPlan, to_create: str) -> list[str]:
+    lines = []
+    for organization in _with_status(plan.organizations, Status.ALREADY_EXISTED):
+        label = f"{organization.organization.name} ({organization.organization.slug})"
+        rows = _contact_rows(organization, *CREATING)
+        lines.append(
+            f"{label} — contacts {to_create}: Contacts rows {rows}" if rows else f"{label} — no contacts {to_create}"
+        )
+    return lines
 
 
 def _skipped_contact_lines(plan: ImportPlan) -> list[str]:
