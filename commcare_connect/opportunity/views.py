@@ -3901,8 +3901,11 @@ def download_invoice_line_items(request, org_slug, opp_id):
     if not start_date_str or not end_date_str:
         return HttpResponseBadRequest("Start date and end date are required.")
 
-    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
-    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    try:
+        start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return HttpResponseBadRequest("Invalid date format. Use YYYY-MM-DD.")
     if invoice_id:
         invoice = get_object_or_404(PaymentInvoice, payment_invoice_id=invoice_id, opportunity=request.opportunity)
         deliveries = get_invoice_delivery_rows_for_export(invoice)
