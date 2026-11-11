@@ -20,7 +20,8 @@ its old pay rate.
 - **Visit:** one submitted form.
 - **Delivery:** one completed set of a payment unit's required forms (deliver units). Pay and visit limits count
   deliveries. For a payment unit with one form, 1 delivery = 1 visit. This matches the UI ("Total Deliveries",
-  "Worker pay per delivery").
+  "Worker pay per delivery"). Once approved, it is stored as a `Delivery` that links its visits (section
+  [7](#7-recording-pay-per-delivery-the-key-change)).
 - **Cost per delivery:** worker pay + org pay.
 
 Worker-facing text and the "visit limit" name keep saying visits, since that is what the product calls them.
@@ -82,10 +83,11 @@ invoices for past months, should keep the pay rate that applied at the time.
 
 1. **Pay rate history is the single source of truth.** A new table keeps one row per pay rate, with the date it
    takes effect. The pay rate on any day is the latest row that had taken effect by that day.
-2. **Add to earned pay, don't recalculate it.** Each worker's earned (accrued) pay is only increased for deliveries
-   approved since the last update, at the pay rate active that day. Earned pay already recorded is never changed.
-   Each addition is kept as its own record.
-3. **Invoices bill those records**, so they always match earned pay and show the pay rate each delivery earned.
+2. **Store each delivery and record its pay once.** A `Delivery` links the visits paid as one delivery, and a
+   `PayRecord` stores its pay at the pay rate active on the day it was approved. Recorded pay is never edited or
+   deleted: pay taken back (due to work rejection) is a reversal record.
+3. **Invoices bill pay records**, so they always match earned pay, show the pay rate each delivery earned, and each
+   billed delivery can be traced to its visits.
 4. **Visit limits follow the budget.** When the cost per delivery goes up, each worker's remaining visits are scaled
    down so the money left for them stays the same.
 5. **Remove `amount` and `org_amount` from `PaymentUnit`** once everything reads from the pay rate history.
@@ -103,7 +105,7 @@ invoices for past months, should keep the pay rate that applied at the time.
 
 ## Part 1: Foundation
 
-Pay rate history, add-only earned pay and invoices (tickets 1–4, releases 1 and 2). Until a pay rate changes, pay and
+Pay rate history, deliveries and pay records, and invoices (tickets 1–4, releases 1 and 2). Until a pay rate changes, pay and
 invoices give the same results as today.
 
 ## 6. Data model
@@ -258,108 +260,177 @@ Otherwise the form shows an error: the unit already has visits, or the date is i
 
 ### 6.7 Protecting pay rate history
 
-Earned pay records (section [7.1](#71-earned-pay-records)) and invoices depend on pay rate rows, so they are never deleted in normal use: no delete in the app, and
+Pay records (section [7.1](#71-models)) and invoices depend on pay rate rows, so they are never deleted in normal use: no delete in the app, and
 `on_delete=PROTECT` on `payment_unit`.
 
 **Exception:** `delete_opportunity` (stale and test opportunities) and the dev-only `generate_sample_data` delete
 `PaymentUnitRate` rows just before `PaymentUnit`.
 
-## 7. Updating earned pay (the key change)
+## 7. Recording pay per delivery (the key change)
 
-Today, every recalculation does:
+Today, every recalculation prices all of a work's approved deliveries at the current pay rate:
 
 ```python
 saved_payment_accrued = approved_count * payment_unit.amount
 ```
 
-New rule: **only add to earned pay for newly approved deliveries**, at the pay rate active today.
+**New rule:** each approved delivery is stored once, and gets one pay record at the pay rate in force on the day it
+was approved. Recorded pay is never edited or deleted. If pay is taken back, a reversal record is added.
+
+This follows product's "Payment tracking and invoicing" goal, to trace each payment back to its visits:
+
+- a `Delivery` tracks which visits count as one delivery
+- a `PayRecord` links a delivery to the pay rate active when it was approved
+- invoices bill pay records instead of today's calculation
+- the exchange rate is the one on the approval date
+
+### 7.1 Models
 
 ```python
-# Runs for each work after its new status is set (in memory; everything is saved together at the end)
-# set_totals(work, records) sets the work's saved amounts and approved count to the sum of those earned pay records
-if completed_work.status != CompletedWorkStatus.approved:
-    completed_work.earned_pay_records.filter(invoice_row__isnull=True).delete()  # section 7.3
-    set_totals(completed_work, records=[])  # 0 while not approved, as today
-elif completed_work.saved_approved_count == 0 and completed_work.earned_pay_records.exists():
-    # Approved again with billed records left (old work rejected after it was invoiced): bring its totals back
-    set_totals(completed_work, completed_work.earned_pay_records.all())
+class Delivery(BaseModel):  # the visits paid as one delivery
+    completed_work = models.ForeignKey(CompletedWork, on_delete=models.PROTECT, related_name="deliveries")
 
-new_deliveries = approved_count - completed_work.saved_approved_count
-if completed_work.status == CompletedWorkStatus.approved and new_deliveries > 0:
-    pay_rate = completed_work.payment_unit.current_pay_rate
-    new_flw_pay = new_deliveries * pay_rate.flw_amount
-    new_org_pay = new_deliveries * pay_rate.org_amount
-    exchange_rate = get_exchange_rate(currency, now())
 
-    EarnedPayRecord.objects.create(  # section 7.1
-        completed_work=completed_work,
-        deliveries=new_deliveries,
-        pay_rate=pay_rate,
-        flw_amount=new_flw_pay,
-        org_amount=new_org_pay,
-        exchange_rate=exchange_rate,
-        earned_on=now(),
+class UserVisit(XFormBaseModel):
+    delivery = models.ForeignKey(Delivery, null=True, blank=True, on_delete=models.PROTECT, related_name="visits")
+
+
+class PayRecord(BaseModel):
+    completed_work = models.ForeignKey(CompletedWork, on_delete=models.PROTECT, related_name="pay_records")
+    # empty only for backfilled earnings from an old invoice row that today's visits can't make up
+    delivery = models.ForeignKey(Delivery, null=True, on_delete=models.PROTECT, related_name="pay_records")
+    reverses = models.OneToOneField(  # set only on a reversal; a record is reversed at most once
+        "self", null=True, on_delete=models.PROTECT, related_name="reversal"
     )
-    completed_work.saved_payment_accrued += new_flw_pay
-    completed_work.saved_payment_accrued_usd += Decimal(new_flw_pay) / exchange_rate  # USD rate is int 1
-    completed_work.saved_org_payment_accrued += new_org_pay
-    completed_work.saved_org_payment_accrued_usd += Decimal(new_org_pay) / exchange_rate
-    completed_work.saved_approved_count = approved_count
-# saved by the updater's bulk_update at the end, as today
+    pay_rate = models.ForeignKey(PaymentUnitRate, null=True, on_delete=models.PROTECT)
+    flw_amount = models.IntegerField()  # worker pay for one delivery, local currency; negative on a reversal
+    org_amount = models.IntegerField()  # org pay, the same way
+    exchange_rate = models.DecimalField(max_digits=20, decimal_places=6)  # USD = local ÷ this
+    # sets the pay rate and invoice month; empty for a backfilled delivery whose date isn't known
+    approved_on = models.DateTimeField(null=True)
+    # why it was reversed; kept here because CompletedWork.reason is overwritten on its next status change
+    reason = models.TextField(blank=True)
+    invoice_row = models.ForeignKey(  # the only field that changes: set by billing, cleared by cancelling
+        CompletedWorkInvoice, null=True, on_delete=models.SET_NULL, related_name="pay_records"
+    )
+
+    class Meta:
+        constraints = [
+            CheckConstraint(  # earnings are positive, reversals negative
+                condition=Q(reverses__isnull=True, flw_amount__gte=0, org_amount__gte=0)
+                | Q(reverses__isnull=False, flw_amount__lte=0, org_amount__lte=0),
+                name="pay_record_sign",
+            ),
+        ]
 ```
 
-**Running at the same time.** Two recalculations at once could both pay the same new delivery. So `update_status`
-locks the work rows, in its own transaction, before counting visits, for every caller (requests and tasks). A second
-run waits, then reads the updated count. Today's Redis lock per worker isn't enough: it is released before a request
-commits, and the nightly job doesn't take it.
+**Kinds of pay record**
 
-In managed opportunities `approved_count` only counts visits that are approved **and** agreed.
+- **Earning:** pay for one delivery, at one pay rate.
+- **Reversal:** a negative copy of an earning, with `reverses` set.
+- **Live earning:** an earning that hasn't been reversed.
 
-**Work that stops being approved.** Its records are deleted and its totals are 0. Paid or invoiced work can't stop
-being approved (section [7.3](#73-rejecting-approved-work)).
+**Why the models look like this**
 
-Effects:
+- **`Delivery` only groups visits.** Visits point to it, and the worker and payment unit come through
+  `completed_work`. The approval date, pay rate and paid status live on its pay records, because a delivery can be
+  reversed and approved again.
+- **`pay_rate` can be empty.** Backfilled records only know their amounts. They are linked to the unit's pay rate
+  when their amount per delivery matches it, and left empty when pay was edited after they were invoiced (section
+  [7.3](#73-pay-record-backfill)).
+- **No USD amounts on records.** They come from the exchange rate.
 
-- Agreeing visits, imports and the nightly job only add pay for new deliveries; recorded pay is never repriced.
-- Worker totals, reports and exports already read the stored amounts, so they don't change.
-- The `CompletedWork.payment_accrued` property, which multiplies by the current pay rate, reads the stored amount
-  instead.
+**Totals on `CompletedWork`**
 
-### 7.1 Earned pay records
+- `saved_payment_accrued` and its org and USD versions become a cache of the sum of the work's pay records.
+- `saved_approved_count` is the number of the work's deliveries with a live earning. It is kept up to date until
+  ticket 12, so the `PAY_RECORDS` switch (section [7.3](#73-pay-record-backfill)) can be turned back off.
+- The `payment_accrued` property, which multiplies by the current pay rate, reads the stored amount instead.
 
-**Why.** Today a piece of work only stores its total earned pay and approved count, not when each delivery was
-approved or at which pay rate and exchange rate. Invoices work around this by comparing counts, which breaks once
-pay rates can change:
+### 7.2 Updating pay
 
-- **Duplicate in the same month.** A delivery approved on September 30 at 4 and its duplicate on October 1 at
-  5, both before the September invoice, are billed together as 2 deliveries at 5, the pay rate on the invoice date,
-  though one was earned at 4.
-- **Additional deliveries.** A duplicate approved after its work was invoiced is listed under the next invoice's month,
-  since we don't know when it was approved, and its amount is found by subtracting what was already invoiced.
-
-So each addition to earned pay is kept as a record: deliveries, pay rate, amounts and when.
-
-**Model**
+Every time a work is recalculated, `update_status` calls `sync_pay` for it, after setting its new status:
 
 ```python
-class EarnedPayRecord(BaseModel):
-    completed_work = models.ForeignKey(CompletedWork, on_delete=models.PROTECT, related_name="earned_pay_records")
-    deliveries = models.PositiveIntegerField()
-    pay_rate = models.ForeignKey(PaymentUnitRate, on_delete=models.PROTECT, null=True)  # empty for old work
-    flw_amount = models.IntegerField()  # worker pay, local currency
-    org_amount = models.IntegerField()  # org pay, local currency
-    exchange_rate = models.DecimalField(max_digits=20, decimal_places=6)  # USD amount = local amount ÷ this
-    earned_on = models.DateTimeField(null=True)  # empty only for old records whose date isn't known
+def sync_pay(work):  # under the CompletedWork row lock
+    if work.status != CompletedWorkStatus.approved:
+        for earning in work.pay_records.live_earnings():
+            reverse(earning)  # section 7.4
+    else:
+        # work approved again after a rejection: its reversed deliveries earn again
+        for delivery in work.deliveries.without_live_earning():
+            earn(delivery, approved_on=work.status_modified_date)
+        for visits in match_new_deliveries(work):
+            delivery = Delivery.objects.create(completed_work=work)
+            UserVisit.objects.filter(pk__in=[v.pk for v in visits]).update(delivery=delivery)
+            earn(delivery, approved_on=max(v.review_status_modified_date for v in visits))
+    set_totals(work)  # saved by the updater's bulk_update at the end, as today
+
+
+def earn(delivery, approved_on):
+    pay_rate = delivery.completed_work.payment_unit.pay_rate_on(approved_on)
+    PayRecord.objects.create(
+        delivery=delivery, completed_work=delivery.completed_work, pay_rate=pay_rate,
+        flw_amount=pay_rate.flw_amount, org_amount=pay_rate.org_amount,
+        exchange_rate=get_exchange_rate(currency, approved_on), approved_on=approved_on,
+    )
 ```
 
-- Records are only added, never changed. They are deleted only when their work stops being approved (section
-  [7.3](#73-rejecting-approved-work)).
-- Each record has one pay rate, so its amount ÷ deliveries is always a real pay rate.
-- USD amounts aren't stored; they come from the exchange rate.
-- The totals on the work (`saved_payment_accrued` and the others) stay. For new work they equal the sum of its
-  records while it is approved, and 0 otherwise (section [7](#7-updating-earned-pay-the-key-change)). Old work whose pay was edited after it was invoiced can differ, because today's code repriced it.
+In short:
 
-### 7.2 Earned pay backfill
+- **Work no longer approved:** each live earning is reversed (section [7.4](#74-rejecting-approved-work)).
+- **Work approved:** deliveries whose earning was reversed earn again ("Approved again" below). Then new approved
+  visits are grouped into deliveries, and each new delivery earns once.
+- The work's cached totals are updated either way.
+
+**Matching visits to deliveries** (`match_new_deliveries`)
+
+1. Load the work's approved and agreed visits that have no delivery, by deliver unit, earliest agreed first
+   (`review_status_modified_date`). Old visits with no agree date come first. `visit_date`, then `id`, break ties,
+   since a bulk agree stamps many visits at once.
+2. While every required deliver unit has such a visit, and, if the payment unit has optional deliver units, at least
+   one optional visit is left, take the first from each required unit, plus the first optional visit. Together they
+   form one delivery.
+3. **Child payment units:** a parent gets no more deliveries than its children's approved count allows. Once the cap
+   is reached, matching stops; the parent's remaining visits stay unlinked until the cap allows another delivery.
+
+Visits that can't make a full delivery stay unlinked, and can join a later one.
+
+**Example.** A payment unit has two required deliver units, Registration and Follow-up, and two optional ones,
+Option 1 and Option 2. A work's agreed visits: R1 (Sep 3), F1 (Sep 5), O1 (Sep 6), R2 (Sep 10), O2 (Sep 12).
+
+- **Delivery 1:** R1 + F1 + O1, approved Sep 6.
+- **R2 and O2** have no Follow-up to pair with, so they stay unlinked.
+- **F2 is agreed on Oct 2:** the next run makes Delivery 2 from R2 + F2 + O2, approved Oct 2.
+
+> **Note:** 34 payment units have ever used child payment units, and none are in active opportunities (production
+> data from the design doc).
+
+**Approval date**
+
+A delivery is approved when its last visit is approved and agreed. All opportunities are managed, so that is when the
+PM agrees its last visit: the latest `review_status_modified_date` among its visits.
+
+- **Not the time the updater ran.** A visit agreed at 23:50 on September 30 but processed at 00:30 on October 1 gets
+  September's pay rate and invoice month.
+- **Why agree order.** Matching in agree order gives each delivery the earliest approval date its visits allow, and
+  links old visits in about the order they were billed (section [7.3](#73-pay-record-backfill)). Agree order never
+  changes once set, since agreed visits are final.
+- **Backfilled deliveries** are dated differently (section [7.3](#73-pay-record-backfill)).
+
+**Approved again**
+
+If a work is rejected (section [7.4](#74-rejecting-approved-work)) and later approved again, each delivery whose
+earning was reversed earns again on the same `Delivery`, at the pay rate on the work's new approval date. Its visits
+don't move.
+
+**Effects**
+
+- Agreeing visits, imports and the nightly job only add pay for new deliveries. Recorded pay is never repriced.
+- Worker totals, reports and exports already read the stored amounts, so they don't change.
+- `saved_approved_count` no longer decides new pay. The visit links do.
+
+### 7.3 Earned pay backfill
 
 We don't need to know when old deliveries were approved: today's code prices deliveries at one pay rate each time it
 invoices them, so the amounts can come from existing invoice rows and the current pay rate. A re-runnable management
@@ -400,26 +471,33 @@ deliveries: 2 were on the September invoice, and 1 was approved on October 5 and
 - Had the backfill run on October 1, a delivery approved that morning would be billed on the October 2 invoice,
   under September.
 
-### 7.3 Rejecting approved work
+### 7.4 Rejecting approved work
 
-Approved work can stop being approved in two ways:
+Agreed visits can't be rejected today: the NM's reject, the visit status import and the review status import all
+skip them. But a work can still stop being approved in three ways, and its pay goes with it:
 
-- **Completed work status import:** it sets the work's status directly. It doesn't change the work's visits.
-- **A visit is rejected** (by the NM or the visit status import): one rejected visit rejects the whole work. Agreed
-  visits can't be rejected, but a work can have extra visits that weren't agreed, such as a duplicate.
+- **Completed work status import:** sets the work's status directly.
+- **A new visit** from a suspended worker, or one with a blocking pending task: form processing rejects the visit and
+  the whole work.
+- **Any visit on the work is rejected,** such as a duplicate (`_update_status`, when `auto_approve_payments` is on).
 
 **Rules**
 
-- **Paid or invoiced work can't stop being approved.** Paid: its `payment_date` is set. Invoiced: one of its records
-  has an invoice row.
+- **Paid or invoiced work can't stop being approved.** Paid means its `payment_date` is set. Invoiced means one of its
+  live earnings has an invoice row.
   - The completed work status import skips it and lists it as locked, like agreed visits in the visit status import.
   - Rejecting one of its visits is refused: the NM sees an error, and the visit status import lists it as locked.
-- **Other work:** its earned pay records are deleted and its totals become 0. None of them were billed or paid. If it
-  is approved again, it gets new records at the pay rate active then.
-- **Old work rejected after it was invoiced** (before this rule) keeps its billed records, so they aren't billed or
-  paid again if it is approved again.
+  - Form processing rejects the new visit but leaves the work approved.
+- **Other work loses its pay through reversals.** Each live earning gets a reversal: a negative copy with the same pay
+  rate and exchange rate, plus a reason. The work's deliveries and visit links stay, and its totals drop to 0. None
+  of this pay was billed or paid, so invoices don't change.
+- **Approved again:** see section [7.2](#72-updating-pay).
 - **The import's status sticks.** Existing bug: when `auto_approve_payments` is on, the recalculation after the
   import sets the work back to approved, since its visits are still approved and agreed (ticket 11).
+
+**Open question (product):** do these rules hold? Rejecting a work takes back pay for every delivery on it, so for
+example a rejected duplicate cancels the original's pay; and paid or invoiced work stays blocked until invoices can
+show credits. The rules above keep today's behaviour until product answers.
 
 ## 8. Invoices
 
@@ -978,15 +1056,15 @@ few hours."
 1. Pay rate history model and migration
 2. Restrict editing payment unit and opportunity dates
 3. Read pay rates from the history
-4. Add-only earned pay, earned pay records, and invoices bill them
+4. Deliveries and pay records, and invoices bill them
 5. Pay Rates card and Rate History (read-only)
 6. Schedule, edit and cancel, and record edits with pghistory
 7. Job on the 1st
 8. Upcoming pay rate changes: list column, banners and Add Budget note
 9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
-10. Block rejecting paid or invoiced work, and delete earned pay records of rejected work (section
-    [7.3](#73-rejecting-approved-work))
-11. Existing bug: keep the status set by the completed work status import (section [7.3](#73-rejecting-approved-work))
+10. Block rejecting paid or invoiced work, and reverse the pay of other rejected work (section
+    [7.4](#74-rejecting-approved-work))
+11. Existing bug: keep the status set by the completed work status import (section [7.4](#74-rejecting-approved-work))
 12. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and make an
     invoice row's record required
 
@@ -997,7 +1075,7 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 | Release       | Tickets    | Notes                                                                                                                                                                                                                                                                                                                               |
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Foundation | 1, 2, 3    | Nothing new for PMs except the date rules. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
-| 2. Earned pay | 4, 10, 11  | Add-only earned pay, earned pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.2](#72-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
+| 2. Earned pay | 4, 10, 11  | Deliveries and pay records, and invoices bill them. Deploy and run the earned pay backfill (section [7.3](#73-earned-pay-backfill)) after the invoice run on the 2nd and before the end of the month. Editing pay on the form no longer reprices work already approved. **Not safe to roll back**: fix forward instead. |
 | 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
 | 4. Follow-up  | 12         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
 
@@ -1010,14 +1088,16 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 
 - **Drop copied columns from invoice rows.** Once every row is linked to a record (ticket 12), read `completed_work`,
   `billed_count`, local amounts and `month` from the record, and derive `is_delta`.
-- **Drop the cached earned pay totals from `CompletedWork`.** Once the earned pay backfill has run (ticket 12),
-  `saved_payment_accrued`, `saved_org_payment_accrued` and their USD versions are just sums of the work's earned pay
-  records. Read them from the records instead, after checking that worker totals, reports and exports stay fast.
+- **Drop the cached totals from `CompletedWork`.** `saved_payment_accrued`, `saved_org_payment_accrued` and their USD
+  versions are sums of the work's pay records. Read them from the records instead, after checking that worker
+  totals, reports and exports stay fast.
 - **Let the PM choose what a raise does.** In the change modal, either scale visit limits down (as now) or add the
   budget needed to keep them. Today the PM does the second with Add Budget, before or after the change (section
   [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)).
 - **Keep approved work approved.** A rejected extra visit, such as a duplicate, could leave its work approved
-  instead of rejecting it (section [7.3](#73-rejecting-approved-work)).
+  instead of rejecting it, so only deliveries whose own visits are rejected lose their pay (section
+  [7.4](#74-rejecting-approved-work)). Product is checking whether work-level rejection is needed.
 - **Reject paid work with a credit.** Paid or invoiced work can't be rejected (section
-  [7.3](#73-rejecting-approved-work)), for example if it turns out to be fraud. A credit on the next invoice could
+  [7.4](#74-rejecting-approved-work)), for example if it turns out to be fraud. A credit on the next invoice could
   allow it.
+- **Group visits by delivery** in the UI, for example in the worker's visit list.
