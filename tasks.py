@@ -137,6 +137,7 @@ def staging_add(c: Context, branch="", yes=False, skip_trial=False):
 
 
 def _staging_add(*, branch, yes, skip_trial):
+    """Check the branch, choose its position, run a trial build, then start the add workflow."""
     repo = PROJECT_DIR
     branch = branch or staging.current_branch(repo)
     if not branch:
@@ -183,6 +184,7 @@ def _staging_add(*, branch, yes, skip_trial):
 
 
 def _check_trial_build(*, repo, branches, new_branch, before):
+    """Stop the add if the branch breaks a staging build that works without it."""
     print("Running trial builds with and without the branch (this takes a moment)...")
     proposed_branches = staging.branches_with(branches=branches, new_branch=new_branch, before=before)
     added_failures, result = staging.trial_added_failures(

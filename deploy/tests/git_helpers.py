@@ -4,10 +4,12 @@ import subprocess
 
 
 def run_git(cwd, *args):
+    """Run git in `cwd`, raising if it fails."""
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
 def commit(repo, *, filename, content="change\n"):
+    """Write `content` to `filename` and commit it."""
     path = repo / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
@@ -34,6 +36,7 @@ def merge_branch(repo, *, name, merging):
 
 
 def add_commit_to(repo, *, name, filename):
+    """Commit one more file to an existing branch and push it."""
     run_git(repo, "checkout", "--quiet", name)
     commit(repo, filename=filename)
     push(repo, name)
@@ -41,5 +44,6 @@ def add_commit_to(repo, *, name, filename):
 
 
 def push(repo, *branches):
+    """Push the branches and fetch, so origin's refs are up to date."""
     run_git(repo, "push", "--quiet", "origin", *branches)
     run_git(repo, "fetch", "--quiet", "origin")

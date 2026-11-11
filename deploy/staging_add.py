@@ -31,22 +31,29 @@ NOT_FOUND = re.compile(r"\] (\S+) NOT FOUND")
 
 
 class StagingAddError(Exception):
+    """A step of `inv staging-add` failed; the message says why."""
+
     pass
 
 
 @dataclass
 class StagingConfig:
+    """The branch lists in commcare-connect-staging.yml."""
+
     branches: list[str]
     commented_branches: list[str]
 
     @classmethod
     def parse(cls, text):
+        """Read the active and commented-out branches from the file's text."""
         data = yaml.safe_load(text) or {}
         return cls(branches=list(data.get("branches") or []), commented_branches=COMMENTED_ENTRY.findall(text))
 
 
 @dataclass
 class TrialResult:
+    """The outcome of one git-build-branch trial build."""
+
     succeeded: bool
     failures: set[str] = field(default_factory=set)
     output: str = ""
@@ -61,10 +68,12 @@ class TrialResult:
 
 
 def current_branch(repo):
+    """The branch checked out in `repo`, or "" when HEAD is detached."""
     return git(repo, "branch", "--show-current")
 
 
 def fetch_origin(repo):
+    """Update origin's branches, dropping ones deleted on GitHub."""
     git(repo, "fetch", "--quiet", "--prune", "origin")
 
 
@@ -76,6 +85,7 @@ def unpushed_commit_count(repo, branch):
 
 
 def fetch_config():
+    """The current branch list from dimagi/staging-branches."""
     text = run(
         ["gh", "api", f"repos/{CONFIG_REPO}/contents/{CONFIG_FILE}", "-H", "Accept: application/vnd.github.raw"]
     )
@@ -178,6 +188,7 @@ def contains_any(*, repo, ref, commits_of, excluding):
 
 
 def branches_with(*, branches, new_branch, before):
+    """The list with `new_branch` added before `before`, or at the end if `before` is None."""
     if before is None:
         return [*branches, new_branch]
     index = branches.index(before)
@@ -240,6 +251,7 @@ def parse_failures(output):
 
 
 def normalize_entry(name):
+    """Strip the `origin/` or `origin:` prefix git-build-branch puts on branch names."""
     for prefix in ("origin/", "origin:"):
         if name.startswith(prefix):
             return name.removeprefix(prefix)
@@ -253,6 +265,7 @@ def failure_details(output):
 
 
 def git_build_branch_command():
+    """The git-build-branch in this virtualenv if there is one, else the one on PATH."""
     in_venv = Path(sys.executable).parent / "git-build-branch"
     return str(in_venv) if in_venv.exists() else "git-build-branch"
 
@@ -332,22 +345,27 @@ def watch_run(run_id):
 
 
 def origin_ref(branch):
+    """The remote-tracking ref for a branch on origin."""
     return f"refs/remotes/origin/{branch}"
 
 
 def ref_exists(repo, ref):
+    """Whether `ref` exists in `repo`."""
     return subprocess.run(["git", "show-ref", "--verify", "--quiet", ref], cwd=repo).returncode == 0
 
 
 def is_ancestor(repo, ancestor, descendant):
+    """Whether `ancestor` is in the history of `descendant`."""
     return subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=repo).returncode == 0
 
 
 def git(repo, *args):
+    """Run a git command in `repo` and return its output."""
     return run(["git", *args], cwd=repo)
 
 
 def run(command, cwd=None):
+    """Run a command and return its output, raising StagingAddError if it fails."""
     completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
     if completed.returncode != 0:
         raise StagingAddError(f"`{' '.join(command)}` failed:\n{completed.stderr.strip()}")

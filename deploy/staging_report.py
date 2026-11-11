@@ -42,17 +42,21 @@ HEADLINES = {
 
 @dataclass
 class Suspect:
+    """A listed branch that likely caused the failure, and who to tell."""
+
     branch: str
     owner: str
     slack_id: str
 
     def mention(self):
+        """A Slack mention if the owner was found in Slack, else their name from the list."""
         if self.slack_id:
             return f"<@{self.slack_id}>"
         return slack_escape(self.owner) or "owner unknown"
 
 
 def main():
+    """Write the Slack payload for the failed step to the given file."""
     args = parse_args()
     repo = Path.cwd()
     output = staging.ANSI_ESCAPE.sub("", Path(args.log).read_text()) if args.log else ""
@@ -70,6 +74,7 @@ def main():
 
 
 def parse_args():
+    """Read the command-line options."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--step", choices=HEADLINES, required=True, help="The step that failed")
     parser.add_argument("--log", help="That step's output")
@@ -143,6 +148,7 @@ def branches_changing(*, repo, branches, apps):
 
 
 def describe_suspects(*, repo, names, config_text, slack_token):
+    """Pair each suspect branch with its owner from the list and their Slack user."""
     owners = dict(OWNER_COMMENT.findall(config_text))
     return [
         Suspect(
@@ -200,6 +206,7 @@ def failure_details(*, step, output):
 
 
 def lines_from_first(*, output, markers):
+    """The lines from the first one containing any of `markers`, or [] if none does."""
     lines = output.splitlines()
     for index, line in enumerate(lines):
         if any(marker in line for marker in markers):
@@ -208,6 +215,7 @@ def lines_from_first(*, output, markers):
 
 
 def slack_payload(*, step, details, suspects, run_url):
+    """The Slack message: headline, failure details, likely causes and links."""
     config_url = f"https://github.com/{staging.CONFIG_REPO}/blob/main/{staging.CONFIG_FILE}"
     blocks = [
         section(f"{HEADLINES[step]} Staging keeps its current version until the branch list builds."),
@@ -222,6 +230,7 @@ def slack_payload(*, step, details, suspects, run_url):
 
 
 def section(text):
+    """A Slack section block with mrkdwn text."""
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
 
 
@@ -248,6 +257,7 @@ def existing_ref(*, repo, branch):
 
 
 def file_exists(*, repo, ref, path):
+    """Whether `path` exists at `ref`."""
     result = subprocess.run(["git", "cat-file", "-e", f"{ref}:{path}"], cwd=repo, capture_output=True)
     return result.returncode == 0
 
