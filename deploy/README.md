@@ -105,6 +105,11 @@ Ideally deploy should be done via GitHub actions however it can be run locally a
 inv deploy
 ```
 
+Deploys run through the `Deploy` GitHub Actions workflow also create a
+[GitHub deployment](https://docs.github.com/en/rest/deployments/deployments) record for the `staging` or `production`
+environment, pointing at the deployed commit, so the repository's Environments page shows what is running where. Local
+`inv deploy` runs do not create one.
+
 A deploy restarts the app containers only. Changes to Traefik's own arguments (`traefik.args` in
 `config/deploy.yml`, such as the forwarded-header range it trusts) need the proxy restarted as well:
 
