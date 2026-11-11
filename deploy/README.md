@@ -229,24 +229,36 @@ flowchart TD
 ```
 
 The rebuild job itself, whichever way it started (see [When changes overlap](#when-changes-overlap) for how runs
-queue):
+queue). It calls `rebuild-staging-jobs.yml`, which splits the work into three jobs:
 
 ```mermaid
 flowchart TD
-    build["Build autostaging: main + every listed branch<br/>(deploy/rebuildstaging --no-push)"]
-    checks["manage.py check<br/>makemigrations --check"]
-    same{"Are autostaging's files identical<br/>to origin/autostaging?"}
-    nodeploy["Stop: staging already runs this code"]
-    deploy["Force-push autostaging,<br/>run deploy.yml for staging"]
-    slack["Post the failure to Slack<br/>(deploy/staging_report.py).<br/>Staging keeps its current version."]
+    subgraph buildjob["build job: read-only token, no secrets"]
+        build["Build autostaging: main + every listed branch<br/>(deploy/rebuildstaging --no-push)"]
+        checks["manage.py check<br/>makemigrations --check"]
+    end
+    subgraph publishjob["publish job: can push and start workflows"]
+        same{"Are autostaging's files identical<br/>to origin/autostaging?"}
+        nodeploy["Stop: staging already runs this code"]
+        deploy["Force-push autostaging,<br/>run deploy.yml for staging"]
+    end
+    subgraph reportjob["report job: has the Slack token"]
+        slack["Post the failure to Slack<br/>(deploy/staging_report.py).<br/>Staging keeps its current version."]
+    end
 
     build -- "ok" --> checks
-    checks -- "ok" --> same
+    checks -- "ok: autostaging handed over as a git bundle" --> same
     same -- "yes" --> nodeploy
     same -- "no" --> deploy
     build -- "conflict or missing branch" --> slack
     checks -- "error" --> slack
+    deploy -- "push or dispatch failed" --> slack
 ```
+
+Only the `build` job runs the listed branches' code: `uv sync`, `manage.py check` and `makemigrations` all import it.
+So that job gets a read-only token, keeps no credentials in `.git/config` and doesn't save the uv cache. The `publish`
+and `report` jobs start on fresh runners and run only `main`'s code, so a listed branch can't reach the push token or
+the Slack token.
 
 | Case                                        | `staging-branches`                                                                        | `commcare-connect`                                                                                                  | Deploys?                           |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
@@ -271,7 +283,7 @@ they start the next workflow with `workflow_dispatch` instead. For the same reas
 ### When changes overlap
 
 Only the `rebuild-staging` job of `rebuild-staging.yml` has a concurrency group (`rebuild-staging`,
-`cancel-in-progress: false`). The `check-branch` and `remove-merged-branch` jobs have none, so they run straight away
+`cancel-in-progress: false`). It covers the `build`, `publish` and `report` jobs it calls as one unit. The `check-branch` and `remove-merged-branch` jobs have none, so they run straight away
 even while a rebuild is in progress.
 
 - One rebuild runs at a time, and a running rebuild is never cancelled.
