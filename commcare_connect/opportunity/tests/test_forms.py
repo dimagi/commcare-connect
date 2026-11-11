@@ -1505,6 +1505,31 @@ class TestEditTaskTypeForm:
         assert saved.slug == "original-slug"
 
 
+def _payment_unit_form(opportunity, data, instance=None):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    return PaymentUnitForm(
+        data={
+            "name": "Bonus",
+            "description": "Bonus payment unit",
+            "amount": 5,
+            "org_amount": 0,
+            "max_total": 10,
+            "max_daily": 2,
+            "required_deliver_units": [str(deliver_unit.id)],
+            **data,
+        },
+        deliver_units=[deliver_unit],
+        payment_units=[],
+        org_slug=opportunity.organization.slug,
+        opportunity=opportunity,
+        instance=instance,
+    )
+
+
+def _days_from_today(days):
+    return None if days is None else now().date() + datetime.timedelta(days=days)
+
+
 @pytest.mark.django_db
 class TestPaymentUnitFormBudgetValidation:
     """The per-user delivery limit is allocated from a shared budget pool per payment unit.
@@ -1515,23 +1540,7 @@ class TestPaymentUnitFormBudgetValidation:
     """
 
     def _form(self, opportunity, data, instance=None):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        return PaymentUnitForm(
-            data={
-                "name": "Bonus",
-                "description": "Bonus payment unit",
-                "max_daily": 10,
-                "amount": 5,
-                "org_amount": 0,
-                "required_deliver_units": [str(deliver_unit.id)],
-                **data,
-            },
-            deliver_units=[deliver_unit],
-            payment_units=[],
-            org_slug=opportunity.organization.slug,
-            opportunity=opportunity,
-            instance=instance,
-        )
+        return _payment_unit_form(opportunity, data, instance)
 
     @pytest.mark.parametrize(
         "num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid",
@@ -1637,6 +1646,53 @@ def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submi
         deliver_unit.refresh_from_db()
         assert deliver_unit.display_name == expected
         assert deliver_unit.payment_unit is None
+
+
+@pytest.mark.django_db
+class TestPaymentUnitFormDates:
+    @pytest.mark.parametrize("edit", [False, True])
+    @pytest.mark.parametrize(
+        "opp_end, unit_start, unit_end, error_field",
+        [
+            (30, None, None, None),
+            (30, 0, 30, None),
+            (30, -1, None, "start_date"),
+            (30, None, 31, "end_date"),
+            (30, None, -1, "end_date"),  # no start date: it starts with the opportunity, after this end
+            (30, 31, None, "start_date"),  # no end date: it ends with the opportunity, before this start
+            (None, None, 100, None),  # opportunity with no end date
+        ],
+    )
+    def test_dates_within_opportunity(self, opportunity, edit, opp_end, unit_start, unit_end, error_field):
+        opportunity.start_date = _days_from_today(0)
+        opportunity.end_date = _days_from_today(opp_end)
+        opportunity.save()
+        instance = PaymentUnitFactory(opportunity=opportunity) if edit else None
+
+        form = _payment_unit_form(
+            opportunity,
+            {"start_date": _days_from_today(unit_start) or "", "end_date": _days_from_today(unit_end) or ""},
+            instance=instance,
+        )
+
+        assert form.is_valid() is (error_field is None), form.errors
+        if error_field:
+            assert "opportunity's" in form.errors[error_field][0]
+
+    def test_unchanged_dates_outside_opportunity_still_save(self, opportunity):
+        opportunity.start_date = _days_from_today(0)
+        opportunity.end_date = _days_from_today(30)
+        opportunity.save()
+        # Made before units had to sit inside their opportunity's dates
+        unit = PaymentUnitFactory(
+            opportunity=opportunity, start_date=_days_from_today(-5), end_date=_days_from_today(40)
+        )
+
+        form = _payment_unit_form(
+            opportunity, {"start_date": unit.start_date, "end_date": unit.end_date}, instance=unit
+        )
+
+        assert form.is_valid(), form.errors
 
 
 @pytest.mark.django_db

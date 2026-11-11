@@ -1555,6 +1555,15 @@ class PaymentUnitForm(forms.ModelForm):
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+        if self.opportunity:
+            # Only new or changed dates, so units made before this rule can still be edited
+            try:
+                self.opportunity.validate_payment_unit_dates(
+                    start_date if "start_date" in self.changed_data else None,
+                    end_date if "end_date" in self.changed_data else None,
+                )
+            except ValidationError as e:
+                self.add_error(None, e)
 
         required_deliver_units = set(cleaned_data.get("required_deliver_units", []))
         if required_deliver_units & set(cleaned_data.get("optional_deliver_units", [])):
