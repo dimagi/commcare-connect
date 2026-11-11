@@ -31,9 +31,9 @@ pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
-uvx jscpd@5.4.2 commcare_connect --changed  # clones in your uncommitted files, [NEW] = not in HEAD (pre-commit hook; settings in .jscpd.json)
+uvx jscpd@5.4.2 commcare_connect --baseline-from-ref "$(git merge-base HEAD origin/main)" --fail-on-new-clones 0  # run before opening a PR; fails on clones your branch adds (settings in .jscpd.json)
 
-# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, jscpd)
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
 
 # Requirements (uv)
@@ -110,7 +110,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
 - **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
 - **Keep business logic out of views, forms, tasks and the other thin layers** (tables, filter sets, serializers, admin, management commands). Put it in the app's `services`, `queries`, `permissions` or `exports`. Read `docs/code-organization.md` before adding such code or moving existing code
-- **Duplicate code (jscpd)**: the `jscpd` hook fails a commit that adds a `[NEW]` clone, meaning your change copied code; extract the shared part to the home `docs/code-organization.md` gives it. Clones it lists without `[NEW]` were already there: if one is in code you touched, ask the user whether to refactor it, and if they agree and the refactor is small, do it in its own `refactor:` commit. jscpd also flags code that only looks alike. Don't extract imports, `Meta` classes, single field declarations, crispy-form layouts, argparse options or other framework boilerplate; copies that differ in their details, so a shared version would need flags or parameters per caller; or a few lines that would read worse extracted. Do extract a field that brings its own queryset, widget setup or validation when a second form needs it: that is a field factory (see `docs/code-organization/thin-layers.md`). Bypass the hook with `SKIP=jscpd` only for these, and say so in the PR description
+- **Duplicate code (jscpd)**: before opening a PR, run the jscpd command under Commands. It fails when your branch adds a clone, meaning your change copied code; extract the shared part to the home `docs/code-organization.md` gives it. Clones that were already on `main` don't fail it: if one is in code you touched, ask the user whether to refactor it, and if they agree and the refactor is small, do it in its own `refactor:` commit. jscpd also flags code that only looks alike. Don't extract imports, `Meta` classes, single field declarations, crispy-form layouts, argparse options or other framework boilerplate; copies that differ in their details, so a shared version would need flags or parameters per caller; or a few lines that would read worse extracted. Do extract a field that brings its own queryset, widget setup or validation when a second form needs it: that is a field factory (see `docs/code-organization/thin-layers.md`). Leave clones of these kinds in place and list them in the PR description
 - **Prefer class-based views** for form handling and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views.py` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
 - **Use Django Forms** over raw HTML forms for validation and rendering
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
