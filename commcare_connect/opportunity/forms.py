@@ -898,7 +898,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
-        self.is_start_date_readonly = self.current_start_date < datetime.date.today()
+        self.is_start_date_readonly = self._is_start_date_locked()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
@@ -910,7 +910,11 @@ class OpportunityFinalizeForm(forms.ModelForm):
             Row(
                 Field(
                     "start_date",
-                    help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
+                    help=(
+                        gettext("Start date can't be changed once it has passed, or once the opportunity has visits.")
+                        if self.is_start_date_readonly
+                        else None
+                    ),
                     wrapper_class="flex-1",
                 ),
                 Field("end_date", wrapper_class="flex-1"),
@@ -959,7 +963,42 @@ class OpportunityFinalizeForm(forms.ModelForm):
             if total_budget_sum + cleaned_data["total_budget"] > program.budget:
                 self.add_error("total_budget", "Budget exceeds the program budget.")
 
+            if "start_date" in self.changed_data:
+                self._validate_start_date_today(start_date)
+            self._validate_dates_cover_payment_units(start_date, end_date)
             return cleaned_data
+
+    def _is_start_date_locked(self):
+        today = now().date()
+        if self.current_start_date < today:
+            return True
+        # On its start day, once a visit may already be paid, moving the start later would leave it before the start
+        return self.current_start_date == today and self.opportunity.has_payable_visits()
+
+    def _validate_start_date_today(self, start_date):
+        # Visits processed earlier today are trial; they would sit inside the active period
+        if start_date == now().date() and self.opportunity.has_visits_today():
+            self.add_error(
+                "start_date", gettext("Start date can be today only if the opportunity has no visits for today.")
+            )
+
+    def _validate_dates_cover_payment_units(self, start_date, end_date):
+        # A unit's blank date takes the opportunity's, so each date is checked against both of a unit's dates
+        units = self.opportunity.paymentunit_set
+        if "start_date" in self.changed_data:
+            if unit := units.filter(start_date__lt=start_date).order_by("start_date").first():
+                message = gettext("Start date can't be after the start date of payment unit %(name)s (%(date)s).")
+                self.add_error("start_date", message % {"name": unit.name, "date": unit.start_date})
+            elif unit := units.filter(end_date__lt=start_date).order_by("end_date").first():
+                message = gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s).")
+                self.add_error("start_date", message % {"name": unit.name, "date": unit.end_date})
+        if "end_date" in self.changed_data:
+            if unit := units.filter(end_date__gt=end_date).order_by("-end_date").first():
+                message = gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
+                self.add_error("end_date", message % {"name": unit.name, "date": unit.end_date})
+            elif unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
+                message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
+                self.add_error("end_date", message % {"name": unit.name, "date": unit.start_date})
 
 
 class VisitExportForm(forms.Form):

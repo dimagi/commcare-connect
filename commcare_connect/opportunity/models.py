@@ -282,6 +282,14 @@ class Opportunity(BaseModel):
         if errors:
             raise ValidationError(errors)
 
+    def has_visits_today(self):
+        # Trial is decided when a visit is processed, so this looks at when it was processed
+        return UserVisit.objects.filter(opportunity=self, date_created__date=now().date()).exists()
+
+    def has_payable_visits(self):
+        # Trial visits get no completed work, so they are never paid
+        return UserVisit.objects.filter(opportunity=self).exclude(status=VisitValidationStatus.trial).exists()
+
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user
         limit for ``payment_units``, raising ``ValidationError`` if it can't.

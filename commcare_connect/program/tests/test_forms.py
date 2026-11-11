@@ -10,13 +10,14 @@ from waffle.testutils import override_switch
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import ENABLE_PROGRAM_ACCESS_REDESIGN
 from commcare_connect.opportunity.forms import OpportunityFinalizeForm, OpportunityInitForm
-from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.models import Opportunity, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     ApplicationFactory,
     DeliveryTypeFactory,
     HQApiKeyFactory,
     OpportunityFactory,
     PaymentUnitFactory,
+    UserVisitFactory,
 )
 from commcare_connect.program.forms import ProgramForm
 from commcare_connect.program.helpers import eligible_funders, eligible_watchers
@@ -198,6 +199,7 @@ class TestOpportunityFinalizeForm:
     def get_form(self, **kwargs):
         return OpportunityFinalizeForm(
             data=kwargs,
+            instance=self.opportunity,
             opportunity=self.opportunity,
             current_start_date=self.opportunity.start_date,
         )
@@ -267,6 +269,69 @@ class TestOpportunityFinalizeForm:
         expected = (50 + self.payment_unit.org_amount) * 20 + 20
         assert f"id_total_budget.value = ({expected} * parseInt(this.value || 0))" in render_crispy_form(form)
 
+    @pytest.mark.parametrize(
+        "current_start, has_visit, locked",
+        [(-1, False, True), (0, True, True), (0, False, False), (3, True, False)],
+    )
+    def test_start_date_locked(self, current_start, has_visit, locked):
+        self.opportunity.start_date = _days_from_today(current_start)
+        self.opportunity.save()
+        if has_visit:
+            UserVisitFactory(opportunity=self.opportunity, status=VisitValidationStatus.approved)
+
+        assert self.get_form().fields["start_date"].disabled is locked
+
+    @pytest.mark.parametrize("visit_days_ago, valid", [(None, True), (0, False), (1, True)])
+    def test_start_date_today_needs_no_visits_today(self, visit_days_ago, valid):
+        self.opportunity.start_date = _days_from_today(3)
+        self.opportunity.save()
+        if visit_days_ago is not None:
+            UserVisitFactory(
+                opportunity=self.opportunity,
+                status=VisitValidationStatus.trial,
+                completed_work=None,
+                date_created=timezone.now() - timezone.timedelta(days=visit_days_ago),
+            )
+
+        form = self.get_form(
+            start_date=_days_from_today(0), end_date=_days_from_today(20), total_budget=5000, max_users=3
+        )
+
+        assert form.is_valid() is valid, form.errors
+        if not valid:
+            assert form.errors["start_date"] == [
+                "Start date can be today only if the opportunity has no visits for today."
+            ]
+
+    def test_trial_visit_does_not_lock_start_date(self):
+        UserVisitFactory(opportunity=self.opportunity, status=VisitValidationStatus.trial, completed_work=None)
+
+        assert not self.get_form().fields["start_date"].disabled
+
+    @pytest.mark.parametrize(
+        "unit_dates, start, end, error_field, error, error_date",
+        [
+            ((5, 15), 6, 20, "start_date", "after the start date of payment unit", 5),
+            ((None, 5), 6, 20, "start_date", "after the end date of payment unit", 5),
+            ((5, 15), 2, 14, "end_date", "before the end date of payment unit", 15),
+            ((10, None), 2, 8, "end_date", "before the start date of payment unit", 10),
+            ((5, 15), 5, 15, None, None, None),
+            ((None, None), 6, 14, None, None, None),
+        ],
+    )
+    def test_dates_cover_payment_units(self, unit_dates, start, end, error_field, error, error_date):
+        self.payment_unit.start_date, self.payment_unit.end_date = map(_days_from_today, unit_dates)
+        self.payment_unit.save()
+
+        form = self.get_form(
+            start_date=_days_from_today(start), end_date=_days_from_today(end), total_budget=5000, max_users=3
+        )
+
+        assert form.is_valid() is (error_field is None), form.errors
+        if error_field:
+            message = f"{error} {self.payment_unit.name} ({_days_from_today(error_date)})."
+            assert message in form.errors[error_field][0]
+
 
 @pytest.mark.django_db
 class TestFunderOrganizations:
@@ -283,6 +348,10 @@ class TestFunderOrganizations:
         program_manager_org.save()
 
         assert program_manager_org not in eligible_funders(program_manager_org)
+
+
+def _days_from_today(days):
+    return None if days is None else timezone.now().date() + timezone.timedelta(days=days)
 
 
 def program_form_data(delivery_type, **overrides):
