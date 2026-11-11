@@ -277,10 +277,8 @@ The project has a staging environment at [https://connect-staging.dimagi.com/](h
 which is connected to the staging environment of CommCare HQ at
 [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
 
-- Update [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml) with the branches you need to include.
-- Run `deploy/rebuildstaging` to build the `autostaging` branch
-- After this, you can deploy to the staging environment by manually running the `deploy`
-  [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
+- Run `inv staging-add` on your branch to add it to the staging list. Staging rebuilds and deploys on its own.
+  See [deploy/README.md](deploy/README.md#staging) for how it works.
 
 ### Remote Access to machines
 
