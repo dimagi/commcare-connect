@@ -274,43 +274,54 @@ def env_without_git_hooks():
 
 def start_add_workflow(*, branch, before):
     """Run add-connect-branch.yml and return its run ID."""
+    user = run(["gh", "api", "user", "--jq", ".login"])
+    existing_ids = {r["databaseId"] for r in list_add_runs(user=user)}
     started_at = datetime.now(tz=UTC) - timedelta(seconds=10)  # allow for clock differences
     command = ["gh", "workflow", "run", ADD_WORKFLOW, "--repo", CONFIG_REPO, "-f", f"branch={branch}"]
     if before:
         command += ["-f", f"before={before}"]
     run(command)
-    return find_run_started_since(started_at=started_at, user=run(["gh", "api", "user", "--jq", ".login"]))
+    return find_new_run(started_at=started_at, user=user, existing_ids=existing_ids)
 
 
-def find_run_started_since(*, started_at, user, attempts=15):
-    """`gh workflow run` doesn't print the run ID, so look for the user's newest run."""
+def find_new_run(*, started_at, user, existing_ids, attempts=15):
+    """`gh workflow run` doesn't print the run ID, so wait for a run of the user's that wasn't there before."""
     for _ in range(attempts):
-        output = run(
-            [
-                "gh",
-                "run",
-                "list",
-                "--repo",
-                CONFIG_REPO,
-                "--workflow",
-                ADD_WORKFLOW,
-                "--user",
-                user,
-                "--event",
-                "workflow_dispatch",
-                "--limit",
-                "5",
-                "--json",
-                "databaseId,createdAt",
-            ]
-        )
-        runs = [r for r in json.loads(output) if datetime.fromisoformat(r["createdAt"]) >= started_at]
+        runs = [
+            r
+            for r in list_add_runs(user=user)
+            if r["databaseId"] not in existing_ids and datetime.fromisoformat(r["createdAt"]) >= started_at
+        ]
         if runs:
             return max(runs, key=lambda r: r["createdAt"])["databaseId"]
         time.sleep(2)
     raise StagingAddError(
         f"Started {ADD_WORKFLOW} but couldn't find the run. Check https://github.com/{CONFIG_REPO}/actions"
     )
+
+
+def list_add_runs(*, user):
+    """The user's most recent dispatched runs of the add workflow."""
+    output = run(
+        [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            CONFIG_REPO,
+            "--workflow",
+            ADD_WORKFLOW,
+            "--user",
+            user,
+            "--event",
+            "workflow_dispatch",
+            "--limit",
+            "10",
+            "--json",
+            "databaseId,createdAt",
+        ]
+    )
+    return json.loads(output)
 
 
 def watch_run(run_id):
