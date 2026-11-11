@@ -6,6 +6,8 @@ from pathlib import Path
 
 from invoke import Context, Exit, call, task
 
+from deploy import staging_add as staging
+
 PROJECT_DIR = Path(__file__).parent
 
 
@@ -117,3 +119,87 @@ def deploy(c: Context, env="staging"):
     """Deploy the app to prod servers"""
     with c.cd(PROJECT_DIR / "deploy"):
         c.run(f"kamal deploy -d {env}")
+
+
+@task(
+    help={
+        "branch": "Branch to add (default: the current branch)",
+        "yes": "Don't ask for confirmation",
+        "skip_trial": "Don't run a trial build to check for conflicts first",
+    }
+)
+def staging_add(c: Context, branch="", yes=False, skip_trial=False):
+    """Add a branch to Connect staging. Compatibility branches go in the right place automatically."""
+    try:
+        _staging_add(branch=branch, yes=yes, skip_trial=skip_trial)
+    except staging.StagingAddError as error:
+        raise Exit(str(error), code=1)
+
+
+def _staging_add(*, branch, yes, skip_trial):
+    """Check the branch, choose its position, run a trial build, then start the add workflow."""
+    repo = PROJECT_DIR
+    branch = branch or staging.current_branch(repo)
+    if not branch:
+        raise Exit("Not on a branch. Check one out or pass --branch.", code=1)
+    if branch == staging.TRUNK:
+        raise Exit(f"'{staging.TRUNK}' is always on staging.", code=1)
+
+    print("Fetching origin...")
+    staging.fetch_origin(repo)
+    if not staging.ref_exists(repo=repo, ref=staging.origin_ref(branch)):
+        raise Exit(f"'{branch}' isn't on origin. Push it first.", code=1)
+    if unpushed := staging.unpushed_commit_count(repo=repo, branch=branch):
+        raise Exit(f"'{branch}' has {unpushed} commit(s) that aren't on origin. Push them first.", code=1)
+
+    config = staging.fetch_config()
+    if branch in config.branches:
+        print(f"'{branch}' is already on staging.")
+        return
+    if branch in config.commented_branches:
+        raise Exit(
+            f"'{branch}' is commented out in {staging.CONFIG_FILE}. Uncomment it there instead:\n"
+            f"  https://github.com/{staging.CONFIG_REPO}/edit/main/{staging.CONFIG_FILE}",
+            code=1,
+        )
+
+    before = staging.find_insert_before(
+        repo=repo, branches=config.branches, new_branch=branch, pr_bases=staging.open_pr_bases()
+    )
+    if not skip_trial:
+        _check_trial_build(repo=repo, branches=config.branches, new_branch=branch, before=before)
+
+    position = f"before '{before}'" if before else "at the end"
+    if not yes and input(f"Add '{branch}' {position}? [y/N] ").strip().lower() != "y":
+        raise Exit("Not added.", code=1)
+
+    run_id = staging.start_add_workflow(branch=branch, before=before)
+    print(f"Running https://github.com/{staging.CONFIG_REPO}/actions/runs/{run_id}")
+    if not staging.watch_run(run_id):
+        raise Exit("Adding the branch failed. See the run above.", code=1)
+    print(
+        f"Added '{branch}' {position}. Staging will rebuild and deploy:\n"
+        f"  https://github.com/{staging.CODE_REPO}/actions/workflows/rebuild-staging.yml"
+    )
+
+
+def _check_trial_build(*, repo, branches, new_branch, before):
+    """Stop the add if the branch breaks a staging build that works without it."""
+    print("Running trial builds with and without the branch (this takes a moment)...")
+    proposed_branches = staging.branches_with(branches=branches, new_branch=new_branch, before=before)
+    added_failures, result = staging.trial_added_failures(
+        repo=repo, branches=branches, proposed_branches=proposed_branches
+    )
+    if result.failed_unexpectedly:
+        raise Exit(f"The trial build failed:\n{result.output}\nRerun with --skip-trial to add anyway.", code=1)
+    if added_failures:
+        raise Exit(
+            f"Adding '{new_branch}' breaks the staging build at: {', '.join(sorted(added_failures))}\n\n"
+            f"{staging.failure_details(result.output)}\n\n"
+            "Fix the conflict, for example with a compatibility branch, and try again.",
+            code=1,
+        )
+    if result.failures:
+        print(f"Staging is already broken at: {', '.join(sorted(result.failures))}. This branch adds no new problems.")
+    else:
+        print("Trial build succeeded.")
