@@ -161,7 +161,7 @@ def eoi_links(text: str, hyperlink: str | None) -> tuple[list[str], list[str]]:
     for line in (line.strip() for line in text.splitlines()):
         if not line:
             continue
-        line_urls = [url.rstrip(URL_TRAILING_PUNCTUATION) for url in URL_IN_TEXT.findall(line)]
+        line_urls = [_without_trailing_punctuation(url) for url in URL_IN_TEXT.findall(line)]
         if not line_urls and hyperlink_unused:
             line_urls = [hyperlink]
             hyperlink_unused = False
@@ -178,6 +178,15 @@ def cell_text(value: object) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value).strip()
+
+
+def _without_trailing_punctuation(url: str) -> str:
+    """Strips trailing punctuation, keeping a closing parenthesis that balances one inside the URL."""
+    while url and url[-1] in URL_TRAILING_PUNCTUATION:
+        if url[-1] == ")" and url.count(")") <= url.count("("):
+            break
+        url = url[:-1]
+    return url
 
 
 def _form_data(texts: dict[str, str], is_main_poc: bool) -> dict[str, str]:

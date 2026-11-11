@@ -251,6 +251,8 @@ def test_duplicate_countries_are_kept_once():
         ),
         ("A https://a.example/x\nB https://a.example/x", None, (["https://a.example/x"], [])),
         ("See (https://x.org),", None, (["https://x.org"], [])),
+        ("https://en.wikipedia.org/wiki/Foo_(bar)", None, (["https://en.wikipedia.org/wiki/Foo_(bar)"], [])),
+        ("(https://en.wikipedia.org/wiki/Foo_(bar)).", None, (["https://en.wikipedia.org/wiki/Foo_(bar)"], [])),
         ("HTTPS://X.ORG/a", None, (["HTTPS://X.ORG/a"], [])),
     ],
 )
