@@ -22,6 +22,8 @@ that wouldn't change what a future engineer does.
 Leave out anything that goes stale on a refactor: file paths, line numbers, private
 helper names, log strings. Keep names that need a migration to change: models,
 fields, constraints, enum values, waffle flag/switch names, URL routes.
+
+Don't mention Jira tickets, PRs or people. State the underlying requirement instead.
 -->
 
 ## Context
