@@ -228,8 +228,6 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
 def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, filters: dict):
     filters = filters or {}
     access_objects = []
-    # Creation order, as claim funding and the mobile API use. The final sort by name is stable, so each
-    # worker's rows keep this order, which `get_worker_deliveries` relies on for its sub-rows.
     for payment_unit in opportunity.paymentunit_set.order_by("pk"):
         queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         if last_active_days := filters.get("last_active"):
