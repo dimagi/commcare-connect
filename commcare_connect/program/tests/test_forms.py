@@ -275,7 +275,7 @@ class TestOpportunityFinalizeForm:
             (-1, False, True, None, "can't be changed"),
             (0, True, True, None, "can't be changed"),
             (0, False, False, 0, ""),
-            (3, True, False, 1, "From tomorrow"),
+            (3, True, False, 1, "Can't be today"),
         ],
     )
     def test_start_date_locked(
@@ -363,6 +363,31 @@ class TestOpportunityFinalizeForm:
         if error_field:
             message = f"{error} {self.payment_unit.name} ({_days_from_today(error_date)})."
             assert message in form.errors[error_field][0]
+
+    @pytest.mark.parametrize(
+        "unit_dates, expected_start_max, expected_end_min",
+        [
+            ((5, 15), 5, 15),
+            ((None, 5), 5, 5),
+            ((10, None), 10, 10),
+            ((None, None), None, 0),  # no unit dates: only today limits the end
+        ],
+    )
+    def test_date_pickers_cover_payment_units(self, unit_dates, expected_start_max, expected_end_min):
+        self.payment_unit.start_date, self.payment_unit.end_date = map(_days_from_today, unit_dates)
+        self.payment_unit.save()
+
+        form = self.get_form()
+
+        start_field, end_field = form.fields["start_date"], form.fields["end_date"]
+        assert end_field.widget.attrs["min"] == str(_days_from_today(expected_end_min))
+        if expected_start_max is None:
+            assert "max" not in start_field.widget.attrs
+            assert not start_field.help_text and not end_field.help_text
+        else:
+            assert start_field.widget.attrs["max"] == str(_days_from_today(expected_start_max))
+            assert "on or before" in start_field.help_text
+            assert "on or after" in end_field.help_text
 
 
 @pytest.mark.django_db

@@ -9,7 +9,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Q, Sum, TextChoices
+from django.db.models import Count, F, Max, Min, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.formats import date_format
@@ -324,6 +324,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
+        if self.instance.pk:
+            _first_unit_date, last_unit_date = payment_unit_date_bounds(self.instance)
+            set_date_limits(field=self.fields["end_date"], earliest=last_unit_date, saved=self.instance.end_date)
+            if last_unit_date:
+                end_help_text = cover_units_help_text(on_or_after=last_unit_date)
+                self.fields["end_date"].help_text = f"{self.fields['end_date'].help_text} {end_help_text}"
 
     def add_credential_fields(self, credential_config=None):
         self.fields["enable_credentials"] = forms.BooleanField(
@@ -930,6 +936,9 @@ class OpportunityFinalizeForm(forms.ModelForm):
         self.fields["max_users"] = forms.IntegerField(
             label="Max Connect Workers", initial=int(self.instance.number_of_users)
         )
+        # The opportunity's dates must cover every payment unit: it starts on or before the first unit date and
+        # ends on or after the last
+        first_unit_date, last_unit_date = payment_unit_date_bounds(self.opportunity)
         self.fields["start_date"].disabled = self.is_start_date_readonly
         if self.is_start_date_readonly:
             self.fields["start_date"].help_text = gettext(
@@ -940,11 +949,20 @@ class OpportunityFinalizeForm(forms.ModelForm):
             set_date_limits(
                 field=self.fields["start_date"],
                 earliest=earliest_start_date(visits_today),
+                latest=first_unit_date,
                 saved=self.current_start_date,
             )
+            help_text = cover_units_help_text(on_or_before=first_unit_date)
             if visits_today:
-                self.fields["start_date"].help_text = FROM_TOMORROW_HELP_TEXT
-        set_date_limits(field=self.fields["end_date"], earliest=now().date(), saved=self.instance.end_date)
+                help_text = f"{help_text} {TODAY_UNAVAILABLE_HELP_TEXT}".strip()
+            self.fields["start_date"].help_text = help_text
+        today = now().date()
+        set_date_limits(
+            field=self.fields["end_date"],
+            earliest=max(today, last_unit_date or today),
+            saved=self.instance.end_date,
+        )
+        self.fields["end_date"].help_text = cover_units_help_text(on_or_after=last_unit_date)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1668,9 +1686,10 @@ class PaymentUnitForm(forms.ModelForm):
         # Only an edit is held to today or later (see clean_start_date)
         if self.instance.pk:
             visits_today = self.instance.has_visits_today()
+            # The note only matters when today would otherwise be pickable
+            if visits_today and opportunity.start_date <= now().date():
+                help_text = f"{help_text} {TODAY_UNAVAILABLE_HELP_TEXT}"
             earliest = max(earliest, earliest_start_date(visits_today))
-            if visits_today:
-                help_text = f"{help_text} {FROM_TOMORROW_HELP_TEXT}"
         set_date_limits(
             field=self.fields["start_date"],
             earliest=earliest,
@@ -1694,7 +1713,7 @@ class PaymentUnitForm(forms.ModelForm):
         self.opportunity.validate_budget_for_payment_units([proposed_unit, *other_units])
 
 
-FROM_TOMORROW_HELP_TEXT = _("From tomorrow, as there are visits for today.")
+TODAY_UNAVAILABLE_HELP_TEXT = _("Can't be today, as visits were already processed today.")
 
 
 def earliest_start_date(visits_today):
@@ -1724,6 +1743,34 @@ def validate_payment_unit_end_date(opportunity, end_date):
     if unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
         message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
         raise ValidationError(message % {"name": unit.name, "date": unit.start_date})
+
+
+def payment_unit_date_bounds(opportunity):
+    dates = opportunity.paymentunit_set.aggregate(
+        min_start=Min("start_date"),
+        min_end=Min("end_date"),
+        max_start=Max("start_date"),
+        max_end=Max("end_date"),
+    )
+
+    earliest = min(
+        (d for d in (dates["min_start"], dates["min_end"]) if d),
+        default=None,
+    )
+    latest = max(
+        (d for d in (dates["max_start"], dates["max_end"]) if d),
+        default=None,
+    )
+
+    return earliest, latest
+
+
+def cover_units_help_text(on_or_before=None, on_or_after=None):
+    if on_or_before:
+        return gettext("Must cover its payment units: on or before %(date)s.") % {"date": date_format(on_or_before)}
+    if on_or_after:
+        return gettext("Must cover its payment units: on or after %(date)s.") % {"date": date_format(on_or_after)}
+    return ""
 
 
 def format_date_range(start_date, end_date):
