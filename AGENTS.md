@@ -44,6 +44,10 @@ uv add <pkg>
 
 # Translations
 inv translations
+
+# Developer docs site (Zensical; config in zensical.toml, pages in docs/)
+uv run --group docs zensical serve  # live preview on :8000
+uv run --group docs zensical build  # strict build into ./site, as CI does
 ```
 
 ## Architecture
@@ -172,6 +176,8 @@ ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered
 - To record a decision, run `/create-adr`.
 
 ## Further reading
+
+The developer docs site (`zensical.toml`) publishes these and the app READMEs. Most of its pages under `docs/` are one-line `--8<--` stubs that include a README from beside the code, so edit the README, not the stub. A new doc page needs a `nav` entry in `zensical.toml`; links to files outside the site (`.github/`, source files) must be absolute GitHub URLs, because the site has no copy of them and the build's link check does not catch these.
 
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
