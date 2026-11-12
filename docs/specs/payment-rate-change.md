@@ -502,26 +502,25 @@ it reprices pay at the current pay rate. Rerun the backfill before turning the s
 ### 7.4 Rejecting approved work
 
 Agreed visits can't be rejected today: the NM's reject, the visit status import and the review status import all
-skip them. But a work can still stop being approved in three ways, and its pay goes with it:
+skip them. But a work can still stop being approved in two ways, and its pay goes with it:
 
-- **Completed work status import:** sets the work's status directly.
 - **A new visit** from a suspended worker, or one with a blocking pending task: form processing rejects the visit and
   the whole work.
 - **Any visit on the work is rejected,** such as a duplicate (`_update_status`, when `auto_approve_payments` is on).
+
+The completed work status import, which sets a work's status directly, isn't available in the UI and will be removed
+(ticket 11).
 
 **Rules**
 
 - **Paid or invoiced work can't stop being approved.** Paid means its `payment_date` is set. Invoiced means one of its
   live earnings has an invoice row.
-  - The completed work status import skips it and lists it as locked, like agreed visits in the visit status import.
   - Rejecting one of its visits is refused: the NM sees an error, and the visit status import lists it as locked.
   - Form processing rejects the new visit but leaves the work approved.
 - **Other work loses its pay through reversals.** Each live earning gets a reversal: a negative copy with the same pay
   rate and exchange rate, plus a reason. The work's deliveries and visit links stay, and its totals drop to 0. None
   of this pay was billed or paid, so invoices don't change.
 - **Approved again:** see section [7.2](#72-updating-pay).
-- **The import's status sticks.** Existing bug: when `auto_approve_payments` is on, the recalculation after the
-  import sets the work back to approved, since its visits are still approved and agreed (ticket 11).
 
 **Open question (product):** do these rules hold? Rejecting a work takes back pay for every delivery on it, so for
 example a rejected duplicate cancels the original's pay; and paid or invoiced work stays blocked until invoices can
@@ -890,7 +889,7 @@ Screenshots from the Claude design are included below. This section only lists w
 8. Upcoming pay rate changes: list column and banner
 9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
 10. Block rejecting paid or invoiced work (CCCT-3065, section [7.4](#74-rejecting-approved-work))
-11. Existing bug: keep the status set by the completed work status import (section [7.4](#74-rejecting-approved-work))
+11. Remove the completed work export and status import (CCCT-3064, section [7.4](#74-rejecting-approved-work))
 12. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and remove
     today's pay and invoice code with the `PAY_RECORDS` switch
 
