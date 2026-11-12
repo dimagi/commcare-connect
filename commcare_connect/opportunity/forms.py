@@ -348,8 +348,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
     def clean_end_date(self):
         end_date = self.cleaned_data.get("end_date")
         if end_date and "end_date" in self.changed_data:
-            if error := payment_unit_end_date_error(self.instance, end_date):
-                raise ValidationError(error)
+            validate_payment_unit_end_date(self.instance, end_date)
         return end_date
 
     def clean_users(self):
@@ -1007,8 +1006,10 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 message = gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s).")
                 self.add_error("start_date", message % {"name": unit.name, "date": unit.end_date})
         if "end_date" in self.changed_data:
-            if error := payment_unit_end_date_error(self.opportunity, end_date):
-                self.add_error("end_date", error)
+            try:
+                validate_payment_unit_end_date(self.opportunity, end_date)
+            except ValidationError as e:
+                self.add_error("end_date", e)
 
 
 class VisitExportForm(forms.Form):
@@ -1636,10 +1637,19 @@ class PaymentUnitForm(forms.ModelForm):
         return cleaned_data
 
     def clean_start_date(self):
+        # Once a visit may be paid the field is locked (see __init__). Before that, a start date can't be cleared
+        # or moved into the past
         start_date = self.cleaned_data.get("start_date")
-        if self.instance.pk and "start_date" in self.changed_data:
-            if error := self._start_date_change_error(start_date):
-                raise ValidationError(error)
+        if not self.instance.pk or "start_date" not in self.changed_data:
+            return start_date
+        if not start_date:
+            raise ValidationError(_("Start date can't be cleared once it has been set."))
+        today = now().date()
+        if start_date < today:
+            raise ValidationError(_("Start date can't be in the past."))
+        if start_date == today and self.instance.has_visits_today():
+            # Visits processed earlier today are trial; they would sit inside the active period
+            raise ValidationError(_("Start date can be today only if the payment unit has no visits for today."))
         return start_date
 
     def _set_date_limits(self):
@@ -1655,7 +1665,7 @@ class PaymentUnitForm(forms.ModelForm):
         if self.fields["start_date"].disabled:
             return
         earliest = opportunity.start_date
-        # Only an edit is held to today or later (see _start_date_change_error)
+        # Only an edit is held to today or later (see clean_start_date)
         if self.instance.pk:
             visits_today = self.instance.has_visits_today()
             earliest = max(earliest, earliest_start_date(visits_today))
@@ -1668,20 +1678,6 @@ class PaymentUnitForm(forms.ModelForm):
             saved=self.instance.start_date,
         )
         self.fields["start_date"].help_text = help_text
-
-    def _start_date_change_error(self, start_date):
-        """Once a visit may be paid the field is locked (see __init__). Before that, a start date can't be cleared
-        or moved into the past."""
-        unit = self.instance
-        today = now().date()
-        if not start_date:
-            return _("Start date can't be cleared once it has been set.")
-        if start_date < today:
-            return _("Start date can't be in the past.")
-        if start_date == today and unit.has_visits_today():
-            # Visits processed earlier today are trial; they would sit inside the active period
-            return _("Start date can be today only if the payment unit has no visits for today.")
-        return None
 
     def _validate_budget_covers_claimants(self, cleaned_data):
         """
@@ -1719,16 +1715,15 @@ def set_date_limits(field, earliest=None, latest=None, saved=None):
         field.widget.attrs["max"] = latest.isoformat()
 
 
-def payment_unit_end_date_error(opportunity, end_date):
+def validate_payment_unit_end_date(opportunity, end_date):
     # A unit's blank date takes the opportunity's, so the end is checked against both of a unit's dates
     units = opportunity.paymentunit_set
     if unit := units.filter(end_date__gt=end_date).order_by("-end_date").first():
         message = gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
-        return message % {"name": unit.name, "date": unit.end_date}
+        raise ValidationError(message % {"name": unit.name, "date": unit.end_date})
     if unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
         message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
-        return message % {"name": unit.name, "date": unit.start_date}
-    return None
+        raise ValidationError(message % {"name": unit.name, "date": unit.start_date})
 
 
 def format_date_range(start_date, end_date):
