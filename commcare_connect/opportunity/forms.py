@@ -160,6 +160,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label=_("Select a country"),
     )
+    end_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+        required=False,
+        help_text=_("Extends opportunity end date for all users."),
+    )
 
     class Meta:
         model = Opportunity
@@ -315,11 +320,6 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         self.fields["currency"].disabled = True
         self.fields["country"].disabled = True
 
-        self.fields["end_date"] = forms.DateField(
-            widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
-            required=False,
-            help_text=_("Extends opportunity end date for all users."),
-        )
         if self.instance:
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()

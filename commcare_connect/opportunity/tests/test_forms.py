@@ -1531,27 +1531,6 @@ class TestEditTaskTypeForm:
         assert saved.slug == "original-slug"
 
 
-def _payment_unit_form(opportunity, data, instance=None):
-    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-    return PaymentUnitForm(
-        data={
-            "name": "Bonus",
-            "description": "Bonus payment unit",
-            "amount": 5,
-            "org_amount": 0,
-            "max_total": 10,
-            "max_daily": 2,
-            "required_deliver_units": [str(deliver_unit.id)],
-            **data,
-        },
-        deliver_units=[deliver_unit],
-        payment_units=[],
-        org_slug=opportunity.organization.slug,
-        opportunity=opportunity,
-        instance=instance,
-    )
-
-
 def _days_from_today(days):
     return None if days is None else now().date() + datetime.timedelta(days=days)
 
@@ -1564,9 +1543,6 @@ class TestPaymentUnitFormBudgetValidation:
     below the count of workers who have already claimed, some workers silently receive a
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
-
-    def _form(self, opportunity, data, instance=None):
-        return _payment_unit_form(opportunity, data, instance)
 
     @pytest.mark.parametrize(
         "num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid",
@@ -1593,7 +1569,7 @@ class TestPaymentUnitFormBudgetValidation:
         )
 
         instance = units[0] if edit_existing else None
-        form = self._form(opportunity, {"max_total": new_max_total}, instance=instance)
+        form = _payment_unit_form(opportunity, {"max_total": new_max_total}, instance=instance)
 
         assert form.is_valid() == expect_valid
         if not expect_valid:
