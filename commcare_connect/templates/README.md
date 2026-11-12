@@ -1,4 +1,4 @@
-# CommCare Connect Templates
+# Connect Templates
 
 This directory holds the project's Django HTML templates, organized by feature and by how widely they are reused.
 

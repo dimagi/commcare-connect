@@ -1,4 +1,4 @@
-# CommCare Connect
+# Connect
 
 Django 5.2 + PostGIS monolith for managing community health worker opportunities, payments, and workflows. Integrates with CommCare HQ and ConnectID services.
 
