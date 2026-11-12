@@ -49,9 +49,9 @@ jobs:
       - name: Install docs dependencies
         run: uv sync --frozen --only-group docs
 
-      # strict = true in zensical.toml makes broken links and anchors fail this step.
+      # --strict aborts on any warning, so broken links and anchors fail this step.
       - name: Build site
-        run: uv run --no-sync zensical build --clean
+        run: uv run --no-sync zensical build --clean --strict
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
