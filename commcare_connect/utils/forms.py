@@ -81,6 +81,7 @@ class ManagedOptionForm(forms.ModelForm):
     """
 
     locked_slug_help_text = None
+    slug_autofill = True
 
     class Meta:
         fields = ("name", "slug", "description")
