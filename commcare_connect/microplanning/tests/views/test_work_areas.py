@@ -1,38 +1,22 @@
-import datetime
 from unittest.mock import patch
 
 import pytest
 from django.contrib.gis.geos import Polygon
-from django.utils import formats, timezone, translation
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.helpers import (
-    denied_inaccessibility_work_area_ids,
-    exclude_work_areas_for_opportunity,
-    pending_inaccessibility_requests,
-    work_area_detail,
-    work_area_search_options,
-)
-from commcare_connect.microplanning.models import SRID, InaccessibilityRequestStatus, WorkAreaStatus
+from commcare_connect.microplanning.models import SRID, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import (
-    ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
-    WorkAreaInaccessibilityRequestFactory,
 )
-from commcare_connect.opportunity.models import VisitValidationStatus
-from commcare_connect.opportunity.tests.factories import BlobMetaFactory, OpportunityAccessFactory, UserVisitFactory
+from commcare_connect.microplanning.views.work_areas import _exclude_work_areas_for_opportunity
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
-
-
-def _unit_square(x, y):
-    """A 1x1 square with lower-left corner at (x, y); its centroid is (x + 0.5, y + 0.5)."""
-    return Polygon(((x, y), (x, y + 1), (x + 1, y + 1), (x + 1, y), (x, y)), srid=SRID)
 
 
 @pytest.mark.django_db
 class TestExcludeWorkAreas:
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_happy_path_excludes_not_visited_areas(self, mock_bulk_hq, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity)
@@ -44,7 +28,7 @@ class TestExcludeWorkAreas:
             work_area_group=group,
         )
 
-        res = exclude_work_areas_for_opportunity(
+        res = _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id for wa in work_areas],
             user=org_user_admin,
@@ -63,14 +47,14 @@ class TestExcludeWorkAreas:
 
         assert mock_bulk_hq.call_count == 1
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_mixed_batch_eligible_and_ineligible(self, mock_bulk_hq, org_user_admin, opportunity):
         wa_not_visited = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
         wa_unassigned = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
         wa_inaccessible = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.INACCESSIBLE)
         wa_excluded = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.EXCLUDED)
 
-        res = exclude_work_areas_for_opportunity(
+        res = _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa_not_visited.id, wa_unassigned.id, wa_inaccessible.id, wa_excluded.id],
             user=org_user_admin,
@@ -90,7 +74,7 @@ class TestExcludeWorkAreas:
         assert wa_inaccessible.status == WorkAreaStatus.INACCESSIBLE  # unchanged
         assert wa_excluded.status == WorkAreaStatus.EXCLUDED  # unchanged
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_hq_batch_failure_skips_local_exclusion_for_whole_chunk(self, mock_bulk_hq, org_user_admin, opportunity):
         """When the HQ bulk call fails, no work area in that chunk is excluded."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -104,7 +88,7 @@ class TestExcludeWorkAreas:
         )
         mock_bulk_hq.side_effect = CommCareHQAPIException("HQ down")
 
-        res = exclude_work_areas_for_opportunity(
+        res = _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id for wa in work_areas],
             user=org_user_admin,
@@ -119,11 +103,11 @@ class TestExcludeWorkAreas:
             assert wa.status == WorkAreaStatus.NOT_VISITED
             assert wa.work_area_group == group
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_no_case_id_excludes_locally_without_hq_call(self, mock_bulk_hq, org_user_admin, opportunity):
         wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED, case_id=None)
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id],
             user=org_user_admin,
@@ -134,11 +118,11 @@ class TestExcludeWorkAreas:
         wa.refresh_from_db()
         assert wa.status == WorkAreaStatus.EXCLUDED
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_work_area_from_other_opportunity_is_ignored(self, mock_bulk_hq, org_user_admin, opportunity):
         other_wa = WorkAreaFactory(status=WorkAreaStatus.NOT_VISITED)  # different opportunity
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[other_wa.id],
             user=org_user_admin,
@@ -157,11 +141,11 @@ class TestExcludeWorkAreas:
             WorkAreaStatus.EXPECTED_VISIT_REACHED,
         ],
     )
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_work_started_statuses_are_not_excluded(self, mock_bulk_hq, org_user_admin, opportunity, status):
         wa = WorkAreaFactory(opportunity=opportunity, status=status)
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id],
             user=org_user_admin,
@@ -172,7 +156,7 @@ class TestExcludeWorkAreas:
         assert wa.status == status  # unchanged
         mock_bulk_hq.assert_not_called()
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_work_areas_over_chunk_size_are_split_into_batches(self, mock_bulk_hq, org_user_admin, opportunity):
         """125 work areas → 3 HQ calls (50, 50, 25); all excluded on success."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -186,7 +170,7 @@ class TestExcludeWorkAreas:
             work_area_group=group,
         )
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id for wa in work_areas],
             user=org_user_admin,
@@ -201,7 +185,7 @@ class TestExcludeWorkAreas:
             wa.refresh_from_db()
             assert wa.status == WorkAreaStatus.EXCLUDED
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_one_failed_chunk_does_not_block_other_chunks(self, mock_bulk_hq, org_user_admin, opportunity):
         """Chunk 2 fails; chunks 1 and 3 still excluded."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -217,7 +201,7 @@ class TestExcludeWorkAreas:
 
         mock_bulk_hq.side_effect = [None, CommCareHQAPIException("HQ down"), None]
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id for wa in work_areas],
             user=org_user_admin,
@@ -232,7 +216,7 @@ class TestExcludeWorkAreas:
         assert len(excluded) == 2 * HQ_BULK_CHUNK_SIZE
         assert len(not_visited) == HQ_BULK_CHUNK_SIZE
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_excluding_subset_recomputes_group_centroid(self, mock_bulk_hq, org_user_admin, opportunity):
         """Excluding some areas recomputes the group centroid from the areas that remain."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -255,7 +239,7 @@ class TestExcludeWorkAreas:
         old_centroid = group.centroid
         assert old_centroid is not None
 
-        res = exclude_work_areas_for_opportunity(
+        res = _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa_exclude.id],
             user=org_user_admin,
@@ -270,7 +254,7 @@ class TestExcludeWorkAreas:
         assert group.centroid.y == 30.5
         assert wa_keep.work_area_group_id == group.id  # kept area still belongs to the group
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_excluding_all_areas_sets_group_centroid_to_none(self, mock_bulk_hq, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity)
@@ -284,7 +268,7 @@ class TestExcludeWorkAreas:
         group.update_centroid()
         assert group.centroid is not None
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[wa.id for wa in work_areas],
             user=org_user_admin,
@@ -294,7 +278,7 @@ class TestExcludeWorkAreas:
         group.refresh_from_db()
         assert group.centroid is None
 
-    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    @patch("commcare_connect.microplanning.views.work_areas.bulk_create_or_update_cases")
     def test_exclusion_recomputes_each_affected_group_independently(self, mock_bulk_hq, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         group_a = WorkAreaGroupFactory(opportunity=opportunity, name="group_a")
@@ -331,7 +315,7 @@ class TestExcludeWorkAreas:
         group_a.update_centroid()
         group_b.update_centroid()
 
-        exclude_work_areas_for_opportunity(
+        _exclude_work_areas_for_opportunity(
             opportunity=opportunity,
             work_area_ids=[a_exclude.id, b_exclude.id],
             user=org_user_admin,
@@ -346,224 +330,6 @@ class TestExcludeWorkAreas:
         assert b_keep.work_area_group_id == group_b.id
 
 
-@pytest.mark.django_db
-class TestWorkAreaSearchOptions:
-    def test_includes_all_three_searchable_types(self, opportunity):
-        work_area = WorkAreaFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity)
-        impl_area = ImplementationAreaFactory(opportunity=opportunity)
-
-        assert work_area_search_options(opportunity) == [
-            {
-                "value": f"wa:{work_area.id}",
-                "label": work_area.slug,
-                "type": "Work Area",
-                "kind": "wa",
-                "object_id": work_area.id,
-                "filter_name": "work_area",
-            },
-            {
-                "value": f"wag:{group.id}",
-                "label": group.name,
-                "type": "Work Area Group",
-                "kind": "wag",
-                "object_id": group.id,
-                "filter_name": "work_area_group",
-            },
-            {
-                "value": f"ia:{impl_area.id}",
-                "label": impl_area.name,
-                "type": "Implementation Area",
-                "kind": "ia",
-                "object_id": impl_area.id,
-                "filter_name": "implementation_area",
-            },
-        ]
-
-    def test_kind_is_untranslated_so_styling_can_key_on_it(self, opportunity):
-        """``type`` is a translated display string; ``kind`` is the stable key the badge colours
-        are chosen by, so it must not change with the active language."""
-        WorkAreaFactory(opportunity=opportunity)
-
-        with translation.override("fr"):
-            option = work_area_search_options(opportunity)[0]
-
-        assert option["kind"] == "wa"
-
-    def test_excludes_other_opportunities(self, opportunity):
-        WorkAreaFactory()
-        WorkAreaGroupFactory()
-        ImplementationAreaFactory()
-
-        assert work_area_search_options(opportunity) == []
-
-    def test_orders_each_type_by_label(self, opportunity):
-        WorkAreaFactory(opportunity=opportunity, slug="zeta-area")
-        WorkAreaFactory(opportunity=opportunity, slug="alpha-area")
-        WorkAreaGroupFactory(opportunity=opportunity, name="Zeta Group")
-        WorkAreaGroupFactory(opportunity=opportunity, name="Alpha Group")
-
-        labels = [option["label"] for option in work_area_search_options(opportunity)]
-
-        assert labels == ["alpha-area", "zeta-area", "Alpha Group", "Zeta Group"]
-
-
-@pytest.mark.django_db
-class TestWorkAreaDetail:
-    def test_returns_the_fields_the_map_sidebar_renders(self, opportunity):
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity)
-        impl_area = ImplementationAreaFactory(opportunity=opportunity)
-        work_area = WorkAreaFactory(
-            opportunity=opportunity,
-            opportunity_access=access,
-            work_area_group=group,
-            implementation_area=impl_area,
-            implementation_area_name=impl_area.name,
-            status=WorkAreaStatus.NOT_VISITED,
-        )
-
-        detail = work_area_detail(opportunity, work_area.id)
-
-        assert detail == {
-            "id": work_area.id,
-            "slug": work_area.slug,
-            "status": WorkAreaStatus.NOT_VISITED,
-            "building_count": work_area.building_count,
-            "expected_visit_count": work_area.expected_visit_count,
-            "group_id": group.id,
-            "group_name": group.name,
-            "assignee_name": access.user.name,
-            "assignee_phone": access.user.phone_number,
-            "visits_completed": 0,
-            "implementation_area_name": impl_area.name,
-        }
-
-    def test_visits_completed_counts_only_approved_visits(self, opportunity):
-        access = OpportunityAccessFactory(opportunity=opportunity)
-        work_area = WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
-        for status in (
-            VisitValidationStatus.approved,
-            VisitValidationStatus.approved,
-            VisitValidationStatus.rejected,
-        ):
-            UserVisitFactory(opportunity=opportunity, user=access.user, work_area=work_area, status=status)
-
-        assert work_area_detail(opportunity, work_area.id)["visits_completed"] == 2
-
-    def test_returns_none_for_another_opportunitys_work_area(self, opportunity):
-        other_work_area = WorkAreaFactory()
-
-        assert work_area_detail(opportunity, other_work_area.id) is None
-
-    def test_returns_none_for_a_missing_work_area(self, opportunity):
-        assert work_area_detail(opportunity, 999999) is None
-
-
-@pytest.mark.django_db
-class TestPendingInaccessibilityRequests:
-    @pytest.fixture
-    def make_request(self, opportunity):
-        def _make(
-            days_ago,
-            request_status=InaccessibilityRequestStatus.PENDING,
-            work_area_status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
-        ):
-            work_area = WorkAreaFactory(
-                opportunity=opportunity,
-                status=work_area_status,
-                work_area_group=WorkAreaGroupFactory(opportunity=opportunity),
-            )
-            return WorkAreaInaccessibilityRequestFactory(
-                work_area=work_area,
-                date_of_visit=timezone.localdate() - datetime.timedelta(days=days_ago),
-                status=request_status,
-            )
-
-        return _make
-
-    def test_longest_outstanding_first(self, opportunity, make_request):
-        recent = make_request(2)
-        oldest = make_request(9)
-
-        assert pending_inaccessibility_requests(opportunity) == [
-            self.expected_row(oldest, days_outstanding=9),
-            self.expected_row(recent, days_outstanding=2),
-        ]
-
-    def expected_row(self, pending_request, days_outstanding, photo_blob_id=None):
-        work_area = pending_request.work_area
-        return {
-            "work_area_id": pending_request.work_area_id,
-            "slug": work_area.slug,
-            "group_name": work_area.work_area_group.name,
-            "implementation_area_name": work_area.implementation_area_name,
-            "flw_name": pending_request.opportunity_access.user.name,
-            "date_of_visit": formats.date_format(pending_request.date_of_visit),
-            "pending_label": f"{days_outstanding}d pending",
-            "photo_blob_id": photo_blob_id,
-        }
-
-    @pytest.mark.parametrize(
-        ("request_status", "work_area_status"),
-        [
-            (InaccessibilityRequestStatus.APPROVED, WorkAreaStatus.INACCESSIBLE),
-            (InaccessibilityRequestStatus.DENIED, WorkAreaStatus.NOT_VISITED),
-            (InaccessibilityRequestStatus.PENDING, WorkAreaStatus.NOT_VISITED),
-        ],
-        ids=["approved", "denied", "pending_on_reverted_area"],
-    )
-    def test_excludes_requests_no_longer_awaiting_review(
-        self, opportunity, make_request, request_status, work_area_status
-    ):
-        make_request(3, request_status=request_status, work_area_status=work_area_status)
-
-        assert pending_inaccessibility_requests(opportunity) == []
-
-    def test_scoped_to_the_opportunity(self, opportunity, make_request):
-        own_request = make_request(1)
-        WorkAreaInaccessibilityRequestFactory(
-            work_area=WorkAreaFactory(status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
-        )
-
-        result = pending_inaccessibility_requests(opportunity)
-
-        assert [pending["work_area_id"] for pending in result] == [own_request.work_area_id]
-
-    def test_row_carries_the_forms_photo(self, opportunity, make_request):
-        pending_request = make_request(4)
-        photo = BlobMetaFactory(parent_id=pending_request.xform_id)
-        BlobMetaFactory(parent_id="another-form")
-
-        assert pending_inaccessibility_requests(opportunity) == [
-            self.expected_row(pending_request, days_outstanding=4, photo_blob_id=photo.blob_id)
-        ]
-
-
-@pytest.mark.django_db
-class TestDeniedInaccessibilityWorkAreaIds:
-    @pytest.mark.parametrize(
-        ("work_area_status", "still_denied"),
-        [
-            (WorkAreaStatus.NOT_VISITED, True),
-            (WorkAreaStatus.VISITED, True),
-            (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, False),
-            (WorkAreaStatus.INACCESSIBLE, False),
-        ],
-        ids=["not_visited", "visited", "re_requested", "approved_since"],
-    )
-    def test_excludes_areas_that_moved_on_from_the_denial(self, opportunity, work_area_status, still_denied):
-        work_area = WorkAreaFactory(opportunity=opportunity, status=work_area_status)
-        WorkAreaInaccessibilityRequestFactory(work_area=work_area, status=InaccessibilityRequestStatus.DENIED)
-
-        result = denied_inaccessibility_work_area_ids(opportunity)
-
-        assert result == ([work_area.id] if still_denied else [])
-
-    def test_lists_an_area_denied_more_than_once_only_once(self, opportunity):
-        work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
-        WorkAreaInaccessibilityRequestFactory.create_batch(
-            2, work_area=work_area, status=InaccessibilityRequestStatus.DENIED
-        )
-
-        assert denied_inaccessibility_work_area_ids(opportunity) == [work_area.id]
+def _unit_square(x, y):
+    """A 1x1 square with lower-left corner at (x, y); its centroid is (x + 0.5, y + 0.5)."""
+    return Polygon(((x, y), (x, y + 1), (x + 1, y + 1), (x + 1, y), (x, y)), srid=SRID)

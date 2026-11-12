@@ -23,8 +23,9 @@ from django.urls import reverse
 
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
-from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.const import (
+    MAX_EXCLUDE_WORK_AREAS,
+    MAX_UNASSIGN_WORK_AREAS,
     NO_CHILDREN_WORK_AREA_UNIT_SLUG,
     SEARCH_KIND_FILTERS,
     SERVICE_DELIVERY_UNIT_SLUG,
@@ -50,14 +51,11 @@ from commcare_connect.microplanning.tests.factories import (
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
 )
-from commcare_connect.microplanning.views import (
-    MAX_EXCLUDE_WORK_AREAS,
-    MAX_UNASSIGN_WORK_AREAS,
-    InaccessibilityReviewAction,
-    UserVisitVectorLayer,
-    get_metrics_for_microplanning,
-    is_adding_work_areas,
-)
+from commcare_connect.microplanning.views import progress_map
+from commcare_connect.microplanning.views.area_imports import _is_adding_work_areas
+from commcare_connect.microplanning.views.home import _get_metrics_for_microplanning
+from commcare_connect.microplanning.views.inaccessibility import InaccessibilityReviewAction
+from commcare_connect.microplanning.views.progress_map import UserVisitVectorLayer
 from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     DeliverUnitFactory,
@@ -121,7 +119,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.area_imports.import_work_areas_task.delay")
     def test_locking_mechanism(self, mock_delay, client, org_user_admin, opportunity, csv_file):
         url = self.get_url(opportunity.organization.slug, opportunity.opportunity_id)
         client.force_login(org_user_admin)
@@ -147,7 +145,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert mock_delay.call_count == 1  # No new task
 
     @pytest.mark.usefixtures("work_area_import_lock")
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.area_imports.import_work_areas_task.delay")
     def test_upload_accepted_when_work_areas_exist(self, mock_delay, client, org_user_admin, opportunity, csv_file):
         WorkAreaFactory(opportunity=opportunity)
         mock_delay.return_value = MagicMock(id="task-456")
@@ -159,7 +157,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert mock_delay.call_count == 1
         assert "Work Area upload has been started." in str(list(response.wsgi_request._messages)[0])
 
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.area_imports.import_work_areas_task.delay")
     def test_an_import_that_ends_at_once_leaves_no_lock(
         self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
     ):
@@ -177,7 +175,10 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
 
         assert cache.get(work_area_import_lock) is None
 
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay", side_effect=RuntimeError("no broker"))
+    @patch(
+        "commcare_connect.microplanning.views.area_imports.import_work_areas_task.delay",
+        side_effect=RuntimeError("no broker"),
+    )
     def test_lock_and_file_are_released_when_the_import_cannot_be_queued(
         self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
     ):
@@ -191,7 +192,7 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert default_storage.listdir("")[1] == []
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
-    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.area_imports.import_work_areas_task.delay")
     def test_flagged_permission_required(self, mock_delay, client, org_user_admin, opportunity, csv_file):
         """
         Ensure upload is only allowed if the opportunity is flagged for microplanning.
@@ -265,7 +266,7 @@ class TestAreaUploadRefusals(BaseMicroplanningFlagTest):
             kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
         )
 
-        with patch(f"commcare_connect.microplanning.views.{task_name}.delay") as delay:
+        with patch(f"commcare_connect.microplanning.views.area_imports.{task_name}.delay") as delay:
             csv_file = SimpleUploadedFile("areas.csv", b"a,b\n1,2\n", content_type=content_type)
             response = client.post(url, {"csv_file": csv_file})
 
@@ -289,7 +290,7 @@ class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
-    @patch("commcare_connect.microplanning.views.import_implementation_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.area_imports.import_implementation_areas_task.delay")
     def test_locking_and_redirect(self, mock_delay, client, org_user_admin, organization, opportunity, csv_file):
         mock_delay.return_value = Mock(id="00000000-0000-0000-0000-000000000000")
         client.force_login(org_user_admin)
@@ -679,7 +680,7 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         def fetch(task_result=None):
             if task_result is None:
                 return client.get(url)
-            with mock.patch("commcare_connect.microplanning.views.AsyncResult") as async_result:
+            with mock.patch("commcare_connect.microplanning.views.area_imports.AsyncResult") as async_result:
                 task = async_result.return_value
                 task.ready.return_value = True
                 task.successful.return_value = True
@@ -802,7 +803,7 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
 def test_is_adding_work_areas(opportunity, existing, created, expected):
     WorkAreaFactory.create_batch(size=existing, opportunity=opportunity)
 
-    assert is_adding_work_areas(opportunity_id=opportunity.id, created=created) is expected
+    assert _is_adding_work_areas(opportunity_id=opportunity.id, created=created) is expected
 
 
 @pytest.mark.django_db
@@ -862,7 +863,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert any(t.name == self.template_name for t in response.templates)
         assert response.context["work_area"] == work_area
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.views.work_areas.create_or_update_case_by_work_area")
     def test_successful_field_updates(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -886,7 +887,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert group.centroid.x == 77.5
         assert group.centroid.y == 28.5
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.views.work_areas.create_or_update_case_by_work_area")
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
@@ -929,7 +930,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.expected_visit_count == 10  # unchanged
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.views.work_areas.create_or_update_case_by_work_area")
     def test_hq_sync_failure_returns_form_error(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -966,7 +967,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
             (WorkAreaStatus.VISITED, 3, 5, 5, WorkAreaStatus.VISITED),
         ],
     )
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.views.work_areas.create_or_update_case_by_work_area")
     def test_expected_visit_count_change_reevaluates_status(
         self,
         mock_sync,
@@ -1003,7 +1004,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.status == expected_status
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    @patch("commcare_connect.microplanning.views.work_areas.create_or_update_case_by_work_area")
     def test_successful_group_field_update_for_centroid_recalculation(
         self, mock_sync, client, org_user_admin, opportunity
     ):
@@ -1087,7 +1088,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
     def _get_tile_queryset(self, client, org_user_admin, opportunity, query_params=None):
         client.force_login(org_user_admin)
         url = self.tile_url(opportunity.organization.slug, str(opportunity.opportunity_id))
-        original_get_queryset = microplanning_views.WorkAreaVectorLayer.get_queryset
+        original_get_queryset = progress_map.WorkAreaVectorLayer.get_queryset
         captured_qs = []
 
         def capturing_get_queryset(self_layer):
@@ -1096,7 +1097,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
             return qs
 
         # the actual MVT (vector tile) response is binary protobuf and hard to assert
-        with patch.object(microplanning_views.WorkAreaVectorLayer, "get_queryset", capturing_get_queryset):
+        with patch.object(progress_map.WorkAreaVectorLayer, "get_queryset", capturing_get_queryset):
             response = client.get(url, data=query_params or {})
 
         assert response.status_code in (200, 204)
@@ -1105,7 +1106,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
 
     def test_implementation_area_name_is_a_tile_field(self):
         # Exposed in the vector tile so the map sidebar can show it for the selected work area.
-        assert "implementation_area_name" in microplanning_views.WorkAreaVectorLayer.tile_fields
+        assert "implementation_area_name" in progress_map.WorkAreaVectorLayer.tile_fields
 
     def test_unfiltered_returns_all_work_areas(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
@@ -1666,7 +1667,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             ]
         }
         with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            "commcare_connect.microplanning.views.assignment.send_work_area_assignment_notification.delay"
         ) as delay_patch:
             response = client.post(
                 self._url(program_manager_org, managed_opportunity),
@@ -1685,7 +1686,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
         client.force_login(program_manager_org_user_admin)
 
         with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            "commcare_connect.microplanning.views.assignment.send_work_area_assignment_notification.delay"
         ) as delay_patch:
             response = client.post(
                 self._url(program_manager_org, managed_opportunity),
@@ -1798,8 +1799,8 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
         old_wag_centroid_value = work_area.work_area_group.centroid
 
         with (
-            patch("commcare_connect.microplanning.views.send_push_notification_task") as mock_notif,
-            patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area"),
+            patch("commcare_connect.microplanning.views.inaccessibility.send_push_notification_task") as mock_notif,
+            patch("commcare_connect.microplanning.views.inaccessibility.create_or_update_case_by_work_area"),
             django_capture_on_commit_callbacks(execute=True),
         ):
             response = client.post(url, {"action": action})
@@ -1843,7 +1844,7 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         with patch(
-            "commcare_connect.microplanning.views.create_or_update_case_by_work_area",
+            "commcare_connect.microplanning.views.inaccessibility.create_or_update_case_by_work_area",
             side_effect=CommCareHQAPIException("HQ unavailable"),
         ):
             response = client.post(url, {"action": "approve"})
@@ -2042,7 +2043,7 @@ class TestAssignmentAccess:
             assert response.status_code == 404
             assert wa.opportunity_access_id is None
 
-    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.assignment.unassign_work_areas_for_opportunity")
     def test_unassign_work_areas(
         self, mock_unassign, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed
     ):
@@ -2329,7 +2330,7 @@ class TestUnassignWorkAreas:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.assignment.unassign_work_areas_for_opportunity")
     def test_calls_helper_and_returns_counts(
         self,
         mock_unassign,
@@ -2368,7 +2369,7 @@ class TestUnassignWorkAreas:
         assert kwargs["work_area_ids"] == [wa1.id, wa2.id]
         assert kwargs["user"] == program_manager_org_user_admin
 
-    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.assignment.unassign_work_areas_for_opportunity")
     def test_all_hq_failures_returns_502(
         self,
         mock_unassign,
@@ -2385,7 +2386,7 @@ class TestUnassignWorkAreas:
         assert response.status_code == 502
         assert "error" in response.json()
 
-    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.assignment.unassign_work_areas_for_opportunity")
     def test_all_skipped_returns_200(
         self,
         mock_unassign,
@@ -2440,7 +2441,7 @@ class TestUnassignWorkAreas:
         )
         assert response.status_code == 400
 
-    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.assignment.unassign_work_areas_for_opportunity")
     def test_too_many_work_area_ids_returns_400(
         self,
         mock_unassign,
@@ -2472,7 +2473,7 @@ class TestExcludeWorkAreasView:
         )
 
     @patch(
-        "commcare_connect.microplanning.views.exclude_work_areas_for_opportunity",
+        "commcare_connect.microplanning.views.work_areas._exclude_work_areas_for_opportunity",
         return_value={"excluded_ids": [1], "skipped": 0, "failed": 0},
     )
     def test_valid_request_calls_exclude_and_returns_200(self, mock_exclude, client, org_user_admin, opportunity):
@@ -2504,7 +2505,7 @@ class TestExcludeWorkAreasView:
         ],
         ids=["missing", "blank", "too_long"],
     )
-    @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.work_areas._exclude_work_areas_for_opportunity")
     def test_invalid_exclusion_reason_returns_400(self, mock_exclude, client, org_user_admin, opportunity, post_data):
         client.force_login(org_user_admin)
         response = client.post(self.url(opportunity), post_data)
@@ -2520,14 +2521,14 @@ class TestExcludeWorkAreasView:
         ],
         ids=["missing", "non_integer"],
     )
-    @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.work_areas._exclude_work_areas_for_opportunity")
     def test_invalid_work_area_ids_returns_400(self, mock_exclude, client, org_user_admin, opportunity, post_data):
         client.force_login(org_user_admin)
         response = client.post(self.url(opportunity), post_data)
         assert response.status_code == 400
         mock_exclude.assert_not_called()
 
-    @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
+    @patch("commcare_connect.microplanning.views.work_areas._exclude_work_areas_for_opportunity")
     def test_too_many_work_area_ids_returns_400(self, mock_exclude, client, org_user_admin, opportunity):
 
         client.force_login(org_user_admin)
@@ -2545,7 +2546,7 @@ class TestExcludeWorkAreasView:
 
 @pytest.mark.django_db
 class TestGetMetricsForMicroplanningWorkAreas:
-    """Tests for the get_metrics_for_microplanning helper — work area metrics."""
+    """Tests for the _get_metrics_for_microplanning helper — work area metrics."""
 
     @pytest.fixture
     def opp(self):
@@ -2599,7 +2600,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         )
         self._make_visits(opp, wa_visited, approved=2)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Unvisited Work Areas")
         # in scope = 3 (wa_not_visited, wa_visited, wa_inaccessible); unvisited = 1
         assert m["value"] == 1
@@ -2623,7 +2624,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         # Approved visits on an excluded WA must not bump the count.
         self._make_visits(opp, wa_excluded, approved=5)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas (children found)")
         # in scope = 4; visited = 2
         assert m["value"] == 2
@@ -2635,7 +2636,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         other_unit = DeliverUnitFactory(app=opp.deliver_app, slug="registration")
         self._make_visits(opp, wa, approved=1, deliver_unit=other_unit)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas (children found)")
         assert m["value"] == 0
 
@@ -2655,7 +2656,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         self._make_visits(opp, wa_hsd_only, approved=1)  # HSD visit doesn't count toward this tile
         self._make_visits(opp, wa_excluded, approved=2, deliver_unit=ncwa_unit)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas (no children found)")
         # in scope = 3; no-children-found = 1 (wa_ncwa only)
         assert m["value"] == 1
@@ -2681,7 +2682,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         self._make_visits(opp, wa_over, approved=7)  # reached (>=)
         self._make_visits(opp, wa_excluded_reached, approved=10)  # excluded — ignored
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "EVC Reached")
         # in scope = 4; reached = 2 - wa_no_target is not one of them
         assert m["value"] == 2
@@ -2699,7 +2700,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
                 WorkAreaStatus.EXCLUDED,
             ],
         )
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Inaccessible Work Areas")
         # in scope = 3; inaccessible = 1, the requested one not having been accepted yet
         assert m["value"] == 1
@@ -2714,7 +2715,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
                 WorkAreaStatus.VISITED,
             ],
         )
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Excluded Work Areas")
         assert m["value"] == 2
         assert "percentage" not in m
@@ -2744,7 +2745,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         # An excluded WA's approved visit must not count - it's out of scope entirely.
         self._make_visits(opp, wa_excluded, approved=1)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Work Areas Done")
         # in scope = 6 (all but wa_excluded); done = 5 (wa_untouched is the only one left out)
         assert m["value"] == 5
@@ -2756,7 +2757,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         other_unit = DeliverUnitFactory(app=opp.deliver_app, slug="registration")
         self._make_visits(opp, wa, approved=5, deliver_unit=other_unit)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "WA Visited : Visits Ratio")
         assert m["value"] == "--"  # zero HSD visits, as denominator pct_visits is zero
 
@@ -2785,7 +2786,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         self._make_visits(opp, wa_unvisited, pending=5)
         UserVisitFactory(opportunity=opp, work_area=None, status=VisitValidationStatus.pending)
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "WA Visited : Visits Ratio")
         assert m["value"] == 10.0
         assert "percentage" not in m
@@ -2794,7 +2795,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
     def test_pct_visited_to_pct_visits_zero_denominator(self, opp):
         """No visits and no expected visits → show '--'."""
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "WA Visited : Visits Ratio")
         assert m["value"] == "--"
         assert "unit" not in m
@@ -2814,7 +2815,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
                 opportunity=opp, work_area=None, deliver_unit=hsd_unit, status=VisitValidationStatus.approved
             )
 
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "WA Visited : Visits Ratio")
         # total_hsd (WA-attached) = 1 -> pct_visits = 1/20 = 0.05
         # pct_wa_visited = 1/2 = 0.5 -> ratio = 0.5 / 0.05 = 10.0
@@ -2823,7 +2824,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
     def test_zero_in_scope_work_areas(self, opp):
         """All WAs excluded → percentage metrics show None; visited count is 0."""
         self._make_work_areas(opp, [WorkAreaStatus.EXCLUDED])
-        metrics = get_metrics_for_microplanning(opp)
+        metrics = _get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas (children found)")
         assert m["value"] == 0
         assert m["percentage"] is None
@@ -2844,7 +2845,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         )
         self._make_visits(opp, wa_unassigned, approved=1)
 
-        tiles = {m["name"]: (m["value"], m.get("percentage")) for m in get_metrics_for_microplanning(opp)}
+        tiles = {m["name"]: (m["value"], m.get("percentage")) for m in _get_metrics_for_microplanning(opp)}
         assert tiles["Work Areas Done"] == (1, 50)  # denominator is 2, not 5
         assert tiles["Unvisited Work Areas"] == (1, 50)
         assert tiles["Visited Work Areas (children found)"] == (1, 50)
@@ -2964,8 +2965,8 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         timeout_error = OperationalError("canceling statement due to statement timeout")
         timeout_error.__cause__ = cause
         with (
-            patch("commcare_connect.microplanning.views.CoverageProgressReport") as report_cls,
-            patch("commcare_connect.microplanning.views.transaction.set_rollback") as set_rollback,
+            patch("commcare_connect.microplanning.views.coverage.CoverageProgressReport") as report_cls,
+            patch("commcare_connect.microplanning.views.coverage.transaction.set_rollback") as set_rollback,
         ):
             report_cls.return_value.header.side_effect = timeout_error
             resp = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
@@ -2977,7 +2978,7 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
 
     def test_non_timeout_operational_error_is_not_masked(self, client, org_user_admin, opportunity):
         client.force_login(org_user_admin)
-        with patch("commcare_connect.microplanning.views.CoverageProgressReport") as report_cls:
+        with patch("commcare_connect.microplanning.views.coverage.CoverageProgressReport") as report_cls:
             report_cls.return_value.header.side_effect = OperationalError("connection lost")  # no pgcode 57014
             with pytest.raises(OperationalError):
                 client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
@@ -2992,7 +2993,7 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
     def work_area(self, opportunity):
         return WorkAreaFactory(opportunity=opportunity)
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.work_area_groups.cluster_work_areas_task.delay")
     def test_valid_building_count_forwards_to_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
         mock_delay.return_value = MagicMock(id="task-123")
         client.force_login(org_user_admin)
@@ -3004,7 +3005,7 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
         mock_delay.assert_called_once_with(opportunity.id, 250)
         assert "clustering_task_id=task-123" in response.headers["HX-Push-Url"]
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.work_area_groups.cluster_work_areas_task.delay")
     def test_empty_building_count_defaults(self, mock_delay, client, org_user_admin, opportunity, work_area):
         mock_delay.return_value = MagicMock(id="task-123")
         client.force_login(org_user_admin)
@@ -3015,7 +3016,7 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
         assert response.status_code == 200
         mock_delay.assert_called_once_with(opportunity.id, 200)
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.work_area_groups.cluster_work_areas_task.delay")
     def test_out_of_range_does_not_start_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
         client.force_login(org_user_admin)
 
@@ -3033,7 +3034,7 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
     def url(self, org_slug, opp_id):
         return reverse("microplanning:cluster_work_areas", args=(org_slug, opp_id))
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.work_area_groups.cluster_work_areas_task.delay")
     def test_rerun_replaces_existing_groups(self, mock_delay, client, org_user_admin, opportunity):
 
         mock_task = MagicMock()
@@ -3054,7 +3055,7 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.work_area_group is None
 
-    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    @patch("commcare_connect.microplanning.views.work_area_groups.cluster_work_areas_task.delay")
     def test_rerun_blocked_when_assigned(self, mock_delay, client, org_user_admin, opportunity):
 
         old_group = WorkAreaGroupFactory(opportunity=opportunity)

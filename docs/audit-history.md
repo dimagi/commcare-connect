@@ -19,7 +19,7 @@ saying who made the change. Because the triggers run in the database, every writ
       work_area.save(update_fields=["status"])
   ```
 
-  Extra keys are allowed and are stored alongside, e.g. `reason=` in `microplanning/helpers.py`.
+  Extra keys are allowed and are stored alongside, e.g. `reason=` in `microplanning/services.py`.
 
 ## What is tracked
 
