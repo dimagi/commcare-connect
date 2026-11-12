@@ -67,6 +67,7 @@ from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.jira_service_desk import is_configured as is_jira_service_desk_configured
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
+from commcare_connect.microplanning.services import update_work_area_statuses
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.decorators import require_manual_visit_verification
@@ -1266,8 +1267,7 @@ def approve_visits(request, org_slug, opp_id):
         update_payment_accrued(opportunity=request.opportunity, users=user_ids, incremental=True)
     send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
 
-    for work_area in work_areas_to_update:
-        work_area.update_status()
+    update_work_area_statuses(work_areas_to_update)
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
