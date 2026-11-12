@@ -87,6 +87,7 @@ class TestPaymentInvoice:
                     amount=10,
                     date=datetime.date.today(),
                     invoice_number=generate_invoice_number(),
+                    bill_to=BillToAddress.get_default(),  # bulk_create skips save(), which fills the default
                 )
             )
 
@@ -216,6 +217,24 @@ class TestPaymentInvoice:
             invoice.save(update_fields=["status"])
 
         assert invoice.pm_certification["name"] == expected_name
+
+    def test_new_invoice_gets_default_bill_to(self, default_address):
+        assert PaymentInvoiceFactory().bill_to == default_address
+
+    def test_later_save_keeps_bill_to(self, default_address):
+        invoice = PaymentInvoiceFactory()
+        BillToAddress.objects.update(is_default=False)
+        BillToAddressFactory(is_default=True)
+        invoice.save()  # e.g. a status change must not move the invoice to the new default
+        invoice.refresh_from_db()
+        assert invoice.bill_to == default_address
+
+    def test_used_bill_to_cannot_be_deleted(self):
+        # The database backstop for any delete path.
+        address = BillToAddressFactory()
+        PaymentInvoiceFactory(bill_to=address)
+        with pytest.raises(ProtectedError):
+            address.delete()
 
 
 @pytest.fixture

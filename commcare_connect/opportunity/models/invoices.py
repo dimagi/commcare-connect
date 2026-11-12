@@ -84,6 +84,7 @@ class PaymentInvoice(models.Model):
     invoice_number = models.CharField(max_length=50)
     service_delivery = models.BooleanField(default=True)
     exchange_rate = models.ForeignKey(ExchangeRate, on_delete=models.DO_NOTHING, null=True)
+    bill_to = models.ForeignKey(BillToAddress, on_delete=models.PROTECT, related_name="invoices")
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
@@ -97,6 +98,11 @@ class PaymentInvoice(models.Model):
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.bill_to_id is None:
+            self.bill_to = BillToAddress.get_default()
+        super().save(*args, **kwargs)
 
     @property
     def invoice_type(self):
