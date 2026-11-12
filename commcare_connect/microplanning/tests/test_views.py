@@ -67,7 +67,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
-def work_area_at(opportunity, x, y, **kwargs):
+def _work_area_at(opportunity, x, y, **kwargs):
     """A 1x1 degree work area with its lower-left corner at (x, y).
 
     The factory gives every work area the same fixed boundary, so a filter could never be seen to
@@ -441,16 +441,16 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
         return response.json()["bounds"]
 
     def test_unfiltered_covers_every_work_area(self, client, org_user_admin, organization, opportunity):
-        work_area_at(opportunity, 10, 20)
-        work_area_at(opportunity, 40, 50)
+        _work_area_at(opportunity, 10, 20)
+        _work_area_at(opportunity, 40, 50)
 
         bounds = self.get_bounds(client, org_user_admin, organization, opportunity)
 
         assert bounds == [10, 20, 41, 51]
 
     def test_status_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
-        work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
-        work_area_at(opportunity, 40, 50, status=WorkAreaStatus.NOT_VISITED)
+        _work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
+        _work_area_at(opportunity, 40, 50, status=WorkAreaStatus.NOT_VISITED)
 
         bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"status": WorkAreaStatus.VISITED})
 
@@ -458,8 +458,8 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
 
     def test_work_area_group_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
-        work_area_at(opportunity, 10, 20, work_area_group=group)
-        work_area_at(opportunity, 40, 50)
+        _work_area_at(opportunity, 10, 20, work_area_group=group)
+        _work_area_at(opportunity, 40, 50)
 
         bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"work_area_group": group.id})
 
@@ -467,8 +467,8 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
 
     def test_implementation_area_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
         implementation_area = ImplementationAreaFactory(opportunity=opportunity)
-        work_area_at(opportunity, 10, 20, implementation_area=implementation_area)
-        work_area_at(opportunity, 40, 50)
+        _work_area_at(opportunity, 10, 20, implementation_area=implementation_area)
+        _work_area_at(opportunity, 40, 50)
 
         bounds = self.get_bounds(
             client, org_user_admin, organization, opportunity, {"implementation_area": implementation_area.id}
@@ -478,8 +478,8 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
 
     def test_work_area_filter_returns_just_that_area(self, client, org_user_admin, organization, opportunity):
         """The search box's path: picking one work area sets the hidden `work_area` filter."""
-        target = work_area_at(opportunity, 10, 20)
-        work_area_at(opportunity, 40, 50)
+        target = _work_area_at(opportunity, 10, 20)
+        _work_area_at(opportunity, 40, 50)
 
         bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"work_area": target.id})
 
@@ -488,8 +488,8 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
     def test_visit_date_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
         """The uservisit-joining, DISTINCT-ed case — duplicate rows must not disturb the extent."""
         access = OpportunityAccessFactory(opportunity=opportunity)
-        in_range = work_area_at(opportunity, 10, 20)
-        out_of_range = work_area_at(opportunity, 40, 50)
+        in_range = _work_area_at(opportunity, 10, 20)
+        out_of_range = _work_area_at(opportunity, 40, 50)
         # Two visits on the in-range area, so the join duplicates its row.
         for _ in range(2):
             UserVisitFactory(
@@ -516,7 +516,7 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
         assert bounds == [10, 20, 11, 21]
 
     def test_no_matches_returns_null(self, client, org_user_admin, organization, opportunity):
-        work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
+        _work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
 
         bounds = self.get_bounds(
             client, org_user_admin, organization, opportunity, {"status": WorkAreaStatus.INACCESSIBLE}
@@ -528,9 +528,9 @@ class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
         assert self.get_bounds(client, org_user_admin, organization, opportunity) is None
 
     def test_scoped_to_opportunity(self, client, org_user_admin, organization, opportunity):
-        work_area_at(opportunity, 10, 20)
+        _work_area_at(opportunity, 10, 20)
         other_opp = OpportunityFactory(organization=organization)
-        work_area_at(other_opp, 40, 50)
+        _work_area_at(other_opp, 40, 50)
 
         bounds = self.get_bounds(client, org_user_admin, organization, opportunity)
 
@@ -2160,9 +2160,9 @@ class TestGetWorkAreasForAssignment:
     ):
         """Assignment mode zooms from this, since these work areas bypass the tile filters."""
         group = WorkAreaGroupFactory(opportunity=managed_opportunity)
-        work_area_at(managed_opportunity, 10, 20, work_area_group=group)
-        work_area_at(managed_opportunity, 12, 22, work_area_group=group)
-        work_area_at(managed_opportunity, 40, 50)  # another group, must not widen the box
+        _work_area_at(managed_opportunity, 10, 20, work_area_group=group)
+        _work_area_at(managed_opportunity, 12, 22, work_area_group=group)
+        _work_area_at(managed_opportunity, 40, 50)  # another group, must not widen the box
         client.force_login(program_manager_org_user_admin)
 
         response = client.get(
@@ -2191,8 +2191,8 @@ class TestGetFlwWorkAreasForAssignment:
         self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
         access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        mine = work_area_at(managed_opportunity, 10, 20, opportunity_access=access)
-        work_area_at(managed_opportunity, 40, 50)  # unassigned, must not widen the box
+        mine = _work_area_at(managed_opportunity, 10, 20, opportunity_access=access)
+        _work_area_at(managed_opportunity, 40, 50)  # unassigned, must not widen the box
         client.force_login(program_manager_org_user_admin)
 
         payload = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id, access.id)).json()
