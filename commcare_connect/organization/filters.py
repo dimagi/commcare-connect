@@ -51,7 +51,7 @@ class DirectoryFilterSet(AlwaysBoundFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search")}),
+        widget=forms.TextInput(attrs={"placeholder": _("Search"), "class": "rounded-lg"}),
     )
 
     def filter_by_search_term(self, queryset, name, value):
