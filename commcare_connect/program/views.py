@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
 from django.http import Http404, HttpResponse
@@ -146,7 +147,7 @@ class ManagedOpportunityViewMixin:
     def dispatch(self, request, *args, **kwargs):
         try:
             self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
-        except Program.DoesNotExist:
+        except (Program.DoesNotExist, ValidationError):
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)

@@ -11,6 +11,7 @@ from django.core.cache import cache
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
@@ -21,7 +22,6 @@ from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
-    AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     EditTaskTypeForm,
     OpportunityChangeForm,
@@ -30,11 +30,14 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     PaymentUnitForm,
 )
+from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    ExchangeRate,
+    Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
     PaymentInvoice,
@@ -47,6 +50,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     ExchangeRateFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
@@ -393,14 +397,61 @@ class TestOpportunityInitUpdateForm:
             data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
         return data
 
-    def _get_form(self, *, opportunity, data):
+    def _valid_data(self, opportunity):
+        return self._build_form_data(
+            opportunity,
+            learn_payload={"id": opportunity.learn_app.cc_app_id, "name": "learn"},
+            learn_domain=opportunity.learn_app.cc_domain,
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": opportunity.deliver_app.cc_app_id, "name": "deliver"},
+            deliver_domain=opportunity.deliver_app.cc_domain,
+        )
+
+    def _get_form(self, *, opportunity, data, user=None):
         return OpportunityInitUpdateForm(
             data=data,
             instance=opportunity,
-            user=opportunity.api_key.user,
+            user=user or opportunity.api_key.user,
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
+    def test_rejects_key(self, opportunity, case):
+        if case == "another_users_key":
+            change = {"api_key": str(HQApiKeyFactory(hq_server=opportunity.hq_server).id)}
+        else:
+            change = {"hq_server": HQServerFactory().id}
+        data = self._valid_data(opportunity) | change
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert not form.is_valid()
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    def test_rejects_own_key_on_other_hq_server(self, opportunity):
+        user = UserFactory()
+        key = HQApiKeyFactory(user=user)
+        data = self._valid_data(opportunity) | {"api_key": str(key.id)}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data, user=user).errors
+
+    @pytest.mark.parametrize("bad_id", ["999999", "abc"])
+    def test_rejects_unknown_or_malformed_key_id(self, opportunity, bad_id):
+        data = self._valid_data(opportunity) | {"api_key": bad_id}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data).errors
+
+    def test_current_key_owned_by_other_user_is_accepted(self, opportunity):
+        data = self._valid_data(opportunity)
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opportunity.api_key_id
+
+    def test_legacy_opportunity_without_hq_server_keeps_its_key(self, opportunity):
+        """Opportunities from before hq_server was recorded keep their key on the server it belongs to."""
+        data = self._valid_data(opportunity) | {"hq_server": opportunity.api_key.hq_server_id}
+        Opportunity.objects.filter(pk=opportunity.pk).update(hq_server=None)
+        opportunity.refresh_from_db()
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
 
     def test_updates_existing_linked_apps(self, opportunity):
         learn_app = opportunity.learn_app
@@ -571,6 +622,11 @@ class TestOpportunityInitForm:
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    def test_rejects_key_owned_by_another_user(self, opportunity):
+        other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
 
     @pytest.mark.parametrize("switch_active", [True, False])
     def test_init_form_sets_automatic_visit_verification_from_global_switch(self, opportunity, switch_active):
@@ -773,7 +829,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.amount == 100.0
         assert invoice.date == datetime.date(2025, 11, 6)
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice")
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice")
     def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
@@ -800,6 +856,64 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.end_date is None
         assert invoice.title is None
         mock_bill_invoice.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "usd_currency, expected_amount, expected_amount_usd",
+        [
+            (False, Decimal("100.00"), Decimal("50.00")),
+            (True, Decimal("200.00"), Decimal("100.00")),
+        ],
+    )
+    def test_custom_invoice_converts_amount_with_one_rate_lookup(
+        self, valid_opportunity, usd_currency, expected_amount, expected_amount_usd
+    ):
+        rate = ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=2.0, rate_date="2025-11-01")
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "title": "Ignored for custom invoices",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", wraps=ExchangeRate.latest_exchange_rate) as lookup:
+            assert form.is_valid(), form.errors
+
+        lookup.assert_called_once_with(valid_opportunity.currency_code, datetime.date(2025, 11, 6))
+        assert form.cleaned_data["exchange_rate"] == rate
+        assert form.cleaned_data["amount"] == expected_amount
+        assert form.cleaned_data["amount_usd"] == expected_amount_usd
+        assert form.cleaned_data["title"] is None
+        assert form.cleaned_data["start_date"] is None
+        assert form.cleaned_data["end_date"] is None
+
+    @pytest.mark.parametrize("usd_currency", [False, True])
+    def test_custom_invoice_without_exchange_rate(self, valid_opportunity, usd_currency):
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", return_value=None) as lookup:
+            assert not form.is_valid()
+
+        lookup.assert_called_once()
+        assert form.non_field_errors() == ["Exchange rate not available for selected date."]
 
     def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
@@ -861,7 +975,7 @@ class TestAutomatedPaymentInvoiceForm:
         ],
         ids=["completed-period", "end-before-start", "ends-today", "future-end"],
     )
-    @patch("commcare_connect.opportunity.forms.localdate", return_value=datetime.date(2025, 11, 6))
+    @patch("commcare_connect.opportunity.forms.invoices.localdate", return_value=datetime.date(2025, 11, 6))
     def test_service_delivery_window_must_be_a_completed_period(
         self, mock_localdate, valid_opportunity, start_date, end_date, expected_error
     ):
@@ -927,7 +1041,7 @@ class TestAutomatedPaymentInvoiceForm:
             assert "The billable total for this period has changed since this page was loaded." in str(form.errors)
             assert not PaymentInvoice.objects.filter(invoice_number="INV-001").exists()
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice", return_value=[])
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice", return_value=[])
     def test_service_delivery_amount_is_never_the_posted_one(self, mock_bill_invoice, valid_opportunity):
         """The posted total is a preview artefact and must never survive onto the invoice.
 

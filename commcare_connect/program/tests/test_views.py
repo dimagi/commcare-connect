@@ -475,6 +475,17 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
         response = self.client.get(edit_url)
         assert response.status_code == HTTPStatus.NOT_FOUND
 
+    @pytest.mark.parametrize("url_name", ["program:opportunity_init", "program:opportunity_init_edit"])
+    def test_invalid_program_id_redirects_to_program_home(self, url_name, program_actors):
+        org = program_actors(self.program)["owner"]
+        act_as_admin(self.client, org)
+        kwargs = {"org_slug": org.slug, "pk": "not-a-valid-uuid"}
+        if url_name == "program:opportunity_init_edit":
+            kwargs["opp_id"] = "some-opportunity"
+        response = self.client.get(reverse(url_name, kwargs=kwargs))
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse("program:home", kwargs={"org_slug": org.slug})
+
 
 @pytest.mark.django_db
 class TestManageApplicationView(BaseProgramTest):
