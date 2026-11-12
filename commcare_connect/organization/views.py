@@ -14,7 +14,7 @@ from django.db import transaction
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext, gettext_lazy
@@ -170,8 +170,8 @@ def api_key_removal_blocks(memberships):
     """One message per member whose removal would leave opportunities with an API key no one here manages."""
     blocks = []
     for membership in memberships:
-        opportunity_names = [opportunity.name for opportunity in opportunities_orphaned_by_removal(membership)]
-        if opportunity_names:
+        opportunities = opportunities_orphaned_by_removal(membership)
+        if opportunities:
             blocks.append(
                 format_html(
                     gettext(
@@ -180,7 +180,7 @@ def api_key_removal_blocks(memberships):
                         "{link_start}Learn how to replace an API key{link_end}."
                     ),
                     name=membership.user.name or membership.user.email,
-                    opportunities=", ".join(opportunity_names),
+                    opportunities=_opportunity_edit_links(membership.organization.slug, opportunities),
                     link_start=format_html(
                         '<a href="{}" target="_blank" rel="noopener" class="underline">', MANAGING_API_KEYS_URL
                     ),
@@ -188,6 +188,18 @@ def api_key_removal_blocks(memberships):
                 )
             )
     return blocks
+
+
+def _opportunity_edit_links(org_slug, opportunities):
+    """Each opportunity's name, linked to the Edit page where its API key is replaced."""
+    return format_html_join(
+        ", ",
+        '<a href="{}" class="underline">{}</a>',
+        (
+            (reverse("opportunity:edit", args=(org_slug, opportunity.opportunity_id)), opportunity.name)
+            for opportunity in opportunities
+        ),
+    )
 
 
 def accept_invite(request, org_slug, token):

@@ -31,6 +31,9 @@ class TestRemoveMembersView:
     def url(self, org_slug):
         return reverse("organization:remove_members", args=(org_slug,))
 
+    def edit_url(self, organization, opportunity):
+        return reverse("opportunity:edit", args=(organization.slug, opportunity.opportunity_id))
+
     def test_member_whose_api_key_is_in_use_blocks_the_removal(
         self, client, org_user_admin, org_user_member, organization
     ):
@@ -39,8 +42,10 @@ class TestRemoveMembersView:
         The names are user input inside a message that carries a link, so they must arrive escaped.
         """
         api_key = HQApiKeyFactory(user=org_user_member)
-        for name in ["Opp B", "Opp <A>"]:
+        opp_b, opp_a = (
             OpportunityFactory(name=name, program=ProgramFactory(organization=organization), api_key=api_key)
+            for name in ["Opp B", "Opp <A>"]
+        )
         UserOrganizationMembership.objects.create(user=UserFactory(), organization=organization)
         selected = UserOrganizationMembership.objects.filter(organization=organization).exclude(user=org_user_admin)
         membership_ids = list(selected.values_list("id", flat=True))
@@ -49,7 +54,9 @@ class TestRemoveMembersView:
 
         assert messages == [
             f"{escape(org_user_member.name)} can't be removed because their HQ API key is used by these "
-            "opportunities: Opp &lt;A&gt;, Opp B. Replace the API key on each one first. "
+            f'opportunities: <a href="{self.edit_url(organization, opp_a)}" class="underline">Opp &lt;A&gt;</a>, '
+            f'<a href="{self.edit_url(organization, opp_b)}" class="underline">Opp B</a>. '
+            "Replace the API key on each one first. "
             f'<a href="{MANAGING_API_KEYS_URL}" target="_blank" rel="noopener" class="underline">'
             "Learn how to replace an API key</a>."
         ]
