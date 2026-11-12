@@ -345,6 +345,13 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             initial=credential_config.delivery_level if credential_config else "",
         )
 
+    def clean_end_date(self):
+        end_date = self.cleaned_data.get("end_date")
+        if end_date and "end_date" in self.changed_data:
+            if error := payment_unit_end_date_error(self.instance, end_date):
+                raise ValidationError(error)
+        return end_date
+
     def clean_users(self):
         user_data = self.cleaned_data.get("users")
         if user_data and self.opportunity and self.opportunity.has_ended:
@@ -996,12 +1003,8 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 message = gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s).")
                 self.add_error("start_date", message % {"name": unit.name, "date": unit.end_date})
         if "end_date" in self.changed_data:
-            if unit := units.filter(end_date__gt=end_date).order_by("-end_date").first():
-                message = gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
-                self.add_error("end_date", message % {"name": unit.name, "date": unit.end_date})
-            elif unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
-                message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
-                self.add_error("end_date", message % {"name": unit.name, "date": unit.start_date})
+            if error := payment_unit_end_date_error(self.opportunity, end_date):
+                self.add_error("end_date", error)
 
 
 class VisitExportForm(forms.Form):
@@ -1696,6 +1699,18 @@ def set_date_limits(field, earliest=None, latest=None):
         field.widget.attrs["min"] = earliest.isoformat()
     if latest:
         field.widget.attrs["max"] = latest.isoformat()
+
+
+def payment_unit_end_date_error(opportunity, end_date):
+    # A unit's blank date takes the opportunity's, so the end is checked against both of a unit's dates
+    units = opportunity.paymentunit_set
+    if unit := units.filter(end_date__gt=end_date).order_by("-end_date").first():
+        message = gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
+        return message % {"name": unit.name, "date": unit.end_date}
+    if unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
+        message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
+        return message % {"name": unit.name, "date": unit.start_date}
+    return None
 
 
 def format_date_range(start_date, end_date):

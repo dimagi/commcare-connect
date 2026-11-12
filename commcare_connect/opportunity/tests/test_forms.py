@@ -186,6 +186,28 @@ class TestOpportunityChangeForm:
                 assert form.cleaned_data[test_data["field"]] == test_data["expected_clean"]
 
     @pytest.mark.parametrize(
+        "unit_dates, end, expected_error",
+        [
+            ((None, 40), 30, "before the end date of payment unit"),
+            ((40, None), 30, "before the start date of payment unit"),
+            ((None, 40), 40, None),
+        ],
+    )
+    def test_end_date_covers_payment_units(self, valid_opportunity, base_form_data, unit_dates, end, expected_error):
+        valid_opportunity.start_date = _days_from_today(0)
+        valid_opportunity.end_date = _days_from_today(60)
+        valid_opportunity.save()
+        start_date, end_date = map(_days_from_today, unit_dates)
+        PaymentUnitFactory(opportunity=valid_opportunity, start_date=start_date, end_date=end_date)
+
+        data = {**base_form_data, "end_date": _days_from_today(end).isoformat()}
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+
+        assert form.is_valid() is (expected_error is None), form.errors
+        if expected_error:
+            assert expected_error in form.errors["end_date"][0]
+
+    @pytest.mark.parametrize(
         "app_scenario",
         [
             pytest.param(
