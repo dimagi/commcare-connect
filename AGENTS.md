@@ -19,6 +19,7 @@ inv down                            # docker compose down
 # Worktrees: each gets its own DB + Redis DB (see "Working in git worktrees" in README.md)
 wt switch --create <branch>         # create and set up via .config/wt.toml
 scripts/setup-worktree.sh           # same setup, for worktrees made by other tools
+wt new <branch> --share=1           # reuse the main checkout's DB + Redis DB; skips migrate
 
 # JavaScript/CSS
 npm ci                              # install deps

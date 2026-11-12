@@ -2,8 +2,17 @@
 # Set up a git worktree: copy .env from the main checkout, install dependencies, and give the
 # worktree its own database and Redis database. worktrunk runs this from .config/wt.toml; with
 # another worktree tool, run it yourself in the new worktree.
+#
+# To use the main checkout's database and Redis database instead, pass --share or set
+# WORKTREE_SHARE=1 (`wt new my-branch --share=1` does this). Migrations are then not run, so the
+# branch can't change the main checkout's schema by accident.
 
 set -euo pipefail
+
+share=${WORKTREE_SHARE:-0}
+if [[ "${1:-}" == "--share" ]]; then
+    share=1
+fi
 
 main_checkout=$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -n 1)
 cd "$(git rev-parse --show-toplevel)"
@@ -18,5 +27,9 @@ fi
 
 uv sync
 npm ci --no-audit --no-fund
-uv run python scripts/worktree.py setup
-uv run python manage.py migrate
+if [[ "$share" == "1" ]]; then
+    uv run python scripts/worktree.py setup --share
+else
+    uv run python scripts/worktree.py setup
+    uv run python manage.py migrate
+fi

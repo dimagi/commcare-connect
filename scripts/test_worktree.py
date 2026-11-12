@@ -66,3 +66,28 @@ def test_env_file_editing(tmp_path):
     worktree.comment_out_env_value(env_file, "SECONDARY_DATABASE_URL")
 
     assert env_file.read_text() == "DATABASE_URL=new\n# SECONDARY_DATABASE_URL=x\nREDIS_URL=r\n"
+
+
+def test_setup_shares_main_checkout_database_and_redis(tmp_path, monkeypatch):
+    main, branch_worktree = tmp_path / "main", tmp_path / "branch"
+    main.mkdir()
+    branch_worktree.mkdir()
+    (main / ".env").write_text(
+        "DATABASE_URL=postgres://localhost/commcare_connect\nREDIS_URL=redis://localhost:6379/0\n"
+    )
+    (branch_worktree / ".env").write_text(
+        "DATABASE_URL=postgres://localhost/connect_wt_old\nSECONDARY_DATABASE_URL=x\n"
+        "REDIS_URL=redis://localhost:6379/3\nCELERY_BROKER_URL=redis://localhost:6379/3\n"
+    )
+    monkeypatch.setattr(worktree, "main_worktree", lambda: main)
+    monkeypatch.setattr(worktree, "create_database", lambda database_url: pytest.fail("created a database"))
+    monkeypatch.setattr(
+        worktree, "choose_redis_database", lambda current, used: pytest.fail("picked a Redis database")
+    )
+
+    worktree.setup(worktree=branch_worktree, share=True)
+
+    assert (branch_worktree / ".env").read_text() == (
+        "DATABASE_URL=postgres://localhost/commcare_connect\nSECONDARY_DATABASE_URL=x\n"
+        "REDIS_URL=redis://localhost:6379/0\n# CELERY_BROKER_URL=redis://localhost:6379/3\n"
+    )

@@ -1,6 +1,7 @@
 """Give a git worktree its own PostgreSQL database and Redis database.
 
-    worktree.py setup             # in a worktree: create its database, point .env at it
+    worktree.py setup             # in a worktree: create its databases, point .env at them
+    worktree.py setup --share     # in a worktree: use the main checkout's database and Redis database
     worktree.py teardown BRANCH   # anywhere: drop the branch's databases
 
 scripts/setup-worktree.sh runs `setup`; the post-remove hook in .config/wt.toml runs `teardown`.
@@ -26,20 +27,26 @@ WORKTREE_REDIS_DATABASES = range(1, 15)
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("setup")
+    commands.add_parser("setup").add_argument(
+        "--share", action="store_true", help="use the main checkout's database and Redis database"
+    )
     commands.add_parser("teardown").add_argument("branch")
     args = parser.parse_args()
 
     if args.command == "setup":
-        setup(worktree=Path.cwd())
+        setup(worktree=Path.cwd(), share=args.share)
     else:
         teardown(branch=args.branch, env_file=main_worktree() / ".env")
 
 
-def setup(worktree):
+def setup(worktree, share):
     env_file = worktree / ".env"
-    setup_own_database(worktree=worktree, env_file=env_file)
-    setup_redis_database(worktree=worktree, env_file=env_file)
+    if share:
+        for key in ["DATABASE_URL", "REDIS_URL", "CELERY_BROKER_URL"]:
+            copy_main_env_value(env_file=env_file, key=key)
+    else:
+        setup_own_database(worktree=worktree, env_file=env_file)
+        setup_redis_database(worktree=worktree, env_file=env_file)
 
     database = urlsplit(read_env_value(env_file, "DATABASE_URL")).path.lstrip("/")
     redis_database = redis_database_number(read_env_value(env_file, "REDIS_URL"))
@@ -151,6 +158,15 @@ def read_env_value(env_file, key):
             if line.startswith(f"{key}="):
                 value = line.removeprefix(f"{key}=").strip("'\"")
     return value
+
+
+def copy_main_env_value(env_file, key):
+    """Give the worktree the main checkout's value for a key, or no value if the main checkout has none."""
+    value = read_env_value(main_worktree() / ".env", key)
+    if value is None:
+        comment_out_env_value(env_file, key)
+    else:
+        set_env_value(env_file, key, value)
 
 
 def set_env_value(env_file, key, value):
