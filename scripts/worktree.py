@@ -8,9 +8,11 @@ scripts/setup-worktree.sh runs `setup`; the post-remove hook in .config/wt.toml 
 """
 
 import argparse
+import fcntl
 import hashlib
 import re
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -66,17 +68,27 @@ def setup_own_database(worktree, env_file):
 
 
 def setup_redis_database(worktree, env_file):
-    redis_database = choose_redis_database(
-        current=redis_database_number(read_env_value(env_file, "REDIS_URL")),
-        used=redis_databases_used_by_other_worktrees(worktree),
-    )
-    redis_url = f"redis://localhost:6379/{redis_database}"
-    if redis_url != read_env_value(env_file, "REDIS_URL"):
-        # Newly assigned, so clear anything a removed worktree left in it.
-        redis.Redis.from_url(redis_url).flushdb()
+    with redis_allocation_lock(worktree):
+        redis_database = choose_redis_database(
+            current=redis_database_number(read_env_value(env_file, "REDIS_URL")),
+            used=redis_databases_used_by_other_worktrees(worktree),
+        )
+        redis_url = f"redis://localhost:6379/{redis_database}"
+        if redis_url != read_env_value(env_file, "REDIS_URL"):
+            # Newly assigned, so clear anything a removed worktree left in it.
+            redis.Redis.from_url(redis_url).flushdb()
 
-    set_env_value(env_file, "REDIS_URL", redis_url)
-    set_env_value(env_file, "CELERY_BROKER_URL", redis_url)
+        set_env_value(env_file, "REDIS_URL", redis_url)
+        set_env_value(env_file, "CELERY_BROKER_URL", redis_url)
+
+
+@contextmanager
+def redis_allocation_lock(worktree):
+    """Holds a lock shared by all worktrees, so two set up at once can't pick the same Redis database."""
+    git_dir = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=worktree))
+    with (git_dir / "connect-worktree-redis.lock").open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        yield
 
 
 def teardown(branch, env_file):

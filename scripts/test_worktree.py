@@ -1,4 +1,6 @@
+import fcntl
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -93,3 +95,12 @@ def test_setup_shares_main_checkout_database_and_redis(tmp_path, monkeypatch):
         "DATABASE_URL=postgres://localhost/commcare_connect\nSECONDARY_DATABASE_URL=x\n"
         "REDIS_URL=redis://localhost:6379/0\n# CELERY_BROKER_URL=redis://localhost:6379/3\n"
     )
+
+
+def test_redis_allocation_lock_blocks_a_second_setup(tmp_path):
+    subprocess.run(["git", "init", "-q", tmp_path], check=True)
+    lock_path = tmp_path / ".git" / "connect-worktree-redis.lock"
+
+    with worktree.redis_allocation_lock(tmp_path), lock_path.open("w") as second_setup:
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(second_setup, fcntl.LOCK_EX | fcntl.LOCK_NB)
