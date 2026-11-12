@@ -13,7 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
 from waffle.decorators import waffle_flag
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases, create_or_update_case_by_work_area
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import (
     HQ_BULK_CHUNK_SIZE,
@@ -26,6 +26,7 @@ from commcare_connect.microplanning.models import (
     WorkAreaGroup,
     WorkAreaStatus,
 )
+from commcare_connect.microplanning.services import create_or_update_case_by_work_area
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
 from commcare_connect.organization.decorators import (

@@ -3,11 +3,8 @@ from typing import Any, TypedDict
 from urllib.parse import urlencode
 
 import httpx
-from django.db import transaction
 
-from commcare_connect.microplanning.models import WorkArea
-from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
-from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess
+from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess
 from commcare_connect.users.helpers import fetch_hq_user_uuid
 from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -62,29 +59,8 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
     return cases
 
 
-def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
-    if not work_area.opportunity_access:
-        raise ValueError("Work Area must have an assigned Opportunity Access")
-
-    opp_access = work_area.opportunity_access
-    api_key = opp_access.opportunity.api_key
-    domain = opp_access.opportunity.deliver_app.cc_domain
-    user = opp_access.user
-    case_data = WorkAreaCaseSerializer(work_area).data
-    case_data["owner_id"] = _resolve_hq_user_uuid(user, domain, api_key)
-
-    with transaction.atomic():
-        # Re-fetch with a row-level lock to prevent a race condition where two
-        # concurrent calls both see case_id as None
-        locked_work_area = WorkArea.objects.select_for_update().get(pk=work_area.pk)
-        case = create_or_update_case(api_key, domain, case_data, case_id=locked_work_area.case_id)
-        if locked_work_area.case_id is None:
-            locked_work_area.case_id = case.case_id
-            locked_work_area.save(update_fields=["case_id"])
-    return case
-
-
-def _resolve_hq_user_uuid(user: User, domain: str, api_key: HQApiKey) -> str:
+def resolve_hq_user_uuid(user: User, domain: str, api_key: HQApiKey) -> str:
+    """The user's HQ user UUID on ``domain``, fetched from HQ and stored on their link the first time."""
     link = ConnectIDUserLink.objects.get(user=user, domain=domain, hq_server=api_key.hq_server)
     if link.hq_user_uuid:
         return link.hq_user_uuid
@@ -94,44 +70,6 @@ def _resolve_hq_user_uuid(user: User, domain: str, api_key: HQApiKey) -> str:
     link.hq_user_uuid = hq_user_uuid
     link.save(update_fields=["hq_user_uuid"])
     return hq_user_uuid
-
-
-def bulk_create_or_update_cases_by_work_areas(
-    work_areas: list[WorkArea], opportunity: Opportunity
-) -> list[CommCareCase]:
-    """Sync a batch of work areas to HQ in a single UPSERT call keyed on external_id."""
-    if not work_areas:
-        return []
-
-    api_key = opportunity.api_key
-    domain = opportunity.deliver_app.cc_domain
-
-    wa_by_username: dict[str, WorkArea] = {wa.opportunity_access.user.username.lower(): wa for wa in work_areas}
-    owner_id_by_username: dict[str, str] = {
-        username: _resolve_hq_user_uuid(wa.opportunity_access.user, domain, api_key)
-        for username, wa in wa_by_username.items()
-    }
-
-    cases_data = []
-    for wa in work_areas:
-        case_data = dict(WorkAreaCaseSerializer(wa).data)
-        case_data["owner_id"] = owner_id_by_username[wa.opportunity_access.user.username.lower()]
-        cases_data.append(case_data)
-
-    # UPSERT: HQ decides create vs update via external_id
-    cases = bulk_create_or_update_cases(api_key, domain, cases_data, create=None)
-
-    wa_by_id = {str(wa.pk): wa for wa in work_areas if wa.case_id is None}
-    newly_created = []
-    for case in cases:
-        if case.external_id in wa_by_id:
-            wa = wa_by_id[case.external_id]
-            wa.case_id = case.case_id
-            newly_created.append(wa)
-    if newly_created:
-        WorkArea.objects.bulk_update(newly_created, ["case_id"])
-
-    return cases
 
 
 def bulk_create_or_update_cases(
@@ -227,7 +165,7 @@ def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
     domain = opportunity_access.opportunity.deliver_app.cc_domain
     api_key = opportunity_access.opportunity.api_key
     user = opportunity_access.user
-    hq_user_uuid = _resolve_hq_user_uuid(user, domain, api_key)
+    hq_user_uuid = resolve_hq_user_uuid(user, domain, api_key)
     case_data = get_case_list(
         api_key,
         domain,

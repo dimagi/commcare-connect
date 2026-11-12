@@ -11,7 +11,6 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 from waffle.decorators import waffle_flag
 
-from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import (
     InaccessibilityRequestStatus,
@@ -19,6 +18,7 @@ from commcare_connect.microplanning.models import (
     WorkAreaInaccessibilityRequest,
     WorkAreaStatus,
 )
+from commcare_connect.microplanning.services import create_or_update_case_by_work_area
 from commcare_connect.opportunity.models import BlobMeta
 from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (

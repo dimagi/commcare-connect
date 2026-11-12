@@ -3,9 +3,16 @@ import logging
 import pghistory
 from django.db import transaction
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
+from commcare_connect.commcarehq.api import (
+    CommCareCase,
+    bulk_create_or_update_cases,
+    create_or_update_case,
+    resolve_hq_user_uuid,
+)
 from commcare_connect.microplanning.const import HQ_ASSIGN_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
+from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
@@ -115,3 +122,63 @@ def _bulk_unassign(work_areas):
         wa.opportunity_access = None
         wa.status = WorkAreaStatus.UNASSIGNED
     WorkArea.objects.bulk_update(work_areas, fields=["opportunity_access", "status"])
+
+
+def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
+    if not work_area.opportunity_access:
+        raise ValueError("Work Area must have an assigned Opportunity Access")
+
+    opp_access = work_area.opportunity_access
+    api_key = opp_access.opportunity.api_key
+    domain = opp_access.opportunity.deliver_app.cc_domain
+    user = opp_access.user
+    case_data = WorkAreaCaseSerializer(work_area).data
+    case_data["owner_id"] = resolve_hq_user_uuid(user, domain, api_key)
+
+    with transaction.atomic():
+        # Re-fetch with a row-level lock to prevent a race condition where two
+        # concurrent calls both see case_id as None
+        locked_work_area = WorkArea.objects.select_for_update().get(pk=work_area.pk)
+        case = create_or_update_case(api_key, domain, case_data, case_id=locked_work_area.case_id)
+        if locked_work_area.case_id is None:
+            locked_work_area.case_id = case.case_id
+            locked_work_area.save(update_fields=["case_id"])
+    return case
+
+
+def bulk_create_or_update_cases_by_work_areas(
+    work_areas: list[WorkArea], opportunity: Opportunity
+) -> list[CommCareCase]:
+    """Sync a batch of work areas to HQ in a single UPSERT call keyed on external_id."""
+    if not work_areas:
+        return []
+
+    api_key = opportunity.api_key
+    domain = opportunity.deliver_app.cc_domain
+
+    wa_by_username: dict[str, WorkArea] = {wa.opportunity_access.user.username.lower(): wa for wa in work_areas}
+    owner_id_by_username: dict[str, str] = {
+        username: resolve_hq_user_uuid(wa.opportunity_access.user, domain, api_key)
+        for username, wa in wa_by_username.items()
+    }
+
+    cases_data = []
+    for wa in work_areas:
+        case_data = dict(WorkAreaCaseSerializer(wa).data)
+        case_data["owner_id"] = owner_id_by_username[wa.opportunity_access.user.username.lower()]
+        cases_data.append(case_data)
+
+    # UPSERT: HQ decides create vs update via external_id
+    cases = bulk_create_or_update_cases(api_key, domain, cases_data, create=None)
+
+    wa_by_id = {str(wa.pk): wa for wa in work_areas if wa.case_id is None}
+    newly_created = []
+    for case in cases:
+        if case.external_id in wa_by_id:
+            wa = wa_by_id[case.external_id]
+            wa.case_id = case.case_id
+            newly_created.append(wa)
+    if newly_created:
+        WorkArea.objects.bulk_update(newly_created, ["case_id"])
+
+    return cases

@@ -1,7 +1,6 @@
 import pytest
 from django.core.management import call_command
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
 from commcare_connect.commcarehq.tests.fake_hq import serve_fake_hq
 from commcare_connect.microplanning.const import SERVICE_DELIVERY_UNIT_SLUG
 from commcare_connect.microplanning.management.commands.generate_microplanning_data import DEMO_OPP_NAME, Command
@@ -11,6 +10,7 @@ from commcare_connect.microplanning.models import (
     WorkAreaInaccessibilityRequest,
     WorkAreaStatus,
 )
+from commcare_connect.microplanning.services import bulk_create_or_update_cases_by_work_areas
 from commcare_connect.opportunity.models import CompletedWork, Opportunity, UserVisit, VisitReviewStatus
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, PaymentUnitFactory
 
