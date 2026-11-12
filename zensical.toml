@@ -19,12 +19,19 @@ copyright = "Copyright &copy; Dimagi"
 strict = true
 
 # The snippet stubs read files outside docs/, so `serve` must watch them too.
+# Listed one by one so app code changes don't trigger rebuilds: when a new stub
+# includes another file, add that file here as well.
 watch = [
   "README.md",
   "AGENTS.md",
   "pr_guidelines.md",
   "deploy/README.md",
-  "commcare_connect",
+  "commcare_connect/opportunity/README.md",
+  "commcare_connect/opportunity/PAYMENTS.md",
+  "commcare_connect/form_receiver/README.md",
+  "commcare_connect/flags/README.md",
+  "commcare_connect/health/README.md",
+  "commcare_connect/templates/README.md",
 ]
 
 nav = [
