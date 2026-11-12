@@ -1753,8 +1753,39 @@ class TestPaymentUnitStartDate:
 
         assert form.fields["start_date"].disabled
         assert "already has visits" in form.fields["start_date"].help_text
+        assert "min" not in form.fields["start_date"].widget.attrs
         self._assert_result(form, None)
         assert form.cleaned_data["start_date"] == _days_from_today(-2)
+
+    # The opportunity runs from 10 days ago to 60 days from now
+    @pytest.mark.parametrize(
+        "edit, visit_status, opp_end, expected_start_min, expected_from_tomorrow_note",
+        [
+            (False, None, 60, -10, False),  # a new unit isn't held to today or later
+            (True, None, 60, 0, False),
+            (True, VisitValidationStatus.trial, 60, 1, True),
+            (True, None, None, 0, False),
+        ],
+    )
+    def test_date_limits(
+        self, opportunity, edit, visit_status, opp_end, expected_start_min, expected_from_tomorrow_note
+    ):
+        opportunity.end_date = _days_from_today(opp_end)
+        opportunity.save()
+        unit = self._unit(opportunity, 5, visit_status) if edit else None
+
+        form = _payment_unit_form(opportunity, {}, instance=unit)
+
+        start_attrs, end_attrs = form.fields["start_date"].widget.attrs, form.fields["end_date"].widget.attrs
+        latest = str(opportunity.end_date) if opp_end else None
+        assert start_attrs["min"] == str(_days_from_today(expected_start_min))
+        assert start_attrs.get("max") == end_attrs.get("max") == latest
+        assert end_attrs["min"] == str(opportunity.start_date)
+        range_text = "Within the opportunity's dates:" if opp_end else "From the opportunity's start date:"
+        start_help_text = form.fields["start_date"].help_text
+        assert start_help_text.startswith(range_text)
+        assert ("From tomorrow" in start_help_text) is expected_from_tomorrow_note
+        assert form.fields["end_date"].help_text.startswith(range_text)
 
     @pytest.mark.parametrize("visit_status", [None, VisitValidationStatus.trial])
     def test_started_unit_without_payable_visits_can_move(self, opportunity, visit_status):

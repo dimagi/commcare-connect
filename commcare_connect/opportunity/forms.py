@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.formats import date_format
 from django.utils.html import format_html
 from django.utils.timezone import localdate, now
 from django.utils.translation import gettext
@@ -928,6 +929,12 @@ class OpportunityFinalizeForm(forms.ModelForm):
             self.fields["start_date"].help_text = gettext(
                 "Start date can't be changed once it has passed, or once the opportunity has visits."
             )
+        else:
+            visits_today = self.opportunity.has_visits_today()
+            set_date_limits(field=self.fields["start_date"], earliest=earliest_start_date(visits_today))
+            if visits_today:
+                self.fields["start_date"].help_text = FROM_TOMORROW_HELP_TEXT
+        set_date_limits(field=self.fields["end_date"], earliest=now().date())
 
     def clean(self):
         cleaned_data = super().clean()
@@ -939,7 +946,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
             if end_date < now().date():
                 self.add_error("end_date", "Please enter the correct end date for this opportunity")
             if not self.is_start_date_readonly and start_date < now().date():
-                self.add_error("start_date", "Start date should be today or latter")
+                self.add_error("start_date", gettext("Start date can't be in the past."))
             if start_date >= end_date:
                 self.add_error("end_date", "End date must be after start date")
 
@@ -1416,6 +1423,8 @@ class PaymentUnitForm(forms.ModelForm):
             self.fields["start_date"].help_text = gettext(
                 "Start date can't be changed because this payment unit already has visits."
             )
+        if self.opportunity:
+            self._set_date_limits()
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1626,6 +1635,23 @@ class PaymentUnitForm(forms.ModelForm):
                 raise ValidationError(error)
         return start_date
 
+    def _set_date_limits(self):
+        opportunity = self.opportunity
+        help_text = format_date_range(opportunity.start_date, opportunity.end_date)
+        set_date_limits(field=self.fields["end_date"], earliest=opportunity.start_date, latest=opportunity.end_date)
+        self.fields["end_date"].help_text = help_text
+        if self.fields["start_date"].disabled:
+            return
+        earliest = opportunity.start_date
+        # Only an edit is held to today or later (see _start_date_change_error)
+        if self.instance.pk:
+            visits_today = self.instance.has_visits_today()
+            earliest = max(earliest, earliest_start_date(visits_today))
+            if visits_today:
+                help_text = f"{help_text} {FROM_TOMORROW_HELP_TEXT}"
+        set_date_limits(field=self.fields["start_date"], earliest=earliest, latest=opportunity.end_date)
+        self.fields["start_date"].help_text = help_text
+
     def _start_date_change_error(self, start_date):
         """Once a visit may be paid the field is locked (see __init__). Before that, a start date can't be cleared
         or moved into the past."""
@@ -1653,6 +1679,32 @@ class PaymentUnitForm(forms.ModelForm):
         other_units = self.opportunity.paymentunit_set.exclude(pk=self.instance.pk)
 
         self.opportunity.validate_budget_for_payment_units([proposed_unit, *other_units])
+
+
+FROM_TOMORROW_HELP_TEXT = _("From tomorrow, as there are visits for today.")
+
+
+def earliest_start_date(visits_today):
+    # Visits processed earlier today are trial; a start of today would put them inside the active period
+    today = now().date()
+    return today + datetime.timedelta(days=1) if visits_today else today
+
+
+def set_date_limits(field, earliest=None, latest=None):
+    # Greys out dates the server would reject; the server checks still apply
+    if earliest:
+        field.widget.attrs["min"] = earliest.isoformat()
+    if latest:
+        field.widget.attrs["max"] = latest.isoformat()
+
+
+def format_date_range(start_date, end_date):
+    if end_date:
+        return gettext("Within the opportunity's dates: %(start)s – %(end)s.") % {
+            "start": date_format(start_date),
+            "end": date_format(end_date),
+        }
+    return gettext("From the opportunity's start date: %(start)s.") % {"start": date_format(start_date)}
 
 
 class SendMessageMobileUsersForm(forms.Form):

@@ -270,18 +270,34 @@ class TestOpportunityFinalizeForm:
         assert f"id_total_budget.value = ({expected} * parseInt(this.value || 0))" in render_crispy_form(form)
 
     @pytest.mark.parametrize(
-        "current_start, has_visit, locked",
-        [(-1, False, True), (0, True, True), (0, False, False), (3, True, False)],
+        "current_start, has_visit, expected_locked, expected_start_min, expected_help_text",
+        [
+            (-1, False, True, None, "can't be changed"),
+            (0, True, True, None, "can't be changed"),
+            (0, False, False, 0, ""),
+            (3, True, False, 1, "From tomorrow"),
+        ],
     )
-    def test_start_date_locked(self, current_start, has_visit, locked):
+    def test_start_date_locked(
+        self, current_start, has_visit, expected_locked, expected_start_min, expected_help_text
+    ):
         self.opportunity.start_date = _days_from_today(current_start)
         self.opportunity.save()
         if has_visit:
-            UserVisitFactory(opportunity=self.opportunity, status=VisitValidationStatus.approved)
+            UserVisitFactory(
+                opportunity=self.opportunity, status=VisitValidationStatus.approved, date_created=timezone.now()
+            )
 
         form = self.get_form()
-        assert form.fields["start_date"].disabled is locked
-        assert bool(form.fields["start_date"].help_text) is locked
+        start_field = form.fields["start_date"]
+        assert start_field.disabled is expected_locked
+        if expected_help_text:
+            assert expected_help_text in start_field.help_text
+        else:
+            assert not start_field.help_text
+        start_min = None if expected_start_min is None else str(_days_from_today(expected_start_min))
+        assert start_field.widget.attrs.get("min") == start_min
+        assert form.fields["end_date"].widget.attrs["min"] == str(_days_from_today(0))
 
     @pytest.mark.parametrize("visit_days_ago, valid", [(None, True), (0, False), (1, True)])
     def test_start_date_today_needs_no_visits_today(self, visit_days_ago, valid):
