@@ -1809,6 +1809,23 @@ class TestPaymentUnitStartDate:
         assert ("From tomorrow" in start_help_text) is expected_from_tomorrow_note
         assert form.fields["end_date"].help_text.startswith(range_text)
 
+    # A saved date the server would still accept has to stay in range, or the browser won't submit the form
+    @pytest.mark.parametrize(
+        "unit_dates, expected_start_min, expected_end_max",
+        [
+            ((-2, None), -2, 60),  # started, with no payable visits
+            ((-15, 70), -15, 70),  # saved before units had to sit inside their opportunity's dates
+        ],
+    )
+    def test_saved_dates_stay_in_range(self, opportunity, unit_dates, expected_start_min, expected_end_max):
+        start_date, end_date = map(_days_from_today, unit_dates)
+        unit = PaymentUnitFactory(opportunity=opportunity, start_date=start_date, end_date=end_date)
+
+        form = _payment_unit_form(opportunity, {}, instance=unit)
+
+        assert form.fields["start_date"].widget.attrs["min"] == str(_days_from_today(expected_start_min))
+        assert form.fields["end_date"].widget.attrs["max"] == str(_days_from_today(expected_end_max))
+
     @pytest.mark.parametrize("visit_status", [None, VisitValidationStatus.trial])
     def test_started_unit_without_payable_visits_can_move(self, opportunity, visit_status):
         unit = self._unit(opportunity, -2, visit_status)

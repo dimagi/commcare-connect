@@ -938,10 +938,14 @@ class OpportunityFinalizeForm(forms.ModelForm):
             )
         else:
             visits_today = self.opportunity.has_visits_today()
-            set_date_limits(field=self.fields["start_date"], earliest=earliest_start_date(visits_today))
+            set_date_limits(
+                field=self.fields["start_date"],
+                earliest=earliest_start_date(visits_today),
+                saved=self.current_start_date,
+            )
             if visits_today:
                 self.fields["start_date"].help_text = FROM_TOMORROW_HELP_TEXT
-        set_date_limits(field=self.fields["end_date"], earliest=now().date())
+        set_date_limits(field=self.fields["end_date"], earliest=now().date(), saved=self.instance.end_date)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1641,7 +1645,12 @@ class PaymentUnitForm(forms.ModelForm):
     def _set_date_limits(self):
         opportunity = self.opportunity
         help_text = format_date_range(opportunity.start_date, opportunity.end_date)
-        set_date_limits(field=self.fields["end_date"], earliest=opportunity.start_date, latest=opportunity.end_date)
+        set_date_limits(
+            field=self.fields["end_date"],
+            earliest=opportunity.start_date,
+            latest=opportunity.end_date,
+            saved=self.instance.end_date,
+        )
         self.fields["end_date"].help_text = help_text
         if self.fields["start_date"].disabled:
             return
@@ -1652,7 +1661,12 @@ class PaymentUnitForm(forms.ModelForm):
             earliest = max(earliest, earliest_start_date(visits_today))
             if visits_today:
                 help_text = f"{help_text} {FROM_TOMORROW_HELP_TEXT}"
-        set_date_limits(field=self.fields["start_date"], earliest=earliest, latest=opportunity.end_date)
+        set_date_limits(
+            field=self.fields["start_date"],
+            earliest=earliest,
+            latest=opportunity.end_date,
+            saved=self.instance.start_date,
+        )
         self.fields["start_date"].help_text = help_text
 
     def _start_date_change_error(self, start_date):
@@ -1693,8 +1707,12 @@ def earliest_start_date(visits_today):
     return today + datetime.timedelta(days=1) if visits_today else today
 
 
-def set_date_limits(field, earliest=None, latest=None):
-    # Greys out dates the server would reject; the server checks still apply
+def set_date_limits(field, earliest=None, latest=None, saved=None):
+    # Greys out dates the server would reject; the server checks still apply.
+    # The server accepts an unchanged saved date, and the browser won't submit a form whose value is out of range
+    if saved:
+        earliest = earliest and min(earliest, saved)
+        latest = latest and max(latest, saved)
     if earliest:
         field.widget.attrs["min"] = earliest.isoformat()
     if latest:

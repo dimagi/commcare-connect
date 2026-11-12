@@ -321,6 +321,20 @@ class TestOpportunityFinalizeForm:
                 "Start date can be today only if the opportunity has no visits for today."
             ]
 
+    def test_saved_start_date_stays_in_range(self):
+        # Starts today with a trial visit from today: not locked, and the browser must still accept today
+        UserVisitFactory(
+            opportunity=self.opportunity,
+            status=VisitValidationStatus.trial,
+            completed_work=None,
+            date_created=timezone.now(),
+        )
+
+        form = self.get_form()
+
+        assert not form.fields["start_date"].disabled
+        assert form.fields["start_date"].widget.attrs["min"] == str(_days_from_today(0))
+
     def test_trial_visit_does_not_lock_start_date(self):
         UserVisitFactory(opportunity=self.opportunity, status=VisitValidationStatus.trial, completed_work=None)
 
