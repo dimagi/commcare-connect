@@ -108,6 +108,32 @@ psql -d commcare_connect -c "CREATE EXTENSION IF NOT EXISTS postgis;"
     $ ./manage.py migrate
     $ ./manage.py runserver
 
+### Working in git worktrees
+
+To work on several branches at once, give each one its own git worktree. The repository has
+hooks for [worktrunk](https://worktrunk.dev/) (`wt`) in `.config/wt.toml`:
+
+    # create a branch and worktree, set it up, and start Claude Code in it
+    $ wt switch --create --execute claude my-branch
+
+    # remove the worktree and drop its databases
+    $ wt remove my-branch
+
+Set up the main checkout first (above): worktrees copy its `.env`, and the docker compose
+services must be running. When a worktree is created, `scripts/setup-worktree.sh`:
+
+- copies `.env` from the main checkout, and runs `uv sync` and `npm ci`
+- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>`, and runs `migrate`
+- picks a Redis database (1-14) that no other worktree's `.env` uses, and points `REDIS_URL` and
+  `CELERY_BROKER_URL` at it, so the branch's Celery worker never runs another branch's tasks
+- comments out `SECONDARY_DATABASE_URL`, which would otherwise point at the main checkout's replica
+
+Then the JS and CSS build in the background. The database has no data in it; create a user
+with `./manage.py createsuperuser`.
+
+With a worktree tool other than worktrunk, run `scripts/setup-worktree.sh` in the new worktree,
+and `uv run python scripts/worktree.py teardown <branch>` after removing it.
+
 ## Basic Commands
 
 Some useful command are available via the `tasks.py` file:
