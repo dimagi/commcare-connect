@@ -88,20 +88,19 @@ invoices for past months, should keep the pay rate that applied at the time.
    deleted: pay taken back (due to work rejection) is a reversal record.
 3. **Invoices bill pay records**, so they always match earned pay, show the pay rate each delivery earned, and each
    billed delivery can be traced to its visits.
-4. **Visit limits follow the budget.** When the cost per delivery goes up, each worker's remaining visits are scaled
-   down so the money left for them stays the same.
-5. **Remove `amount` and `org_amount` from `PaymentUnit`** once everything reads from the pay rate history.
+4. **Remove `amount` and `org_amount` from `PaymentUnit`** once everything reads from the pay rate history.
 
 ### 5.3 Product decisions
 
-- **Visit limits on a pay rate increase.** Reduce visit limits for both existing and new workers, with a
-  warning before the PM confirms (section [11](#11-budget-and-visit-limits)).
+- **Budget check up front, for increases only.** When scheduling an increase, the budget must cover all remaining
+  work at the new cost per delivery; otherwise the change is blocked until the PM adds budget. A decrease is
+  never blocked on budget (section [11.2](#112-budget-check-when-scheduling)).
+- **A pay rate change never changes visit limits,** for an increase or a decrease. PMs can still change them with
+  Add Budget. New workers who join after a change is scheduled are priced at the higher cost (section
+  [11.3](#113-visit-limits)).
 - **Brand-new payment units.** If a payment unit has no visits, a pay rate change takes effect immediately
   (section [9.1](#91-payment-units-with-no-visits)).
 - **Existing opportunities.** The feature applies to all active opportunities, including ones already running.
-- **Pay rate decreases.** Visit limits stay as they are; the PM sees a message saying so (section [11.3](#113-message-before-confirming)).
-- **Funding a pay rate increase.** Cover the extra from the remaining budget. If that isn't enough, block the
-  change when scheduling or cancel it on the 1st, and email all opportunity admins (section [11.4](#114-no-overspend-funding-check)).
 
 ## Part 1: Foundation
 
@@ -121,10 +120,9 @@ class PaymentUnitRate(BaseModel):
     flw_amount = models.PositiveIntegerField()  # worker pay
     org_amount = models.PositiveIntegerField(default=0)  # org pay
     planned_for = models.DateField()  # the 1st of a month; first pay rate: section 6.3
-    cancelled_by = models.CharField(max_length=255, blank=True)  # user's email, or "system"
+    cancelled_by = models.CharField(max_length=255, blank=True)  # user's email
     cancelled_on = models.DateTimeField(null=True, blank=True)
-    cancellation_reason = models.TextField(blank=True)  # filled in when the system cancels a change
-    effective_on = models.DateField(null=True, blank=True)  # the day it took effect (limits scaled)
+    workers_notified_on = models.DateTimeField(null=True, blank=True)  # set by the notification job (section 10)
 
     class Meta:
         constraints = [
@@ -141,19 +139,16 @@ class PaymentUnitRate(BaseModel):
   `date_created` and `date_modified`.
 - **Edits:** each change to the amounts of an existing row (editing a scheduled change, or a change in place,
   section [9.1](#91-payment-units-with-no-visits)) is saved as an event with the old and new amounts, who made it, and when.
-- **System cancellations** (section [11.4](#114-no-overspend-funding-check)): `cancelled_by` is `"system"` and `cancellation_reason` says why.
-- **`effective_on`** is the day a pay rate took effect (limits scaled). `planned_for` is only the day it is due; if
-  the job runs late, `effective_on` is later. It is set by:
-  - the job on the 1st, to the day it runs (section [10](#10-applying-a-scheduled-change))
-  - an Initial Rate, when it is created (section [6.3](#63-first-pay-rate-of-a-payment-unit))
-  - in-place changes, which keep it (section [9.1](#91-payment-units-with-no-visits))
+- **`workers_notified_on`** is set once workers are told about the change (section
+  [10](#10-when-a-change-takes-effect)). Rows that aren't a change (the Initial Rate and backfilled rows) get it when
+  they are created, so the notification job skips them.
 
 A pay rate's **status** is worked out, not stored:
 
 | Status    | Rule                                                            |
 | --------- | --------------------------------------------------------------- |
-| Scheduled | not cancelled, and `effective_on` isn't set yet                 |
-| Active    | the latest (by `planned_for`) pay rate that has taken effect    |
+| Scheduled | not cancelled, and `planned_for` is after today                 |
+| Active    | the latest not cancelled pay rate with `planned_for` up to today |
 | Ended     | an older pay rate that took effect, when a newer one is active  |
 | Cancelled | `cancelled_on` is set                                           |
 
@@ -167,24 +162,17 @@ A pay rate's **status** is worked out, not stored:
 ```python
 class PaymentUnit(models.Model):
     def pay_rate_on(self, day):
-        return self.pay_rates.filter(effective_on__lte=day).order_by("-planned_for").first()
+        return self.pay_rates.filter(cancelled_on__isnull=True, planned_for__lte=day).order_by("-planned_for").first()
 
     @property
     def current_pay_rate(self):
         return self.pay_rate_on(date.today())
 ```
 
-**A pay rate counts only from the day it takes effect** (`effective_on`), not from its `planned_for`.
-
-- If the pay rate job runs late, approvals, budget checks and new workers keep the old pay rate until the change is
-  applied, so earned pay and visit limits always match.
-- If the job cancels the change instead (section [11.4](#114-no-overspend-funding-check)), nobody ever earned the new
-  pay rate.
-
 ### 6.3 First pay rate of a payment unit
 
-Every payment unit gets an Initial Rate row when it is created, from its pay. `planned_for` and `effective_on` are
-both the day it is created, and never change.
+Every payment unit gets an Initial Rate row when it is created, from its pay. `planned_for` is the day it is created,
+and never changes.
 
 The pay rate and the unit's dates are kept separate:
 
@@ -192,14 +180,10 @@ The pay rate and the unit's dates are kept separate:
 - **Unit and opportunity dates:** when work can be paid. Visits before the start date are trial and never paid
   (section [6.5](#65-changing-payment-unit-and-opportunity-dates)).
 
-`effective_on` is set straight away, since limits already match this pay rate; otherwise the job on the 1st would
-treat it as a change.
-
 ### 6.4 Data migration for existing payment units
 
 The **pay rate backfill** creates one row for **every** existing payment unit, in all opportunities (active, ended
-and not started yet), from its current `amount` and `org_amount`. `effective_on` is set, for the same reason as
-section [6.3](#63-first-pay-rate-of-a-payment-unit). `planned_for` and `effective_on` are both:
+and not started yet), from its current `amount` and `org_amount`. `planned_for` is:
 
 - the opportunity's start date, if it has passed. Payment units have no created date, and no approval comes before
   the opportunity starts.
@@ -610,7 +594,7 @@ same either way.
 
 ## Part 2: Scheduling and applying pay rate changes
 
-What PMs, NMs and workers see, the pay rate job, and visit limits (tickets 5–9, release 3). Depends on the
+What PMs, NMs and workers see, the budget check, and notifications (tickets 5–9, release 3). Depends on the
 changes in Part 1.
 
 ## 9. Scheduling a change
@@ -626,8 +610,8 @@ place instead: the unit has no visits, so the change takes effect immediately (s
 | Action   | Allowed                             | Refused                                                                     |
 | -------- | ----------------------------------- | --------------------------------------------------------------------------- |
 | Schedule | no change is scheduled yet          | a change is already scheduled (section [12.1](#121-payment-unit-edit-page)) |
-| Edit     | a scheduled change, before its date | once the change is applied, cancelled or its date has come                  |
-| Cancel   | a scheduled change, before its date | once applied or due, and always for the Initial Rate                        |
+| Edit     | a scheduled change, before its date | once its date has come, or it is cancelled                                  |
+| Cancel   | a scheduled change, before its date | once its date has come, and always for the Initial Rate                     |
 
 - Editing updates the same row; each edit is kept as an event (section [6.1](#61-new-model-paymentunitrate)).
 - Cancelling sets `cancelled_by` and `cancelled_on`; the row stays in the history as "Cancelled".
@@ -636,30 +620,29 @@ place instead: the unit has no visits, so the change takes effect immediately (s
 
 - The new pay rate must differ from the active one in worker pay or org pay.
 - **The opportunity ends before the effective date.**
-- **The cost per delivery goes up and the opportunity can't fund it** (section [11.4](#114-no-overspend-funding-check)).
-  On edit, the funding check counts the edited amounts in place of the change's current ones, not on top of them.
+- **An increase the budget can't cover** for the remaining work at the new cost (section
+  [11.2](#112-budget-check-when-scheduling)). The message shows how much budget is missing and links to Add Budget
+  (section [12.2](#122-schedule-rate-change-modal)). On edit, the check uses the edited amounts in place of the
+  change's current ones.
 
-The modal shows the visit limit warning when the cost per delivery goes up and the decrease message when it goes down
-(section [11.3](#113-message-before-confirming)).
-
-**Locking:** scheduling locks the payment unit, so two PMs can't both schedule a change. Edit and cancel lock the pay
-rate row, which the job also locks, so a change can't be edited or cancelled while the job applies it.
+**Locking:** scheduling, editing and cancelling lock the opportunity row. Workers joining and Add Budget take the same
+lock, so the budget check always sees their limits.
 
 ### 9.1 Payment units with no visits
 
 If a payment unit has **no visits** (Trial and Over Limit visits don't count), a change takes effect **immediately**.
 Nobody has earned anything at the old pay rate, so it **edits the active pay rate in place**, usually the Initial
-Rate. `planned_for` and `effective_on` don't change. The old amounts are kept as an event (section
+Rate. `planned_for` doesn't change. The old amounts are kept as an event (section
 [6.1](#61-new-model-paymentunitrate)).
 
 This includes units that haven't started yet, since all their visits are trial. Workers aren't notified before the
 unit starts.
 
 - **Modal:** the effective date shows today. Before saving, the PM confirms that the change takes effect immediately
-  and can't be cancelled, and that workers are notified now (if worker pay changes). The visit limit warning (section
-  [11.3](#113-message-before-confirming)) is included if the cost goes up.
-- **On save:** if the cost goes up, joined workers' limits are scaled straight away (section [11.2](#112-what-a-pay-rate-increase-does)); with no visits there
-  is no shortfall. If worker pay changed, workers are notified. No NM banner.
+  and can't be cancelled, and that workers are notified now (if worker pay changes).
+- **Budget:** the same check as scheduling (section [11.2](#112-budget-check-when-scheduling)). Visit limits don't
+  change.
+- **On save:** if worker pay changed, workers are notified. No NM banner.
 
 **Avoiding race conditions:** lock first, then check again that the unit still hasn't started or still has no visits.
 
@@ -667,124 +650,40 @@ unit starts.
 @transaction.atomic
 def change_pay_rate_in_place(payment_unit, flw_amount, org_amount, user):
     # Lock first, then check, so nothing can slip in between:
-    # - a worker joining locks the opportunity; without this they could get a limit at the old cost
-    #   that the scaling below misses
+    # - workers joining and Add Budget lock the opportunity; the budget check must see their limits
     # - form processing locks the claim limit rows before saving a visit; without this a visit could
     #   arrive and be auto-approved at the old pay rate, after the PM was told the change is immediate
     opportunity = Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
     list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
-    payment_unit = PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
     started = not not_started(payment_unit)
     if started and has_visits(payment_unit):
         raise ValidationError("This payment unit now has visits. Schedule the change for the 1st instead.")
-    previous = payment_unit.current_pay_rate  # loaded before the edit, so it keeps the old amounts
-    if previous.flw_amount + previous.org_amount == 0 and flw_amount + org_amount > 0:
-        # Raised from zero: limits aren't scaled, so the budget must cover them at the new cost (section 11.7)
-        if needed_from_zero(payment_unit, flw_amount + org_amount) > opportunity.remaining_budget:
-            raise ValidationError("The remaining budget can't cover this pay rate. Add budget first.")
+    check_budget(opportunity, payment_unit, flw_amount, org_amount)  # section 11.2; increases only
     pay_rate = payment_unit.pay_rates.select_for_update().filter(cancelled_on__isnull=True).latest("planned_for")
+    worker_pay_changed = pay_rate.flw_amount != flw_amount
     pay_rate.flw_amount = flw_amount
     pay_rate.org_amount = org_amount
     pay_rate.modified_by = user.email
     pay_rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
-    scale_visit_limits(payment_unit, previous, pay_rate)
-    if started and previous.flw_amount != pay_rate.flw_amount:  # no notification before the unit starts
+    if started and worker_pay_changed:  # no notification before the unit starts
         # planned_for stays the original date, so the message shows today
         transaction.on_commit(partial(send_pay_rate_change_notification.delay, pay_rate.pk, date.today()))
     return pay_rate
 ```
 
-## 10. Applying a scheduled change
+## 10. When a change takes effect
 
-**When it runs**
+Nothing has to be applied on the 1st. The pay rate is looked up by date (section [6.2](#62-looking-up-a-pay-rate)),
+and the budget was already checked when the change was scheduled (section [11.2](#112-budget-check-when-scheduling)).
+Visit limits don't change.
 
-A new Celery beat task, **the pay rate job**, applies every pay rate change whose date has come but isn't applied
-yet.
-- **Every hour on the 1st**, starting at 00:00 UTC, since scheduled changes always fall on the 1st. 00:00 so the new
-  pay rate starts as close to the 1st as possible; until the job runs, everything keeps the old pay rate (section
-  [6.2](#62-looking-up-a-pay-rate)). Traffic is low then, so its brief locks don't hold up visits. A failed run is
-  picked up within the hour instead of leaving a change stuck (its date has passed, so it can't be cancelled).
-- **Once a day on other days**, at 00:00 UTC: it checks scheduled changes for funding (section
-  [11.4](#114-no-overspend-funding-check)) and applies anything still not applied.
-- If a change is still not applied, PMs and NMs see a banner (section [12.4](#124-banners)).
+The only work left on the 1st is telling workers. A Celery beat task, **the notification job**, runs daily. For each
+change that has taken effect and whose workers haven't been notified yet, it notifies workers if worker pay changed
+(section [10.1](#101-notifications)) and sets `workers_notified_on`, so it never sends twice. It skips changes on
+opportunities that have ended or are inactive, like other jobs that only act on running opportunities.
 
-> **Note:** the exact schedule, and when the funding check runs on the 1st, can be finalised during implementation.
-
-**What it does**
-
-For each change:
-
-1. **Cancels it if the opportunity has ended or is inactive** (for example, its end date was moved earlier), like
-   other jobs that only act on active, running opportunities.
-2. **Checks funding** if the cost per delivery went up, and cancels the change if it can't be funded (section
-   [11.4](#114-no-overspend-funding-check)).
-3. **Scales visit limits** if the cost per delivery went up (section [11.2](#112-what-a-pay-rate-increase-does)).
-4. **Notifies workers** if worker pay changed.
-5. **Records `effective_on`** as today.
-
-**Reliability**
-
-- It starts one task per pay rate. Each runs in one transaction, locks the pay rate row and returns straight away if
-  it is already applied or cancelled. So a failed task leaves nothing half-done, and a retried one never scales or
-  notifies twice.
-- **Retries:** about 1, 2, 4, 8 and 16 seconds apart, all within a minute. A task that still fails is reported to
-  Sentry, and the next run tries again.
-
-**Code**
-
-```python
-@celery_app.task()
-def apply_pay_rate_changes():
-    to_apply = PaymentUnitRate.objects.filter(
-        cancelled_on__isnull=True,
-        effective_on__isnull=True,
-        planned_for__lte=date.today(),
-    )
-    for pay_rate_id in to_apply.values_list("pk", flat=True):
-        apply_pay_rate_change.delay(pay_rate_id)
-
-
-@celery_app.task(
-    base=ReportFinalFailureToSentry,  # reports to Sentry once the retries are used up
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    max_retries=5,
-)
-def apply_pay_rate_change(pay_rate_id):
-    with transaction.atomic():
-        payment_unit = PaymentUnitRate.objects.select_related("payment_unit").get(pk=pay_rate_id).payment_unit
-        # Same locks in the same order as an immediate change (section 9.1), so the two can't deadlock
-        opportunity = Opportunity.objects.select_for_update().get(pk=payment_unit.opportunity_id)
-        list(OpportunityClaimLimit.objects.select_for_update().filter(payment_unit=payment_unit))
-        payment_unit = PaymentUnit.objects.select_for_update().get(pk=payment_unit.pk)  # max_total is scaled too
-        pay_rate = PaymentUnitRate.objects.select_for_update().get(pk=pay_rate_id)
-        if pay_rate.effective_on or pay_rate.cancelled_on:
-            return  # already applied, or cancelled in the meantime
-        previous = payment_unit.pay_rate_on(pay_rate.planned_for - timedelta(days=1))
-        if not opportunity.active or opportunity.has_ended:
-            cancel_automatically(pay_rate, reason="The opportunity has ended")
-            return
-        shortfall = funding_shortfall(payment_unit, previous, pay_rate)
-        if shortfall > opportunity.remaining_budget:
-            cancel_unfunded_change(pay_rate, shortfall)  # also emails the opportunity admins
-            return
-        scale_visit_limits(payment_unit, previous, pay_rate)
-        pay_rate.effective_on = date.today()
-        pay_rate.save(update_fields=["effective_on"])
-        if previous.flw_amount != pay_rate.flw_amount:
-            notify = partial(send_pay_rate_change_notification.delay, pay_rate.pk, pay_rate.planned_for)
-            transaction.on_commit(notify)
-```
-
-**Changes made while the job runs**
-
-- **Visits, new workers and Add Budget increases** wait for the job's locks, then work with the scaled limits. Add
-  Budget adds to or subtracts from the scaled limit.
-- **Editing the payment unit:** the form saves only the fields the PM changed, so it can't overwrite the scaled max.
-- **Add Budget decreases** check that a limit doesn't go below the visits already done, but don't lock the limits. If
-  the job scales a limit down between the check and the save, the decrease is taken off the scaled limit and can
-  leave it just below the visits done. This can already happen today if a visit arrives between the check and the
-  save, so it is accepted.
+If a run fails or is missed, the next day's run sends the message. It is late, but no pay is wrong: the pay rate
+applies by date.
 
 ### 10.1 Notifications
 
@@ -794,8 +693,9 @@ def apply_pay_rate_change(pay_rate_id):
 | Org pay only                     | No                         | Yes                      |
 
 **Worker notification:** a push notification through the existing messaging service, sent to all workers with
-access to the opportunity. If their visit limit changed, the message says so. Example: "From `<Effective date>`, you
-earn `<New worker pay>` `<Currency>` per `<Payment unit name>`. You have `<Visits left>` visits left."
+access to the opportunity. It says the new pay applies to work approved from the effective date, since work is paid
+at the pay rate on its approval date. Example: "From `<Effective date>`, work approved earns `<New worker pay>`
+`<Currency>` per `<Payment unit name>`."
 
 **NM banner:** see section [12.4](#124-banners).
 
@@ -811,192 +711,70 @@ earn `<New worker pay>` `<Currency>` per `<Payment unit name>`. You have `<Visit
 - **Claimed budget** = every worker's visit limit × (worker pay + org pay).
 - **Remaining budget** = total budget − claimed budget.
 
-### 11.2 What a pay rate increase does
+### 11.2 Budget check when scheduling
 
-When the cost per delivery goes up, visit limits go down for **both existing and new workers**, so the opportunity
-stays within budget. This also applies when only org pay goes up. This scales each worker's visit limit and the
-payment unit's max visits per worker (`max_total`).
-
-**Rule**
+An increase can only be scheduled if the budget can pay for all the work still to come at the **new** cost per
+delivery:
 
 ```
-scaled limit = deliveries approved + floor((limit − deliveries approved) × old cost ÷ new cost)
-new limit    = scaled limit, but not below the deliveries completed, and never above the current limit
+required budget = used budget
+                + Σ over workers of max(0, visit limit − deliveries approved) × cost per delivery
 ```
 
-- **Deliveries approved:** approved (agreed) before the change; their pay is already recorded at the old pay rate.
-- **Deliveries completed:** all forms submitted, approved or waiting.
+- **Used budget:** worker pay + org pay already earned, at the pay rates that applied (pay records, section
+  [7](#7-recording-pay-per-delivery-the-key-change)).
+- **Cost per delivery:** the new cost for the unit being changed; other units use their budget cost per delivery
+  (section [11.4](#114-claimed-budget)).
+- **If the required budget is more than the total budget,** the change is blocked until the PM adds budget. The
+  modal shows the missing amount and links to Add Budget (section [12.2](#122-schedule-rate-change-modal)).
 
-**Why**
+**Why the new cost for all remaining work.** Until the 1st, deliveries are approved at the current (lower) pay rate;
+after it, at the new one. Pricing all remaining work at the new cost covers either case, without knowing when each
+delivery will be approved. Nothing needs checking again on the 1st.
 
-- **Same remaining money.** Workers can have different limits and have used different amounts, so each worker keeps
-  the money left for them, and we work out how many deliveries it buys at the new pay rate.
-- **Only approved deliveries keep the old cost.** Pay is added when a delivery is approved, so deliveries waiting
-  for approval and not yet done are costed at the new pay rate.
-- **Worst case.** We assume every waiting delivery is approved after the 1st, at the new pay rate. This is only for
-  the budget check; pay is still added on approval, and rejected deliveries leave money unspent.
-- **The higher of the two.** Under the worst case all completed deliveries are approved, so the limit never drops
-  below them (see Dev in the example below).
-- **Round down.** A limit never costs more than the money left, so the budget is never overspent. The remainder (less
-  than one delivery per worker) stays in the budget.
+**Only an increase is checked**, meaning the total cost per delivery (worker pay + org pay) goes up. A decrease
+lowers future spending, so it is never blocked, even if the opportunity is already over budget for other reasons
+(for example, an NM approving visits over a worker's limit).
 
-**When**
+**Example.** Worker pay goes from 4 to 5 (no org pay). Total budget is 1,500.
 
-Limits are scaled on the 1st, by the pay rate job. So a change cancelled before the 1st leaves nothing to undo.
+| Worker | Visit limit | Approved | Visits left | Used (at 4)   | Remaining work (at 5) |
+| ------ | ----------- | -------- | ----------- | ------------- | --------------------- |
+| Asha   | 100         | 20       | 80          | 20 × 4 = 80   | 80 × 5 = 400          |
+| Ben    | 150         | 10       | 140         | 10 × 4 = 40   | 140 × 5 = 700         |
+| Chen   | 100         | 100      | 0           | 100 × 4 = 400 | 0                     |
 
-**Example**
+Required budget = 520 + 1,100 = 1,620, so the change is blocked: 120 is missing. Once the PM adds 120, it can be
+scheduled.
 
-Pay rate goes from 4 to 5.
+### 11.3 Visit limits
 
-| Worker | Limit | Approved | Waiting | Money left | Deliveries it buys | Scaled limit | New limit |
-| ------ | ----- | -------- | ------- | ---------- | ------------------ | ------------ | --------- |
-| Asha   | 100   | 20       | 20      | 320        | 64                 | 84           | 84        |
-| Ben    | 150   | 10       | 0       | 560        | 112                | 122          | 122       |
-| Chen   | 100   | 100      | 0       | 0          | 0                  | 100          | 100       |
-| Dev    | 100   | 10       | 90      | 360        | 72                 | 82           | **100**   |
+- **A pay rate change never changes visit limits.** A change, up or down, leaves every worker's visit limit and the
+  payment unit's max visits per worker as they are. PMs can still change them with Add Budget, as today.
+- **New workers** who join after a change is scheduled get the payment unit's max visits per worker, as today. They
+  can only join if the remaining budget covers it at the higher cost, otherwise they are refused, so the budget is
+  never overspent.
+- **Add Budget**, including raising an existing worker's limit, works as today, but prices added visits at the higher
+  cost while a change is scheduled.
+- **Budget may be left over** when work is done at the lower pay rate: deliveries approved before an increase, or
+  after a decrease. It shows up as remaining budget, which the PM can give to workers as extra visits with Add Budget.
 
-Money left = (limit − approved) × 4; deliveries it buys = money left ÷ 5, rounded down.
+### 11.4 Claimed budget
 
-Dev has completed 100 deliveries (10 approved + 90 waiting), so the limit stays at 100. The 90 waiting cost 450 at
-the new pay rate, but only 360 is left: the extra 90 is the **shortfall** (section [11.4](#114-no-overspend-funding-check)).
-
-**New workers**
-
-The payment unit's **max visits per worker** is scaled by the same ratio, rounded down: 100 × 4 ÷ 5 = **80**.
-80 × 5 = 100 × 4, so new workers get the same money as existing ones. It never goes below 1, or new workers
-couldn't join the unit at all; their limit is still capped by what the remaining budget can pay.
-
-**Daily limit.** If the payment unit's max visits per day (`max_daily`) is now above the scaled max, it is lowered
-to match, so the daily limit is never higher than the total.
-
-**Code**
-
-```python
-def scale_visit_limits(payment_unit, old_rate, new_rate):
-    old_cost = old_rate.flw_amount + old_rate.org_amount
-    new_cost = new_rate.flw_amount + new_rate.org_amount
-    if new_cost <= old_cost:
-        return  # a decrease keeps limits as they are (section 11.3)
-    if old_cost == 0:
-        return  # raised from zero: funded from the remaining budget instead (section 11.7)
-    counts = delivery_counts_per_worker(payment_unit)  # {claim_limit_id: (approved, completed)}, from CompletedWork
-    for claim_limit in payment_unit.opportunityclaimlimit_set.all():
-        approved, completed = counts.get(claim_limit.id, (0, 0))
-        scaled = approved + (claim_limit.max_visits - approved) * old_cost // new_cost
-        claim_limit.max_visits = min(claim_limit.max_visits, max(completed, scaled))
-        claim_limit.save(update_fields=["max_visits"])
-    if payment_unit.max_total:
-        payment_unit.max_total = max(1, payment_unit.max_total * old_cost // new_cost)
-        if payment_unit.max_daily and payment_unit.max_daily > payment_unit.max_total:
-            payment_unit.max_daily = payment_unit.max_total
-        payment_unit.save(update_fields=["max_total", "max_daily"])
-```
-
-### 11.3 Message before confirming
-
-One message for the payment unit, with no per-worker numbers.
-
-**Increase**
-
-> "This increase will reduce workers' remaining visits for this payment unit by around `<Percent>`% (`<Visits>`
-> visits in total) when it takes effect on `<Effective date>`. Add budget first if you want workers to keep their
-> visits."
-
-`<Percent>` = 1 − old cost ÷ new cost (e.g. 20% for 4 → 5).
-
-`<Visits>` = Σ over workers of (current limit − new limit), using the 11.2 rule with today's counts (e.g. 44 in the
-11.2 example: Asha 16 + Ben 28). It can change slightly by the 1st as deliveries are approved.
-
-The message also shows the budget needed to keep workers' visits: Σ over workers of (limit − deliveries approved) ×
-(new cost − old cost).
-
-**Decrease**
-
-> "This change does not change the number of visits assigned to each worker."
-
-Visit limits stay as they are. The PM can add visits with Add Budget.
-
-> **Note:** a decrease never raises limits. If an in-place change (section [9.1](#91-payment-units-with-no-visits))
-> raises the pay rate by mistake and is then lowered, workers
-> keep the reduced limits. The PM restores them by hand: Add Budget → Increase Visits for existing workers, and the
-> payment unit's max visits per worker for new ones.
-
-### 11.4 No overspend: funding check
-
-A **shortfall** (like Dev's above) is what a worker's waiting deliveries cost at the new pay rate beyond the money set
-aside for them. It is paid from the opportunity's **remaining budget**; if that isn't enough, the change can't go
-ahead.
-
-**When it is checked**
-
-1. **When scheduling**, with today's numbers. If there isn't enough budget, the change is blocked, asking the PM to
-   agree pending visits or add budget first. The message shows how much is missing (total shortfall − remaining
-   budget).
-   - Other payment units' scheduled changes share the same remaining budget, so the check adds up the shortfalls of
-     all the opportunity's scheduled changes, including this one.
-2. **Between scheduling and the 1st**: PMs and NMs see a warning banner as soon as the total can no longer be funded
-   (section [12.4](#124-banners)). The pay rate job's daily funding check also emails the PM and NM admins once, so
-   they can act as soon as possible, since the banner only reaches people who open Connect Web.
-3. **On the 1st at 00:00**, before limits are scaled. By then the change may no longer fit: workers may have submitted
-   more visits, new workers may have joined, limits may have been raised (Add Budget or max visits per worker), or
-   over-limit visits may have been approved. If there isn't enough budget, the change is **cancelled automatically**:
-   - the old pay rate stays
-   - the row shows as "Cancelled" in the history, with a `cancellation_reason`
-   - all opportunity admins are emailed, so it gets resolved quickly
-
-> **Note (trade-off):** this is an edge case, since the banner gives time to act first. But a change cancelled on the
-> 1st can only be scheduled again for the 1st of the following month, so it is delayed by a month.
-
-**Example**
-
-| Case                                                       | Shortfall         | Remaining budget | Result                                                                   |
-| ---------------------------------------------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------ |
-| Section [11.2](#112-what-a-pay-rate-increase-does) example | 90 (Dev)          | 100              | Scheduled. On the 1st, 90 covers Dev, leaving 10.                        |
-| Section [11.2](#112-what-a-pay-rate-increase-does) example | 90 (Dev)          | 20               | Blocked until pending visits at current rate are agreed or budget added. |
-| Unit A, scheduled first                                    | 400               | 500              | Scheduled.                                                               |
-| Unit B, same opportunity                                   | 300 (+ 400 for A) | 500              | Blocked: together they need 700.                                         |
-
-### 11.5 Adding or reducing visits from the Add Budget form
-
-The Add Budget form works as today, at the cost per delivery active at the time. Visits added before the 1st are
-scaled on the 1st with the rest of the worker's money. Example: pay rate 4 → 5, a PM adds 10 visits (40) in September;
-if none are approved by the 1st, the worker ends up with 8 extra visits, not 10.
-
-**Note on the form.** While a change is scheduled, the Add Budget form notes that visits not approved by the effective
-date, including any added now, will be adjusted to the new pay rate.
-
-### 11.6 Claimed budget
-
-Today claimed budget = visit limit × current cost. Once a new pay rate is applied, that also prices deliveries already
-approved at the new pay rate, though they were paid at the old one. Claimed budget looks too high, the remaining budget
-too low, and new workers can be wrongly blocked. So claimed budget **must** be:
+Today claimed budget = visit limit × current cost. Once a new pay rate is in effect, that prices deliveries already
+approved at the new pay rate, though they were paid at the old one. Claimed budget looks too high or too low, and new
+workers can be wrongly blocked or let in. So claimed budget **must** be:
 
 ```
 worker pay + org pay already earned (at the pay rates that applied)
-  +  max(0, visit limit − deliveries approved) × current cost per delivery
+  +  max(0, visit limit − deliveries approved) × budget cost per delivery
 ```
 
+- **Budget cost per delivery:** the higher of the current cost and any scheduled cost. Every budget check uses it, so
+  they all agree.
 - **Why `max(0, …)`:** an NM can still approve over-limit visits (for example, through the visit status import), so
   deliveries approved can go above the visit limit. Without it, the second part would go negative and cancel out pay
   they really earned, making the budget look bigger than it is.
-- Only claimed budget uses this formula. Other budget checks (joining, the payment unit form, new workers' limits)
-  keep max visits per worker × cost, with the cost from `current_pay_rate` (section [6.2](#62-looking-up-a-pay-rate)).
-
-### 11.7 Special case: pay rate raised from zero
-
-If the cost was 0 and the PM raises worker or org pay, no money was ever set aside for these deliveries, so scaling
-doesn't work. Instead:
-
-- Visit limits and max visits per worker stay as they are.
-- The funding check (section [11.4](#114-no-overspend-funding-check)) needs every worker's unapproved deliveries at the new cost:
-
-  ```
-  needed = Σ over workers of (limit − deliveries approved) × new cost
-  ```
-
-  If the remaining budget doesn't cover it, the change is blocked when scheduling or cancelled on the 1st, as in
-  section [11.4](#114-no-overspend-funding-check), and the message asks the PM to add budget first.
-- The modal shows how much budget the change needs, instead of the visit limit warning.
 
 ## 12. UI
 
@@ -1010,7 +788,6 @@ Screenshots from the Claude design are included below. This section only lists w
 - Cancel Change asks for confirmation first.
 - **Schedule Rate Change** is **disabled** when a change is already scheduled, with the tooltip: "A change is already
   scheduled for `<Effective date>`. Edit or cancel it instead."
-- The funding warning (section [12.4](#124-banners)) is also shown on the Pay Rates card.
 - Rate History: an edited pay rate lists its edits (old → new amounts, who, when).
 
 ### 12.2 Schedule Rate Change modal
@@ -1020,7 +797,9 @@ Screenshots from the Claude design are included below. This section only lists w
 - The same modal, pre-filled, is used for **Edit**.
 - Setting worker pay or org pay to 0 asks the PM to confirm before saving.
 - **Effective date** is shown, not editable: the 1st of next month, or today (section [9.1](#91-payment-units-with-no-visits)).
-- Messages: section [11.3](#113-message-before-confirming); funding error, which stops the save: section [11.4](#114-no-overspend-funding-check).
+- **Not enough budget:** an error stops the save. It shows the missing amount and an **Add budget** link that opens
+  the Add Budget form for this opportunity, so the PM can fix it without leaving the workflow (section
+  [11.2](#112-budget-check-when-scheduling)).
 
 ### 12.3 Payment units list
 
@@ -1043,62 +822,34 @@ Screenshots from the Claude design are included below. This section only lists w
   For an org pay change, the second sentence says "Org pay changes from … to …". If both change, it shows both.
 - If several changes are coming, one line per opportunity and payment unit.
 
-**Funding warning banner (PMs and NMs)**
-
-If a scheduled change can no longer be funded from the budget left (section [11.4](#114-no-overspend-funding-check)), a warning
-banner is shown **straight away**, not only in the last 2 days, so there is time to act:
-
-"`<Opportunity name>`: the pay rate change for `<Payment unit name>` on `<Effective date>` can no longer be funded
-from the budget left. Agree pending visits or add budget before `<Effective date>`, or this change will not
-apply."
-
-- Shown to the PMs who can schedule pay rate changes and to the NMs of the opportunity's organisation.
-- It goes away by itself once the change can be funded again (waiting deliveries approved or budget added).
-- It can take up to an hour to appear or go away (cached, because it counts visits per worker).
-
-**Delayed change banner (PMs and NMs)**
-
-If a change is still Scheduled after its planned date (the pay rate job hasn't applied it yet), a banner is shown:
-
-"`<Opportunity name>`: the pay rate change for `<Payment unit name>` planned for `<Effective date>` hasn't been
-applied yet. Workers are still paid at the old pay rate. Please contact support if this message is still shown in a
-few hours."
-
-- Shown to the same people as the funding warning banner. It is checked when the page loads, so it shows even if
-  the job doesn't run.
-- It replaces the upcoming change banner for that change, and goes away by itself once the change is applied.
-- Not shown for a change the job cancelled (for example, one that couldn't be funded): it is no longer Scheduled.
-
 ## 13. All scenarios
 
 **Scheduling and editing**
 
-| Case                                          | Behaviour                                                                       |
-| --------------------------------------------- | ------------------------------------------------------------------------------- |
-| Change scheduled on the last day of the month | Takes effect the next day. The banner is shown till the end of the last day.    |
-| Several PMs edit the scheduled change         | Last edit wins. Each edit is shown in the history.                              |
-| Cancel, then schedule again in the same month | Allowed. The cancelled row stays in history and a new scheduled row is created. |
-| Opportunity ends before the effective date    | Scheduling is blocked (section [9](#9-scheduling-a-change)).                    |
+| Case                                          | Behaviour                                                                                          |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Change scheduled on the last day of the month | Takes effect the next day. The banner is shown till the end of the last day.                       |
+| Several PMs edit the scheduled change         | Last edit wins. Each edit is shown in the history.                                                 |
+| Cancel, then schedule again in the same month | Allowed. The cancelled row stays in history and a new scheduled row is created.                    |
+| Opportunity ends before the effective date    | Scheduling is blocked (section [9](#9-scheduling-a-change)).                                       |
+| Budget can't cover an increase                | Scheduling is blocked until budget is added (section [11.2](#112-budget-check-when-scheduling)). |
+| Two units' changes in the same opportunity    | The second is checked with the first's higher cost already counted, so both are always funded.     |
 
-**Applying on the 1st**
+**On the 1st**
 
-| Case                                    | Behaviour                                                                                                                      |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| End date moved earlier after scheduling | The job cancels the change on the 1st (section [10](#10-applying-a-scheduled-change)).                                         |
-| Change cancelled before the 1st         | Nothing to undo. Limits only change on the 1st.                                                                                |
-| Change can't be funded on the 1st       | Cancelled automatically, old pay rate stays, opportunity admins emailed (section [11.4](#114-no-overspend-funding-check)).     |
-| Two units' changes on the same 1st      | Scheduling checks the total. If both don't fit on the 1st, one is cancelled (section [11.4](#114-no-overspend-funding-check)). |
-| Job on the 1st runs late                | Everything keeps using the old pay rate until the change is applied (section [6.2](#62-looking-up-a-pay-rate)).                |
+| Case                                    | Behaviour                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| End date moved earlier after scheduling | The pay rate still applies by date; workers aren't notified (section [10](#10-when-a-change-takes-effect)). |
+| Notification job fails or is missed     | Pay is unaffected: the pay rate applies by date. The next day's run sends the notification late.          |
 
 **Budget and visit limits**
 
-| Case                                | Behaviour                                                                                                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Worker has used all their visits    | Limit stays the same. Deliveries already completed are never reduced.                                                                 |
-| Workers with different visit limits | Each worker's remaining visits are scaled separately (section [11.2](#112-what-a-pay-rate-increase-does)).                            |
-| New workers join before the 1st     | They get limits at the old cost, then are scaled on the 1st like everyone else.                                                       |
-| Budget added before the 1st         | Scaled down on the 1st like the rest of the worker's money (section [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)). |
-| Workers join before the unit starts | Limits are priced at the Initial Rate (section [6.3](#63-first-pay-rate-of-a-payment-unit)).                                          |
+| Case                                | Behaviour                                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| New workers join before the 1st     | They get max visits per worker, and can only join if the budget covers it at the higher cost (section [11.3](#113-visit-limits)). |
+| Budget added before the 1st         | Added visits are priced at the higher cost (section [11.3](#113-visit-limits)).                             |
+| Pay rate decrease                   | No budget check, even if the opportunity is already over budget. Limits stay the same. Budget reserved at the higher cost becomes remaining budget once the change applies. |
+| Workers join before the unit starts | Limits are priced at the Initial Rate (section [6.3](#63-first-pay-rate-of-a-payment-unit)).                 |
 
 **Earned pay and invoices**
 
@@ -1108,26 +859,25 @@ few hours."
 
 **Special payment units**
 
-| Case                                  | Behaviour                                                                                                                           |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Payment unit with no visits           | Active pay rate is edited in place, takes effect immediately (section [9.1](#91-payment-units-with-no-visits)).                     |
-| Payment unit with child payment units | Each unit has its own pay rate. Changing a parent does not change its children.                                                     |
-| Pay rate set to 0                     | Allowed (same as today). The modal asks the PM to confirm.                                                                          |
-| Pay rate raised from 0                | Limits are not scaled; funded from the remaining budget (section [11.7](#117-special-case-pay-rate-raised-from-zero)).              |
+| Case                                  | Behaviour                                                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Payment unit with no visits           | Active pay rate is edited in place, takes effect immediately (section [9.1](#91-payment-units-with-no-visits)). |
+| Payment unit with child payment units | Each unit has its own pay rate. Changing a parent does not change its children.                                 |
+| Pay rate set to 0                     | Allowed (same as today). The modal asks the PM to confirm.                                                      |
+| Pay rate raised from 0                | The same budget check, at the new cost. Limits stay the same.                                                   |
 
 ## 14. Implementation tickets (proposed, to be created after approval)
 
 1. Pay rate history model and migration
 2. Restrict editing payment unit and opportunity dates
 3. Read pay rates from the history
-4. Deliveries and pay records, and invoices bill them
+4. Deliveries and pay records, invoices bill them, and rejected work's pay is reversed (CCCT-3016)
 5. Pay Rates card and Rate History (read-only)
 6. Schedule, edit and cancel, and record edits with pghistory
-7. Job on the 1st
-8. Upcoming pay rate changes: list column, banners and Add Budget note
+7. Notification job
+8. Upcoming pay rate changes: list column and banner
 9. Immediate change for payment units with no visits or not started yet (section [9.1](#91-payment-units-with-no-visits))
-10. Block rejecting paid or invoiced work, and reverse the pay of other rejected work (section
-    [7.4](#74-rejecting-approved-work))
+10. Block rejecting paid or invoiced work (CCCT-3065, section [7.4](#74-rejecting-approved-work))
 11. Existing bug: keep the status set by the completed work status import (section [7.4](#74-rejecting-approved-work))
 12. Drop `amount` and `org_amount` from `PaymentUnit` and `invoiced_approved_count` from `CompletedWork`, and remove
     today's pay and invoice code with the `PAY_RECORDS` switch
@@ -1140,7 +890,7 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Foundation | 1, 2, 3    | Nothing new for PMs except the date rules. Pay and invoices give the same results as today. Safe to roll back.                                                                                                                                                                                                                 |
 | 2. Earned pay | 4, 10, 11  | Deliveries and pay records, and invoices bill them. Deploy with the `PAY_RECORDS` switch off, then run the pay record backfill (section [7.3](#73-pay-record-backfill)), which turns it on. Editing pay on the form no longer reprices work already approved. Add the `UserVisit.delivery` index with `AddIndexConcurrently` in its own migration, so building it doesn't block form submissions. To roll back, turn the switch off (section [7.3](#73-pay-record-backfill)); the code itself is not safe to roll back. |
-| 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the job, the list column and banners.                                                                                                                                                                                  |
+| 3. Feature    | 5–9        | Everything PMs see arrives together: Pay Rates card, scheduling, immediate changes for units with no visits, the notification job, the list column and banner.                                                                                                                                                                                    |
 | 4. Follow-up  | 12         | Drop the old fields once releases 1 to 3 have been live and stable.                                                                                                                                                                                                                                                                 |
 
 > **Note:** releases 1 and 2 can ship together if needed. The combined release is then not safe to roll back either.
@@ -1155,9 +905,8 @@ Tickets are reviewed and merged one at a time, then deployed in these releases.
 - **Drop the cached totals from `CompletedWork`.** `saved_payment_accrued`, `saved_org_payment_accrued` and their USD
   versions are sums of the work's pay records. Read them from the records instead, after checking that worker
   totals, reports and exports stay fast.
-- **Let the PM choose what a raise does.** In the change modal, either scale visit limits down (as now) or add the
-  budget needed to keep them. Today the PM does the second with Add Budget, before or after the change (section
-  [11.5](#115-adding-or-reducing-visits-from-the-add-budget-form)).
+- **Add the missing budget from the change modal.** Instead of linking to Add Budget, offer to add the missing amount
+  in the same step, when the PM agrees to the increase (section [11.2](#112-budget-check-when-scheduling)).
 - **Keep approved work approved.** A rejected extra visit, such as a duplicate, could leave its work approved
   instead of rejecting it, so only deliveries whose own visits are rejected lose their pay (section
   [7.4](#74-rejecting-approved-work)). Product is checking whether work-level rejection is needed.
