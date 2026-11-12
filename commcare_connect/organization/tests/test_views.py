@@ -8,6 +8,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import escape
 from django.utils.timezone import localtime
 
 from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityFactory
@@ -17,6 +18,7 @@ from commcare_connect.organization.models import (
     TeamSizeRange,
     UserOrganizationMembership,
 )
+from commcare_connect.organization.views import MANAGING_API_KEYS_URL
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
@@ -32,9 +34,12 @@ class TestRemoveMembersView:
     def test_member_whose_api_key_is_in_use_blocks_the_removal(
         self, client, org_user_admin, org_user_member, organization
     ):
-        """Nobody selected is removed, and the message names the opportunities whose key needs replacing."""
+        """Nobody selected is removed, and the message names the opportunities whose key needs replacing.
+
+        The names are user input inside a message that carries a link, so they must arrive escaped.
+        """
         api_key = HQApiKeyFactory(user=org_user_member)
-        for name in ["Opp B", "Opp A"]:
+        for name in ["Opp B", "Opp <A>"]:
             OpportunityFactory(name=name, program=ProgramFactory(organization=organization), api_key=api_key)
         UserOrganizationMembership.objects.create(user=UserFactory(), organization=organization)
         selected = UserOrganizationMembership.objects.filter(organization=organization).exclude(user=org_user_admin)
@@ -43,8 +48,10 @@ class TestRemoveMembersView:
         messages = self._remove_members(client, org_user_admin, organization, membership_ids)
 
         assert messages == [
-            f"{org_user_member.name} can't be removed because their HQ API key is used by these opportunities: "
-            "Opp A, Opp B. Replace the API key on each one first."
+            f"{escape(org_user_member.name)} can't be removed because their HQ API key is used by these "
+            "opportunities: Opp &lt;A&gt;, Opp B. Replace the API key on each one first. "
+            f'<a href="{MANAGING_API_KEYS_URL}" target="_blank" rel="noopener" class="underline">'
+            "Learn how to replace an API key</a>."
         ]
         assert selected.count() == len(membership_ids) == 2
 

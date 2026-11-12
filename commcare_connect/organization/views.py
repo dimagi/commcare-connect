@@ -14,7 +14,9 @@ from django.db import transaction
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, UpdateView, View
@@ -46,6 +48,10 @@ from commcare_connect.program.utils import AccessLevel, org_access_level_from_re
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
+
+MANAGING_API_KEYS_URL = (
+    "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/4522541061/Managing+API+keys+for+an+Opportunity"
+)
 
 
 @login_required
@@ -167,11 +173,18 @@ def api_key_removal_blocks(memberships):
         opportunity_names = [opportunity.name for opportunity in opportunities_orphaned_by_removal(membership)]
         if opportunity_names:
             blocks.append(
-                gettext(
-                    "{name} can't be removed because their HQ API key is used by these opportunities: "
-                    "{opportunities}. Replace the API key on each one first."
-                ).format(
-                    name=membership.user.name or membership.user.email, opportunities=", ".join(opportunity_names)
+                format_html(
+                    gettext(
+                        "{name} can't be removed because their HQ API key is used by these opportunities: "
+                        "{opportunities}. Replace the API key on each one first. "
+                        "{link_start}Learn how to replace an API key{link_end}."
+                    ),
+                    name=membership.user.name or membership.user.email,
+                    opportunities=", ".join(opportunity_names),
+                    link_start=format_html(
+                        '<a href="{}" target="_blank" rel="noopener" class="underline">', MANAGING_API_KEYS_URL
+                    ),
+                    link_end=mark_safe("</a>"),
                 )
             )
     return blocks
