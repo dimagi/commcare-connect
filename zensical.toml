@@ -8,8 +8,8 @@
 # To publish another README, add a stub under docs/ and an entry to `nav` below.
 
 [project]
-site_name = "CommCare Connect Developer Docs"
-site_description = "Developer documentation for CommCare Connect"
+site_name = "Connect Developer Docs"
+site_description = "Developer documentation for Connect"
 site_url = "https://dimagi.github.io/commcare-connect/"
 repo_url = "https://github.com/dimagi/commcare-connect"
 repo_name = "dimagi/commcare-connect"

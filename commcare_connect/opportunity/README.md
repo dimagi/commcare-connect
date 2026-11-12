@@ -1,6 +1,6 @@
 # Opportunity App
 
-The opportunity app is the core domain of CommCare Connect. It manages paid programs where mobile users learn skills and deliver health services in exchange for payment.
+The opportunity app is the core domain of Connect. It manages paid programs where mobile users learn skills and deliver health services in exchange for payment.
 
 ## Key Concepts
 

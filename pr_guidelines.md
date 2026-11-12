@@ -1,6 +1,6 @@
 # Pull Request Guidelines
 
-This document outlines best practices for creating and reviewing pull requests in the CommCare Connect project.
+This document outlines best practices for creating and reviewing pull requests in the Connect project.
 
 ## Table of Contents
 
