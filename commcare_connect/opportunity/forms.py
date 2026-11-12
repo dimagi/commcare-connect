@@ -351,11 +351,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             initial=credential_config.delivery_level if credential_config else "",
         )
 
-    def clean_end_date(self):
-        end_date = self.cleaned_data.get("end_date")
+    def clean(self):
+        cleaned_data = super().clean()
+        end_date = cleaned_data.get("end_date")
         if end_date and "end_date" in self.changed_data:
             validate_payment_unit_end_date(self.instance, end_date)
-        return end_date
+        return cleaned_data
 
     def clean_users(self):
         user_data = self.cleaned_data.get("users")
@@ -1011,10 +1012,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 message = gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s).")
                 self.add_error("start_date", message % {"name": unit.name, "date": unit.end_date})
         if "end_date" in self.changed_data:
-            try:
-                validate_payment_unit_end_date(self.opportunity, end_date)
-            except ValidationError as e:
-                self.add_error("end_date", e)
+            validate_payment_unit_end_date(self.opportunity, end_date)
 
 
 class VisitExportForm(forms.Form):
@@ -1710,10 +1708,10 @@ def validate_payment_unit_end_date(opportunity, end_date):
     units = opportunity.paymentunit_set
     if unit := units.filter(end_date__gt=end_date).order_by("-end_date").first():
         message = gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
-        raise ValidationError(message % {"name": unit.name, "date": unit.end_date})
+        raise ValidationError({"end_date": message % {"name": unit.name, "date": unit.end_date}})
     if unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
         message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
-        raise ValidationError(message % {"name": unit.name, "date": unit.start_date})
+        raise ValidationError({"end_date": message % {"name": unit.name, "date": unit.start_date}})
 
 
 def payment_unit_date_bounds(opportunity):
