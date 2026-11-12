@@ -16,6 +16,7 @@ The opportunity app is the core domain of CommCare Connect. It manages paid prog
 - **AssignedTask** — Tracks completion of individual tasks by a user (assigned → completed).
 - **Payment** — A confirmed payment to a user for approved work.
 - **PaymentInvoice** — An invoice for a managed opportunity. Tracks status through NM/PM review workflow and links to completed work and payments.
+- **BillToAddress** — An entity invoices are billed to (`PaymentInvoice.bill_to`, `PROTECT`). Exactly one active default always exists (seeded as Dimagi, Inc.), and new invoices without a choice get it.
 
 ## User Journey
 
@@ -85,7 +86,7 @@ Organization
         ├── OpportunityVerificationFlags (1:1)
         ├── DeliverUnitFlagRules (per DeliverUnit)
         ├── FormJsonValidationRules (per DeliverUnit, M2M)
-        ├── PaymentInvoice
+        ├── PaymentInvoice (refs BillToAddress)
         │     └── Payment (1:1)
         └── OpportunityAccess (per user)
               ├── OpportunityClaim (1:1)

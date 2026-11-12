@@ -4,6 +4,8 @@ from unittest import mock
 
 import pghistory
 import pytest
+from django.core.exceptions import ImproperlyConfigured
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
@@ -13,6 +15,7 @@ from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
+    BillToAddress,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
@@ -26,6 +29,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
+    BillToAddressFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -212,6 +216,32 @@ class TestPaymentInvoice:
             invoice.save(update_fields=["status"])
 
         assert invoice.pm_certification["name"] == expected_name
+
+
+@pytest.fixture
+def default_address(db):
+    # Seeded by migration 0154 and restored by the ensure_default_bill_to_address autouse fixture.
+    return BillToAddress.objects.get(is_default=True)
+
+
+@pytest.mark.django_db
+class TestBillToAddress:
+    @pytest.mark.parametrize(
+        "target, changes, constraint",
+        [
+            ("other", {"is_default": True}, "unique_default_bill_to_address"),
+            ("default", {"is_active": False}, "default_bill_to_address_is_active"),
+        ],
+    )
+    def test_constraints(self, default_address, target, changes, constraint):
+        address = default_address if target == "default" else BillToAddressFactory()
+        with pytest.raises(IntegrityError, match=constraint), transaction.atomic():
+            BillToAddress.objects.filter(pk=address.pk).update(**changes)
+
+    def test_get_default_without_default_fails_clearly(self, default_address):
+        BillToAddress.objects.update(is_default=False)
+        with pytest.raises(ImproperlyConfigured, match="No default Bill To address"):
+            BillToAddress.get_default()
 
 
 @pytest.mark.django_db

@@ -4,8 +4,10 @@ import datetime
 from uuid import uuid4
 
 import pghistory
+from django.core.exceptions import ImproperlyConfigured
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.utils.functional import cached_property
 from django.utils.translation import gettext, gettext_lazy
 
@@ -36,6 +38,36 @@ class InvoiceStatus(models.TextChoices):
     @classmethod
     def get_choices(cls):
         return cls.choices
+
+
+class BillToAddress(BaseModel):
+    """An entity an invoice can be billed to."""
+
+    name = models.CharField(max_length=255)
+    address = models.TextField()
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name_plural = gettext_lazy("Bill to Addresses")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default"], condition=Q(is_default=True), name="unique_default_bill_to_address"
+            ),
+            models.CheckConstraint(
+                condition=Q(is_active=True) | Q(is_default=False), name="default_bill_to_address_is_active"
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def get_default(cls):
+        try:
+            return cls.objects.get(is_default=True)
+        except cls.DoesNotExist:
+            raise ImproperlyConfigured("No default Bill To address is configured.")
 
 
 @pghistory.track(fields=["status"])
