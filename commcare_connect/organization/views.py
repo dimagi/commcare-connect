@@ -14,7 +14,9 @@ from django.db import transaction
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, UpdateView, View
@@ -23,6 +25,7 @@ from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.opportunity.helpers import opportunities_orphaned_by_removal
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
@@ -45,6 +48,10 @@ from commcare_connect.program.utils import AccessLevel, org_access_level_from_re
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
+
+MANAGING_API_KEYS_URL = (
+    "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/4522541061/Managing+API+keys+for+an+Opportunity"
+)
 
 
 @login_required
@@ -143,11 +150,44 @@ def remove_members(request, org_slug):
         messages.error(request, message=gettext("You cannot remove yourself from the organization."))
         return redirect(redirect_url)
 
+    memberships = UserOrganizationMembership.objects.filter(
+        pk__in=membership_ids, organization__slug=org_slug
+    ).select_related("user", "organization")
+    blocking_messages = api_key_removal_blocks(memberships)
+    for message in blocking_messages:
+        messages.error(request, message=message)
+    if blocking_messages:
+        return redirect(redirect_url)
+
     if membership_ids:
-        UserOrganizationMembership.objects.filter(pk__in=membership_ids, organization__slug=org_slug).delete()
+        memberships.delete()
         messages.success(request, message=gettext("Selected members have been removed from the organization."))
 
     return redirect(redirect_url)
+
+
+def api_key_removal_blocks(memberships):
+    """One message per member whose removal would leave opportunities with an API key no one here manages."""
+    blocks = []
+    for membership in memberships:
+        opportunity_names = [opportunity.name for opportunity in opportunities_orphaned_by_removal(membership)]
+        if opportunity_names:
+            blocks.append(
+                format_html(
+                    gettext(
+                        "{name} can't be removed because their HQ API key is used by these opportunities: "
+                        "{opportunities}. Replace the API key on each one first. "
+                        "{link_start}Learn how to replace an API key{link_end}."
+                    ),
+                    name=membership.user.name or membership.user.email,
+                    opportunities=", ".join(opportunity_names),
+                    link_start=format_html(
+                        '<a href="{}" target="_blank" rel="noopener" class="underline">', MANAGING_API_KEYS_URL
+                    ),
+                    link_end=mark_safe("</a>"),
+                )
+            )
+    return blocks
 
 
 def accept_invite(request, org_slug, token):
