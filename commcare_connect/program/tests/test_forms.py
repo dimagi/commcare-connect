@@ -114,7 +114,7 @@ class TestOpportunityInitForm:
             program=self.program, organization=self.invited_org, status=ProgramApplicationStatus.ACCEPTED
         )
         self.hq_server = HQServerFactory()
-        self.api_key = HQApiKeyFactory(hq_server=self.hq_server)
+        self.api_key = HQApiKeyFactory(hq_server=self.hq_server, user=self.user)
         self.learn_app = ApplicationFactory()
         self.deliver_app = ApplicationFactory()
 
@@ -133,6 +133,9 @@ class TestOpportunityInitForm:
             "hq_server": self.hq_server.id,
         }
 
+    def _form(self, data):
+        return OpportunityInitForm(data=data, program=self.program, org_slug=self.organization.slug, user=self.user)
+
     def test_form_initialization(self):
         form = OpportunityInitForm(program=self.program, org_slug=self.organization.slug)
         assert form.fields["currency"].initial == self.program.currency
@@ -141,13 +144,13 @@ class TestOpportunityInitForm:
         assert "organization" in form.fields
 
     def test_form_validation_valid_data(self):
-        form = OpportunityInitForm(data=self.form_data, program=self.program, org_slug=self.organization.slug)
+        form = self._form(self.form_data)
         assert form.is_valid()
 
     def test_form_validation_invalid_data(self):
         invalid_data = self.form_data.copy()
         invalid_data["learn_app"] = invalid_data["deliver_app"]
-        form = OpportunityInitForm(data=invalid_data, program=self.program, org_slug=self.organization.slug)
+        form = self._form(invalid_data)
         assert not form.is_valid()
         assert form.errors["learn_app"] == ["Learn app and Deliver app cannot be same"]
         assert form.errors["deliver_app"] == ["Learn app and Deliver app cannot be same"]
@@ -155,7 +158,7 @@ class TestOpportunityInitForm:
     def test_form_validation_missing_data(self):
         invalid_data = self.form_data.copy()
         invalid_data["learn_app"] = None
-        form = OpportunityInitForm(data=invalid_data, program=self.program, org_slug=self.organization.slug)
+        form = self._form(invalid_data)
         assert not form.is_valid()
 
     def test_form_save(self):

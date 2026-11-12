@@ -10,6 +10,7 @@
                       omit to let the browser do a full-page form submit
     hx_indicator    - HTMX CSS selector for the loading indicator (e.g. "#loadingIndicator")
     container_class - CSS classes on the outermost wrapper div (e.g. "flex justify-end mb-3");
+    note            - Text shown above the filters, e.g. to explain what they apply to
 
   From view context (not passed via `with`):
     filters_applied_count - Integer; shows a badge on the filter button when > 0
@@ -48,7 +49,10 @@
             hx-trigger="submit"
             {% if hx_indicator %}hx-indicator="{{ hx_indicator }}"{% endif %}
             class="content">
-        <div class="modal-body">{% crispy filter_form %}</div>
+        <div class="modal-body">
+          {% if note %}<p class="mb-4 text-sm text-slate-500">{{ note }}</p>{% endif %}
+          {% crispy filter_form %}
+        </div>
         <div class="footer">
           <button type="button"
                   @click="closeFilter()"

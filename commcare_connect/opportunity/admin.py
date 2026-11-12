@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
@@ -18,10 +19,10 @@ from commcare_connect.opportunity.models import (
     LearnModule,
     Opportunity,
     OpportunityAccess,
+    OpportunityApiKeyEvent,
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunitySupervisingOrganizationEvent,
-    OverLimitReasonChoices,
     Payment,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,
@@ -31,7 +32,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
 )
 from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_units
-from commcare_connect.utils.admin import AuditEventAdmin, audited_object
+from commcare_connect.utils.admin import UNKNOWN, AuditEventAdmin, audited_object
 
 # Register your models here.
 
@@ -118,7 +119,7 @@ class UserVisitAdmin(admin.ModelAdmin):
 
     @admin.display(description="Over Limit Reasons")
     def get_over_limit_reasons(self, obj):
-        return ", ".join(OverLimitReasonChoices(reason).label for reason in obj.over_limit_reasons)
+        return ", ".join(obj.get_over_limit_reasons_display())
 
 
 @admin.register(Assessment)
@@ -246,3 +247,25 @@ class OpportunitySupervisingOrganizationEventAdmin(AuditEventAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("pgh_obj", "supervising_organization")
+
+
+@admin.register(OpportunityApiKeyEvent)
+class OpportunityApiKeyEventAdmin(AuditEventAdmin):
+    list_display = ("pgh_created_at", "opportunity", "key", "key_owner", "pgh_label", "changed_by")
+    list_filter = ("pgh_label", ("pgh_obj__program", admin.RelatedOnlyFieldListFilter))
+    search_fields = ("pgh_obj__name", "api_key__user__email")
+    fields = ("pgh_created_at", "opportunity", "key", "key_owner", "pgh_label", "changed_by", "changed_by_email")
+    readonly_fields = fields
+
+    opportunity = audited_object("pgh_obj", _("Opportunity"))
+    key = audited_object("api_key", _("API key"))
+
+    @admin.display(description=_("Key owner"))
+    def key_owner(self, obj):
+        try:
+            return obj.api_key.user.email if obj.api_key else UNKNOWN
+        except ObjectDoesNotExist:
+            return UNKNOWN
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("pgh_obj", "api_key__user")

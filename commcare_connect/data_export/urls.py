@@ -21,8 +21,15 @@ urlpatterns = [
         name="completed_module_data",
     ),
     path(
+        "opportunity/<int:opp_id>/attachment/",
+        views.AttachmentView.as_view(),
+        name="attachment_export",
+    ),
+    # Kept for callers written before the endpoint served audio as well as images; both
+    # paths resolve any attachment by blob_id.
+    path(
         "opportunity/<int:opp_id>/image/",
-        views.ImageView.as_view(),
+        views.AttachmentView.as_view(),
         name="image_export",
     ),
     path(

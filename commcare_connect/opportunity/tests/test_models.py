@@ -4,6 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
+from django.db.models import ProtectedError
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
 
@@ -16,15 +17,19 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
     OpportunityClaimLimit,
+    OverLimitReasonChoices,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,  # added via pghistory
     TaskTypeModeChoices,
+    UserVisit,
+    VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
+    HQApiKeyFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -883,3 +888,48 @@ def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2
 
     assert opportunity.daily_max_visits_per_user == expected_v1
     assert opportunity.daily_max_visits_per_user_v2 == expected_v2
+
+
+@pytest.mark.parametrize(
+    "status, reasons, expected",
+    [
+        (VisitValidationStatus.approved, [], []),
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.max_daily],
+            [OverLimitReasonChoices.max_daily.label],
+        ),
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.claim_ended, OverLimitReasonChoices.max_visits],
+            [OverLimitReasonChoices.claim_ended.label, OverLimitReasonChoices.max_visits.label],
+        ),
+        (VisitValidationStatus.over_limit, [], ["Not recorded (visit predates over-limit reason tracking)"]),
+        # Reasons outlive a later manual review
+        (
+            VisitValidationStatus.rejected,
+            [OverLimitReasonChoices.max_daily],
+            [OverLimitReasonChoices.max_daily.label],
+        ),
+    ],
+)
+def test_user_visit_over_limit_reasons_display(status, reasons, expected):
+    visit = UserVisit(status=status, over_limit_reasons=reasons)
+    assert visit.get_over_limit_reasons_display() == expected
+
+
+@pytest.mark.django_db
+class TestOpportunityApiKey:
+    def test_deleting_key_owner_is_blocked(self, opportunity):
+        with pytest.raises(ProtectedError):
+            opportunity.api_key.user.delete()
+
+    def test_api_key_change_is_audited(self, opportunity):
+        new_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        with pghistory.context(username="admin", user_email="admin@example.com"):
+            opportunity.api_key = new_key
+            opportunity.save()
+        event = opportunity.api_key_events.latest("pgh_id")
+        assert event.pgh_label == "api_key_update"
+        assert event.api_key_id == new_key.id
+        assert event.pgh_context.metadata["user_email"] == "admin@example.com"

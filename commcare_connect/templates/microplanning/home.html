@@ -76,7 +76,12 @@
                   hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
                   hx-target="#modal-container"
                   class="button button-md primary-dark">
-            <i class="fa-solid fa-upload"></i> {% translate "Upload Work Areas" %}
+            <i class="fa-solid fa-upload"></i>
+            {% if work_areas_present %}
+              {% translate "Add Work Areas" %}
+            {% else %}
+              {% translate "Upload Work Areas" %}
+            {% endif %}
           </button>
         {% endif %}
         {% if show_implementation_area_btn %}

@@ -11,6 +11,7 @@ from commcare_connect.opportunity.helpers import (
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
+    get_worker_deliveries,
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
@@ -58,7 +59,7 @@ def test_deliver_status_query_no_visits(opportunity: Opportunity, visits_elsewhe
         assert access.approved == 0
         assert access.rejected == 0
         assert access.pending == 0
-        assert access.completed == 0
+        assert access.delivered == 0
 
 
 @pytest.mark.django_db
@@ -69,11 +70,11 @@ def test_deliver_status_query(opportunity: Opportunity):
     for mobile_user in mobile_users:
         access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
         for pu in payment_units:
-            count_by_status = dict(approved=0, pending=0, rejected=0, completed=0, over_limit=0, incomplete=0)
+            count_by_status = dict(approved=0, pending=0, rejected=0, delivered=0, over_limit=0, incomplete=0)
             completed_works = CompletedWorkFactory.create_batch(20, opportunity_access=access, payment_unit=pu)
             for cw in completed_works:
                 count_by_status[cw.status.value] += 1
-            count_by_status["completed"] = len(completed_works) - count_by_status["incomplete"]
+            count_by_status["delivered"] = len(completed_works) - count_by_status["incomplete"]
             completed_work_counts[(mobile_user.username, pu.name)] = count_by_status
 
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
@@ -83,9 +84,86 @@ def test_deliver_status_query(opportunity: Opportunity):
         assert completed_work_counts[(username, access.payment_unit)]["approved"] == access.approved
         assert completed_work_counts[(username, access.payment_unit)]["rejected"] == access.rejected
         assert completed_work_counts[(username, access.payment_unit)]["pending"] == access.pending
-        assert completed_work_counts[(username, access.payment_unit)]["completed"] == access.completed
+        assert completed_work_counts[(username, access.payment_unit)]["delivered"] == access.delivered
         assert completed_work_counts[(username, access.payment_unit)]["over_limit"] == access.over_limit
         assert completed_work_counts[(username, access.payment_unit)]["incomplete"] == access.incomplete
+
+
+@pytest.mark.django_db
+def test_get_worker_deliveries(opportunity: Opportunity):
+    payment_units = PaymentUnitFactory.create_batch(3, opportunity=opportunity)
+    no_work_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    one_unit_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    CompletedWorkFactory(
+        opportunity_access=one_unit_access, payment_unit=payment_units[0], status=CompletedWorkStatus.pending
+    )
+    two_unit_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    for payment_unit in payment_units[:2]:
+        CompletedWorkFactory(
+            opportunity_access=two_unit_access, payment_unit=payment_unit, status=CompletedWorkStatus.over_limit
+        )
+
+    deliveries = {delivery.opportunity_access.pk: delivery for delivery in get_worker_deliveries(opportunity, {})}
+
+    assert len(deliveries) == 3
+    assert deliveries[no_work_access.pk].payment_unit_label == "3 payment units"
+    one_unit = deliveries[one_unit_access.pk]
+    assert one_unit.payment_unit_label == payment_units[0].name
+    assert one_unit.payment_unit_ids == [payment_units[0].payment_unit_id]
+    assert one_unit.sub_rows == []
+    two_units = deliveries[two_unit_access.pk]
+    assert two_units.payment_unit_label == "2 payment units"
+    assert two_units.payment_unit_ids == [unit.payment_unit_id for unit in payment_units[:2]]
+    assert [row.payment_unit_label for row in two_units.sub_rows] == [unit.name for unit in payment_units[:2]]
+    assert two_units.over_limit == 2
+    assert two_units.delivered == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters,expected_units",
+    [
+        ({}, ["flagged", "clean"]),
+        ({"last_active": 5}, ["flagged", "clean"]),
+        ({"has_duplicates": True}, ["flagged"]),
+        ({"has_duplicates": False}, ["clean"]),
+        ({"has_overlimit": True}, ["flagged"]),
+        ({"has_overlimit": False}, ["clean"]),
+        ({"review_pending": True}, ["flagged"]),
+        ({"review_pending": False}, ["clean"]),
+        ({"has_flags": True}, ["flagged"]),
+        ({"has_flags": False}, ["clean"]),
+        ({"has_overlimit": True, "review_pending": False}, []),
+    ],
+)
+def test_get_worker_deliveries_with_filters(opportunity: Opportunity, filters, expected_units):
+    # Filters apply per payment unit, so a worker's row covers only the units that match.
+    flagged = PaymentUnitFactory(opportunity=opportunity, name="flagged")
+    clean = PaymentUnitFactory(opportunity=opportunity, name="clean")
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, last_active=now() - timedelta(days=10))
+    duplicate = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=flagged,
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=2,
+    )
+    UserVisitFactory(
+        opportunity_access=access, deliver_unit__payment_unit=flagged, completed_work=duplicate, flagged=True
+    )
+    CompletedWorkFactory(opportunity_access=access, payment_unit=flagged, status=CompletedWorkStatus.over_limit)
+    CompletedWorkFactory(
+        opportunity_access=access, payment_unit=clean, status=CompletedWorkStatus.approved, saved_approved_count=1
+    )
+    units = {"flagged": flagged, "clean": clean}
+
+    deliveries = get_worker_deliveries(opportunity, filters)
+
+    if not expected_units:
+        assert deliveries == []
+        return
+    (delivery,) = deliveries
+    assert delivery.payment_unit_ids == [units[name].payment_unit_id for name in expected_units]
+    assert delivery.over_limit == (1 if "flagged" in expected_units else 0)
 
 
 @pytest.mark.django_db

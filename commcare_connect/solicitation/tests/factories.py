@@ -1,11 +1,17 @@
 from datetime import timedelta
 
 from django.utils.timezone import now
-from factory import Faker, LazyFunction, SubFactory
+from factory import Faker, LazyFunction, Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.program.tests.factories import _get_default_currency
-from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.models import (
+    Solicitation,
+    SolicitationApplication,
+    SolicitationEvaluationCriterion,
+    SolicitationInvitation,
+    SolicitationQuestion,
+)
 from commcare_connect.users.tests.factories import OrganizationFactory
 
 
@@ -38,3 +44,21 @@ class SolicitationInvitationFactory(DjangoModelFactory):
 
     class Meta:
         model = SolicitationInvitation
+
+
+class SolicitationEvaluationCriterionFactory(DjangoModelFactory):
+    solicitation = SubFactory(SolicitationFactory)
+    label = Sequence(lambda n: f"Criterion {n}")
+    weight = 50
+
+    class Meta:
+        model = SolicitationEvaluationCriterion
+
+
+class SolicitationQuestionFactory(DjangoModelFactory):
+    solicitation = SubFactory(SolicitationFactory)
+    text = Faker("sentence")
+    question_type = SolicitationQuestion.QuestionType.TEXT
+
+    class Meta:
+        model = SolicitationQuestion

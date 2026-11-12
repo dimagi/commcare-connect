@@ -12,7 +12,14 @@ from commcare_connect.opportunity.export import (
     export_user_status_table,
     export_user_visit_review_data,
 )
-from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit, VisitReviewStatus
+from commcare_connect.opportunity.models import (
+    Opportunity,
+    OverLimitReasonChoices,
+    UserInviteStatus,
+    UserVisit,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CompletedModuleFactory,
@@ -58,10 +65,10 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
     name = mobile_user_with_connect_link.name
 
     assert dataset.export("csv") == (
-        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
+        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Payment Unit,Over Limit Reason,Rejected Reason,"
         "Justification,Duration,Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
-        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,test_form1,\r\n"
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,abc,A B C,,test_form2,b\r\n"
+        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,,,test_form1,\r\n"
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,,,abc,A B C,,test_form2,b\r\n"
     )
 
 
@@ -135,12 +142,42 @@ def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
     assert dataset.export("csv") == (
-        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
+        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Payment Unit,Over Limit Reason,Rejected Reason,"
         "Justification,Duration,Entity ID,Entity Name,Flags,form_json\r\n"
-        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,"{form_json_1_string}"\r\n'
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,abc,A B C,,"
+        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,,,"{form_json_1_string}"\r\n'
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,,,abc,A B C,,"
         f'"{form_json_2_string}"\r\n'
     )
+
+
+@pytest.mark.parametrize(
+    "status, reasons, expected",
+    [
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.max_visits, OverLimitReasonChoices.max_daily],
+            f"{OverLimitReasonChoices.max_visits.label}; {OverLimitReasonChoices.max_daily.label}",
+        ),
+        (VisitValidationStatus.over_limit, [], "Not recorded (visit predates over-limit reason tracking)"),
+        (VisitValidationStatus.approved, [], ""),
+    ],
+)
+def test_export_user_visit_data_over_limit_columns(opportunity, mobile_user, status, reasons, expected):
+    visit = UserVisitFactory(
+        opportunity=opportunity,
+        user=mobile_user,
+        status=status,
+        over_limit_reasons=reasons,
+        visit_date=now(),
+        form_json={"form": {}},
+    )
+
+    dataset = UserVisitExporter(opportunity, True).get_dataset(visit.visit_date, visit.visit_date, [])
+
+    [row] = dataset.dict
+    assert row["Unit Name"] == visit.deliver_unit.name
+    assert row["Payment Unit"] == visit.completed_work.payment_unit.name
+    assert row["Over Limit Reason"] == expected
 
 
 def _get_prepared_dataset_for_user_status_test(data):

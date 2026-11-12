@@ -13,6 +13,8 @@ inv down                            # docker compose down
 ./manage.py migrate                 # run migrations (dev)
 ./manage.py migrate_multi           # run migrations on both primary + secondary DB (prod)
 ./manage.py runserver               # dev server
+./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
+./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
 
 # JavaScript/CSS
 npm ci                              # install deps
@@ -51,7 +53,7 @@ inv translations
 - **API versioning**: `AcceptHeaderVersioning` with versions `1.0` and `2.0`
 - **Background tasks**: Celery with Redis broker; beat scheduler uses DB
 - **Feature flags**: django-waffle with a custom `Flag` model. Flag names in `flags/flag_names.py`, switch names in `flags/switch_names.py` — see Terminology below
-- **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion)
+- **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion). Read `docs/audit-history.md` before tracking a model or reading its events
 - **Database**: PostgreSQL + PostGIS. `ATOMIC_REQUESTS = True` (all requests are transactions)
 - **Deployment**: Kamal (Docker-based) + Ansible on EC2. See `deploy/README.md`
 
@@ -73,13 +75,14 @@ commcare_connect/
   microplanning/   # Work areas, coverage tracking, maps (Mapbox)
   reports/         # KPI and admin reports
   flags/           # Waffle feature flag/switch name constants
+  health/          # /up liveness probe, token-gated /status/ dependency checks (see its README)
   multidb/         # Secondary DB support + logical replication
   deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
   web/             # Context processors, shared template tags
   prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
 config/
-  settings/        # base.py, local.py, test.py, staging.py, production.py
+  settings/        # base.py, local.py, test.py; deploy_base.py shared by staging.py + production.py
   api_router.py    # DRF API URL routing
   celery_app.py    # Celery config
   urls.py          # Root URL config
@@ -118,7 +121,8 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Searchable selects are opt-in**: nothing enhances a `<select>` by default. Add `data-tomselect="1"` to the widget's attrs (or the tag) to have `static/js/tomselect.js` turn it into a tom-select, and add `data-tomselect:no-remove-button` on single selects or the chosen value renders as a removable chip. Extra TomSelect options go through `data-tomselect:settings` as JSON; anything needing render _functions_ gets its own module and must **not** carry `data-tomselect`, or the generic initializer claims it first (see `static/js/work_area_search.js`). Use it for long or searchable lists, not short fixed choices. The page must also load `bundles/js/tomselect-bundle.js` and `bundles/css/tomselect.css` or a marked field silently stays native — check they are there, and that they don't arrive by accident: `opportunity/user_tasks.html` gets them only from its permission-gated Create Task modal include, so its filters are searchable for some users and plain for others
 - **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists all 76 of them. Plenty of templates still use raw utilities; that's legacy
 - **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
-- **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md` and `flags/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
+- **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md`, `flags/README.md` and `health/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
+- **So are the Confluence docs**: user-facing changes must list the Confluence pages they affect in the PR's **Documentation** section, or say "None". To find them, search Confluence for the features the branch changes and compare the results against the documentation links on the Jira ticket. If the `connect-tech:docs-affected-by-branch` skill is available (Claude Code with the `connect-tech` plugin), open the PR first with "Pending" under the **Documentation** header, then run the skill on the branch in a subagent. Pass the subagent the PR link and the Jira ticket key, and tell it to replace "Pending" with its findings when it is done. A subagent can't ask the user, so if you don't know the ticket, ask the user before opening the PR; pass "none" if there isn't one. Without Confluence access, ask the user which pages are affected. Never drop the section as empty.
 - **Moving or renaming a module**: grep `*.md` for the old path and update it in the same commit.
 
 ## Commits

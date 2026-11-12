@@ -42,7 +42,9 @@ def managed_opp_with_deliver_units(program_manager_org, organization):
 @pytest.fixture
 def active_managed_opportunity(program_manager_org, organization):
     program = ProgramFactory(organization=program_manager_org)
-    return OpportunityFactory(program=program, organization=organization, active=True)
+    opportunity = OpportunityFactory(program=program, organization=organization, active=True)
+    PaymentUnitFactory(opportunity=opportunity)
+    return opportunity
 
 
 @pytest.mark.django_db
@@ -285,18 +287,23 @@ class TestActivateOpportunity:
         )
         assert response.status_code == 400
 
-    def test_activate_ended_opportunity_rejected(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+    @pytest.mark.parametrize(
+        "end_date", [datetime.date.today() - datetime.timedelta(days=1), None], ids=["ended", "no_end_date"]
+    )
+    def test_activate_rejected_without_valid_end_date(
+        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units, end_date
     ):
         opportunity, du1, du2 = managed_opp_with_deliver_units
         PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
-        opportunity.end_date = datetime.date.today() - datetime.timedelta(days=1)
+        opportunity.end_date = end_date
         opportunity.save(update_fields=["end_date"])
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
             f"/api/opportunities/{opportunity.opportunity_id}/activate/",
         )
         assert response.status_code == 400
+        opportunity.refresh_from_db()
+        assert opportunity.active is False
 
 
 @pytest.mark.django_db
@@ -315,16 +322,22 @@ class TestInviteUsers:
         assert response.data["invited_count"] == 2
         mock_add_users.delay.assert_called_once_with(["+265999111222", "+265999333444"], active_managed_opportunity.id)
 
-    def test_invite_users_inactive_opportunity(self, api_client, program_manager_org_user_admin, managed_opportunity):
-        managed_opportunity.active = False
-        managed_opportunity.save(update_fields=["active"])
+    @pytest.mark.parametrize("changes", [{"active": False}, {"end_date": None}], ids=["inactive", "no_end_date"])
+    def test_invite_users_rejected(
+        self, api_client, program_manager_org_user_admin, active_managed_opportunity, changes
+    ):
+        for field, value in changes.items():
+            setattr(active_managed_opportunity, field, value)
+        active_managed_opportunity.save(update_fields=list(changes))
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
-            f"/api/opportunities/{managed_opportunity.opportunity_id}/invite_users/",
+            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
             {"phone_numbers": ["+265999111222"]},
             format="json",
         )
         assert response.status_code == 400
+        opportunity = active_managed_opportunity
+        assert not (opportunity.userinvite_set.exists() or opportunity.opportunityaccess_set.exists())
 
     def test_invite_users_empty_list(self, api_client, program_manager_org_user_admin, active_managed_opportunity):
         api_client.force_authenticate(program_manager_org_user_admin)

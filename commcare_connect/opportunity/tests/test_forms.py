@@ -11,6 +11,7 @@ from django.core.cache import cache
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
@@ -35,6 +36,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
     PaymentInvoice,
@@ -47,6 +49,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     ExchangeRateFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
@@ -393,14 +396,61 @@ class TestOpportunityInitUpdateForm:
             data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
         return data
 
-    def _get_form(self, *, opportunity, data):
+    def _valid_data(self, opportunity):
+        return self._build_form_data(
+            opportunity,
+            learn_payload={"id": opportunity.learn_app.cc_app_id, "name": "learn"},
+            learn_domain=opportunity.learn_app.cc_domain,
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": opportunity.deliver_app.cc_app_id, "name": "deliver"},
+            deliver_domain=opportunity.deliver_app.cc_domain,
+        )
+
+    def _get_form(self, *, opportunity, data, user=None):
         return OpportunityInitUpdateForm(
             data=data,
             instance=opportunity,
-            user=opportunity.api_key.user,
+            user=user or opportunity.api_key.user,
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
+    def test_rejects_key(self, opportunity, case):
+        if case == "another_users_key":
+            change = {"api_key": str(HQApiKeyFactory(hq_server=opportunity.hq_server).id)}
+        else:
+            change = {"hq_server": HQServerFactory().id}
+        data = self._valid_data(opportunity) | change
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert not form.is_valid()
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    def test_rejects_own_key_on_other_hq_server(self, opportunity):
+        user = UserFactory()
+        key = HQApiKeyFactory(user=user)
+        data = self._valid_data(opportunity) | {"api_key": str(key.id)}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data, user=user).errors
+
+    @pytest.mark.parametrize("bad_id", ["999999", "abc"])
+    def test_rejects_unknown_or_malformed_key_id(self, opportunity, bad_id):
+        data = self._valid_data(opportunity) | {"api_key": bad_id}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data).errors
+
+    def test_current_key_owned_by_other_user_is_accepted(self, opportunity):
+        data = self._valid_data(opportunity)
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opportunity.api_key_id
+
+    def test_legacy_opportunity_without_hq_server_keeps_its_key(self, opportunity):
+        """Opportunities from before hq_server was recorded keep their key on the server it belongs to."""
+        data = self._valid_data(opportunity) | {"hq_server": opportunity.api_key.hq_server_id}
+        Opportunity.objects.filter(pk=opportunity.pk).update(hq_server=None)
+        opportunity.refresh_from_db()
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
 
     def test_updates_existing_linked_apps(self, opportunity):
         learn_app = opportunity.learn_app
@@ -571,6 +621,11 @@ class TestOpportunityInitForm:
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    def test_rejects_key_owned_by_another_user(self, opportunity):
+        other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
 
     @pytest.mark.parametrize("switch_active", [True, False])
     def test_init_form_sets_automatic_visit_verification_from_global_switch(self, opportunity, switch_active):
@@ -1510,32 +1565,99 @@ class TestPaymentUnitFormBudgetValidation:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
 
 
+def _payment_unit_form(opportunity, data=None, instance=None, deliver_units=None):
+    deliver_units = deliver_units or [DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)]
+    if data is not None:
+        data = {
+            "name": "Bonus",
+            "description": "Bonus payment unit",
+            "amount": 5,
+            "org_amount": 0,
+            "max_total": 10,
+            "max_daily": 5,
+            "required_deliver_units": [str(deliver_units[0].id)],
+            **data,
+        }
+    return PaymentUnitForm(
+        data=data,
+        deliver_units=deliver_units,
+        payment_units=[],
+        org_slug=opportunity.organization.slug,
+        opportunity=opportunity,
+        instance=instance,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "display_name, expect_valid",
+    [
+        pytest.param("", True, id="blank"),
+        pytest.param("Household visit", True, id="set"),
+        pytest.param("x" * 30, True, id="max_length"),
+        pytest.param("x" * 31, False, id="too_long"),
+    ],
+)
+def test_payment_unit_form_display_name(opportunity, display_name, expect_valid):
+    form = _payment_unit_form(opportunity, {"display_name": display_name})
+
+    assert form.is_valid() == expect_valid, form.errors
+    if expect_valid:
+        assert form.instance.display_name == display_name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "initial, submitted, selected, expected",
+    [
+        pytest.param("", "", True, "", id="blank"),
+        pytest.param("", "ANC visit", True, "ANC visit", id="set"),
+        pytest.param("ANC visit", "", True, "", id="cleared"),
+        # An unticked deliver unit's input is disabled, so the browser submits nothing for it
+        pytest.param("ANC visit", None, False, "ANC visit", id="unselected_keeps_name"),
+        pytest.param("", "x" * 31, True, None, id="too_long"),
+    ],
+)
+def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submitted, selected, expected):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None, display_name=initial)
+    other_deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    field = f"deliver_unit_display_name_{deliver_unit.pk}"
+    data = {"required_deliver_units": [str((deliver_unit if selected else other_deliver_unit).id)]}
+    if submitted is not None:
+        data[field] = submitted
+    form = _payment_unit_form(opportunity, data, deliver_units=[deliver_unit, other_deliver_unit])
+
+    assert form.fields[field].initial == initial
+    rows = form.fields["required_deliver_units"].deliver_unit_rows
+    assert [row["selected"] for row in rows] == [selected, not selected]
+    assert form.is_valid() == (expected is not None), form.errors
+    if expected is not None:
+        form.instance.opportunity = opportunity
+        form.save()
+        deliver_unit.refresh_from_db()
+        assert deliver_unit.display_name == expected
+        assert deliver_unit.payment_unit is None
+
+
+@pytest.mark.django_db
+def test_payment_unit_form_rejects_deliver_unit_both_required_and_optional(opportunity):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+
+    form = _payment_unit_form(
+        opportunity,
+        {"required_deliver_units": [str(deliver_unit.id)], "optional_deliver_units": [str(deliver_unit.id)]},
+        deliver_units=[deliver_unit],
+    )
+
+    assert not form.is_valid()
+    assert form.errors["optional_deliver_units"] == ["A deliver unit cannot be both required and optional."]
+
+
 @pytest.mark.django_db
 class TestPaymentUnitFormDailyLimit:
-    def _form(self, opportunity, data=None, instance=None):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        if data is not None:
-            data = {
-                "name": "Bonus",
-                "description": "Bonus payment unit",
-                "amount": 5,
-                "org_amount": 0,
-                "max_total": 10,
-                "required_deliver_units": [str(deliver_unit.id)],
-                **data,
-            }
-        return PaymentUnitForm(
-            data=data,
-            deliver_units=[deliver_unit],
-            payment_units=[],
-            org_slug=opportunity.organization.slug,
-            opportunity=opportunity,
-            instance=instance,
-        )
-
     @override_switch(OPTIONAL_DAILY_LIMIT, active=False)
     def test_daily_limit_required_when_switch_off(self, opportunity):
-        form = self._form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
+        form = _payment_unit_form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
 
         assert "no_daily_limit" not in form.fields
         assert not form.is_valid()
@@ -1551,7 +1673,7 @@ class TestPaymentUnitFormDailyLimit:
         ],
     )
     def test_valid_daily_limit_when_switch_on(self, opportunity, data, expected_max_daily):
-        form = self._form(opportunity, data)
+        form = _payment_unit_form(opportunity, data)
 
         assert form.is_valid(), form.errors
         assert form.instance.max_daily == expected_max_daily
@@ -1569,7 +1691,7 @@ class TestPaymentUnitFormDailyLimit:
         ],
     )
     def test_invalid_daily_limit_when_switch_on(self, opportunity, data, expected_error):
-        form = self._form(opportunity, data)
+        form = _payment_unit_form(opportunity, data)
 
         assert not form.is_valid()
         assert form.errors["max_daily"] == [expected_error]
@@ -1579,7 +1701,7 @@ class TestPaymentUnitFormDailyLimit:
     def test_no_daily_limit_initial_for_existing_unit(self, opportunity, max_daily, expected_initial):
         unit = PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=10)
 
-        form = self._form(opportunity, instance=unit)
+        form = _payment_unit_form(opportunity, instance=unit)
 
         assert form.fields["no_daily_limit"].initial is expected_initial
 

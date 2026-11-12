@@ -1,4 +1,4 @@
-{% load static i18n %}
+{% load static i18n waffle_tags organization_extras %}
 <div x-cloak
      class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
      :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -39,6 +39,13 @@
             {% include "components/sidenav-items.html" with name="Opportunities" icon="table-cells-large" target=opportunity_url namespace="opportunity" %}
             {% url 'program:home' request.org.slug as program_home_url %}
             {% include "components/sidenav-items.html" with name="Programs" icon="table-columns" target=program_home_url namespace="program" %}
+            {% switch "solicitations" %}
+              {% if request.user|is_pm_org_admin:request.org %}
+                {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
+                {% trans "Solicitations" as solicitations_name %}
+                {% include "components/sidenav-items.html" with name=solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
+              {% endif %}
+            {% endswitch %}
           {% endif %}
           {% if request.org_access_level.has_admin or perms.users.org_management_settings_access %}
             {% url 'organization:home' request.org.slug as organization_home_url %}

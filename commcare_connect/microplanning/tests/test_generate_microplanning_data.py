@@ -1,15 +1,17 @@
 import pytest
 from django.core.management import call_command
 
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
+from commcare_connect.commcarehq.tests.fake_hq import serve_fake_hq
 from commcare_connect.microplanning.const import SERVICE_DELIVERY_UNIT_SLUG
-from commcare_connect.microplanning.management.commands.generate_microplanning_data import Command
+from commcare_connect.microplanning.management.commands.generate_microplanning_data import DEMO_OPP_NAME, Command
 from commcare_connect.microplanning.models import (
     InaccessibilityRequestStatus,
     WorkArea,
     WorkAreaInaccessibilityRequest,
     WorkAreaStatus,
 )
-from commcare_connect.opportunity.models import CompletedWork, UserVisit, VisitReviewStatus
+from commcare_connect.opportunity.models import CompletedWork, Opportunity, UserVisit, VisitReviewStatus
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, PaymentUnitFactory
 
 
@@ -122,3 +124,44 @@ def test_every_requested_inaccessible_area_has_a_pending_request():
     # Unassigned areas are out of scope for every microplanning metric, so a seeded request must
     # never sit on one.
     assert not requested.filter(opportunity_access__isnull=True).exists()
+
+
+@pytest.mark.django_db
+def test_fake_hq_option_lets_assigned_work_areas_sync_to_the_fake_hq():
+    """Assignment needs the opportunity's API key on the fake HQ and an HQ user for each worker."""
+    with serve_fake_hq() as hq:
+        call_command(
+            "generate_microplanning_data",
+            clusters=1,
+            grid=2,
+            groups_per_cluster=1,
+            workers=2,
+            no_admin=True,
+            force=True,
+            fake_hq=hq.url,
+        )
+        opportunity = Opportunity.objects.get(name=DEMO_OPP_NAME)
+        assigned = list(WorkArea.objects.filter(opportunity=opportunity, opportunity_access__isnull=False))
+
+        cases = bulk_create_or_update_cases_by_work_areas(work_areas=assigned, opportunity=opportunity)
+
+    assert assigned
+    assert len(cases) == len(assigned)
+
+
+@pytest.mark.django_db
+def test_fake_hq_option_defaults_to_the_fake_hq_port_and_can_be_rerun():
+    for _ in range(2):
+        call_command(
+            "generate_microplanning_data",
+            "--fake-hq",
+            clusters=1,
+            grid=2,
+            groups_per_cluster=1,
+            workers=1,
+            no_admin=True,
+            force=True,
+        )
+
+    opportunity = Opportunity.objects.get(name=DEMO_OPP_NAME)
+    assert opportunity.api_key.hq_server.url == "http://localhost:8001"

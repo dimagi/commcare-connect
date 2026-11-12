@@ -28,9 +28,11 @@ from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFla
 from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
+    AudioAttachmentFactory,
     BlobMetaFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
+    PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -218,6 +220,16 @@ class TestProgramOpportunityOrganizationDataView:
         is_test_by_id = {opp["id"]: opp["is_test"] for opp in response.json()["opportunities"]}
         assert is_test_by_id[live_opp.id] is False
         assert is_test_by_id[test_opp.id] is True
+
+
+@pytest.mark.django_db
+class TestSingleOpportunityDataView:
+    def test_includes_payment_units(self, api_client, opportunity, org_user_member):
+        payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+        add_export_credentials(api_client, org_user_member)
+        response = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": opportunity.id}))
+        assert response.status_code == 200
+        assert {unit["id"] for unit in response.json()["payment_units"]} == {unit.id for unit in payment_units}
 
 
 @pytest.mark.django_db
@@ -532,8 +544,27 @@ class TestLabsRecordDataViewAuthorization:
         assert record.experiment == "original", "Cross-org record must not be overwritten"
 
 
+def _attach_image(visit):
+    return BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+
+
+def _attach_audio(visit):
+    return AudioAttachmentFactory(user_visit=visit)
+
+
+# Images are BlobMeta rows keyed by the form, audio is an AudioAttachment row keyed by the
+# visit, and every endpoint below resolves either from the blob_id alone.
+ATTACHMENT_FACTORIES = [_attach_image, _attach_audio]
+ATTACHMENT_URL_NAMES = [
+    "data_export:attachment_export",
+    # The legacy name for the same view, kept for callers written before it served audio.
+    "data_export:image_export",
+    "data_export:attachment_signed_url",
+]
+
+
 @pytest.mark.django_db
-class TestImageView:
+class TestAttachmentView:
     def test_returns_image_bytes(self, api_client, opportunity, org_user_member):
         visit = UserVisitFactory(opportunity=opportunity)
         blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
@@ -571,15 +602,40 @@ class TestImageView:
         response = api_client.get(url, {"blob_id": blob_meta.blob_id})
         assert response.status_code == 404
 
+    # Audio is an AudioAttachment row rather than a BlobMeta, so it is resolved by a
+    # separate lookup; the legacy "image" path serves it too.
+    @pytest.mark.parametrize("url_name", ["data_export:attachment_export", "data_export:image_export"])
+    def test_returns_audio_bytes(self, api_client, opportunity, org_user_member, url_name):
+        visit = UserVisitFactory(opportunity=opportunity)
+        audio = AudioAttachmentFactory(user_visit=visit, name="q1.m4a")
+        storages["default"].save(audio.blob_id, ContentFile(b"audiobytes"))
+        add_export_credentials(api_client, org_user_member)
+        url = reverse(url_name, kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": audio.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"audiobytes"
+        assert response["Content-Type"] == "audio/mp4"
+        assert "q1.m4a" in response["Content-Disposition"]
+
+    def test_non_member_audio_returns_404(self, api_client, opportunity, user):
+        audio = AudioAttachmentFactory(user_visit=UserVisitFactory(opportunity=opportunity))
+        add_export_credentials(api_client, user)
+        url = reverse("data_export:attachment_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": audio.blob_id})
+        assert response.status_code == 404
+
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("url_name", ["data_export:image_export", "data_export:attachment_signed_url"])
-def test_blob_from_other_accessible_opportunity_returns_404(api_client, opportunity, org_user_member, url_name):
+@pytest.mark.parametrize("url_name", ATTACHMENT_URL_NAMES)
+@pytest.mark.parametrize("attach", ATTACHMENT_FACTORIES, ids=["image", "audio"])
+def test_attachment_from_other_accessible_opportunity_returns_404(
+    api_client, opportunity, org_user_member, url_name, attach
+):
     other_visit = UserVisitFactory(opportunity__organization=opportunity.organization)
-    blob_meta = BlobMetaFactory(parent_id=other_visit.xform_id, content_type="image/jpeg")
+    attachment = attach(other_visit)
     add_export_credentials(api_client, org_user_member)
     url = reverse(url_name, kwargs={"opp_id": opportunity.id})
-    response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+    response = api_client.get(url, {"blob_id": attachment.blob_id})
     assert response.status_code == 404
 
 
@@ -614,15 +670,15 @@ class TestAttachmentSignedUrlView:
         response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
         assert response.status_code == 501
 
-    def test_returns_signed_url(self, api_client, opportunity, org_user_member):
-        visit = UserVisitFactory(opportunity=opportunity)
-        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+    @pytest.mark.parametrize("attach", ATTACHMENT_FACTORIES, ids=["image", "audio"])
+    def test_returns_signed_url(self, api_client, opportunity, org_user_member, attach):
+        attachment = attach(UserVisitFactory(opportunity=opportunity))
         add_export_credentials(api_client, org_user_member)
         with (
             mock.patch("commcare_connect.data_export.views._default_storage_supports_signed_urls", return_value=True),
             mock.patch("commcare_connect.data_export.views._get_attachment_signed_url", return_value="https://signed"),
         ):
-            response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+            response = api_client.get(self._url(opportunity), {"blob_id": attachment.blob_id})
         assert response.status_code == 200
         assert response.json() == {"attachment_signed_url": "https://signed"}
 
@@ -1048,6 +1104,21 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.work_area_group_id == group.id
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+
+    @mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay")
+    def test_adding_to_existing_group_queues_hq_sync(
+        self, sync_delay, v2_write_client, opportunity, django_capture_on_commit_callbacks
+    ):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(36.0, -1.3, 0.02))
+        group.update_centroid()
+        payload = [self._item(work_area_group_name="group-a")]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = _post_json(client=v2_write_client, url=self.url(opportunity.id), payload=payload)
+
+        assert response.status_code == 201
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
 
     def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
         WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")

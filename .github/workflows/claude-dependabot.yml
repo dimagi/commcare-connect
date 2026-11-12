@@ -1,0 +1,238 @@
+# Claude Dependabot PR Review Workflow
+#
+# Runs the `dependabot-pr-review` skill against a Dependabot PR and posts the
+# resulting review as a PR comment.
+#
+# The review instructions are NOT duplicated here. They live in
+# `.claude/skills/dependabot-pr-review/`, which is the same skill a developer
+# invokes locally with `/dependabot-pr-review <N>`. This workflow only supplies
+# the CI-specific overrides (which PR, post the comment, non-interactive). Keep
+# it that way: when the prompt was inlined here it drifted from reality and sat
+# for months telling Claude to parse a pnpm lockfile this repo does not have.
+#
+# Triggered on: Dependabot PRs (opened, synchronize), or manual dispatch
+#
+# Requirements:
+# - `.claude/skills/dependabot-pr-review/` must be committed to the repo.
+# - ANTHROPIC_API_KEY must exist in BOTH secret stores, under the same name:
+#     Settings > Secrets and variables > Actions      (workflow_dispatch runs)
+#     Settings > Secrets and variables > Dependabot   (Dependabot-triggered runs)
+#   A run triggered by Dependabot reads only the Dependabot store, so a key
+#   present in just the Actions store yields an empty value and the step fails.
+#   No PAT is required: Dependabot runs start with a read-only GITHUB_TOKEN,
+#   but the `permissions:` block below raises it, which is GitHub's documented
+#   way to grant write access for these events.
+#
+# Notes:
+# - One run per PR at a time: a newer push cancels the in-flight review, and
+#   each run edits the previous review comment instead of adding another, so a
+#   Dependabot rebase doesn't stack up duplicate comments.
+
+name: Claude Dependabot PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to analyze'
+        required: true
+        type: string
+
+jobs:
+  dependabot-review:
+    # Gate on who authored the PR, not github.actor -- the actor is whoever
+    # triggered this event, which is not necessarily the PR's author. The
+    # event_name guard matters because github.event.pull_request is null on
+    # workflow_dispatch.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login == 'dependabot[bot]') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: claude-dependabot-${{ inputs.pr_number || github.event.pull_request.number }}
+      cancel-in-progress: true
+
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      # Deliberately no `id-token: write`. This job never authenticates to a
+      # cloud provider, and the repo's deploy workflow assumes an AWS role via
+      # OIDC -- so minting an OIDC token here would hand any code that runs in
+      # this job a path to those deploy credentials.
+      # Gates the github_ci MCP server, which replaces shelling out to
+      # `gh pr checks` / `gh run view` / `gh api .../jobs/<id>/logs`.
+      actions: read
+
+    steps:
+      # Audit only: records egress without blocking. Flip to `block` plus an
+      # `allowed-endpoints` list once the recorded traffic looks stable.
+      - name: Harden the runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Resolve PR ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Via env, never `${{ }}` inside the script: a dispatch input is
+          # free text and would otherwise be spliced into the shell verbatim.
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::pr_number must be a number."
+            exit 1
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          read -r AUTHOR REF < <(gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json author,headRefName --jq '"\(.author.login) \(.headRefName)"')
+          # workflow_dispatch skips the job-level author gate. The checked-out
+          # branch supplies the review skill, so only trust Dependabot's.
+          if [ "$AUTHOR" != "app/dependabot" ] && [ "$AUTHOR" != "dependabot[bot]" ]; then
+            echo "::error::Manual dispatch is restricted to Dependabot PRs (PR author: $AUTHOR)."
+            exit 1
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          # Don't leave a credential behind in .git/config.
+          # The repo is public, so the unauthenticated fetches lockdiff.py makes
+          # still work.
+          persist-credentials: false
+          # Full history, all branches. The skill compares the PR against
+          # origin/main to detect PRs whose dependency was removed or whose
+          # target version main has already passed, and lockdiff.py needs a
+          # real merge-base. A shallow clone silently breaks both.
+          fetch-depth: 0
+
+      - name: Verify the skill is present
+        run: |
+          SKILL=.claude/skills/dependabot-pr-review/SKILL.md
+          if [ ! -f "$SKILL" ]; then
+            echo "::error::$SKILL not found. The review instructions live in the"
+            echo "::error::skill directory and must be committed for this workflow to run."
+            exit 1
+          fi
+          echo "Found $SKILL ($(wc -l < "$SKILL") lines)"
+
+      # Run the lockfile inventory here, as a fixed step, rather than letting
+      # Claude invoke it: that keeps every code-execution path out of Claude's
+      # tool allowlist. It reads lockfiles as data and runs no dependency code.
+      - name: Inventory lockfile changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 .claude/skills/dependabot-pr-review/scripts/lockdiff.py "$PR_NUMBER" --repo "$REPO" \
+            > /tmp/lockdiff.txt 2>&1 || echo "(lockdiff.py failed; output above)" >> /tmp/lockdiff.txt
+          cat /tmp/lockdiff.txt
+
+      # Deliberately no dependency install and no test run in this job. It holds
+      # ANTHROPIC_API_KEY and a write-scoped GITHUB_TOKEN, and installed or
+      # tested PR dependencies would execute their code next to both. The repo's
+      # own CI (ci.yml) already runs the suite on the PR with no secrets; the
+      # review reads those results through the github_ci tools.
+      - name: Run Claude Dependabot Analysis
+        id: claude_review
+        env:
+          # The review runs almost entirely through `gh` -- reading the PR, its
+          # checks, its diff, and posting the comment -- and so do the bundled
+          # scripts. Without GH_TOKEN on *this* step every one of those calls
+          # fails with "set the GH_TOKEN environment variable". Setting it on
+          # the earlier step does not carry over.
+          #
+          # A Dependabot-triggered run gets a read-only GITHUB_TOKEN by
+          # default, but the `permissions:` block above raises it -- that is
+          # GitHub's documented mechanism, so no PAT is needed to comment.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Makes a bare `gh pr view <N>` resolve to this repo even if an
+          # explicit --repo is ever missed.
+          GH_REPO: ${{ github.repository }}
+        uses: anthropics/claude-code-action@v1.0.269
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: 'dependabot[bot]'
+          # Unlocks the github_ci MCP tools listed in --allowedTools below.
+          additional_permissions: |
+            actions: read
+          # Deliberately not `Bash(gh:*)`. The only write-capable GitHub command
+          # granted is `gh pr comment`; everything else is read-only or local.
+          # CI status and job logs come from the github_ci MCP server rather
+          # than the CLI, which is narrower and more reliable than parsing
+          # `gh run view` output.
+          #
+          # No tool here may run arbitrary commands, because the job holds
+          # secrets and Claude reads untrusted upstream changelogs. That rules
+          # out `sed` (its `e` command), `awk` (`system()`), `sort`
+          # (`--compress-program`), `tar` (`--to-command`), a bare `git:*`
+          # (`-c alias.x='!cmd'`, `fetch --upload-pack`, `grep -O`) and any
+          # script that `Write` could overwrite first. Only read-only git
+          # subcommands are listed; the full-history checkout already has
+          # origin/main, so no fetch is needed.
+          claude_args: |
+            --allowedTools "mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(git show:*),Bash(git log:*),Bash(git diff:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git ls-files:*),Bash(diff:*),Bash(base64:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Glob,Grep,WebFetch,WebSearch"
+          prompt: |
+            Review pull request #${{ steps.pr.outputs.pr_number }} on ${{ github.repository }}.
+
+            Read `.claude/skills/dependabot-pr-review/SKILL.md` and follow it. It is the
+            full review procedure — the classification and triage step, the validity and
+            CI checks, the bundled scripts, the research ordering, and the output format.
+            Follow it rather than improvising, including the parts that tell you to settle
+            a question empirically instead of relaying a changelog claim.
+
+            CI-specific overrides to the skill's defaults:
+
+            1. The PR number is ${{ steps.pr.outputs.pr_number }} and the repo is
+               ${{ github.repository }}. Substitute that repo everywhere the skill's
+               commands say `dimagi/commcare-connect`, and pass `--repo ${{ github.repository }}`
+               to the bundled scripts. Do not ask which PR to review; you have it.
+
+            2. Where the skill writes `<skill-dir>`, it means
+               `.claude/skills/dependabot-pr-review` — it is checked out here, and the
+               repo root is your working directory. You cannot run the bundled scripts
+               here: `lockdiff.py` has already been run for this PR and its output is in
+               /tmp/lockdiff.txt — read that wherever the skill says to run it. Ignore the
+               skill's references to `scripts/triage.py`: that tool scans the whole open
+               queue and this run reviews one PR. `git fetch` is not available either;
+               the checkout has full history and an up-to-date origin/main.
+
+            3. For the skill's CI checks, use the github_ci MCP tools rather than the
+               `gh` commands it suggests — `mcp__github_ci__get_ci_status` for check
+               results, then `mcp__github_ci__get_workflow_run_details` and
+               `mcp__github_ci__download_job_log` to read a failing job. `gh pr checks`,
+               `gh run view` and `gh api` are not available to you here.
+
+            4. The skill says to print the review to the terminal and not to comment.
+               Here, do the opposite: this run exists to post it. Write the review to
+               /tmp/review.md, then post it, replacing the previous automated review on
+               this PR if there is one:
+                 gh pr comment ${{ steps.pr.outputs.pr_number }} --repo ${{ github.repository }} --edit-last --create-if-none --body-file /tmp/review.md
+               Post exactly once, at the end. If you cannot post, print the review to the
+               log so the run is still useful.
+
+            5. End the comment with this line so readers know what produced it:
+               `<sub>Automated review via the dependabot-pr-review skill — please sanity-check before acting.</sub>`
+
+            6. You are non-interactive. Where the skill says to ask the user, choose the
+               most reasonable option, state the assumption in the review, and continue.
+
+            7. Write scratch files under /tmp. Do not modify anything in the working tree,
+               and do not push, merge, or close anything. The only write to GitHub you may
+               make is the single PR comment above.
+
+            8. Dependencies are NOT installed in this job and you cannot run the test
+               suite, build, or install anything. Ignore the skill's instructions to
+               diff downloaded artifacts or run tests locally. For test and build
+               results, use the PR's CI checks via the github_ci tools (point 3) and
+               say in the review that they are the only test evidence.

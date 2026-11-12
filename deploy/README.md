@@ -87,6 +87,10 @@ The Django settings are configured using the `deploy/roles/connect/templates/con
 settings values are in `deploy/roles/connect/defaults/main.yml`, overridden per environment in the inventory files.
 Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansible Secrets - Production` entries.
 
+`HEALTH_CHECK_TOKENS` is set from the `health_check_tokens` secret, a list of tokens joined with commas; leaving the
+secret out renders an empty value, which leaves the `/status/` health check pages open. See
+`commcare_connect/health/README.md`.
+
 To update the Django settings:
 
 ```bash
@@ -100,6 +104,50 @@ Ideally deploy should be done via GitHub actions however it can be run locally a
 ```bash
 inv deploy
 ```
+
+Deploys run through the `Deploy` GitHub Actions workflow also create a
+[GitHub deployment](https://docs.github.com/en/rest/deployments/deployments) record for the `staging` or `production`
+environment, pointing at the deployed commit, so the repository's Environments page shows what is running where. Local
+`inv deploy` runs do not create one.
+
+A deploy restarts the app containers only. Changes to Traefik's own arguments (`traefik.args` in
+`config/deploy.yml`, such as the forwarded-header range it trusts) need the proxy restarted as well:
+
+```bash
+kamal traefik reboot -d <destination>
+```
+
+### Scheduled deploys
+
+The `Scheduled production deploy` workflow (`.github/workflows/scheduled-deploy.yml`) deploys `main` to production
+every Monday, Wednesday and Friday at 12:00 UTC. GitHub sometimes starts scheduled runs a few minutes late. It takes
+the same concurrency group as manual production deploys, so it waits for any deploy already running and none can start
+until it finishes. A group holds one waiting run at most: if a manual production deploy is waiting at 12:00, the
+scheduled run replaces it and the manual one is cancelled, and a manual deploy started while the scheduled run waits
+cancels the scheduled one. Once it has the group, it checks `main` against the latest release and CI:
+
+- **Nothing new since the latest release:** the run skips and posts an info message to the production deploy
+  channel.
+- **The latest release isn't in `main`'s history** (it has commits `main` doesn't, for example after `main` was reset):
+  the run skips and posts a warning, so someone can decide whether to deploy by hand.
+- **CI on `main` is still running:** the run waits up to 20 minutes for it to finish, then carries on as below. While
+  it waits it holds the production deploy group, so a manual production deploy queues behind it.
+- **CI on `main` failed, was still running after the wait, or hasn't run:** the run skips the deploy and posts a
+  warning to the production deploy channel. It doesn't retry, and the next slot tries again.
+- **The check itself fails** (for example a GitHub API error): the run skips and posts a warning.
+
+The deploy is pinned to the commit that was checked, so anything merged while it runs waits for the next slot. To
+retry a failed scheduled deploy, start a manual deploy or use **Re-run all jobs**. **Re-run failed jobs** reuses the
+old commit without checking it again, so the deploy refuses to run when production already has something newer.
+
+Every scheduled run posts to the production deploy channel. The deploy's own Slack messages show `(automatic)` for
+these runs, and `(scheduled)` or `(adhoc)` for manual deploys. A slot with no message means the run never started (the
+workflow is disabled, or GitHub dropped the schedule), it was cancelled while waiting for another deploy, or it
+couldn't reach Slack.
+
+To stop scheduled deploys, go to **Actions → Scheduled production deploy**, open the **⋯** menu and choose
+**Disable workflow**. Choose **Enable workflow** in the same place to resume them. Nothing reminds you to turn it back
+on. Manual deploys through the `Deploy` workflow keep working while the schedule is disabled.
 
 ## Accessing logs
 
