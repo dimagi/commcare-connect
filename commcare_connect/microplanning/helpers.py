@@ -6,11 +6,9 @@ from django.db.models import Count, F, Q
 from django.utils import formats, timezone
 from django.utils.translation import gettext
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases
 from commcare_connect.microplanning.const import (
-    HQ_ASSIGN_BULK_CHUNK_SIZE,
     HQ_BULK_CHUNK_SIZE,
-    HQ_UNASSIGN_BULK_CHUNK_SIZE,
     SEARCH_KIND_FILTERS,
 )
 from commcare_connect.microplanning.models import (
@@ -23,7 +21,6 @@ from commcare_connect.microplanning.models import (
 )
 from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
-from commcare_connect.utils.itertools import batched
 
 logger = logging.getLogger(__name__)
 
@@ -254,108 +251,3 @@ def _bulk_exclude(work_areas, user, exclusion_reason):
         work_areas,
         fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
     )
-
-
-def assign_work_areas_and_sync_to_hq(opportunity, work_areas, user):
-    """Persist work-area assignments and push the new owners to HQ, one HQ POST per chunk in
-    its own savepoint.
-
-    Each ``work_area`` must already have its target ``opportunity_access``/``status`` set in
-    memory.
-    """
-    assigned_ids = []
-    failed_ids = []
-    pghistory_ctx = dict(reason="assigned", username=user.username, user_email=user.email)
-
-    for batch in batched(work_areas, HQ_ASSIGN_BULK_CHUNK_SIZE):
-        chunk = list(batch)
-        try:
-            with transaction.atomic(), pghistory.context(**pghistory_ctx):
-                WorkArea.objects.bulk_update(chunk, ["opportunity_access", "status"])
-                bulk_create_or_update_cases_by_work_areas(chunk, opportunity)
-        except CommCareHQAPIException as e:
-            logger.warning(
-                "Failed to sync work area assignment chunk to HQ opp=%s size=%d: %s", opportunity.id, len(chunk), e
-            )
-            failed_ids.extend(wa.id for wa in chunk)
-            continue
-        assigned_ids.extend(wa.id for wa in chunk)
-    return {"assigned_ids": assigned_ids, "failed_ids": failed_ids}
-
-
-def unassign_work_areas_for_opportunity(opportunity, work_area_ids, user):
-    """Unassign work areas and set their HQ case owner_id to '-'.
-    HQ calls are batched by HQ_UNASSIGN_BULK_CHUNK_SIZE and each batch commits in its own
-    transaction, so a batch failure rolls back only that batch (its IDs are returned in
-    `failed_ids`) while the other batches still succeed.
-    """
-    unassigned_ids = []
-    failed_ids = []
-    skipped = 0
-
-    # Dedupe while preserving order so we don't process or HQ-update the same work area twice.
-    unique_work_area_ids = list(dict.fromkeys(work_area_ids))
-    work_areas_map = {
-        wa.id: wa for wa in WorkArea.objects.filter(id__in=unique_work_area_ids, opportunity=opportunity)
-    }
-
-    api_key = opportunity.api_key
-    domain = opportunity.deliver_app.cc_domain if opportunity.deliver_app else None
-
-    needs_hq = []
-    db_only = []
-
-    for work_area_id in unique_work_area_ids:
-        work_area = work_areas_map.get(work_area_id)
-        # Only assigned, not-yet-visited areas can be unassigned; anything that's progressed
-        # (VISITED, INACCESSIBLE, …) or is already unassigned/excluded is skipped.
-        if (
-            work_area is None
-            or work_area.opportunity_access_id is None
-            or work_area.status != WorkAreaStatus.NOT_VISITED
-        ):
-            skipped += 1
-            continue
-
-        if work_area.case_id:
-            needs_hq.append(work_area)
-        else:
-            db_only.append(work_area)
-
-    pghistory_ctx = dict(reason="unassigned", username=user.username, user_email=user.email)
-
-    for chunk in batched(needs_hq, HQ_UNASSIGN_BULK_CHUNK_SIZE):
-        # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
-        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
-        try:
-            with transaction.atomic(), pghistory.context(**pghistory_ctx):
-                _bulk_unassign(chunk)
-                bulk_create_or_update_cases(api_key, domain, updates)
-        except CommCareHQAPIException as e:
-            # Per-batch transaction: a failed HQ batch rolls back only this chunk's DB changes.
-            logger.warning("Failed to unassign HQ case chunk (size=%d): %s", len(chunk), e)
-            failed_ids.extend(wa.id for wa in chunk)
-            continue
-        unassigned_ids.extend(wa.id for wa in chunk)
-
-    if db_only:
-        with transaction.atomic(), pghistory.context(**pghistory_ctx):
-            _bulk_unassign(db_only)
-        unassigned_ids.extend(wa.id for wa in db_only)
-
-    logger.info(
-        "unassign_work_areas_for_opportunity finished opp=%s requested=%d unassigned=%d skipped=%d failed=%d",
-        opportunity.id,
-        len(unique_work_area_ids),
-        len(unassigned_ids),
-        skipped,
-        len(failed_ids),
-    )
-    return {"unassigned_ids": unassigned_ids, "skipped": skipped, "failed_ids": failed_ids}
-
-
-def _bulk_unassign(work_areas):
-    for wa in work_areas:
-        wa.opportunity_access = None
-        wa.status = WorkAreaStatus.UNASSIGNED
-    WorkArea.objects.bulk_update(work_areas, fields=["opportunity_access", "status"])
