@@ -55,6 +55,8 @@ Follow `docs/adr/_template.md`:
 
 **What to leave out.** Accepted ADRs are not edited, so leave out anything that goes stale on a refactor: file paths, line numbers, private helper names, descriptions of how the code is laid out, log strings, migration filenames. Keep names that are part of the decision and need a migration to change: models and fields, DB constraints and indexes, enum values, waffle flag and switch names, URL routes and query parameters, and ORM lookup paths when the join is the decision. Test: "If this is renamed tomorrow, does it need a migration or just a refactor?" Migration → keep. Refactor → cut.
 
+**State requirements, not where they came from.** Don't mention Jira tickets, PRs or people. Write the underlying requirement instead: "Program managers need to see who changed an invoice and when", not "CCCT-2136 asked for an audit log".
+
 **Keep it short.** Wordiness is the most common problem, so write tight from the start:
 
 - One idea per sentence.
