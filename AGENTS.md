@@ -167,7 +167,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 ## Architecture Decision Records
 
-ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file.
+ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file, and add it to the "Architecture decisions" section of `nav` in `zensical.toml` so the developer docs site lists it.
 
 - Before designing a change, read the ADRs that touch that area.
 - Cite them as `ADR-NNNN` in code comments, PR descriptions and conversations.

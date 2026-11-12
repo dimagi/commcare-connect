@@ -87,8 +87,9 @@ If the Context relies on something an existing ADR decided, this ADR extends it.
 
 1. Show the user the draft and ask for edits.
 2. Write the file.
-3. Run `prek run --files <adr-file>` and fix anything it reports.
-4. Tell the user the file written and "Review the diff and commit when ready."
+3. Add the ADR to the end of the "Architecture decisions" section of `nav` in `zensical.toml`, labelled `ADR-NNNN: <short title>`, so it appears on the developer docs site.
+4. Run `prek run --files <adr-file> zensical.toml` and `uv run --group docs zensical build`, and fix anything they report.
+5. Tell the user the file written and "Review the diff and commit when ready."
 
 ## Rules
 
