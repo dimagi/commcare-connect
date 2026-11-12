@@ -101,21 +101,21 @@ Organization
 
 ## Key Files
 
-| File                            | Purpose                                                               |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `models/`                       | Models, one module per domain; import them from the package root      |
-| `api/views.py`                  | Mobile API: claim, progress, delivery                                 |
-| `views/`                        | Web UI; invoice views in `invoices.py`, the rest in `__init__.py`     |
-| `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports          |
-| `forms/`                        | Django forms; invoice forms in `invoices.py`, the rest in `__init__`  |
-| `tables/`                       | Tables; invoice tables in `invoices.py`, the rest in `__init__.py`    |
-| `export.py`                     | Exports: visits, payments, user status, work status                   |
-| `visit_import.py`               | Bulk visit/payment import, exchange rates                             |
-| `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                  |
-| `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual        |
-| `utils/invoice.py`              | Invoice number generation and start date utilities                    |
-| `../form_receiver/processor.py` | Processes forms from CommCareHQ into modules, assessments, and visits |
+| File                            | Purpose                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `models/`                       | Models, one module per domain; import them from the package root                                 |
+| `api/views.py`                  | Mobile API: claim, progress, delivery                                                            |
+| `views/`                        | Web UI; invoice views in `invoices.py`, worker pages in `worker.py`, the rest in `__init__.py`   |
+| `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports                                     |
+| `forms/`                        | Django forms; invoice forms in `invoices.py`, the rest in `__init__`                             |
+| `tables/`                       | Tables; invoice tables in `invoices.py`, worker tables in `worker.py`, the rest in `__init__.py` |
+| `export.py`                     | Exports: visits, payments, user status, work status                                              |
+| `visit_import.py`               | Bulk visit/payment import, exchange rates                                                        |
+| `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                                             |
+| `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual                                   |
+| `utils/invoice.py`              | Invoice number generation and start date utilities                                               |
+| `../form_receiver/processor.py` | Processes forms from CommCareHQ into modules, assessments, and visits                            |
 
-`views/`, `forms/` and `tables/` are being split by feature. A feature module such as `invoices.py` imports shared
-helpers from its package's `__init__.py`; the `__init__.py` never imports it back, so import its names from the
-submodule itself.
+`views/`, `forms/` and `tables/` are being split by feature. A feature module such as `invoices.py` or `worker.py`
+imports shared helpers from its package's `__init__.py`; the `__init__.py` never imports it back, so import its names
+from the submodule itself.

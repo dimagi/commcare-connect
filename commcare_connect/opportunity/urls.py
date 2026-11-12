@@ -14,12 +14,6 @@ from commcare_connect.opportunity.views import (
     OpportunityPaymentUnitTableView,
     TaskTypeOcsSection,
     TaskTypesConfig,
-    WorkerDeliverView,
-    WorkerLearnView,
-    WorkerPaymentsView,
-    WorkerTaskView,
-    WorkerView,
-    WorkerWorkAreaView,
     add_budget_existing_users,
     add_budget_new_users,
     add_payment_unit,
@@ -58,6 +52,21 @@ from commcare_connect.opportunity.views import (
     verification_flags_config,
 )
 from commcare_connect.opportunity.views import invoices as invoice_views
+from commcare_connect.opportunity.views.worker import (
+    UserTasksView,
+    UserVisitVerificationView,
+    WorkerCompletedTaskTableView,
+    WorkerDeliverView,
+    WorkerLearnView,
+    WorkerPaymentsView,
+    WorkerTaskView,
+    WorkerView,
+    WorkerWorkAreaView,
+    visit_verification_table_view,
+    worker_flag_counts,
+    worker_learn_status_view,
+    worker_payment_history,
+)
 
 app_name = "opportunity"
 urlpatterns = [
@@ -85,16 +94,16 @@ urlpatterns = [
     path("<slug:opp_id>/payment_unit/<slug:pk>/edit", view=edit_payment_unit, name="edit_payment_unit"),
     path("<slug:opp_id>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<slug:opp_id>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
-    path("<slug:opp_id>/user_visits/", view=views.UserVisitVerificationView.as_view(), name="user_visits_list"),
-    path("<slug:opp_id>/user_tasks/", view=views.UserTasksView.as_view(), name="user_tasks_list"),
+    path("<slug:opp_id>/user_visits/", view=UserVisitVerificationView.as_view(), name="user_visits_list"),
+    path("<slug:opp_id>/user_tasks/", view=UserTasksView.as_view(), name="user_tasks_list"),
     path(
         "<slug:opp_id>/user_tasks_table/",
-        view=views.WorkerCompletedTaskTableView.as_view(),
+        view=WorkerCompletedTaskTableView.as_view(),
         name="user_tasks_table",
     ),
     path(
         "<slug:opp_id>/user_visit_verification_table/",
-        view=views.visit_verification_table_view,
+        view=visit_verification_table_view,
         name="user_visit_verification_table",
     ),
     path("<slug:opp_id>/user_visit_details/<slug:pk>/", view=views.user_visit_details, name="user_visit_details"),
@@ -170,7 +179,7 @@ urlpatterns = [
     path("<slug:opp_id>/workers/work-areas/", WorkerWorkAreaView.as_view(), name="worker_work_areas"),
     path(
         "<slug:opp_id>/worker_learn_progress/<slug:access_id>",
-        views.worker_learn_status_view,
+        worker_learn_status_view,
         name="worker_learn_progress",
     ),
     path("<slug:opp_id>/opportunity_delivery_stats/", views.opportunity_delivery_stats, name="delivery_stats"),
@@ -188,10 +197,10 @@ urlpatterns = [
     path("<slug:opp_id>/deliver_unit_table", views.deliver_unit_table, name="deliver_unit_table"),
     path(
         "<slug:opp_id>/worker_payment_history/<slug:access_id>",
-        views.worker_payment_history,
+        worker_payment_history,
         name="worker_payment_history",
     ),
-    path("<slug:opp_id>/worker_flag_counts/", views.worker_flag_counts, name="worker_flag_counts"),
+    path("<slug:opp_id>/worker_flag_counts/", worker_flag_counts, name="worker_flag_counts"),
     path("<slug:opp_id>/exchange_rate/", invoice_views.exchange_rate_preview, name="exchange_rate"),
     path("<slug:opp_id>/invoice_items/", invoice_views.invoice_items, name="invoice_items"),
     path(

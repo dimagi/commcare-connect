@@ -57,6 +57,9 @@ This document outlines best practices for creating and reviewing pull requests i
 
 - **Use AI reviews as a first pass**: Let automated tools catch basic issues first
 - **Respond to AI feedback**: Address AI review comments before requesting human review
+- **Know when the automated review runs**: the Claude Code Review workflow reviews every push to a ready PR. It runs OpenCodeReview first, then a Claude review if OpenCodeReview found nothing. Comments come from `github-actions[bot]`.
+  - **Drafts are skipped** so work in progress isn't reviewed on every push. To get a review on a draft, add the `review-draft` label: that reviews it straight away, and every push after that until you remove the label. An unlabelled draft is first reviewed when you mark it ready.
+  - **The "Automated review verdict" check is advisory**: it never fails. Its summary says whether both stages ran and found nothing.
 
 #### 8. Code Standards
 

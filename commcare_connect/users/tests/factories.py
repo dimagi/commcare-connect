@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from factory import Faker, RelatedFactory, Sequence, SubFactory
+from factory import Faker, LazyAttribute, RelatedFactory, Sequence, SubFactory
 from factory.django import DjangoModelFactory, Password
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
@@ -14,7 +14,9 @@ from commcare_connect.users.models import ConnectIDUserLink
 
 class UserFactory(DjangoModelFactory):
     username = Sequence(lambda n: f"user_{n}")
-    email = Faker("email")
+    # Derived from the unique username: a random Faker email can repeat within a run, and with
+    # get-or-create on email a repeat silently returns an existing user instead of a new one.
+    email = LazyAttribute(lambda o: f"{o.username}@example.com")
     name = Faker("name")
     password = Password(
         Faker(
