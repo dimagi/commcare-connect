@@ -102,7 +102,7 @@ Organization
 
 | File                            | Purpose                                                               |
 | ------------------------------- | --------------------------------------------------------------------- |
-| `models.py`                     | All model definitions                                                 |
+| `models/`                       | Models, one module per domain; import them from the package root      |
 | `api/views.py`                  | Mobile API: claim, progress, delivery                                 |
 | `views.py`                      | Web UI: create, edit, finalize, dashboard                             |
 | `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports          |
