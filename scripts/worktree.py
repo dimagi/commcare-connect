@@ -113,8 +113,10 @@ def choose_redis_database(current, used):
 
 def redis_databases_used_by_other_worktrees(worktree):
     used = set()
+    worktree = worktree.resolve()
     for path in worktree_paths():
-        if path != worktree:
+        # Resolve both, so a symlink in either path doesn't make this worktree look like another one.
+        if path.resolve() != worktree:
             used.add(redis_database_number(read_env_value(path / ".env", "REDIS_URL")))
     return used
 
