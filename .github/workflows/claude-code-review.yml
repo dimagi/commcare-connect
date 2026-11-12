@@ -43,14 +43,22 @@ on:
   pull_request:
     types: [opened, synchronize, ready_for_review, labeled]
 
-# One review per PR; a new push cancels the running one. Any other label still
-# starts a run (whose jobs skip), so it gets a group of its own rather than
-# cancelling a review in progress.
+# One review per PR; a run that will review cancels the review in progress. A run
+# whose jobs will skip (another label, a push to an unlabelled draft, a labelled
+# draft marked ready) gets a group of its own, or it would cancel that review and
+# then do nothing. The condition repeats the `ocr` job's `if`; keep them in step.
 concurrency:
   group: >-
     claude-review-${{ github.event.pull_request.number }}${{
-    github.event.action == 'labeled' && github.event.label.name != 'review-draft'
-    && format('-label-{0}', github.run_id) || '' }}
+    !(github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && (!github.event.pull_request.draft
+          || contains(github.event.pull_request.labels.*.name, 'review-draft'))
+      && (github.event.action != 'labeled'
+          || (github.event.label.name == 'review-draft' && github.event.pull_request.draft))
+      && (github.event.action != 'ready_for_review'
+          || !contains(github.event.pull_request.labels.*.name, 'review-draft')))
+    && format('-noop-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 permissions: {}
@@ -62,7 +70,8 @@ jobs:
     # so a maintainer's push to a Dependabot branch would otherwise get reviewed.
     # Drafts only with the `review-draft` label. A `labeled` event counts only for
     # that label on a draft, and `ready_for_review` is skipped for a draft that
-    # already had it, since its last push was reviewed.
+    # already had it, since its last push was reviewed. The concurrency group
+    # repeats this condition.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.login != 'dependabot[bot]'
