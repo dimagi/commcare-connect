@@ -275,7 +275,7 @@ class TestOpportunityFinalizeForm:
             (-1, False, True, None, "can't be changed"),
             (0, True, True, None, "can't be changed"),
             (0, False, False, 0, ""),
-            (3, True, False, 1, "Can't be today"),
+            (3, True, False, 0, ""),
         ],
     )
     def test_start_date_locked(
@@ -299,30 +299,10 @@ class TestOpportunityFinalizeForm:
         assert start_field.widget.attrs.get("min") == start_min
         assert form.fields["end_date"].widget.attrs["min"] == str(_days_from_today(0))
 
-    @pytest.mark.parametrize("visit_days_ago, valid", [(None, True), (0, False), (1, True)])
-    def test_start_date_today_needs_no_visits_today(self, visit_days_ago, valid):
+    def test_trial_visit_does_not_block_start_date(self):
+        # Trial visits never change, so even one from today doesn't stop the start moving to today
         self.opportunity.start_date = _days_from_today(3)
         self.opportunity.save()
-        if visit_days_ago is not None:
-            UserVisitFactory(
-                opportunity=self.opportunity,
-                status=VisitValidationStatus.trial,
-                completed_work=None,
-                date_created=timezone.now() - timezone.timedelta(days=visit_days_ago),
-            )
-
-        form = self.get_form(
-            start_date=_days_from_today(0), end_date=_days_from_today(20), total_budget=5000, max_users=3
-        )
-
-        assert form.is_valid() is valid, form.errors
-        if not valid:
-            assert form.errors["start_date"] == [
-                "Start date can be today only if the opportunity has no visits for today."
-            ]
-
-    def test_saved_start_date_stays_in_range(self):
-        # Starts today with a trial visit from today: not locked, and the browser must still accept today
         UserVisitFactory(
             opportunity=self.opportunity,
             status=VisitValidationStatus.trial,
@@ -330,15 +310,12 @@ class TestOpportunityFinalizeForm:
             date_created=timezone.now(),
         )
 
-        form = self.get_form()
+        form = self.get_form(
+            start_date=_days_from_today(0), end_date=_days_from_today(20), total_budget=5000, max_users=3
+        )
 
         assert not form.fields["start_date"].disabled
-        assert form.fields["start_date"].widget.attrs["min"] == str(_days_from_today(0))
-
-    def test_trial_visit_does_not_lock_start_date(self):
-        UserVisitFactory(opportunity=self.opportunity, status=VisitValidationStatus.trial, completed_work=None)
-
-        assert not self.get_form().fields["start_date"].disabled
+        assert form.is_valid(), form.errors
 
     @pytest.mark.parametrize(
         "unit_dates, start, end, error_field, error, error_date",

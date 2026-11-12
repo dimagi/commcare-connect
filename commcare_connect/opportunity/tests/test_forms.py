@@ -1740,7 +1740,6 @@ class TestPaymentUnitStartDate:
                 deliver_unit=DeliverUnitFactory(payment_unit=unit),
                 status=visit_status,
                 completed_work=None,
-                date_created=now(),
             )
         return unit
 
@@ -1760,7 +1759,7 @@ class TestPaymentUnitStartDate:
             (False, 15, None),
             (False, 1, None),
             (False, 0, None),
-            (True, 0, "today only"),
+            (True, 0, None),  # trial visits never change, so they don't block today
             (False, -2, "in the past"),
             (True, 15, None),  # not started: trial visits only
             (False, None, "can't be cleared"),
@@ -1783,17 +1782,15 @@ class TestPaymentUnitStartDate:
 
     # The opportunity runs from 10 days ago to 60 days from now
     @pytest.mark.parametrize(
-        "edit, visit_status, opp_end, expected_start_min, expected_today_unavailable_note",
+        "edit, visit_status, opp_end, expected_start_min",
         [
-            (False, None, 60, -10, False),  # a new unit isn't held to today or later
-            (True, None, 60, 0, False),
-            (True, VisitValidationStatus.trial, 60, 1, True),
-            (True, None, None, 0, False),
+            (False, None, 60, -10),  # a new unit isn't held to today or later
+            (True, None, 60, 0),
+            (True, VisitValidationStatus.trial, 60, 0),
+            (True, None, None, 0),
         ],
     )
-    def test_date_limits(
-        self, opportunity, edit, visit_status, opp_end, expected_start_min, expected_today_unavailable_note
-    ):
+    def test_date_limits(self, opportunity, edit, visit_status, opp_end, expected_start_min):
         opportunity.end_date = _days_from_today(opp_end)
         opportunity.save()
         unit = self._unit(opportunity, 5, visit_status) if edit else None
@@ -1806,9 +1803,7 @@ class TestPaymentUnitStartDate:
         assert start_attrs.get("max") == end_attrs.get("max") == latest
         assert end_attrs["min"] == str(opportunity.start_date)
         range_text = "Within the opportunity's dates:" if opp_end else "From the opportunity's start date:"
-        start_help_text = form.fields["start_date"].help_text
-        assert start_help_text.startswith(range_text)
-        assert ("Can't be today" in start_help_text) is expected_today_unavailable_note
+        assert form.fields["start_date"].help_text.startswith(range_text)
         assert form.fields["end_date"].help_text.startswith(range_text)
 
     # A saved date the server would still accept has to stay in range, or the browser won't submit the form
@@ -1827,17 +1822,6 @@ class TestPaymentUnitStartDate:
 
         assert form.fields["start_date"].widget.attrs["min"] == str(_days_from_today(expected_start_min))
         assert form.fields["end_date"].widget.attrs["max"] == str(_days_from_today(expected_end_max))
-
-    def test_today_note_hidden_when_opportunity_starts_later(self, opportunity):
-        # Today isn't pickable anyway, so the note would add nothing
-        opportunity.start_date = _days_from_today(10)
-        opportunity.save()
-        unit = self._unit(opportunity, 15, VisitValidationStatus.trial)
-
-        form = _payment_unit_form(opportunity, {}, instance=unit)
-
-        assert form.fields["start_date"].widget.attrs["min"] == str(_days_from_today(10))
-        assert "Can't be today" not in form.fields["start_date"].help_text
 
     @pytest.mark.parametrize("visit_status", [None, VisitValidationStatus.trial])
     def test_started_unit_without_payable_visits_can_move(self, opportunity, visit_status):

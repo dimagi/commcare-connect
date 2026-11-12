@@ -282,10 +282,6 @@ class Opportunity(BaseModel):
         if errors:
             raise ValidationError(errors)
 
-    def has_visits_today(self):
-        # Trial is decided when a visit is processed, so this looks at when it was processed
-        return UserVisit.objects.filter(opportunity=self, date_created__date=now().date()).exists()
-
     def has_payable_visits(self):
         # Trial visits get no completed work, so they are never paid
         return UserVisit.objects.filter(opportunity=self).exclude(status=VisitValidationStatus.trial).exists()
@@ -761,10 +757,6 @@ class PaymentUnit(models.Model):
 
     def __str__(self):
         return self.name
-
-    def has_visits_today(self):
-        # Trial is decided when a visit is processed, so this looks at when it was processed
-        return self._visits().filter(date_created__date=now().date()).exists()
 
     def has_payable_visits(self):
         # Trial visits get no completed work, so they are never paid. Over-limit ones can still be approved.

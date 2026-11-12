@@ -945,17 +945,13 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 "Start date can't be changed once it has passed, or once the opportunity has visits."
             )
         else:
-            visits_today = self.opportunity.has_visits_today()
             set_date_limits(
                 field=self.fields["start_date"],
-                earliest=earliest_start_date(visits_today),
+                earliest=now().date(),
                 latest=first_unit_date,
                 saved=self.current_start_date,
             )
-            help_text = cover_units_help_text(on_or_before=first_unit_date)
-            if visits_today:
-                help_text = f"{help_text} {TODAY_UNAVAILABLE_HELP_TEXT}".strip()
-            self.fields["start_date"].help_text = help_text
+            self.fields["start_date"].help_text = cover_units_help_text(on_or_before=first_unit_date)
         today = now().date()
         set_date_limits(
             field=self.fields["end_date"],
@@ -994,8 +990,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
             if total_budget_sum + cleaned_data["total_budget"] > program.budget:
                 self.add_error("total_budget", "Budget exceeds the program budget.")
 
-            if "start_date" in self.changed_data:
-                self._validate_start_date_today(start_date)
             self._validate_dates_cover_payment_units(start_date, end_date)
             return cleaned_data
 
@@ -1005,13 +999,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
             return True
         # On its start day, once a visit may already be paid, moving the start later would leave it before the start
         return self.current_start_date == today and self.opportunity.has_payable_visits()
-
-    def _validate_start_date_today(self, start_date):
-        # Visits processed earlier today are trial; they would sit inside the active period
-        if start_date == now().date() and self.opportunity.has_visits_today():
-            self.add_error(
-                "start_date", gettext("Start date can be today only if the opportunity has no visits for today.")
-            )
 
     def _validate_dates_cover_payment_units(self, start_date, end_date):
         # A unit's blank date takes the opportunity's, so each date is checked against both of a unit's dates
@@ -1665,9 +1652,6 @@ class PaymentUnitForm(forms.ModelForm):
         today = now().date()
         if start_date < today:
             raise ValidationError(_("Start date can't be in the past."))
-        if start_date == today and self.instance.has_visits_today():
-            # Visits processed earlier today are trial; they would sit inside the active period
-            raise ValidationError(_("Start date can be today only if the payment unit has no visits for today."))
         return start_date
 
     def _set_date_limits(self):
@@ -1685,11 +1669,7 @@ class PaymentUnitForm(forms.ModelForm):
         earliest = opportunity.start_date
         # Only an edit is held to today or later (see clean_start_date)
         if self.instance.pk:
-            visits_today = self.instance.has_visits_today()
-            # The note only matters when today would otherwise be pickable
-            if visits_today and opportunity.start_date <= now().date():
-                help_text = f"{help_text} {TODAY_UNAVAILABLE_HELP_TEXT}"
-            earliest = max(earliest, earliest_start_date(visits_today))
+            earliest = max(earliest, now().date())
         set_date_limits(
             field=self.fields["start_date"],
             earliest=earliest,
@@ -1711,15 +1691,6 @@ class PaymentUnitForm(forms.ModelForm):
         other_units = self.opportunity.paymentunit_set.exclude(pk=self.instance.pk)
 
         self.opportunity.validate_budget_for_payment_units([proposed_unit, *other_units])
-
-
-TODAY_UNAVAILABLE_HELP_TEXT = _("Can't be today, as visits were already processed today.")
-
-
-def earliest_start_date(visits_today):
-    # Visits processed earlier today are trial; a start of today would put them inside the active period
-    today = now().date()
-    return today + datetime.timedelta(days=1) if visits_today else today
 
 
 def set_date_limits(field, earliest=None, latest=None, saved=None):
