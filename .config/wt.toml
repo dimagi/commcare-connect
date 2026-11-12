@@ -7,7 +7,7 @@ setup = "scripts/setup-worktree.sh"
 build-js = "npm run dev"
 
 [post-remove]
-cleanup = "uv run python scripts/worktree.py teardown '{{ branch }}'"
+cleanup = "uv run python scripts/worktree.py teardown {{ branch }}"
 
 [aliases]
 # `wt new <branch> --share=1` creates a worktree that uses the main checkout's database and Redis database.
