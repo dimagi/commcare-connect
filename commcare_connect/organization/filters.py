@@ -8,6 +8,19 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
+class ToggleInput(forms.CheckboxInput):
+    """A toggle switch that is on only for the value a ticked checkbox submits; any other value means off."""
+
+    ON_VALUE = "on"
+
+    def __init__(self, attrs=None):
+        super().__init__(attrs={"class": "simple-toggle"} | (attrs or {}))
+
+    def value_from_datadict(self, data, files, name):
+        # CheckboxInput treats any non-empty value other than "false" as ticked.
+        return data.get(name) == self.ON_VALUE
+
+
 class ToggleFilter(django_filters.BooleanFilter):
     """A boolean filter shown as a toggle switch, filtering on True when on and on `off_value` when off.
 
@@ -15,7 +28,7 @@ class ToggleFilter(django_filters.BooleanFilter):
     """
 
     def __init__(self, *args, off_value=None, **kwargs):
-        kwargs.setdefault("widget", forms.CheckboxInput(attrs={"class": "simple-toggle"}))
+        kwargs.setdefault("widget", ToggleInput())
         super().__init__(*args, **kwargs)
         self.off_value = off_value
 

@@ -76,7 +76,14 @@ class TestOrganizationFilterSet:
         test = OrganizationFactory(is_test=True)
 
         assert set(OrganizationFilterSet(queryset=Organization.objects.all()).qs) == {real}
-        assert _filtered_organizations({"test": "true"}) == {test}
+        assert _filtered_organizations({"test": "on"}) == {test}
+
+    @pytest.mark.parametrize("value, lists_test", [("on", True), ("true", False), ("abc", False), ("0", False)])
+    def test_test_toggle_is_on_only_for_a_ticked_value(self, value, lists_test):
+        real = OrganizationFactory()
+        test = OrganizationFactory(is_test=True)
+
+        assert _filtered_organizations({"test": value}) == ({test} if lists_test else {real})
 
 
 @pytest.mark.django_db
@@ -331,7 +338,7 @@ class TestContactFilterSet:
         main = ContactFactory(name="A Main", is_main_poc=True)
         other = ContactFactory(name="B Other", organization=main.organization)
 
-        assert _filtered_contacts({"main_poc": "true"}) == [main]
+        assert _filtered_contacts({"main_poc": "on"}) == [main]
         assert _filtered_contacts({"main_poc": ""}) == [main, other]
 
     def test_lists_archived_contacts_only_when_asked_for(self):
@@ -339,14 +346,14 @@ class TestContactFilterSet:
         archived = ContactFactory(is_archived=True)
 
         assert _filtered_contacts({}) == [active]
-        assert _filtered_contacts({"archived": "true"}) == [archived]
+        assert _filtered_contacts({"archived": "on"}) == [archived]
 
     def test_lists_contacts_of_test_organizations_only_when_asked_for(self):
         real = ContactFactory()
         test = ContactFactory(organization=OrganizationFactory(is_test=True))
 
         assert _filtered_contacts({}) == [real]
-        assert _filtered_contacts({"organization_test": "true"}) == [test]
+        assert _filtered_contacts({"organization_test": "on"}) == [test]
 
 
 @pytest.mark.django_db
