@@ -5,7 +5,7 @@ The opportunity app is the core domain of CommCare Connect. It manages paid prog
 ## Key Concepts
 
 - **Opportunity** — A paid program created by an organization. It has a learn app (training), a deliver app (fieldwork), a budget, and a time window.
-- **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → delivering → paid.
+- **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → claimed → delivering → paid.
 - **OpportunityClaim** — Created when a user commits to delivering work. Allocates visit limits per payment unit.
 - **PaymentUnit** — Defines what a user gets paid for and how much. Can be hierarchical (parent/child).
 - **DeliverUnit** — A type of form submission within a delivery app (e.g., "household visit", "follow-up").
@@ -61,8 +61,9 @@ When a delivery form is received, it is checked against the opportunity's `Oppor
 | `attachment_missing`     | Required attachments missing     | `DeliverUnitFlagRules`         |
 | `form_value_not_found`   | Custom form validation failed    | `FormJsonValidationRules`      |
 | `user_suspended`         | User is suspended                | `OpportunityAccess.suspended`  |
+| `pending_task`           | Worker has an incomplete task    | Always on (`AssignedTask`)     |
 
-Flag codes are defined in `commcare_connect/utils/flags.py`. If `auto_approve_visits` is enabled and the visit is not flagged, the visit is automatically approved.
+Flag codes are defined in `commcare_connect/utils/flags.py`. It also keeps `catchment`, whose check has been removed, so that old `flag_reason` values still have a label. `user_suspended` and `pending_task` reject the visit outright; see the visit status table in `../form_receiver/README.md`. If `auto_approve_visits` is enabled and the visit is not flagged, the visit is automatically approved.
 
 ## Auto-Approval
 
