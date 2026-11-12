@@ -10,8 +10,18 @@ from commcare_connect.commcarehq.api import (
     resolve_hq_user_uuid,
 )
 from commcare_connect.microplanning.const import HQ_ASSIGN_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.models import WorkArea, WorkAreaInaccessibilityRequest, WorkAreaStatus
+from commcare_connect.microplanning.models import (
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
+from commcare_connect.microplanning.tasks import (
+    ImplementationAreaCSVImporter,
+    WorkAreaCSVImporter,
+    send_work_area_assignment_notification,
+)
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
@@ -206,3 +216,126 @@ def update_work_area_statuses(work_areas):
     """Recalculate each work area's status from its visits, e.g. after visits are added or reviewed."""
     for work_area in work_areas:
         work_area.update_status()
+
+
+def bulk_update_work_areas(opportunity, updates, user):
+    """Apply field changes, assignments and unassignments to many work areas at once.
+
+    ``updates`` holds one dict per work area: ``id`` is the WorkArea, the other keys are the fields to
+    set. An ``opportunity_access`` key assigns the area, or unassigns it when the value is None.
+    Returns the work areas and the assign/unassign results (None when nothing was assigned or
+    unassigned), whose ``failed_ids`` list the areas HQ did not accept.
+    """
+    instances = []
+    assign_result = None
+    unassign_result = None
+    touched_fields = set()
+    needs_visit_status_update = []
+    needs_hq_resync = []
+    to_assign = []
+    original_access_status = {}
+    to_unassign = []
+    recompute_group_ids = set()
+
+    for item in updates:
+        item = item.copy()
+        instance = item.pop("id")
+        has_access_key = "opportunity_access" in item
+        access = item.pop("opportunity_access", None)
+        old_group_id = instance.work_area_group_id
+
+        for field, value in item.items():
+            setattr(instance, field, value)
+            touched_fields.add(field)
+
+        if "expected_visit_count" in item:
+            needs_visit_status_update.append(instance)
+
+        if "boundary" in item and instance.work_area_group_id is not None:
+            # Group centroid is derived from member WorkAreas' boundaries, so an edit here
+            # needs a recompute even without a group change.
+            recompute_group_ids.add(instance.work_area_group_id)
+
+        if instance.work_area_group_id != old_group_id:
+            recompute_group_ids.update({instance.work_area_group_id, old_group_id})
+
+        if access is not None:
+            # assign_work_areas_and_sync_to_hq expects opportunity_access/status already set.
+            original_access_status[instance.id] = (instance.opportunity_access_id, instance.status)
+            instance.opportunity_access = access
+            if instance.status == WorkAreaStatus.UNASSIGNED:
+                instance.status = WorkAreaStatus.NOT_VISITED
+            to_assign.append(instance)
+        elif has_access_key:
+            # Explicit `opportunity_access: null` — unassign rather than silently ignore.
+            to_unassign.append(instance)
+        elif item and instance.opportunity_access_id:
+            needs_hq_resync.append(instance)
+
+        instances.append(instance)
+
+    if touched_fields:
+        # Must run before the group-centroid recompute below: update_centroid() re-reads
+        # member WorkAreas' boundaries from the DB, so it needs this write already committed.
+        WorkArea.objects.bulk_update(instances, fields=list(touched_fields))
+
+    update_work_area_statuses(needs_visit_status_update)
+
+    recompute_group_ids.discard(None)
+    if recompute_group_ids:
+        groups = list(WorkAreaGroup.objects.filter(pk__in=recompute_group_ids))
+        for group in groups:
+            group.update_centroid(commit=False)
+        WorkAreaGroup.objects.bulk_update(groups, ["centroid"])
+
+    if needs_hq_resync:
+        bulk_create_or_update_cases_by_work_areas(needs_hq_resync, opportunity)
+
+    if to_assign:
+        result = assign_work_areas_and_sync_to_hq(opportunity, to_assign, user)
+        assign_result = result
+        failed_ids = set(result["failed_ids"])
+        notified_access_ids = set()
+        for wa in to_assign:
+            if wa.id in failed_ids:
+                orig_access_id, orig_status = original_access_status[wa.id]
+                wa.opportunity_access_id = orig_access_id
+                wa.status = orig_status
+            else:
+                notified_access_ids.add(wa.opportunity_access_id)
+        for access_id in notified_access_ids:
+            transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
+
+    if to_unassign:
+        result = unassign_work_areas_for_opportunity(opportunity, [wa.id for wa in to_unassign], user)
+        unassign_result = result
+        unassigned_ids = set(result["unassigned_ids"])
+        for wa in to_unassign:
+            if wa.id in unassigned_ids:
+                wa.opportunity_access = None
+                wa.status = WorkAreaStatus.UNASSIGNED
+
+    return {"work_areas": instances, "assign_result": assign_result, "unassign_result": unassign_result}
+
+
+def create_work_area_group(opportunity, **fields):
+    """Create a work area group in ``opportunity``."""
+    return WorkAreaGroup.objects.create(opportunity=opportunity, **fields)
+
+
+def update_work_area_group(work_area_group, **fields):
+    """Set ``fields`` on a work area group and save it."""
+    for field, value in fields.items():
+        setattr(work_area_group, field, value)
+    work_area_group.save()
+    return work_area_group
+
+
+def import_work_areas_from_csv(opportunity_id, csv_source):
+    """Create work areas from CSV rows. Returns the importer's result: counts, or ``errors``."""
+    return WorkAreaCSVImporter(opportunity_id, csv_source).run()
+
+
+def import_implementation_areas_from_csv(opportunity_id, csv_source):
+    """Create implementation areas from CSV rows. Returns the importer's result: counts, or ``errors``."""
+    return ImplementationAreaCSVImporter(opportunity_id, csv_source).run()

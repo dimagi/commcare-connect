@@ -1,20 +1,20 @@
 import json
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.data_export.const import ATTACHMENT_FIELDS, OPPORTUNITY_ACCESS_CHECK_MAX_IDS
-from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.services import (
-    assign_work_areas_and_sync_to_hq,
-    bulk_create_or_update_cases_by_work_areas,
-    unassign_work_areas_for_opportunity,
+    bulk_update_work_areas,
+    create_work_area_group,
+    update_work_area_group,
 )
-from commcare_connect.microplanning.tasks import parse_lon_lat_centroid, send_work_area_assignment_notification
+from commcare_connect.microplanning.tasks import parse_lon_lat_centroid
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
@@ -571,109 +571,26 @@ class WorkAreaGroupWriteSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         try:
-            return WorkAreaGroup.objects.create(opportunity=self.context["view"].opportunity, **validated_data)
+            return create_work_area_group(self.context["view"].opportunity, **validated_data)
         except IntegrityError:
             raise serializers.ValidationError({"name": _("A work area group with this name already exists.")})
+
+    def update(self, instance, validated_data):
+        return update_work_area_group(instance, **validated_data)
 
 
 class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
     def create(self, validated_data):
-        opportunity = self.context["view"].opportunity
-
-        instances = []
-        touched_fields = set()
-        needs_visit_status_update = []
-        needs_hq_resync = []
-        to_assign = []
-        original_access_status = {}
-        to_unassign = []
-        recompute_group_ids = set()
-
-        for item in validated_data:
-            item = item.copy()
-            instance = item.pop("id")
-            has_access_key = "opportunity_access" in item
-            access = item.pop("opportunity_access", None)
-            old_group_id = instance.work_area_group_id
-
-            for field, value in item.items():
-                setattr(instance, field, value)
-                touched_fields.add(field)
-
-            if "expected_visit_count" in item:
-                needs_visit_status_update.append(instance)
-
-            if "boundary" in item and instance.work_area_group_id is not None:
-                # Group centroid is derived from member WorkAreas' boundaries, so an edit here
-                # needs a recompute even without a group change.
-                recompute_group_ids.add(instance.work_area_group_id)
-
-            if instance.work_area_group_id != old_group_id:
-                recompute_group_ids.update({instance.work_area_group_id, old_group_id})
-
-            if access is not None:
-                # assign_work_areas_and_sync_to_hq expects opportunity_access/status already set.
-                original_access_status[instance.id] = (instance.opportunity_access_id, instance.status)
-                instance.opportunity_access = access
-                if instance.status == WorkAreaStatus.UNASSIGNED:
-                    instance.status = WorkAreaStatus.NOT_VISITED
-                to_assign.append(instance)
-            elif has_access_key:
-                # Explicit `opportunity_access: null` — unassign rather than silently ignore.
-                to_unassign.append(instance)
-            elif item and instance.opportunity_access_id:
-                needs_hq_resync.append(instance)
-
-            instances.append(instance)
-
-        if touched_fields:
-            # Must run before the group-centroid recompute below: update_centroid() re-reads
-            # member WorkAreas' boundaries from the DB, so it needs this write already committed.
-            WorkArea.objects.bulk_update(instances, fields=list(touched_fields))
-
-        for instance in needs_visit_status_update:
-            instance.update_status()
-
-        recompute_group_ids.discard(None)
-        if recompute_group_ids:
-            groups = list(WorkAreaGroup.objects.filter(pk__in=recompute_group_ids))
-            for group in groups:
-                group.update_centroid(commit=False)
-            WorkAreaGroup.objects.bulk_update(groups, ["centroid"])
-
-        if needs_hq_resync:
-            bulk_create_or_update_cases_by_work_areas(needs_hq_resync, opportunity)
-
-        if to_assign:
-            result = assign_work_areas_and_sync_to_hq(opportunity, to_assign, self.context["request"].user)
-            # Side-channeled on the serializer instance: ListSerializer.save() only returns
-            # instances, so this is how the view recovers failed_ids/skipped counts.
-            self.assign_result = result
-            failed_ids = set(result["failed_ids"])
-            notified_access_ids = set()
-            for wa in to_assign:
-                if wa.id in failed_ids:
-                    orig_access_id, orig_status = original_access_status[wa.id]
-                    wa.opportunity_access_id = orig_access_id
-                    wa.status = orig_status
-                else:
-                    notified_access_ids.add(wa.opportunity_access_id)
-            for access_id in notified_access_ids:
-                transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
-
-        if to_unassign:
-            result = unassign_work_areas_for_opportunity(
-                opportunity, [wa.id for wa in to_unassign], self.context["request"].user
-            )
-            # See assign_result above: same side-channel, for the unassign path.
-            self.unassign_result = result
-            unassigned_ids = set(result["unassigned_ids"])
-            for wa in to_unassign:
-                if wa.id in unassigned_ids:
-                    wa.opportunity_access = None
-                    wa.status = WorkAreaStatus.UNASSIGNED
-
-        return instances
+        result = bulk_update_work_areas(
+            opportunity=self.context["view"].opportunity,
+            updates=validated_data,
+            user=self.context["request"].user,
+        )
+        # Side-channeled on the serializer instance: ListSerializer.save() only returns
+        # instances, so this is how the view recovers failed_ids/skipped counts.
+        self.assign_result = result["assign_result"]
+        self.unassign_result = result["unassign_result"]
+        return result["work_areas"]
 
 
 class WorkAreaBulkUpdateSerializer(serializers.ModelSerializer):

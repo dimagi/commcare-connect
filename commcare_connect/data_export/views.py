@@ -63,6 +63,7 @@ from commcare_connect.data_export.serializer import (
 )
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.services import import_implementation_areas_from_csv, import_work_areas_from_csv
 from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -878,6 +879,8 @@ class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminVie
 
 class CSVImporterBulkCreateView(APIView):
     csv_importer_class = None
+    # Takes the opportunity ID and a CSV file object, and returns the importer's result.
+    import_csv = None
     item_name = "items"
 
     def get_fieldnames(self):
@@ -909,7 +912,7 @@ class CSVImporterBulkCreateView(APIView):
             )
 
         csv_source = self.items_to_csv(items)
-        result = self.csv_importer_class(self.opportunity.id, csv_source).run()
+        result = self.import_csv(self.opportunity.id, csv_source)
 
         if "errors" in result:
             return Response({"errors": list(result["errors"].keys())}, status=status.HTTP_400_BAD_REQUEST)
@@ -918,6 +921,7 @@ class CSVImporterBulkCreateView(APIView):
 
 class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView):
     csv_importer_class = WorkAreaCSVImporter
+    import_csv = staticmethod(import_work_areas_from_csv)
     item_name = "Work Areas"
 
     def get_fieldnames(self):
@@ -947,6 +951,7 @@ class ImplementationAreaBulkCreateView(
     MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView
 ):
     csv_importer_class = ImplementationAreaCSVImporter
+    import_csv = staticmethod(import_implementation_areas_from_csv)
     item_name = "Implementation Areas"
 
     def row_from_item(self, item):
