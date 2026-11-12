@@ -57,6 +57,7 @@ from commcare_connect.opportunity.views import (
     user_visit_review,
     verification_flags_config,
 )
+from commcare_connect.opportunity.views import invoices as invoice_views
 
 app_name = "opportunity"
 urlpatterns = [
@@ -140,23 +141,23 @@ urlpatterns = [
     path("<slug:opp_id>/payment_report/", payment_report, name="payment_report"),
     path("<slug:opp_id>/user_visit_review/", user_visit_review, name="user_visit_review"),
     path("<slug:opp_id>/user_invite/", view=opportunity_user_invite, name="user_invite"),
-    path("<slug:opp_id>/invoice/", views.invoice_list, name="invoice_list"),
-    path("<slug:opp_id>/invoice/create/", views.InvoiceCreateView.as_view(), name="invoice_create"),
-    path("<slug:opp_id>/invoice/<slug:pk>/review/", views.InvoiceReviewView.as_view(), name="invoice_review"),
+    path("<slug:opp_id>/invoice/", invoice_views.invoice_list, name="invoice_list"),
+    path("<slug:opp_id>/invoice/create/", invoice_views.InvoiceCreateView.as_view(), name="invoice_create"),
+    path("<slug:opp_id>/invoice/<slug:pk>/review/", invoice_views.InvoiceReviewView.as_view(), name="invoice_review"),
     path(
         "<slug:opp_id>/invoice/<slug:invoice_id>/update/",
-        views.update_invoice_invoice_ticket_link,
+        invoice_views.update_invoice_invoice_ticket_link,
         name="update_invoice_invoice_ticket_link",
     ),
     path(
         "<slug:opp_id>/invoice/<slug:invoice_id>/finance_request/",
-        views.InvoiceFinanceRequestView.as_view(),
+        invoice_views.InvoiceFinanceRequestView.as_view(),
         name="invoice_finance_request",
     ),
-    path("<slug:opp_id>/invoice/<slug:invoice_id>/download/", views.download_invoice, name="download_invoice"),
-    path("<slug:opp_id>/invoice/export/", views.export_invoices, name="export_invoices"),
-    path("<slug:opp_id>/invoice/update_status/", views.invoice_update_status, name="invoice_update_status"),
-    path("<slug:opp_id>/invoice/pay/", views.invoice_pay, name="invoice_pay"),
+    path("<slug:opp_id>/invoice/<slug:invoice_id>/download/", invoice_views.download_invoice, name="download_invoice"),
+    path("<slug:opp_id>/invoice/export/", invoice_views.export_invoices, name="export_invoices"),
+    path("<slug:opp_id>/invoice/update_status/", invoice_views.invoice_update_status, name="invoice_update_status"),
+    path("<slug:opp_id>/invoice/pay/", invoice_views.invoice_pay, name="invoice_pay"),
     path("<slug:opp_id>/delete_invites/", views.delete_user_invites, name="delete_user_invites"),
     path("<slug:opp_id>/resend_invites/", resend_user_invites, name="resend_user_invites"),
     path("<slug:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
@@ -191,11 +192,11 @@ urlpatterns = [
         name="worker_payment_history",
     ),
     path("<slug:opp_id>/worker_flag_counts/", views.worker_flag_counts, name="worker_flag_counts"),
-    path("<slug:opp_id>/exchange_rate/", views.exchange_rate_preview, name="exchange_rate"),
-    path("<slug:opp_id>/invoice_items/", views.invoice_items, name="invoice_items"),
+    path("<slug:opp_id>/exchange_rate/", invoice_views.exchange_rate_preview, name="exchange_rate"),
+    path("<slug:opp_id>/invoice_items/", invoice_views.invoice_items, name="invoice_items"),
     path(
         "<slug:opp_id>/invoice_items/download/",
-        views.download_invoice_line_items,
+        invoice_views.download_invoice_line_items,
         name="download_invoice_line_items",
     ),
     path("<slug:opp_id>/visit_export_count/", views.visit_export_count, name="visit_export_count"),

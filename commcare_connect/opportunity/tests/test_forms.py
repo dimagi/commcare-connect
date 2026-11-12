@@ -22,7 +22,6 @@ from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
-    AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     EditTaskTypeForm,
     OpportunityChangeForm,
@@ -31,6 +30,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     PaymentUnitForm,
 )
+from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWorkInvoice,
@@ -828,7 +828,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.amount == 100.0
         assert invoice.date == datetime.date(2025, 11, 6)
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice")
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice")
     def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
@@ -916,7 +916,7 @@ class TestAutomatedPaymentInvoiceForm:
         ],
         ids=["completed-period", "end-before-start", "ends-today", "future-end"],
     )
-    @patch("commcare_connect.opportunity.forms.localdate", return_value=datetime.date(2025, 11, 6))
+    @patch("commcare_connect.opportunity.forms.invoices.localdate", return_value=datetime.date(2025, 11, 6))
     def test_service_delivery_window_must_be_a_completed_period(
         self, mock_localdate, valid_opportunity, start_date, end_date, expected_error
     ):
@@ -982,7 +982,7 @@ class TestAutomatedPaymentInvoiceForm:
             assert "The billable total for this period has changed since this page was loaded." in str(form.errors)
             assert not PaymentInvoice.objects.filter(invoice_number="INV-001").exists()
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice", return_value=[])
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice", return_value=[])
     def test_service_delivery_amount_is_never_the_posted_one(self, mock_bill_invoice, valid_opportunity):
         """The posted total is a preview artefact and must never survive onto the invoice.
 
