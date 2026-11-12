@@ -45,12 +45,20 @@ class AlwaysBoundFilterSet(django_filters.FilterSet):
         super().__init__(data if data is not None else {}, *args, **kwargs)
 
 
-class OrganizationFilterSet(AlwaysBoundFilterSet):
+class DirectoryFilterSet(AlwaysBoundFilterSet):
+    """A filterset for an LLO Directory listing, with a search box each subclass matches in `filter_by_search_term`."""
+
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
         widget=forms.TextInput(attrs={"placeholder": _("Search")}),
     )
+
+    def filter_by_search_term(self, queryset, name, value):
+        raise NotImplementedError
+
+
+class OrganizationFilterSet(DirectoryFilterSet):
     countries = django_filters.ModelMultipleChoiceFilter(
         queryset=Country.objects.order_by("name"),
         label=_("Countries"),
@@ -80,12 +88,7 @@ class OrganizationFilterSet(AlwaysBoundFilterSet):
         ).distinct()
 
 
-class ContactFilterSet(AlwaysBoundFilterSet):
-    search = django_filters.CharFilter(
-        method="filter_by_search_term",
-        label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search")}),
-    )
+class ContactFilterSet(DirectoryFilterSet):
     countries = django_filters.ModelMultipleChoiceFilter(
         field_name="organization__countries",
         queryset=Country.objects.order_by("name"),
