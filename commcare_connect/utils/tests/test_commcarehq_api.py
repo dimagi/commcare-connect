@@ -1,7 +1,10 @@
+import asyncio
+
 import httpx
 import pytest
 
 from commcare_connect.opportunity.tests.factories import HQApiKeyFactory
+from commcare_connect.utils import commcarehq_api
 from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_access_errors
 
 APP_URL = "{url}/a/dom/api/v0.5/application/{app_id}/"
@@ -36,5 +39,19 @@ class TestAppAccessErrors:
     def test_transport_error_is_not_access_denied(self, httpx_mock, key):
         httpx_mock.add_exception(httpx.ConnectTimeout("timed out"))
         [error] = app_access_errors(key, [("dom", "app1")])
+        assert error is not None
+        assert not isinstance(error, CommCareHQAccessDenied)
+
+    def test_a_check_that_outlasts_the_deadline_is_not_access_denied(self, httpx_mock, key, monkeypatch):
+        """httpx times each phase separately, so a slow server is cut off by the overall deadline instead."""
+        monkeypatch.setattr(commcarehq_api, "APP_ACCESS_TIMEOUT", 0.1)
+
+        async def stall(request):
+            await asyncio.sleep(5)
+
+        self._mock(httpx_mock, key, "app1", json={})
+        httpx_mock.add_callback(stall, url=APP_URL.format(url=key.hq_server.url, app_id="app2"))
+        ok, error = app_access_errors(key, [("dom", "app1"), ("dom", "app2")])
+        assert ok is None  # the check that finished keeps its result
         assert error is not None
         assert not isinstance(error, CommCareHQAccessDenied)

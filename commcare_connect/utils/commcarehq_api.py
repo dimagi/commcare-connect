@@ -95,14 +95,19 @@ async def _app_access_errors(hq_server_url, auth_header, apps):
 
 async def _app_access_error(client, url):
     try:
-        # Streamed, so a successful check reads only the status, not the whole app.
-        async with client.stream("GET", url) as response:
-            if response.is_success:
-                return None
-            await response.aread()
-            return _app_fetch_error(response)
+        # httpx's timeout applies to each phase (connect, then each read) separately, so it alone can't stop
+        # a slow server from running the check past the deadline. This bounds the whole check.
+        async with asyncio.timeout(APP_ACCESS_TIMEOUT):
+            # Streamed, so a successful check reads only the status, not the whole app.
+            async with client.stream("GET", url) as response:
+                if response.is_success:
+                    return None
+                await response.aread()
+                return _app_fetch_error(response)
     except httpx.RequestError as e:
         return CommCareHQAPIException(f"Failed to fetch app structure: {e}")
+    except TimeoutError:
+        return CommCareHQAPIException(f"Failed to fetch app structure: no answer within {APP_ACCESS_TIMEOUT}s")
 
 
 def _app_fetch_error(response) -> CommCareHQAPIException:

@@ -1,0 +1,18 @@
+{% load tailwind_field %}
+<div id="div_{{ field.auto_id }}"
+     class="{% if wrapper_class %}{{ wrapper_class }} {% endif %}mb-3">
+  {% if field.label and form_show_labels %}
+    <label for="{{ field.id_for_label }}"
+           class="mb-2 block text-sm font-bold text-gray-700">
+      {{ field.label|safe }}
+      {% if field.field.required %}<span class="asteriskField">*</span>{% endif %}
+    </label>
+  {% endif %}
+  <div class="mb-3 flex items-center gap-1">
+    <div class="flex-1"{% if flat_attrs %} {{ flat_attrs|safe }}{% endif %}>
+      {% include "tailwind/layout/select.html" %}
+    </div>
+    {% include "opportunity/partials/add_api_key_button.html" %}
+  </div>
+  {% include "tailwind/layout/help_text_and_errors.html" %}
+</div>

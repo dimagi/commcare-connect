@@ -89,16 +89,27 @@ CHECKBOX_CLASS = "simple-toggle"
 DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
 APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
-ADD_API_KEY_BUTTON = HTML('{% include "opportunity/partials/add_api_key_button.html" %}')
+API_KEY_FIELD_TEMPLATE = "opportunity/partials/api_key_field.html"
+FIXED_HQ_SERVER_FIELD_TEMPLATE = "opportunity/partials/fixed_hq_server_field.html"
 
 
 class HQApiKeyCreateForm(forms.ModelForm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, fixed_hq_server=None, **kwargs):
+        """`fixed_hq_server` pins the key to that server, for pages whose key select only lists that server's
+        keys. The server is then shown as text rather than offered as a choice."""
         super().__init__(*args, **kwargs)
+        self.fixed_hq_server = fixed_hq_server
+        server_layout = Field("hq_server")
+        if fixed_hq_server:
+            server_field = self.fields["hq_server"]
+            # Narrowing the queryset also rejects a post naming any other server.
+            server_field.queryset = server_field.queryset.filter(pk=fixed_hq_server.pk)
+            server_field.initial = fixed_hq_server.pk
+            server_layout = Field("hq_server", template=FIXED_HQ_SERVER_FIELD_TEMPLATE)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Field("hq_server"),
+            server_layout,
             Field("api_key"),
             Div(Submit("submit", "Save", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
@@ -423,11 +434,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
     def _api_key_layout(self):
         return Row(
             HTML('{% include "opportunity/partials/api_key_section_header.html" %}'),
-            Column(
-                Field("api_key", wrapper_class="flex-1"),
-                ADD_API_KEY_BUTTON,
-                css_class="flex items-center gap-1",
-            ),
+            Field("api_key", template=API_KEY_FIELD_TEMPLATE),
             css_class="grid grid-cols-2 gap-4 p-6 card_bg",
         )
 
@@ -535,11 +542,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("currency"),
                     Field("country"),
                     Field("hq_server"),
-                    Column(
-                        Field("api_key", wrapper_class="flex-1"),
-                        ADD_API_KEY_BUTTON,
-                        css_class="flex items-center gap-1",
-                    ),
+                    Field("api_key", template=API_KEY_FIELD_TEMPLATE),
                 ),
                 css_class="grid grid-cols-2 gap-4 card_bg",
             ),
@@ -912,6 +915,15 @@ def fixed_server_api_key_choices(opportunity, user):
         choices = [("", _("Select an API key"))]
     own_keys = _own_api_keys(user, opportunity.hq_server_id, exclude=current_key)
     return choices + [(key.id, key.masked) for key in own_keys]
+
+
+def reloaded_api_key_selection(choices, pending, opportunity):
+    """The option to select when the key list reloads: the admin's unsaved pick, if it is still offered, so adding
+    another key doesn't silently put the opportunity's current key back. Otherwise the current key."""
+    offered = {str(value) for value, _label in choices}
+    if pending is not None and str(pending) in offered:
+        return str(pending)
+    return str(opportunity.api_key_id or "")
 
 
 def _fixed_server_api_key_attrs(opportunity, org_slug):

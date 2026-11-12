@@ -27,11 +27,14 @@ from commcare_connect.opportunity.forms import (
     AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     EditTaskTypeForm,
+    HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityInitForm,
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     PaymentUnitForm,
+    fixed_server_api_key_choices,
+    reloaded_api_key_selection,
 )
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
@@ -2172,3 +2175,63 @@ class TestApiKeyOnChangeForm:
         form = _change_form(opp, _request_for(opp.program.organization, opp), **overrides)
         assert form.is_valid(), form.errors
         assert form.save().api_key_id == opp.api_key_id
+
+
+@pytest.mark.django_db
+class TestHQApiKeyCreateForm:
+    def test_pinned_server_is_shown_not_offered(self):
+        server = HQServerFactory(name="Pinned HQ")
+        HQServerFactory(name="Other HQ")  # must not be offered
+        form = HQApiKeyCreateForm(fixed_hq_server=server)
+        assert list(form.fields["hq_server"].queryset) == [server]
+        html = render_crispy_form(form)
+        assert "<select" not in html  # the only other field, api_key, is a text input
+        assert "Pinned HQ" in html
+        assert "Other HQ" not in html
+        assert 'type="hidden"' in html
+        assert f'value="{server.pk}"' in html
+
+    @pytest.mark.parametrize("pinned, valid", [(True, False), (False, True)])
+    def test_another_server_is_rejected_only_when_pinned(self, pinned, valid):
+        server, other = HQServerFactory(), HQServerFactory()
+        form = HQApiKeyCreateForm(
+            data={"hq_server": other.id, "api_key": "a-new-api-key-value"},
+            fixed_hq_server=server if pinned else None,
+        )
+        assert form.is_valid() is valid
+
+
+@pytest.mark.parametrize(
+    "pending, expected",
+    [
+        ("2", "2"),  # the admin's unsaved pick survives the reload
+        (None, "1"),  # nothing sent: the opportunity's key
+        ("99", "1"),  # no longer offered: the opportunity's key
+    ],
+)
+def test_reloaded_api_key_selection(pending, expected):
+    opportunity = Opportunity(api_key_id=1)
+    assert reloaded_api_key_selection([(1, "current"), (2, "mine")], pending, opportunity) == expected
+
+
+def test_reloaded_api_key_selection_without_a_current_key():
+    choices = [("", "Select an API key"), (2, "mine")]
+    assert reloaded_api_key_selection(choices, None, Opportunity()) == ""
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("current_is_own", [False, True])
+def test_fixed_server_api_key_choices(opportunity, current_is_own):
+    """The current key comes first, labelled with who added it, then the user's other keys on the server, newest
+    first."""
+    current = opportunity.api_key
+    user = current.user if current_is_own else UserFactory()
+    older = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    newer = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    HQApiKeyFactory(user=user)  # another server
+    owner = current.user
+    assert fixed_server_api_key_choices(opportunity, user) == [
+        (current.id, f"{current.masked} (added by {owner.name or owner.email})"),
+        (newer.id, newer.masked),
+        (older.id, older.masked),
+    ]
