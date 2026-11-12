@@ -790,6 +790,14 @@ Screenshots from the Claude design are included below. This section only lists w
   scheduled for `<Effective date>`. Edit or cancel it instead."
 - Rate History: an edited pay rate lists its edits (old → new amounts, who, when).
 
+**Differs from the screenshot**
+
+- The first pay rate is labelled "Initial Rate", not "Opportunity Start": it starts the day the unit is created, not on
+  the opportunity's start date (section [6.3](#63-first-pay-rate-of-a-payment-unit)).
+- "Rates cannot be changed in place" is only shown once the unit has visits. Until then, a change is made in place
+  (section [9.1](#91-payment-units-with-no-visits)).
+- The banner at the top is the NM banner (section [12.4](#124-banners)).
+
 ### 12.2 Schedule Rate Change modal
 
 ![Schedule Rate Change modal](payment-rate-change-modal.png)
@@ -808,6 +816,8 @@ Screenshots from the Claude design are included below. This section only lists w
 - The Upcoming Change column says what changes, for example "Worker pay 4 → 5 (USD) from October 1, 2026".
   If both worker pay and org pay change, show both lines.
 - Only PMs see the org pay line, like the existing "Org pay per delivery" column, which NMs don't see.
+- **Differs from the screenshot:** the column shows the old and the new pay, and says which one changes, not just the
+  new amount.
 
 ### 12.4 Banners
 
@@ -821,6 +831,8 @@ Screenshots from the Claude design are included below. This section only lists w
 
   For an org pay change, the second sentence says "Org pay changes from … to …". If both change, it shows both.
 - If several changes are coming, one line per opportunity and payment unit.
+- **Differs from the edit page screenshot:** the banner names the opportunity and is shown on every page, not only on
+  the edit page.
 
 ## 13. All scenarios
 
