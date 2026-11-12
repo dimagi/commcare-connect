@@ -1,0 +1,10 @@
+# worktrunk (https://worktrunk.dev) project hooks. See "Working in git worktrees" in README.md.
+
+[pre-start]
+setup = "scripts/setup-worktree.sh"
+
+[post-start]
+build-js = "npm run dev"
+
+[post-remove]
+cleanup = "uv run python scripts/worktree.py teardown '{{ branch }}'"
