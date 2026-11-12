@@ -155,7 +155,7 @@ Set up the main checkout first (above): worktrees copy its `.env`, and the docke
 services must be running. When a worktree is created, `scripts/setup-worktree.sh`:
 
 - copies `.env` from the main checkout, and runs `uv sync` and `npm ci`
-- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>`, and runs `migrate`
+- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`
 - picks a Redis database (1-14) that no other worktree's `.env` uses, and points `REDIS_URL` and
   `CELERY_BROKER_URL` at it, so the branch's Celery worker never runs another branch's tasks
 - comments out `SECONDARY_DATABASE_URL`, which would otherwise point at the main checkout's replica

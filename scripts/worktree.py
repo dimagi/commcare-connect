@@ -93,14 +93,12 @@ def teardown(branch, env_file):
 
 
 def database_name(branch):
-    """A PostgreSQL-safe name for the branch. A hash is added if the branch name had to change,
-    so that two branches never get the same name."""
+    """A PostgreSQL-safe name for the branch. It ends in a hash of the branch name, so that two
+    branches never get the same name."""
+    digest = hashlib.sha1(branch.encode()).hexdigest()[:8]
     name = re.sub(r"[^a-z0-9_]+", "_", branch.lower()).strip("_")
-    max_length = MAX_DATABASE_NAME_LENGTH - len(DATABASE_PREFIX)
-    if name != branch or len(name) > max_length:
-        digest = hashlib.sha1(branch.encode()).hexdigest()[:8]
-        name = f"{name[: max_length - len(digest) - 1]}_{digest}"
-    return DATABASE_PREFIX + name
+    max_length = MAX_DATABASE_NAME_LENGTH - len(DATABASE_PREFIX) - len(digest) - 1
+    return f"{DATABASE_PREFIX}{name[:max_length]}_{digest}"
 
 
 def choose_redis_database(current, used):

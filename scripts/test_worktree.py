@@ -11,8 +11,10 @@ spec.loader.exec_module(worktree)
 @pytest.mark.parametrize(
     "branch, expected",
     [
-        ("feature_x", "connect_wt_feature_x"),
+        ("feature_x", "connect_wt_feature_x_38f2695f"),
         ("cs/Feature-X", "connect_wt_cs_feature_x_ac9df7e7"),
+        # Would collide with cs/Feature-X if only changed names got a hash.
+        ("cs_feature_x_ac9df7e7", "connect_wt_cs_feature_x_ac9df7e7_410b49bb"),
     ],
 )
 def test_database_name(branch, expected):
