@@ -18,7 +18,7 @@ This mirrors the setup used in [commcare-hq](https://github.com/dimagi/commcare-
 
 ## Dependabot
 
-Config: [`.github/dependabot.yml`](../.github/dependabot.yml)
+Config: [`.github/dependabot.yml`](https://github.com/dimagi/commcare-connect/blob/main/.github/dependabot.yml)
 
 Dependabot reads `pyproject.toml` / `uv.lock` (via the native `uv` ecosystem), `package.json`, and the workflow files under `.github/workflows/`, then opens pull requests when newer versions are available.
 
@@ -39,7 +39,7 @@ Dependabot reads `pyproject.toml` / `uv.lock` (via the native `uv` ecosystem), `
 
 ## pip-audit and npm audit (Security Audit CI job)
 
-Config: [`.github/workflows/security.yml`](../.github/workflows/security.yml)
+Config: [`.github/workflows/security.yml`](https://github.com/dimagi/commcare-connect/blob/main/.github/workflows/security.yml)
 
 Runs on every pull request that modifies `pyproject.toml`, `uv.lock`, `package.json`, or `package-lock.json`.
 
@@ -52,15 +52,16 @@ Both jobs fail if any package has a known vulnerability in the OSV / PyPI / npm 
 
 ## Dependency groups
 
-`pyproject.toml` uses three groups:
+`pyproject.toml` uses four groups:
 
 | Group | Location | Contents |
 |-------|----------|----------|
 | Runtime | `[project.dependencies]` | Core app dependencies needed in all environments |
 | `production` | `[dependency-groups.production]` | Production-only deps (gunicorn, psycopg2, anymail, storages, allow-cidr) |
 | `dev` | `[dependency-groups.dev]` | Development and test-only deps |
+| `docs` | `[dependency-groups.docs]` | Developer docs site (Zensical). Not installed by a plain `uv sync`; use `uv run --group docs` |
 
-pip-audit scans runtime + production. Dev deps are not scanned.
+pip-audit scans runtime + production. Dev and docs deps are not scanned.
 
 ---
 
