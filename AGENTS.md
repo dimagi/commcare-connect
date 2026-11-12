@@ -111,8 +111,9 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
 - **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
-- **Keep business logic out of views, forms and the other thin layers** (tables, filter sets, serializers, admin, management commands). Put it in the app's `services`, `queries`, `permissions` or `exports`. Read `docs/code-organization.md` before adding such code or moving existing code
-- **Duplicate code (jscpd)**: before opening a PR, run the jscpd command under Commands. It fails when your branch adds a clone, meaning your change copied code; extract the shared part to the home `docs/code-organization.md` gives it. Clones that were already on `main` don't fail it: if one is in code you touched, ask the user whether to refactor it, and if they agree and the refactor is small, do it in its own `refactor:` commit. jscpd also flags code that only looks alike. Don't extract imports, `Meta` classes, single field declarations, crispy-form layouts, argparse options or other framework boilerplate; copies that differ in their details, so a shared version would need flags or parameters per caller; or a few lines that would read worse extracted. Do extract a field that brings its own queryset, widget setup or validation when a second form needs it: that is a field factory (see `docs/code-organization/thin-layers.md`). Leave clones of these kinds in place and list them in the PR description
+- **Code organization**: read `docs/code-organization.md` before adding code that writes another app's models, adding a utility, or moving existing code
+- **Refactoring code you touch**: when code you touch breaks the rules in `docs/code-organization.md`, or a module you change has grown large enough to split, ask the user whether to refactor it and say why you want to. If they agree and the fix is small, do it in its own `refactor:` commit; larger fixes get a separate PR
+- **Duplicate code (jscpd)**: before opening a PR, run the jscpd command under Commands. It fails when your branch adds a clone, meaning your change copied code; extract the shared part into one function or class that both callers use. Clones that were already on `main` don't fail it: if one is in code you touched, follow **Refactoring code you touch**. jscpd also flags code that only looks alike. Don't extract imports, `Meta` classes, single field declarations, crispy-form layouts, argparse options or other framework boilerplate; copies that differ in their details, so a shared version would need flags or parameters per caller; or a few lines that would read worse extracted. Do extract a field that brings its own queryset, widget setup or validation when a second form needs it: that is a field factory. Leave clones of these kinds in place and list them in the PR description
 - **Prefer class-based views** for form handling and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views.py` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
 - **Use Django Forms** over raw HTML forms for validation and rendering
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
@@ -124,6 +125,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md`, `flags/README.md` and `health/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
 - **So are the Confluence docs**: user-facing changes must list the Confluence pages they affect in the PR's **Documentation** section, or say "None". To find them, search Confluence for the features the branch changes and compare the results against the documentation links on the Jira ticket. If the `connect-tech:docs-affected-by-branch` skill is available (Claude Code with the `connect-tech` plugin), open the PR first with "Pending" under the **Documentation** header, then run the skill on the branch in a subagent. Pass the subagent the PR link and the Jira ticket key, and tell it to replace "Pending" with its findings when it is done. A subagent can't ask the user, so if you don't know the ticket, ask the user before opening the PR; pass "none" if there isn't one. Without Confluence access, ask the user which pages are affected. Never drop the section as empty.
 - **Moving or renaming a module**: grep `*.md` for the old path and update it in the same commit.
+- **Moving or deleting a function**: grep `*/migrations/*.py` for imports of it and copy it into each of those migrations, in the same commit.
 
 ## Commits
 
@@ -166,7 +168,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 ## Further reading
 
-- `docs/code-organization.md` — where services, queries, exports and utilities go; it links topic files under `docs/code-organization/`
+- `docs/code-organization.md` — writing another app's models, where utilities go, and migration imports
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
