@@ -210,6 +210,28 @@ class TestOpportunityChangeForm:
             assert expected_error in form.errors["end_date"][0]
 
     @pytest.mark.parametrize(
+        "new_end, expect_error",
+        [
+            (None, True),  # end date unchanged: still ended
+            (-1, True),
+            (30, False),  # extended in the same submission
+        ],
+    )
+    def test_invite_to_ended_opportunity(self, valid_opportunity, base_form_data, new_end, expect_error):
+        valid_opportunity.start_date = _days_from_today(-30)
+        valid_opportunity.end_date = _days_from_today(-1)
+        valid_opportunity.save()
+        end = valid_opportunity.end_date if new_end is None else _days_from_today(new_end)
+        data = {**base_form_data, "end_date": end.isoformat(), "users": "+15555555555"}
+
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+        form.is_valid()
+
+        assert ("users" in form.errors) is expect_error, form.errors
+        if expect_error:
+            assert "This opportunity has ended" in form.errors["users"][0]
+
+    @pytest.mark.parametrize(
         "app_scenario",
         [
             pytest.param(

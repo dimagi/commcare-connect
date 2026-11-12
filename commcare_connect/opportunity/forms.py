@@ -356,15 +356,13 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         end_date = cleaned_data.get("end_date")
         if end_date and "end_date" in self.changed_data:
             validate_payment_unit_end_date(self.instance, end_date)
+        if cleaned_data.get("users") and self.opportunity.has_ended and (not end_date or end_date < now().date()):
+            self.add_error("users", gettext("This opportunity has ended. You cannot invite more workers."))
         return cleaned_data
 
     def clean_users(self):
-        user_data = self.cleaned_data.get("users")
-        if user_data and self.opportunity and self.opportunity.has_ended:
-            submitted_end_date = self.cleaned_data.get("end_date")
-            if not submitted_end_date or datetime.date.fromisoformat(submitted_end_date) < now().date():
-                raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
-        return self._validate_and_parse_users(user_data)
+        # Overrides the invite form's check for an ended opportunity, which clean() does with the new end date
+        return self._validate_and_parse_users(self.cleaned_data.get("users"))
 
     def _can_edit_supervising_organization(self):
         """Only an org with PM-level oversight may reassign it.
