@@ -1,6 +1,6 @@
 # Pull Request Guidelines
 
-This document outlines best practices for creating and reviewing pull requests in the CommCare Connect project.
+This document outlines best practices for creating and reviewing pull requests in the Connect project.
 
 ## Table of Contents
 
@@ -16,6 +16,7 @@ This document outlines best practices for creating and reviewing pull requests i
 - **Include demos and screenshots**: Visual aids help reviewers understand the changes quickly
 - **Reference Jira tickets**: Include links to tickets with comprehensive summaries and motivation for the change
 - **Link to staging environments**: Provide test/demo environment links if needed where reviewers can interact with the feature
+- **Fill in the PR template**: Every heading in `.github/PULL_REQUEST_TEMPLATE.md` is expected. Under **Documentation**, list the Confluence pages a user-facing change makes out of date, or write "None"; don't leave it empty
 
 #### 2. Manageable Size
 
@@ -25,7 +26,7 @@ This document outlines best practices for creating and reviewing pull requests i
 
 #### 3. Clean Git History
 
-- **Use meaningful commit messages**: Each commit should tell a clear story
+- **Use meaningful commit messages**: Each commit should tell a clear story. Use semantic prefixes (`feat:`, `fix(opportunity):`, `docs:`) and don't mix change types in one commit
 - **Rewrite history when beneficial**: Use git rebase to make the PR easier to read
 - **Logical commit progression**: Organize commits in a way that makes the development process clear
 
@@ -60,7 +61,7 @@ This document outlines best practices for creating and reviewing pull requests i
 #### 8. Code Standards
 
 - **Follow the project styleguide**: Ensure code adheres to established conventions
-- **Consistent formatting**: Use project linting and formatting tools
+- **Consistent formatting**: Run `prek run -a` (installed with `prek install`), which runs ruff, prettier, djlint, eslint and jscpd
 - **Clear naming conventions**: Use descriptive variable and function names
 
 ## Giving Quality Code Reviews

@@ -8,8 +8,8 @@
 # To publish another README, add a stub under docs/ and an entry to `nav` below.
 
 [project]
-site_name = "CommCare Connect Developer Docs"
-site_description = "Developer documentation for CommCare Connect"
+site_name = "Connect Developer Docs"
+site_description = "Developer documentation for Connect"
 site_url = "https://dimagi.github.io/commcare-connect/"
 repo_url = "https://github.com/dimagi/commcare-connect"
 repo_name = "dimagi/commcare-connect"
@@ -36,19 +36,24 @@ watch = [
 
 nav = [
   { "Home" = "index.md" },
-  { "Codebase guide" = "codebase-guide.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Local development" = "local-development.md" },
+  { "Codebase overview" = "codebase-overview.md" },
+  { "Conventions" = "conventions.md" },
   { "Apps" = [
     { "Opportunity" = [
       "apps/opportunity/index.md",
       { "Payments" = "apps/opportunity/PAYMENTS.md" },
     ] },
     { "Form receiver" = "apps/form-receiver.md" },
-    { "Feature flags" = "apps/flags.md" },
     { "Health checks" = "apps/health.md" },
-    { "Templates" = "apps/templates.md" },
   ] },
   { "Topics" = [
     { "Audit history" = "audit-history.md" },
+    { "Feature flags" = "feature-flags.md" },
+  ] },
+  { "Frontend" = [
+    { "Templates" = "templates.md" },
   ] },
   { "Contributing" = [
     { "Pull requests" = "contributing/pull-requests.md" },
@@ -58,8 +63,8 @@ nav = [
   { "Architecture decisions" = [
     { "ADR-0001: Database trigger change history" = "adr/0001-database-trigger-change-history.md" },
   ] },
-  { "Design specs" = [
-    { "Program access redesign" = "superpowers/specs/2026-08-17-program-access-redesign-design.md" },
+  { "Design docs" = [
+    { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
   ] },
 ]
 

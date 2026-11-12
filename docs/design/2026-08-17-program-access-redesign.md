@@ -1,5 +1,10 @@
 # Program access redesign: funder, watchers, and supervising organization
 
+!!! info "Status: implemented"
+    Written 2026-08-17. The forms ship behind the `enable_program_access_redesign` switch
+    (`ENABLE_PROGRAM_ACCESS_REDESIGN` in `commcare_connect/flags/switch_names.py`). This is a record of the
+    design at the time; the code is the source of truth where they differ.
+
 ## Goal
 
 Expose three organization relationships that already exist in the data model but have no

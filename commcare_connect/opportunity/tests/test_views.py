@@ -27,7 +27,8 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -76,14 +77,14 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.invoice_export import invoice_pdf_filename
 from commcare_connect.opportunity.views import (
     OpportunityList,
-    WorkerPaymentsView,
     get_earned_summary,
     get_export_task_id,
-    invoice_pdf_filename,
     link_deliver_units,
 )
+from commcare_connect.opportunity.views.worker import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import AccessLevel
@@ -3935,7 +3936,7 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
 @pytest.mark.parametrize("is_watcher", [False, True])
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
     mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
@@ -3966,7 +3967,7 @@ def test_worker_payments_shows_import_banner_on_reload(
     assert expected_class in content  # success -> green banner, error -> red banner
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_opens_modal_for_import_errors(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -3993,7 +3994,7 @@ def test_worker_payments_opens_modal_for_import_errors(
     assert "bg-message-error" not in content
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_stops_polling_once_import_succeeds(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -4013,7 +4014,7 @@ def test_worker_payments_stops_polling_once_import_succeeds(
 
 
 @pytest.mark.parametrize("is_error", [False, True])
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_shows_import_banner_only_once(
     mock_async_result, is_error, client, organization, opportunity, org_user_member
 ):
@@ -4037,7 +4038,7 @@ def test_worker_payments_shows_import_banner_only_once(
     assert message not in repeat.content.decode()
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_worker_payments_shows_import_error_modal_only_once(
     mock_status_async_result, mock_view_async_result, client, organization, opportunity, org_user_member
@@ -4071,7 +4072,7 @@ def test_worker_payments_shows_import_error_modal_only_once(
     assert "payment_import_status" not in repeat.content.decode()
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_reports_a_crashed_import_task(
     mock_async_result, client, organization, opportunity, org_user_member
 ):

@@ -4,7 +4,7 @@
 
 Python dependencies are managed with [uv](https://docs.astral.sh/uv/). Direct dependencies are declared in `pyproject.toml` using minimum-version ranges (`>=`); the full resolved dependency graph (including transitive deps) is recorded in `uv.lock` and committed to the repo.
 
-Two automated systems keep dependencies up to date and secure:
+Automated checks keep dependencies up to date and secure:
 
 | Tool | Purpose | Runs |
 |------|---------|------|
@@ -31,6 +31,9 @@ Dependabot reads `pyproject.toml` / `uv.lock` (via the native `uv` ecosystem), `
 - Internal Dimagi git-sourced packages (`xml2json`, `git-build-branch`) are excluded — they have no PyPI versions to track
 
 **Reviewing a Dependabot PR:**
+
+The `dependabot-pr-review` skill in `.claude/skills/` walks through these steps in Claude Code, for a single PR or the whole Dependabot queue.
+
 1. Check the linked changelog for breaking changes
 2. Confirm the CI `Security Audit` and `CI` jobs pass
 3. For major bumps, check whether any direct call sites in our code are affected (Dependabot links to release notes)
@@ -85,7 +88,7 @@ After bumping, run the full test suite before committing:
 
 ```bash
 uv run pytest
-uv run pre-commit run -a
+uv run prek run -a
 ```
 
 ---
@@ -104,4 +107,4 @@ uv add --group production <package>     # production-only dependency
 
 ## Periodic full audit
 
-For a deeper review (major version bumps, EoL packages, CVE triage), run the `/audit-dependencies` skill in Claude Code.
+There is no automated audit beyond Dependabot and the Security Audit job. For a deeper review (major version bumps, EoL packages, CVE triage), `uv tree --outdated` and `npm outdated` list what is behind, and `uvx pip-audit` checks the locked set by hand.
