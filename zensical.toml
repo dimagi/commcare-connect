@@ -36,27 +36,32 @@ watch = [
 
 nav = [
   { "Home" = "index.md" },
-  { "Codebase guide" = "codebase-guide.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Local development" = "local-development.md" },
+  { "Codebase overview" = "codebase-overview.md" },
+  { "Conventions" = "conventions.md" },
   { "Apps" = [
     { "Opportunity" = [
       "apps/opportunity/index.md",
       { "Payments" = "apps/opportunity/PAYMENTS.md" },
     ] },
     { "Form receiver" = "apps/form-receiver.md" },
-    { "Feature flags" = "apps/flags.md" },
     { "Health checks" = "apps/health.md" },
-    { "Templates" = "apps/templates.md" },
   ] },
   { "Topics" = [
     { "Audit history" = "audit-history.md" },
+    { "Feature flags" = "feature-flags.md" },
+  ] },
+  { "Frontend" = [
+    { "Templates" = "templates.md" },
   ] },
   { "Contributing" = [
     { "Pull requests" = "contributing/pull-requests.md" },
     { "Dependency management" = "dependency-management.md" },
   ] },
   { "Deployment" = "deployment.md" },
-  { "Design specs" = [
-    { "Program access redesign" = "superpowers/specs/2026-08-17-program-access-redesign-design.md" },
+  { "Design docs" = [
+    { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
   ] },
 ]
 
