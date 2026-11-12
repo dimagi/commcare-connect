@@ -5,7 +5,7 @@
 # nothing. The `Automated review verdict` check is advisory: it always passes, and
 # says in a warning and the job summary whether both stages ran and found nothing.
 #
-# Triggered on: PR opened, pushed, or marked ready for review
+# Triggered on: PR opened or pushed, drafts included
 #
 # Requirements:
 # - ANTHROPIC_API_KEY in Settings > Secrets and variables > Actions, for the OCR
@@ -16,8 +16,9 @@
 #
 # Notes:
 # - Skipped for forks (no secrets or OIDC tokens on fork-originated
-#   `pull_request` events), for Dependabot PRs, which `claude-dependabot.yml`
-#   reviews instead, and for drafts.
+#   `pull_request` events) and for Dependabot PRs, which `claude-dependabot.yml`
+#   reviews instead. Drafts are reviewed on every push like any other PR, so
+#   marking one ready for review starts nothing new.
 # - A new push cancels the running review: its result is about to be stale.
 # - The `claude` job authenticates to the Claude API with workload identity
 #   federation: the action exchanges the job's GitHub OIDC token for a
@@ -36,7 +37,7 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review]
+    types: [opened, synchronize]
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
@@ -49,12 +50,9 @@ jobs:
     name: OpenCodeReview
     # Gate on who authored the PR, not github.actor: the actor is whoever pushed,
     # so a maintainer's push to a Dependabot branch would otherwise get reviewed.
-    # Drafts are skipped: the review plugin stops without reviewing a draft, which
-    # would otherwise reach the verdict as a clean pass. `ready_for_review` runs it.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.login != 'dependabot[bot]'
-      && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -136,9 +134,9 @@ jobs:
     name: Claude Code Review
     needs: ocr
     # Only reviews code OCR has already cleared. `ocr` must have succeeded: a
-    # failed OCR run reports no counts, and the verdict reports it. The fork,
-    # Dependabot and draft guard is repeated from `ocr` because this job holds an
-    # OIDC token; it must not depend on `ocr`'s condition staying in step.
+    # failed OCR run reports no counts, and the verdict reports it. The fork and
+    # Dependabot guard is repeated from `ocr` because this job holds an OIDC
+    # token; it must not depend on `ocr`'s condition staying in step.
     if: >-
       needs.ocr.result == 'success'
       && needs.ocr.outputs.comments_total == '0'
@@ -146,7 +144,6 @@ jobs:
       && needs.ocr.outputs.complete == 'true'
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.login != 'dependabot[bot]'
-      && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -203,6 +200,16 @@ jobs:
       - name: Run Claude Code Review
         id: claude
         uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
+        env:
+          # The plugin's first step stops on a draft PR. Drafts are reviewed here,
+          # so that one check is overridden; its other stop conditions stand. The
+          # action appends this to Claude's system prompt (src/entrypoints/run.ts).
+          # If the model stops anyway, the run looks clean to the advisory verdict.
+          APPEND_SYSTEM_PROMPT: >-
+            This repository reviews draft pull requests. When the code-review
+            command checks whether to stop, do not treat the pull request being a
+            draft as a reason to stop; review it as you would a ready pull request.
+            Every other stop condition still applies.
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Workload identity federation, in place of anthropic_api_key. Setting
