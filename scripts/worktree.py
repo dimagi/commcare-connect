@@ -38,14 +38,27 @@ def main():
 
 def setup(worktree):
     env_file = worktree / ".env"
+    setup_own_database(worktree=worktree, env_file=env_file)
+    setup_redis_database(worktree=worktree, env_file=env_file)
+
+    database = urlsplit(read_env_value(env_file, "DATABASE_URL")).path.lstrip("/")
+    redis_database = redis_database_number(read_env_value(env_file, "REDIS_URL"))
+    print(f"[connect] Database {database}, Redis database {redis_database}.")
+
+
+def setup_own_database(worktree, env_file):
     branch = git("branch", "--show-current", cwd=worktree)
     if not branch:
         raise SystemExit("The worktree has no branch checked out, so its database can't be named.")
 
-    name = database_name(branch)
-    database_url = with_path(read_env_value(env_file, "DATABASE_URL"), name)
+    database_url = with_path(read_env_value(env_file, "DATABASE_URL"), database_name(branch))
     create_database(database_url)
+    set_env_value(env_file, "DATABASE_URL", database_url)
+    # A copied SECONDARY_DATABASE_URL would point this worktree's migrations at the main checkout's replica.
+    comment_out_env_value(env_file, "SECONDARY_DATABASE_URL")
 
+
+def setup_redis_database(worktree, env_file):
     redis_database = choose_redis_database(
         current=redis_database_number(read_env_value(env_file, "REDIS_URL")),
         used=redis_databases_used_by_other_worktrees(worktree),
@@ -55,12 +68,8 @@ def setup(worktree):
         # Newly assigned, so clear anything a removed worktree left in it.
         redis.Redis.from_url(redis_url).flushdb()
 
-    set_env_value(env_file, "DATABASE_URL", database_url)
     set_env_value(env_file, "REDIS_URL", redis_url)
     set_env_value(env_file, "CELERY_BROKER_URL", redis_url)
-    # A copied SECONDARY_DATABASE_URL would point this worktree's migrations at the main checkout's replica.
-    comment_out_env_value(env_file, "SECONDARY_DATABASE_URL")
-    print(f"[connect] Database {name}, Redis database {redis_database}.")
 
 
 def teardown(branch, env_file):
