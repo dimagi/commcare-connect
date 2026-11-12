@@ -5,7 +5,6 @@ from commcare_connect.opportunity.models import DeliveryType
 from commcare_connect.opportunity.tests.factories import OpportunityFactory, UserCredentialFactory
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.solicitation.tests.factories import SolicitationFactory
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 # The shared form, views and row actions are covered by organization/tests/test_primary_sectors.py; these tests
 # cover only what Delivery Types adds on top of them.
@@ -14,15 +13,6 @@ from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCE
 @pytest.fixture
 def delivery_type(db):
     return DeliveryType.objects.create(name="Nutrition", slug="nutrition", description="Nutrition programs")
-
-
-@pytest.fixture
-def settings_admin(user):
-    app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
-    user.user_permissions.add(
-        user.user_permissions.model.objects.get(content_type__app_label=app_label, codename=codename)
-    )
-    return user
 
 
 @pytest.mark.django_db

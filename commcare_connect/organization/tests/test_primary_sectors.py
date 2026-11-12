@@ -6,21 +6,11 @@ from django.urls import reverse
 from commcare_connect.organization.forms import PrimarySectorForm
 from commcare_connect.organization.models import PrimarySector
 from commcare_connect.users.tests.factories import OrganizationFactory
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 
 @pytest.fixture
 def sector(db):
     return PrimarySector.objects.create(name="Health", slug="health", description="Health programs")
-
-
-@pytest.fixture
-def settings_admin(user):
-    app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
-    user.user_permissions.add(
-        user.user_permissions.model.objects.get(content_type__app_label=app_label, codename=codename)
-    )
-    return user
 
 
 @pytest.mark.django_db
