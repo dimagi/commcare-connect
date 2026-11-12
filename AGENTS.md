@@ -103,7 +103,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
 - **Verification flag config**: which validation flags an opportunity applies — `OpportunityVerificationFlags` and `DeliverUnitFlagRules` in `opportunity/models/verification.py`.
 
-**"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView`, the `Worker*Table` classes and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
+**"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView` (`opportunity/views/worker.py`), the `Worker*Table` classes (`opportunity/tables/worker.py`) and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
 
 ## Code Style
 
