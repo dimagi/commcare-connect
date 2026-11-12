@@ -9,9 +9,9 @@ from django.utils import timezone
 from django.utils.timezone import localdate
 
 from commcare_connect.microplanning.const import NO_CHILDREN_WORK_AREA_UNIT_SLUG, SERVICE_DELIVERY_UNIT_SLUG
-from commcare_connect.microplanning.helpers import pct, ratio
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import DeliverUnit, Opportunity, UserVisit, VisitValidationStatus
+from commcare_connect.utils.percentages import pct
 
 WEEK_DAYS = 7
 
@@ -365,7 +365,7 @@ def build_ward_rows(target_aggregates, filtered_status, filtered_visits, last_we
             "last_week": pct(lw_visits.get("visits_approved", 0), target["expected_visit_total"]),
         }
         for out_key, pct_key, denom in _WARD_PCT_RATIOS:
-            row[out_key] = ratio(row[pct_key], ratio_denominator[denom])
+            row[out_key] = _ratio(row[pct_key], ratio_denominator[denom])
 
         rows.append(row)
     return rows
@@ -407,11 +407,21 @@ def build_wag_rows(display, target_aggregates, filtered_status, filtered_visits,
         row["pct_visits_approved_last_week"] = pct(lw_visits.get("visits_approved", 0), target["expected_visit_total"])
         row["pct_wa_evc_reached"] = pct(status.get("wa_evc_reached", 0), target["num_work_areas"])
         # pct_wa_visited is not a bottom-table column; compute inline as the ratio numerator
-        row["pct_wa_visited_to_pct_visits"] = ratio(
+        row["pct_wa_visited_to_pct_visits"] = _ratio(
             pct(status.get("wa_visited", 0), target["num_work_areas"]), row["pct_visits_approved"]
         )
-        row["pct_wa_visited_to_pct_visits_last_week"] = ratio(
+        row["pct_wa_visited_to_pct_visits_last_week"] = _ratio(
             pct(lw_status.get("wa_visited", 0), target["num_work_areas"]), row["pct_visits_approved_last_week"]
         )
         rows.append(row)
     return rows
+
+
+def _ratio(numerator, denominator, ndigits=2):
+    """Plain ratio of ``numerator`` over ``denominator`` (no ×100), rounded to ``ndigits``.
+
+    Returns None for a zero/falsy denominator or a None numerator.
+    """
+    if not denominator or numerator is None:
+        return None
+    return round(numerator / denominator, ndigits)

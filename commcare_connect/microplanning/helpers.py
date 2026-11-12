@@ -28,27 +28,6 @@ from commcare_connect.utils.itertools import batched
 logger = logging.getLogger(__name__)
 
 
-def pct(numerator, denominator, ndigits=2):
-    """Percentage of ``numerator`` over ``denominator``, rounded to ``ndigits``.
-
-    Returns None for a zero/falsy denominator or a None numerator. Pass ``ndigits=None`` for an
-    integer result (``round(x, None)`` returns an int).
-    """
-    if not denominator or numerator is None:
-        return None
-    return round(numerator / denominator * 100, ndigits)
-
-
-def ratio(numerator, denominator, ndigits=2):
-    """Plain ratio of ``numerator`` over ``denominator`` (no ×100), rounded to ``ndigits``.
-
-    Returns None for a zero/falsy denominator or a None numerator.
-    """
-    if not denominator or numerator is None:
-        return None
-    return round(numerator / denominator, ndigits)
-
-
 MAP_WORK_AREA_FIELDS = (
     "id",
     "slug",
