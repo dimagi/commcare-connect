@@ -23,9 +23,11 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
+# One group per PR and one for main. PR runs cancel each other; main runs queue instead, so a Pages
+# deploy is never cut off halfway and an older run can't finish after a newer one.
 concurrency:
-  group: docs-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  group: docs-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -54,14 +56,15 @@ jobs:
       - name: Build site
         run: uv run --no-sync zensical build --clean --strict
 
+      # Only main publishes: a manual run from another branch builds but doesn't deploy.
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
