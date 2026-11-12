@@ -3,7 +3,6 @@ import logging
 from functools import partial
 from uuid import UUID
 
-import pghistory
 from django.contrib.gis.geos import Point
 from django.db import transaction
 from django.db.models import Count, Min, Q
@@ -23,6 +22,7 @@ from commcare_connect.microplanning.models import (
     WorkAreaInaccessibilityRequest,
     WorkAreaStatus,
 )
+from commcare_connect.microplanning.services import request_work_area_inaccessibility, update_work_area_statuses
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -314,7 +314,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         additional_details = block.get("additional_details", "")
         location = _parse_xform_location(xform.metadata.location)
 
-        WorkAreaInaccessibilityRequest.objects.create(
+        request_work_area_inaccessibility(
             work_area=work_area,
             opportunity_access=access,
             xform_id=xform.id,
@@ -322,16 +322,13 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             location=location,
             reason=reason,
             additional_details=additional_details,
+            user=user,
         )
         all_attachments = xform.raw_form.get("attachments", {})
         photo_attachments = {name: meta for name, meta in all_attachments.items() if name == photo_evidence}
         if not photo_attachments:
             raise ProcessingError(f"photo_evidence attachment '{photo_evidence}' not found on form")
         transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, photo_attachments))
-
-        work_area.status = new_status
-        with pghistory.context(username=user.username, user_email=user.email):
-            work_area.save(update_fields=["status"])
 
 
 def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
@@ -552,7 +549,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         user_visit.save()
 
         if work_area:
-            work_area.update_status()
+            update_work_area_statuses([work_area])
 
         if not access.last_active or access.last_active < user_visit.visit_date:
             access.last_active = user_visit.visit_date

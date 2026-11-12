@@ -10,7 +10,7 @@ from commcare_connect.commcarehq.api import (
     resolve_hq_user_uuid,
 )
 from commcare_connect.microplanning.const import HQ_ASSIGN_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import WorkArea, WorkAreaInaccessibilityRequest, WorkAreaStatus
 from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -182,3 +182,27 @@ def bulk_create_or_update_cases_by_work_areas(
         WorkArea.objects.bulk_update(newly_created, ["case_id"])
 
     return cases
+
+
+def request_work_area_inaccessibility(
+    *, work_area, opportunity_access, xform_id, date_of_visit, location, reason, additional_details, user
+):
+    """Record a worker's request to mark a work area inaccessible, and set the area to await review."""
+    WorkAreaInaccessibilityRequest.objects.create(
+        work_area=work_area,
+        opportunity_access=opportunity_access,
+        xform_id=xform_id,
+        date_of_visit=date_of_visit,
+        location=location,
+        reason=reason,
+        additional_details=additional_details,
+    )
+    work_area.status = WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+    with pghistory.context(username=user.username, user_email=user.email):
+        work_area.save(update_fields=["status"])
+
+
+def update_work_area_statuses(work_areas):
+    """Recalculate each work area's status from its visits, e.g. after visits are added or reviewed."""
+    for work_area in work_areas:
+        work_area.update_status()
