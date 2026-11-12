@@ -968,18 +968,18 @@ class OpportunityFinalizeForm(forms.ModelForm):
             start_date = cleaned_data["start_date"]
             end_date = cleaned_data["end_date"]
             if end_date < now().date():
-                self.add_error("end_date", "Please enter the correct end date for this opportunity")
+                self.add_error("end_date", gettext("Please enter the correct end date for this opportunity"))
             if not self.is_start_date_readonly and start_date < now().date():
                 self.add_error("start_date", gettext("Start date can't be in the past."))
             if start_date >= end_date:
-                self.add_error("end_date", "End date must be after start date")
+                self.add_error("end_date", gettext("End date must be after start date"))
 
             program = self.opportunity.program
             if not (program.start_date <= start_date <= program.end_date):
-                self.add_error("start_date", "Start date must be within the program's start and end dates.")
+                self.add_error("start_date", gettext("Start date must be within the program's start and end dates."))
 
             if not (program.start_date <= end_date <= program.end_date):
-                self.add_error("end_date", "End date must be within the program's start and end dates.")
+                self.add_error("end_date", gettext("End date must be within the program's start and end dates."))
 
             total_budget_sum = (
                 Opportunity.objects.filter(program=program)
@@ -988,7 +988,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 or 0
             )
             if total_budget_sum + cleaned_data["total_budget"] > program.budget:
-                self.add_error("total_budget", "Budget exceeds the program budget.")
+                self.add_error("total_budget", gettext("Budget exceeds the program budget."))
 
             self._validate_dates_cover_payment_units(start_date, end_date)
             return cleaned_data
