@@ -161,6 +161,16 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
 
+## Architecture Decision Records
+
+ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file.
+
+- Before designing a change, read the ADRs that touch that area.
+- Cite them as `ADR-NNNN` in code comments, PR descriptions and conversations.
+- If your proposal contradicts an ADR, say so explicitly ("Contradicts ADR-0007 because …") rather than silently overriding it.
+- Ask before editing an accepted ADR. Reversing a decision means writing a new ADR that supersedes it.
+- To record a decision, run `/create-adr`.
+
 ## Further reading
 
 - `pr_guidelines.md` — PR size, description and review conventions
