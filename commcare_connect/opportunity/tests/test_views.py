@@ -2672,6 +2672,40 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
     assert response.status_code == 404
 
 
+def test_worker_payment_history_without_payments(client: Client, opportunity: Opportunity, org_user_admin: User):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    client.force_login(org_user_admin)
+    url = reverse(
+        "opportunity:worker_payment_history",
+        args=(opportunity.organization.slug, opportunity.opportunity_id, access.opportunity_access_id),
+    )
+    response = client.get(url)
+    assert response.status_code == 200
+    assert "Rollback Last Payment" not in response.content.decode()
+
+
+def test_worker_payment_history_with_payment(client: Client, opportunity: Opportunity, org_user_admin: User):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    payment = PaymentFactory(opportunity_access=access)
+    client.force_login(org_user_admin)
+    url = reverse(
+        "opportunity:worker_payment_history",
+        args=(opportunity.organization.slug, opportunity.opportunity_id, access.opportunity_access_id),
+    )
+    response = client.get(url)
+    assert response.status_code == 200
+    delete_url = reverse(
+        "opportunity:payment_delete",
+        args=(
+            opportunity.organization.slug,
+            opportunity.opportunity_id,
+            access.opportunity_access_id,
+            payment.payment_id,
+        ),
+    )
+    assert delete_url in response.content.decode()
+
+
 @pytest.mark.django_db
 class TestSuspendUser:
     def url(self, org_slug, opp_id, pk):
