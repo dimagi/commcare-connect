@@ -83,7 +83,7 @@ class Solicitation(BaseModel):
     def effective_status(self):
         if self.status == self.Status.ACTIVE and self.application_deadline <= now():
             return self.Status.CLOSED
-        return self.status
+        return self.Status(self.status)
 
     @property
     def is_open(self):

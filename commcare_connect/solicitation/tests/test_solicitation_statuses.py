@@ -25,9 +25,11 @@ DEADLINE_CASES = [
 @pytest.mark.parametrize("status, deadline_offset, expected_status", DEADLINE_CASES)
 def test_deadline_rule(status, deadline_offset, expected_status):
     solicitation = SolicitationFactory(status=status, application_deadline=now() + deadline_offset)
+    solicitation.refresh_from_db()  # the stored status loads as a plain string
     expected_open = expected_status == Status.ACTIVE
 
     assert solicitation.effective_status == expected_status
+    assert solicitation.effective_status.label == expected_status.label
     assert solicitation.is_open is expected_open
     assert Solicitation.objects.open().filter(pk=solicitation.pk).exists() is expected_open
 
