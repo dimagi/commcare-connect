@@ -4,6 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
+from django.db import transaction
 from django.db.models import ProtectedError, Sum
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
@@ -37,6 +38,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    PaymentUnitRateFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -1127,3 +1129,24 @@ class TestOpportunityApiKey:
         assert event.pgh_label == "api_key_update"
         assert event.api_key_id == new_key.id
         assert event.pgh_context.metadata["user_email"] == "admin@example.com"
+
+
+@pytest.mark.django_db
+class TestPaymentUnitRateLookups:
+    @pytest.fixture
+    def unit(self):
+        return PaymentUnitFactory()
+
+    def test_pay_rate_on_skips_cancelled_and_later_rows(self, unit):
+        jan = PaymentUnitRateFactory(payment_unit=unit, flw_amount=4, planned_for=date(2026, 1, 1))
+        PaymentUnitRateFactory(payment_unit=unit, flw_amount=5, planned_for=date(2026, 2, 1), cancelled_on=now())
+        mar = PaymentUnitRateFactory(payment_unit=unit, flw_amount=6, planned_for=date(2026, 3, 1))
+        assert unit.pay_rate_on(date(2026, 2, 15)) == jan
+        assert unit.pay_rate_on(date(2026, 3, 1)) == mar
+        assert unit.pay_rate_on(date(2025, 12, 31)) is None
+
+    def test_one_live_rate_per_date(self, unit):
+        PaymentUnitRateFactory(payment_unit=unit, flw_amount=4, planned_for=date(2026, 3, 1), cancelled_on=now())
+        PaymentUnitRateFactory(payment_unit=unit, flw_amount=5, planned_for=date(2026, 3, 1))
+        with pytest.raises(IntegrityError), transaction.atomic():
+            PaymentUnitRateFactory(payment_unit=unit, flw_amount=6, planned_for=date(2026, 3, 1))

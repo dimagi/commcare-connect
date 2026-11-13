@@ -40,7 +40,7 @@ from commcare_connect.opportunity.models.opportunity import (
     Opportunity,
     OpportunityStatus,
 )
-from commcare_connect.opportunity.models.payment_units import DeliverUnit, PaymentUnit
+from commcare_connect.opportunity.models.payment_units import SYSTEM_USER, DeliverUnit, PaymentUnit, PaymentUnitRate
 from commcare_connect.opportunity.models.reference import Country, Currency, DeliveryType, ExchangeRate
 from commcare_connect.opportunity.models.verification import (
     DeliverUnitFlagRules,
@@ -58,6 +58,7 @@ from commcare_connect.opportunity.models.visits import (
 
 __all__ = [
     "CHOICE_FIELD_MAX_LENGTH",
+    "SYSTEM_USER",
     "Assessment",
     "AssignedTask",
     "AssignedTaskStatus",
@@ -92,6 +93,7 @@ __all__ = [
     "Payment",
     "PaymentInvoice",
     "PaymentUnit",
+    "PaymentUnitRate",
     "TaskType",
     "TaskTypeModeChoices",
     "UserInvite",
