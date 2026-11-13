@@ -26,6 +26,7 @@ Don't change or delete the source doc.
 
 An ADR records a decision that:
 
+- is significant, as defined in the "Architecture Decision Records" section of `AGENTS.md`,
 - was a real choice between plausible options,
 - constrains future work,
 - would be useful to cite from code or PRs, and
