@@ -508,6 +508,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.status = VisitValidationStatus.rejected
             if completed_work is not None:
                 completed_work.status = CompletedWorkStatus.rejected
+                completed_work_needs_save = True
         if _has_blocking_pending_task(access, app):
             flags.append(["pending_task", "Worker has an incomplete assigned task."])
             user_visit.status = VisitValidationStatus.rejected
