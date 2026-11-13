@@ -49,7 +49,8 @@
             {% endblocktranslate %}
           </span>
         </div>
-        <div class="flex flex-col gap-5 bg-white p-4 rounded-lg">
+        <div x-data="{ open: false, loadFailed: false }"
+             class="flex flex-col gap-5 bg-white p-4 rounded-lg">
           <div class="flex flex-col gap-3.5">
             <div class="flex items-center justify-between gap-3">
               <span class="title-sm"
@@ -81,6 +82,39 @@
                   {% translate "Total delivery limit reached." %}
                 {% endif %}
               </span>
+            </div>
+          {% endif %}
+          {% if allocation.has_payment_units %}
+            <button type="button"
+                    @click="open = !open"
+                    hx-get="{{ payment_unit_breakdown_url }}"
+                    hx-trigger="click once"
+                    hx-target="#delivery-allocation-payment-units"
+                    hx-swap="innerHTML"
+                    @htmx:after-request="loadFailed = !$event.detail.successful"
+                    :aria-expanded="open.toString()"
+                    aria-controls="delivery-allocation-payment-units"
+                    class="flex w-full items-center justify-center gap-2 border-t border-brand-border-light pt-2.5 text-sm font-medium text-brand-indigo hover:text-brand-deep-purple">
+              <span x-show="!open">{% translate "Show Payment Units" %}</span>
+              <span x-show="open" x-cloak>{% translate "Hide Payment Units" %}</span>
+              <i class="fa-solid fa-chevron-down text-xs transition-transform duration-300"
+                 :class="open && 'rotate-180'"
+                 aria-hidden="true"></i>
+            </button>
+            <div id="delivery-allocation-payment-units"
+                 x-show="open"
+                 x-cloak
+                 class="flex flex-col gap-4">
+              <div x-show="!loadFailed"
+                   class="flex items-center justify-center gap-2 py-4 text-sm text-brand-indigo"
+                   role="status">
+                <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                <span>{% translate "Loading payment units" %}</span>
+              </div>
+              <p x-show="loadFailed"
+                 x-cloak
+                 class="py-4 text-center text-sm text-brand-mango"
+                 role="alert">{% translate "Payment units could not be loaded. Refresh the page to try again." %}</p>
             </div>
           {% endif %}
         </div>

@@ -17,7 +17,11 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.worker_progress import get_delivery_allocation, get_worker_payments
+from commcare_connect.opportunity.worker_progress import (
+    get_delivery_allocation,
+    get_payment_unit_breakdown,
+    get_worker_payments,
+)
 from commcare_connect.opportunity.worker_progress_types import (
     DeliveryAllocation,
     LimitUsage,
@@ -168,14 +172,21 @@ def test_get_delivery_allocation(opportunity):
         )
 
     allocation = get_delivery_allocation(opportunity)
+    breakdown = get_payment_unit_breakdown(opportunity)
 
+    by_name = {unit.name: unit for unit in breakdown.payment_units}
     # Claimants hold 30 household visits (150), leaving 950: 9 more full workers, and the leftover 50 is
-    # short of a full allocation. That is 30 + 90 household visits and 45 ANC visits.
+    # short of a full allocation
+    assert by_name[household.name].limit == 30 + 90
+    assert by_name[anc.name].limit == 45
     assert allocation.total.limit == 165
+    assert by_name[household.name].counts == StatusCounts(approved=2, pending=2, rejected=1)
+    assert by_name[anc.name].counts == StatusCounts()
     assert allocation.total.counts == StatusCounts(approved=2, pending=2, rejected=1)
     assert allocation.active_workers == 2
     assert allocation.synced_workers == 1
     assert allocation.hide_pending is False
+    assert breakdown.hide_pending is False
     assert allocation.has_payment_units is True
 
 
@@ -234,12 +245,15 @@ def test_get_delivery_allocation_without_budget(opportunity):
 def test_get_delivery_allocation_unit_without_total(opportunity):
     opportunity.total_budget = 1000
     opportunity.save()
-    PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=10, org_amount=0)
-    PaymentUnitFactory(opportunity=opportunity, max_total=None, max_daily=None)
+    limited = PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=10, org_amount=0)
+    unlimited = PaymentUnitFactory(opportunity=opportunity, max_total=None, max_daily=None)
 
     allocation = get_delivery_allocation(opportunity)
 
-    # The unit without a max_total adds no limit to the total
+    by_name = {unit.name: unit for unit in get_payment_unit_breakdown(opportunity).payment_units}
+    assert by_name[limited.name].limit == 100
+    assert by_name[unlimited.name].limit is None
+    assert by_name[unlimited.name].is_reached is False
     assert allocation.total.limit == 100
 
 
@@ -294,6 +308,9 @@ def test_worker_progress_template_renders(opportunity, total_budget):
     )
 
     assert "Delivery Allocation" in html
+    assert "Show Payment Units" in html
+    # The payment units are loaded when the breakdown is first opened
+    assert "Loading payment units" in html
     budget = "1,000" if total_budget else "--"
     assert f"<strong>{amount_with_currency(0, opportunity.currency_code)}</strong> workers · " in html
     assert f"org / {budget}" in html
@@ -325,3 +342,16 @@ def test_get_delivery_allocation_without_payment_units(opportunity):
     allocation = get_delivery_allocation(opportunity)
 
     assert allocation.has_payment_units is False
+    assert get_payment_unit_breakdown(opportunity).payment_units == []
+
+
+@pytest.mark.django_db
+def test_payment_unit_breakdown_template_renders(opportunity):
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=5, org_amount=5)
+
+    html = render_to_string(
+        "opportunity/partials/payment_unit_breakdown.html",
+        {"breakdown": get_payment_unit_breakdown(opportunity)},
+    )
+
+    assert unit.name in html

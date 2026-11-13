@@ -87,6 +87,11 @@ class LimitUsage:
 
 
 @dataclass
+class PaymentUnitUsage(LimitUsage):
+    name: str = ""
+
+
+@dataclass
 class DeliveryAllocation:
     total: LimitUsage
     has_payment_units: bool
@@ -96,6 +101,16 @@ class DeliveryAllocation:
     @property
     def hide_pending(self):
         return self.total.counts.pending == 0
+
+
+@dataclass
+class PaymentUnitBreakdown:
+    payment_units: list[PaymentUnitUsage]
+
+    @property
+    def hide_pending(self):
+        # Matches DeliveryAllocation.hide_pending, as the total is the sum of the payment units
+        return not any(unit.counts.pending for unit in self.payment_units)
 
 
 @dataclass

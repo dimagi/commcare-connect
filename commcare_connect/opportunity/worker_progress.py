@@ -17,6 +17,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.worker_progress_types import (
     DeliveryAllocation,
     LimitUsage,
+    PaymentUnitBreakdown,
+    PaymentUnitUsage,
     StatusCounts,
     WorkerPayments,
 )
@@ -38,6 +40,23 @@ def get_delivery_allocation(opportunity: Opportunity) -> DeliveryAllocation:
         active_workers=active_worker_count,
         synced_workers=synced_worker_count,
     )
+
+
+def get_payment_unit_breakdown(opportunity: Opportunity) -> PaymentUnitBreakdown:
+    """The Delivery Allocation card's per payment unit usage, which the dashboard loads only when it is opened."""
+    payment_units = list(opportunity.paymentunit_set.order_by("pk"))
+    limit_by_unit = opportunity.allotted_visits_by_unit(payment_units)
+    status_counts_by_unit = _status_counts_by_payment_unit(opportunity)
+
+    unit_usages = [
+        PaymentUnitUsage(
+            counts=status_counts_by_unit.get(pu.pk, StatusCounts()),
+            limit=limit_by_unit.get(pu.pk),
+            name=pu.name,
+        )
+        for pu in payment_units
+    ]
+    return PaymentUnitBreakdown(payment_units=unit_usages)
 
 
 def get_worker_payments(opportunity: Opportunity) -> WorkerPayments:
