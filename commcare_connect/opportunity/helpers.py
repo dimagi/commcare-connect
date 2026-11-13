@@ -696,14 +696,20 @@ def get_worker_learn_table_data(opportunity):
         .annotate(total_duration=Sum("duration"))
         .values("total_duration")[:1]
     )
+    if learn_modules_count:
+        modules_completed_percentage = Round(
+            ExpressionWrapper(F("completed_modules_count") * 100.0 / learn_modules_count, output_field=FloatField()), 1
+        )
+    else:
+        # The learn app has no learn modules, so a completion percentage is undefined.
+        modules_completed_percentage = Value(None, output_field=FloatField())
+
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).annotate(
         status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
         completed_modules_count=Count("completedmodule__module", distinct=True),
         assesment_count=Count("assessment", distinct=True),
         learning_hours=Subquery(duration_subquery, output_field=DurationField()),
-        modules_completed_percentage=Round(
-            ExpressionWrapper(F("completed_modules_count") * 100.0 / learn_modules_count, output_field=FloatField()), 1
-        ),
+        modules_completed_percentage=modules_completed_percentage,
         assessment_status_rank=Case(
             When(Exists(assessment_exists_subquery(passed=True)), then=Value(2)),  # Passed
             When(Exists(assessment_exists_subquery(passed=False)), then=Value(1)),  # Failed
