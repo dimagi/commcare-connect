@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import UUID
 
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import (
     Case,
     CharField,
@@ -83,6 +84,10 @@ def get_deliveries_count_subquery(status=None, sum_field=None):
         ),
         0,
     )
+
+
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
 
 
 def total_accrued_sq():
