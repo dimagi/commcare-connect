@@ -33,6 +33,7 @@ from commcare_connect.opportunity.forms import (
 from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
+    BillToAddress,
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
@@ -46,6 +47,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
+    BillToAddressFactory,
     CommCareAppFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -742,6 +744,72 @@ class TestAddBudgetNewUsersForm:
 
 @pytest.mark.django_db
 class TestAutomatedPaymentInvoiceForm:
+    def _custom_data(self, **extra):
+        return {
+            "date": "2025-11-06",
+            "usd_currency": False,
+            "amount": 100.0,
+            "description": "Why",
+            "title": "",
+            "date_of_expense": "2025-11-05",
+            **extra,
+        }
+
+    def _form(self, opportunity, invoice_type="custom", data=None, **kwargs):
+        """Bound forms get the default bill_to unless `data` supplies one."""
+        if data is not None:
+            data = {"bill_to": BillToAddress.get_default().pk, **data}
+        return AutomatedPaymentInvoiceForm(
+            opportunity=opportunity, invoice_type=invoice_type, is_opportunity_pm=False, data=data, **kwargs
+        )
+
+    def _billable_work(self, opportunity):
+        """One approved, unbilled delivery approved in October 2025, worth 100 to the worker and 20 to the org."""
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=20)
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=opportunity,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+        return cw
+
+    @pytest.fixture
+    def addresses(self, db):
+        return {
+            "default": BillToAddress.objects.get(is_default=True),
+            "other": BillToAddressFactory(name="Dimagi South Africa"),
+            "inactive": BillToAddressFactory(name="Old Entity", is_active=False),
+        }
+
+    def test_bill_to_lists_active_addresses_with_default_selected(self, valid_opportunity, addresses):
+        field = self._form(valid_opportunity).fields["bill_to"]
+        assert list(field.queryset) == [addresses["default"], addresses["other"]]
+        assert field.initial == addresses["default"]
+
+    @pytest.mark.parametrize("choice", ["default", "other"])
+    def test_saves_chosen_bill_to(self, valid_opportunity, addresses, choice):
+        ExchangeRateFactory(rate_date="2020-01-01")
+        form = self._form(valid_opportunity, data=self._custom_data(bill_to=addresses[choice].pk))
+        assert form.is_valid(), form.errors
+        assert form.save().bill_to == addresses[choice]
+
+    def test_bill_to_is_required(self, valid_opportunity):
+        ExchangeRateFactory(rate_date="2020-01-01")
+        form = self._form(valid_opportunity, data=self._custom_data(bill_to=""))
+        assert not form.is_valid()
+        assert "bill_to" in form.errors
+
+    def test_read_only_shows_invoice_address_even_if_deactivated(self, valid_opportunity, addresses):
+        invoice = PaymentInvoiceFactory(opportunity=valid_opportunity, bill_to=addresses["other"])
+        addresses["other"].is_active = False
+        addresses["other"].save()
+        form = self._form(valid_opportunity, instance=invoice, read_only=True)
+        assert form.fields["bill_to"].initial == f"Dimagi South Africa\n{addresses['other'].address}"
+        assert form.fields["bill_to"].widget.attrs["readonly"] == "readonly"
+
     def test_form_initialization(self, valid_opportunity):
         valid_opportunity.start_date = datetime.date(2025, 1, 15)
         valid_opportunity.save()
@@ -788,8 +856,8 @@ class TestAutomatedPaymentInvoiceForm:
         ExchangeRateFactory(rate_date="2020-01-01")
         PaymentInvoiceFactory(opportunity=valid_opportunity, invoice_number="INV-001")
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="custom",
             data={
                 "invoice_number": "INV-001",
@@ -801,7 +869,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "description": "",
                 "title": "",
             },
-            is_opportunity_pm=False,
         )
         assert not form.is_valid()
         assert form.errors["invoice_number"][0] == "Please use a different invoice number"
@@ -809,8 +876,8 @@ class TestAutomatedPaymentInvoiceForm:
     def test_valid_form(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="custom",
             data={
                 "date": "2025-11-06",
@@ -822,7 +889,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "",
                 "date_of_expense": "2025-11-05",
             },
-            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -833,8 +899,8 @@ class TestAutomatedPaymentInvoiceForm:
     def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="custom",
             data={
                 "invoice_number": "INV-001",
@@ -847,7 +913,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "description": "Monthly consulting services rendered.",
                 "date_of_expense": "2025-11-05",
             },
-            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -869,9 +934,8 @@ class TestAutomatedPaymentInvoiceForm:
     ):
         rate = ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=2.0, rate_date="2025-11-01")
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
-            invoice_type="custom",
+        form = self._form(
+            valid_opportunity,
             data={
                 "date": "2025-11-06",
                 "usd_currency": usd_currency,
@@ -882,7 +946,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "description": "A mandatory description",
                 "date_of_expense": "2025-11-05",
             },
-            is_opportunity_pm=False,
         )
         with patch.object(ExchangeRate, "latest_exchange_rate", wraps=ExchangeRate.latest_exchange_rate) as lookup:
             assert form.is_valid(), form.errors
@@ -917,19 +980,10 @@ class TestAutomatedPaymentInvoiceForm:
 
     def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
-        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-            invoiced_approved_count=0,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+        cw = self._billable_work(valid_opportunity)
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-001",
@@ -943,7 +997,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "description": "Monthly consulting services rendered.",
             },
-            is_opportunity_pm=False,
         )
 
         assert form.is_valid()
@@ -981,8 +1034,8 @@ class TestAutomatedPaymentInvoiceForm:
     ):
         ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-WINDOW",
@@ -992,7 +1045,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": end_date,
                 "description": "Monthly consulting services rendered.",
             },
-            is_opportunity_pm=False,
         )
 
         assert form.is_valid() is (expected_error is None)
@@ -1012,18 +1064,10 @@ class TestAutomatedPaymentInvoiceForm:
         Saving anyway would hand the NM an invoice for a figure they never reviewed.
         """
         ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1), currency_code="USD", rate=1.0)
-        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+        self._billable_work(valid_opportunity)
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-001",
@@ -1033,7 +1077,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "description": "Monthly consulting services rendered.",
             },
-            is_opportunity_pm=False,
         )
 
         assert form.is_valid() is expect_valid
@@ -1050,18 +1093,10 @@ class TestAutomatedPaymentInvoiceForm:
         then be 0 rather than the 120 that was posted, so it never claims money it has no rows for.
         """
         ExchangeRateFactory(rate_date=datetime.date(2020, 1, 1))
-        payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
-        cw = CompletedWorkFactory(
-            opportunity_access__opportunity=valid_opportunity,
-            payment_unit=payment_unit,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-        )
-        cw.status_modified_date = datetime.date(2025, 10, 5)
-        cw.save()
+        self._billable_work(valid_opportunity)
 
-        form = AutomatedPaymentInvoiceForm(
-            opportunity=valid_opportunity,
+        form = self._form(
+            valid_opportunity,
             invoice_type="service_delivery",
             data={
                 "invoice_number": "INV-STALE",
@@ -1073,7 +1108,6 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "description": "Monthly consulting services rendered.",
             },
-            is_opportunity_pm=False,
         )
 
         assert form.is_valid()

@@ -101,7 +101,11 @@
       </div>
       <div class="section">
         <p class="section-heading">{% trans "Bill to" %}</p>
-        <p>{{ dimagi_address|linebreaksbr }}</p>
+        <p>
+          {{ invoice.bill_to.name }}
+          <br>
+          {{ invoice.bill_to.address|linebreaksbr }}
+        </p>
       </div>
       <div class="section">
         <p>{% trans "Opportunity" %}: {{ opportunity.name }}</p>
