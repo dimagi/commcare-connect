@@ -455,6 +455,28 @@ class TestOpportunityInitUpdateForm:
             program=opportunity.program,
         )
 
+    def test_keeping_the_key_and_apps_makes_no_hq_calls(self, opportunity, httpx_mock):
+        # httpx_mock has no responses registered, so any HQ request fails the test.
+        form = self._get_form(opportunity=opportunity, data=self._valid_data(opportunity), user=UserFactory())
+        assert form.is_valid(), form.errors
+
+    def test_kept_key_is_checked_against_new_apps(self, opportunity, httpx_mock):
+        """The current key may belong to a colleague, so pointing it at other apps needs HQ's say-so."""
+        _mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-learn-domain", "new-learn-id", status=403)
+        _mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-deliver-domain", "new-deliver-id")
+        data = self._build_form_data(
+            opportunity,
+            learn_payload={"id": "new-learn-id", "name": "new learn app"},
+            learn_domain="new-learn-domain",
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": "new-deliver-id", "name": "new deliver app"},
+            deliver_domain="new-deliver-domain",
+        )
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+
+        assert form.errors["api_key"] == ['This API key cannot access the learn app on domain "new-learn-domain".']
+
     @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
     def test_rejects_key(self, opportunity, case):
         if case == "another_users_key":
@@ -524,6 +546,7 @@ class TestOpportunityInitUpdateForm:
         # currency is always taken from the program, ignoring the submitted "EUR" value
         assert updated_opportunity.currency == opportunity.program.currency
 
+    @pytest.mark.usefixtures("hq_grants_app_access")
     def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
         original_learn_app = opportunity.learn_app
         original_deliver_app = opportunity.deliver_app
@@ -621,8 +644,9 @@ class TestOpportunityInitUpdateForm:
         assert learn_app.passing_score == 91
 
 
-@pytest.mark.django_db
-class TestOpportunityInitForm:
+class OpportunityInitFormTestBase:
+    """Shared fixtures and form builders for the opportunity setup form tests."""
+
     @pytest.fixture(autouse=True)
     def program_application(self, opportunity):
         return ProgramApplicationFactory(
@@ -654,13 +678,20 @@ class TestOpportunityInitForm:
             **self._build_data(opportunity),
             **(extra_data or {}),
         }
-        return OpportunityInitForm(
-            data=data,
-            user=opportunity.api_key.user,
-            org_slug=opportunity.organization.slug,
-            program=opportunity.program,
-        )
+        return OpportunityInitForm(data=data, **self._form_kwargs(opportunity))
 
+    @staticmethod
+    def _form_kwargs(opportunity):
+        return {
+            "user": opportunity.api_key.user,
+            "org_slug": opportunity.organization.slug,
+            "program": opportunity.program,
+        }
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("hq_grants_app_access")
+class TestOpportunityInitForm(OpportunityInitFormTestBase):
     def test_rejects_key_owned_by_another_user(self, opportunity):
         other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
         form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
@@ -694,6 +725,32 @@ class TestOpportunityInitForm:
             assert credential_config.delivery_level == UserCredential.DeliveryLevel.TWENTY_FIVE
         else:
             assert credential_config is None
+
+
+@pytest.mark.django_db
+class TestOpportunityInitFormKeyCheck(OpportunityInitFormTestBase):
+    @pytest.mark.parametrize(
+        "deliver_status, expected_errors",
+        [
+            (200, None),
+            (403, ['This API key cannot access the deliver app on domain "{domain}".']),
+            (503, ["Could not reach CommCare HQ to check this API key. Please try again."]),
+        ],
+    )
+    def test_checks_the_key_can_reach_the_apps(self, opportunity, httpx_mock, deliver_status, expected_errors):
+        _mock_hq_apps(httpx_mock, opportunity, deliver_status=deliver_status)
+        form = self._build_form(opportunity)
+
+        if expected_errors is None:
+            assert form.is_valid(), form.errors
+        else:
+            domain = opportunity.deliver_app.cc_domain
+            assert form.errors["api_key"] == [error.format(domain=domain) for error in expected_errors]
+
+    def test_skips_the_hq_check_when_apps_are_invalid(self, opportunity, httpx_mock):
+        # httpx_mock has no responses registered, so any HQ request fails the test.
+        form = self._build_form(opportunity, extra_data={"deliver_app": self._build_data(opportunity)["learn_app"]})
+        assert form.errors["learn_app"] == ["Learn app and Deliver app cannot be same"]
 
 
 class TestAddBudgetNewUsersForm:
@@ -1870,16 +1927,9 @@ class TestSupervisingOrganizations:
         assert len(ids) == len(set(ids))
 
 
-class SupervisingOrganizationFormTestBase:
+@pytest.mark.usefixtures("hq_grants_app_access")
+class SupervisingOrganizationFormTestBase(OpportunityInitFormTestBase):
     """Shared form-data builders for the supervising organization tests."""
-
-    @pytest.fixture(autouse=True)
-    def program_application(self, opportunity):
-        return ProgramApplicationFactory(
-            organization=opportunity.organization,
-            program=opportunity.program,
-            status=ProgramApplicationStatus.ACCEPTED,
-        )
 
     def _form_data(self, opportunity, include_locked_fields=True, **overrides):
         """Build a valid payload.
@@ -1912,12 +1962,7 @@ class SupervisingOrganizationFormTestBase:
         return data
 
     def _create_form(self, opportunity, **overrides):
-        return OpportunityInitForm(
-            data=self._form_data(opportunity, **overrides),
-            user=opportunity.api_key.user,
-            org_slug=opportunity.organization.slug,
-            program=opportunity.program,
-        )
+        return OpportunityInitForm(data=self._form_data(opportunity, **overrides), **self._form_kwargs(opportunity))
 
     def _update_form(self, opportunity, include_locked_fields=True, **overrides):
         return OpportunityInitUpdateForm(
@@ -1928,9 +1973,7 @@ class SupervisingOrganizationFormTestBase:
                 **overrides,
             ),
             instance=opportunity,
-            user=opportunity.api_key.user,
-            org_slug=opportunity.organization.slug,
-            program=opportunity.program,
+            **self._form_kwargs(opportunity),
         )
 
 

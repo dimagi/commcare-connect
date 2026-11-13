@@ -670,7 +670,17 @@ class OpportunityInitForm(forms.ModelForm):
                     self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
             except KeyError:
                 raise forms.ValidationError("Invalid app data")
+            # A field with an error has left cleaned_data, so the posted apps are only complete on a valid form.
+            if not self.errors:
+                _verify_api_key_access(self, cleaned_data.get("api_key"), self._posted_apps())
             return cleaned_data
+
+    def _posted_apps(self):
+        """The chosen apps as `(app_type, cc_domain, cc_app_id)`, the shape `_verify_api_key_access` takes."""
+        return [
+            (app_type, self.cleaned_data[f"{app_type}_app_domain"], self.cleaned_data[f"{app_type}_app"]["id"])
+            for app_type in ("learn", "deliver")
+        ]
 
     def _build_commcare_app(self, *, app_type, organization, hq_server, created_by, update_existing=False):
         app_data = self.cleaned_data[f"{app_type}_app"]
