@@ -1049,7 +1049,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
         )
 
         self.fields["max_users"] = forms.IntegerField(
-            label="Max Connect Workers", initial=int(self.instance.number_of_users)
+            label="Max Connect Workers", initial=self.instance.budgeted_workers
         )
         # The opportunity's dates must cover every payment unit: it starts on or before the first unit date and
         # ends on or after the last

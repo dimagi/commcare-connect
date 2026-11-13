@@ -1,6 +1,8 @@
 """The Opportunity itself and its per-opportunity configuration."""
 
 import datetime
+from functools import cached_property
+from typing import NamedTuple
 from uuid import uuid4
 
 import pghistory
@@ -25,6 +27,11 @@ class OpportunityStatus(models.IntegerChoices):
     ACTIVE = 0, gettext_lazy("Active")
     ENDED = 1, gettext_lazy("Ended")
     INACTIVE = 2, gettext_lazy("Inactive")
+
+
+class UnitClaims(NamedTuple):
+    visits: int
+    cost: int
 
 
 # Tracked separately from the fields=["active"] tracker below rather than by adding
@@ -134,24 +141,7 @@ class Opportunity(BaseModel):
 
     @property
     def claimed_budget(self):
-        payment_unit_counts = (
-            self._claim_limits()
-            .values("payment_unit")
-            .annotate(
-                visits_count=Sum("max_visits"),
-                amount=F("payment_unit__amount"),
-                org_amount=F("payment_unit__org_amount"),
-            )
-        )
-        claimed = 0
-
-        for count in payment_unit_counts:
-            visits_count = count["visits_count"]
-            amount = count["amount"]
-            org_amount = count["org_amount"]
-            claimed += visits_count * (amount + org_amount)
-
-        return claimed
+        return sum(claims.cost for claims in self._claims_by_unit().values())
 
     @property
     def claimed_visits(self):
@@ -185,7 +175,10 @@ class Opportunity(BaseModel):
         Budget consumed per user across the given payment units; includes org pay unless
         include_org_pay is False.
         """
-        return sum(pu.max_total * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units)
+        # A unit without a max_total gives claimants no visits (see OpportunityClaimLimit.create_claim_limits)
+        return sum(
+            (pu.max_total or 0) * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units
+        )
 
     def validate_payment_unit_dates(self, unit_start_date, unit_end_date):
         errors = {}
@@ -220,11 +213,9 @@ class Opportunity(BaseModel):
         change (each exposing ``max_total``/``amount``/``org_amount``; unsaved instances are
         fine).
         """
-        from commcare_connect.opportunity.models.access import OpportunityClaim
-
         if not self.total_budget:
             return
-        claimant_count = OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
+        claimant_count = self._claimed_worker_count()
         if not claimant_count:
             return
 
@@ -243,14 +234,126 @@ class Opportunity(BaseModel):
             )
 
     @property
-    def number_of_users(self):
+    def budgeted_workers(self):
+        """How many workers ``total_budget`` could pay in full, if every worker got each payment unit's
+        ``max_total`` at the units' current amounts.
+
+        Ignores who has actually claimed, so it drifts from reality once claims are made and payment
+        units change. The finalize form uses it to turn a number of workers into a budget; for a count
+        that reflects existing claims, use ``max_workers``. ``None`` when the payment units cost nothing,
+        since then no number of workers adds up to the budget.
+        """
         if not self.total_budget:
             return 0
-        return self.total_budget / self.budget_per_user()
+        budget_per_worker = self.budget_per_user()
+        if not budget_per_worker:
+            return None
+        return self.total_budget // budget_per_worker
+
+    @property
+    def max_workers(self):
+        """Workers who have claimed, plus the whole workers the remaining budget can still fund. ``None``
+        when the budget puts no limit on claims. Calculated once per instance, together with
+        ``allotted_visits``."""
+        return self._budget_capacity[0]
 
     @property
     def allotted_visits(self):
-        return self.max_visits_per_user * self.number_of_users
+        """Deliveries the budget funds across all workers, as a whole number. ``None`` when the budget puts
+        no limit on them. Calculated once per instance, together with ``max_workers``."""
+        return self._budget_capacity[1]
+
+    @cached_property
+    def _budget_capacity(self):
+        """``(max_workers, allotted_visits)``, from a single read of the payment units and claims.
+
+        Workers who have claimed count with the visits in their claim limits. On top of them come the
+        whole workers the remaining budget can still fund, each getting every unit's full ``max_total``.
+        Cached, so it goes stale if the payment units, claims, budget or end date change afterwards;
+        fetch the opportunity again to recalculate.
+        """
+        payment_units = list(self.paymentunit_set.all())
+        claims_by_unit = self._claims_by_unit()
+        unclaimed_workers = self._unclaimed_worker_count(payment_units, claims_by_unit)
+        visits_by_unit = self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers)
+        workers = None if unclaimed_workers is None else self._claimed_worker_count() + unclaimed_workers
+        visits = None if visits_by_unit is None else sum(visits_by_unit.values())
+        return workers, visits
+
+    def allotted_visits_by_unit(self, payment_units=None):
+        """Deliveries the budget funds for each payment unit across all workers.
+
+        Workers who have claimed count with the limits in their ``OpportunityClaimLimit`` rows, so
+        manual adjustments and limits set before a payment-unit change are kept. The unclaimed budget
+        is projected at today's config: a worker can only claim while the remaining budget covers a
+        full allocation (see ``ClaimOpportunityView``), so it funds whole workers, each getting every
+        unit's full ``max_total``; a leftover too small for one more worker funds nothing. Once the
+        opportunity has ended no one can claim, so the unclaimed budget funds nothing either.
+
+        Units with neither a claim limit nor a ``max_total`` are left out. Empty when the units have a
+        price but there is no budget, or when the units cost nothing and so have no budget limit.
+        """
+        if payment_units is None:
+            payment_units = self.paymentunit_set.all()
+        claims_by_unit = self._claims_by_unit()
+        unclaimed_workers = self._unclaimed_worker_count(payment_units, claims_by_unit)
+        # None (no limit) becomes {} here, the same as "priced units, no budget". Callers show both as
+        # no limit. That's safe because the dashboard requires a truthy total_budget (is_setup_complete),
+        # so the no-budget case never reaches them.
+        return self._allotted_visits_by_unit(payment_units, claims_by_unit, unclaimed_workers) or {}
+
+    def _allotted_visits_by_unit(self, payment_units, claims_by_unit, unclaimed_workers):
+        """``allotted_visits_by_unit``, but ``None`` when the budget puts no limit on the deliveries."""
+        if unclaimed_workers is None:
+            # max_total is per worker, so with unlimited workers any unit that has one is unlimited too
+            if any(pu.max_total for pu in payment_units):
+                return None
+            # No unit has a max_total, so new workers add no visits and only the existing claims count
+            unclaimed_workers = 0
+        elif not self.total_budget and self.budget_per_user_for_units(payment_units):
+            return {}
+        return {
+            pu.pk: (claims_by_unit[pu.pk].visits if pu.pk in claims_by_unit else 0)
+            + (pu.max_total or 0) * unclaimed_workers
+            for pu in payment_units
+            if pu.max_total or pu.pk in claims_by_unit
+        }
+
+    def _claimed_worker_count(self):
+        from commcare_connect.opportunity.models.access import OpportunityClaim
+
+        return OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
+
+    def _unclaimed_worker_count(self, payment_units, claims_by_unit):
+        """Whole workers the remaining budget can still fund, or ``None`` when it puts no limit on them.
+
+        Applies ``ClaimOpportunityView``'s rule: a worker can claim while the remaining budget covers
+        ``budget_per_user()``, which is what ``budget_per_user_for_units`` prices here. That rule lets
+        anyone claim when the units cost nothing, even on a budget of 0, which is what the finalize form
+        sets for them.
+        """
+        if self.has_ended:
+            return 0
+
+        remaining_budget = (self.total_budget or 0) - sum(claims.cost for claims in claims_by_unit.values())
+        budget_per_worker = self.budget_per_user_for_units(payment_units)
+        if not budget_per_worker:
+            return None if remaining_budget >= 0 else 0
+        return max(remaining_budget, 0) // budget_per_worker
+
+    def _claims_by_unit(self):
+        from commcare_connect.opportunity.models.access import OpportunityClaimLimit
+
+        rows = (
+            OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=self)
+            .values("payment_unit_id")
+            .annotate(
+                visits=Sum("max_visits"),
+                cost=Sum(F("max_visits") * (F("payment_unit__amount") + F("payment_unit__org_amount"))),
+            )
+            .order_by()
+        )
+        return {row["payment_unit_id"]: UnitClaims(row["visits"], row["cost"]) for row in rows}
 
     @property
     def max_visits_per_user(self):

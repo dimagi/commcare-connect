@@ -42,6 +42,14 @@ class TestAppAccessErrors:
         assert error is not None
         assert not isinstance(error, CommCareHQAccessDenied)
 
+    @pytest.mark.parametrize("url", ["http://[::1", "http://example.com:99999"])
+    def test_a_malformed_server_url_is_returned_not_raised(self, key, url):
+        """httpx raises these outside RequestError, so the check must not let them escape as a 500."""
+        key.hq_server.url = url
+        errors = app_access_errors(key, [("dom", "app1"), ("dom", "app2")])
+        assert len(errors) == 2
+        assert all(error is not None and not isinstance(error, CommCareHQAccessDenied) for error in errors)
+
     def test_a_check_that_outlasts_the_deadline_is_not_access_denied(self, httpx_mock, key, monkeypatch):
         """httpx times each phase separately, so a slow server is cut off by the overall deadline instead."""
         monkeypatch.setattr(commcarehq_api, "APP_ACCESS_TIMEOUT", 0.1)
