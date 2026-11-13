@@ -167,10 +167,6 @@ def _drop_cached_backend():
 @pytest.fixture
 def eager_celery(settings):
     """Run tasks in-process and keep their results where a poll by task id can find them.
-
-    Override the Django settings Celery reads from rather than assigning to ``celery_app.conf``:
-    since Celery 5.7 a value assigned to ``conf`` keeps shadowing the settings even after it is
-    "restored", which leaked into later tests that flip ``CELERY_TASK_ALWAYS_EAGER``.
     """
     previous_store = generate_invoice_summary_export.store_eager_result
     settings.CELERY_TASK_ALWAYS_EAGER = True
