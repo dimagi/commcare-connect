@@ -346,7 +346,10 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             if end_date < now().date():
                 self.add_error("end_date", gettext("End date can't be in the past."))
             else:
-                validate_payment_unit_end_date(self.instance, end_date)
+                try:
+                    validate_payment_unit_end_date(self.instance, end_date)
+                except ValidationError as e:
+                    self.add_error(None, e)
         if cleaned_data.get("users") and self.opportunity.has_ended and (not end_date or end_date < now().date()):
             self.add_error("users", gettext("This opportunity has ended. You cannot invite more workers."))
         return cleaned_data
@@ -1001,7 +1004,10 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 message = gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s).")
                 self.add_error("start_date", message % {"name": unit.name, "date": unit.end_date})
         if "end_date" in self.changed_data:
-            validate_payment_unit_end_date(self.opportunity, end_date)
+            try:
+                validate_payment_unit_end_date(self.opportunity, end_date)
+            except ValidationError as e:
+                self.add_error(None, e)
 
 
 class VisitExportForm(forms.Form):
