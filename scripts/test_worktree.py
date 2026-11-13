@@ -60,6 +60,18 @@ def test_redis_database_number(url, expected):
     assert worktree.redis_database_number(url) == expected
 
 
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        (None, "redis://localhost:6379/3"),
+        ("redis://localhost:6379", "redis://localhost:6379/3"),
+        ("rediss://:secret@cache.local:6380/0", "rediss://:secret@cache.local:6380/3"),
+    ],
+)
+def test_with_redis_database(url, expected):
+    assert worktree.with_redis_database(url=url, number=3) == expected
+
+
 def test_env_file_editing(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text('DATABASE_URL="old"\nSECONDARY_DATABASE_URL=x\n')

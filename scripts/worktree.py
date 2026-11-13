@@ -24,6 +24,8 @@ DATABASE_PREFIX = "connect_wt_"
 MAX_DATABASE_NAME_LENGTH = 63 - len("test_") - len("_gw99")
 # Database 0 is the default for the main checkout; 15 is the test suite's (TEST_REDIS_DB).
 WORKTREE_REDIS_DATABASES = range(1, 15)
+# The default for REDIS_URL and CELERY_BROKER_URL in config/settings/base.py.
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 
 def main():
@@ -69,12 +71,13 @@ def setup_own_database(worktree, env_file):
 
 def setup_redis_database(worktree, env_file):
     with redis_allocation_lock(worktree):
+        current_url = read_env_value(env_file, "REDIS_URL")
         redis_database = choose_redis_database(
-            current=redis_database_number(read_env_value(env_file, "REDIS_URL")),
+            current=redis_database_number(current_url),
             used=redis_databases_used_by_other_worktrees(worktree),
         )
-        redis_url = f"redis://localhost:6379/{redis_database}"
-        if redis_url != read_env_value(env_file, "REDIS_URL"):
+        redis_url = with_redis_database(url=current_url, number=redis_database)
+        if redis_url != current_url:
             # Newly assigned, so clear anything a removed worktree left in it.
             redis.Redis.from_url(redis_url).flushdb()
 
@@ -137,6 +140,11 @@ def redis_database_number(url):
     """The database number in a Redis URL. A missing URL or path means 0, as in config/settings/base.py."""
     match = re.match(r"rediss?://[^/]*/(\d+)", url or "")
     return int(match.group(1)) if match else 0
+
+
+def with_redis_database(url, number):
+    """The Redis URL with its database number replaced, keeping the host, port, password and scheme."""
+    return urlunsplit(urlsplit(url or DEFAULT_REDIS_URL)._replace(path=f"/{number}"))
 
 
 def create_database(database_url):
