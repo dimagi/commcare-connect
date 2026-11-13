@@ -334,8 +334,8 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             work_area.save(update_fields=["status"])
 
 
-def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
-    """Validate a form submission against the opportunity's verification flags.
+def get_visit_flags(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+    """Return the verification flags a submitted visit raises.
 
     Checks GPS presence, location proximity, submission time window,
     duplicate entities, attachments, form duration, and custom JSON validation rules.
@@ -453,7 +453,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     Locks the claim limit row (select_for_update) to serialize concurrent
     submissions for the same user + payment unit, then:
     1. Creates a UserVisit with initial status based on daily/total/claim limits
-    2. Runs verification flag checks via clean_form_submission()
+    2. Runs verification flag checks via get_visit_flags()
     3. Rejects the visit if the worker has a pending assigned task
     4. Auto-rejects flagged visits if automatic_visit_verification is enabled
     5. Auto-approves if auto_approve_visits is enabled and no flags are raised
@@ -542,7 +542,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        flags = clean_form_submission(user_visit, xform)
+        flags = get_visit_flags(user_visit=user_visit, xform=xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
