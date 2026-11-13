@@ -1,11 +1,11 @@
 # Opportunity App
 
-The opportunity app is the core domain of CommCare Connect. It manages paid programs where mobile users learn skills and deliver health services in exchange for payment.
+The opportunity app is the core domain of Connect. It manages paid programs where mobile users learn skills and deliver health services in exchange for payment.
 
 ## Key Concepts
 
 - **Opportunity** — A paid program created by an organization. It has a learn app (training), a deliver app (fieldwork), a budget, and a time window.
-- **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → delivering → paid.
+- **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → claimed → delivering → paid.
 - **OpportunityClaim** — Created when a user commits to delivering work. Allocates visit limits per payment unit.
 - **PaymentUnit** — Defines what a user gets paid for and how much. Can be hierarchical (parent/child).
 - **DeliverUnit** — A type of form submission within a delivery app (e.g., "household visit", "follow-up").
@@ -61,8 +61,9 @@ When a delivery form is received, it is checked against the opportunity's `Oppor
 | `attachment_missing`     | Required attachments missing     | `DeliverUnitFlagRules`         |
 | `form_value_not_found`   | Custom form validation failed    | `FormJsonValidationRules`      |
 | `user_suspended`         | User is suspended                | `OpportunityAccess.suspended`  |
+| `pending_task`           | Worker has an incomplete task    | Always on (`AssignedTask`)     |
 
-Flag codes are defined in `commcare_connect/utils/flags.py`. If `auto_approve_visits` is enabled and the visit is not flagged, the visit is automatically approved.
+Flag codes are defined in `commcare_connect/utils/flags.py`. It also keeps `catchment`, whose check has been removed, so that old `flag_reason` values still have a label. `user_suspended` and `pending_task` reject the visit outright; see the visit status table in `../form_receiver/README.md`. If `auto_approve_visits` is enabled and the visit is not flagged, the visit is automatically approved.
 
 ## Auto-Approval
 
@@ -100,16 +101,21 @@ Organization
 
 ## Key Files
 
-| File                            | Purpose                                                               |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `models.py`                     | All model definitions                                                 |
-| `api/views.py`                  | Mobile API: claim, progress, delivery                                 |
-| `views.py`                      | Web UI: create, edit, finalize, dashboard                             |
-| `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports          |
-| `forms.py`                      | Django forms for opportunity creation/editing                         |
-| `export.py`                     | Exports: visits, payments, user status, work status                   |
-| `visit_import.py`               | Bulk visit/payment import, exchange rates                             |
-| `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                  |
-| `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual        |
-| `utils/invoice.py`              | Invoice number generation and start date utilities                    |
-| `../form_receiver/processor.py` | Processes forms from CommCareHQ into modules, assessments, and visits |
+| File                            | Purpose                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `models/`                       | Models, one module per domain; import them from the package root                                 |
+| `api/views.py`                  | Mobile API: claim, progress, delivery                                                            |
+| `views/`                        | Web UI; invoice views in `invoices.py`, worker pages in `worker.py`, the rest in `__init__.py`   |
+| `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports                                     |
+| `forms/`                        | Django forms; invoice forms in `invoices.py`, the rest in `__init__`                             |
+| `tables/`                       | Tables; invoice tables in `invoices.py`, worker tables in `worker.py`, the rest in `__init__.py` |
+| `export.py`                     | Exports: visits, payments, user status, work status                                              |
+| `visit_import.py`               | Bulk visit/payment import, exchange rates                                                        |
+| `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                                             |
+| `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual                                   |
+| `utils/invoice.py`              | Invoice number generation and start date utilities                                               |
+| `../form_receiver/processor.py` | Processes forms from CommCareHQ into modules, assessments, and visits                            |
+
+`views/`, `forms/` and `tables/` are being split by feature. A feature module such as `invoices.py` or `worker.py`
+imports shared helpers from its package's `__init__.py`; the `__init__.py` never imports it back, so import its names
+from the submodule itself.

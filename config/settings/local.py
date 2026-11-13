@@ -55,6 +55,9 @@ JIRA_SERVICE_DESK_DRY_RUN_DELAY = env.int("JIRA_SERVICE_DESK_DRY_RUN_DELAY", def
 # allow running the deid-scripts in development
 INSTALLED_APPS += ["commcare_connect.deid"]
 
+# builds local data by driving the real app code; see commcare_connect/simulation/README.md
+INSTALLED_APPS += ["commcare_connect.simulation"]
+
 DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"  # noqa: F405
 
 # Set the paths to the GDAL and GEOS libraries if we're on a Mac
