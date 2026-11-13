@@ -7,8 +7,8 @@ lost. Archiving takes the organization, and the programs it owns with their oppo
 day-to-day use: they leave listings, pickers, the automation API, background jobs and emails, and their pages
 say the organization no longer exists. Their history stays: the delivery and invoice reports still count
 their past work and still offer them as filter choices, labelled as archived, and the data-export API still
-returns them. The LLO Directory is where the organization can be found, and restored if it starts working
-with Connect again.
+exports them. Nothing can be added to them or changed in them until the organization is restored. The LLO
+Directory is where the organization can be found, and restored if it starts working with Connect again.
 
 ## Archiving is refused while the organization has unfinished work
 
@@ -82,6 +82,8 @@ organization's role on each, and why each one blocks.
 - **The organization's admins are emailed** once the archive is saved: "The organization <name> was
   archived on Connect." Nothing else, so the reason and who archived it stay internal. Members and viewers
   aren't emailed.
+- **It can't be edited in the LLO Directory** while it is archived. Its row offers restoring instead, and its
+  edit page answers "not found".
 
 ## What disappears
 
@@ -99,7 +101,7 @@ Visibility follows **ownership**:
 
 Because of the blocking rules, everything that disappears has already finished. All of it stays in the
 delivery and invoice reports, labelled as archived (see "Reports keep the history" below), and in the
-data-export API (see "The data-export API is unchanged" below).
+data-export API's exports (see "The data-export API still exports them" below).
 
 "Disappears" covers:
 - **Listings, pickers and counts.** Reports keep the history instead (see below).
@@ -131,10 +133,14 @@ is archived or restored:
 - **Members of an archived organization** no longer see its invoices in the invoice report, since they have
   lost access to it everywhere else.
 
-### The data-export API is unchanged
+### The data-export API still exports them
 
-The data-export API is left as it is. It still returns archived organizations, the programs and opportunities
-they own and everything under them, to the same callers as before archiving.
+The data-export API's reads are left as they are. They still return archived organizations, the programs and
+opportunities they own and everything under them, to the same callers as before archiving.
+
+Its writes are refused like the rest of the app's: creating, updating or deleting lab records scoped to an
+archived organization, or to a program or opportunity it owns, and the microplanning writes (work area groups,
+work areas and implementation areas) on those opportunities answer "not found".
 
 ### How the archived organization itself disappears
 
@@ -170,7 +176,7 @@ they own and everything under them, to the same callers as before archiving.
 ### Left out
 
 - **Mobile workers** (see "Mobile workers are not affected").
-- **The data-export API** (see "The data-export API is unchanged").
+- **The data-export API's exports** (see "The data-export API still exports them").
 
 ## Restoring
 
