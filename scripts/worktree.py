@@ -149,11 +149,16 @@ def create_database(database_url):
         cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
 
 
+@contextmanager
 def connect(database_url):
     # CREATE DATABASE and DROP DATABASE can't run inside a transaction.
     connection = psycopg2.connect(database_url)
     connection.autocommit = True
-    return connection.cursor()
+    try:
+        with connection.cursor() as cursor:
+            yield cursor
+    finally:
+        connection.close()
 
 
 def with_path(url, path):
