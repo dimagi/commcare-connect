@@ -139,35 +139,64 @@ Migrate the database and start Django:
 To work on several branches at once, give each one its own git worktree. The repository has
 hooks for [worktrunk](https://worktrunk.dev/) (`wt`) in `.config/wt.toml`.
 
-Create a branch and worktree, set it up, and start Claude Code in it:
+Set up the main checkout first (above): worktrees copy its `.env`, and the docker compose
+services must be running.
+
+#### Create a worktree
+
+By default, a worktree gets its own empty database and its own Redis database:
+
+```bash
+wt switch --create my-branch
+```
+
+`wt new my-branch` does the same; it is a shorter alias defined in `.config/wt.toml`.
+
+The database has no data in it; create a user with `./manage.py createsuperuser`.
+
+To use the main checkout's database and Redis database instead, for example to work with data
+you already have, pass `--share=1`:
+
+```bash
+wt new my-branch --share=1
+```
+
+Setup doesn't run `migrate` on a shared database. If the branch adds migrations, running them
+changes the main checkout's schema too, so give that branch its own database instead.
+
+To start Claude Code in the new worktree as soon as it is set up, add `--execute claude`:
 
 ```bash
 wt switch --create --execute claude my-branch
 ```
 
-Remove the worktree and drop the databases created for its branch. A worktree created with
-`--share=1` has none, so this leaves the main checkout's database alone:
+#### Remove a worktree
 
 ```bash
 wt remove my-branch
 ```
 
-Set up the main checkout first (above): worktrees copy its `.env`, and the docker compose
-services must be running. When a worktree is created, `scripts/setup-worktree.sh`:
+This drops the databases created for the branch. A worktree created with `--share=1` has none,
+so the main checkout's database is left alone.
+
+#### What setup does
+
+When a worktree is created, `scripts/setup-worktree.sh`:
 
 - copies `.env` from the main checkout, and runs `uv sync` and `npm ci`
-- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`.
-  A worktree created with `wt new my-branch --share=1` skips this and uses the main checkout's
-  database and Redis database instead, without running `migrate`
+- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`
 - picks a Redis database (1-14) that no other worktree's `.env` uses, and points `REDIS_URL` and
   `CELERY_BROKER_URL` at it, so the branch's Celery worker never runs another branch's tasks
 - comments out `SECONDARY_DATABASE_URL`, which would otherwise point at the main checkout's replica
 
-Then the JS and CSS build in the background. The database has no data in it; create a user
-with `./manage.py createsuperuser`.
+With `--share=1`, it skips the database and Redis steps and copies `DATABASE_URL`, `REDIS_URL`
+and `CELERY_BROKER_URL` from the main checkout's `.env` instead. Either way, the JS and CSS then
+build in the background.
 
-With a worktree tool other than worktrunk, run `scripts/setup-worktree.sh` in the new worktree,
-and `uv run python scripts/worktree.py teardown <branch>` after removing it.
+#### Other worktree tools
+
+Run `scripts/setup-worktree.sh` in the new worktree (add `--share` to use the main checkout's
+databases), and `uv run python scripts/worktree.py teardown <branch>` after removing it.
 
 <!-- --8<-- [end:local-setup] -->
 
