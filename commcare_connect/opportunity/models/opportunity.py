@@ -11,7 +11,7 @@ from django.db import models
 from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils.timezone import now
-from django.utils.translation import gettext_lazy
+from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.opportunity.models.commcare_app import CommCareApp, HQApiKey
@@ -179,6 +179,31 @@ class Opportunity(BaseModel):
         return sum(
             (pu.max_total or 0) * (pu.amount + (pu.org_amount if include_org_pay else 0)) for pu in payment_units
         )
+
+    def validate_payment_unit_dates(self, unit_start_date, unit_end_date):
+        errors = {}
+        if unit_start_date:
+            if unit_start_date < self.start_date:
+                message = gettext("Start date can't be before the opportunity's start date (%(date)s).")
+                errors["start_date"] = message % {"date": self.start_date}
+            elif self.end_date and unit_start_date > self.end_date:
+                message = gettext("Start date can't be after the opportunity's end date (%(date)s).")
+                errors["start_date"] = message % {"date": self.end_date}
+        if unit_end_date:
+            if self.end_date and unit_end_date > self.end_date:
+                message = gettext("End date can't be after the opportunity's end date (%(date)s).")
+                errors["end_date"] = message % {"date": self.end_date}
+            elif unit_end_date < self.start_date:
+                message = gettext("End date can't be before the opportunity's start date (%(date)s).")
+                errors["end_date"] = message % {"date": self.start_date}
+        if errors:
+            raise ValidationError(errors)
+
+    def has_payable_visits(self):
+        from commcare_connect.opportunity.models.visits import UserVisit, VisitValidationStatus
+
+        # Trial visits get no completed work, so they are never paid
+        return UserVisit.objects.filter(opportunity=self).exclude(status=VisitValidationStatus.trial).exists()
 
     def validate_budget_for_payment_units(self, payment_units):
         """Validate that ``total_budget`` can give every existing claimant the full per-user

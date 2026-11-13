@@ -9,9 +9,10 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Q, Sum, TextChoices
+from django.db.models import Count, F, Max, Min, Q, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.formats import date_format
 from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext
@@ -60,7 +61,7 @@ from commcare_connect.utils.commcarehq_api import (
     CommCareHQAPIException,
     app_access_errors,
 )
-from commcare_connect.utils.forms import ManagedOptionForm
+from commcare_connect.utils.forms import DATE_INPUT, ManagedOptionForm
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         queryset=Country.objects.order_by("name"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
         empty_label=_("Select a country"),
+    )
+    end_date = forms.DateField(
+        widget=DATE_INPUT,
+        required=False,
+        help_text=_("Extends opportunity end date for all users."),
     )
 
     class Meta:
@@ -316,15 +322,21 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         self.fields["currency"].disabled = True
         self.fields["country"].disabled = True
 
-        self.fields["end_date"] = forms.DateField(
-            widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
-            required=False,
-            help_text=_("Extends opportunity end date for all users."),
-        )
         if self.instance:
             if self.instance.end_date:
-                self.initial["end_date"] = self.instance.end_date.isoformat()
+                self.initial["end_date"] = self.instance.end_date
             self.currently_active = self.instance.active
+        if self.instance.pk:
+            _first_unit_date, last_unit_date = payment_unit_date_bounds(self.instance)
+            today = now().date()
+            set_date_limits(
+                field=self.fields["end_date"],
+                earliest=max(today, last_unit_date or today),
+                saved=self.instance.end_date,
+            )
+            if last_unit_date:
+                end_help_text = cover_units_help_text(on_or_after=last_unit_date)
+                self.fields["end_date"].help_text = f"{self.fields['end_date'].help_text} {end_help_text}"
 
     def add_credential_fields(self, credential_config=None):
         self.fields["enable_credentials"] = forms.BooleanField(
@@ -346,13 +358,25 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             initial=credential_config.delivery_level if credential_config else "",
         )
 
+    def clean(self):
+        cleaned_data = super().clean()
+        end_date = cleaned_data.get("end_date")
+        if end_date and "end_date" in self.changed_data:
+            if end_date < now().date():
+                self.add_error("end_date", gettext("End date can't be in the past."))
+            else:
+                try:
+                    validate_payment_unit_end_date(self.instance, end_date)
+                except ValidationError as e:
+                    self.add_error(None, e)
+        if cleaned_data.get("users") and self.opportunity.has_ended and (not end_date or end_date < now().date()):
+            self.add_error("users", gettext("This opportunity has ended. You cannot invite more workers."))
+        _verify_api_key_access(self, cleaned_data.get("api_key"), _stored_apps(self.instance))
+        return cleaned_data
+
     def clean_users(self):
-        user_data = self.cleaned_data.get("users")
-        if user_data and self.opportunity and self.opportunity.has_ended:
-            submitted_end_date = self.cleaned_data.get("end_date")
-            if not submitted_end_date or datetime.date.fromisoformat(submitted_end_date) < now().date():
-                raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
-        return self._validate_and_parse_users(user_data)
+        # Overrides the invite form's check for an ended opportunity, which clean() does with the new end date
+        return self._validate_and_parse_users(self.cleaned_data.get("users"))
 
     def _can_edit_supervising_organization(self):
         """Only an org with PM-level oversight may reassign it.
@@ -430,11 +454,6 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             hq_server=self.instance.hq_server,
             opportunity=self.instance,
         )
-
-    def clean(self):
-        cleaned_data = super().clean()
-        _verify_api_key_access(self, cleaned_data.get("api_key"), _stored_apps(self.instance))
-        return cleaned_data
 
     def save(self, commit=True):
         # Attached at runtime, so absent from Meta.fields and skipped by construct_instance.
@@ -1000,14 +1019,14 @@ class OpportunityFinalizeForm(forms.ModelForm):
             "total_budget",
         ]
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date"}),
-            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "start_date": DATE_INPUT,
+            "end_date": DATE_INPUT,
         }
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
-        self.is_start_date_readonly = self.current_start_date < datetime.date.today()
+        self.is_start_date_readonly = self._is_start_date_locked()
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
@@ -1017,11 +1036,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field(
-                    "start_date",
-                    help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
-                    wrapper_class="flex-1",
-                ),
+                Field("start_date", wrapper_class="flex-1"),
                 Field("end_date", wrapper_class="flex-1"),
                 Field(
                     "max_users",
@@ -1036,7 +1051,29 @@ class OpportunityFinalizeForm(forms.ModelForm):
         self.fields["max_users"] = forms.IntegerField(
             label="Max Connect Workers", initial=self.instance.budgeted_workers
         )
+        # The opportunity's dates must cover every payment unit: it starts on or before the first unit date and
+        # ends on or after the last
+        first_unit_date, last_unit_date = payment_unit_date_bounds(self.opportunity)
         self.fields["start_date"].disabled = self.is_start_date_readonly
+        if self.is_start_date_readonly:
+            self.fields["start_date"].help_text = gettext(
+                "Start date can't be changed once it has passed, or once the opportunity has visits."
+            )
+        else:
+            set_date_limits(
+                field=self.fields["start_date"],
+                earliest=now().date(),
+                latest=first_unit_date,
+                saved=self.current_start_date,
+            )
+            self.fields["start_date"].help_text = cover_units_help_text(on_or_before=first_unit_date)
+        today = now().date()
+        set_date_limits(
+            field=self.fields["end_date"],
+            earliest=max(today, last_unit_date or today),
+            saved=self.instance.end_date,
+        )
+        self.fields["end_date"].help_text = cover_units_help_text(on_or_after=last_unit_date)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1046,18 +1083,18 @@ class OpportunityFinalizeForm(forms.ModelForm):
             start_date = cleaned_data["start_date"]
             end_date = cleaned_data["end_date"]
             if end_date < now().date():
-                self.add_error("end_date", "Please enter the correct end date for this opportunity")
+                self.add_error("end_date", gettext("Please enter the correct end date for this opportunity"))
             if not self.is_start_date_readonly and start_date < now().date():
-                self.add_error("start_date", "Start date should be today or latter")
+                self.add_error("start_date", gettext("Start date can't be in the past."))
             if start_date >= end_date:
-                self.add_error("end_date", "End date must be after start date")
+                self.add_error("end_date", gettext("End date must be after start date"))
 
             program = self.opportunity.program
             if not (program.start_date <= start_date <= program.end_date):
-                self.add_error("start_date", "Start date must be within the program's start and end dates.")
+                self.add_error("start_date", gettext("Start date must be within the program's start and end dates."))
 
             if not (program.start_date <= end_date <= program.end_date):
-                self.add_error("end_date", "End date must be within the program's start and end dates.")
+                self.add_error("end_date", gettext("End date must be within the program's start and end dates."))
 
             total_budget_sum = (
                 Opportunity.objects.filter(program=program)
@@ -1066,9 +1103,33 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 or 0
             )
             if total_budget_sum + cleaned_data["total_budget"] > program.budget:
-                self.add_error("total_budget", "Budget exceeds the program budget.")
+                self.add_error("total_budget", gettext("Budget exceeds the program budget."))
 
+            self._validate_dates_cover_payment_units(start_date, end_date)
             return cleaned_data
+
+    def _is_start_date_locked(self):
+        today = now().date()
+        if self.current_start_date < today:
+            return True
+        # On its start day, once a visit may already be paid, moving the start later would leave it before the start
+        return self.current_start_date == today and self.opportunity.has_payable_visits()
+
+    def _validate_dates_cover_payment_units(self, start_date, end_date):
+        # A unit's blank date takes the opportunity's, so each date is checked against both of a unit's dates
+        units = self.opportunity.paymentunit_set
+        if "start_date" in self.changed_data:
+            if unit := units.filter(start_date__lt=start_date).order_by("start_date").first():
+                message = gettext("Start date can't be after the start date of payment unit %(name)s (%(date)s).")
+                self.add_error("start_date", message % {"name": unit.name, "date": unit.start_date})
+            elif unit := units.filter(end_date__lt=start_date).order_by("end_date").first():
+                message = gettext("Start date can't be after the end date of payment unit %(name)s (%(date)s).")
+                self.add_error("start_date", message % {"name": unit.name, "date": unit.end_date})
+        if "end_date" in self.changed_data:
+            try:
+                validate_payment_unit_end_date(self.opportunity, end_date)
+            except ValidationError as e:
+                self.add_error(None, e)
 
 
 class VisitExportForm(forms.Form):
@@ -1458,8 +1519,8 @@ class PaymentUnitForm(forms.ModelForm):
         }
         widgets = {
             "max_daily": forms.NumberInput(attrs={"min": 1}),
-            "start_date": forms.DateInput(attrs={"type": "date"}),
-            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "start_date": DATE_INPUT,
+            "end_date": DATE_INPUT,
         }
         labels = {
             "display_name": _("Display name"),
@@ -1484,6 +1545,14 @@ class PaymentUnitForm(forms.ModelForm):
             self.fields["max_daily"].required = True
         elif self.instance.pk:
             self.fields["no_daily_limit"].initial = self.instance.max_daily is None
+        # A paid visit could fall before any new start date, so the field is locked rather than left to fail
+        if self.instance.pk and self.instance.has_payable_visits():
+            self.fields["start_date"].disabled = True
+            self.fields["start_date"].help_text = gettext(
+                "Start date can't be changed because this payment unit already has visits."
+            )
+        if self.opportunity:
+            self._set_date_limits()
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1664,6 +1733,15 @@ class PaymentUnitForm(forms.ModelForm):
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and end_date < start_date:
             raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+        if self.opportunity:
+            # Only new or changed dates, so units made before this rule can still be edited
+            try:
+                self.opportunity.validate_payment_unit_dates(
+                    start_date if "start_date" in self.changed_data else None,
+                    end_date if "end_date" in self.changed_data else None,
+                )
+            except ValidationError as e:
+                self.add_error(None, e)
 
         required_deliver_units = set(cleaned_data.get("required_deliver_units", []))
         if required_deliver_units & set(cleaned_data.get("optional_deliver_units", [])):
@@ -1678,6 +1756,43 @@ class PaymentUnitForm(forms.ModelForm):
 
         return cleaned_data
 
+    def clean_start_date(self):
+        # Once a visit may be paid the field is locked (see __init__). Before that, a start date can't be cleared
+        # or moved into the past
+        start_date = self.cleaned_data.get("start_date")
+        if not self.instance.pk or "start_date" not in self.changed_data:
+            return start_date
+        if not start_date:
+            raise ValidationError(_("Start date can't be cleared once it has been set."))
+        today = now().date()
+        if start_date < today:
+            raise ValidationError(_("Start date can't be in the past."))
+        return start_date
+
+    def _set_date_limits(self):
+        opportunity = self.opportunity
+        help_text = format_date_range(opportunity.start_date, opportunity.end_date)
+        set_date_limits(
+            field=self.fields["end_date"],
+            earliest=opportunity.start_date,
+            latest=opportunity.end_date,
+            saved=self.instance.end_date,
+        )
+        self.fields["end_date"].help_text = help_text
+        if self.fields["start_date"].disabled:
+            return
+        earliest = opportunity.start_date
+        # Only an edit is held to today or later (see clean_start_date)
+        if self.instance.pk:
+            earliest = max(earliest, now().date())
+        set_date_limits(
+            field=self.fields["start_date"],
+            earliest=earliest,
+            latest=opportunity.end_date,
+            saved=self.instance.start_date,
+        )
+        self.fields["start_date"].help_text = help_text
+
     def _validate_budget_covers_claimants(self, cleaned_data):
         """
         Reject the create/edit if the budget can't give every existing claimant the full limit.
@@ -1691,6 +1806,66 @@ class PaymentUnitForm(forms.ModelForm):
         other_units = self.opportunity.paymentunit_set.exclude(pk=self.instance.pk)
 
         self.opportunity.validate_budget_for_payment_units([proposed_unit, *other_units])
+
+
+def set_date_limits(field, earliest=None, latest=None, saved=None):
+    # Greys out dates the server would reject; the server checks still apply.
+    # The server accepts an unchanged saved date, and the browser won't submit a form whose value is out of range
+    if saved:
+        earliest = earliest and min(earliest, saved)
+        latest = latest and max(latest, saved)
+    if earliest:
+        field.widget.attrs["min"] = earliest.isoformat()
+    if latest:
+        field.widget.attrs["max"] = latest.isoformat()
+
+
+def validate_payment_unit_end_date(opportunity, end_date):
+    # A unit's blank date takes the opportunity's, so the end is checked against both of a unit's dates
+    units = opportunity.paymentunit_set
+    if unit := units.filter(end_date__gt=end_date).order_by("-end_date").first():
+        message = gettext("End date can't be before the end date of payment unit %(name)s (%(date)s).")
+        raise ValidationError({"end_date": message % {"name": unit.name, "date": unit.end_date}})
+    if unit := units.filter(start_date__gt=end_date).order_by("-start_date").first():
+        message = gettext("End date can't be before the start date of payment unit %(name)s (%(date)s).")
+        raise ValidationError({"end_date": message % {"name": unit.name, "date": unit.start_date}})
+
+
+def payment_unit_date_bounds(opportunity):
+    dates = opportunity.paymentunit_set.aggregate(
+        min_start=Min("start_date"),
+        min_end=Min("end_date"),
+        max_start=Max("start_date"),
+        max_end=Max("end_date"),
+    )
+
+    earliest = min(
+        (d for d in (dates["min_start"], dates["min_end"]) if d),
+        default=None,
+    )
+    latest = max(
+        (d for d in (dates["max_start"], dates["max_end"]) if d),
+        default=None,
+    )
+
+    return earliest, latest
+
+
+def cover_units_help_text(on_or_before=None, on_or_after=None):
+    if on_or_before:
+        return gettext("Must cover its payment units: on or before %(date)s.") % {"date": date_format(on_or_before)}
+    if on_or_after:
+        return gettext("Must cover its payment units: on or after %(date)s.") % {"date": date_format(on_or_after)}
+    return ""
+
+
+def format_date_range(start_date, end_date):
+    if end_date:
+        return gettext("Within the opportunity's dates: %(start)s – %(end)s.") % {
+            "start": date_format(start_date),
+            "end": date_format(end_date),
+        }
+    return gettext("From the opportunity's start date: %(start)s.") % {"start": date_format(start_date)}
 
 
 class SendMessageMobileUsersForm(forms.Form):

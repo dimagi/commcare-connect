@@ -1140,3 +1140,30 @@ class TestOpportunityApiKey:
     )
     def test_masked_never_shows_a_short_key_in_full(self, value, expected):
         assert HQApiKey(api_key=value).masked == expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status, link, has_payable_visits",
+    [
+        (None, "unit", False),
+        (VisitValidationStatus.trial, "unit", False),
+        (VisitValidationStatus.over_limit, "unit", True),
+        (VisitValidationStatus.approved, "unit", True),
+        # A deliver unit can move to a new opportunity's unit, keeping its visits from the old opportunity
+        (VisitValidationStatus.approved, "other_opportunity", False),
+        # The deliver unit was removed from the unit after the visit was paid through it
+        (VisitValidationStatus.approved, "removed", True),
+    ],
+)
+def test_payment_unit_has_payable_visits(status, link, has_payable_visits):
+    unit = PaymentUnitFactory()
+    if status:
+        removed = link == "removed"
+        UserVisitFactory(
+            opportunity=OpportunityFactory() if link == "other_opportunity" else unit.opportunity,
+            deliver_unit=DeliverUnitFactory(payment_unit=None if removed else unit),
+            status=status,
+            completed_work=CompletedWorkFactory(payment_unit=unit) if removed else None,
+        )
+    assert unit.has_payable_visits() is has_payable_visits

@@ -8,6 +8,8 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.utils.datetime import DateRanges
 
+DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
+
 
 class PresetDateRangeField(forms.MultiValueField):
     """A date range picked from relative presets ("Last 3 months") or entered as a custom From/To range.

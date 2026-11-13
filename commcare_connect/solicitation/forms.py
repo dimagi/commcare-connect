@@ -14,7 +14,6 @@ from django.utils.translation import gettext_lazy as _
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, Currency
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.forms import DATE_INPUT
 from commcare_connect.program.models import Program
 from commcare_connect.solicitation.models import (
     Solicitation,
@@ -22,6 +21,7 @@ from commcare_connect.solicitation.models import (
     SolicitationInvitation,
     SolicitationQuestion,
 )
+from commcare_connect.utils.forms import DATE_INPUT
 
 # Deadlines are whole hours. Browsers count `step` from the field's rendered value unless `min` is set, so
 # the whole-hour `min` anchors validation to :00. The picker still starts from the current time's minutes,

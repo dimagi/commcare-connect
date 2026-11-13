@@ -48,6 +48,7 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
     PaymentUnit,
     TaskTypeModeChoices,
+    VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -62,6 +63,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
+    UserVisitFactory,
 )
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.helpers import eligible_supervising_organizations
@@ -168,7 +170,7 @@ class TestOpportunityChangeForm:
             "country": valid_opportunity.country.code,
             "is_test": valid_opportunity.is_test,
             "delivery_type": valid_opportunity.delivery_type.id,
-            "end_date": valid_opportunity.end_date.isoformat(),
+            "end_date": valid_opportunity.end_date,
         }
         assert all(form.initial.get(key) == value for key, value in expected_initial.items())
 
@@ -221,6 +223,74 @@ class TestOpportunityChangeForm:
             assert form.is_valid()
             if "expected_clean" in test_data:
                 assert form.cleaned_data[test_data["field"]] == test_data["expected_clean"]
+
+    @pytest.mark.parametrize(
+        "unit_dates, end, expected_error",
+        [
+            ((None, 40), 30, "before the end date of payment unit"),
+            ((40, None), 30, "before the start date of payment unit"),
+            ((None, 40), 40, None),
+        ],
+    )
+    def test_end_date_covers_payment_units(self, valid_opportunity, base_form_data, unit_dates, end, expected_error):
+        valid_opportunity.start_date = _days_from_today(0)
+        valid_opportunity.end_date = _days_from_today(60)
+        valid_opportunity.save()
+        start_date, end_date = map(_days_from_today, unit_dates)
+        PaymentUnitFactory(opportunity=valid_opportunity, start_date=start_date, end_date=end_date)
+
+        data = {**base_form_data, "end_date": _days_from_today(end).isoformat()}
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+
+        assert form.fields["end_date"].widget.attrs["min"] == str(_days_from_today(40))
+        assert "on or after" in form.fields["end_date"].help_text
+        assert form.is_valid() is (expected_error is None), form.errors
+        if expected_error:
+            assert expected_error in form.errors["end_date"][0]
+
+    @pytest.mark.parametrize(
+        "saved_end, new_end, expect_error",
+        [
+            (30, -1, True),
+            (-5, -5, False),  # unchanged: an ended opportunity can still be edited
+            (30, 0, False),
+        ],
+    )
+    def test_end_date_in_past(self, valid_opportunity, base_form_data, saved_end, new_end, expect_error):
+        valid_opportunity.start_date = _days_from_today(-30)
+        valid_opportunity.end_date = _days_from_today(saved_end)
+        valid_opportunity.save()
+        data = {**base_form_data, "end_date": _days_from_today(new_end).isoformat(), "users": ""}
+
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+
+        earliest = min(_days_from_today(0), valid_opportunity.end_date)
+        assert form.fields["end_date"].widget.attrs["min"] == str(earliest)
+        assert form.is_valid() is not expect_error, form.errors
+        if expect_error:
+            assert form.errors["end_date"] == ["End date can't be in the past."]
+
+    @pytest.mark.parametrize(
+        "new_end, expect_error",
+        [
+            (None, True),  # end date unchanged: still ended
+            (-1, True),
+            (30, False),  # extended in the same submission
+        ],
+    )
+    def test_invite_to_ended_opportunity(self, valid_opportunity, base_form_data, new_end, expect_error):
+        valid_opportunity.start_date = _days_from_today(-30)
+        valid_opportunity.end_date = _days_from_today(-1)
+        valid_opportunity.save()
+        end = valid_opportunity.end_date if new_end is None else _days_from_today(new_end)
+        data = {**base_form_data, "end_date": end.isoformat(), "users": "+15555555555"}
+
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+        form.is_valid()
+
+        assert ("users" in form.errors) is expect_error, form.errors
+        if expect_error:
+            assert "This opportunity has ended" in form.errors["users"][0]
 
     @pytest.mark.parametrize(
         "app_scenario",
@@ -1602,6 +1672,10 @@ class TestEditTaskTypeForm:
         assert saved.slug == "original-slug"
 
 
+def _days_from_today(days):
+    return None if days is None else now().date() + datetime.timedelta(days=days)
+
+
 @pytest.mark.django_db
 class TestPaymentUnitFormBudgetValidation:
     """The per-user delivery limit is allocated from a shared budget pool per payment unit.
@@ -1610,25 +1684,6 @@ class TestPaymentUnitFormBudgetValidation:
     below the count of workers who have already claimed, some workers silently receive a
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
-
-    def _form(self, opportunity, data, instance=None):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        return PaymentUnitForm(
-            data={
-                "name": "Bonus",
-                "description": "Bonus payment unit",
-                "max_daily": 10,
-                "amount": 5,
-                "org_amount": 0,
-                "required_deliver_units": [str(deliver_unit.id)],
-                **data,
-            },
-            deliver_units=[deliver_unit],
-            payment_units=[],
-            org_slug=opportunity.organization.slug,
-            opportunity=opportunity,
-            instance=instance,
-        )
 
     @pytest.mark.parametrize(
         "num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid",
@@ -1655,7 +1710,7 @@ class TestPaymentUnitFormBudgetValidation:
         )
 
         instance = units[0] if edit_existing else None
-        form = self._form(opportunity, {"max_total": new_max_total}, instance=instance)
+        form = _payment_unit_form(opportunity, {"max_total": new_max_total}, instance=instance)
 
         assert form.is_valid() == expect_valid
         if not expect_valid:
@@ -1734,6 +1789,168 @@ def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submi
         deliver_unit.refresh_from_db()
         assert deliver_unit.display_name == expected
         assert deliver_unit.payment_unit is None
+
+
+@pytest.mark.django_db
+class TestPaymentUnitFormDates:
+    @pytest.mark.parametrize("edit", [False, True])
+    @pytest.mark.parametrize(
+        "opp_end, unit_start, unit_end, error_field",
+        [
+            (30, None, None, None),
+            (30, 0, 30, None),
+            (30, -1, None, "start_date"),
+            (30, None, 31, "end_date"),
+            (30, None, -1, "end_date"),  # no start date: it starts with the opportunity, after this end
+            (30, 31, None, "start_date"),  # no end date: it ends with the opportunity, before this start
+            (None, None, 100, None),  # opportunity with no end date
+        ],
+    )
+    def test_dates_within_opportunity(self, opportunity, edit, opp_end, unit_start, unit_end, error_field):
+        opportunity.start_date = _days_from_today(0)
+        opportunity.end_date = _days_from_today(opp_end)
+        opportunity.save()
+        instance = PaymentUnitFactory(opportunity=opportunity) if edit else None
+
+        form = _payment_unit_form(
+            opportunity,
+            {"start_date": _days_from_today(unit_start) or "", "end_date": _days_from_today(unit_end) or ""},
+            instance=instance,
+        )
+
+        assert form.is_valid() is (error_field is None), form.errors
+        if error_field:
+            # Editing a unit's start into the past fails its own rule first, which is all that's shown
+            expected = "in the past" if edit and unit_start == -1 else "opportunity's"
+            assert expected in form.errors[error_field][0]
+
+    def test_unchanged_dates_outside_opportunity_still_save(self, opportunity):
+        opportunity.start_date = _days_from_today(0)
+        opportunity.end_date = _days_from_today(30)
+        opportunity.save()
+        # Made before units had to sit inside their opportunity's dates
+        unit = PaymentUnitFactory(
+            opportunity=opportunity, start_date=_days_from_today(-5), end_date=_days_from_today(40)
+        )
+
+        form = _payment_unit_form(
+            opportunity, {"start_date": unit.start_date, "end_date": unit.end_date}, instance=unit
+        )
+
+        assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+class TestPaymentUnitStartDate:
+    @pytest.fixture
+    def opportunity(self, opportunity):
+        opportunity.start_date = _days_from_today(-10)
+        opportunity.end_date = _days_from_today(60)
+        opportunity.save()
+        return opportunity
+
+    def _unit(self, opportunity, start, visit_status=None):
+        unit = PaymentUnitFactory(opportunity=opportunity, start_date=_days_from_today(start))
+        if visit_status:
+            UserVisitFactory(
+                opportunity=opportunity,
+                deliver_unit=DeliverUnitFactory(payment_unit=unit),
+                status=visit_status,
+                completed_work=None,
+            )
+        return unit
+
+    def _form(self, unit, new_start, **kwargs):
+        start_date = _days_from_today(new_start)
+        return _payment_unit_form(unit.opportunity, {"start_date": start_date or "", **kwargs}, instance=unit)
+
+    def _assert_result(self, form, error):
+        assert form.is_valid() is (error is None), form.errors
+        if error:
+            assert error in form.errors["start_date"][0]
+
+    # The unit starts in 5 days, so any visit it has is trial
+    @pytest.mark.parametrize(
+        "has_visit, new_start, error",
+        [
+            (False, 15, None),
+            (False, 1, None),
+            (False, 0, None),
+            (True, 0, None),  # trial visits never change, so they don't block today
+            (False, -2, "in the past"),
+            (True, 15, None),  # not started: trial visits only
+            (False, None, "can't be cleared"),
+        ],
+    )
+    def test_start_date_change(self, opportunity, has_visit, new_start, error):
+        unit = self._unit(opportunity, 5, VisitValidationStatus.trial if has_visit else None)
+        self._assert_result(self._form(unit, new_start), error)
+
+    @pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.over_limit])
+    def test_started_unit_start_date_locked(self, opportunity, visit_status):
+        unit = self._unit(opportunity, -2, visit_status)
+        form = self._form(unit, 8)
+
+        assert form.fields["start_date"].disabled
+        assert "already has visits" in form.fields["start_date"].help_text
+        assert "min" not in form.fields["start_date"].widget.attrs
+        self._assert_result(form, None)
+        assert form.cleaned_data["start_date"] == _days_from_today(-2)
+
+    # The opportunity runs from 10 days ago to 60 days from now
+    @pytest.mark.parametrize(
+        "edit, visit_status, opp_end, expected_start_min",
+        [
+            (False, None, 60, -10),  # a new unit isn't held to today or later
+            (True, None, 60, 0),
+            (True, VisitValidationStatus.trial, 60, 0),
+            (True, None, None, 0),
+        ],
+    )
+    def test_date_limits(self, opportunity, edit, visit_status, opp_end, expected_start_min):
+        opportunity.end_date = _days_from_today(opp_end)
+        opportunity.save()
+        unit = self._unit(opportunity, 5, visit_status) if edit else None
+
+        form = _payment_unit_form(opportunity, {}, instance=unit)
+
+        start_attrs, end_attrs = form.fields["start_date"].widget.attrs, form.fields["end_date"].widget.attrs
+        latest = str(opportunity.end_date) if opp_end else None
+        assert start_attrs["min"] == str(_days_from_today(expected_start_min))
+        assert start_attrs.get("max") == end_attrs.get("max") == latest
+        assert end_attrs["min"] == str(opportunity.start_date)
+        range_text = "Within the opportunity's dates:" if opp_end else "From the opportunity's start date:"
+        assert form.fields["start_date"].help_text.startswith(range_text)
+        assert form.fields["end_date"].help_text.startswith(range_text)
+
+    # A saved date the server would still accept has to stay in range, or the browser won't submit the form
+    @pytest.mark.parametrize(
+        "unit_dates, expected_start_min, expected_end_max",
+        [
+            ((-2, None), -2, 60),  # started, with no payable visits
+            ((-15, 70), -15, 70),  # saved before units had to sit inside their opportunity's dates
+        ],
+    )
+    def test_saved_dates_stay_in_range(self, opportunity, unit_dates, expected_start_min, expected_end_max):
+        start_date, end_date = map(_days_from_today, unit_dates)
+        unit = PaymentUnitFactory(opportunity=opportunity, start_date=start_date, end_date=end_date)
+
+        form = _payment_unit_form(opportunity, {}, instance=unit)
+
+        assert form.fields["start_date"].widget.attrs["min"] == str(_days_from_today(expected_start_min))
+        assert form.fields["end_date"].widget.attrs["max"] == str(_days_from_today(expected_end_max))
+
+    @pytest.mark.parametrize("visit_status", [None, VisitValidationStatus.trial])
+    def test_started_unit_without_payable_visits_can_move(self, opportunity, visit_status):
+        unit = self._unit(opportunity, -2, visit_status)
+        form = self._form(unit, 8)
+
+        assert not form.fields["start_date"].disabled
+        self._assert_result(form, None)
+
+    def test_started_unit_other_fields_save(self, opportunity):
+        unit = self._unit(opportunity, -2, VisitValidationStatus.approved)
+        self._assert_result(self._form(unit, -2, name="Renamed"), None)
 
 
 @pytest.mark.django_db
