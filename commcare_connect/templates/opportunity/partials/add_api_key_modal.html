@@ -4,7 +4,8 @@
 <div x-cloak
      x-show="showAddApiKeyModal"
      x-transition.opacity
-     class="modal-backdrop">
+     class="modal-backdrop"
+     @keydown.escape.window="showAddApiKeyModal = false">
   <div @click.away="showAddApiKeyModal = false"
        x-transition
        class="modal"
