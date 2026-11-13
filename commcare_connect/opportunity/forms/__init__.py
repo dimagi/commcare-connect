@@ -57,7 +57,7 @@ from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
-from commcare_connect.utils.forms import ManagedOptionForm
+from commcare_connect.utils.forms import DATE_INPUT, ManagedOptionForm
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 logger = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         empty_label=_("Select a country"),
     )
     end_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}, format="%Y-%m-%d"),
+        widget=DATE_INPUT,
         required=False,
         help_text=_("Extends opportunity end date for all users."),
     )
@@ -894,8 +894,8 @@ class OpportunityFinalizeForm(forms.ModelForm):
             "total_budget",
         ]
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date"}),
-            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "start_date": DATE_INPUT,
+            "end_date": DATE_INPUT,
         }
 
     def __init__(self, *args, **kwargs):
@@ -1391,8 +1391,8 @@ class PaymentUnitForm(forms.ModelForm):
         }
         widgets = {
             "max_daily": forms.NumberInput(attrs={"min": 1}),
-            "start_date": forms.DateInput(attrs={"type": "date"}),
-            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "start_date": DATE_INPUT,
+            "end_date": DATE_INPUT,
         }
         labels = {
             "display_name": _("Display name"),
