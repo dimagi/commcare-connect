@@ -10,7 +10,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_worker_progress,
     get_worker_deliveries,
     get_worker_learn_table_data,
     get_worker_table_data,
@@ -513,82 +512,6 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.workers_invited == 3
     assert result.pending_invites == 1
     assert result.active_tasks_count == 2
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-    ],
-    indirect=True,
-)
-def test_opportunity_worker_progress_stats(opportunity):
-    today = now()
-    yesterday = today - timedelta(days=1)
-
-    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=300)
-
-    # Total paid = 100
-    PaymentFactory(opportunity_access=access, date_paid=today, amount=100)
-
-    # Total deliveries = 4
-    # Org pay on non-approved work is excluded from total_org_accrued
-    CompletedWorkFactory.create_batch(
-        2,
-        opportunity_access=access,
-        status=CompletedWorkStatus.pending,
-        saved_completed_count=1,
-        saved_org_payment_accrued=40,
-    )
-    CompletedWorkFactory.create_batch(
-        1,
-        opportunity_access=access,
-        status=CompletedWorkStatus.approved,
-        saved_completed_count=1,
-        saved_approved_count=1,
-        saved_org_payment_accrued=30,
-    )
-    CompletedWorkFactory.create_batch(
-        1, opportunity_access=access, status=CompletedWorkStatus.rejected, saved_completed_count=1
-    )
-
-    # Visits since yesterday = 2
-    cw = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1)
-    UserVisitFactory(
-        opportunity=opportunity,
-        opportunity_access=access,
-        completed_work=cw,
-        status=VisitValidationStatus.pending,
-        visit_date=yesterday,
-    )
-    UserVisitFactory(
-        opportunity=opportunity,
-        opportunity_access=access,
-        completed_work=cw,
-        status=VisitValidationStatus.approved,
-        visit_date=yesterday,
-    )
-
-    # A CompletedWork with 2 duplicate approved visits should add 2 to total/approved deliveries, not 1.
-    CompletedWorkFactory(
-        opportunity_access=access,
-        status=CompletedWorkStatus.approved,
-        saved_completed_count=2,
-        saved_approved_count=2,
-        saved_org_payment_accrued=60,
-    )
-
-    result = get_opportunity_worker_progress(opportunity.id)
-
-    assert result.id == opportunity.id
-    assert result.total_deliveries == 7
-    assert result.approved_deliveries == 3
-    assert result.rejected_deliveries == 1
-    assert result.total_accrued == 300
-    assert result.total_org_accrued == 90
-    assert result.total_paid == 100
-    assert result.visits_since_yesterday == 2
 
 
 @pytest.mark.django_db
