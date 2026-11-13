@@ -186,7 +186,7 @@ def slack_user_id(*, email, token):
         # `missing_scope` means the bot token needs `users:read.email`
         print(f"Slack lookup for {email} failed: {data.get('error')}", file=sys.stderr)
         return ""
-    return data["user"]["id"]
+    return data.get("user", {}).get("id", "")
 
 
 # The message

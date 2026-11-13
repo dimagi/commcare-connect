@@ -100,7 +100,11 @@ class TestDescribeSuspects:
 
 @pytest.mark.parametrize(
     "response",
-    [{"json": {"ok": False, "error": "missing_scope"}}, {"json": {"ok": False, "error": "users_not_found"}}],
+    [
+        {"json": {"ok": False, "error": "missing_scope"}},
+        {"json": {"ok": False, "error": "users_not_found"}},
+        {"json": {"ok": True}},
+    ],
 )
 def test_slack_lookup_failure_returns_no_id(httpx_mock, response):
     httpx_mock.add_response(**response)
