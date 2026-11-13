@@ -8,6 +8,7 @@ from django.urls import reverse
 
 from commcare_connect.opportunity.tests.factories import (
     DeliveryTypeFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
     PaymentFactory,
@@ -49,6 +50,7 @@ def act_as_admin(client, org):
     user = UserFactory()
     make_membership(org, user, Role.ADMIN)
     client.force_login(user)
+    return user
 
 
 def was_denied(response):
@@ -475,6 +477,17 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
         response = self.client.get(edit_url)
         assert response.status_code == HTTPStatus.NOT_FOUND
 
+    @pytest.mark.parametrize("url_name", ["program:opportunity_init", "program:opportunity_init_edit"])
+    def test_invalid_program_id_redirects_to_program_home(self, url_name, program_actors):
+        org = program_actors(self.program)["owner"]
+        act_as_admin(self.client, org)
+        kwargs = {"org_slug": org.slug, "pk": "not-a-valid-uuid"}
+        if url_name == "program:opportunity_init_edit":
+            kwargs["opp_id"] = "some-opportunity"
+        response = self.client.get(reverse(url_name, kwargs=kwargs))
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse("program:home", kwargs={"org_slug": org.slug})
+
 
 @pytest.mark.django_db
 class TestManageApplicationView(BaseProgramTest):
@@ -560,3 +573,26 @@ class TestApplyOrDeclineApplicationView:
         assert was_denied(response)
         self.application.refresh_from_db()
         assert self.application.status == ProgramApplicationStatus.INVITED
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("actor,expected", PROGRAM_MANAGE_ACCESS)
+def test_opportunity_api_key_options(client, program_actors, actor, expected):
+    """Program managers reload the key list after adding a key, which keeps the opportunity's key selected."""
+    program = ProgramFactory()
+    org = program_actors(program)[actor]
+    user = act_as_admin(client, org)
+    opportunity = OpportunityFactory(organization=OrganizationFactory(), program=program)
+    new_key = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    url = reverse(
+        "program:opportunity_api_key_options", args=(org.slug, program.program_id, opportunity.opportunity_id)
+    )
+    response = client.get(url)
+    if not expected:
+        assert was_denied(response), f"{actor} reached the API key options: {response.status_code}"
+        return
+    assert [value for value, _ in response.context["choices"]] == [opportunity.api_key_id, new_key.id]
+    assert response.context["selected"] == str(opportunity.api_key_id)
+    # htmx sends the admin's unsaved pick as the select's value; the reload keeps it.
+    response = client.get(url, {"api_key": new_key.id})
+    assert response.context["selected"] == str(new_key.id)

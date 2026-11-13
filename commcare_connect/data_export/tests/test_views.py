@@ -32,6 +32,7 @@ from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
+    PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -219,6 +220,16 @@ class TestProgramOpportunityOrganizationDataView:
         is_test_by_id = {opp["id"]: opp["is_test"] for opp in response.json()["opportunities"]}
         assert is_test_by_id[live_opp.id] is False
         assert is_test_by_id[test_opp.id] is True
+
+
+@pytest.mark.django_db
+class TestSingleOpportunityDataView:
+    def test_includes_payment_units(self, api_client, opportunity, org_user_member):
+        payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+        add_export_credentials(api_client, org_user_member)
+        response = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": opportunity.id}))
+        assert response.status_code == 200
+        assert {unit["id"] for unit in response.json()["payment_units"]} == {unit.id for unit in payment_units}
 
 
 @pytest.mark.django_db

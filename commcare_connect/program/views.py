@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
 from django.http import Http404, HttpResponse
@@ -10,10 +11,15 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import ListView, UpdateView
 
-from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
+from commcare_connect.opportunity.forms import (
+    OpportunityInitForm,
+    OpportunityInitUpdateForm,
+    fixed_server_api_key_choices,
+    reloaded_api_key_selection,
+)
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
@@ -39,6 +45,7 @@ from commcare_connect.program.tasks import (
     send_program_invite_applied_email,
     send_program_invite_email,
 )
+from commcare_connect.utils.db import get_object_by_uuid_or_int
 
 from .utils import AccessLevel, program_access_level_from_request, programs_accessible_to_org
 
@@ -146,7 +153,7 @@ class ManagedOpportunityViewMixin:
     def dispatch(self, request, *args, **kwargs):
         try:
             self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
-        except Program.DoesNotExist:
+        except (Program.DoesNotExist, ValidationError):
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)
@@ -178,6 +185,22 @@ class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, OpportunityInitU
 
     def get_opportunity_queryset(self):
         return Opportunity.objects.filter(program=self.program)
+
+
+@program_admin_access_required
+@require_GET
+def opportunity_api_key_options(request, org_slug, pk, opp_id):
+    """The options for the API key select on the opportunity Edit page, reloaded after the user adds a key. Program
+    admins only, like that select."""
+    opportunity = get_object_by_uuid_or_int(
+        Opportunity.objects.filter(program=request.program).select_related("api_key__user"),
+        opp_id,
+        uuid_field="opportunity_id",
+    )
+    choices = fixed_server_api_key_choices(opportunity, request.user)
+    # htmx sends the select's own value with the reload, which is the admin's unsaved pick.
+    selected = reloaded_api_key_selection(choices, request.GET.get("api_key"), opportunity)
+    return render(request, "opportunity/partials/api_key_options.html", {"choices": choices, "selected": selected})
 
 
 @program_admin_access_required

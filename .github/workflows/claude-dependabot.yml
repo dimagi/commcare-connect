@@ -72,7 +72,7 @@ jobs:
       # Audit only: records egress without blocking. Flip to `block` plus an
       # `allowed-endpoints` list once the recorded traffic looks stable.
       - name: Harden the runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -158,8 +158,9 @@ jobs:
           # Makes a bare `gh pr view <N>` resolve to this repo even if an
           # explicit --repo is ever missed.
           GH_REPO: ${{ github.repository }}
-        uses: anthropics/claude-code-action@v1.0.206
+        uses: anthropics/claude-code-action@v1.0.269
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: 'dependabot[bot]'
           # Unlocks the github_ci MCP tools listed in --allowedTools below.

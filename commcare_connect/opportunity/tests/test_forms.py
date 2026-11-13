@@ -3,14 +3,17 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
+import httpx
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from crispy_forms.utils import render_crispy_form
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
+from django.urls import reverse
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
@@ -21,20 +24,25 @@ from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
-    AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     EditTaskTypeForm,
+    HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityInitForm,
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     PaymentUnitForm,
+    fixed_server_api_key_choices,
+    reloaded_api_key_selection,
 )
+from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    ExchangeRate,
+    Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
     PaymentInvoice,
@@ -47,6 +55,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     ExchangeRateFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
@@ -79,6 +88,39 @@ def valid_opportunity(organization):
     )
     PaymentUnitFactory(opportunity=opp)
     return opp
+
+
+def _request_for(org, opportunity, role=UserOrganizationMembership.Role.ADMIN):
+    user = UserFactory()
+    return make_request(user, org=org, membership=make_membership(org, user, role), opportunity=opportunity)
+
+
+def _change_form(opportunity, request, **overrides):
+    data = {
+        "name": opportunity.name,
+        "description": "Updated description",
+        "short_description": "Updated short",
+        "active": True,
+        "currency": opportunity.currency.code,
+        "country": opportunity.country,
+        "is_test": opportunity.is_test,
+        "delivery_type": opportunity.delivery_type_id,
+        "supervising_organization": opportunity.supervising_organization_id,
+    }
+    data.update(overrides)
+    return OpportunityChangeForm(data=data, instance=opportunity, request=request)
+
+
+def _mock_hq_app(httpx_mock, hq_server, cc_domain, cc_app_id, status=200):
+    """HQ answers `status` when the app is fetched from `hq_server`, the server of the key being checked."""
+    url = f"{hq_server.url}/a/{cc_domain}/api/v0.5/application/{cc_app_id}/"
+    httpx_mock.add_response(url=url, status_code=status, json={})
+
+
+def _mock_hq_apps(httpx_mock, opportunity, learn_status=200, deliver_status=200):
+    """HQ answers `learn_status` and `deliver_status` when asked for the opportunity's current apps."""
+    for app, status in ((opportunity.learn_app, learn_status), (opportunity.deliver_app, deliver_status)):
+        _mock_hq_app(httpx_mock, opportunity.hq_server, app.cc_domain, app.cc_app_id, status)
 
 
 @pytest.mark.django_db
@@ -393,14 +435,61 @@ class TestOpportunityInitUpdateForm:
             data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
         return data
 
-    def _get_form(self, *, opportunity, data):
+    def _valid_data(self, opportunity):
+        return self._build_form_data(
+            opportunity,
+            learn_payload={"id": opportunity.learn_app.cc_app_id, "name": "learn"},
+            learn_domain=opportunity.learn_app.cc_domain,
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": opportunity.deliver_app.cc_app_id, "name": "deliver"},
+            deliver_domain=opportunity.deliver_app.cc_domain,
+        )
+
+    def _get_form(self, *, opportunity, data, user=None):
         return OpportunityInitUpdateForm(
             data=data,
             instance=opportunity,
-            user=opportunity.api_key.user,
+            user=user or opportunity.api_key.user,
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
+    def test_rejects_key(self, opportunity, case):
+        if case == "another_users_key":
+            change = {"api_key": str(HQApiKeyFactory(hq_server=opportunity.hq_server).id)}
+        else:
+            change = {"hq_server": HQServerFactory().id}
+        data = self._valid_data(opportunity) | change
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert not form.is_valid()
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    def test_rejects_own_key_on_other_hq_server(self, opportunity):
+        user = UserFactory()
+        key = HQApiKeyFactory(user=user)
+        data = self._valid_data(opportunity) | {"api_key": str(key.id)}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data, user=user).errors
+
+    @pytest.mark.parametrize("bad_id", ["999999", "abc"])
+    def test_rejects_unknown_or_malformed_key_id(self, opportunity, bad_id):
+        data = self._valid_data(opportunity) | {"api_key": bad_id}
+        assert "api_key" in self._get_form(opportunity=opportunity, data=data).errors
+
+    def test_current_key_owned_by_other_user_is_accepted(self, opportunity):
+        data = self._valid_data(opportunity)
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opportunity.api_key_id
+
+    def test_legacy_opportunity_without_hq_server_keeps_its_key(self, opportunity):
+        """Opportunities from before hq_server was recorded keep their key on the server it belongs to."""
+        data = self._valid_data(opportunity) | {"hq_server": opportunity.api_key.hq_server_id}
+        Opportunity.objects.filter(pk=opportunity.pk).update(hq_server=None)
+        opportunity.refresh_from_db()
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+        assert form.is_valid(), form.errors
 
     def test_updates_existing_linked_apps(self, opportunity):
         learn_app = opportunity.learn_app
@@ -571,6 +660,11 @@ class TestOpportunityInitForm:
             org_slug=opportunity.organization.slug,
             program=opportunity.program,
         )
+
+    def test_rejects_key_owned_by_another_user(self, opportunity):
+        other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
 
     @pytest.mark.parametrize("switch_active", [True, False])
     def test_init_form_sets_automatic_visit_verification_from_global_switch(self, opportunity, switch_active):
@@ -773,7 +867,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.amount == 100.0
         assert invoice.date == datetime.date(2025, 11, 6)
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice")
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice")
     def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
@@ -800,6 +894,64 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.end_date is None
         assert invoice.title is None
         mock_bill_invoice.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "usd_currency, expected_amount, expected_amount_usd",
+        [
+            (False, Decimal("100.00"), Decimal("50.00")),
+            (True, Decimal("200.00"), Decimal("100.00")),
+        ],
+    )
+    def test_custom_invoice_converts_amount_with_one_rate_lookup(
+        self, valid_opportunity, usd_currency, expected_amount, expected_amount_usd
+    ):
+        rate = ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=2.0, rate_date="2025-11-01")
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "title": "Ignored for custom invoices",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", wraps=ExchangeRate.latest_exchange_rate) as lookup:
+            assert form.is_valid(), form.errors
+
+        lookup.assert_called_once_with(valid_opportunity.currency_code, datetime.date(2025, 11, 6))
+        assert form.cleaned_data["exchange_rate"] == rate
+        assert form.cleaned_data["amount"] == expected_amount
+        assert form.cleaned_data["amount_usd"] == expected_amount_usd
+        assert form.cleaned_data["title"] is None
+        assert form.cleaned_data["start_date"] is None
+        assert form.cleaned_data["end_date"] is None
+
+    @pytest.mark.parametrize("usd_currency", [False, True])
+    def test_custom_invoice_without_exchange_rate(self, valid_opportunity, usd_currency):
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", return_value=None) as lookup:
+            assert not form.is_valid()
+
+        lookup.assert_called_once()
+        assert form.non_field_errors() == ["Exchange rate not available for selected date."]
 
     def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
@@ -861,7 +1013,7 @@ class TestAutomatedPaymentInvoiceForm:
         ],
         ids=["completed-period", "end-before-start", "ends-today", "future-end"],
     )
-    @patch("commcare_connect.opportunity.forms.localdate", return_value=datetime.date(2025, 11, 6))
+    @patch("commcare_connect.opportunity.forms.invoices.localdate", return_value=datetime.date(2025, 11, 6))
     def test_service_delivery_window_must_be_a_completed_period(
         self, mock_localdate, valid_opportunity, start_date, end_date, expected_error
     ):
@@ -927,7 +1079,7 @@ class TestAutomatedPaymentInvoiceForm:
             assert "The billable total for this period has changed since this page was loaded." in str(form.errors)
             assert not PaymentInvoice.objects.filter(invoice_number="INV-001").exists()
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice", return_value=[])
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice", return_value=[])
     def test_service_delivery_amount_is_never_the_posted_one(self, mock_bill_invoice, valid_opportunity):
         """The posted total is a preview artefact and must never survive onto the invoice.
 
@@ -1510,32 +1662,99 @@ class TestPaymentUnitFormBudgetValidation:
             assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
 
 
+def _payment_unit_form(opportunity, data=None, instance=None, deliver_units=None):
+    deliver_units = deliver_units or [DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)]
+    if data is not None:
+        data = {
+            "name": "Bonus",
+            "description": "Bonus payment unit",
+            "amount": 5,
+            "org_amount": 0,
+            "max_total": 10,
+            "max_daily": 5,
+            "required_deliver_units": [str(deliver_units[0].id)],
+            **data,
+        }
+    return PaymentUnitForm(
+        data=data,
+        deliver_units=deliver_units,
+        payment_units=[],
+        org_slug=opportunity.organization.slug,
+        opportunity=opportunity,
+        instance=instance,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "display_name, expect_valid",
+    [
+        pytest.param("", True, id="blank"),
+        pytest.param("Household visit", True, id="set"),
+        pytest.param("x" * 30, True, id="max_length"),
+        pytest.param("x" * 31, False, id="too_long"),
+    ],
+)
+def test_payment_unit_form_display_name(opportunity, display_name, expect_valid):
+    form = _payment_unit_form(opportunity, {"display_name": display_name})
+
+    assert form.is_valid() == expect_valid, form.errors
+    if expect_valid:
+        assert form.instance.display_name == display_name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "initial, submitted, selected, expected",
+    [
+        pytest.param("", "", True, "", id="blank"),
+        pytest.param("", "ANC visit", True, "ANC visit", id="set"),
+        pytest.param("ANC visit", "", True, "", id="cleared"),
+        # An unticked deliver unit's input is disabled, so the browser submits nothing for it
+        pytest.param("ANC visit", None, False, "ANC visit", id="unselected_keeps_name"),
+        pytest.param("", "x" * 31, True, None, id="too_long"),
+    ],
+)
+def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submitted, selected, expected):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None, display_name=initial)
+    other_deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    field = f"deliver_unit_display_name_{deliver_unit.pk}"
+    data = {"required_deliver_units": [str((deliver_unit if selected else other_deliver_unit).id)]}
+    if submitted is not None:
+        data[field] = submitted
+    form = _payment_unit_form(opportunity, data, deliver_units=[deliver_unit, other_deliver_unit])
+
+    assert form.fields[field].initial == initial
+    rows = form.fields["required_deliver_units"].deliver_unit_rows
+    assert [row["selected"] for row in rows] == [selected, not selected]
+    assert form.is_valid() == (expected is not None), form.errors
+    if expected is not None:
+        form.instance.opportunity = opportunity
+        form.save()
+        deliver_unit.refresh_from_db()
+        assert deliver_unit.display_name == expected
+        assert deliver_unit.payment_unit is None
+
+
+@pytest.mark.django_db
+def test_payment_unit_form_rejects_deliver_unit_both_required_and_optional(opportunity):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+
+    form = _payment_unit_form(
+        opportunity,
+        {"required_deliver_units": [str(deliver_unit.id)], "optional_deliver_units": [str(deliver_unit.id)]},
+        deliver_units=[deliver_unit],
+    )
+
+    assert not form.is_valid()
+    assert form.errors["optional_deliver_units"] == ["A deliver unit cannot be both required and optional."]
+
+
 @pytest.mark.django_db
 class TestPaymentUnitFormDailyLimit:
-    def _form(self, opportunity, data=None, instance=None):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        if data is not None:
-            data = {
-                "name": "Bonus",
-                "description": "Bonus payment unit",
-                "amount": 5,
-                "org_amount": 0,
-                "max_total": 10,
-                "required_deliver_units": [str(deliver_unit.id)],
-                **data,
-            }
-        return PaymentUnitForm(
-            data=data,
-            deliver_units=[deliver_unit],
-            payment_units=[],
-            org_slug=opportunity.organization.slug,
-            opportunity=opportunity,
-            instance=instance,
-        )
-
     @override_switch(OPTIONAL_DAILY_LIMIT, active=False)
     def test_daily_limit_required_when_switch_off(self, opportunity):
-        form = self._form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
+        form = _payment_unit_form(opportunity, {"max_daily": "", "no_daily_limit": "on"})
 
         assert "no_daily_limit" not in form.fields
         assert not form.is_valid()
@@ -1551,7 +1770,7 @@ class TestPaymentUnitFormDailyLimit:
         ],
     )
     def test_valid_daily_limit_when_switch_on(self, opportunity, data, expected_max_daily):
-        form = self._form(opportunity, data)
+        form = _payment_unit_form(opportunity, data)
 
         assert form.is_valid(), form.errors
         assert form.instance.max_daily == expected_max_daily
@@ -1569,7 +1788,7 @@ class TestPaymentUnitFormDailyLimit:
         ],
     )
     def test_invalid_daily_limit_when_switch_on(self, opportunity, data, expected_error):
-        form = self._form(opportunity, data)
+        form = _payment_unit_form(opportunity, data)
 
         assert not form.is_valid()
         assert form.errors["max_daily"] == [expected_error]
@@ -1579,7 +1798,7 @@ class TestPaymentUnitFormDailyLimit:
     def test_no_daily_limit_initial_for_existing_unit(self, opportunity, max_daily, expected_initial):
         unit = PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=10)
 
-        form = self._form(opportunity, instance=unit)
+        form = _payment_unit_form(opportunity, instance=unit)
 
         assert form.fields["no_daily_limit"].initial is expected_initial
 
@@ -1931,29 +2150,10 @@ class TestSupervisingOrganizationOnChangeForm:
         )
         return opportunity
 
-    def _request_for(self, org, opportunity, role=UserOrganizationMembership.Role.ADMIN):
-        user = UserFactory()
-        return make_request(user, org=org, membership=make_membership(org, user, role), opportunity=opportunity)
-
-    def _form(self, opportunity, request, **overrides):
-        data = {
-            "name": opportunity.name,
-            "description": "Updated description",
-            "short_description": "Updated short",
-            "active": True,
-            "currency": opportunity.currency.code,
-            "country": opportunity.country,
-            "is_test": opportunity.is_test,
-            "delivery_type": opportunity.delivery_type_id,
-            "supervising_organization": opportunity.supervising_organization_id,
-        }
-        data.update(overrides)
-        return OpportunityChangeForm(data=data, instance=opportunity, request=request)
-
     def test_program_manager_can_reassign(self, managed_opportunity):
-        request = self._request_for(managed_opportunity.program.organization, managed_opportunity)
+        request = _request_for(managed_opportunity.program.organization, managed_opportunity)
 
-        form = self._form(
+        form = _change_form(
             managed_opportunity,
             request,
             supervising_organization=managed_opportunity.organization.pk,
@@ -1967,9 +2167,9 @@ class TestSupervisingOrganizationOnChangeForm:
 
     def test_delivering_organization_cannot_see_or_set_it(self, managed_opportunity):
         original = managed_opportunity.supervising_organization
-        request = self._request_for(managed_opportunity.organization, managed_opportunity)
+        request = _request_for(managed_opportunity.organization, managed_opportunity)
 
-        form = self._form(
+        form = _change_form(
             managed_opportunity,
             request,
             supervising_organization=managed_opportunity.organization.pk,
@@ -1985,7 +2185,7 @@ class TestSupervisingOrganizationOnChangeForm:
     def test_absent_for_unmanaged_opportunity(self, opportunity):
         opportunity.managed = False
         opportunity.save()
-        request = self._request_for(opportunity.program.organization, opportunity)
+        request = _request_for(opportunity.program.organization, opportunity)
 
         form = OpportunityChangeForm(instance=opportunity, request=request)
 
@@ -1995,3 +2195,169 @@ class TestSupervisingOrganizationOnChangeForm:
         form = OpportunityChangeForm(instance=managed_opportunity)
 
         assert "supervising_organization" not in form.fields
+
+
+@pytest.mark.django_db
+class TestApiKeyOnChangeForm:
+    """The Edit page lets opportunity admins replace the HQ API key without touching the apps."""
+
+    @pytest.fixture
+    def opp(self, opportunity):
+        for app, domain in ((opportunity.learn_app, "learn-domain"), (opportunity.deliver_app, "deliver-domain")):
+            app.cc_domain = domain
+            app.save(update_fields=["cc_domain"])
+        return opportunity
+
+    def _replacement_form(self, opportunity, httpx_mock, deliver_status=200):
+        """A form submitting a new key of the admin's own, with HQ answering for both apps."""
+        _mock_hq_apps(httpx_mock, opportunity, deliver_status=deliver_status)
+        request = _request_for(opportunity.program.organization, opportunity)
+        new_key = HQApiKeyFactory(user=request.user, hq_server=opportunity.hq_server)
+        return new_key, _change_form(opportunity, request, api_key=str(new_key.id))
+
+    @pytest.mark.parametrize(
+        "org, role, shown",
+        [
+            ("program", UserOrganizationMembership.Role.ADMIN, True),
+            ("program", UserOrganizationMembership.Role.MEMBER, False),
+            # The delivering org can edit the opportunity, but the key belongs to whoever runs the program.
+            ("delivering", UserOrganizationMembership.Role.ADMIN, False),
+        ],
+    )
+    def test_only_program_admins_see_the_field(self, opp, org, role, shown):
+        organization = opp.program.organization if org == "program" else opp.organization
+        form = OpportunityChangeForm(instance=opp, request=_request_for(organization, opp, role))
+        assert ("api_key" in form.fields) is shown
+
+    @pytest.mark.parametrize("missing", ["request", "hq_server"])
+    def test_absent_without(self, opp, missing):
+        request = None if missing == "request" else _request_for(opp.program.organization, opp)
+        if missing == "hq_server":
+            opp.hq_server = None
+        form = OpportunityChangeForm(instance=opp, request=request)
+        assert "api_key" not in form.fields
+
+    def test_choices_are_current_key_then_own_keys_on_the_server(self, opp):
+        request = _request_for(opp.program.organization, opp)
+        own = HQApiKeyFactory(user=request.user, hq_server=opp.hq_server)
+        HQApiKeyFactory(user=request.user)  # other server: excluded
+        field = OpportunityChangeForm(instance=opp, request=request).fields["api_key"]
+        assert [value for value, _ in field.widget.choices if value] == [opp.api_key_id, own.id]
+        assert field.initial == opp.api_key_id
+        assert field.widget.attrs["hx-get"] == reverse(
+            "program:opportunity_api_key_options",
+            args=(request.org.slug, opp.program.program_id, opp.opportunity_id),
+        )
+
+    def test_without_a_current_key_nothing_is_preselected(self, opp):
+        Opportunity.objects.filter(pk=opp.pk).update(api_key=None)
+        opp.refresh_from_db()
+        request = _request_for(opp.program.organization, opp)
+        HQApiKeyFactory(user=request.user, hq_server=opp.hq_server)
+        field = OpportunityChangeForm(instance=opp, request=request).fields["api_key"]
+        assert field.widget.choices[0] == ("", "Select an API key")
+
+    def test_server_name_is_not_rendered_as_a_template(self, opp):
+        opp.hq_server.name = "HQ {{ 1|add:1 }}"
+        form = OpportunityChangeForm(instance=opp, request=_request_for(opp.program.organization, opp))
+        assert "HQ {{ 1|add:1 }}" in render_crispy_form(form)
+
+    def test_replaces_key_after_workers_join(self, opp, httpx_mock):
+        OpportunityAccessFactory(opportunity=opp)
+        apps = (opp.learn_app_id, opp.deliver_app_id)
+        new_key, form = self._replacement_form(opp, httpx_mock)
+
+        assert form.is_valid(), form.errors
+        form.save()
+        saved = Opportunity.objects.values_list("api_key_id", "learn_app_id", "deliver_app_id").get(pk=opp.pk)
+        assert saved == (new_key.id, *apps)
+
+    def test_rejects_key_hq_refuses(self, opp, httpx_mock):
+        _, form = self._replacement_form(opp, httpx_mock, deliver_status=403)
+        assert form.errors["api_key"] == ['This API key cannot access the deliver app on domain "deliver-domain".']
+
+    @pytest.mark.parametrize("failure", ["timeout", 500, 502, 429])
+    def test_reports_hq_failure_without_blaming_the_key(self, opp, httpx_mock, failure):
+        if failure == "timeout":
+            httpx_mock.add_exception(httpx.ConnectTimeout("timed out"), is_reusable=True)
+            request = _request_for(opp.program.organization, opp)
+            new_key = HQApiKeyFactory(user=request.user, hq_server=opp.hq_server)
+            form = _change_form(opp, request, api_key=str(new_key.id))
+        else:
+            _, form = self._replacement_form(opp, httpx_mock, deliver_status=failure)
+        assert form.errors["api_key"] == ["Could not reach CommCare HQ to check this API key. Please try again."]
+
+    @pytest.mark.parametrize("case", ["another_users_key", "own_key_on_other_server"])
+    def test_rejects_keys_that_are_not_allowed(self, opp, case):
+        request = _request_for(opp.program.organization, opp)
+        owner = {"hq_server": opp.hq_server} if case == "another_users_key" else {"user": request.user}
+        form = _change_form(opp, request, api_key=str(HQApiKeyFactory(**owner).id))
+        assert form.errors["api_key"] == ["Select one of your own API keys for this HQ server."]
+
+    @pytest.mark.parametrize("posted", ["current", "", None])
+    def test_keeping_the_key_makes_no_hq_calls(self, opp, httpx_mock, posted):
+        # httpx_mock has no responses registered, so any HQ request fails the test.
+        overrides = {} if posted is None else {"api_key": str(opp.api_key_id) if posted == "current" else posted}
+        form = _change_form(opp, _request_for(opp.program.organization, opp), **overrides)
+        assert form.is_valid(), form.errors
+        assert form.save().api_key_id == opp.api_key_id
+
+
+@pytest.mark.django_db
+class TestHQApiKeyCreateForm:
+    def test_pinned_server_is_shown_not_offered(self):
+        server = HQServerFactory(name="Pinned HQ")
+        HQServerFactory(name="Other HQ")  # must not be offered
+        form = HQApiKeyCreateForm(fixed_hq_server=server)
+        assert list(form.fields["hq_server"].queryset) == [server]
+        html = render_crispy_form(form)
+        assert "<select" not in html  # the only other field, api_key, is a text input
+        assert "Pinned HQ" in html
+        assert "Other HQ" not in html
+        assert 'type="hidden"' in html
+        assert f'value="{server.pk}"' in html
+
+    @pytest.mark.parametrize("pinned, valid", [(True, False), (False, True)])
+    def test_another_server_is_rejected_only_when_pinned(self, pinned, valid):
+        server, other = HQServerFactory(), HQServerFactory()
+        form = HQApiKeyCreateForm(
+            data={"hq_server": other.id, "api_key": "a-new-api-key-value"},
+            fixed_hq_server=server if pinned else None,
+        )
+        assert form.is_valid() is valid
+
+
+@pytest.mark.parametrize(
+    "pending, expected",
+    [
+        ("2", "2"),  # the admin's unsaved pick survives the reload
+        (None, "1"),  # nothing sent: the opportunity's key
+        ("99", "1"),  # no longer offered: the opportunity's key
+    ],
+)
+def test_reloaded_api_key_selection(pending, expected):
+    opportunity = Opportunity(api_key_id=1)
+    assert reloaded_api_key_selection([(1, "current"), (2, "mine")], pending, opportunity) == expected
+
+
+def test_reloaded_api_key_selection_without_a_current_key():
+    choices = [("", "Select an API key"), (2, "mine")]
+    assert reloaded_api_key_selection(choices, None, Opportunity()) == ""
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("current_is_own", [False, True])
+def test_fixed_server_api_key_choices(opportunity, current_is_own):
+    """The current key comes first, labelled with who added it, then the user's other keys on the server, newest
+    first."""
+    current = opportunity.api_key
+    user = current.user if current_is_own else UserFactory()
+    older = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    newer = HQApiKeyFactory(user=user, hq_server=opportunity.hq_server)
+    HQApiKeyFactory(user=user)  # another server
+    owner = current.user
+    assert fixed_server_api_key_choices(opportunity, user) == [
+        (current.id, f"{current.masked} (added by {owner.name or owner.email})"),
+        (newer.id, newer.masked),
+        (older.id, older.masked),
+    ]

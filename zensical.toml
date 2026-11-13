@@ -1,0 +1,146 @@
+# Developer documentation site, built with Zensical (https://zensical.org).
+#
+#   uv run --group docs zensical serve    # live preview on http://localhost:8000
+#   uv run --group docs zensical build    # static site in ./site
+#
+# Most pages are thin stubs that pull in a README living next to the code it
+# documents (see the `--8<--` lines in docs/), so there is one copy of each doc.
+# To publish another README, add a stub under docs/ and an entry to `nav` below.
+
+[project]
+site_name = "Connect Developer Docs"
+site_description = "Developer documentation for Connect"
+site_url = "https://dimagi.github.io/commcare-connect/"
+repo_url = "https://github.com/dimagi/commcare-connect"
+repo_name = "dimagi/commcare-connect"
+copyright = "Copyright &copy; Dimagi"
+
+# Fail the build on broken links and anchors instead of shipping them.
+strict = true
+
+# The snippet stubs read files outside docs/, so `serve` must watch them too.
+# Listed one by one so app code changes don't trigger rebuilds: when a new stub
+# includes another file, add that file here as well.
+watch = [
+  "README.md",
+  "AGENTS.md",
+  "pr_guidelines.md",
+  "deploy/README.md",
+  "commcare_connect/opportunity/README.md",
+  "commcare_connect/opportunity/PAYMENTS.md",
+  "commcare_connect/form_receiver/README.md",
+  "commcare_connect/flags/README.md",
+  "commcare_connect/health/README.md",
+  "commcare_connect/templates/README.md",
+]
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Local development" = "local-development.md" },
+  { "Codebase overview" = "codebase-overview.md" },
+  { "Conventions" = "conventions.md" },
+  { "Apps" = [
+    { "Opportunity" = [
+      "apps/opportunity/index.md",
+      { "Payments" = "apps/opportunity/PAYMENTS.md" },
+    ] },
+    { "Form receiver" = "apps/form-receiver.md" },
+    { "Health checks" = "apps/health.md" },
+  ] },
+  { "Topics" = [
+    { "Audit history" = "audit-history.md" },
+    { "Feature flags" = "feature-flags.md" },
+  ] },
+  { "Frontend" = [
+    { "Templates" = "templates.md" },
+  ] },
+  { "Contributing" = [
+    { "Pull requests" = "contributing/pull-requests.md" },
+    { "Dependency management" = "dependency-management.md" },
+  ] },
+  { "Deployment" = "deployment.md" },
+  { "Design docs" = [
+    { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
+  ] },
+]
+
+[project.validation]
+invalid_links = true
+invalid_link_anchors = true
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.annotate",     # numbered call-outs inside code blocks
+  "content.code.copy",         # copy button on every code block
+  "content.code.select",       # link to a line range in a code block
+  "content.footnote.tooltips",
+  "content.tabs.link",         # picking a tab (e.g. macOS/Linux) switches it on every page
+  "content.tooltips",
+  "navigation.footer",         # previous/next links
+  "navigation.indexes",        # section index pages (apps/opportunity/index.md)
+  "navigation.instant",        # SPA-style navigation, keeps search open across pages
+  "navigation.instant.prefetch",
+  "navigation.path",           # breadcrumbs
+  "navigation.sections",
+  "navigation.top",            # back-to-top button
+  "navigation.tracking",       # URL follows the current heading, for sharing deep links
+  "search.highlight",
+  "toc.follow",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}               # !!! note / !!! warning call-outs
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true          # ¶ anchor on every heading
+pymdownx.betterem = {}
+pymdownx.details = {}         # collapsible ??? blocks
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}            # ++ctrl+c++
+pymdownx.magiclink.repo_url_shorthand = true   # dimagi/commcare-connect#123 becomes a link
+pymdownx.magiclink.user = "dimagi"
+pymdownx.magiclink.repo = "commcare-connect"
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+# Pull files from anywhere in the repo into a page: --8<-- "path/from/repo/root.md".
+# check_paths makes a moved or renamed README fail the build instead of rendering nothing.
+pymdownx.snippets.base_path = ["."]
+pymdownx.snippets.check_paths = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}

@@ -52,4 +52,9 @@ In particular consider how existing data may be impacted by this change.
 
 ### Labels & Review
 
+<!--
+    Draft PRs aren't reviewed automatically. Add the `review-draft` label to get the
+    automated review on a draft; see "AI Review Integration" in pr_guidelines.md.
+-->
+
 - [ ] The set of people pinged as reviewers is appropriate for the level of risk of the change

@@ -4,6 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
+from django.db.models import ProtectedError
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
 
@@ -12,6 +13,7 @@ from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
+    HQApiKey,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
@@ -28,6 +30,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
+    HQApiKeyFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -914,3 +917,32 @@ def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2
 def test_user_visit_over_limit_reasons_display(status, reasons, expected):
     visit = UserVisit(status=status, over_limit_reasons=reasons)
     assert visit.get_over_limit_reasons_display() == expected
+
+
+@pytest.mark.django_db
+class TestOpportunityApiKey:
+    def test_deleting_key_owner_is_blocked(self, opportunity):
+        with pytest.raises(ProtectedError):
+            opportunity.api_key.user.delete()
+
+    def test_api_key_change_is_audited(self, opportunity):
+        new_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        with pghistory.context(username="admin", user_email="admin@example.com"):
+            opportunity.api_key = new_key
+            opportunity.save()
+        event = opportunity.api_key_events.latest("pgh_id")
+        assert event.pgh_label == "api_key_update"
+        assert event.api_key_id == new_key.id
+        assert event.pgh_context.metadata["user_email"] == "admin@example.com"
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("abcdef1234567890wxyz", "abcd...wxyz"),
+            ("abcdefghijklm", "abcd...jklm"),
+            ("abc12345", "****"),
+            ("", "****"),
+        ],
+    )
+    def test_masked_never_shows_a_short_key_in_full(self, value, expected):
+        assert HQApiKey(api_key=value).masked == expected
