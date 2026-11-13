@@ -137,12 +137,8 @@ kamal traefik reboot -d <destination>
 The staging environment at [https://connect-staging.dimagi.com/](https://connect-staging.dimagi.com/) is connected
 to the staging environment of CommCare HQ at [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
 
-1. Update
-   [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml)
-   with the branches you need to include.
-2. Run `deploy/rebuildstaging` to build the `autostaging` branch.
-3. Run the [`Deploy` workflow](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml) manually
-   for staging.
+Run `inv staging-add` on your branch to add it to the staging list. Staging rebuilds and deploys on its own; see
+[Staging](#staging) for how it works.
 
 ### Scheduled deploys
 
@@ -187,6 +183,171 @@ kamal app logs
 ```
 
 See `kamal app logs --help` for more details.
+
+## Staging
+
+Staging runs the `autostaging` branch: `main` with every branch listed in
+[`commcare-connect-staging.yml`](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml)
+merged in. The `rebuild-staging` workflow rebuilds and deploys it when a listed branch gets a push or the list changes,
+and removes branches from the list once they are merged to `main`. A git conflict, an error from `manage.py check`, or a
+migration problem found by `makemigrations --check` (such as two branches adding a migration to the same app) stops the
+rebuild before `autostaging` is pushed; staging keeps its current version until the list builds again.
+
+The failure is posted to the staging deploy Slack channel by `deploy/staging_report.py`, which names the branches that
+likely caused it. For each one it mentions whoever started the branch (the author of its first commit not on `main`),
+found in Slack by commit email (the bot token needs the `users:read.email` scope), or else shows the name from the
+comment on the branch's line in the list.
+
+To add your current branch (needs `gh` logged in with permission to run workflows in `dimagi/staging-branches`):
+
+```bash
+inv staging-add
+```
+
+It checks the branch is pushed, runs a trial build to catch conflicts, and puts a compatibility branch (one that merges
+two listed branches) above the branches it contains. Options: `--branch <name>`, `--yes`, `--skip-trial`.
+
+`deploy/rebuildstaging --no-push` runs the same build locally without pushing.
+
+### What starts a rebuild
+
+Two repos take part. `dimagi/staging-branches` holds the branch list and the workflows that edit it.
+`dimagi/commcare-connect` holds `rebuild-staging.yml`, which builds `autostaging`, and `deploy.yml`, which deploys it.
+
+```mermaid
+flowchart TD
+    subgraph dev["Developer"]
+        add["inv staging-add"]
+        handedit["Edit commcare-connect-staging.yml<br/>by hand on main"]
+        removeui["Run remove-connect-branch.yml<br/>from the Actions tab"]
+        push["Push to a branch"]
+        merge["Merge a PR into main"]
+        manual["Run rebuild-staging.yml<br/>from the Actions tab"]
+    end
+
+    subgraph sb["dimagi/staging-branches"]
+        addwf["add-connect-branch.yml<br/>adds the branch to the list"]
+        removewf["remove-connect-branch.yml<br/>removes the branch from the list"]
+        trigger["trigger-commcare-connect-rebuild.yml"]
+    end
+
+    subgraph cc["dimagi/commcare-connect: rebuild-staging.yml"]
+        check{"push event:<br/>is the pushed branch listed?<br/>(main always is)"}
+        merged{"Is it a push to main<br/>that merged a listed branch?"}
+        skip["Stop: no rebuild"]
+        dispatchremove["This run skips its rebuild.<br/>The remove-merged-branch job<br/>starts the removal instead"]
+        rebuild["rebuild-staging job"]
+    end
+
+    add --> addwf
+    addwf -- "list changed" --> trigger
+    handedit -- "push to main" --> trigger
+    removeui --> removewf
+    removewf -- "list changed" --> trigger
+    trigger -- "workflow_dispatch" --> rebuild
+    manual -- "workflow_dispatch" --> rebuild
+
+    push --> check
+    merge --> check
+    check -- "no" --> skip
+    check -- "yes" --> merged
+    merged -- "no" --> rebuild
+    merged -- "yes" --> dispatchremove
+    dispatchremove -- "reason=merge" --> removewf
+```
+
+The rebuild job itself, whichever way it started (see [When changes overlap](#when-changes-overlap) for how runs
+queue). It calls `rebuild-staging-jobs.yml`, which splits the work into three jobs:
+
+```mermaid
+flowchart TD
+    subgraph buildjob["build job: read-only token, no secrets"]
+        build["Build autostaging: main + every listed branch<br/>(deploy/rebuildstaging --no-push)"]
+        checks["manage.py check<br/>makemigrations --check"]
+    end
+    subgraph publishjob["publish job: can push and start workflows"]
+        same{"Are autostaging's files identical<br/>to origin/autostaging?"}
+        nodeploy["Stop: staging already runs this code"]
+        deploy["Force-push autostaging,<br/>run deploy.yml for staging"]
+    end
+    subgraph reportjob["report job: has the Slack token"]
+        slack["Post the failure to Slack<br/>(deploy/staging_report.py).<br/>Staging keeps its current version."]
+    end
+
+    build -- "ok" --> checks
+    checks -- "ok: autostaging handed over as a git bundle" --> same
+    same -- "yes" --> nodeploy
+    same -- "no" --> deploy
+    build -- "conflict or missing branch" --> slack
+    checks -- "error" --> slack
+    deploy -- "push or dispatch failed" --> slack
+```
+
+Only the `build` job runs the listed branches' code: `uv sync`, `manage.py check` and `makemigrations` all import it.
+So that job gets a read-only token, keeps no credentials in `.git/config` and doesn't save the uv cache. The `publish`
+and `report` jobs start on fresh runners and run only `main`'s code, so a listed branch can't reach the push token or
+the Slack token.
+
+| Case                                        | `staging-branches`                                                                        | `commcare-connect`                                                                                                  | Deploys?                           |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `inv staging-add`                           | `add-connect-branch.yml` edits the list, then `trigger-commcare-connect-rebuild.yml` runs | `rebuild-staging.yml` (dispatch) rebuilds                                                                           | If the files changed               |
+| Hand edit of the list on `main`             | `trigger-commcare-connect-rebuild.yml` runs on the push                                   | `rebuild-staging.yml` (dispatch) rebuilds                                                                           | If the files changed               |
+| Run `remove-connect-branch.yml` by hand     | Edits the list, then `trigger-commcare-connect-rebuild.yml` runs                          | `rebuild-staging.yml` (dispatch) rebuilds                                                                           | If the files changed               |
+| Push to a listed branch                     | Nothing                                                                                   | `rebuild-staging.yml` (push) rebuilds                                                                               | If the files changed               |
+| Push to an unlisted branch                  | Nothing                                                                                   | `rebuild-staging.yml` (push) stops at `check-branch`                                                                | No                                 |
+| Push to `main` that merges no listed branch | Nothing                                                                                   | `rebuild-staging.yml` (push) rebuilds, since `main` is always listed                                                | If the files changed               |
+| Merge a listed branch into `main`           | `remove-connect-branch.yml` removes it, then `trigger-commcare-connect-rebuild.yml` runs  | Two runs of `rebuild-staging.yml`: the push run skips its rebuild and starts the removal; the dispatch run rebuilds | Once at most, if the files changed |
+| Run `rebuild-staging.yml` by hand           | Nothing                                                                                   | `rebuild-staging.yml` (dispatch) rebuilds                                                                           | If the files changed               |
+
+"If the files changed" compares the file tree of the new `autostaging` with `origin/autostaging`, not the commits,
+because every build makes new merge commits. A rebuild that produces the code staging already runs does not deploy.
+When a merged branch is removed, staging usually stays the same, since its code now comes in through `main`. It
+deploys if `main` gained other commits since the last build, or if the merge resolved conflicts differently.
+
+The workflows in `staging-branches` push with `GITHUB_TOKEN`, and a push made with that token starts no workflows. So
+they start the next workflow with `workflow_dispatch` instead. For the same reason `rebuild-staging.yml` runs
+`deploy.yml` itself after pushing `autostaging`.
+
+### When changes overlap
+
+Only the `rebuild-staging` job of `rebuild-staging.yml` has a concurrency group (`rebuild-staging`,
+`cancel-in-progress: false`). It covers the `build`, `publish` and `report` jobs it calls as one unit. The `check-branch` and `remove-merged-branch` jobs have none, so they run straight away
+even while a rebuild is in progress.
+
+- One rebuild runs at a time, and a running rebuild is never cancelled.
+- At most one rebuild waits. When another arrives, GitHub cancels the waiting one and queues the newest.
+- Dropping a waiting rebuild loses nothing. A rebuild reads the list and checks out the branches when it starts, not
+  when it was triggered, so the one that runs next builds everything that has landed by then.
+- List edits are never dropped. `add-connect-branch.yml` and `remove-connect-branch.yml` in `staging-branches` don't
+  queue, so every edit runs. If two edits run at the same time, both push to `main` and the second push is rejected.
+  That workflow then fetches the new `main`, makes its edit again and pushes, up to 5 times.
+- `deploy.yml` has its own group (`deploy-staging`, `cancel-in-progress: false`) that works the same way.
+
+Example: a rebuild is running, someone merges a listed branch into `main`, and then someone adds another branch.
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developers
+    participant Push as commcare-connect<br/>rebuild-staging.yml (push run)
+    participant SB as staging-branches
+    participant Queue as commcare-connect<br/>rebuild-staging job queue
+
+    Note over Queue: Rebuild A is running
+    Dev->>Push: Merge listed branch X into main
+    Note over Push: check-branch finds X.<br/>The rebuild job is skipped, so nothing joins the queue.
+    Push->>SB: remove-merged-branch dispatches remove-connect-branch.yml
+    SB->>SB: Remove X from the list
+    SB->>Queue: Dispatch run: rebuild B waits behind A
+    Dev->>SB: inv staging-add Y runs add-connect-branch.yml
+    SB->>SB: Add Y to the list
+    SB->>Queue: Dispatch run: rebuild C replaces the waiting B
+    Note over Queue: A finishes. C builds main (with X merged)<br/>plus the list without X and with Y.
+```
+
+There are two runs of `rebuild-staging.yml` here. The push run from the merge starts the removal and never queues a
+rebuild. Rebuild B belongs to a later dispatch run, started after the removal has landed. So when C replaces B, the
+removal has already happened and C includes it. If a list edit lands after C has started, its own rebuild queues
+behind C and runs next.
 
 ## Setting up logical replication
 

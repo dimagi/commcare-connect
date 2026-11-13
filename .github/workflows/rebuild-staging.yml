@@ -1,0 +1,121 @@
+name: Rebuild staging branch
+
+# Rebuilds `autostaging` from https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml
+# and deploys it when the code changed. Based on commcare-hq's rebuild-staging.yml.
+#
+# Runs on:
+# - a push to any branch: rebuilds only if the branch is listed (`main` always is).
+# - workflow_dispatch: started by staging-branches whenever the list changes.
+# A push to `main` that merges a listed branch removes it from the list instead; that edit starts the rebuild.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+permissions:
+  contents: read
+
+env:
+  STAGING_CONFIG: commcare-connect-staging.yml
+
+jobs:
+  check-branch:
+    # Only run on the canonical repo, not on forks or mirrors. Branch deletions are pushes too; skip them.
+    if: github.repository == 'dimagi/commcare-connect' && !github.event.deleted
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should-rebuild: >-
+        ${{ github.event_name == 'workflow_dispatch'
+            || (steps.check.outputs.found == 'true' && steps.check-merged.outputs.merged-branch == '') }}
+      merged-branch: ${{ steps.check-merged.outputs.merged-branch }}
+    steps:
+      - name: Check if branch is in staging config
+        id: check
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          # The contents API isn't cached, unlike raw.githubusercontent.com, so a just-added branch is seen
+          gh api "repos/dimagi/staging-branches/contents/$STAGING_CONFIG" \
+            -H 'Accept: application/vnd.github.raw' > staging.yml
+          # Exact match on active entries; comments and substrings don't count
+          if yq -e '.branches[] | select(. == strenv(BRANCH))' staging.yml > /dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch '$BRANCH' not in staging config, skipping rebuild"
+          fi
+
+      - name: Check if push to main merged a staging branch
+        id: check-merged
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Works for merge, squash and rebase merges, unlike parsing the commit message.
+          # Fork PRs are skipped: their config entries are `owner:branch`, which the removal can't match.
+          MERGED_BRANCH=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq "
+            [.[] | select(.merged_at != null
+                          and .base.ref == \"main\"
+                          and .head.repo.full_name == \"$GITHUB_REPOSITORY\")][0].head.ref // empty")
+          if [ -z "$MERGED_BRANCH" ]; then
+            echo "No merged pull request found for $SHA"
+            exit 0
+          fi
+          echo "Detected merged branch: $MERGED_BRANCH"
+          if BRANCH="$MERGED_BRANCH" yq -e '.branches[] | select(. == strenv(BRANCH))' staging.yml > /dev/null; then
+            echo "merged-branch=$MERGED_BRANCH" >> "$GITHUB_OUTPUT"
+            echo "Branch '$MERGED_BRANCH' is in the staging config, will trigger removal"
+          else
+            echo "Merged branch '$MERGED_BRANCH' not in staging config"
+          fi
+
+  remove-merged-branch:
+    needs: check-branch
+    if: needs.check-branch.outputs.merged-branch != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ secrets.STAGING_BRANCHES_APP_ID }}
+          private-key: ${{ secrets.STAGING_BRANCHES_APP_PRIVATE_KEY }}
+          owner: dimagi
+          repositories: staging-branches
+
+      - name: Trigger branch removal
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: ${{ needs.check-branch.outputs.merged-branch }}
+        run: |
+          echo "Triggering removal of branch '$BRANCH' from $STAGING_CONFIG"
+          gh workflow run remove-connect-branch.yml \
+            --repo dimagi/staging-branches \
+            -f branch="$BRANCH" \
+            -f reason=merge
+
+  rebuild-staging:
+    needs: check-branch
+    if: needs.check-branch.outputs.should-rebuild == 'true'
+    # On the job, not the workflow, so pushes to unlisted branches never queue here and can't replace
+    # a waiting rebuild. A replaced waiting rebuild is harmless: the newer one builds the latest state.
+    # Set here rather than on each called job so build, publish and report run as one unit.
+    concurrency:
+      group: rebuild-staging
+      cancel-in-progress: false
+    # The most the called jobs may use; each job narrows it
+    permissions:
+      contents: write
+      actions: write
+    uses: ./.github/workflows/rebuild-staging-jobs.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
