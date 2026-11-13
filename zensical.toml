@@ -65,6 +65,7 @@ nav = [
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
+    { "Archiving organizations" = "design/2026-10-27-organization-archiving-design.md" },
   ] },
 ]
 
