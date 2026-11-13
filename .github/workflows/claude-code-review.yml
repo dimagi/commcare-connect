@@ -1,0 +1,344 @@
+# Claude Code Review
+#
+# Two-stage automated review, ported from dimagi/open-chat-studio. OpenCodeReview
+# runs first and posts inline findings; the Claude review runs only if it found
+# nothing. The `Automated review verdict` check is advisory: it always passes, and
+# says in a warning and the job summary whether both stages ran and found nothing.
+#
+# Triggered on: PR opened, pushed or marked ready for review. Drafts are reviewed
+# only on request: add the `review-draft` label.
+#
+# Requirements:
+# - ANTHROPIC_API_KEY in Settings > Secrets and variables > Actions, for the OCR
+#   job only. OCR takes a static token and cannot use workload identity federation.
+# - A Claude API workload identity federation rule for the `claude` job (IDs
+#   below). Its subject must match `repo:dimagi/commcare-connect:pull_request`.
+# - `.opencodereview/` for OpenCodeReview's per-path rules
+#
+# Notes:
+# - Skipped for forks (no secrets or OIDC tokens on fork-originated
+#   `pull_request` events) and for Dependabot PRs, which `claude-dependabot.yml`
+#   reviews instead.
+# - Drafts are skipped unless they carry the `review-draft` label, so work in
+#   progress isn't reviewed on every push. Adding the label reviews the draft,
+#   and every push after that is reviewed until the label is removed. An
+#   unlabelled draft gets its first review when it is marked ready.
+# - A new push cancels the running review: its result is about to be stale.
+# - The `claude` job authenticates to the Claude API with workload identity
+#   federation: the action exchanges the job's GitHub OIDC token for a
+#   short-lived Claude API token, so it holds no static API key. That needs
+#   `id-token: write`, which only the `claude` job gets. `deploy.yml` assumes an
+#   AWS role through OIDC too (`github_deploy`). That role's trust policy pins
+#   the token subject to the deploy branches' refs, so a `pull_request` token
+#   from this job cannot assume it. Keep it that way: a wildcard subject would
+#   let code in this job obtain deploy credentials.
+# - GitHub API calls use the job's GITHUB_TOKEN (`github_token` input), not the
+#   Claude GitHub App, so comments are posted as github-actions[bot]. The
+#   action's workflow-validation check belongs to the App token exchange, so it
+#   is skipped and a PR that edits this file runs its own edited copy.
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, labeled]
+
+# One review per PR; a run that will review cancels the review in progress. A run
+# whose jobs will skip (another label, a push to an unlabelled draft, a labelled
+# draft marked ready) gets a group of its own, or it would cancel that review and
+# then do nothing. The condition repeats the `ocr` job's `if`; keep them in step.
+concurrency:
+  group: >-
+    claude-review-${{ github.event.pull_request.number }}${{
+    !(github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && (!github.event.pull_request.draft
+          || contains(github.event.pull_request.labels.*.name, 'review-draft'))
+      && (github.event.action != 'labeled'
+          || (github.event.label.name == 'review-draft' && github.event.pull_request.draft))
+      && (github.event.action != 'ready_for_review'
+          || !contains(github.event.pull_request.labels.*.name, 'review-draft')))
+    && format('-noop-{0}', github.run_id) || '' }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  ocr:
+    name: OpenCodeReview
+    # Gate on who authored the PR, not github.actor: the actor is whoever pushed,
+    # so a maintainer's push to a Dependabot branch would otherwise get reviewed.
+    # Drafts only with the `review-draft` label. A `labeled` event counts only for
+    # that label on a draft, and `ready_for_review` is skipped for a draft that
+    # already had it, since its last push was reviewed. The concurrency group
+    # repeats this condition.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && (!github.event.pull_request.draft
+          || contains(github.event.pull_request.labels.*.name, 'review-draft'))
+      && (github.event.action != 'labeled'
+          || (github.event.label.name == 'review-draft' && github.event.pull_request.draft))
+      && (github.event.action != 'ready_for_review'
+          || !contains(github.event.pull_request.labels.*.name, 'review-draft'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      # Stops the CLI self-updating mid-run, which breaks later `ocr` calls
+      # (alibaba/open-code-review#703).
+      OCR_NO_UPDATE: '1'
+
+    outputs:
+      comments_total: ${{ steps.ocr.outputs.comments_total }}
+      comments_failed: ${{ steps.ocr.outputs.comments_failed }}
+      complete: ${{ steps.completeness.outputs.complete }}
+
+    steps:
+      # Audit only: records egress without blocking. Flip to `block` plus an
+      # `allowed-endpoints` list once the recorded traffic looks stable.
+      - name: Harden the runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Run OpenCodeReview
+        id: ocr
+        uses: alibaba/open-code-review@375f64cd6f67a48a135da83cfcf59c52669a09cb # v1.13.3
+        with:
+          ocr_version: '1.12.8'
+          llm_url: https://api.anthropic.com
+          llm_auth_token: ${{ secrets.ANTHROPIC_API_KEY }}
+          llm_model: claude-sonnet-5
+          llm_use_anthropic: 'true'
+          # Matches OCR's own built-in Anthropic provider entry, which sets
+          # x-api-key; configuring through the action's inputs bypasses that entry.
+          llm_auth_header: 'x-api-key'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          sticky_summary: 'true'
+          # Skips findings on lines that already carry a bot comment, so a repeat
+          # push does not post them again. `comments_total` is counted before
+          # that filter, so a repeat finding still counts against the verdict:
+          # https://github.com/alibaba/open-code-review/blob/375f64cd6f67a48a135da83cfcf59c52669a09cb/scripts/github-actions/post-review-comments.js#L287
+          incremental: 'true'
+          upload_artifacts: 'true'
+
+      # OCR exits 0 when a single sub-agent fails or a file is skipped, and the
+      # action still exports zero counts. The result's `status` and `warnings`
+      # record it, so the review only counts as complete when both say so:
+      # https://github.com/alibaba/open-code-review/blob/375f64cd6f67a48a135da83cfcf59c52669a09cb/pages/src/content/docs/en/cli-reference.md
+      # `skipped` means no file was eligible for review, which is full coverage of
+      # nothing; the Claude review still runs. The result path is where the pinned
+      # action writes it, so an action bump can move it.
+      - name: Check the review covered every file
+        id: completeness
+        run: |
+          set -euo pipefail
+          result=/tmp/ocr-result.json
+          incomplete() {
+            echo "::error::$1"
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          [[ -s "$result" ]] || incomplete "No OCR result at $result. A new action version may write it elsewhere."
+          status=$(jq -r '.status // "<missing>" | tostring' "$result" 2>/dev/null) \
+            || incomplete "OCR's result at $result is not a JSON object."
+          case "$status" in
+            complete | success | skipped) ;;
+            *) incomplete "OpenCodeReview finished with status '$status', so part of the diff was not reviewed." ;;
+          esac
+          warnings=$(jq -c 'if has("warnings") then .warnings else [] end' "$result")
+          [[ $(jq -r 'type' <<< "$warnings") == "array" ]] \
+            || incomplete "OCR's warnings are not a list: $warnings"
+          if [[ $(jq 'length' <<< "$warnings") != "0" ]]; then
+            jq -r '.[] | tostring' <<< "$warnings"
+            incomplete "OpenCodeReview reported warnings (listed above), so part of the diff was not reviewed."
+          fi
+          echo "complete=true" >> "$GITHUB_OUTPUT"
+
+  claude:
+    name: Claude Code Review
+    needs: ocr
+    # Only reviews code OCR has already cleared. `ocr` must have succeeded: a
+    # failed OCR run reports no counts, and the verdict reports it. The fork,
+    # Dependabot and draft-label guard is repeated from `ocr` because this job
+    # holds an OIDC token; it must not depend on `ocr`'s condition staying in step.
+    if: >-
+      needs.ocr.result == 'success'
+      && needs.ocr.outputs.comments_total == '0'
+      && needs.ocr.outputs.comments_failed == '0'
+      && needs.ocr.outputs.complete == 'true'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && (!github.event.pull_request.draft
+          || contains(github.event.pull_request.labels.*.name, 'review-draft'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      # The review plugin reads linked issues with `gh issue view`.
+      issues: read
+      # Workload identity federation: the action exchanges this job's OIDC token
+      # for a Claude API token. See the header for the AWS trust-policy caveat.
+      id-token: write
+
+    outputs:
+      findings: ${{ steps.findings.outputs.count }}
+      conclusion: ${{ steps.claude.outputs.conclusion }}
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Findings are counted as "review comments this run added", so the comments
+      # already on the PR from earlier pushes have to be recorded first.
+      - name: Snapshot existing review comments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --slurp \
+            | jq -r 'add // [] | .[].id' | sort > "$RUNNER_TEMP/review-comments-before.txt"
+
+      # Tools. The plugin's command grants its own `allowed-tools` while it runs, on
+      # top of --allowedTools, so anything it must not use is in --disallowedTools,
+      # which wins over both:
+      # - `gh pr comment`: the plugin uses it only for its "No issues found"
+      #   summary. Denied, a prompt injected through the PR can only post inline
+      #   comments on the diff. A clean review leaves no comment; the verdict's job
+      #   summary is the record that it ran.
+      # - `gh search`: it reaches all of public GitHub, wider than the PR and its
+      #   linked issues, and the review steps don't use it.
+      # - `git log`, `git show`, `git diff`: they take `--output=<file>`, which could
+      #   write `$GITHUB_ENV` and change later steps. The plugin reads the PR with
+      #   `gh pr diff`/`gh pr view` and the checkout with Read, Grep and Glob.
+      # Unlike open-chat-studio, `gh api` (any write the token allows) and
+      # `gh pr review` are not granted at all.
+      - name: Run Claude Code Review
+        id: claude
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
+        env:
+          # The plugin's first step stops on a draft PR. A draft only gets here with
+          # the `review-draft` label, so that one check is overridden; its other
+          # stop conditions stand. The
+          # action appends this to Claude's system prompt (src/entrypoints/run.ts).
+          # If the model stops anyway, the run looks clean to the advisory verdict.
+          APPEND_SYSTEM_PROMPT: >-
+            This draft pull request was explicitly labelled for review. When the code-review
+            command checks whether to stop, do not treat the pull request being a
+            draft as a reason to stop; review it as you would a ready pull request.
+            Every other stop condition still applies.
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Workload identity federation, in place of anthropic_api_key. Setting
+          # an API key as well would silently take precedence over these. The IDs
+          # are identifiers, not credentials: the exchange only succeeds for an
+          # OIDC token that matches the rule. The rule lives in the Anthropic
+          # Console, not in code. Its subject prefix must be exactly
+          # `repo:dimagi/commcare-connect:pull_request`; a branch-style subject
+          # fails every run with `match_subject_prefix` in the Console's
+          # authentication history.
+          anthropic_federation_rule_id: fdrl_01CmpuwgiBwXrq5rDhPLUyiV
+          anthropic_organization_id: 06badd8a-f111-4e74-916c-0cb534e08138
+          anthropic_service_account_id: svac_01La5YTb8qWH9EHd2Q6DC8qy
+          anthropic_workspace_id: wrkspc_017tmXt8q4V8naGWzjZAR5QF
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(git status:*),Bash(git branch:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Read,Grep,Glob,Task"
+            --disallowedTools "Bash(gh pr comment:*),Bash(gh search:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
+
+      - name: Count findings from this run
+        id: findings
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # Without pipefail a failed `gh api` leaves an empty "after" list, which counts as
+          # zero findings and a clean verdict. The count has to fail instead.
+          set -euo pipefail
+          if [[ ! -f "$RUNNER_TEMP/review-comments-before.txt" ]]; then
+            echo "::error::No snapshot of the comments from before the review; an earlier step failed."
+            exit 1
+          fi
+          # Only the bot's own comments: a reviewer commenting while the run is in
+          # progress must not count as a finding. OCR posts as the same bot, but its
+          # job has finished before this one starts.
+          gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --slurp \
+            | jq -r 'add // [] | map(select(.user.login == "github-actions[bot]")) | .[].id' \
+            | sort > "$RUNNER_TEMP/review-comments-after.txt"
+          count=$(comm -13 "$RUNNER_TEMP/review-comments-before.txt" "$RUNNER_TEMP/review-comments-after.txt" \
+            | wc -l | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "The review added $count inline comment(s) on this push." >> "$GITHUB_STEP_SUMMARY"
+
+  verdict:
+    name: Automated review verdict
+    needs: [ocr, claude]
+    # Advisory: always passes, and reports the outcome as a warning annotation and
+    # in the job summary. OCR raises a few new findings on most pushes, so a check
+    # that failed on any of them would be red nearly all the time. Runs whenever
+    # `ocr` did, including when a stage failed, so an unfinished review is reported
+    # as one rather than going unmentioned.
+    if: always() && needs.ocr.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+
+    steps:
+      - name: Report whether the review ran clean
+        env:
+          OCR_RESULT: ${{ needs.ocr.result }}
+          OCR_COMMENTS: ${{ needs.ocr.outputs.comments_total }}
+          OCR_FAILED: ${{ needs.ocr.outputs.comments_failed }}
+          OCR_COMPLETE: ${{ needs.ocr.outputs.complete }}
+          CLAUDE_RESULT: ${{ needs.claude.result }}
+          FINDINGS: ${{ needs.claude.outputs.findings }}
+          CONCLUSION: ${{ needs.claude.outputs.conclusion }}
+        run: |
+          # No -e: an unexpected failure must not turn this advisory check red. The
+          # ERR trap reports it as "not clean" instead, so it can never read as clean.
+          set -uo pipefail
+          # Every "not clean" outcome ends here, as a warning rather than a failure.
+          not_clean() {
+            echo "::warning title=Automated review not clean::$1"
+            echo "**Automated review not clean:** $1" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          trap 'not_clean "An unexpected command failed on line $LINENO of the verdict script."' ERR
+          [[ "$OCR_RESULT" == "success" ]] \
+            || not_clean "The OpenCodeReview job did not complete (result: $OCR_RESULT)."
+          # An empty count means OCR produced no outputs.
+          [[ "$OCR_COMMENTS" =~ ^[0-9]+$ && "$OCR_FAILED" =~ ^[0-9]+$ ]] \
+            || not_clean "OpenCodeReview reported no comment counts."
+          [[ "$OCR_COMMENTS" == "0" && "$OCR_FAILED" == "0" ]] \
+            || not_clean "OpenCodeReview raised $OCR_COMMENTS finding(s) ($OCR_FAILED failed to post). The Claude review runs once they are resolved."
+          # Zero findings only counts if OCR looked at everything.
+          [[ "$OCR_COMPLETE" == "true" ]] \
+            || not_clean "OpenCodeReview did not review the whole diff. See the OpenCodeReview job log."
+          [[ "$CLAUDE_RESULT" == "success" ]] \
+            || not_clean "The Claude review job did not complete (result: $CLAUDE_RESULT)."
+          # Zero findings has to mean "the review ran and found nothing", not "the review
+          # never got as far as looking", so the action's own conclusion counts too.
+          [[ "$CONCLUSION" == "success" ]] \
+            || not_clean "The Claude review reported conclusion '${CONCLUSION:-<none>}', not success."
+          # An empty count means the counting step never ran.
+          [[ "$FINDINGS" == "0" ]] \
+            || not_clean "The Claude review left ${FINDINGS:-an unknown number of} inline comment(s) on this push."
+          echo "OpenCodeReview and the Claude review found nothing on this push." | tee -a "$GITHUB_STEP_SUMMARY"

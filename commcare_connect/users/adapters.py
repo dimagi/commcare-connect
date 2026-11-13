@@ -87,6 +87,7 @@ class AccountAdapter(DefaultAccountAdapter):
         # a signup is a GET and sends a confirmation mail, so count those too.
         return ratelimit.consume(
             request,
+            app="allauth.account",
             config=account_settings.RATE_LIMITS,
             action="send_mail",
             key=mail_budget_key(email),

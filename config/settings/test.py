@@ -47,3 +47,5 @@ STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticF
 
 # CommCareConnect
 # ------------------------------------------------------------------------------
+# Not in base: it imports dev-only packages. Installed here so CI runs every simulation scenario.
+INSTALLED_APPS += ["commcare_connect.simulation"]  # noqa: F405
