@@ -218,14 +218,14 @@ class Opportunity(BaseModel):
             )
 
     @property
-    def number_of_users(self):
+    def budgeted_workers(self):
         if not self.total_budget:
             return 0
         return self.total_budget / self.budget_per_user()
 
     @property
     def allotted_visits(self):
-        return self.max_visits_per_user * self.number_of_users
+        return self.max_visits_per_user * self.budgeted_workers
 
     @property
     def max_visits_per_user(self):
