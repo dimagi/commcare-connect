@@ -28,7 +28,13 @@ module.exports = [
     languageOptions: {
       ecmaVersion: 2020,
       sourceType: 'module',
-      globals: globals.browser,
+      globals: {
+        ...globals.browser,
+        // Django's JavaScript catalog (the `javascript-catalog` URL)
+        gettext: 'readonly',
+        ngettext: 'readonly',
+        interpolate: 'readonly',
+      },
     },
     rules: {
       'no-console': 'error',

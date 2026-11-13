@@ -1,51 +1,59 @@
-# CommCare Connect Templates
+# Connect Templates
 
-This directory contains all Django HTML templates for the CommCare Connect project, organized by feature and reuse purpose. The structure follows a modular approach to support maintainability, reuse, and clarity.
+This directory holds the project's Django HTML templates, organized by feature and by how widely they are reused.
 
-## 📁 Directory Structure
+## Directory structure
 
-- **Top-level error pages**
-  - `403.html`, `404.html`, `500.html`: Global error pages rendered by Django for respective HTTP status codes.
+### Top level
 
-- **`account/`**
-  - Templates related to user authentication and account management (login, signup, email, password workflows).
+| File                                       | Purpose                                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `base.html`                                | The page shell most templates extend                                                     |
+| `base_table.html`, `grouped_table.html`    | django-tables2 templates; see the table rules in AGENTS.md (no horizontal scroll)        |
+| `403.html`, `404.html`, `429.html`, `500.html` | Error pages Django renders for those status codes                                    |
+| `favicon.html`                             | Favicon links included by the base templates                                             |
 
-- **`components/`**
-  - Reusable template components and partials (e.g., `form.html`, `progressbar/`, `dropdowns/`).
-  - Encouraged for shared UI elements across different pages and apps.
+### Shared
 
-- **`layouts/`**
-  - Base layout elements such as `header.html` and `sidenav.html`.
-  - Used in other templates via `{% include %}` or extended base templates.
+| Directory     | Contents                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `components/` | Reusable partials: forms, modals, badges, cards, dropdowns, progress bars, worker page pieces, sidenav items  |
+| `layouts/`    | `header.html`, `sidenav.html`, `footer.html`                                                                  |
+| `tables/`     | Table-level templates and placeholders shared by several tables                                               |
+| `widgets/`    | Templates for custom form widgets (e.g. `preset_date_range.html`)                                             |
+| `email/`      | `base.html` / `base.txt` that app email templates extend                                                      |
 
-- **`opportunity/`**
-  - All templates specific to the Opportunity app: dashboards, worker views, modals, invoice views, and more.
-  - Follows a flat naming pattern per feature (e.g., `opportunity_worker.html`).
+### Per app or feature
 
-- **`organization/`**
-  - Templates for managing organizations, e.g., creating or viewing an org.
+| Directory                                 | Contents                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------- |
+| `opportunity/`                            | The opportunity app: dashboards, worker views, visits, payments, invoices   |
+| `microplanning/`                          | Work areas, groups, clustering modals and maps                              |
+| `organization/`                           | Creating and managing organizations, members and invites                    |
+| `program/`                                | Program manager and network manager views                                   |
+| `solicitation/`                           | Solicitations: listing, publishing, invitations                           |
+| `audit/`                                  | Audit reports and their emails                                              |
+| `reports/`                                | KPI and admin reports                                                       |
+| `tasks/`                                  | The assigned-task modal                                                     |
+| `users/`                                  | User management, internal features, permissions                             |
+| `flags/`                                  | The feature flag management page                                            |
+| `ocs/`                                    | The Open Chat Studio connect prompt                                         |
+| `account/`, `socialaccount/`              | django-allauth overrides: login, signup, email and password flows           |
+| `admin/`                                  | Django admin overrides (e.g. the organization merge confirmation)           |
+| `pages/`                                  | Standalone pages such as `about.html`                                       |
+| `prelogin/`                               | Public marketing pages, `robots.txt` and `sitemap.xml`                      |
 
-- **`pages/`**
-  - Static or informational pages like `about.html` and `home.html`.
-
-- **`program/`**
-  - Templates related to program manager or national manager views.
-  - Includes shared base layout for program dashboards.
-
-- **`reports/`**
-  - Templates for data reports and admin dashboards.
-
-- **`users/`**
-  - User management templates including forms and user detail views.
-
-## 🧩 Expectations
+## Expectations
 
 - **Reusability**: Place reusable UI pieces under `components/` or `layouts/`.
-- **Modularity**: Each app (e.g., `opportunity`, `program`, `users`) has its own folder to keep related views organized.
-- **Extensibility**: Most templates should extend a base (e.g., `base.html`) and override content blocks.
+- **Modularity**: Each app has its own folder to keep related views organized.
+- **Extensibility**: Most templates should extend a base (e.g. `base.html`) and override content blocks.
 - **Naming**: File names should be descriptive and consistent with view functions or page purposes.
-- **Partial Templates**: Templates prefixed with `partial_` or placed under `components/` are expected to be used via `include` in other templates.
+- **Partial templates**: Fragments meant to be included or swapped in by htmx go in a `partials/` folder inside
+  the app's directory (most do), or under `components/`. A few older ones use a `_` or `partial_` prefix instead.
+- **Styling and interactivity**: use the predefined style classes in `tailwind/tailwind.css`, Alpine.js for
+  in-page behaviour and htmx for loading data; keep JavaScript in `.js` files. AGENTS.md has the details and the
+  htmx/Alpine gotchas.
 
----
-
-For any new templates, follow the existing organizational pattern and consider whether the file is page-specific, app-specific, or a shared component.
+For any new templates, follow the existing organizational pattern and consider whether the file is page-specific,
+app-specific, or a shared component.

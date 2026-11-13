@@ -1,0 +1,114 @@
+<h:html xmlns:h="http://www.w3.org/1999/xhtml" xmlns:orx="http://openrosa.org/jr/xforms" xmlns="http://www.w3.org/2002/xforms" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:jr="http://openrosa.org/javarosa" xmlns:vellum="http://commcarehq.org/xforms/vellum">
+  <h:head>
+    <h:title>Assessment</h:title>
+    <model>
+      <instance>
+        <data xmlns:jrm="http://dev.commcarehq.org/jr/xforms" xmlns="http://openrosa.org/formdesigner/BD70B3D5-6CB4-4A2E-AD5B-C8E3E7BC37A7" uiVersion="1" version="72" name="Assessment">
+          <did_you_lean_anything/>
+          <how_many_modules_are_there/>
+          <score/>
+          <your_score_is_score/>
+          <demo>
+            <assessment xmlns="http://commcareconnect.com/data/v1/learn" id="demo">
+              <user_score/>
+            </assessment>
+          </demo>
+          <orx:meta xmlns:cc="http://commcarehq.org/xforms">
+            <orx:deviceID/>
+            <orx:timeStart/>
+            <orx:timeEnd/>
+            <orx:username/>
+            <orx:userID/>
+            <orx:instanceID/>
+            <cc:appVersion/>
+            <orx:drift/>
+          </orx:meta>
+        </data>
+      </instance>
+      <instance id="commcaresession" src="jr://instance/session"/>
+      <bind nodeset="/data/did_you_lean_anything"/>
+      <bind nodeset="/data/how_many_modules_are_there"/>
+      <bind nodeset="/data/score" calculate="if(/data/did_you_lean_anything = 'yes', 20, 0) + if(/data/how_many_modules_are_there = 'three', 50, 0)"/>
+      <bind nodeset="/data/your_score_is_score"/>
+      <bind nodeset="/data/demo/assessment/user_score" calculate="/data/score"/>
+      <itext>
+        <translation lang="en" default="">
+          <text id="did_you_lean_anything-label">
+            <value>Did you lean anything?</value>
+          </text>
+          <text id="did_you_lean_anything-yes-label">
+            <value>Yes</value>
+          </text>
+          <text id="did_you_lean_anything-no-label">
+            <value>No</value>
+          </text>
+          <text id="how_many_modules_are_there-label">
+            <value>How many modules are there?</value>
+          </text>
+          <text id="how_many_modules_are_there-one-label">
+            <value>One</value>
+          </text>
+          <text id="how_many_modules_are_there-two-label">
+            <value>Two</value>
+          </text>
+          <text id="how_many_modules_are_there-three-label">
+            <value>Three</value>
+          </text>
+          <text id="how_many_modules_are_there-four-label">
+            <value>Four</value>
+          </text>
+          <text id="your_score_is_score-label">
+            <value>Your score is:
+<output value="/data/score"/>
+            </value>
+          </text>
+        </translation>
+      </itext>
+      <setvalue ref="/data/meta/deviceID" value="instance('commcaresession')/session/context/deviceid" event="xforms-ready"/>
+      <setvalue ref="/data/meta/timeStart" value="now()" event="xforms-ready"/>
+      <bind nodeset="/data/meta/timeStart" type="xsd:dateTime"/>
+      <setvalue ref="/data/meta/timeEnd" value="now()" event="xforms-revalidate"/>
+      <bind nodeset="/data/meta/timeEnd" type="xsd:dateTime"/>
+      <setvalue ref="/data/meta/username" value="instance('commcaresession')/session/context/username" event="xforms-ready"/>
+      <setvalue ref="/data/meta/userID" value="instance('commcaresession')/session/context/userid" event="xforms-ready"/>
+      <setvalue ref="/data/meta/instanceID" value="uuid()" event="xforms-ready"/>
+      <setvalue ref="/data/meta/appVersion" value="instance('commcaresession')/session/context/appversion" event="xforms-ready"/>
+      <setvalue ref="/data/meta/drift" value="if(count(instance('commcaresession')/session/context/drift) = 1, instance('commcaresession')/session/context/drift, '')" event="xforms-revalidate"/>
+    </model>
+  </h:head>
+  <h:body>
+    <select ref="/data/did_you_lean_anything">
+      <label ref="jr:itext('did_you_lean_anything-label')"/>
+      <item>
+        <label ref="jr:itext('did_you_lean_anything-yes-label')"/>
+        <value>yes</value>
+      </item>
+      <item>
+        <label ref="jr:itext('did_you_lean_anything-no-label')"/>
+        <value>no</value>
+      </item>
+    </select>
+    <select1 ref="/data/how_many_modules_are_there">
+      <label ref="jr:itext('how_many_modules_are_there-label')"/>
+      <item>
+        <label ref="jr:itext('how_many_modules_are_there-one-label')"/>
+        <value>one</value>
+      </item>
+      <item>
+        <label ref="jr:itext('how_many_modules_are_there-two-label')"/>
+        <value>two</value>
+      </item>
+      <item>
+        <label ref="jr:itext('how_many_modules_are_there-three-label')"/>
+        <value>three</value>
+      </item>
+      <item>
+        <label ref="jr:itext('how_many_modules_are_there-four-label')"/>
+        <value>four</value>
+      </item>
+    </select1>
+    <trigger ref="/data/your_score_is_score" appearance="minimal">
+      <label ref="jr:itext('your_score_is_score-label')"/>
+    </trigger>
+  </h:body>
+</h:html>
