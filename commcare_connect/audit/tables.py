@@ -150,7 +150,7 @@ class ActionColumn(columns.Column):
             )
             return format_html(
                 '<button type="button" class="button button-md primary-dark"'
-                ' hx-get="{}" hx-target="#modal-root" hx-swap="innerHTML">{}</button>',
+                ' hx-get="{}" hx-target="body" hx-swap="beforeend" hx-disabled-elt="this">{}</button>',
                 url,
                 _("Review"),
             )

@@ -5,6 +5,7 @@ from django.http import Http404, HttpResponse, HttpResponseBadRequest, Streaming
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_vary_headers
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 from django_tables2 import RequestConfig
@@ -143,12 +144,18 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
         "org_slug": org_slug,
     }
 
-    template = (
-        "audit/audit_report_body.html"
-        if request.headers.get("HX-Request") == "true"
-        else "audit/audit_report_detail.html"
-    )
-    return render(request, template, context)
+    response = render(request, _detail_template(request), context)
+    # The same URL serves the full page or just the body, so caches must not mix them up.
+    patch_vary_headers(response, ("HX-Request", "HX-History-Restore-Request"))
+    return response
+
+
+def _detail_template(request):
+    # The worker filter pushes its URL to history. Going back to one whose snapshot htmx no longer
+    # has re-requests it over htmx, and htmx then replaces the whole <body>, so it needs the full page.
+    if request.htmx and not request.htmx.history_restore_request:
+        return "audit/audit_report_body.html"
+    return "audit/audit_report_detail.html"
 
 
 @opportunity_required
