@@ -87,7 +87,6 @@ from commcare_connect.opportunity.helpers import (
     amount_with_currency,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_worker_progress,
     get_payment_report_data,
 )
 from commcare_connect.opportunity.models import (
@@ -152,6 +151,7 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
+from commcare_connect.opportunity.worker_progress import get_delivery_allocation, get_worker_payments
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
     opp_standard_access_required,
@@ -2150,72 +2150,13 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 @opp_view_access_required
 @opportunity_required
 def opportunity_worker_progress(request, org_slug, opp_id):
-    result = get_opportunity_worker_progress(request.opportunity.pk)
-
-    verified_percentage = safe_percent(result.approved_deliveries or 0, result.total_deliveries or 0)
-    rejected_percentage = safe_percent(result.rejected_deliveries or 0, result.total_deliveries or 0)
-    earned = get_earned_summary(
-        result.total_accrued or 0, result.total_org_accrued or 0, result.total_budget or 0, result.currency_code
-    )
-    paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
-
-    worker_progress = [
-        {
-            "title": "Verification",
-            "progress": [
-                {
-                    "title": "Approved",
-                    "total": header_with_tooltip(
-                        result.approved_deliveries,
-                        "Number of Service Deliveries Approved by both PM and NM or Auto-approved",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{verified_percentage:.0f}%", "Percentage Approved out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": verified_percentage,
-                },
-                {
-                    "title": "Rejected",
-                    "total": header_with_tooltip(result.rejected_deliveries, "Number of Service Deliveries Rejected"),
-                    "value": header_with_tooltip(
-                        f"{rejected_percentage:.0f}%", "Percentage Rejected out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": rejected_percentage,
-                },
-            ],
-        },
-        {
-            "title": "Payments to Connect Workers",
-            "progress": [
-                {
-                    "title": "Earned",
-                    "total": header_with_tooltip(earned.total, "Earned Amount"),
-                    "value": header_with_tooltip(f"{earned.percentage:.0f}%", earned.percentage_tooltip),
-                    "badge_type": True,
-                    "percent": earned.percentage,
-                },
-                {
-                    "title": "Paid",
-                    "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid, result.currency_code),
-                        "Paid Amount to All Connect Workers",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
-                    ),
-                    "badge_type": True,
-                    "percent": paid_percentage,
-                },
-            ],
-        },
-    ]
-
     return render(
         request,
         "opportunity/opportunity_worker_progress.html",
-        {"worker_progress": worker_progress},
+        {
+            "allocation": get_delivery_allocation(request.opportunity),
+            "payments": get_worker_payments(request.opportunity),
+        },
     )
 
 
