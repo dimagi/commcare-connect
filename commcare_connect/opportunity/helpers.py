@@ -945,5 +945,12 @@ def opportunities_orphaned_by_removal(membership: UserOrganizationMembership) ->
 
 
 def _opportunities_managed_by(org_ids):
-    """The opportunities these orgs manage: those they run, and those in programs they own or fund."""
-    return Opportunity.objects.filter(Q(organization__in=org_ids) | Q(program__in=programs_administered_by(org_ids)))
+    """The opportunities these orgs manage: those they run or supervise, and those in programs they own or fund.
+
+    These are the orgs `org_opportunity_access` makes ADMIN.
+    """
+    return Opportunity.objects.filter(
+        Q(organization__in=org_ids)
+        | Q(supervising_organization__in=org_ids)
+        | Q(program__in=programs_administered_by(org_ids))
+    )

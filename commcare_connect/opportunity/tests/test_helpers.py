@@ -869,6 +869,7 @@ def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity
         ("program", False),
         ("funder", False),
         ("running", False),
+        ("supervising", False),
         ("owner_has_all_org_access", False),
         ("owner_not_member", True),
         ("no_api_key", False),
@@ -892,9 +893,11 @@ def test_api_key_owner_has_left(owner_member_of, expected):
         pytest.param("program", None, True, False, False, True, id="program_org"),
         pytest.param("funder", None, True, False, False, True, id="funder_org"),
         pytest.param("running", None, True, False, False, True, id="running_org"),
+        pytest.param("supervising", None, True, False, False, True, id="supervising_org"),
         pytest.param("program", "funder", True, False, False, False, id="still_in_funder_org"),
         pytest.param("program", "running", True, False, False, False, id="still_in_running_org"),
         pytest.param("running", "program", True, False, False, False, id="still_in_program_org"),
+        pytest.param("running", "supervising", True, False, False, False, id="still_in_supervising_org"),
         pytest.param("program", None, True, True, False, False, id="all_org_access"),
         pytest.param("program", None, True, False, True, False, id="archived"),
         pytest.param(None, None, True, False, False, False, id="unrelated_org"),
@@ -916,13 +919,16 @@ def test_opportunities_orphaned_by_removal(
     assert opportunities_orphaned_by_removal(membership) == ([opportunity] if orphaned else [])
 
 
-# The three organizations that manage an opportunity from `_opportunity_in_funded_program`, all distinct.
+# The four organizations that manage an opportunity from `_opportunity_in_funded_program`, all distinct.
 ORG_OF = {
     "program": lambda opportunity: opportunity.program.organization,
     "funder": lambda opportunity: opportunity.program.funder,
     "running": lambda opportunity: opportunity.organization,
+    "supervising": lambda opportunity: opportunity.supervising_organization,
 }
 
 
 def _opportunity_in_funded_program(**kwargs):
-    return OpportunityFactory(program=ProgramFactory(funder=OrganizationFactory()), **kwargs)
+    return OpportunityFactory(
+        program=ProgramFactory(funder=OrganizationFactory()), supervising_organization=OrganizationFactory(), **kwargs
+    )
