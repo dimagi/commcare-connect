@@ -143,16 +143,16 @@ Each `deliver` block becomes one `UserVisit`.
 
 **Visit status:** the visit starts as `pending`, and these rules apply in order.
 
-| Step | Condition                                                                    | Result                                                                          |
-| ---- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| 1    | Opportunity or payment unit `start_date` is after today                      | `trial`, no `CompletedWork`                                                     |
-| 2    | `check_visit_over_limit` finds any limit breached                            | `over_limit`, and the `CompletedWork` is `over_limit` too                       |
-| 3    | A counted visit already exists for this `entity_id`, worker and deliver unit | `duplicate`                                                                     |
-| 4    | `get_visit_flags` runs the verification flags                                | Visit flagged; `duplicate` falls back to `pending` if the duplicate flag is off |
-| 5    | `OpportunityAccess.suspended`                                                | `rejected`, flag `user_suspended`                                               |
-| 6    | Worker has an active `AssignedTask` still assigned on this app               | `rejected`, flag `pending_task`                                                 |
-| 7    | `automatic_visit_verification`, and the visit is `pending` + flagged         | `rejected`                                                                      |
-| 8    | `auto_approve_visits`, and the visit is `pending` + unflagged                | `approved`, `review_status=agree`                                               |
+| Step | Condition                                                                                                 | Result                                                    |
+| ---- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 1    | Opportunity or payment unit `start_date` is after today                                                   | `trial`, no `CompletedWork`                               |
+| 2    | `check_visit_over_limit` finds any limit breached                                                         | `over_limit`, and the `CompletedWork` is `over_limit` too |
+| 3    | The duplicate flag is on and a counted visit already exists for this `entity_id`, worker and deliver unit | `duplicate`                                               |
+| 4    | `get_visit_flags` runs the verification flags                                                             | Visit flagged                                             |
+| 5    | `OpportunityAccess.suspended`                                                                             | `rejected`, flag `user_suspended`                         |
+| 6    | Worker has an active `AssignedTask` still assigned on this app                                            | `rejected`, flag `pending_task`                           |
+| 7    | `automatic_visit_verification`, and the visit is `pending` + flagged                                      | `rejected`                                                |
+| 8    | `auto_approve_visits`, and the visit is `pending` + unflagged                                             | `approved`, `review_status=agree`                         |
 
 - **Counting:** steps 2–3 leave out `over_limit` and `trial` visits. The claim end-date limits compare against _today_ on the server; the daily limit uses the form's `timeStart` date.
 - **Over-limit reasons:** every breached limit is recorded on `UserVisit.over_limit_reasons`, widest first: `claim_ended`, `claim_limit_ended`, `max_visits`, `max_daily`. They are kept if a reviewer later changes the status. Visits that went over limit before 2026-10-07 have none recorded; `UserVisit.get_over_limit_reasons_display()` labels those "Not recorded" in the visit export and the verification page.
