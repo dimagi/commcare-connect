@@ -15,7 +15,12 @@ from django.views import View
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.helpers import get_payment_report_data
-from commcare_connect.opportunity.models import CompletedWorkStatus, InvoiceStatus, VisitValidationStatus
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
+    InvoiceStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
@@ -514,14 +519,30 @@ def test_export_invoice_report_task_creates_export_file():
     assert save_args[0] == result
 
 
+def _choice_labels(field):
+    return [label for _value, label in field.choices]
+
+
 @pytest.mark.django_db
-def test_delivery_report_organization_filter_leaves_out_archived_organizations():
-    active, archived = OrganizationFactory(), OrganizationFactory(is_archived=True)
+@pytest.mark.parametrize("owner_archived, suffix", [(True, " (organization archived)"), (False, "")])
+def test_delivery_report_labels_programs_and_opportunities_of_archived_organizations(owner_archived, suffix):
+    program = ProgramFactory(organization=OrganizationFactory(is_archived=owner_archived))
+    opportunity = OpportunityFactory(program=program, is_test=False)
 
-    queryset = DeliveryReportFilters.base_filters["organization"].queryset
+    fields = DeliveryReportFilters(queryset=CompletedWork.objects.none()).form.fields
 
-    assert active in queryset
-    assert archived not in queryset
+    assert f"{program}{suffix}" in _choice_labels(fields["program"])
+    assert f"{opportunity}{suffix}" in _choice_labels(fields["opportunity"])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("archived, suffix", [(True, " (archived)"), (False, "")])
+def test_delivery_report_labels_archived_organizations(archived, suffix):
+    organization = OrganizationFactory(is_archived=archived)
+
+    fields = DeliveryReportFilters(queryset=CompletedWork.objects.none()).form.fields
+
+    assert f"{organization}{suffix}" in _choice_labels(fields["organization"])
 
 
 @pytest.mark.django_db
@@ -589,6 +610,28 @@ class TestInvoiceReportFilter:
         f = InvoiceReportFilter(data={}, queryset=qs)
         assert f.is_valid()
         assert set(f.qs.values_list("id", flat=True)) == {self.invoice1.id, self.invoice2.id}
+
+    def test_staff_keep_invoices_of_archived_organizations_with_labelled_opportunities(self):
+        self.org.is_archived = True
+        self.org.save(update_fields=["is_archived"])
+
+        f = self._apply_filter({})
+
+        assert set(f.qs.values_list("id", flat=True)) == {self.invoice1.id, self.invoice2.id}
+        assert f"{self.opp1.name} - {self.opp1.id} (organization archived)" in _choice_labels(
+            f.form.fields["opportunity_name"]
+        )
+
+    def test_members_lose_invoices_of_their_archived_organization(self):
+        member = UserFactory()
+        MembershipFactory(user=member, organization=self.org)
+        self.org.is_archived = True
+        self.org.save(update_fields=["is_archived"])
+
+        f = self._apply_filter({}, user=member)
+
+        assert not f.qs.exists()
+        assert not f.filters["opportunity_name"].queryset.exists()
 
     @pytest.mark.parametrize(
         "use_member_user, other_opp_visible",

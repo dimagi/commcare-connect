@@ -172,6 +172,18 @@ class TestOpportunityExpiryReminderEmails:
 
         assert not mock_send_mail.delay.called
 
+    def test_no_email_sent_for_an_archived_pm_org(self, mock_send_mail):
+        pm_org = ProgramManagerOrgWithUsersFactory(is_archived=True)
+        OpportunityFactory(
+            program=ProgramFactory(organization=pm_org),
+            end_date=datetime.date.today() + datetime.timedelta(days=7),
+            active=True,
+        )
+
+        send_opportunity_expiry_reminder_emails(7)
+
+        assert not mock_send_mail.delay.called
+
     def test_no_email_sent_when_no_pm_members(self, mock_send_mail):
         pm_org = ProgramManagerOrgWithUsersFactory()
         pm_org.memberships.all().delete()

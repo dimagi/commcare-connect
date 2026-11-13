@@ -286,7 +286,9 @@ def program_home(request, org_slug):
 def program_manager_home(request, org):
     program_applications_prefetch = Prefetch(
         "programapplication_set",
-        queryset=ProgramApplication.objects.select_related("organization").annotate(
+        queryset=ProgramApplication.objects.filter(organization__is_archived=False)
+        .select_related("organization")
+        .annotate(
             current_budget=Coalesce(
                 Sum(
                     "program__opportunity__total_budget",
@@ -298,14 +300,16 @@ def program_manager_home(request, org):
         to_attr="applications_with_budget",
     )
 
+    active_applicant = Q(programapplication__organization__is_archived=False)
     programs_qs = (
         programs_accessible_to_org(org)
         .order_by("-start_date")
         .annotate(
-            invited=Count("programapplication"),
+            invited=Count("programapplication", filter=active_applicant),
             applied=Count(
                 "programapplication",
-                filter=Q(
+                filter=active_applicant
+                & Q(
                     programapplication__status__in=[
                         ProgramApplicationStatus.APPLIED,
                         ProgramApplicationStatus.ACCEPTED,
@@ -314,7 +318,7 @@ def program_manager_home(request, org):
             ),
             accepted=Count(
                 "programapplication",
-                filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
+                filter=active_applicant & Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
             ),
         )
         .prefetch_related(program_applications_prefetch, "watchers")
@@ -384,8 +388,9 @@ def program_manager_home(request, org):
 
 
 def network_manager_home(request, org):
+    managed_opportunities = Opportunity.objects.filter(organization=org, program__organization__is_archived=False)
     programs = (
-        Program.objects.filter(programapplication__organization=org)
+        Program.objects.filter(programapplication__organization=org, organization__is_archived=False)
         .annotate(
             status=F("programapplication__status"),
             invite_date=F("programapplication__date_created"),
@@ -395,7 +400,7 @@ def network_manager_home(request, org):
         .prefetch_related(
             Prefetch(
                 "opportunity_set",
-                queryset=Opportunity.objects.filter(organization=org),
+                queryset=managed_opportunities,
                 to_attr="managed_opportunities_for_org",
             )
         )
@@ -406,7 +411,7 @@ def network_manager_home(request, org):
     pending_review_data = (
         UserVisit.objects.filter(
             status="pending",
-            opportunity__organization=org,
+            opportunity__in=managed_opportunities,
         )
         .exclude(opportunity__automatic_visit_verification=True)
         .values(
@@ -415,7 +420,7 @@ def network_manager_home(request, org):
         .annotate(count=Count("id", distinct=True))
     )
     pending_review = _make_recent_activity_data(pending_review_data, org.slug, "opportunity:worker_deliver")
-    access_qs = OpportunityAccess.objects.filter(opportunity__organization=org)
+    access_qs = OpportunityAccess.objects.filter(opportunity__in=managed_opportunities)
 
     payment_accrued_sum_sq = (
         OpportunityAccess.objects.filter(opportunity_id=OuterRef("id"))
@@ -429,14 +434,10 @@ def network_manager_home(request, org):
         .annotate(total=Sum("payment__amount"))
         .values("total")[:1]
     )
-    pending_payments_data_opps = (
-        Opportunity.objects.filter(organization=org)
-        .annotate(
-            pending_payment=Coalesce(Subquery(payment_accrued_sum_sq), 0, output_field=DecimalField())
-            - Coalesce(Subquery(payment_amount_sum_sq), 0, output_field=DecimalField())
-        )
-        .filter(pending_payment__gte=0)
-    )
+    pending_payments_data_opps = managed_opportunities.annotate(
+        pending_payment=Coalesce(Subquery(payment_accrued_sum_sq), 0, output_field=DecimalField())
+        - Coalesce(Subquery(payment_amount_sum_sq), 0, output_field=DecimalField())
+    ).filter(pending_payment__gte=0)
     pending_payments_data = [
         {
             "opportunity__id": data.id,

@@ -71,7 +71,10 @@ def programs_accessible_to_org(org):
     if not org:
         return Program.objects.none()
 
-    return Program.objects.filter(Q(organization=org) | Q(funder=org) | Q(id__in=org.watched_programs.values("id")))
+    return Program.objects.filter(
+        Q(organization=org) | Q(funder=org) | Q(id__in=org.watched_programs.values("id")),
+        organization__is_archived=False,
+    )
 
 
 def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:
@@ -113,7 +116,8 @@ def opportunities_accessible_to_org(org):
         | Q(supervising_organization=org)
         | Q(program__organization=org)
         | Q(program__funder=org)
-        | Q(program__in=org.watched_programs.values("id"))
+        | Q(program__in=org.watched_programs.values("id")),
+        program__organization__is_archived=False,
     )
 
 

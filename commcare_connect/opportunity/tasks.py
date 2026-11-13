@@ -834,7 +834,10 @@ def generate_automated_service_delivery_invoice():
     created_invoices_ids = []
 
     for opportunity in Opportunity.objects.filter(
-        active=True, is_test=False, start_date__gte=OPPORTUNITY_AUTO_INVOICE_START_DATE
+        active=True,
+        is_test=False,
+        start_date__gte=OPPORTUNITY_AUTO_INVOICE_START_DATE,
+        program__organization__is_archived=False,
     ).iterator(chunk_size=CHUNK_SIZE):
         try:
             window_start = get_start_date_for_invoice(opportunity)
