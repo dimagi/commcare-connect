@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.11.*"
 resolution-markers = [
     "python_full_version >= '3.11.5'",
@@ -508,7 +508,7 @@ dev = [
     { name = "git-build-branch", git = "https://github.com/dimagi/git-build-branch" },
     { name = "invoke", specifier = ">=2.2.0" },
     { name = "ipdb", specifier = ">=0.13.13" },
-    { name = "jscpd", specifier = "==5.4.2" },
+    { name = "jscpd", specifier = ">=5.4.2" },
     { name = "prek", specifier = ">=0.5.9" },
     { name = "psycopg2-binary", specifier = ">=2.9.13" },
     { name = "pytest", specifier = ">=9.2.0" },
@@ -1425,17 +1425,17 @@ wheels = [
 
 [[package]]
 name = "jscpd"
-version = "5.4.2"
+version = "5.4.3"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/ae/9084826b85c1ac8527a2b9490bb1475bace031148036d64806852fcd4eef/jscpd-5.4.2-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:88428d1d37d9ce3b5db4ad7382075a7adf431d8bfaa92bd80e1171d8cab37bef", size = 17619286, upload-time = "2026-10-20T16:12:34.559Z" },
-    { url = "https://files.pythonhosted.org/packages/8f/21/f9ba1c3fbb63de205831361a6acf64b301f25a4a4b8506e2e99ce41caf7b/jscpd-5.4.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:c852e732e686df6d74fc860e77741ea4ce4beea47f04101ea1b1ca47f9e08404", size = 16966817, upload-time = "2026-10-20T16:12:37.81Z" },
-    { url = "https://files.pythonhosted.org/packages/c2/8d/2f571992f76d6d6f076ed26177e627d09e3877f756cbd5ef50d6605d8967/jscpd-5.4.2-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:1e1dee0542ff2cb221fbe010a9a7ada61f34c267084c49e24e12f1eac493f029", size = 18506509, upload-time = "2026-10-20T16:12:41.021Z" },
-    { url = "https://files.pythonhosted.org/packages/ae/b2/4991d426005b88da0c81a62a20300edb7a537c46ad288323e972efbba019/jscpd-5.4.2-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:4b6997f9d512b165aeea44e3790c02fa6390e22ee450a81e034abd9dd5212508", size = 19497424, upload-time = "2026-10-20T16:12:44.287Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/4e/c14b4bf2a6f34e760b2d8cab7e78ef4800b8eb48f8ee34a069aa12b6914e/jscpd-5.4.2-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:277750074e7e27da77f2939d1f4cd327a39d5ce793297ddc422769b31580cf17", size = 18366134, upload-time = "2026-10-20T16:12:47.845Z" },
-    { url = "https://files.pythonhosted.org/packages/a2/52/df8e0cc8144eda9eab2cfdde67da713371e90ece9f424a5fc635ccd22302/jscpd-5.4.2-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:9c0635112a95ebc595c5adcf296a3d3f427e1ade4679285ed2b087a0dd712cfb", size = 19819800, upload-time = "2026-10-20T16:12:51.089Z" },
-    { url = "https://files.pythonhosted.org/packages/ff/f2/6726d9192a7f226cd62eba8dff224cb9b06181c691e496b8921aca64483a/jscpd-5.4.2-py3-none-win_amd64.whl", hash = "sha256:ad380b5064ee2c9c3a903c99cd3798dc66e4f7970d33cd423f3fed7014bcbc98", size = 17507194, upload-time = "2026-10-20T16:12:54.432Z" },
-    { url = "https://files.pythonhosted.org/packages/c0/84/53ede87ccf79421f0323b13ed03dbe562d65313628a36cefaf59672b622a/jscpd-5.4.2-py3-none-win_arm64.whl", hash = "sha256:6177a64ee2be4ee4713f5fdad55fa6a19c709495d781a908bacda5f4593042e1", size = 16697991, upload-time = "2026-10-20T16:12:57.856Z" },
+    { url = "https://files.pythonhosted.org/packages/89/b0/a4a1d3cd5922164779ea6cf974107c1bea0aad76cfe4e3ed761e94e15cde/jscpd-5.4.3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:9e84956fbeb8bdfc6857cc88ae714a028af5e17e14607965a68f84c973f56b93", size = 18383791, upload-time = "2026-11-08T06:52:37.937Z" },
+    { url = "https://files.pythonhosted.org/packages/59/8b/3cd4c0e949f6fb7859c5bbd3839a47ab3a9c1d63bb705bc56756b0ba8c39/jscpd-5.4.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:1d054986145a7b4e4fb6ac40ebd6747eeef38313391fec2e79bee75cdf7bad8b", size = 17661267, upload-time = "2026-11-08T06:52:40.55Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/d8/ecd18c6eae51453fc36add7e133df650e1c8fb778a64ad3ba6de7af88449/jscpd-5.4.3-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:915b5db5d98898e722fdbd5d0e82d525263a0f73171f33467577e9e8d4a56367", size = 19228085, upload-time = "2026-11-08T06:52:42.765Z" },
+    { url = "https://files.pythonhosted.org/packages/33/f0/64f0fd5bb8141a663309cf9e3d12bcae49fd6139e38781a55106944e334c/jscpd-5.4.3-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:bdb173c425aa8f887ab6176981197760b74c68fe9df623f9d672b652676299cc", size = 20267513, upload-time = "2026-11-08T06:52:45.392Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/69/bec041affa26b45a9e68468d6a75414d1f6452f4963cadeb4ef923671005/jscpd-5.4.3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:6f82f17cec63f76cf209db1d58191fe06b2b15675609b605eaa8de44be6275b3", size = 19085899, upload-time = "2026-11-08T06:52:47.754Z" },
+    { url = "https://files.pythonhosted.org/packages/53/e7/f923c58d7e14e542b093ef5e848eeea994851b10d03538803e6208ef72f7/jscpd-5.4.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:461ccad74f63011ca722ba59507aac2138bc6f7326c47de63709fd76839bbcb1", size = 20606285, upload-time = "2026-11-08T06:52:49.99Z" },
+    { url = "https://files.pythonhosted.org/packages/90/cc/0def11820ca4a36c2c77c6b17523e627daca14c008cef397929200af8236/jscpd-5.4.3-py3-none-win_amd64.whl", hash = "sha256:5390ebf04c22a6ae173b58a0a760c82b0d2c571541de64773237a5329910557b", size = 17922200, upload-time = "2026-11-08T06:52:52.306Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/96/15575b0f4b409187991c8cc37774ea64a8ee8ec484c21cdfca01846be6f1/jscpd-5.4.3-py3-none-win_arm64.whl", hash = "sha256:9d66b2e6ea46b90392ffd591541796c6038574f843ce5b0167727ce9605028a9", size = 17019843, upload-time = "2026-11-08T06:52:54.501Z" },
 ]
 
 [[package]]

@@ -64,7 +64,7 @@ This document outlines best practices for creating and reviewing pull requests i
 #### 8. Code Standards
 
 - **Follow the project styleguide**: Ensure code adheres to established conventions
-- **Consistent formatting**: Run `prek run -a` (installed with `prek install`), which runs ruff, prettier, djlint, eslint and jscpd
+- **Consistent formatting**: Run `prek run -a` (installed with `prek install`), which runs ruff, prettier, djlint and eslint. Before opening a PR, also run the duplicate-code check (`uv run jscpd ...`) listed under Commands in `AGENTS.md`
 - **Clear naming conventions**: Use descriptive variable and function names
 
 ## Giving Quality Code Reviews

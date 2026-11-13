@@ -329,6 +329,3 @@ webpack-stats.json
 # Claude Code: share settings.json, keep local state out
 .claude/worktrees/
 .claude/settings.local.json
-
-# jscpd baseline, rebuilt from HEAD on every commit
-.jscpd-baseline.json
