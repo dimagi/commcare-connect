@@ -342,56 +342,96 @@ def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]
     Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
     side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
     """
-    flags = []
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
-    if user_visit.status == VisitValidationStatus.duplicate:
-        if opportunity_flags.duplicate:
-            flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
-        else:
-            user_visit.status = VisitValidationStatus.pending
-    if opportunity_flags.gps and user_visit.location is None:
-        flags.append(["gps", "GPS data is missing"])
-    if opportunity_flags.location > 0 and user_visit.location:
-        user_visits = (
-            UserVisit.objects.filter(opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit)
-            .exclude(Q(status=VisitValidationStatus.trial) | Q(entity_id=user_visit.entity_id))
-            .values("location")
-        )
-        cur_lat, cur_lon, *_ = user_visit.location.split(" ")
-        for visit in user_visits:
-            if visit.get("location") is None:
-                continue
-            lat, lon, *_ = visit["location"].split(" ")
-            dist = distance((lat, lon), (cur_lat, cur_lon))
-            if dist.m <= opportunity_flags.location:
-                flags.append(["location", f"Visit location is {dist.m}m from another visit"])
-                break
-    if (
-        opportunity_flags.form_submission_start
-        and opportunity_flags.form_submission_start > xform.metadata.timeStart.time()
-    ):
-        flags.append(["form_submission_period", "Form was submitted before the start time"])
-    if (
-        opportunity_flags.form_submission_end
-        and opportunity_flags.form_submission_end < xform.metadata.timeStart.time()
-    ):
-        flags.append(["form_submission_period", "Form was submitted after the end time"])
-
-    deliver_unit_flags = DeliverUnitFlagRules.objects.filter(
+    deliver_unit_rules = DeliverUnitFlagRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     ).first()
-    if deliver_unit_flags is not None:
-        if deliver_unit_flags.check_attachments:
-            attachments = user_visit.form_json.get("attachments", {})
-            attachments.pop("form.xml", None)
-            if len(attachments) == 0:
-                flags.append(["attachment_missing", "Form was submitted without attachements."])
 
-        if deliver_unit_flags.duration > 0 and xform.metadata.duration < datetime.timedelta(
-            minutes=deliver_unit_flags.duration
-        ):
-            flags.append(["duration", "The form was completed too quickly."])
+    flags = []
+    flags += _check_duplicate(user_visit=user_visit, opportunity_flags=opportunity_flags)
+    flags += _check_gps(user_visit=user_visit, opportunity_flags=opportunity_flags)
+    flags += _check_location_proximity(user_visit=user_visit, opportunity_flags=opportunity_flags)
+    flags += _check_submission_period(xform=xform, opportunity_flags=opportunity_flags)
+    if deliver_unit_rules is not None:
+        flags += _check_attachments(user_visit=user_visit, deliver_unit_rules=deliver_unit_rules)
+        flags += _check_duration(xform=xform, deliver_unit_rules=deliver_unit_rules)
+    flags += _check_form_json_rules(user_visit)
+    return flags
 
+
+def _check_duplicate(user_visit: UserVisit, opportunity_flags: OpportunityVerificationFlags) -> list[list[str]]:
+    """Flag a duplicate visit, or set it back to pending when duplicate checking is off."""
+    if user_visit.status != VisitValidationStatus.duplicate:
+        return []
+    if opportunity_flags.duplicate:
+        return [["duplicate", "A beneficiary with the same identifier already exists"]]
+    user_visit.status = VisitValidationStatus.pending
+    return []
+
+
+def _check_gps(user_visit: UserVisit, opportunity_flags: OpportunityVerificationFlags) -> list[list[str]]:
+    if opportunity_flags.gps and user_visit.location is None:
+        return [["gps", "GPS data is missing"]]
+    return []
+
+
+def _check_location_proximity(
+    user_visit: UserVisit, opportunity_flags: OpportunityVerificationFlags
+) -> list[list[str]]:
+    """Flag a visit closer than the minimum distance to another beneficiary's visit for the same deliver unit."""
+    if opportunity_flags.location <= 0 or not user_visit.location:
+        return []
+    user_visits = (
+        UserVisit.objects.filter(opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit)
+        .exclude(Q(status=VisitValidationStatus.trial) | Q(entity_id=user_visit.entity_id))
+        .values("location")
+    )
+    cur_lat, cur_lon, *_ = user_visit.location.split(" ")
+    for visit in user_visits:
+        if visit.get("location") is None:
+            continue
+        lat, lon, *_ = visit["location"].split(" ")
+        dist = distance((lat, lon), (cur_lat, cur_lon))
+        if dist.m <= opportunity_flags.location:
+            return [["location", f"Visit location is {dist.m}m from another visit"]]
+    return []
+
+
+def _check_submission_period(xform: XForm, opportunity_flags: OpportunityVerificationFlags) -> list[list[str]]:
+    """Flag a form started outside the opportunity's allowed hours."""
+    flags = []
+    start_time = xform.metadata.timeStart.time()
+    if opportunity_flags.form_submission_start and opportunity_flags.form_submission_start > start_time:
+        flags.append(["form_submission_period", "Form was submitted before the start time"])
+    if opportunity_flags.form_submission_end and opportunity_flags.form_submission_end < start_time:
+        flags.append(["form_submission_period", "Form was submitted after the end time"])
+    return flags
+
+
+def _check_attachments(user_visit: UserVisit, deliver_unit_rules: DeliverUnitFlagRules) -> list[list[str]]:
+    """Flag a form with no attachments other than form.xml, when the deliver unit requires them."""
+    if not deliver_unit_rules.check_attachments:
+        return []
+    attachments = user_visit.form_json.get("attachments", {})
+    # Note: this removes form.xml from user_visit.form_json itself, not from a copy.
+    attachments.pop("form.xml", None)
+    if len(attachments) == 0:
+        return [["attachment_missing", "Form was submitted without attachements."]]
+    return []
+
+
+def _check_duration(xform: XForm, deliver_unit_rules: DeliverUnitFlagRules) -> list[list[str]]:
+    """Flag a form completed faster than the deliver unit's minimum duration."""
+    if deliver_unit_rules.duration > 0 and xform.metadata.duration < datetime.timedelta(
+        minutes=deliver_unit_rules.duration
+    ):
+        return [["duration", "The form was completed too quickly."]]
+    return []
+
+
+def _check_form_json_rules(user_visit: UserVisit) -> list[list[str]]:
+    """Flag each form value rule for this deliver unit that the form doesn't satisfy."""
+    flags = []
     form_json_rules = FormJsonValidationRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     )
