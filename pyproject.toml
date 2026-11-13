@@ -104,7 +104,11 @@ dev = [
     "pytest-django>=4.14.0",
     "pytest-httpx>=0.24.0",
     "ruff>=0.17.3",
+    "time-machine>=3.6.0",
     "xml2json",
+]
+docs = [
+    "zensical>=0.1.1",
 ]
 production = [
     "django-allow-cidr>=0.7.1",

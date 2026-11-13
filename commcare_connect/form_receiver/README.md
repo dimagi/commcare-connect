@@ -247,4 +247,4 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 - **Duplicate handling depends on constraint names.** `views.py` matches `IntegrityError` by constraint name. Renaming a constraint changes a resend from a 200 to a 500, which HQ then retries. (`unique_xform_work_area_inaccessibility` in `views.py` matches no real constraint.)
 - **Block names are matched anywhere in the form.** A question or group named `deliver`, `module`, `task`, `assessment` or `work_area_update` in a Connect app that isn't a Connect block (no `@xmlns`) makes `_get_matching_blocks` raise a 500.
 - **Keep the claim-limit lock.** Anything that counts visits or checks duplicates must stay inside the `OpportunityClaimLimit` lock in `process_deliver_unit`.
-- **Shared code:** `XFormSerializer` is also used by the visit details page (`opportunity/views.py`). `update_payment_accrued_for_user` and the verification flags belong to the opportunity app.
+- **Shared code:** `XFormSerializer` is also used by the visit details page (`opportunity/views/__init__.py`). `update_payment_accrued_for_user` and the verification flags belong to the opportunity app.
