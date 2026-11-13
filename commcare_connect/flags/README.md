@@ -1,6 +1,6 @@
-# Release Toggles in CommCare Connect
+# Release Toggles in Connect
 
-CommCare Connect uses [django waffle](https://waffle.readthedocs.io/en/stable/) to manage feature release.
+Connect uses [django waffle](https://waffle.readthedocs.io/en/stable/) to manage feature release.
 
 Waffle provides different tools to control access to a feature on the environment.
 
@@ -17,6 +17,7 @@ Connect uses both [switches](https://waffle.readthedocs.io/en/stable/types/switc
 
 - Switches and flags should be as **short-lived** as possible, existing through the release, but removed once the feature is out.
 - All switches and flags should have a **detailed description** in the note field of the model, describing the feature they control.
+- Exception: `delivery_stats_monthly_export` is a long-lived recipient list, not a release toggle. Its users receive the monthly Delivery Stats CSV email (managed from Internal Features → Delivery Stats Monthly Export). Don't remove it as a stale flag.
 
 ## Configuration Details
 
@@ -39,5 +40,6 @@ They can be managed by users with required access
 Connect uses a custom Flag model `commcare_connect.flags.models.Flag` to define its own entities for access
 
 - flags names are added in the file `flag_names.py`
-- use `is_active_for()` method on the custom `Flag` model to check access to a feature
+- in a request, use waffle's `flag_is_active(request, NAME)`. The custom `Flag.is_active()` adds Connect's checks to waffle's: the flag is also on when it is enabled for `request.opportunity`, that opportunity's program, or `request.org`
+- outside a request, or for an object other than the current one, call `Flag.is_active_for(obj)` on the flag with an `Organization`, `Opportunity` or `Program`. It checks only that object, not the user
 - for new flags, they **should** be created on the relevant environment prior to deploy via Django Admin or added via a migration with the release

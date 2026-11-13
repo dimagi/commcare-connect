@@ -1,12 +1,24 @@
+import logging
+from unittest import mock
+from uuid import uuid4
+
 import pytest
+from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.models import EmailAddress
+from allauth.core import context
+from allauth.core.ratelimit import respond_429
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from allauth.socialaccount.providers.base import AuthProcess
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 
-from commcare_connect.users.adapters import AccountAdapter, SocialAccountAdapter
+from commcare_connect.users.adapters import (
+    AccountAdapter,
+    SocialAccountAdapter,
+    describe_forwarded_hops,
+    mail_budget_key,
+)
 from commcare_connect.users.models import User
 
 
@@ -14,6 +26,98 @@ class TestAccountAdapter:
     @override_settings(ACCOUNT_ALLOW_REGISTRATION=False)
     def test_respects_registration_setting(self, rf: RequestFactory):
         assert not AccountAdapter().is_open_for_signup(rf.get("/"))
+
+    @pytest.mark.parametrize(
+        "proxy_count, forwarded_for, expected",
+        [
+            (0, None, "10.0.0.9"),
+            (0, "203.0.113.5, 10.0.0.1", "10.0.0.9"),
+            (2, "203.0.113.5, 10.0.0.1", "203.0.113.5"),
+            # A client can prepend anything to the header; only the hops the proxies appended count.
+            (2, "198.51.100.7, 203.0.113.5, 10.0.0.1", "203.0.113.5"),
+            # Fewer hops than configured: fall back to the socket address rather than fail the request.
+            (2, "203.0.113.5", "10.0.0.9"),
+            (2, None, "10.0.0.9"),
+        ],
+    )
+    def test_get_client_ip_trusts_configured_proxy_hops(self, rf, settings, proxy_count, forwarded_for, expected):
+        settings.ALLAUTH_TRUSTED_PROXY_COUNT = proxy_count
+        headers = {"HTTP_X_FORWARDED_FOR": forwarded_for} if forwarded_for else {}
+        request = rf.get("/", REMOTE_ADDR="10.0.0.9", **headers)
+        assert AccountAdapter().get_client_ip(request) == expected
+
+    def test_too_short_forwarded_header_is_reported_as_an_error(self, rf, settings, caplog):
+        settings.ALLAUTH_TRUSTED_PROXY_COUNT = 3
+        request = rf.get("/accounts/login/", REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="8.8.8.8, 172.31.4.2")
+        with caplog.at_level(logging.ERROR, logger="commcare_connect.users.adapters"):
+            AccountAdapter().get_client_ip(request)
+        (record,) = caplog.records
+        assert record.levelno == logging.ERROR
+        # The message carries the shape of the chain, so it stays useful where Sentry scrubs the addresses.
+        assert record.getMessage() == (
+            "X-Forwarded-For has 2 hop(s) (public, private), fewer than ALLAUTH_TRUSTED_PROXY_COUNT; "
+            "rate limiting on REMOTE_ADDR (private)"
+        )
+        assert (record.x_forwarded_for, record.remote_addr, record.path) == (
+            "8.8.8.8, 172.31.4.2",
+            "10.0.0.9",
+            "/accounts/login/",
+        )
+
+    @pytest.mark.django_db
+    def test_send_mail_caps_account_mail_per_address(self, anonymous_request, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "2/d/key"}
+        email = f"{uuid4().hex}@example.com"  # unique so the shared test cache can't carry state over
+        # A GET, because the social-login callback sends confirmation mail on one and must count too.
+        with context.request_context(anonymous_request("get", "/accounts/commcarehq/login/callback/")):
+            for to in (email, email.upper(), email):
+                AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
+        assert [message.to for message in mailoutbox] == [[email], [email.upper()]]
+
+    @pytest.mark.django_db
+    def test_send_mail_uses_the_configured_cap(self, anonymous_request, mailoutbox):
+        """Pins the production value, so raising or dropping it in settings is a deliberate change."""
+        email = f"{uuid4().hex}@example.com"
+        with context.request_context(anonymous_request("post", "/accounts/signup/")):
+            for _ in range(11):
+                AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+        assert len(mailoutbox) == 10
+
+    @pytest.mark.django_db
+    def test_send_mail_budget_is_shared_by_gmail_aliases(self, anonymous_request, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "2/d/key"}
+        local = uuid4().hex
+        aliases = [f"{local}@gmail.com", f"{local[:4]}.{local[4:]}+signup@googlemail.com", f"{local}+2@gmail.com"]
+        with context.request_context(anonymous_request("post", "/accounts/signup/")):
+            for to in aliases:
+                AccountAdapter().send_mail("account/email/unknown_account", to, {"signup_url": "https://x/"})
+        assert [message.to for message in mailoutbox] == [[aliases[0]], [aliases[1]]]
+
+    @pytest.mark.django_db
+    def test_send_mail_gives_the_budget_back_when_delivery_fails(self, anonymous_request, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "1/d/key"}
+        email = f"{uuid4().hex}@example.com"
+        with context.request_context(anonymous_request("post", "/accounts/signup/")):
+            with mock.patch.object(DefaultAccountAdapter, "send_mail", side_effect=ConnectionError("SES down")):
+                with pytest.raises(ConnectionError):
+                    AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+            AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+        assert [message.to for message in mailoutbox] == [[email]]
+
+    @pytest.mark.django_db
+    def test_send_mail_outside_a_request_is_not_throttled(self, settings, mailoutbox):
+        settings.ACCOUNT_RATE_LIMITS = {"send_mail": "1/d/key"}
+        email = f"{uuid4().hex}@example.com"
+        for _ in range(2):
+            AccountAdapter().send_mail("account/email/unknown_account", email, {"signup_url": "https://x/"})
+        assert len(mailoutbox) == 2
+
+    @pytest.mark.django_db
+    def test_rate_limited_response_uses_the_site_error_page(self, anonymous_request):
+        response = respond_429(anonymous_request("post", "/accounts/password/reset/"))
+        assert response.status_code == 429
+        assert "Too Many Requests (429)" in response.content.decode()
+        assert 'class="title' in response.content.decode()  # rendered through base.html, not allauth's inline fallback
 
 
 class TestSocialAccountAdapter:
@@ -99,3 +203,30 @@ def test_validate_disconnect(user, provider, has_usable_password, other_provider
             SocialAccountAdapter().validate_disconnect(account, accounts)
     else:
         SocialAccountAdapter().validate_disconnect(account, accounts)
+
+
+@pytest.mark.parametrize(
+    "email, expected",
+    [
+        ("Someone@Example.com ", "someone@example.com"),
+        ("someone+tag@example.com", "someone+tag@example.com"),  # not Gmail: "+tag" may be its own mailbox
+        ("Some.One+signup@Gmail.com", "someone@gmail.com"),
+        ("some.one@googlemail.com", "someone@gmail.com"),
+    ],
+)
+def test_mail_budget_key(email, expected):
+    assert mail_budget_key(email) == expected
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        (None, []),
+        ("", []),
+        ("8.8.8.8", ["public"]),
+        ("8.8.8.8, 172.31.4.2, 10.0.0.1", ["public", "private", "private"]),
+        ("unknown, 127.0.0.1", ["invalid", "private"]),
+    ],
+)
+def test_describe_forwarded_hops(header, expected):
+    assert describe_forwarded_hops(header) == expected

@@ -12,4 +12,4 @@ def add_token_credentials(api_client, user, token="token", scope="read write", a
         application=application,
     )
     credentials = getattr(api_client, "_credentials", {})
-    api_client.credentials(**{**credentials, "Authorization": f"Bearer {access_token}"})
+    api_client.credentials(**{**credentials, "Authorization": f"Bearer {access_token.token}"})

@@ -32,6 +32,7 @@ from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
+    PaymentUnitFactory,
     TaskTypeFactory,
     UserVisitFactory,
 )
@@ -219,6 +220,16 @@ class TestProgramOpportunityOrganizationDataView:
         is_test_by_id = {opp["id"]: opp["is_test"] for opp in response.json()["opportunities"]}
         assert is_test_by_id[live_opp.id] is False
         assert is_test_by_id[test_opp.id] is True
+
+
+@pytest.mark.django_db
+class TestSingleOpportunityDataView:
+    def test_includes_payment_units(self, api_client, opportunity, org_user_member):
+        payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+        add_export_credentials(api_client, org_user_member)
+        response = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": opportunity.id}))
+        assert response.status_code == 200
+        assert {unit["id"] for unit in response.json()["payment_units"]} == {unit.id for unit in payment_units}
 
 
 @pytest.mark.django_db
@@ -1093,6 +1104,21 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
         assert area.work_area_group_id == group.id
         assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+
+    @mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay")
+    def test_adding_to_existing_group_queues_hq_sync(
+        self, sync_delay, v2_write_client, opportunity, django_capture_on_commit_callbacks
+    ):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(36.0, -1.3, 0.02))
+        group.update_centroid()
+        payload = [self._item(work_area_group_name="group-a")]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = _post_json(client=v2_write_client, url=self.url(opportunity.id), payload=payload)
+
+        assert response.status_code == 201
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
 
     def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
         WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")

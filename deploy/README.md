@@ -1,11 +1,12 @@
-# CommCare Connect Deployment
+# Connect Deployment
 
-This folder contains the configuration and scripts for deploying CommCare Connect.
+This folder contains the configuration and scripts for deploying Connect.
 
 ## Overview
 
-CommCare Connect is deployed to AWS using Docker containers. The deployment is managed using [Kamal](https://kamal-deploy.org/), a Ruby-based deployment tool.
-See https://semaphoreci.com/blog/mrsk.
+Connect is deployed to AWS using Docker containers. The deployment is managed using [Kamal](https://kamal-deploy.org/), a Ruby-based deployment tool. Deploys use
+Kamal 1.x (`~> 1.9.2`, pinned in `.github/workflows/deploy.yml`); much of the current Kamal documentation describes
+Kamal 2, whose configuration differs.
 
 Deploying commcare-connect uses the following tools:
 
@@ -61,7 +62,7 @@ vault = "Connect Tech"
 
 See https://developer.1password.com/docs/ssh/agent for more details.
 
-#### AWS CLI
+### AWS CLI
 
 ```bash
 aws configure sso --profile commcare-connect
@@ -81,11 +82,23 @@ To test that SSH, 1Password and AWS are all working you can run (instance ID fro
 ssh -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p" connect@i-08bbcc89fcb90b8c7
 ```
 
+To `ssh` to an instance ID without passing `-o ProxyCommand` each time, add this to `~/.ssh/config`. Kamal and
+Ansible don't need it.
+
+```
+Host i-*
+     ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --region us-east-1 --profile commcare-connect"
+```
+
 ## Updating Django Settings
 
 The Django settings are configured using the `deploy/roles/connect/templates/connect.docker.env.j2` file. The plain text
 settings values are in `deploy/roles/connect/defaults/main.yml`, overridden per environment in the inventory files.
 Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansible Secrets - Production` entries.
+
+`HEALTH_CHECK_TOKENS` is set from the `health_check_tokens` secret, a list of tokens joined with commas; leaving the
+secret out renders an empty value, which leaves the `/status/` health check pages open. See
+`commcare_connect/health/README.md`.
 
 To update the Django settings:
 
@@ -95,11 +108,73 @@ inv django-settings
 
 ## Deploy
 
-Ideally deploy should be done via GitHub actions however it can be run locally as follows:
+Deploy through the [`Deploy` workflow](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml) on
+GitHub Actions. It authenticates to AWS with OpenID Connect rather than stored keys; see
+[Use IAM roles to connect GitHub Actions to actions in AWS](https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/)
+and
+[Configuring OpenID Connect in Amazon Web Services](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services).
+
+It can also be run locally:
 
 ```bash
 inv deploy
 ```
+
+Deploys run through the `Deploy` GitHub Actions workflow also create a
+[GitHub deployment](https://docs.github.com/en/rest/deployments/deployments) record for the `staging` or `production`
+environment, pointing at the deployed commit, so the repository's Environments page shows what is running where. Local
+`inv deploy` runs do not create one.
+
+A deploy restarts the app containers only. Changes to Traefik's own arguments (`traefik.args` in
+`config/deploy.yml`, such as the forwarded-header range it trusts) need the proxy restarted as well:
+
+```bash
+kamal traefik reboot -d <destination>
+```
+
+### Deploying to staging
+
+The staging environment at [https://connect-staging.dimagi.com/](https://connect-staging.dimagi.com/) is connected
+to the staging environment of CommCare HQ at [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
+
+1. Update
+   [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml)
+   with the branches you need to include.
+2. Run `deploy/rebuildstaging` to build the `autostaging` branch.
+3. Run the [`Deploy` workflow](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml) manually
+   for staging.
+
+### Scheduled deploys
+
+The `Scheduled production deploy` workflow (`.github/workflows/scheduled-deploy.yml`) deploys `main` to production
+every Monday, Wednesday and Friday at 12:00 UTC. GitHub sometimes starts scheduled runs a few minutes late. It takes
+the same concurrency group as manual production deploys, so it waits for any deploy already running and none can start
+until it finishes. A group holds one waiting run at most: if a manual production deploy is waiting at 12:00, the
+scheduled run replaces it and the manual one is cancelled, and a manual deploy started while the scheduled run waits
+cancels the scheduled one. Once it has the group, it checks `main` against the latest release and CI:
+
+- **Nothing new since the latest release:** the run skips and posts an info message to the production deploy
+  channel.
+- **The latest release isn't in `main`'s history** (it has commits `main` doesn't, for example after `main` was reset):
+  the run skips and posts a warning, so someone can decide whether to deploy by hand.
+- **CI on `main` is still running:** the run waits up to 20 minutes for it to finish, then carries on as below. While
+  it waits it holds the production deploy group, so a manual production deploy queues behind it.
+- **CI on `main` failed, was still running after the wait, or hasn't run:** the run skips the deploy and posts a
+  warning to the production deploy channel. It doesn't retry, and the next slot tries again.
+- **The check itself fails** (for example a GitHub API error): the run skips and posts a warning.
+
+The deploy is pinned to the commit that was checked, so anything merged while it runs waits for the next slot. To
+retry a failed scheduled deploy, start a manual deploy or use **Re-run all jobs**. **Re-run failed jobs** reuses the
+old commit without checking it again, so the deploy refuses to run when production already has something newer.
+
+Every scheduled run posts to the production deploy channel. The deploy's own Slack messages show `(automatic)` for
+these runs, and `(scheduled)` or `(adhoc)` for manual deploys. A slot with no message means the run never started (the
+workflow is disabled, or GitHub dropped the schedule), it was cancelled while waiting for another deploy, or it
+couldn't reach Slack.
+
+To stop scheduled deploys, go to **Actions → Scheduled production deploy**, open the **⋯** menu and choose
+**Disable workflow**. Choose **Enable workflow** in the same place to resume them. Nothing reminds you to turn it back
+on. Manual deploys through the `Deploy` workflow keep working while the schedule is disabled.
 
 ## Accessing logs
 
@@ -112,3 +187,14 @@ kamal app logs
 ```
 
 See `kamal app logs --help` for more details.
+
+## Setting up logical replication
+
+Connect can replicate its database to a secondary PostgreSQL database (see `commcare_connect/multidb/`).
+
+1. Create another PostgreSQL database, in a separate cluster.
+2. Add `SECONDARY_DATABASE_URL` to the Django settings.
+3. Enable replication on the default database, which requires a restart: `wal_level=logical`,
+   `max_replication_slots=5` and `max_wal_senders=5`.
+4. Create the table schemas in the secondary database with `./manage.py migrate_multi`.
+5. Initialize replication with `./manage.py setup_logical_replication`.

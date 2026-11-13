@@ -27,7 +27,8 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -76,13 +77,14 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.invoice_export import invoice_pdf_filename
 from commcare_connect.opportunity.views import (
     OpportunityList,
-    WorkerPaymentsView,
     get_earned_summary,
     get_export_task_id,
-    invoice_pdf_filename,
+    link_deliver_units,
 )
+from commcare_connect.opportunity.views.worker import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import AccessLevel
@@ -1307,6 +1309,7 @@ class TestResendUserInvites:
         self.organization = organization
         self.opportunity = opportunity
         self.client = client
+        PaymentUnitFactory(opportunity=opportunity)
 
         self.user1 = UserFactory(phone_number="1234567890")
         self.user2 = UserFactory(phone_number="0987654321")
@@ -1872,6 +1875,28 @@ def test_invoice_pdf_filename(invoice_number, expected):
 
 
 @pytest.mark.django_db
+class TestDownloadInvoiceLineItemsView(BaseTestInvoiceView):
+    @pytest.mark.parametrize(
+        "start_date, end_date",
+        [
+            ("2026-10-01", "2026-11-02/"),
+            ("not-a-date", "2026-11-02"),
+            ("2026-13-01", "2026-11-02"),
+        ],
+    )
+    def test_invalid_date_format_returns_bad_request(self, client, setup_invoice, start_date, end_date):
+        opportunity = setup_invoice["opportunity"]
+        client.force_login(setup_invoice["user"])
+        url = reverse(
+            "opportunity:download_invoice_line_items",
+            args=(opportunity.organization.slug, opportunity.opportunity_id),
+        )
+        response = client.get(url, {"start_date": start_date, "end_date": end_date})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+@pytest.mark.django_db
 class TestDownloadInvoiceView(BaseTestInvoiceView):
     @staticmethod
     def _url(opportunity, invoice_id):
@@ -1894,7 +1919,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 
         assert response.status_code == 200
         assert response.headers["Content-Type"] == "application/pdf"
-        expected_disposition = f'attachment;filename="invoice_{invoice.invoice_number}.pdf"'
+        expected_disposition = f'attachment; filename="invoice_{invoice.invoice_number}.pdf"'
         assert response.headers["Content-Disposition"] == expected_disposition
 
     def test_missing_invoice(self, client, setup_invoice):
@@ -1971,7 +1996,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
 class TestAddPaymentUnitView:
     def test_org_amount_field_visible_for_managed_opportunity(self, client):
         managed_opportunity = OpportunityFactory()
-        organization = managed_opportunity.organization
+        organization = managed_opportunity.program.organization
         organization.program_manager = True
         organization.save()
 
@@ -1990,7 +2015,7 @@ class TestAddPaymentUnitView:
 
     def test_add_payment_unit_form_with_managed_opportunity(self, client):
         managed_opportunity = OpportunityFactory()
-        organization = managed_opportunity.organization
+        organization = managed_opportunity.program.organization
         organization.program_manager = True
         organization.save()
 
@@ -2024,28 +2049,39 @@ class TestEditPaymentUnit:
     def _url(self, org_slug, opp_id, payment_unit_id):
         return reverse("opportunity:edit_payment_unit", args=(org_slug, opp_id, payment_unit_id))
 
-    def test_edit_payment_unit_managed_as_non_pm_redirects(
-        self, client, organization, org_user_member, managed_opportunity
+    @pytest.mark.parametrize(
+        "org_fixture, user_fixture, expected",
+        [
+            ("organization", "org_user_member", HTTPStatus.NOT_FOUND),
+            ("program_manager_org", "program_manager_org_user_admin", HTTPStatus.OK),
+        ],
+    )
+    def test_only_program_managers_can_edit(
+        self, request, client, managed_opportunity, org_fixture, user_fixture, expected
     ):
+        org = request.getfixturevalue(org_fixture)
         payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
         DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
-        client.force_login(org_user_member)
-        url = self._url(organization.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.FOUND
-        assert response.url == reverse(
-            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
-        )
+        client.force_login(request.getfixturevalue(user_fixture))
+        response = client.get(self._url(org.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id))
+        assert response.status_code == expected
 
-    def test_edit_payment_unit_managed_as_pm(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
-    ):
-        payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
-        DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
-        client.force_login(program_manager_org_user_admin)
-        url = self._url(program_manager_org.slug, managed_opportunity.opportunity_id, payment_unit.payment_unit_id)
-        response = client.get(url)
-        assert response.status_code == HTTPStatus.OK
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("optional", [False, True])
+def test_link_deliver_units_reuses_unit_from_inactive_opportunity(opportunity, optional):
+    inactive_payment_unit = PaymentUnitFactory(opportunity=OpportunityFactory(active=False))
+    reused = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=inactive_payment_unit, optional=not optional)
+    unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    selected = [str(reused.id), str(unattached.id)]
+
+    link_deliver_units(payment_unit, [] if optional else selected, selected if optional else [])
+
+    for deliver_unit in (reused, unattached):
+        deliver_unit.refresh_from_db()
+        assert deliver_unit.payment_unit == payment_unit
+        assert deliver_unit.optional == optional
 
 
 @pytest.mark.django_db
@@ -2501,22 +2537,20 @@ class TestVerificationFlagsConfig:
             "form_json-MAX_NUM_FORMS": 1000,
         }
 
-    def test_get_managed_opportunity_as_non_pm_redirects(
-        self, client, organization, org_user_member, managed_opportunity
+    @pytest.mark.parametrize(
+        "org_fixture, user_fixture, expected",
+        [
+            ("organization", "org_user_member", HTTPStatus.NOT_FOUND),
+            ("program_manager_org", "program_manager_org_user_admin", HTTPStatus.OK),
+        ],
+    )
+    def test_get_is_for_program_managers(
+        self, request, client, managed_opportunity, org_fixture, user_fixture, expected
     ):
-        client.force_login(org_user_member)
-        response = client.get(self.url(organization.slug, managed_opportunity.opportunity_id))
-        assert response.status_code == HTTPStatus.FOUND
-        assert response.url == reverse(
-            "opportunity:detail", args=(organization.slug, managed_opportunity.opportunity_id)
-        )
-
-    def test_get_managed_opportunity_as_pm(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
-    ):
-        client.force_login(program_manager_org_user_admin)
-        response = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id))
-        assert response.status_code == HTTPStatus.OK
+        org = request.getfixturevalue(org_fixture)
+        client.force_login(request.getfixturevalue(user_fixture))
+        response = client.get(self.url(org.slug, managed_opportunity.opportunity_id))
+        assert response.status_code == expected
 
     def test_post_managed_opportunity_as_pm_saves(
         self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
@@ -2777,17 +2811,41 @@ def test_visit_export_count_boundary_dates(
     assert "2 visits match your filters." in response.content.decode()
 
 
+def _edit_url(opportunity):
+    """The Edit page as the program's owner org, which is a program manager for it."""
+    org_slug = opportunity.program.organization.slug
+    return reverse("opportunity:edit", kwargs={"org_slug": org_slug, "opp_id": opportunity.opportunity_id})
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    [
+        "opportunity:edit",
+        "opportunity:add_payment_unit",
+        "opportunity:add_payment_units",
+        "opportunity:verification_flags_config",
+    ],
+)
+def test_pm_only_pages_deny_the_delivering_org(client, org_user_admin, opportunity, url_name):
+    """The opportunity menu only links these for program managers, so the delivering org can't open them by URL."""
+    client.force_login(org_user_admin)
+    response = client.get(reverse(url_name, args=(opportunity.organization.slug, opportunity.opportunity_id)))
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
 @pytest.mark.django_db
 class TestOpportunityEditActiveHistory:
-    def test_edit_context_includes_active_events(self, client, org_user_admin, opportunity):
-        client.force_login(org_user_admin)
+    @pytest.fixture
+    def program_admin(self, opportunity):
+        return MembershipFactory.create(organization=opportunity.program.organization).user
+
+    def test_edit_context_includes_active_events(self, client, program_admin, opportunity):
+        client.force_login(program_admin)
         opportunity.active = False
         opportunity.save()
 
-        url = reverse(
-            "opportunity:edit",
-            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
-        )
+        url = _edit_url(opportunity)
         response = client.get(url)
 
         assert response.status_code == 200
@@ -2796,13 +2854,10 @@ class TestOpportunityEditActiveHistory:
         event_toggling_inactive = response.context["active_events"].filter(active=False).first()
         assert event_toggling_inactive is not None
 
-    def test_edit_active_toggle_records_user_in_context(self, client, org_user_admin, opportunity):
-        client.force_login(org_user_admin)
+    def test_edit_active_toggle_records_user_in_context(self, client, program_admin, opportunity):
+        client.force_login(program_admin)
 
-        url = reverse(
-            "opportunity:edit",
-            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
-        )
+        url = _edit_url(opportunity)
         post_data = {
             "name": opportunity.name,
             "description": opportunity.description,
@@ -2823,7 +2878,7 @@ class TestOpportunityEditActiveHistory:
         event_toggling_inactive = OpportunityActiveEvent.objects.filter(pgh_obj=opportunity, active=False).first()
         assert event_toggling_inactive is not None
         assert event_toggling_inactive.pgh_context is not None
-        assert event_toggling_inactive.pgh_context.metadata["username"] == org_user_admin.username
+        assert event_toggling_inactive.pgh_context.metadata["username"] == program_admin.username
 
 
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
@@ -2844,19 +2899,29 @@ def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, or
 
 
 @pytest.mark.django_db
-def test_resend_invites_redirects_for_ended_opportunity(client, org_user_member, organization):
-    opportunity = OpportunityFactory(
-        organization=organization,
-        end_date=date.today() - timedelta(days=1),
+def test_resend_invites_redirects_for_opportunity_without_valid_end_date(
+    client, org_user_member, organization, unusable_end_date
+):
+    opportunity = OpportunityFactory(organization=organization, end_date=unusable_end_date)
+    PaymentUnitFactory(opportunity=opportunity)
+    user = UserFactory(phone_number="+15555555555")
+    invite = UserInviteFactory(
+        opportunity=opportunity,
+        phone_number=user.phone_number,
+        status=UserInviteStatus.invited,
+        opportunity_access=None,
     )
     client.force_login(org_user_member)
     url = reverse("opportunity:resend_user_invites", args=[organization.slug, opportunity.opportunity_id])
-    response = client.post(url, data={"user_invite_ids": [1]})
+    with mock.patch("commcare_connect.opportunity.views.invite_user") as invite_user_task:
+        response = client.post(url, data={"user_invite_ids": [invite.id]})
     assert response.status_code == 200
     assert (
         reverse("opportunity:detail", args=[organization.slug, opportunity.opportunity_id])
         in response.headers["HX-Redirect"]
     )
+    invite_user_task.delay.assert_not_called()
+    assert not OpportunityAccess.objects.filter(opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db
@@ -3871,7 +3936,7 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
 @pytest.mark.parametrize("is_watcher", [False, True])
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
     mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
@@ -3902,7 +3967,7 @@ def test_worker_payments_shows_import_banner_on_reload(
     assert expected_class in content  # success -> green banner, error -> red banner
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_opens_modal_for_import_errors(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -3929,7 +3994,7 @@ def test_worker_payments_opens_modal_for_import_errors(
     assert "bg-message-error" not in content
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_stops_polling_once_import_succeeds(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -3949,7 +4014,7 @@ def test_worker_payments_stops_polling_once_import_succeeds(
 
 
 @pytest.mark.parametrize("is_error", [False, True])
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_shows_import_banner_only_once(
     mock_async_result, is_error, client, organization, opportunity, org_user_member
 ):
@@ -3973,7 +4038,7 @@ def test_worker_payments_shows_import_banner_only_once(
     assert message not in repeat.content.decode()
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_worker_payments_shows_import_error_modal_only_once(
     mock_status_async_result, mock_view_async_result, client, organization, opportunity, org_user_member
@@ -4007,7 +4072,7 @@ def test_worker_payments_shows_import_error_modal_only_once(
     assert "payment_import_status" not in repeat.content.decode()
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_reports_a_crashed_import_task(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
