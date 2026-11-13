@@ -1,0 +1,5 @@
+{% load i18n %}
+<div class="flex items-center gap-2 p-4 rounded-lg border-[0.5px] bg-message-warning text-message-warning-text border-message-warning-border">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <span class="text-sm">{% blocktranslate with name=opportunity.api_key.user.name|default:opportunity.api_key.user.email program=opportunity.program.name %}The API key on this opportunity was added by {{ name }}, who can no longer manage the {{ program }} program. Replace it with one of your own keys.{% endblocktranslate %}</span>
+</div>
