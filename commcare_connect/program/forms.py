@@ -9,8 +9,7 @@ from commcare_connect.opportunity.models import Country, Currency
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_funders, eligible_watchers
 from commcare_connect.program.models import Program
-
-DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
+from commcare_connect.utils.forms import DATE_INPUT
 
 
 class ProgramForm(forms.ModelForm):
