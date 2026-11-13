@@ -4,7 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Sum
 from django.db.utils import IntegrityError
 from django.utils.timezone import now
 
@@ -283,6 +283,140 @@ def _claim(opportunity):
     return claim
 
 
+def _claimed_two_unit_opportunity(opportunity, claims):
+    """A budget of 1500 with units costing 50 and 100 a worker (150 in all), and ``claims`` workers claimed."""
+    opportunity.total_budget = 1500
+    opportunity.save(update_fields=["total_budget"])
+    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
+    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
+    for _ in range(claims):
+        _claim(opportunity)
+    return unit_a, unit_b
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "total_budget, expected",
+    [
+        # 10 workers exactly: every unit gets its full share
+        (1000, (100, 50)),
+        # The leftover 75 is short of the 100 an 11th worker needs, so it funds nothing
+        (1075, (100, 50)),
+        (None, None),
+    ],
+)
+def test_allotted_visits_by_unit(opportunity: Opportunity, total_budget, expected):
+    opportunity.total_budget = total_budget
+    unit_a = PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=5, org_amount=0)
+    unit_b = PaymentUnitFactory(opportunity=opportunity, max_total=5, amount=6, org_amount=4)
+    PaymentUnitFactory(opportunity=opportunity, max_total=None)
+
+    by_unit = opportunity.allotted_visits_by_unit()
+
+    if expected is None:
+        assert by_unit == {}
+        assert opportunity.allotted_visits == 0
+    else:
+        assert by_unit == {unit_a.pk: expected[0], unit_b.pk: expected[1]}
+        assert opportunity.allotted_visits == sum(expected)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("total_budget", [1000, 1075, 1030, 90])
+def test_allotted_visits_by_unit_matches_claims(opportunity: Opportunity, total_budget):
+    opportunity.total_budget = total_budget
+    opportunity.save(update_fields=["total_budget"])
+    units = [_budget_unit(opportunity, amount=5, max_total=10), _budget_unit(opportunity, amount=6, org_amount=4)]
+    allotted = opportunity.allotted_visits_by_unit()
+
+    # A full allocation costs 10 × 5 + 10 × 10 = 150. Claim as ClaimOpportunityView allows: only while
+    # the remaining budget covers a full allocation
+    while opportunity.remaining_budget >= opportunity.budget_per_user():
+        _claim(opportunity)
+
+    for unit in units:
+        claimed = OpportunityClaimLimit.objects.filter(payment_unit=unit).aggregate(total=Sum("max_visits"))["total"]
+        assert allotted[unit.pk] == (claimed or 0)
+    assert opportunity.allotted_visits_by_unit() == allotted
+
+
+def _increase_unit_a_for_one_worker(opportunity, unit_a, unit_b):
+    claim_limit = OpportunityClaimLimit.objects.filter(payment_unit=unit_a).first()
+    claim_limit.max_visits += 5
+    claim_limit.save()
+
+
+def _lower_unit_a_max_total(opportunity, unit_a, unit_b):
+    unit_a.max_total = 5
+    unit_a.save()
+
+
+def _add_unit_c(opportunity, unit_a, unit_b):
+    _budget_unit(opportunity, amount=10, max_total=10)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "change, expected",
+    [
+        # 1500 - (450 claimed + 25 for the extra visits) = 1025 left: 6 more workers at 150
+        (_increase_unit_a_for_one_worker, [30 + 5 + 60, 30 + 60]),
+        # Claimants keep 10 of unit A. 1050 left at 5 × 5 + 10 × 10 = 125 a worker: 8 more workers
+        (_lower_unit_a_max_total, [30 + 40, 30 + 80]),
+        # Claimants have no unit C. 1050 left at 150 + 100 = 250 a worker: 4 more workers
+        (_add_unit_c, [30 + 40, 30 + 40, 40]),
+    ],
+)
+def test_allotted_visits_by_unit_follows_claim_limits(opportunity: Opportunity, change, expected):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=3)
+
+    change(opportunity, unit_a, unit_b)
+
+    units = opportunity.paymentunit_set.order_by("pk")
+    assert opportunity.allotted_visits_by_unit() == {unit.pk: limit for unit, limit in zip(units, expected)}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "end_date, visits, workers",
+    [
+        # 1500 - 450 claimed = 1050 left: 7 more workers at 150
+        (date.today(), 30 + 70, 3 + 7),
+        (None, 30 + 70, 3 + 7),
+        # No one can claim once it has ended, so only the claimants count, unlike in budgeted_workers
+        (date.today() - timedelta(days=1), 30, 3),
+    ],
+)
+def test_projection_stops_once_ended(opportunity: Opportunity, end_date, visits, workers):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=3)
+    opportunity.end_date = end_date
+
+    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: visits, unit_b.pk: visits}
+    assert opportunity.max_workers == workers
+    assert opportunity.budgeted_workers == 10
+
+
+@pytest.mark.django_db
+def test_allotted_visits_by_unit_keeps_claim_limits_when_unit_loses_max_total(opportunity: Opportunity):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=1)
+    unit_a.max_total = None
+    unit_a.save()
+
+    # 1500 - 150 claimed = 1350 left at 100 a worker (unit B only): 13 more workers
+    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: 10, unit_b.pk: 10 + 130}
+
+
+@pytest.mark.django_db
+def test_max_workers_counts_claimants_at_their_claimed_cost(opportunity: Opportunity):
+    unit_a, _ = _claimed_two_unit_opportunity(opportunity, claims=3)
+    unit_a.max_total = 20
+    unit_a.save()
+
+    # 1050 left at 20 × 5 + 10 × 10 = 200 a worker: 5 more. budgeted_workers prices all 7 at 200.
+    assert opportunity.max_workers == 3 + 5
+    assert opportunity.budgeted_workers == 7
+
+
 @pytest.mark.django_db
 def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
     opportunity.total_budget = 1000
@@ -293,15 +427,54 @@ def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("total_budget", [1000, 0])
+@pytest.mark.parametrize(
+    "end_date, workers, visits",
+    [
+        # ClaimOpportunityView lets anyone claim while the units cost nothing
+        (None, None, None),
+        (date.today() - timedelta(days=1), 2, 20),
+    ],
+)
+def test_units_that_cost_nothing_put_no_limit_on_claims(
+    opportunity: Opportunity, total_budget, end_date, workers, visits
+):
+    # The finalize form sets a budget of 0 when the units cost nothing
+    opportunity.total_budget = total_budget
+    opportunity.save(update_fields=["total_budget"])
+    unit = _budget_unit(opportunity, amount=0)
+    for _ in range(2):
+        _claim(opportunity)
+    opportunity.end_date = end_date
+
+    assert opportunity.max_workers == workers
+    assert opportunity.allotted_visits == visits
+    assert opportunity.allotted_visits_by_unit() == ({unit.pk: visits} if visits else {})
+
+
+@pytest.mark.django_db
+def test_budget_capacity_reads_units_and_claims_once(opportunity: Opportunity, django_assert_num_queries):
+    _claimed_two_unit_opportunity(opportunity, claims=3)
+
+    # Payment units, claim limits by unit, claim count: shared by both figures
+    with django_assert_num_queries(3):
+        workers, visits = opportunity.max_workers, opportunity.allotted_visits
+
+    assert (workers, visits) == (3 + 7, 30 + 70 + 30 + 70)
+
+
+@pytest.mark.django_db
 def test_units_without_max_total_cost_nothing_per_worker(opportunity: Opportunity):
-    _budget_unit(opportunity)
+    unit = _budget_unit(opportunity)
     _budget_unit(opportunity, max_total=None)
     opportunity.total_budget = 1000
     opportunity.save(update_fields=["total_budget"])
 
-    # ClaimOpportunityView compares the remaining budget with this, so the unit without a max_total adds nothing
+    # ClaimOpportunityView compares the remaining budget with this, so it must agree with the projection
     assert opportunity.budget_per_user() == 100
     assert opportunity.budgeted_workers == 10
+    assert opportunity.max_workers == 10
+    assert opportunity.allotted_visits_by_unit() == {unit.pk: 100}
 
 
 @pytest.mark.django_db
