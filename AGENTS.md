@@ -35,7 +35,7 @@ pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
-uvx jscpd@5.4.2 commcare_connect --baseline-from-ref "$(git merge-base HEAD origin/main)" --fail-on-new-clones 0  # run before opening a PR; fails on clones your branch adds (settings in .jscpd.json)
+uv run jscpd commcare_connect --baseline-from-ref "$(git merge-base HEAD origin/main)" --fail-on-new-clones 0  # run before opening a PR; fails on clones your branch adds (settings in .jscpd.json)
 
 # Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
