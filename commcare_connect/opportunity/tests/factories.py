@@ -123,7 +123,8 @@ class PaymentUnitRateFactory(DjangoModelFactory):
     payment_unit = SubFactory(PaymentUnitFactory)
     flw_amount = Faker("pyint", min_value=1, max_value=10)
     org_amount = 0
-    planned_for = LazyFunction(lambda: now().date())
+    # The day after the unit's Initial Pay Rate, so the default row doesn't clash with it
+    planned_for = LazyFunction(lambda: now().date() + timedelta(days=1))
     created_by = SYSTEM_USER
     modified_by = SYSTEM_USER
 
