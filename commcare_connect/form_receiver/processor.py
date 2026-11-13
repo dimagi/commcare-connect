@@ -541,14 +541,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 user_visit.status = VisitValidationStatus.duplicate
 
         flags = get_visit_flags(user_visit=user_visit, xform=xform, opportunity_flags=opportunity_flags)
-        if access.suspended:
-            flags.append(["user_suspended", "This user is suspended from the opportunity."])
-            user_visit.status = VisitValidationStatus.rejected
-            if completed_work is not None:
-                completed_work.status = CompletedWorkStatus.rejected
-                completed_work_needs_save = True
-        if _has_blocking_pending_task(access, app):
-            flags.append(["pending_task", "Worker has an incomplete assigned task."])
+        # These flags are about the worker, not the form, so they reject the visit outright.
+        if worker_flags := _check_user_suspended(access) + _check_pending_task(access=access, app=app):
+            flags += worker_flags
             user_visit.status = VisitValidationStatus.rejected
             if completed_work is not None:
                 completed_work.status = CompletedWorkStatus.rejected
@@ -631,6 +626,19 @@ def check_visit_over_limit(
     if payment_unit.max_daily is not None and counts["daily"] >= payment_unit.max_daily:
         reasons.append(OverLimitReasonChoices.max_daily)
     return bool(reasons), reasons
+
+
+def _check_user_suspended(access: OpportunityAccess) -> list[list[str]]:
+    if access.suspended:
+        return [["user_suspended", "This user is suspended from the opportunity."]]
+    return []
+
+
+def _check_pending_task(access: OpportunityAccess, app: CommCareApp) -> list[list[str]]:
+    """Flag a visit from a worker who still has an active task assigned on this app."""
+    if _has_blocking_pending_task(access=access, app=app):
+        return [["pending_task", "Worker has an incomplete assigned task."]]
+    return []
 
 
 def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
