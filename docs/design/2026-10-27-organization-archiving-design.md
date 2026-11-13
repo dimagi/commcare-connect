@@ -4,10 +4,11 @@
 
 Retire an organization that no longer works with Connect without deleting it, so none of its records are
 lost. Archiving takes the organization, and the programs it owns with their opportunities, out of
-day-to-day use: they leave listings, pickers, the API, background jobs and emails, and their pages say the
-organization no longer exists. Their history stays: the delivery and invoice reports still count their past
-work and still offer them as filter choices, labelled as archived. The LLO Directory is where the
-organization can be found, and restored if it starts working with Connect again.
+day-to-day use: they leave listings, pickers, the automation API, background jobs and emails, and their pages
+say the organization no longer exists. Their history stays: the delivery and invoice reports still count
+their past work and still offer them as filter choices, labelled as archived, and the data-export API still
+returns them. The LLO Directory is where the organization can be found, and restored if it starts working
+with Connect again.
 
 ## Archiving is refused while the organization has unfinished work
 
@@ -97,11 +98,12 @@ Visibility follows **ownership**:
   network manager hides nothing beyond that organization itself.
 
 Because of the blocking rules, everything that disappears has already finished. All of it stays in the
-delivery and invoice reports, labelled as archived (see "Reports keep the history" below).
+delivery and invoice reports, labelled as archived (see "Reports keep the history" below), and in the
+data-export API (see "The data-export API is unchanged" below).
 
 "Disappears" covers:
 - **Listings, pickers and counts.** Reports keep the history instead (see below).
-- **The data-export API.**
+- **The automation API.**
 - **Background jobs and emails**, such as reminders, audit reports and automated invoices.
 - **Direct links.** A link to the archived organization, or to a program or opportunity hidden with it,
   shows a page saying the organization no longer exists.
@@ -129,6 +131,11 @@ is archived or restored:
 - **Members of an archived organization** no longer see its invoices in the invoice report, since they have
   lost access to it everywhere else.
 
+### The data-export API is unchanged
+
+The data-export API is left as it is. It still returns archived organizations, the programs and opportunities
+they own and everything under them, to the same callers as before archiving.
+
 ### How the archived organization itself disappears
 
 - **Its pages.** Any page under `/a/<org_slug>/` of an archived organization answers with the "no longer
@@ -141,8 +148,7 @@ is archived or restored:
   links to it keeps it as a choice, so saving the record doesn't drop the link.
 - **Inviting it to a program** is refused, and so is **accepting its application**, on the web and through
   the API. Rejecting its application still works.
-- **Exports and reminders.** The organization-scoped data exports, the LLO entity export and the monthly
-  delivery reminder leave it out.
+- **The monthly delivery reminder** leaves it out.
 
 ### How the programs and opportunities it owns disappear
 
@@ -153,8 +159,7 @@ is archived or restored:
   manager home (its programs and every panel) leave them out. The program manager home also leaves out
   applications from archived organizations, in its list and in its invited, applied and accepted counts.
   They aren't declined, so they come back if the organization is restored.
-- **APIs.** The data-export API treats them as not found or leaves them out of its lists. The automation
-  API's program and opportunity lookups answer "not found".
+- **The automation API's** program and opportunity lookups answer "not found".
 - **Background jobs and emails.** The delivery, expiry and invoice review reminders, automated invoices and
   audit reports skip them. Deactivating ended opportunities and archiving test ones still apply to them, as
   to any other finished opportunity. Approving completed work and accruing payments need no change:
@@ -165,8 +170,7 @@ is archived or restored:
 ### Left out
 
 - **Mobile workers** (see "Mobile workers are not affected").
-- **Deleting lab records** through the data-export API still works on records of an archived owner's
-  opportunities.
+- **The data-export API** (see "The data-export API is unchanged").
 
 ## Restoring
 
