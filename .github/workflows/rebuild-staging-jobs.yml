@@ -136,9 +136,13 @@ jobs:
           # The bundle's base commit, and origin/autostaging to compare against
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      # `build` ran the staged code before uploading, so the artifact may hold any paths. Extract it outside
+      # the checkout so it can't replace files there, such as .git/hooks. v8 rejects entries that climb out
+      # of `path`; v4 doesn't.
+      - uses: actions/download-artifact@v8
         with:
           name: autostaging
+          path: ${{ runner.temp }}/autostaging
         # No artifact when autostaging is just main
         continue-on-error: true
 
@@ -146,9 +150,10 @@ jobs:
         id: push
         env:
           SHA: ${{ needs.build.outputs.sha }}
+          BUNDLE: ${{ runner.temp }}/autostaging/autostaging.bundle
         run: |
-          if [ -f autostaging.bundle ]; then
-            git fetch --quiet autostaging.bundle autostaging
+          if [ -f "$BUNDLE" ]; then
+            git fetch --quiet "$BUNDLE" autostaging
           fi
           git rev-parse --verify --quiet "$SHA^{commit}" > /dev/null
           # Every build makes new merge commits, so compare trees to avoid deploying identical code
@@ -182,17 +187,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      # Outside the checkout, so the logs can't replace the report script; see `publish`
+      - uses: actions/download-artifact@v8
         with:
           name: build-logs
+          path: ${{ runner.temp }}/build-logs
         # No logs when `build` succeeded and `publish` failed
         continue-on-error: true
 
       - uses: astral-sh/setup-uv@v6
 
       - name: Fetch listed fork branches
+        env:
+          LOGS: ${{ runner.temp }}/build-logs
         run: |
-          CONFIG="artifacts/staging-branches/$STAGING_CONFIG"
+          CONFIG="$LOGS/artifacts/staging-branches/$STAGING_CONFIG"
           [ -f "$CONFIG" ] || exit 0
           # The checkout has origin's branches; the report finds `owner:branch` entries under refs/remotes/owner
           yq '.branches[] | select(test(":"))' "$CONFIG" |
@@ -206,11 +215,12 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           FAILED_STEP: ${{ needs.build.outputs.failed-step || 'other' }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          LOGS: ${{ runner.temp }}/build-logs
         run: |
-          CONFIG="artifacts/staging-branches/$STAGING_CONFIG"
+          CONFIG="$LOGS/artifacts/staging-branches/$STAGING_CONFIG"
           LOG_ARGS=()
-          if [ -f "$FAILED_STEP.log" ]; then
-            LOG_ARGS=(--log "$FAILED_STEP.log")
+          if [ -f "$LOGS/$FAILED_STEP.log" ]; then
+            LOG_ARGS=(--log "$LOGS/$FAILED_STEP.log")
           fi
           if [ ! -f "$CONFIG" ] || ! uv run --no-project --with httpx --with pyyaml python -m deploy.staging_report \
               --step "$FAILED_STEP" "${LOG_ARGS[@]}" --config "$CONFIG" \
