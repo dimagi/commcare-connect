@@ -132,7 +132,8 @@ def redis_databases_used_by_other_worktrees(worktree):
     for path in worktree_paths():
         # Resolve both, so a symlink in either path doesn't make this worktree look like another one.
         if path.resolve() != worktree:
-            used.add(redis_database_number(read_env_value(path / ".env", "REDIS_URL")))
+            for key in ["REDIS_URL", "CELERY_BROKER_URL"]:
+                used.add(redis_database_number(read_env_value(path / ".env", key)))
     return used
 
 

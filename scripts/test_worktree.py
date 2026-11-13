@@ -72,6 +72,16 @@ def test_with_redis_database(url, expected):
     assert worktree.with_redis_database(url=url, number=3) == expected
 
 
+def test_redis_databases_used_by_other_worktrees_includes_celery_broker(tmp_path, monkeypatch):
+    current, other = tmp_path / "current", tmp_path / "other"
+    current.mkdir()
+    other.mkdir()
+    (other / ".env").write_text("REDIS_URL=redis://localhost:6379/2\nCELERY_BROKER_URL=redis://localhost:6379/5\n")
+    monkeypatch.setattr(worktree, "worktree_paths", lambda: [other, current])
+
+    assert worktree.redis_databases_used_by_other_worktrees(current) == {2, 5}
+
+
 def test_env_file_editing(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text('DATABASE_URL="old"\nSECONDARY_DATABASE_URL=x\n')
