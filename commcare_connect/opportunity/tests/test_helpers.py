@@ -7,6 +7,7 @@ from django.utils.timezone import now
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.filters import TasksFilterSet
 from commcare_connect.opportunity.helpers import (
+    api_key_owner_has_left,
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
@@ -33,13 +34,17 @@ from commcare_connect.opportunity.tests.factories import (
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
+    OpportunityFactory,
     PaymentFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.users.tests.factories import MobileUserFactory
+from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory
+from commcare_connect.utils.test_utils import grant_all_org_access
 
 
 @pytest.mark.django_db
@@ -932,3 +937,28 @@ def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity
     assert row2.assigned_work_areas == 4
     assert row2.assigned_work_area_groups == 2
     assert row2.visits_done == 1
+
+
+@pytest.mark.parametrize(
+    "case, expected",
+    [
+        ("owner_is_member", False),
+        ("owner_in_funder_org", False),
+        ("owner_has_all_org_access", False),
+        ("owner_not_member", True),
+        ("no_api_key", False),
+    ],
+)
+def test_api_key_owner_has_left(case, expected):
+    program = ProgramFactory(funder=OrganizationFactory())
+    opportunity = OpportunityFactory(program=program)
+    owner = opportunity.api_key.user
+    if case == "owner_is_member":
+        UserOrganizationMembership.objects.create(user=owner, organization=program.organization)
+    elif case == "owner_in_funder_org":
+        UserOrganizationMembership.objects.create(user=owner, organization=program.funder)
+    elif case == "owner_has_all_org_access":
+        opportunity.api_key.user = grant_all_org_access(owner)
+    elif case == "no_api_key":
+        opportunity.api_key = None
+    assert api_key_owner_has_left(opportunity) is expected

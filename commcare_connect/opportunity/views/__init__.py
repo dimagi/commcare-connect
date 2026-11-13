@@ -46,6 +46,7 @@ from django_tables2 import RequestConfig, SingleTableView
 from geopy import distance
 from waffle import flag_is_active, switch_is_active
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
@@ -84,6 +85,7 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    api_key_owner_has_left,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
@@ -381,6 +383,8 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        if "api_key" in context["form"].fields:
+            context.update(api_key_replacement_context(self.object))
         context["active_events"] = self.active_history_events
         return context
 
@@ -390,6 +394,15 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
         if self.active_history_events:
             form_kwargs.update({"latest_active_history_event": self.active_history_events[0]})
         return form_kwargs
+
+
+def api_key_replacement_context(opportunity):
+    """Context for the add-key modal and the departed-owner warning on pages that edit an opportunity's key."""
+    return {
+        # The key select only lists keys on the opportunity's server, so a key for another one would vanish.
+        "api_key_form": HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server),
+        "api_key_owner_has_left": api_key_owner_has_left(opportunity),
+    }
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
@@ -2382,14 +2395,26 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
 @login_required
 @require_POST
 def add_api_key(request, org_slug):
-    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s")
+    fixed_hq_server = _fixed_hq_server(request)
+    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s", fixed_hq_server=fixed_hq_server)
 
+    headers = {}
     if form.is_valid():
         api_key = form.save(commit=False)
         api_key.user = request.user
         api_key.save()
-        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-    return HttpResponse(render_crispy_form(form))
+        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=fixed_hq_server)
+        # Only a saved key closes the modal and reloads the key select; a rejected one keeps its errors on screen.
+        headers["HX-Trigger"] = "reload_api_keys"
+    return HttpResponse(render_crispy_form(form), headers=headers)
+
+
+def _fixed_hq_server(request):
+    """The server the add-key modal is pinned to, passed as `?hq_server=` by pages that pin it."""
+    server_id = request.GET.get("hq_server")
+    if not server_id or not server_id.isdigit():
+        return None
+    return HQServer.objects.filter(pk=server_id).first()
 
 
 @login_required

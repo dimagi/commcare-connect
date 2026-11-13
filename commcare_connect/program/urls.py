@@ -9,6 +9,7 @@ from commcare_connect.program.views import (
     apply_or_decline_application,
     invite_organization,
     manage_application,
+    opportunity_api_key_options,
     program_home,
 )
 
@@ -23,6 +24,11 @@ urlpatterns = [
         "<slug:pk>/opportunity/<slug:opp_id>/init/edit/",
         view=ManagedOpportunityInitUpdate.as_view(),
         name="opportunity_init_edit",
+    ),
+    path(
+        "<slug:pk>/opportunity/<slug:opp_id>/api_key_options/",
+        view=opportunity_api_key_options,
+        name="opportunity_api_key_options",
     ),
     path("<slug:pk>/invite", view=invite_organization, name="invite_organization"),
     path("application/<slug:application_id>/<str:action>", manage_application, name="manage_application"),
