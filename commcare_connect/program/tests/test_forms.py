@@ -103,6 +103,7 @@ class TestProgramForm:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures("hq_grants_app_access")
 class TestOpportunityInitForm:
     @pytest.fixture(autouse=True)
     def setup(self, program_manager_org, program_manager_org_user_admin):
