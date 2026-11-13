@@ -166,8 +166,7 @@ def _drop_cached_backend():
 
 @pytest.fixture
 def eager_celery(settings):
-    """Run tasks in-process and keep their results where a poll by task id can find them.
-    """
+    """Run tasks in-process and keep their results where a poll by task id can find them."""
     previous_store = generate_invoice_summary_export.store_eager_result
     settings.CELERY_TASK_ALWAYS_EAGER = True
     settings.CELERY_RESULT_BACKEND = "cache+memory://"
