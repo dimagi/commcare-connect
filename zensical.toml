@@ -62,6 +62,16 @@ nav = [
   { "Deployment" = "deployment.md" },
   { "Architecture decisions" = [
     { "ADR-0001: Database trigger change history" = "adr/0001-database-trigger-change-history.md" },
+    { "ADR-0002: Unit of payable work" = "adr/0002-completed-work-unit-of-payable-work.md" },
+    { "ADR-0003: Per-worker claim limits" = "adr/0003-per-worker-claim-limits.md" },
+    { "ADR-0004: Visit status at ingest" = "adr/0004-visit-status-at-ingest.md" },
+    { "ADR-0005: Cached payment accrual" = "adr/0005-cached-payment-accrual.md" },
+    { "ADR-0006: HQ form forwarding" = "adr/0006-hq-form-forwarding-ingest.md" },
+    { "ADR-0007: Recording payments" = "adr/0007-record-payments-not-move-money.md" },
+    { "ADR-0008: Currency conversion" = "adr/0008-local-currency-with-fixed-usd-conversion.md" },
+    { "ADR-0009: Invoice billing watermark" = "adr/0009-invoice-billing-watermark.md" },
+    { "ADR-0010: Organization access levels" = "adr/0010-organization-scoped-access-levels.md" },
+    { "ADR-0011: Worker identity" = "adr/0011-worker-identity-connectid-and-hq.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
