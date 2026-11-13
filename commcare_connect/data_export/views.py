@@ -128,11 +128,13 @@ def user_is_opportunity_pm(user, opportunity):
 
 class OpportunityPermissionMixin:
     opportunity_kwarg = "opp_id"
+    for_writing = False
 
     def check_opportunity_permission(self, user):
         self.opportunity = _get_opportunity_or_404(
             user,
             self.kwargs[self.opportunity_kwarg],
+            for_writing=self.for_writing,
         )
 
     def check_permissions(self, request):
@@ -145,6 +147,8 @@ class OpportunityDataExportView(OpportunityPermissionMixin, BaseDataExportView):
 
 
 class OpportunityAdminView(OpportunityPermissionMixin, BaseDataWriteView):
+    for_writing = True
+
     def check_opportunity_permission(self, user):
         super().check_opportunity_permission(user)
         if not user_is_opportunity_admin(user, self.opportunity):
@@ -252,9 +256,13 @@ def _accessible_opportunities(user):
     ).distinct()
 
 
-def _get_opportunity_or_404(user, opp_id):
+def _get_opportunity_or_404(user, opp_id, for_writing=False):
+    """An opportunity the user can reach. Writing also needs its program's owner not to be archived."""
+    opportunities = _accessible_opportunities(user)
+    if for_writing:
+        opportunities = opportunities.filter(program__organization__is_archived=False)
     try:
-        return _accessible_opportunities(user).get(id=opp_id)
+        return opportunities.get(id=opp_id)
     except Opportunity.DoesNotExist:
         raise NotFound()
 
@@ -290,30 +298,24 @@ def _get_scoped_attachment(request, opportunity):
     return ScopedAttachment(audio.blob_id, audio.name, audio.content_type)
 
 
-def _get_program_or_404(user, program_id):
+def _get_program_or_404(user, program_id, for_writing=False):
+    """A program of one of the user's organizations. Writing also needs that organization not to be archived."""
+    programs = Program.objects.filter(organization__memberships__user=user, id=program_id)
+    if for_writing:
+        programs = programs.filter(organization__is_archived=False)
     try:
-        return (
-            Program.objects.filter(
-                organization__memberships__user=user,
-                id=program_id,
-            )
-            .distinct()
-            .get()
-        )
+        return programs.distinct().get()
     except Program.DoesNotExist:
         raise NotFound()
 
 
-def _get_org_or_404(user, org_id):
+def _get_org_or_404(user, org_id, for_writing=False):
+    """One of the user's organizations. Writing also needs it not to be archived."""
+    organizations = Organization.objects.filter(memberships__user=user, id=org_id)
+    if for_writing:
+        organizations = organizations.filter(is_archived=False)
     try:
-        return (
-            Organization.objects.filter(
-                memberships__user=user,
-                id=org_id,
-            )
-            .distinct()
-            .get()
-        )
+        return organizations.distinct().get()
     except Organization.DoesNotExist:
         raise NotFound()
 
@@ -566,11 +568,11 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
                 elif record.organization_id:
                     orgs.add(record.organization_id)
         for opp_id in opps:
-            _get_opportunity_or_404(request.user, opp_id)
+            _get_opportunity_or_404(request.user, opp_id, for_writing=True)
         for program_id in programs:
-            _get_program_or_404(request.user, program_id)
+            _get_program_or_404(request.user, program_id, for_writing=True)
         for org_id in orgs:
-            _get_org_or_404(request.user, org_id)
+            _get_org_or_404(request.user, org_id, for_writing=True)
 
     def check_permissions(self, request):
         super().check_permissions(request)

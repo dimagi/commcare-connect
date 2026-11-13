@@ -36,6 +36,8 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
+from commcare_connect.organization.models import Organization
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import MembershipFactory, OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.tests.api import add_token_credentials
@@ -544,6 +546,33 @@ class TestLabsRecordDataViewAuthorization:
         assert record.experiment == "original", "Cross-org record must not be overwritten"
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+@pytest.mark.parametrize("archived, expected_status", [(False, 200), (True, 404)])
+def test_labs_record_writes_are_refused_for_an_archived_owner_but_reads_still_work(
+    api_client, organization, org_user_member, scope, archived, expected_status
+):
+    program = ProgramFactory(organization=organization)
+    scope_ids = {
+        "opportunity": OpportunityFactory(organization=organization, program=program).id,
+        "program": program.id,
+        "organization": organization.id,
+    }
+    scope_field = f"{scope}_id"
+    Organization.objects.filter(pk=organization.pk).update(is_archived=archived)
+    add_export_credentials(api_client, org_user_member)
+    url = reverse("data_export:labs_record_data")
+
+    write = api_client.post(
+        url, data=[{"experiment": "e", "type": "t", "data": {}, scope_field: scope_ids[scope]}], format="json"
+    )
+    read = api_client.get(url, {scope_field: scope_ids[scope]})
+
+    assert write.status_code == expected_status
+    assert LabsRecord.objects.exists() is not archived
+    assert read.status_code == 200
+
+
 def _attach_image(visit):
     return BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
 
@@ -720,6 +749,17 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
 
     def url(self, opp_id):
         return reverse("data_export:work_area_group_write", kwargs={"opp_id": opp_id})
+
+    @pytest.mark.parametrize("owner_archived, expected_status", [(False, 201), (True, 404)])
+    def test_refuses_writes_when_the_program_owner_is_archived(
+        self, v2_write_client, opportunity, owner_archived, expected_status
+    ):
+        Organization.objects.filter(pk=opportunity.program.organization_id).update(is_archived=owner_archived)
+
+        response = v2_write_client.post(self.url(opportunity.id), data={"name": "new-group", "ward": "ward-a"})
+
+        assert response.status_code == expected_status
+        assert WorkAreaGroup.objects.filter(opportunity=opportunity).exists() is not owner_archived
 
     def test_creates_group_when_id_omitted(self, v2_write_client, opportunity):
         response = v2_write_client.post(
