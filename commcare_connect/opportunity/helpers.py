@@ -228,7 +228,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
 def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, filters: dict):
     filters = filters or {}
     access_objects = []
-    for payment_unit in opportunity.paymentunit_set.all():
+    for payment_unit in opportunity.paymentunit_set.order_by("pk"):
         queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         if last_active_days := filters.get("last_active"):
             last_active_date = now() - timedelta(days=int(last_active_days))
@@ -382,7 +382,8 @@ def get_worker_deliveries(opportunity: Opportunity, filters: dict):
 
     That query returns a row for every payment unit in the opportunity, so units the worker has
     neither an allocation for nor any work in are dropped. A worker with nothing anywhere keeps
-    them all, since they could deliver in any of them.
+    them all, since they could deliver in any of them. Sub-rows and `payment_unit_ids` follow the
+    payment units' creation order.
     """
     rows_by_access = {}
     for row in get_annotated_opportunity_access_deliver_status(opportunity, filters):
