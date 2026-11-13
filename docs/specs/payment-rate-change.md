@@ -293,7 +293,7 @@ class PayRecord(BaseModel):
     # sets the pay rate and invoice month; empty for a backfilled delivery whose date isn't known
     approved_on = models.DateTimeField(null=True)
     # why it was reversed; kept here because CompletedWork.reason is overwritten on its next status change
-    reason = models.TextField(blank=True)
+    reversal_reason = models.TextField(blank=True)
     invoice_row = models.ForeignKey(  # the only field that changes: set by billing, cleared by cancelling
         CompletedWorkInvoice, null=True, on_delete=models.SET_NULL, related_name="pay_records"
     )
