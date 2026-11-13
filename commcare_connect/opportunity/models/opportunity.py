@@ -1,6 +1,7 @@
 """The Opportunity itself and its per-opportunity configuration."""
 
 import datetime
+from typing import NamedTuple
 from uuid import uuid4
 
 import pghistory
@@ -25,6 +26,11 @@ class OpportunityStatus(models.IntegerChoices):
     ACTIVE = 0, gettext_lazy("Active")
     ENDED = 1, gettext_lazy("Ended")
     INACTIVE = 2, gettext_lazy("Inactive")
+
+
+class UnitClaims(NamedTuple):
+    visits: int
+    cost: int
 
 
 # Tracked separately from the fields=["active"] tracker below rather than by adding
@@ -134,24 +140,7 @@ class Opportunity(BaseModel):
 
     @property
     def claimed_budget(self):
-        payment_unit_counts = (
-            self._claim_limits()
-            .values("payment_unit")
-            .annotate(
-                visits_count=Sum("max_visits"),
-                amount=F("payment_unit__amount"),
-                org_amount=F("payment_unit__org_amount"),
-            )
-        )
-        claimed = 0
-
-        for count in payment_unit_counts:
-            visits_count = count["visits_count"]
-            amount = count["amount"]
-            org_amount = count["org_amount"]
-            claimed += visits_count * (amount + org_amount)
-
-        return claimed
+        return sum(claims.cost for claims in self._claims_by_unit().values())
 
     @property
     def claimed_visits(self):
@@ -198,11 +187,9 @@ class Opportunity(BaseModel):
         change (each exposing ``max_total``/``amount``/``org_amount``; unsaved instances are
         fine).
         """
-        from commcare_connect.opportunity.models.access import OpportunityClaim
-
         if not self.total_budget:
             return
-        claimant_count = OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
+        claimant_count = self._claimed_worker_count()
         if not claimant_count:
             return
 
@@ -239,6 +226,25 @@ class Opportunity(BaseModel):
     @property
     def allotted_visits(self):
         return self.max_visits_per_user * self.budgeted_workers
+
+    def _claimed_worker_count(self):
+        from commcare_connect.opportunity.models.access import OpportunityClaim
+
+        return OpportunityClaim.objects.filter(opportunity_access__opportunity=self).count()
+
+    def _claims_by_unit(self):
+        from commcare_connect.opportunity.models.access import OpportunityClaimLimit
+
+        rows = (
+            OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=self)
+            .values("payment_unit_id")
+            .annotate(
+                visits=Sum("max_visits"),
+                cost=Sum(F("max_visits") * (F("payment_unit__amount") + F("payment_unit__org_amount"))),
+            )
+            .order_by()
+        )
+        return {row["payment_unit_id"]: UnitClaims(row["visits"], row["cost"]) for row in rows}
 
     @property
     def max_visits_per_user(self):
