@@ -1,0 +1,14 @@
+<div class="progress-track">
+  {% if usage.counts.approved %}
+    <div class="progress-fill bg-message-success-text"
+         style="width: {{ usage.approved_width|stringformat:'.2f' }}%"></div>
+  {% endif %}
+  {% if usage.counts.pending %}
+    <div class="progress-fill bg-brand-sky"
+         style="width: {{ usage.pending_width|stringformat:'.2f' }}%"></div>
+  {% endif %}
+  {% if usage.counts.rejected %}
+    <div class="progress-fill bg-brand-mango"
+         style="width: {{ usage.rejected_width|stringformat:'.2f' }}%"></div>
+  {% endif %}
+</div>

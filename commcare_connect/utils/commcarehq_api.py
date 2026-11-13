@@ -62,11 +62,12 @@ def get_app_structure(api_key, app):
     return _fetch_app(api_key, app.cc_domain, app.cc_app_id, timeout=300).json()
 
 
-def app_access_errors(api_key: HQApiKey, apps) -> list[CommCareHQAPIException | None]:
+def app_access_errors(api_key: HQApiKey, apps) -> list[Exception | None]:
     """Ask HQ, concurrently, whether `api_key` can fetch each `(cc_domain, cc_app_id)` in `apps`.
 
     Returns one entry per app, in order: None when the key can fetch it, otherwise the exception
-    (CommCareHQAccessDenied when HQ refused the key)."""
+    (CommCareHQAccessDenied when HQ refused the key). A check that fails unexpectedly, such as on a malformed
+    server URL, returns its exception rather than raising, so it can't take down the other checks."""
     return _app_access_errors(api_key.hq_server.url, _auth_header(api_key), list(apps))
 
 
@@ -89,7 +90,8 @@ def _fetch_app(api_key, cc_domain, cc_app_id, timeout) -> httpx.Response:
 async def _app_access_errors(hq_server_url, auth_header, apps):
     async with httpx.AsyncClient(headers={"Authorization": auth_header}, timeout=APP_ACCESS_TIMEOUT) as client:
         return await asyncio.gather(
-            *(_app_access_error(client, f"{hq_server_url}{_app_path(domain, app_id)}") for domain, app_id in apps)
+            *(_app_access_error(client, f"{hq_server_url}{_app_path(domain, app_id)}") for domain, app_id in apps),
+            return_exceptions=True,
         )
 
 
