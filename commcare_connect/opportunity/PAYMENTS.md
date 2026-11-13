@@ -107,7 +107,7 @@ flowchart TD
     B -->|no| C[get_or_create CompletedWork<br/>access + entity_id + PaymentUnit]
     C --> D{Over a limit?<br/>claim ended, max_visits, max_daily}
     D -->|yes| OL[visit: over_limit<br/>work: over_limit]
-    D -->|no| E{Entity already<br/>visited for this unit?}
+    D -->|no| E{Duplicate flag on and<br/>entity already visited<br/>for this unit?}
     E -->|yes| DUP[status = duplicate]
     E -->|no| P[status = pending]
     T --> FL

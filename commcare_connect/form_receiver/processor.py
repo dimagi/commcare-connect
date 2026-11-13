@@ -334,64 +334,101 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             work_area.save(update_fields=["status"])
 
 
-def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
-    """Validate a form submission against the opportunity's verification flags.
+def get_visit_flags(
+    user_visit: UserVisit, xform: XForm, opportunity_flags: OpportunityVerificationFlags
+) -> list[list[str]]:
+    """Return the verification flags a submitted visit raises.
 
     Checks GPS presence, location proximity, submission time window,
     duplicate entities, attachments, form duration, and custom JSON validation rules.
-    Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
-    side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
+    Returns a list of [flag_code, reason] pairs.
     """
-    flags = []
-    opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
-    if user_visit.status == VisitValidationStatus.duplicate:
-        if opportunity_flags.duplicate:
-            flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
-        else:
-            user_visit.status = VisitValidationStatus.pending
-    if opportunity_flags.gps and user_visit.location is None:
-        flags.append(["gps", "GPS data is missing"])
-    if opportunity_flags.location > 0 and user_visit.location:
-        user_visits = (
-            UserVisit.objects.filter(opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit)
-            .exclude(Q(status=VisitValidationStatus.trial) | Q(entity_id=user_visit.entity_id))
-            .values("location")
-        )
-        cur_lat, cur_lon, *_ = user_visit.location.split(" ")
-        for visit in user_visits:
-            if visit.get("location") is None:
-                continue
-            lat, lon, *_ = visit["location"].split(" ")
-            dist = distance((lat, lon), (cur_lat, cur_lon))
-            if dist.m <= opportunity_flags.location:
-                flags.append(["location", f"Visit location is {dist.m}m from another visit"])
-                break
-    if (
-        opportunity_flags.form_submission_start
-        and opportunity_flags.form_submission_start > xform.metadata.timeStart.time()
-    ):
-        flags.append(["form_submission_period", "Form was submitted before the start time"])
-    if (
-        opportunity_flags.form_submission_end
-        and opportunity_flags.form_submission_end < xform.metadata.timeStart.time()
-    ):
-        flags.append(["form_submission_period", "Form was submitted after the end time"])
-
-    deliver_unit_flags = DeliverUnitFlagRules.objects.filter(
+    deliver_unit_rules = DeliverUnitFlagRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     ).first()
-    if deliver_unit_flags is not None:
-        if deliver_unit_flags.check_attachments:
-            attachments = user_visit.form_json.get("attachments", {})
-            attachments.pop("form.xml", None)
-            if len(attachments) == 0:
-                flags.append(["attachment_missing", "Form was submitted without attachements."])
 
-        if deliver_unit_flags.duration > 0 and xform.metadata.duration < datetime.timedelta(
-            minutes=deliver_unit_flags.duration
-        ):
-            flags.append(["duration", "The form was completed too quickly."])
+    flags = []
+    flags += _check_duplicate(user_visit)
+    flags += _check_gps(user_visit=user_visit, opportunity_flags=opportunity_flags)
+    flags += _check_location_proximity(user_visit=user_visit, opportunity_flags=opportunity_flags)
+    flags += _check_submission_period(xform=xform, opportunity_flags=opportunity_flags)
+    if deliver_unit_rules is not None:
+        flags += _check_attachments(user_visit=user_visit, deliver_unit_rules=deliver_unit_rules)
+        flags += _check_duration(xform=xform, deliver_unit_rules=deliver_unit_rules)
+    flags += _check_form_json_rules(user_visit)
+    return flags
 
+
+def _check_duplicate(user_visit: UserVisit) -> list[list[str]]:
+    """Flag a duplicate visit. process_deliver_unit only sets that status when the duplicate check is on."""
+    if user_visit.status == VisitValidationStatus.duplicate:
+        return [["duplicate", "A beneficiary with the same identifier already exists"]]
+    return []
+
+
+def _check_gps(user_visit: UserVisit, opportunity_flags: OpportunityVerificationFlags) -> list[list[str]]:
+    if opportunity_flags.gps and user_visit.location is None:
+        return [["gps", "GPS data is missing"]]
+    return []
+
+
+def _check_location_proximity(
+    user_visit: UserVisit, opportunity_flags: OpportunityVerificationFlags
+) -> list[list[str]]:
+    """Flag a visit closer than the minimum distance to another beneficiary's visit for the same deliver unit."""
+    if opportunity_flags.location <= 0 or not user_visit.location:
+        return []
+    user_visits = (
+        UserVisit.objects.filter(opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit)
+        .exclude(Q(status=VisitValidationStatus.trial) | Q(entity_id=user_visit.entity_id))
+        .values("location")
+    )
+    cur_lat, cur_lon, *_ = user_visit.location.split(" ")
+    for visit in user_visits:
+        if visit.get("location") is None:
+            continue
+        lat, lon, *_ = visit["location"].split(" ")
+        dist = distance((lat, lon), (cur_lat, cur_lon))
+        if dist.m <= opportunity_flags.location:
+            return [["location", f"Visit location is {dist.m}m from another visit"]]
+    return []
+
+
+def _check_submission_period(xform: XForm, opportunity_flags: OpportunityVerificationFlags) -> list[list[str]]:
+    """Flag a form started outside the opportunity's allowed hours."""
+    flags = []
+    start_time = xform.metadata.timeStart.time()
+    if opportunity_flags.form_submission_start and opportunity_flags.form_submission_start > start_time:
+        flags.append(["form_submission_period", "Form was submitted before the start time"])
+    if opportunity_flags.form_submission_end and opportunity_flags.form_submission_end < start_time:
+        flags.append(["form_submission_period", "Form was submitted after the end time"])
+    return flags
+
+
+def _check_attachments(user_visit: UserVisit, deliver_unit_rules: DeliverUnitFlagRules) -> list[list[str]]:
+    """Flag a form with no attachments other than form.xml, when the deliver unit requires them."""
+    if not deliver_unit_rules.check_attachments:
+        return []
+    attachments = user_visit.form_json.get("attachments", {})
+    # Note: this removes form.xml from user_visit.form_json itself, not from a copy.
+    attachments.pop("form.xml", None)
+    if len(attachments) == 0:
+        return [["attachment_missing", "Form was submitted without attachements."]]
+    return []
+
+
+def _check_duration(xform: XForm, deliver_unit_rules: DeliverUnitFlagRules) -> list[list[str]]:
+    """Flag a form completed faster than the deliver unit's minimum duration."""
+    if deliver_unit_rules.duration > 0 and xform.metadata.duration < datetime.timedelta(
+        minutes=deliver_unit_rules.duration
+    ):
+        return [["duration", "The form was completed too quickly."]]
+    return []
+
+
+def _check_form_json_rules(user_visit: UserVisit) -> list[list[str]]:
+    """Flag each form value rule for this deliver unit that the form doesn't satisfy."""
+    flags = []
     form_json_rules = FormJsonValidationRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     )
@@ -410,139 +447,60 @@ def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     """Process a delivery form submission into a UserVisit and update CompletedWork.
 
-    Locks the claim limit row (select_for_update) to serialize concurrent
-    submissions for the same user + payment unit, then:
-    1. Creates a UserVisit with initial status based on daily/total/claim limits
-    2. Runs verification flag checks via clean_form_submission()
-    3. Rejects the visit if the worker has a pending assigned task
-    4. Auto-rejects flagged visits if automatic_visit_verification is enabled
-    5. Auto-approves if auto_approve_visits is enabled and no flags are raised
-    6. Updates or creates the associated CompletedWork record
-    7. Triggers incremental payment recalculation
+    1. Rejects the form if a required record is missing or the work area is invalid
+    2. Locks the claim limit row to serialize submissions for the same worker and payment unit
+    3. Sets the visit's status: trial, over_limit or duplicate, otherwise pending
+    4. Flags the visit; a suspended worker or a blocking assigned task rejects it
+    5. Auto-rejects or auto-approves it if the opportunity is set up to
+    6. Saves the visit and CompletedWork, then recalculates the worker's payment
     """
+    work_area_case_id = _get_work_area_case_id(deliver_unit_block)
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
-    try:
-        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
-    except OpportunityAccess.DoesNotExist:
-        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
-    payment_unit = deliver_unit.payment_unit
-    if not payment_unit:
-        raise ProcessingError(
-            f"Payment unit is not configured for the deliver unit: "
-            f"{deliver_unit.name} in opportunity: {opportunity.name}"
-        )
-
-    try:
-        claim = OpportunityClaim.objects.get(opportunity_access=access)
-    except OpportunityClaim.DoesNotExist:
-        raise ProcessingError(f"User has not claimed opportunity {opportunity.name}")
-    entity_id = deliver_unit_block.get("entity_id")
-    entity_name = deliver_unit_block.get("entity_name")
+    access, payment_unit, claim = _get_delivery_records(user=user, opportunity=opportunity, deliver_unit=deliver_unit)
 
     with transaction.atomic():
-        # Lock the claim limit row to serialize concurrent submissions for the same
-        # user + payment unit. Without it, simultaneous submissions read the same
-        # daily/total counts before either commits and both pass the limit check,
-        # letting visits slip past the daily limit. The lock also serializes the
-        # duplicate-entity check below.
-        try:
-            claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
-                opportunity_claim=claim, payment_unit=payment_unit
-            )
-        except OpportunityClaimLimit.DoesNotExist:
-            raise ProcessingError(
-                f"User has no claim limit for payment unit {payment_unit.name} in opportunity {opportunity.name}"
-            )
-        counts = (
-            UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
-            .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
-            .aggregate(
-                daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
-                total=Count("*"),
-                entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
-            )
-        )
-        user_visit = UserVisit(
-            opportunity=opportunity,
+        claim_limit = _lock_claim_limit(claim=claim, payment_unit=payment_unit, opportunity=opportunity)
+        work_area = _lock_work_area(case_id=work_area_case_id, opportunity=opportunity)
+        user_visit = _build_user_visit(
             user=user,
-            opportunity_access=access,
+            opportunity=opportunity,
+            access=access,
             deliver_unit=deliver_unit,
-            entity_id=entity_id,
-            entity_name=entity_name,
-            visit_date=xform.metadata.timeStart,
-            xform_id=xform.id,
-            app_build_id=xform.build_id,
-            app_build_version=xform.metadata.app_build_version,
-            form_json=xform.raw_form,
-            location=xform.metadata.location,
+            deliver_unit_block=deliver_unit_block,
+            xform=xform,
         )
-        completed_work_needs_save = False
+        user_visit.work_area = work_area
+        opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=opportunity)
+
         today = datetime.date.today()
-        over_limit_reasons = []
-        paymentunit_startdate = payment_unit.start_date if payment_unit else None
-        if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
-            completed_work = None
+        completed_work_needs_save = False
+        if _has_not_started(opportunity=opportunity, payment_unit=payment_unit, today=today):
             user_visit.status = VisitValidationStatus.trial
+            completed_work = None
+            over_limit_reasons = []
         else:
             completed_work, _ = CompletedWork.objects.get_or_create(
                 opportunity_access=access,
-                entity_id=entity_id,
+                entity_id=user_visit.entity_id,
                 payment_unit=payment_unit,
-                defaults={"entity_name": entity_name},
+                defaults={"entity_name": user_visit.entity_name},
             )
+            status_before = completed_work.status
             user_visit.completed_work = completed_work
-            is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
-            if is_over_limit:
-                user_visit.status = VisitValidationStatus.over_limit
-                # Work already approved keeps its status: the over-limit visit is not paid anyway, and
-                # flipping the work would move its approval date, which invoicing bills and prices by.
-                if completed_work.status not in (CompletedWorkStatus.over_limit, CompletedWorkStatus.approved):
-                    completed_work.status = CompletedWorkStatus.over_limit
-                    completed_work_needs_save = True
-            elif counts["entity"] > 0:
-                user_visit.status = VisitValidationStatus.duplicate
+            over_limit_reasons = _set_limit_or_duplicate_status(
+                user_visit=user_visit,
+                claim=claim,
+                claim_limit=claim_limit,
+                payment_unit=payment_unit,
+                opportunity_flags=opportunity_flags,
+                today=today,
+            )
+            completed_work_needs_save = completed_work.status != status_before
 
-        flags = clean_form_submission(user_visit, xform)
-        if access.suspended:
-            flags.append(["user_suspended", "This user is suspended from the opportunity."])
-            user_visit.status = VisitValidationStatus.rejected
-            if completed_work is not None:
-                completed_work.status = CompletedWorkStatus.rejected
-        if _has_blocking_pending_task(access, app):
-            flags.append(["pending_task", "Worker has an incomplete assigned task."])
-            user_visit.status = VisitValidationStatus.rejected
-            if completed_work is not None:
-                completed_work.status = CompletedWorkStatus.rejected
-                completed_work_needs_save = True
-        if flags:
-            user_visit.flagged = True
-            user_visit.flag_reason = {"flags": flags}
-
-        if (
-            opportunity.automatic_visit_verification
-            and user_visit.status == VisitValidationStatus.pending
-            and user_visit.flagged
-        ):
-            user_visit.status = VisitValidationStatus.rejected
-        if (
-            opportunity.auto_approve_visits
-            and user_visit.status == VisitValidationStatus.pending
-            and not user_visit.flagged
-        ):
-            user_visit.status = VisitValidationStatus.approved
-            user_visit.review_status = VisitReviewStatus.agree
-
-        work_area = None
-        if work_area_case_id := deliver_unit_block.get("work_area_id"):
-            if not is_a_uuid(work_area_case_id):
-                raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
-            try:
-                work_area = WorkArea.objects.select_for_update().get(
-                    case_id=work_area_case_id, opportunity=access.opportunity
-                )
-                user_visit.work_area = work_area
-            except WorkArea.DoesNotExist:
-                raise ProcessingError("Work area not found")
+        rejected = _flag_visit(user_visit=user_visit, xform=xform, app=app, opportunity_flags=opportunity_flags)
+        if rejected and completed_work is not None:
+            completed_work_needs_save = True
+        _apply_automatic_review(user_visit=user_visit, opportunity=opportunity)
 
         # Suspension and blocking tasks above can move the visit off over_limit, so the
         # reasons are only recorded once the status has settled.
@@ -569,6 +527,169 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 
+def _get_work_area_case_id(deliver_unit_block: dict) -> str | None:
+    """Return the block's work area case id, rejecting one that isn't a UUID."""
+    work_area_case_id = deliver_unit_block.get("work_area_id")
+    if work_area_case_id and not is_a_uuid(work_area_case_id):
+        raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+    return work_area_case_id or None
+
+
+def _get_delivery_records(
+    user: User, opportunity: Opportunity, deliver_unit: DeliverUnit
+) -> tuple[OpportunityAccess, PaymentUnit, OpportunityClaim]:
+    """Load the records a delivery needs, rejecting the form if any is missing."""
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
+    payment_unit = deliver_unit.payment_unit
+    if not payment_unit:
+        raise ProcessingError(
+            f"Payment unit is not configured for the deliver unit: "
+            f"{deliver_unit.name} in opportunity: {opportunity.name}"
+        )
+    try:
+        claim = OpportunityClaim.objects.get(opportunity_access=access)
+    except OpportunityClaim.DoesNotExist:
+        raise ProcessingError(f"User has not claimed opportunity {opportunity.name}")
+    return access, payment_unit, claim
+
+
+def _lock_claim_limit(
+    claim: OpportunityClaim, payment_unit: PaymentUnit, opportunity: Opportunity
+) -> OpportunityClaimLimit:
+    """Lock the worker's claim limit row for this payment unit.
+
+    The lock serializes concurrent submissions for the same worker and payment unit. Without it,
+    simultaneous submissions read the same daily/total counts before either commits and both
+    pass the limit check. It also serializes the duplicate-entity check.
+    """
+    try:
+        return OpportunityClaimLimit.objects.select_for_update().get(
+            opportunity_claim=claim, payment_unit=payment_unit
+        )
+    except OpportunityClaimLimit.DoesNotExist:
+        raise ProcessingError(
+            f"User has no claim limit for payment unit {payment_unit.name} in opportunity {opportunity.name}"
+        )
+
+
+def _lock_work_area(case_id: str | None, opportunity: Opportunity) -> WorkArea | None:
+    if not case_id:
+        return None
+    try:
+        return WorkArea.objects.select_for_update().get(case_id=case_id, opportunity=opportunity)
+    except WorkArea.DoesNotExist:
+        raise ProcessingError("Work area not found")
+
+
+def _build_user_visit(
+    user: User,
+    opportunity: Opportunity,
+    access: OpportunityAccess,
+    deliver_unit: DeliverUnit,
+    deliver_unit_block: dict,
+    xform: XForm,
+) -> UserVisit:
+    """Build an unsaved visit for the deliver block. Its status starts as pending."""
+    return UserVisit(
+        opportunity=opportunity,
+        user=user,
+        opportunity_access=access,
+        deliver_unit=deliver_unit,
+        entity_id=deliver_unit_block.get("entity_id"),
+        entity_name=deliver_unit_block.get("entity_name"),
+        visit_date=xform.metadata.timeStart,
+        xform_id=xform.id,
+        app_build_id=xform.build_id,
+        app_build_version=xform.metadata.app_build_version,
+        form_json=xform.raw_form,
+        location=xform.metadata.location,
+    )
+
+
+def _has_not_started(opportunity: Opportunity, payment_unit: PaymentUnit, today: datetime.date) -> bool:
+    """Whether the opportunity or payment unit starts after today. Visits before then are trial visits."""
+    return opportunity.start_date > today or bool(payment_unit.start_date and payment_unit.start_date > today)
+
+
+def _set_limit_or_duplicate_status(
+    user_visit: UserVisit,
+    claim: OpportunityClaim,
+    claim_limit: OpportunityClaimLimit,
+    payment_unit: PaymentUnit,
+    opportunity_flags: OpportunityVerificationFlags,
+    today: datetime.date,
+) -> list[str]:
+    """Mark the visit over_limit or duplicate based on the worker's earlier visits.
+
+    An over-limit visit also moves its CompletedWork to over_limit. Returns the breached limits.
+    """
+    counts = _count_earlier_visits(user_visit)
+    is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
+    completed_work = user_visit.completed_work
+    if is_over_limit:
+        user_visit.status = VisitValidationStatus.over_limit
+        # Work already approved keeps its status: the over-limit visit is not paid anyway, and
+        # flipping the work would move its approval date, which invoicing bills and prices by.
+        if completed_work.status not in (CompletedWorkStatus.over_limit, CompletedWorkStatus.approved):
+            completed_work.status = CompletedWorkStatus.over_limit
+    elif opportunity_flags.duplicate and counts["entity"] > 0:
+        user_visit.status = VisitValidationStatus.duplicate
+    return over_limit_reasons
+
+
+def _count_earlier_visits(user_visit: UserVisit) -> dict[str, int]:
+    """Count the worker's earlier visits for this deliver unit: that day, in total, and for this entity.
+
+    Over-limit and trial visits are left out.
+    """
+    return (
+        UserVisit.objects.filter(
+            opportunity_access=user_visit.opportunity_access, deliver_unit=user_visit.deliver_unit
+        )
+        .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
+        .aggregate(
+            daily=Count("pk", filter=Q(visit_date__date=user_visit.visit_date)),
+            total=Count("*"),
+            entity=Count("pk", filter=Q(entity_id=user_visit.entity_id)),
+        )
+    )
+
+
+def _flag_visit(
+    user_visit: UserVisit, xform: XForm, app: CommCareApp, opportunity_flags: OpportunityVerificationFlags
+) -> bool:
+    """Record the visit's flags. Flags about the worker also reject the visit and its CompletedWork.
+
+    Returns whether the visit was rejected.
+    """
+    flags = get_visit_flags(user_visit=user_visit, xform=xform, opportunity_flags=opportunity_flags)
+    access = user_visit.opportunity_access
+    worker_flags = _check_user_suspended(access) + _check_pending_task(access=access, app=app)
+    if worker_flags:
+        flags += worker_flags
+        user_visit.status = VisitValidationStatus.rejected
+        if user_visit.completed_work is not None:
+            user_visit.completed_work.status = CompletedWorkStatus.rejected
+    if flags:
+        user_visit.flagged = True
+        user_visit.flag_reason = {"flags": flags}
+    return bool(worker_flags)
+
+
+def _apply_automatic_review(user_visit: UserVisit, opportunity: Opportunity) -> None:
+    """Reject a flagged pending visit or approve an unflagged one, if the opportunity does that automatically."""
+    if user_visit.status != VisitValidationStatus.pending:
+        return
+    if opportunity.automatic_visit_verification and user_visit.flagged:
+        user_visit.status = VisitValidationStatus.rejected
+    elif opportunity.auto_approve_visits and not user_visit.flagged:
+        user_visit.status = VisitValidationStatus.approved
+        user_visit.review_status = VisitReviewStatus.agree
+
+
 def check_visit_over_limit(
     today: datetime.date,
     claim: OpportunityClaim,
@@ -592,6 +713,19 @@ def check_visit_over_limit(
     if payment_unit.max_daily is not None and counts["daily"] >= payment_unit.max_daily:
         reasons.append(OverLimitReasonChoices.max_daily)
     return bool(reasons), reasons
+
+
+def _check_user_suspended(access: OpportunityAccess) -> list[list[str]]:
+    if access.suspended:
+        return [["user_suspended", "This user is suspended from the opportunity."]]
+    return []
+
+
+def _check_pending_task(access: OpportunityAccess, app: CommCareApp) -> list[list[str]]:
+    """Flag a visit from a worker who still has an active task assigned on this app."""
+    if _has_blocking_pending_task(access=access, app=app):
+        return [["pending_task", "Worker has an incomplete assigned task."]]
+    return []
 
 
 def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
