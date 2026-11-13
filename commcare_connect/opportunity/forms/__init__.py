@@ -54,9 +54,13 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
-from commcare_connect.program.utils import is_opportunity_pm
+from commcare_connect.program.utils import is_opportunity_pm, program_access_level_from_request
 from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.commcarehq_api import (
+    CommCareHQAccessDenied,
+    CommCareHQAPIException,
+    app_access_errors,
+)
 from commcare_connect.utils.forms import ManagedOptionForm
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
@@ -69,15 +73,27 @@ CHECKBOX_CLASS = "simple-toggle"
 DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
 APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
+API_KEY_FIELD_TEMPLATE = "opportunity/partials/api_key_field.html"
+FIXED_HQ_SERVER_FIELD_TEMPLATE = "opportunity/partials/fixed_hq_server_field.html"
 
 
 class HQApiKeyCreateForm(forms.ModelForm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, fixed_hq_server=None, **kwargs):
+        """`fixed_hq_server` pins the key to that server, for pages whose key select only lists that server's
+        keys. The server is then shown as text rather than offered as a choice."""
         super().__init__(*args, **kwargs)
+        self.fixed_hq_server = fixed_hq_server
+        server_layout = Field("hq_server")
+        if fixed_hq_server:
+            server_field = self.fields["hq_server"]
+            # Narrowing the queryset also rejects a post naming any other server.
+            server_field.queryset = server_field.queryset.filter(pk=fixed_hq_server.pk)
+            server_field.initial = fixed_hq_server.pk
+            server_layout = Field("hq_server", template=FIXED_HQ_SERVER_FIELD_TEMPLATE)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Field("hq_server"),
+            server_layout,
             Field("api_key"),
             Div(Submit("submit", "Save", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
@@ -164,6 +180,8 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         self.opportunity = self.instance
         if self._can_edit_supervising_organization():
             self._add_supervising_organization_field()
+        if self._can_replace_api_key():
+            self._add_api_key_field()
 
         self.fields["users"].required = False
         layout_fields = [
@@ -230,6 +248,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 Column(Field("country")),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
+            *([self._api_key_layout()] if "api_key" in self.fields else []),
             Row(
                 HTML(f"<div class='col-span-2'><h6 class='title-sm'>{_('Invite Connect Workers')}</h6></div>"),
                 Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
@@ -371,10 +390,59 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
         return active
 
+    def _can_replace_api_key(self):
+        """Program admins, who also manage the key on the opportunity setup page, may replace it once the
+        opportunity has the HQ server and apps it checks."""
+        if self.request is None or not self.instance.pk:
+            return False
+        if not (self.instance.hq_server_id and self.instance.learn_app_id and self.instance.deliver_app_id):
+            return False
+        return program_access_level_from_request(self.request, self.instance.program).has_admin
+
+    def _add_api_key_field(self):
+        self.fields["api_key"] = forms.Field(
+            label=_("API Key"),
+            # Help text is not compiled as a template, unlike crispy HTML(), so the server name is only escaped.
+            help_text=format_html(
+                _("Connect uses this key to reach the opportunity's apps on {}."), self.instance.hq_server.name
+            ),
+            # Blank keeps the current key, so saving other edits never hinges on this select.
+            required=False,
+            initial=self.instance.api_key_id,
+            widget=forms.Select(
+                choices=fixed_server_api_key_choices(self.instance, self.request.user),
+                attrs=_fixed_server_api_key_attrs(self.instance, self.request.org.slug),
+            ),
+        )
+
+    def _api_key_layout(self):
+        return Row(
+            HTML('{% include "opportunity/partials/api_key_section_header.html" %}'),
+            Field("api_key", template=API_KEY_FIELD_TEMPLATE),
+            css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+        )
+
+    def clean_api_key(self):
+        if not self.cleaned_data["api_key"]:
+            return self.instance.api_key
+        return _allowed_api_key(
+            self.cleaned_data["api_key"],
+            user=self.request.user,
+            hq_server=self.instance.hq_server,
+            opportunity=self.instance,
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        _verify_api_key_access(self, cleaned_data.get("api_key"), _stored_apps(self.instance))
+        return cleaned_data
+
     def save(self, commit=True):
         # Attached at runtime, so absent from Meta.fields and skipped by construct_instance.
         if "supervising_organization" in self.cleaned_data:
             self.instance.supervising_organization = self.cleaned_data["supervising_organization"]
+        if "api_key" in self.cleaned_data:
+            self.instance.api_key = self.cleaned_data["api_key"]
         instance = super().save(commit=commit)
         if not switch_is_active(OPPORTUNITY_CREDENTIALS):
             return instance
@@ -458,16 +526,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("currency"),
                     Field("country"),
                     Field("hq_server"),
-                    Column(
-                        Field("api_key", wrapper_class="flex-1"),
-                        HTML(
-                            "<button class='button-icon primary-dark'"
-                            "type='button' @click='showAddApiKeyModal = true'>"
-                            "<i class='fa-solid fa-plus'></i>"
-                            "</button>"
-                        ),
-                        css_class="flex items-center gap-1",
-                    ),
+                    Field("api_key", template=API_KEY_FIELD_TEMPLATE),
                 ),
                 css_class="grid grid-cols-2 gap-4 card_bg",
             ),
@@ -754,13 +813,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
     def _set_initial_api_key(self, api_key):
         choices = [API_KEY_PLACEHOLDER_CHOICE]
         if api_key:
-            if not api_key.api_key:
-                api_key_hidden = ""
-            else:
-                api_key_hidden = (
-                    f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}" if len(api_key.api_key) > 8 else api_key.api_key
-                )
-            choices.append((api_key.id, api_key_hidden))
+            choices.append((api_key.id, api_key.masked))
             self.fields["api_key"].initial = api_key.id
         self.fields["api_key"].widget.choices = choices
 
@@ -832,6 +885,50 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         return opportunity
 
 
+def fixed_server_api_key_choices(opportunity, user):
+    """Options for the Edit page's key select: the opportunity's current key, labelled with who added it, then the
+    user's own keys on its HQ server. The form and the reload after a key is added share it, so the current key
+    stays."""
+    current_key = opportunity.api_key
+    if current_key:
+        owner = current_key.user
+        label = gettext("{key} (added by {owner})").format(key=current_key.masked, owner=owner.name or owner.email)
+        choices = [(current_key.id, label)]
+    else:
+        # A placeholder stops the browser preselecting one of the user's keys.
+        choices = [("", _("Select an API key"))]
+    own_keys = _own_api_keys(user, opportunity.hq_server_id, exclude=current_key)
+    return choices + [(key.id, key.masked) for key in own_keys]
+
+
+def reloaded_api_key_selection(choices, pending, opportunity):
+    """The option to select when the key list reloads: the admin's unsaved pick, if it is still offered, so adding
+    another key doesn't silently put the opportunity's current key back. Otherwise the current key."""
+    offered = {str(value) for value, _label in choices}
+    if pending is not None and str(pending) in offered:
+        return str(pending)
+    return str(opportunity.api_key_id or "")
+
+
+def _fixed_server_api_key_attrs(opportunity, org_slug):
+    # The HQ server can't change here, so the list reloads from the opportunity rather than a server select.
+    return {
+        "hx-get": reverse(
+            "program:opportunity_api_key_options",
+            args=(org_slug, opportunity.program.program_id, opportunity.opportunity_id),
+        ),
+        "hx-trigger": "reload_api_keys from:body",
+        "hx-target": "this",
+    }
+
+
+def _own_api_keys(user, hq_server_id, exclude=None):
+    keys = HQApiKey.objects.filter(user=user, hq_server_id=hq_server_id)
+    if exclude:
+        keys = keys.exclude(pk=exclude.pk)
+    return keys.order_by("-date_created")
+
+
 API_KEY_NOT_ALLOWED = _("Select one of your own API keys for this HQ server.")
 
 
@@ -854,16 +951,45 @@ def _allowed_api_key(key_id, *, user, hq_server, opportunity):
         raise forms.ValidationError(API_KEY_NOT_ALLOWED)
 
 
-def _own_api_keys(user, hq_server_id):
-    return HQApiKey.objects.filter(user=user, hq_server_id=hq_server_id)
-
-
 def _current_hq_server_id(opportunity):
     """The opportunity's HQ server. Opportunities from before hq_server was recorded have none, so the server of
     their key stands in."""
     if opportunity.hq_server_id:
         return opportunity.hq_server_id
     return opportunity.api_key.hq_server_id if opportunity.api_key else None
+
+
+def _stored_apps(opportunity):
+    """The opportunity's apps as `(app_type, cc_domain, cc_app_id)`, the shape `_verify_api_key_access` takes."""
+    apps = (("learn", opportunity.learn_app), ("deliver", opportunity.deliver_app))
+    return [(app_type, app.cc_domain, app.cc_app_id) for app_type, app in apps if app]
+
+
+def _verify_api_key_access(form, api_key, apps):
+    """On an otherwise valid form, ask HQ whether `api_key` can fetch each `(app_type, cc_domain, cc_app_id)` in
+    `apps`, and add the first failure to the form.
+
+    Skipped only when the key and the apps are both what the opportunity already stores: a kept key may belong to
+    a colleague, so pointing it at different apps needs the same check as a new key."""
+    if form.errors or not api_key:
+        return
+    if api_key.id == form.instance.api_key_id and apps == _stored_apps(form.instance):
+        return
+    errors = app_access_errors(api_key, [(domain, app_id) for _app_type, domain, app_id in apps])
+    for (app_type, domain, _app_id), error in zip(apps, errors):
+        if isinstance(error, CommCareHQAccessDenied):
+            form.add_error(
+                "api_key",
+                gettext('This API key cannot access the {app_type} app on domain "{domain}".').format(
+                    app_type=app_type, domain=domain
+                ),
+            )
+            return
+        if error:
+            # Unreachable, 5xx, rate limited, ...: not the key's fault, so don't blame it.
+            logger.warning("HQ API key check failed for opportunity %s", form.instance.pk, exc_info=error)
+            form.add_error("api_key", gettext("Could not reach CommCare HQ to check this API key. Please try again."))
+            return
 
 
 class OpportunityFinalizeForm(forms.ModelForm):

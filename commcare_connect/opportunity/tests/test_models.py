@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     AudioAttachment,
     BillToAddress,
+    HQApiKey,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
@@ -1199,3 +1200,15 @@ class TestOpportunityApiKey:
         assert event.pgh_label == "api_key_update"
         assert event.api_key_id == new_key.id
         assert event.pgh_context.metadata["user_email"] == "admin@example.com"
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("abcdef1234567890wxyz", "abcd...wxyz"),
+            ("abcdefghijklm", "abcd...jklm"),
+            ("abc12345", "****"),
+            ("", "****"),
+        ],
+    )
+    def test_masked_never_shows_a_short_key_in_full(self, value, expected):
+        assert HQApiKey(api_key=value).masked == expected
