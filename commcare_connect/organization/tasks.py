@@ -8,7 +8,12 @@ from django.urls import reverse
 from django_tables2.export import TableExport
 
 from commcare_connect.organization.filters import ContactFilterSet
-from commcare_connect.organization.models import Contact, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    Contact,
+    Organization,
+    OrganizationInvite,
+    UserOrganizationMembership,
+)
 from commcare_connect.organization.tables import ContactExportTable
 from commcare_connect.utils.celery import get_export_storage
 from commcare_connect.utils.tasks import send_mail_async
@@ -57,6 +62,22 @@ def send_invite_accepted_notification(membership_id):
         message=render_to_string("organization/email/invite_accepted.txt", context),
         recipient_list=admin_emails,
         html_message=render_to_string("organization/email/invite_accepted.html", context),
+    )
+
+
+def send_archived_state_notification(organization_id, archived):
+    organization = Organization.objects.get(pk=organization_id)
+    admin_emails = organization.get_member_emails(role=UserOrganizationMembership.Role.ADMIN)
+    if not admin_emails:
+        return
+
+    action = "archived" if archived else "restored"
+    context = {"organization": organization, "action": action}
+    send_mail_async.delay(
+        subject=f"'{organization.name}' was {action} on Connect",
+        message=render_to_string("organization/email/archived_state.txt", context),
+        recipient_list=admin_emails,
+        html_message=render_to_string("organization/email/archived_state.html", context),
     )
 
 

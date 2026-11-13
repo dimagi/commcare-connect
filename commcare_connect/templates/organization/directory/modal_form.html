@@ -19,6 +19,8 @@
     <i class="fa-solid fa-xmark" aria-hidden="true"></i>
   </button>
 </div>
+{% block before_form %}
+{% endblock before_form %}
 <form method="post"
       hx-post="{{ request.get_full_path }}"
       hx-target="#directory-form"

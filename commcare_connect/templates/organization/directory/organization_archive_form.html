@@ -1,0 +1,37 @@
+{% extends "organization/directory/modal_form.html" %}
+{% load i18n %}
+{% block form_title %}
+  {% translate "Archive Organization" %}
+{% endblock form_title %}
+{% block form_subheading %}
+  <p class="hint">{{ object.name }}</p>
+{% endblock form_subheading %}
+{% block before_form %}
+  <div class="flex flex-col gap-3 mb-4 text-sm">
+    <p>{% translate "Archiving this organization will:" %}</p>
+    <ul class="list-disc pl-5">
+      <li>{% translate "archive all of its contacts;" %}</li>
+      <li>{% translate "hide the programs it owns, and their opportunities, from everyone;" %}</li>
+      <li>{% translate "remove its members' access to it." %}</li>
+    </ul>
+    <p>{% translate "It can be restored later from the archived organizations." %}</p>
+    <div>
+      <p class="font-medium">{% translate "Programs that will become inaccessible" %}</p>
+      {% if programs %}
+        <ul class="list-disc pl-5">
+          {% for program in programs %}
+            <li>
+              {{ program.name }} —
+              {% blocktranslate count counter=program.opportunity_count %}{{ counter }} opportunity{% plural %}{{ counter }} opportunities{% endblocktranslate %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="hint">{% translate "This organization owns no programs." %}</p>
+      {% endif %}
+    </div>
+  </div>
+{% endblock before_form %}
+{% block submit_label %}
+  {% translate "Archive" %}
+{% endblock submit_label %}

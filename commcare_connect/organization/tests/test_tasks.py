@@ -5,7 +5,11 @@ from django.template.defaultfilters import date as date_filter
 from django.utils.html import escape
 
 from commcare_connect.organization.models import UserOrganizationMembership
-from commcare_connect.organization.tasks import send_invite_accepted_notification, send_org_invite
+from commcare_connect.organization.tasks import (
+    send_archived_state_notification,
+    send_invite_accepted_notification,
+    send_org_invite,
+)
 from commcare_connect.users.tests.factories import (
     MembershipFactory,
     OrganizationFactory,
@@ -124,5 +128,32 @@ class TestSendInviteAcceptedNotification:
         new_admin_membership = MembershipFactory(organization=organization, role="admin")
 
         send_invite_accepted_notification(new_admin_membership.pk)
+
+        send_mock.delay.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.organization.tasks.send_mail_async")
+class TestSendArchivedStateNotification:
+    @pytest.mark.parametrize("archived, action", [(True, "archived"), (False, "restored")])
+    def test_tells_the_admins_the_organization_was_archived_or_restored(self, send_mock, archived, action):
+        organization = OrganizationFactory(name="Acme")
+        admin = MembershipFactory(organization=organization, role="admin")
+        MembershipFactory(organization=organization, role="member")
+
+        send_archived_state_notification(organization.pk, archived)
+
+        send_mock.delay.assert_called_once()
+        _, kwargs = send_mock.delay.call_args
+        assert kwargs["recipient_list"] == [admin.user.email]
+        assert kwargs["subject"] == f"'Acme' was {action} on Connect"
+        assert f"The organization Acme was {action} on Connect." in kwargs["message"]
+        assert f"The organization Acme was {action} on Connect." in kwargs["html_message"]
+
+    def test_no_email_without_admins(self, send_mock):
+        organization = OrganizationFactory()
+        MembershipFactory(organization=organization, role="member")
+
+        send_archived_state_notification(organization.pk, True)
 
         send_mock.delay.assert_not_called()

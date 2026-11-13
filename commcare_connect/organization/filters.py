@@ -8,7 +8,30 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
-class OrganizationFilterSet(django_filters.FilterSet):
+class ArchivableFilterSet(django_filters.FilterSet):
+    """Lists archived records only when the Show filter asks for them."""
+
+    archived = django_filters.BooleanFilter(
+        field_name="is_archived",
+        label=_("Show"),
+        widget=forms.Select(
+            choices=[("", _("Active")), ("true", _("Archived"))],
+            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
+        ),
+    )
+
+    def __init__(self, data=None, *args, **kwargs):
+        # A filterset with no data skips filtering altogether, which would list archived records
+        # on a plain visit to the listing, so it is always bound.
+        super().__init__(data if data is not None else {}, *args, **kwargs)
+
+    def filter_queryset(self, queryset):
+        if not self.form.cleaned_data.get("archived"):
+            queryset = queryset.filter(is_archived=False)
+        return super().filter_queryset(queryset)
+
+
+class OrganizationFilterSet(ArchivableFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
@@ -42,7 +65,7 @@ class OrganizationFilterSet(django_filters.FilterSet):
         ).distinct()
 
 
-class ContactFilterSet(django_filters.FilterSet):
+class ContactFilterSet(ArchivableFilterSet):
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
@@ -68,28 +91,9 @@ class ContactFilterSet(django_filters.FilterSet):
             attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
         ),
     )
-    archived = django_filters.BooleanFilter(
-        field_name="is_archived",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Active")), ("true", _("Archived"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
 
     class Meta:
         form = CSRFExemptForm
-
-    def __init__(self, data=None, *args, **kwargs):
-        # A filterset with no data skips filtering altogether, which would list archived contacts
-        # on a plain visit to the listing, so it is always bound.
-        super().__init__(data if data is not None else {}, *args, **kwargs)
-
-    def filter_queryset(self, queryset):
-        # Archived contacts are only listed when asked for, so an unset filter shows the active ones.
-        if not self.form.cleaned_data.get("archived"):
-            queryset = queryset.filter(is_archived=False)
-        return super().filter_queryset(queryset)
 
     def filter_by_search_term(self, queryset, name, value):
         return queryset.filter(
