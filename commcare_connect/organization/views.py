@@ -401,6 +401,8 @@ class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
 
 
 class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
+    # An archived organization is restored before it can be edited.
+    queryset = Organization.objects.filter(is_archived=False)
     success_message = gettext_lazy("Organization {name} updated.")
 
 

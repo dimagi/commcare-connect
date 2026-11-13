@@ -223,6 +223,23 @@ class TestOrganizationFormViews:
 
         assert response.headers["HX-Redirect"] == expected
 
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_an_archived_organization_cannot_be_edited(
+        self, client, user_with_directory_access, countries, sectors, method
+    ):
+        org = OrganizationFactory(name="Before", is_archived=True)
+        client.force_login(user_with_directory_access)
+        url = reverse("organization_directory:edit", args=(org.slug,))
+
+        if method == "get":
+            response = client.get(url, HTTP_HX_REQUEST="true")
+        else:
+            response = client.post(url, _form_data(countries, sectors, name="After"), HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 404
+        org.refresh_from_db()
+        assert org.name == "Before"
+
     def test_invalid_submission_rerenders_the_form(self, client, user_with_directory_access, countries, sectors):
         org = OrganizationFactory()
         client.force_login(user_with_directory_access)
