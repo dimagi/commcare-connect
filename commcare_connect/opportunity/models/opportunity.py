@@ -222,9 +222,19 @@ class Opportunity(BaseModel):
 
     @property
     def budgeted_workers(self):
+        """How many workers ``total_budget`` could pay in full, if every worker got each payment unit's
+        ``max_total`` at the units' current amounts.
+
+        Ignores who has actually claimed, so it drifts from reality once claims are made and payment
+        units change. The finalize form uses it to turn a number of workers into a budget. ``None`` when
+        the payment units cost nothing, since then no number of workers adds up to the budget.
+        """
         if not self.total_budget:
             return 0
-        return self.total_budget / self.budget_per_user()
+        budget_per_worker = self.budget_per_user()
+        if not budget_per_worker:
+            return None
+        return self.total_budget // budget_per_worker
 
     @property
     def allotted_visits(self):
