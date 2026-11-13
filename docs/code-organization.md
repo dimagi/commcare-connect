@@ -25,7 +25,7 @@ Utilities may read or write the database and call external systems.
 
 ## Large modules
 
-A views module that grows too large, such as `opportunity/views.py`, can become a package with one module per topic, e.g. `opportunity/views/invoices.py`.
+Any module that grows too large, whether views, forms, tables, tasks or utilities, can become a package with one module per topic. For example, `opportunity/views.py` can split into `opportunity/views/invoices.py`, `opportunity/views/payments.py` and so on. The same goes for utilities: when a module in an app's `utils/` or in `commcare_connect/utils/` covers several topics, split it into one module per topic.
 
 ## Migrations
 
