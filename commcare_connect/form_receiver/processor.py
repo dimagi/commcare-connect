@@ -1,6 +1,5 @@
 import datetime
 import logging
-from functools import partial
 from uuid import UUID
 
 import pghistory
@@ -240,7 +239,7 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         if not created:
             raise ProcessingError("Learn Assessment is already completed")
 
-        transaction.on_commit(partial(notify_user_for_scored_assessment.delay, assessment.pk))
+        notify_user_for_scored_assessment.delay_on_commit(assessment.pk)
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -327,7 +326,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         photo_attachments = {name: meta for name, meta in all_attachments.items() if name == photo_evidence}
         if not photo_attachments:
             raise ProcessingError(f"photo_evidence attachment '{photo_evidence}' not found on form")
-        transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, photo_attachments))
+        download_inaccessibility_request_attachments.delay_on_commit(xform.id, photo_attachments)
 
         work_area.status = new_status
         with pghistory.context(username=user.username, user_email=user.email):
@@ -566,7 +565,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     completed_work_id = completed_work.id if completed_work is not None else None
     update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
-    transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+    download_user_visit_attachments.delay_on_commit(user_visit.id)
 
 
 def check_visit_over_limit(
