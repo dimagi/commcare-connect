@@ -148,7 +148,7 @@ Each `deliver` block becomes one `UserVisit`.
 | 1    | Opportunity or payment unit `start_date` is after today                      | `trial`, no `CompletedWork`                                                     |
 | 2    | `check_visit_over_limit` finds any limit breached                            | `over_limit`, and the `CompletedWork` is `over_limit` too                       |
 | 3    | A counted visit already exists for this `entity_id`, worker and deliver unit | `duplicate`                                                                     |
-| 4    | `clean_form_submission` runs the verification flags                          | Visit flagged; `duplicate` falls back to `pending` if the duplicate flag is off |
+| 4    | `get_visit_flags` runs the verification flags                                | Visit flagged; `duplicate` falls back to `pending` if the duplicate flag is off |
 | 5    | `OpportunityAccess.suspended`                                                | `rejected`, flag `user_suspended`                                               |
 | 6    | Worker has an active `AssignedTask` still assigned on this app               | `rejected`, flag `pending_task`                                                 |
 | 7    | `automatic_visit_verification`, and the visit is `pending` + flagged         | `rejected`                                                                      |
