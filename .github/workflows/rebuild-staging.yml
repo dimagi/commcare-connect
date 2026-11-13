@@ -25,6 +25,7 @@ jobs:
     # Only run on the canonical repo, not on forks or mirrors. Branch deletions are pushes too; skip them.
     if: github.repository == 'dimagi/commcare-connect' && !github.event.deleted
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -80,10 +81,11 @@ jobs:
     needs: check-branch
     if: needs.check-branch.outputs.merged-branch != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
         with:
           app-id: ${{ secrets.STAGING_BRANCHES_APP_ID }}
           private-key: ${{ secrets.STAGING_BRANCHES_APP_PRIVATE_KEY }}
