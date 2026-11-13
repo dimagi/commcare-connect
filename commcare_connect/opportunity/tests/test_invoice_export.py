@@ -8,11 +8,14 @@ from urllib.parse import urlparse
 
 import pytest
 from django.core.files.storage import default_storage
+from django.template.loader import render_to_string
 from django_weasyprint.utils import DjangoURLFetcher
+from pytest_django.asserts import assertInHTML
 
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_summary_export
 from commcare_connect.opportunity.tests.factories import (
+    BillToAddressFactory,
     ExchangeRateFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
@@ -22,6 +25,7 @@ from commcare_connect.opportunity.utils.invoice_export import (
     build_invoice_pdf_zip,
     build_invoice_summary_dataset,
     get_exportable_invoices,
+    get_invoice_pdf_context,
     invoice_pdf_filename,
     render_invoice_pdf,
 )
@@ -56,6 +60,23 @@ class TestPdfExport:
     def test_render_invoice_pdf(self, opportunity):
         invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, description="Fuel")
         assert render_invoice_pdf(invoice).startswith(b"%PDF")
+
+    @pytest.mark.parametrize(
+        "address_kwargs, expected",
+        [
+            # No choice: the seeded default must print exactly what the hardcoded DIMAGI_ADDRESS did.
+            (None, "<p>Dimagi, Inc.<br>245 Main Street, 2nd Floor<br>Cambridge, MA 02142, USA<br>+1 617.649.2214</p>"),
+            (
+                {"name": "Dimagi South Africa", "address": "1 Long St\nCape Town"},
+                "<p>Dimagi South Africa<br>1 Long St<br>Cape Town</p>",
+            ),
+        ],
+    )
+    def test_bill_to_section(self, opportunity, address_kwargs, expected):
+        extra = {"bill_to": BillToAddressFactory(**address_kwargs)} if address_kwargs else {}
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, **extra)
+        html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
+        assertInHTML(expected, html)
 
     def test_render_loads_static_assets_from_disk(self, opportunity):
         """Rendering runs outside a request, so the `file://` base URL is what lets the URL fetcher

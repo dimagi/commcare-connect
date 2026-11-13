@@ -175,6 +175,8 @@ class PaymentAdmin(admin.ModelAdmin):
 class PaymentInvoiceAdmin(admin.ModelAdmin):
     list_display = ["invoice_number", "opportunity", "amount", "date"]
     search_fields = ["opportunity__name", "invoice_number"]
+    # An invoice's Bill To is fixed once it exists; new ones get the default from PaymentInvoice.save().
+    readonly_fields = ["bill_to"]
 
 
 @admin.register(PaymentUnit)
