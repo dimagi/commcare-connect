@@ -158,7 +158,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 - **Framework**: pytest + pytest-django + factory-boy
 - **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
-- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `managed_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `managed_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`, `settings_admin` (a `user` with `ORG_MANAGEMENT_SETTINGS_ACCESS`)
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
 - HTTP mocking: `pytest-httpx` for httpx calls
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances

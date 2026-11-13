@@ -21,7 +21,7 @@
   <form hx-post="{{ request.path }}"
         hx-target="#managed-option-form-wrapper"
         hx-swap="outerHTML"
-        {% if not object %}x-data="slugAutofill()"{% endif %}>
+        {% if not object and form.slug_autofill %}x-data="slugAutofill()"{% endif %}>
     <div class="content">{% crispy form %}</div>
     <div class="footer flex justify-end gap-3">
       <button type="button"

@@ -4,6 +4,7 @@ import django_tables2 as tables
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import CharField, Value
 from django.db.models.functions import Coalesce, NullIf
+from django.template.defaultfilters import linebreaksbr
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -15,6 +16,7 @@ from django_tables2 import columns
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
+    BillToAddress,
     CompletedWork,
     DeliverUnit,
     DeliveryType,
@@ -929,3 +931,24 @@ class DeliveryTypeTable(ManagedOptionTable):
 
     class Meta(ManagedOptionTable.Meta):
         model = DeliveryType
+
+
+class BillToAddressTable(ManagedOptionTable):
+    name = columns.Column(verbose_name=gettext_lazy("Entity name"))
+    address = columns.Column(
+        verbose_name=gettext_lazy("Address"), orderable=False, attrs={"td": {"class": "whitespace-normal"}}
+    )
+    invoice_count = columns.Column(verbose_name=gettext_lazy("Invoices"), attrs=STAT_COLUMN_ATTRS)
+    is_default = columns.TemplateColumn(
+        verbose_name=gettext_lazy("Default"), template_name="users/bill_to_addresses/default_column.html"
+    )
+    is_active = columns.BooleanColumn(verbose_name=gettext_lazy("Active"), attrs=STAT_COLUMN_ATTRS)
+
+    class Meta(ManagedOptionTable.Meta):
+        model = BillToAddress
+        fields = ("name", "address", "invoice_count", "is_default", "is_active")
+        exclude = ("slug", "description")
+        sequence = (*fields, "actions")
+
+    def render_address(self, value):
+        return linebreaksbr(value)
