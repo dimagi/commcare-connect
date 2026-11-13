@@ -6,13 +6,13 @@ from django.core.management import CommandError, call_command
 def test_refuses_to_run_without_debug(settings):
     settings.DEBUG = False
     with pytest.raises(CommandError, match="--force"):
-        call_command("run_scenario", "anything")
+        call_command("run_scenario", "baseline")
 
 
 @pytest.mark.django_db
 def test_unknown_scenario(settings):
     settings.DEBUG = True
-    with pytest.raises(CommandError, match="Unknown scenario"):
+    with pytest.raises(CommandError, match="invalid choice"):
         call_command("run_scenario", "no_such_scenario", "--admin-email", "nobody@example.com")
 
 

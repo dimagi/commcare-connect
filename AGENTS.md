@@ -15,6 +15,7 @@ inv down                            # docker compose down
 ./manage.py runserver               # dev server
 ./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
 ./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
+./manage.py run_scenario <name> --admin-email you@example.com  # build local data through the app (simulation/)
 
 # JavaScript/CSS
 npm ci                              # install deps
@@ -78,6 +79,7 @@ commcare_connect/
   health/          # /up liveness probe, token-gated /status/ dependency checks (see its README)
   multidb/         # Secondary DB support + logical replication
   deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
+  simulation/      # Builds local data by driving the real forms/functions/APIs; only in INSTALLED_APPS under local.py and test.py
   web/             # Context processors, shared template tags
   prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
@@ -147,6 +149,15 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
 - **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
 - **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
+
+## Local data
+
+Local dev data (not test fixtures) comes from the `simulation` app, which builds it by driving the real forms, functions and APIs. See `commcare_connect/simulation/README.md`.
+
+- **Never seed with the ORM or factories.** Compose `Sim` steps. If a step is missing, add one that submits the page's request as the acting admin (`sim.browser(user)`); don't change production code to make a step possible
+- **Shared vs personal scenarios**: `simulation/scenarios/` holds a few shared scenarios that CI builds; one-off data (a feature in progress, a bug repro) goes in the gitignored `simulation/scenarios/local/` and is never committed. Prefer extending a shared scenario over adding one
+- **Changing a user flow means updating its step in the same PR.** If you change a form, view or function a step calls, update the step; `test_scenarios.py` usually fails otherwise. Scenarios only call steps, so they rarely need changing
+- **A fixed bug leaves a regression test, not a scenario**
 
 ## Gotchas
 
