@@ -4,7 +4,7 @@ version = "0.0.1"
 requires-python = "==3.11.*"
 dependencies = [
     "argon2-cffi>=21.3.0",
-    "celery>=5.3.4",
+    "celery>=5.7.0",
     "crispy-tailwind>=1.0.3",
     "django>=5.2,<5.3",
     "django-allauth>=65.21.1",
@@ -29,16 +29,16 @@ dependencies = [
     "gevent>=26.9.0",
     "hiredis>=3.5.0",
     "httpx[http2]>=0.24.1",
-    "jsonpath-ng>=1.15.0",
+    "jsonpath-ng>=1.16.0",
     "pillow>=10.0.0",
     "pyproj>=3.7.2",
     "python-slugify>=8.0.1",
     "quickcache>=0.5.4",
     "redis>=8.0.0",
-    "sentry-sdk>=2.73.0",
+    "sentry-sdk>=2.74.0",
     "shapely>=2.2.0",
     "tablib[xlsx]>=3.5.0",
-    "twilio>=9.12.0",
+    "twilio>=9.13.0",
     "whitenoise>=6.5.0",
 ]
 
@@ -91,20 +91,20 @@ git-build-branch = { git = "https://github.com/dimagi/git-build-branch" }
 
 [dependency-groups]
 dev = [
-    "coverage>=7.17.0",
+    "coverage>=7.17.2",
     "django-debug-toolbar>=4.1.0",
-    "djlint>=1.49.2",
+    "djlint>=1.49.10",
     "factory-boy>=3.3.0",
     "git-build-branch",
     "invoke>=2.2.0",
     "ipdb>=0.13.13",
-    "jscpd==5.4.2",
-    "prek>=0.5.9",
+    "jscpd==5.4.3",
+    "prek>=0.5.10",
     "psycopg2-binary>=2.9.13",
     "pytest>=9.2.0",
     "pytest-django>=4.14.0",
     "pytest-httpx>=0.24.0",
-    "ruff>=0.17.3",
+    "ruff>=0.17.4",
     "time-machine>=3.6.0",
     "xml2json",
 ]
