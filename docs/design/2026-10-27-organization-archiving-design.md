@@ -156,8 +156,10 @@ is archived or restored:
 - **APIs.** The data-export API treats them as not found or leaves them out of its lists. The automation
   API's program and opportunity lookups answer "not found".
 - **Background jobs and emails.** The delivery, expiry and invoice review reminders, automated invoices and
-  audit reports skip them. Housekeeping and payment tasks (deactivating ended opportunities, archiving test
-  ones, approving completed work, accruing payments) keep running on everything.
+  audit reports skip them. Deactivating ended opportunities and archiving test ones still apply to them, as
+  to any other finished opportunity. Approving completed work and accruing payments need no change:
+  approval only runs on opportunities that haven't ended, and accrual only runs from imports started on an
+  opportunity's page, so neither reaches an archived organization's work.
 - **The flag form** no longer offers them, except the ones a flag already links to.
 
 ### Left out
