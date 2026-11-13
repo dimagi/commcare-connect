@@ -129,8 +129,9 @@ class TestSendMonthlyDeliveryReminderEmail:
         send_monthly_delivery_reminder_email()
         send_mock.delay.assert_not_called()
 
-    def test_send_reminder_email_for_nm_org_with_pending_deliveries(self, send_mock):
-        opportunity = OpportunityFactory(organization=OrgWithUsersFactory(), is_test=False)
+    @pytest.mark.parametrize("is_archived", [False, True])
+    def test_send_reminder_email_for_nm_org_with_pending_deliveries(self, send_mock, is_archived):
+        opportunity = OpportunityFactory(organization=OrgWithUsersFactory(is_archived=is_archived), is_test=False)
 
         access = OpportunityAccessFactory(opportunity=opportunity)
         completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
@@ -143,7 +144,8 @@ class TestSendMonthlyDeliveryReminderEmail:
             completed_work=completed_work,
         )
         send_monthly_delivery_reminder_email()
-        send_mock.delay.assert_called_once()
+        # An archived organization's members are not reminded.
+        assert send_mock.delay.call_count == (0 if is_archived else 1)
 
     def test_send_reminder_email_skipped_for_test_opportunity(self, send_mock):
         opportunity = OpportunityFactory(organization=OrgWithUsersFactory(), is_test=True)
