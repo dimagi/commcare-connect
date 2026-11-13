@@ -92,4 +92,4 @@ jobs:
         run: uv sync --frozen
 
       - name: Test with pytest
-        run: uv run pytest
+        run: uv run pytest -n auto
