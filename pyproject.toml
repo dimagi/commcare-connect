@@ -107,6 +107,9 @@ dev = [
     "ruff>=0.17.3",
     "xml2json",
 ]
+docs = [
+    "zensical>=0.1.1",
+]
 production = [
     "django-allow-cidr>=0.7.1",
     "django-anymail[amazon-ses]>=10.1",

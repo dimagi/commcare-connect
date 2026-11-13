@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 from django.urls import reverse
 
-from commcare_connect.opportunity.forms import InvoiceExportForm
+from commcare_connect.opportunity.forms.invoices import InvoiceExportForm
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_pdf_zip_export, generate_invoice_summary_export
 from commcare_connect.opportunity.tests.factories import PaymentInvoiceFactory
@@ -236,7 +236,7 @@ def test_export_notification_after_refresh(client, opportunity, org_user_member,
         )
     status_url = reverse("opportunity:export_status", args=(org_slug, "task-1"))
 
-    with mock.patch("commcare_connect.opportunity.views.AsyncResult") as async_result:
+    with mock.patch("commcare_connect.opportunity.views.invoices.AsyncResult") as async_result:
         async_result.return_value.ready.return_value = finished
         assert status_url in client.get(started.url).content.decode()
         assert (status_url in client.get(started.url).content.decode()) is shown_again

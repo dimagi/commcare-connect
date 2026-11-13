@@ -1,10 +1,15 @@
+"""Shared views for the opportunity app; features are moving out into submodules (``invoices``, ``worker``).
+
+Never import a submodule here: they import from this package, so it would be circular.
+"""
+
 import datetime
 import json
 import logging
-from collections import Counter, defaultdict, namedtuple
+from collections import namedtuple
 from datetime import timedelta
-from decimal import Decimal, InvalidOperation
-from functools import cached_property, partial
+from decimal import Decimal
+from functools import cached_property
 from http import HTTPStatus
 from urllib.parse import urlencode, urlparse, urlunsplit
 
@@ -12,36 +17,18 @@ import httpx
 import pghistory
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
 from django.core.files.storage import default_storage, storages
-from django.db import transaction
-from django.db.models import (
-    Case,
-    Count,
-    DecimalField,
-    F,
-    FloatField,
-    Func,
-    IntegerField,
-    Max,
-    OuterRef,
-    Q,
-    Subquery,
-    Sum,
-    Value,
-    When,
-)
+from django.db.models import Count, F, FloatField, Func, Q, Sum, Value
 from django.db.models.functions import Cast, Coalesce
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
-from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
 from django.utils.decorators import method_decorator
@@ -56,8 +43,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import CreateView, DetailView, TemplateView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
-from django_tables2.export import TableExport
-from django_weasyprint.views import WeasyTemplateResponse
 from geopy import distance
 from waffle import flag_is_active, switch_is_active
 
@@ -65,7 +50,6 @@ from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.form_receiver.serializers import XFormSerializer
-from commcare_connect.jira_service_desk import is_configured as is_jira_service_desk_configured
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -73,26 +57,20 @@ from commcare_connect.opportunity.decorators import require_manual_visit_verific
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.opportunity.filters import (
     AssignedTaskFilterSet,
-    DeliverFilterSet,
     FilterMixin,
     OpportunityListFilterSet,
-    TasksFilterSet,
-    UserTasksFilterSet,
 )
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
     AudioAttachmentTranscribeForm,
-    AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     DeliverUnitFlagsForm,
     EditAssignedTaskForm,
     EditTaskTypeForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
-    InvoiceExportForm,
-    InvoiceFinanceRequestForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
@@ -100,7 +78,6 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
-    PaymentInvoiceInvoiceTicketLinkForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -111,26 +88,16 @@ from commcare_connect.opportunity.helpers import (
     get_opportunity_funnel_progress,
     get_opportunity_worker_progress,
     get_payment_report_data,
-    get_worker_deliveries,
-    get_worker_learn_table_data,
-    get_worker_table_data,
-    get_worker_tasks_base_queryset,
-    get_worker_work_area_table_data,
 )
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
     BlobMeta,
-    CompletedModule,
     CompletedWork,
-    CompletedWorkStatus,
     DeliverUnit,
     DeliverUnitFlagRules,
-    ExchangeRate,
     FormJsonValidationRules,
-    InvoiceFinanceRequestStatus,
-    InvoiceStatus,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -140,7 +107,6 @@ from commcare_connect.opportunity.models import (
     OpportunityStatus,
     OpportunityVerificationFlags,
     Payment,
-    PaymentInvoice,
     PaymentUnit,
     TaskType,
     UserInvite,
@@ -153,26 +119,13 @@ from commcare_connect.opportunity.tables import (
     AssignedTaskListTable,
     CompletedWorkTable,
     DeliverUnitTable,
-    InvoiceDeliveriesTable,
-    InvoiceLineItemsTable,
     LearnModuleTable,
     OpportunityTable,
-    PaymentInvoiceTable,
     PaymentReportTable,
     PaymentUnitTable,
     ProgramManagerOpportunityTable,
     SuspendedUsersTable,
     TaskTable,
-    UserVisitVerificationTable,
-    WorkerCompletedTaskTable,
-    WorkerDeliveryTable,
-    WorkerLearnStatusTable,
-    WorkerLearnTable,
-    WorkerPaymentsTable,
-    WorkerStatusTable,
-    WorkerTasksTable,
-    WorkerVisitTable,
-    WorkerWorkAreaTable,
     header_with_tooltip,
 )
 from commcare_connect.opportunity.tasks import (
@@ -181,8 +134,6 @@ from commcare_connect.opportunity.tasks import (
     bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
     generate_deliver_status_export,
-    generate_invoice_pdf_zip_export,
-    generate_invoice_summary_export,
     generate_payment_export,
     generate_review_visit_export,
     generate_user_status_export,
@@ -190,39 +141,8 @@ from commcare_connect.opportunity.tasks import (
     generate_work_status_export,
     get_payment_upload_key,
     invite_user,
-    send_invoice_paid_mail,
     send_push_notification_task,
-    submit_invoice_finance_request,
     update_user_and_send_invite,
-)
-from commcare_connect.opportunity.utils.finance_request import (
-    can_submit_finance_request,
-    fail_stuck_finance_request,
-    get_previous_finance_request,
-    suggest_new_vendor,
-)
-from commcare_connect.opportunity.utils.invoice import (
-    InvoiceWorkflow,
-    filter_invoices_by_month,
-    get_invoice_month_options,
-    invoice_month_param,
-    resolve_invoice_month,
-    split_month_options,
-    with_invoice_month,
-)
-from commcare_connect.opportunity.utils.invoice_export import (
-    get_exportable_invoices,
-    get_invoice_pdf_context,
-    invoice_pdf_filename,
-)
-from commcare_connect.opportunity.utils.invoice_line_items import (
-    Money,
-    get_billable_delivery_rows_for_export,
-    get_billable_line_items,
-    get_invoice_delivery_rows_for_export,
-    get_invoice_line_items,
-    rollback_invoice_line_items,
-    total_late_delta_units,
 )
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
@@ -249,11 +169,8 @@ from commcare_connect.program.utils import (
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import (
-    CELERY_TASK_FAILURE,
-    CELERY_TASK_SUCCESS,
     download_export_file,
     get_task_progress,
-    get_task_progress_message,
     render_export_status,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -267,7 +184,6 @@ from commcare_connect.utils.tables import (
     DATE_TIME_FORMAT,
     DEFAULT_PAGE_SIZE,
     PAGE_SIZE_OPTIONS,
-    get_duration_min,
     get_validated_page_size,
 )
 
@@ -276,16 +192,9 @@ logger = logging.getLogger(__name__)
 EXPORT_ROW_LIMIT = 10_000
 _NEXT_WORKER_TASKS = "worker_tasks"
 
-PAYMENT_IMPORT_TASK_PARAM = "payment_import_task_id"
 
-INVOICE_EXPORT_TASKS = {
-    InvoiceExportForm.PDF_ZIP: generate_invoice_pdf_zip_export,
-    InvoiceExportForm.CSV_SUMMARY: generate_invoice_summary_export,
-}
 # Task id of the payment import whose outcome has already been shown to the user.
 PAYMENT_IMPORT_CLAIMED_SESSION_KEY = "shown_payment_import"
-# Task id of the invoice export this user started whose outcome has not been shown yet.
-INVOICE_EXPORT_SESSION_KEY = "pending_invoice_export"
 
 
 def get_opportunity_or_404(opp_id):
@@ -1798,512 +1707,6 @@ def payment_report(request, org_slug, opp_id):
 
 
 @opp_standard_access_required
-@opportunity_required
-def invoice_list(request, org_slug, opp_id):
-    filter_kwargs = dict(opportunity=request.opportunity)
-
-    highlight_invoice_number = request.GET.get("highlight")
-    export_task_id = request.GET.get("export_task_id")
-    # The id stays in the URL, so only trust it while it is the export this user started. A
-    # running export keeps showing its progress; a finished one is shown once, then forgotten.
-    if not export_task_id or export_task_id != request.session.get(INVOICE_EXPORT_SESSION_KEY):
-        export_task_id = None
-    elif AsyncResult(export_task_id).ready():
-        del request.session[INVOICE_EXPORT_SESSION_KEY]
-
-    all_invoices = PaymentInvoice.objects.filter(**filter_kwargs)
-    month_options = get_invoice_month_options(all_invoices)
-    selected_month = resolve_invoice_month(request.GET.get("month"), month_options, highlight_invoice_number)
-    month_chips, older_months = split_month_options(month_options, selected_month)
-
-    queryset = all_invoices.select_related("exchange_rate").annotate(
-        last_status_modified_at=Max("status_events__pgh_created_at")
-    )
-    if selected_month:
-        queryset = filter_invoices_by_month(queryset, selected_month)
-    queryset = queryset.order_by("date")
-
-    if highlight_invoice_number:  # make sure highlighted invoice is on page 1
-        queryset = queryset.annotate(
-            _highlight_order=Case(
-                When(invoice_number=highlight_invoice_number, then=Value(0)),
-                default=Value(1),
-                output_field=IntegerField(),
-            )
-        ).order_by("_highlight_order", "date")
-
-    csrf_token = get_token(request)
-
-    table = PaymentInvoiceTable(
-        queryset,
-        org_slug=org_slug,
-        opportunity=request.opportunity,
-        csrf_token=csrf_token,
-        highlight_invoice_number=highlight_invoice_number,
-        is_pm=request.is_opportunity_pm,
-        month_param=invoice_month_param(selected_month),
-    )
-
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-    return render(
-        request,
-        "opportunity/invoice_list.html",
-        {
-            "opportunity": request.opportunity,
-            "table": table,
-            "month_chips": month_chips,
-            "older_months": older_months,
-            "selected_month": selected_month,
-            "invoice_count": table.paginator.count,
-            "export_task_id": export_task_id,
-            # The month the page is actually showing, not the raw query value: an export
-            # started from here must cover exactly what the user is looking at.
-            "month_param": invoice_month_param(selected_month),
-            "exportable_count": get_exportable_invoices(request.opportunity, selected_month).count(),
-            "export_url": reverse("opportunity:export_invoices", args=(org_slug, opp_id)),
-            "new_invoice_url": reverse(
-                "opportunity:invoice_create",
-                args=(org_slug, request.opportunity.opportunity_id),
-            ),
-            # Same rule as InvoiceCreateView: only the opportunity's own (NM) org creates invoices.
-            "can_create_invoice": request.org.id == request.opportunity.organization_id,
-            "path": [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {
-                    "title": request.opportunity.name,
-                    "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
-                },
-                {
-                    "title": "Invoices",
-                    "url": reverse("opportunity:invoice_list", args=(org_slug, request.opportunity.opportunity_id)),
-                },
-            ],
-        },
-    )
-
-
-@method_decorator(opp_standard_access_required, name="dispatch")
-class InvoiceCreateView(OpportunityObjectMixin, CreateView):
-    model = PaymentInvoice
-    template_name = "opportunity/invoice_create.html"
-    form_class = AutomatedPaymentInvoiceForm
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        opportunity = self.get_opportunity()
-        org_slug = self.request.org.slug
-
-        context.update(
-            {
-                "opportunity": opportunity,
-                "is_service_delivery": self.request.GET.get("invoice_type")
-                == PaymentInvoice.InvoiceType.service_delivery,
-                "path": [
-                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                    {
-                        "title": opportunity.name,
-                        "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
-                    },
-                    {
-                        "title": "Invoices",
-                        "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)),
-                    },
-                    {
-                        "title": self.breadcrumb_title,
-                        "url": reverse("opportunity:invoice_create", args=(org_slug, opportunity.opportunity_id)),
-                    },
-                ],
-            }
-        )
-        return context
-
-    @property
-    def breadcrumb_title(self):
-        service_delivery = PaymentInvoice.InvoiceType.service_delivery
-        if self.request.GET.get("invoice_type", service_delivery) == service_delivery:
-            return "New Service Delivery Invoice"
-        return "New Custom Invoice"
-
-    def get(self, request, org_slug, opp_id, **kwargs):
-        self._check_opportunity_org(request)
-        return super().get(request, org_slug, opp_id, **kwargs)
-
-    def _check_opportunity_org(self, request):
-        # Only NM org user is allowed to create invoice
-        if request.org != request.opportunity.organization:
-            raise Http404()
-
-    def post(self, request, org_slug, opp_id, **kwargs):
-        self._check_opportunity_org(request)
-
-        form = self.get_form()
-        if not form.is_valid():
-            # Re-render the bound form to preserve validation errors.
-            self.object = None
-            return self.form_invalid(form)
-
-        form.save()
-        return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["opportunity"] = self.get_opportunity()
-        kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
-        kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
-        kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
-        return kwargs
-
-    def get_success_url(self):
-        return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().opportunity_id))
-
-
-@method_decorator(opp_view_access_required, name="dispatch")
-class InvoiceReviewView(OpportunityObjectMixin, DetailView):
-    model = PaymentInvoice
-    template_name = "opportunity/invoice_detail.html"
-
-    def get_object(self, queryset=None):
-        opportunity = self.get_opportunity()
-        return get_object_or_404(
-            PaymentInvoice,
-            payment_invoice_id=self.kwargs.get("pk"),
-            opportunity_id=opportunity.id,
-        )
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        invoice = self.object
-        opportunity = invoice.opportunity
-        org_slug = self.request.org.slug
-        form = self.get_form()
-        month_param = self.request.GET.get("month")
-        invoice_list_url = with_invoice_month(
-            reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)), month_param
-        )
-        context.update(
-            {
-                "opportunity": opportunity,
-                "form": form,
-                "month_param": month_param,
-                "invoice_list_url": invoice_list_url,
-                "is_service_delivery": invoice.service_delivery,
-                "invoice_status": invoice.status,
-                "line_item_count": len(form.line_items_table.rows) if form.line_items_table else None,
-                "path": [
-                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                    {
-                        "title": opportunity.name,
-                        "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
-                    },
-                    {"title": "Invoices", "url": invoice_list_url},
-                    {
-                        "title": self.breadcrumb_title,
-                        "url": reverse(
-                            "opportunity:invoice_review",
-                            args=(org_slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-                        ),
-                    },
-                ],
-            }
-        )
-        context["show_payment_invoice_invoice_ticket_link_form"] = self.request.is_opportunity_pm
-        context["show_finance_request"] = self.request.is_opportunity_pm and (
-            invoice.status == InvoiceStatus.READY_TO_PAY or hasattr(invoice, "finance_request")
-        )
-        if context["show_finance_request"]:
-            context.update(get_finance_request_context(invoice))
-        return context
-
-    def get_form(self):
-        invoice = self.object
-        opportunity = invoice.opportunity
-        invoice_type = (
-            PaymentInvoice.InvoiceType.service_delivery
-            if invoice.service_delivery
-            else PaymentInvoice.InvoiceType.custom
-        )
-
-        line_items_table = None
-        late_delta_units = 0
-        if invoice.service_delivery:
-            line_items = get_invoice_line_items(invoice)
-            late_delta_units = total_late_delta_units(line_items)
-            show_org = any(item.org_pay.local for item in line_items)
-            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, line_items, show_org=show_org)
-        return AutomatedPaymentInvoiceForm(
-            instance=invoice,
-            opportunity=opportunity,
-            invoice_type=invoice_type,
-            line_items_table=line_items_table,
-            late_delta_units=late_delta_units,
-            read_only=True,
-            is_opportunity_pm=self.request.is_opportunity_pm,
-        )
-
-    @property
-    def breadcrumb_title(self):
-        if self.object.service_delivery:
-            return _("Review Service Delivery Invoice")
-        return _("Review Custom Invoice")
-
-
-@opportunity_pm_required
-@opportunity_required
-@require_POST
-def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
-    invoice = get_object_or_404(
-        PaymentInvoice,
-        payment_invoice_id=invoice_id,
-        opportunity=request.opportunity,
-    )
-
-    form = PaymentInvoiceInvoiceTicketLinkForm(request.POST)
-    if form.is_valid():
-        link = form.cleaned_data["invoice_ticket_link"]
-        if link:
-            invoice.invoice_ticket_link = link
-            invoice.save(update_fields=["invoice_ticket_link"])
-            messages.success(request, _("Invoice ticket link saved!"))
-        elif invoice.invoice_ticket_link:
-            invoice.invoice_ticket_link = link
-            invoice.save(update_fields=["invoice_ticket_link"])
-            messages.success(request, _("Invoice ticket link removed!"))
-        else:
-            messages.error(request, _("Enter a ticket link."))
-    else:
-        messages.error(request, _("Error: {errors}").format(errors=form.errors.as_text()))
-    return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
-
-
-@method_decorator(opportunity_pm_required, name="dispatch")
-class InvoiceFinanceRequestView(OpportunityObjectMixin, View):
-    """Send an approved invoice to Finance as a Jira service desk request, and show how that is going.
-
-    Both methods return the invoice page's Finance card, which htmx swaps in place.
-    """
-
-    template_name = "opportunity/partials/invoice_finance_request.html"
-
-    def get(self, request, *args, **kwargs):
-        return render(request, self.template_name, get_finance_request_context(self.get_invoice()))
-
-    def post(self, request, *args, **kwargs):
-        # Locking the invoice stops a double click from raising two tickets.
-        invoice = self.get_invoice(for_update=True)
-        fail_stuck_finance_request(invoice)
-        if not is_jira_service_desk_configured() or not can_submit_finance_request(invoice):
-            return render(request, self.template_name, get_finance_request_context(invoice))
-
-        form = InvoiceFinanceRequestForm(request.POST, instance=getattr(invoice, "finance_request", None))
-        if not form.is_valid():
-            return render(request, self.template_name, get_finance_request_context(invoice, form=form))
-
-        finance_request = form.save(commit=False)
-        finance_request.invoice = invoice
-        finance_request.status = InvoiceFinanceRequestStatus.PENDING
-        finance_request.error = ""
-        finance_request.submitted_by = request.user
-        finance_request.created_by = finance_request.created_by or request.user.email
-        finance_request.modified_by = request.user.email
-        finance_request.save()
-        invoice.finance_request = finance_request
-        transaction.on_commit(partial(submit_invoice_finance_request.delay, finance_request.id))
-        return render(request, self.template_name, get_finance_request_context(invoice))
-
-    def get_invoice(self, for_update=False):
-        queryset = PaymentInvoice.objects.select_related("opportunity__organization")
-        if for_update:
-            # The finance request is left to a query of its own, run once the lock is held: a join
-            # here would read it as it was before a concurrent submission committed.
-            queryset = queryset.select_for_update(of=("self",))
-        else:
-            queryset = queryset.select_related("finance_request")
-        return get_object_or_404(
-            queryset, opportunity=self.get_opportunity(), payment_invoice_id=self.kwargs["invoice_id"]
-        )
-
-
-def get_finance_request_context(invoice, form=None):
-    fail_stuck_finance_request(invoice)
-    finance_request = getattr(invoice, "finance_request", None)
-    configured = is_jira_service_desk_configured()
-    can_submit = configured and can_submit_finance_request(invoice)
-    if can_submit and form is None:
-        # A failed request is resent with the answers it was given; `initial` would override them.
-        initial = None if finance_request else _finance_request_initial(invoice)
-        form = InvoiceFinanceRequestForm(instance=finance_request, initial=initial)
-    return {
-        "invoice": invoice,
-        "opportunity": invoice.opportunity,
-        "finance_request": finance_request,
-        "finance_request_configured": configured,
-        "finance_request_form": form if can_submit else None,
-    }
-
-
-def _finance_request_initial(invoice):
-    """Answers from the opportunity's last request, which usually stay the same from invoice to invoice."""
-    initial = {"new_vendor": suggest_new_vendor(invoice.opportunity.organization)}
-    if previous := get_previous_finance_request(invoice.opportunity):
-        initial.update(
-            contracted_entity=previous.contracted_entity,
-            gl_account=previous.gl_account,
-            project_name=previous.project_name,
-        )
-    return initial
-
-
-@opp_standard_access_required
-@opportunity_required
-def download_invoice(request, org_slug, opp_id, invoice_id):
-    invoice = get_object_or_404(
-        PaymentInvoice.objects.select_related("opportunity", "exchange_rate", "payment"),
-        opportunity=request.opportunity,
-        payment_invoice_id=invoice_id,
-    )
-    return WeasyTemplateResponse(
-        request=request,
-        template="opportunity/invoice_download.html",
-        context=get_invoice_pdf_context(invoice),
-        content_type="application/pdf",
-        filename=invoice_pdf_filename(invoice),
-    )
-
-
-@opp_standard_access_required
-@opportunity_required
-@require_POST
-def export_invoices(request, org_slug, opp_id):
-    """Start a bulk invoice export and send the user back to the list to watch it finish."""
-    form = InvoiceExportForm(data=request.POST, opportunity=request.opportunity)
-    redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
-
-    if not form.is_valid():
-        messages.error(request, _("That export request was not valid. Please try again."))
-        return redirect(redirect_url)
-
-    invoices = form.get_invoices()
-    if not invoices:
-        messages.error(request, _("There are no invoices to export."))
-        return redirect(redirect_url)
-
-    invoice_ids = [invoice.pk for invoice in invoices]
-    # A bare delay() is safe here: the export only reads rows that were committed long ago, so
-    # there is nothing for the worker to race with.
-    task = INVOICE_EXPORT_TASKS[form.cleaned_data["export_type"]].delay(request.opportunity.pk, invoice_ids)
-    request.session[INVOICE_EXPORT_SESSION_KEY] = task.id
-
-    query = {"export_task_id": task.id}
-    if form.cleaned_data["month"]:
-        query["month"] = form.cleaned_data["month"]
-    return redirect(f"{redirect_url}?{urlencode(query)}")
-
-
-@opp_standard_access_required
-@opportunity_required
-@require_POST
-def invoice_update_status(request, org_slug, opp_id):
-    """
-    Update invoice status. Handles multiple status transitions based on user role:
-    - Network Manager: PENDING_NM_REVIEW -> PENDING_PM_REVIEW (submit to PM) or CANCELLED_BY_NM (cancel)
-    - Program Manager: PENDING_PM_REVIEW -> READY_TO_PAY (approve for payment) or REJECTED_BY_PM (reject)
-    """
-    if not request.org_membership:
-        return HttpResponse(
-            status=302,
-            headers={"HX-Redirect": reverse("opportunity:detail", args=[org_slug, opp_id])},
-        )
-
-    invoice_id = request.POST.get("invoice_id")
-    description = request.POST.get("description")
-    new_status = request.POST.get("new_status")
-
-    if new_status not in InvoiceStatus.values:
-        return HttpResponseBadRequest(_("Invalid invoice status."))
-
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
-
-    role = "program_manager" if request.is_opportunity_pm else "network_manager"
-    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, role)
-    if error:
-        return HttpResponseBadRequest(error)
-
-    if new_status == InvoiceStatus.PENDING_PM_REVIEW and request.POST.get("attestation") != "true":
-        return HttpResponseBadRequest(_("You must certify the invoice before submitting."))
-
-    invoice.status = new_status
-    update_fields = ["status", "description"] if invoice.service_delivery else ["status"]
-    if invoice.service_delivery:
-        invoice.description = description
-
-    if new_status == InvoiceStatus.PENDING_PM_REVIEW:
-        with pghistory.context(
-            username=request.user.username,
-            user_email=request.user.email,
-            attestation_certified=True,
-        ):
-            invoice.save(update_fields=update_fields)
-    else:
-        invoice.save(update_fields=update_fields)
-
-    if invoice.service_delivery and new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-        rollback_invoice_line_items(invoice)
-
-    messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
-
-    return HttpResponse(
-        status=204,
-        headers={"HX-Redirect": _invoice_list_redirect_url(request, org_slug, opp_id)},
-    )
-
-
-@opp_standard_access_required
-@opportunity_required
-@require_POST
-def invoice_pay(request, org_slug, opp_id):
-    if not request.is_opportunity_pm:
-        return HttpResponse(
-            status=302,
-            headers={"HX-Redirect": reverse("opportunity:detail", args=[org_slug, opp_id])},
-        )
-    invoice_ids = request.POST.getlist("pk")
-    invoices = PaymentInvoice.objects.filter(
-        opportunity=request.opportunity, payment_invoice_id__in=invoice_ids, payment__isnull=True
-    )
-
-    paid_invoice_ids = []
-    payments = []
-    required_status = InvoiceStatus.READY_TO_PAY
-    for inv in invoices:
-        if inv.status != required_status:
-            label = InvoiceStatus.get_label(required_status)
-            return HttpResponseBadRequest(_("Only {} invoice can be approved.").format(label))
-        paid_invoice_ids.append(inv.id)
-        payments.append(
-            Payment(
-                amount=inv.amount,
-                organization=request.opportunity.organization,
-                amount_usd=inv.amount_usd,
-                invoice=inv,
-            )
-        )
-        inv.status = InvoiceStatus.PAID
-        inv.save(update_fields=["status"])
-
-    Payment.objects.bulk_create(payments)
-
-    transaction.on_commit(partial(send_invoice_paid_mail.delay, request.opportunity.pk, paid_invoice_ids))
-    if paid_invoice_ids:
-        messages.success(request, _("Invoice(s) successfully marked as paid."))
-    return HttpResponse(headers={"HX-Redirect": _invoice_list_redirect_url(request, org_slug, opp_id)})
-
-
-def _invoice_list_redirect_url(request, org_slug, opp_id):
-    """Back to the invoice list, on the month the action was started from."""
-    return with_invoice_month(reverse("opportunity:invoice_list", args=(org_slug, opp_id)), request.GET.get("month"))
-
-
-@opp_standard_access_required
 @require_POST
 @csrf_exempt
 @opportunity_required
@@ -2454,117 +1857,6 @@ def sync_deliver_units(request, org_slug, opp_id):
     return HttpResponse(content=message, status=status)
 
 
-@method_decorator(opp_view_access_required, name="dispatch")
-class WorkerPageView(OpportunityObjectMixin, TemplateView):
-    page_title = None
-
-    def dispatch(self, request, *args, **kwargs):
-        self.opportunity = self.get_opportunity()
-        user_id = request.GET.get("user")
-        self.opportunity_access = (
-            (
-                OpportunityAccess.objects.filter(opportunity=self.opportunity, user__user_id=user_id)
-                .select_related("user")
-                .first()
-            )
-            if user_id
-            else None
-        )
-        if not self.opportunity_access:
-            raise Http404("A valid worker must be specified.")
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_path(self):
-        org_slug = self.kwargs["org_slug"]
-        opp_id = self.kwargs["opp_id"]
-        path = []
-        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
-        path.append(
-            {
-                "title": self.opportunity.program.name,
-                "url": reverse("program:home", args=(org_slug,)),
-            }
-        )
-        path.extend(
-            [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {"title": self.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-                {"title": "Connect Workers", "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id))},
-                {"title": self.page_title, "url": self.request.path},
-            ]
-        )
-        return path
-
-    def get_worker_kpi_context(self):
-        visits_queryset = UserVisit.objects.filter(opportunity_access=self.opportunity_access)
-        counts = get_user_visit_counts(self.opportunity, visits_queryset)
-
-        flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
-        for visit in visits_queryset.filter(flagged=True, flag_reason__isnull=False):
-            for flag, _description in visit.flag_reason.get("flags", []):
-                flag_label = FlagLabels.get_label(flag)
-                if visit.status == VisitValidationStatus.approved:
-                    if visit.review_created_on is not None:
-                        if visit.review_status == VisitReviewStatus.agree:
-                            flagged_info[flag_label]["approved"] += 1
-                        else:
-                            flagged_info[flag_label]["pending"] += 1
-                    else:
-                        flagged_info[flag_label]["approved"] += 1
-                if visit.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
-                    flagged_info[flag_label]["pending"] += 1
-                if visit.status == VisitValidationStatus.rejected:
-                    flagged_info[flag_label]["rejected"] += 1
-                flagged_info[flag_label]["name"] = flag_label
-
-        last_payment_details = (
-            Payment.objects.filter(opportunity_access=self.opportunity_access)
-            .select_related("opportunity_access__user")
-            .order_by("-date_paid")
-            .first()
-        )
-        pending_tasks_count = AssignedTask.objects.filter(
-            opportunity_access=self.opportunity_access,
-            status=AssignedTaskStatus.ASSIGNED,
-        ).count()
-        tasks_url = reverse(
-            "opportunity:user_tasks_list", args=(self.request.org.slug, self.opportunity.opportunity_id)
-        )
-        pending_tasks_url = f"{tasks_url}?{urlencode({'user': self.opportunity_access.user.user_id, 'task_status': AssignedTaskStatus.ASSIGNED})}"  # noqa: E501
-        return {
-            "counts": counts,
-            "flagged_info": flagged_info.values(),
-            "last_payment_details": last_payment_details,
-            "pending_tasks_count": pending_tasks_count,
-            "pending_tasks_url": pending_tasks_url,
-        }
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context.update(self.get_worker_kpi_context())
-        context.update(
-            {
-                "opportunity": self.opportunity,
-                "opportunity_access": self.opportunity_access,
-                "path": self.get_path(),
-                "has_suspension_perm": self.request.is_opportunity_pm,
-            }
-        )
-        return context
-
-
-class UserVisitVerificationView(WorkerPageView):
-    template_name = "opportunity/user_visit_verification.html"
-    page_title = gettext_lazy("Visits")
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["MAPBOX_TOKEN"] = settings.MAPBOX_TOKEN
-        context["show_worker_tasks_tabs"] = switch_is_active(WORKER_VISITS_TASKS)
-        context["visit_id"] = self.request.GET.get("visit_id")
-        return context
-
-
 def _can_manage_tasks(request, opportunity):
     """Permission to create, edit, or delete tasks."""
     return is_opportunity_pm(request, opportunity)
@@ -2580,267 +1872,6 @@ def _task_redirect_url(request, org_slug, opp_id):
         url = reverse("opportunity:user_tasks_list", args=(org_slug, opp_id))
         return f"{url}?{urlencode({'user': user_id})}"
     return reverse("opportunity:assigned_task_list", args=(org_slug, opp_id))
-
-
-class UserTasksView(WorkerPageView, FilterMixin):
-    template_name = "opportunity/user_tasks.html"
-    page_title = gettext_lazy("Tasks")
-    filter_class = UserTasksFilterSet
-
-    def get_filter_kwargs(self):
-        return {
-            "queryset": AssignedTask.objects.none(),
-            "request": self.request,
-            "opportunity": self.opportunity,
-        }
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        can_manage_tasks = _can_manage_tasks(self.request, self.opportunity)
-        context["can_manage_tasks"] = can_manage_tasks
-        context.update(self.get_filter_context())
-        if can_manage_tasks:
-            context["create_task_form"] = CreateTaskForm(
-                opportunity=self.opportunity, access=self.opportunity_access, user=self.request.user
-            )
-            create_url = reverse(
-                "opportunity:create_task", args=(self.request.org.slug, self.opportunity.opportunity_id)
-            )
-            context["create_task_url"] = (
-                f"{create_url}?{urlencode({'next': 'worker_tasks', 'user': self.opportunity_access.user.user_id})}"
-            )
-
-            delete_url = reverse(
-                "opportunity:delete_tasks", args=(self.request.org.slug, self.opportunity.opportunity_id)
-            )
-            context["delete_tasks_url"] = (
-                f"{delete_url}?{urlencode({'next': 'worker_tasks', 'user': self.opportunity_access.user.user_id})}"
-            )
-        return context
-
-
-@method_decorator(opp_view_access_required, name="dispatch")
-class WorkerTableView(OpportunityObjectMixin, SingleTableView):
-    redirect_url_name = None  # subclasses must set this to the parent page URL name
-
-    def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
-
-    def dispatch(self, request, *args, **kwargs):
-        self.opportunity = self.get_opportunity()
-        response = super().dispatch(request, *args, **kwargs)
-        url = reverse(self.redirect_url_name, args=[request.org.slug, self.kwargs["opp_id"]])
-        query_params = request.GET.urlencode()
-        response["HX-Replace-Url"] = f"{url}?{query_params}" if query_params else url
-        return response
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["opportunity"] = self.opportunity
-        return context
-
-
-class WorkerCompletedTaskTableView(WorkerTableView, FilterMixin):
-    model = AssignedTask
-    table_class = WorkerCompletedTaskTable
-    template_name = "opportunity/worker_visit_table.html"
-    redirect_url_name = "opportunity:user_tasks_list"
-    filter_class = UserTasksFilterSet
-
-    def get_filter_kwargs(self):
-        queryset = AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
-            "task_type", "assigned_by", "opportunity_access__opportunity"
-        )
-        user_id = self.request.GET.get("user")
-        if user_id:
-            queryset = queryset.filter(opportunity_access__user__user_id=user_id)
-        return {
-            "queryset": queryset,
-            "request": self.request,
-            "opportunity": self.opportunity,
-        }
-
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        kwargs["organization"] = self.request.org
-        kwargs["can_manage_tasks"] = _can_manage_tasks(self.request, self.opportunity)
-        return kwargs
-
-    def get_queryset(self):
-        return self._get_filter().qs.order_by("-date_created")
-
-
-def get_user_visit_counts(opportunity, queryset):
-    user_visit_counts = queryset.aggregate(
-        pending_review=Count(
-            "id",
-            filter=Q(
-                review_status=VisitReviewStatus.pending,
-                status=VisitValidationStatus.approved,
-                review_created_on__isnull=False,
-            ),
-        ),
-        disagree=Count(
-            "id",
-            filter=Q(
-                review_status=VisitReviewStatus.disagree,
-                review_created_on__isnull=False,
-            ),
-        ),
-        agree=Count(
-            "id",
-            filter=Q(
-                status=VisitValidationStatus.approved,
-                review_status=VisitReviewStatus.agree,
-                review_created_on__isnull=False,
-            ),
-        ),
-        approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
-        pending=Count("id", filter=Q(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])),
-        rejected=Count("id", filter=Q(status=VisitValidationStatus.rejected)),
-        flagged=Count("id", filter=Q(flagged=True)),
-        all=Count("*"),
-    )
-    return user_visit_counts
-
-
-class WorkerVisitTableView(WorkerTableView):
-    model = UserVisit
-    table_class = WorkerVisitTable
-    template_name = "opportunity/worker_visit_table.html"
-    redirect_url_name = "opportunity:user_visits_list"
-
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        kwargs["organization"] = self.request.org
-        kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
-        kwargs["highlighted_visit_id"] = self.request.GET.get("visit_id")
-        return kwargs
-
-    def get_queryset(self):
-        queryset = UserVisit.objects.filter(opportunity=self.opportunity).select_related("user", "opportunity")
-        user_id = self.request.GET.get("user")
-        if user_id:
-            queryset = queryset.filter(user__user_id=user_id)
-        return queryset.order_by("visit_date", "pk")
-
-    def get_table(self, **kwargs):
-        table = super().get_table(**kwargs)
-        visit_id = self.request.GET.get("visit_id")
-        if visit_id and "page" not in self.request.GET:
-            page = self._get_visit_page(visit_id)
-            if page:
-                table.paginate(page=page, per_page=get_validated_page_size(self.request))
-        return table
-
-    def _get_visit_page(self, visit_id):
-        queryset = self.get_queryset()
-        target = queryset.filter(user_visit_id=visit_id).first()
-        if not target:
-            return None
-        preceding_count = queryset.filter(
-            Q(visit_date__lt=target.visit_date) | Q(visit_date=target.visit_date, pk__lt=target.pk)
-        ).count()
-        return preceding_count // get_validated_page_size(self.request) + 1
-
-
-class VisitVerificationTableView(WorkerVisitTableView):
-    table_class = UserVisitVerificationTable
-    template_name = "opportunity/user_visit_verification_table.html"
-    exclude_columns = []
-
-    def get_table(self, **kwargs):
-        kwargs["exclude"] = self.exclude_columns
-        self.table = super().get_table(**kwargs)
-        return self.table
-
-    def get_tab_display(self, **kwargs):
-        user_visit_counts = get_user_visit_counts(self.opportunity, self.filter_queryset)
-        tabs_to_labels = {
-            "all": _("All"),
-            "approved": _("Approved"),
-            "rejected": _("Rejected"),
-            "pending": _("Pending NM Review"),
-            "pending_review": _("Pending PM Review"),
-            "agree": _("Agree") if self.request.is_opportunity_pm else _("Approved"),
-            "disagree": _("Disagree") if self.request.is_opportunity_pm else _("Revalidate"),
-        }
-        tabs_to_display = self.tabs
-        tabs = []
-        for tab in tabs_to_display:
-            tabs.append({"name": tab, "label": tabs_to_labels[tab], "count": user_visit_counts.get(tab, 0)})
-        return tabs
-
-    @cached_property
-    def tabs(self):
-        opportunity = self.get_opportunity()
-        if opportunity.automatic_visit_verification:
-            if self.request.is_opportunity_pm:
-                return ["all"]
-            else:
-                return ["approved", "rejected", "all"]
-
-        if self.request.is_opportunity_pm:
-            return ["pending_review", "disagree", "agree", "all"]
-        else:
-            return ["pending", "pending_review", "disagree", "agree", "rejected", "all"]
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["tabs"] = self.get_tab_display()
-        persisted_filters = []
-        for name, values in self.request.GET.lists():
-            if name in {"page", "filter_status", "sort"}:
-                continue
-            for value in values:
-                if value in ("", None):
-                    continue
-                persisted_filters.append((name, value))
-        context["persisted_filters"] = persisted_filters
-        return context
-
-    def get_queryset(self):
-        self.exclude_columns = []
-        self.filter_queryset = super().get_queryset()
-
-        requested_status = self.request.GET.get("filter_status")
-        allowed = set(self.tabs)
-        self.filter_status = requested_status if requested_status in allowed else None
-        queryset = self.filter_queryset
-        if self.filter_status == "pending":
-            queryset = queryset.filter(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])
-            self.exclude_columns = ["last_activity"]
-        if self.filter_status == "approved":
-            queryset = queryset.filter(status=VisitValidationStatus.approved)
-        if self.filter_status == "rejected":
-            queryset = queryset.filter(status=VisitValidationStatus.rejected)
-
-        if self.filter_status == "pending_review":
-            queryset = queryset.filter(
-                review_status=VisitReviewStatus.pending,
-                status=VisitValidationStatus.approved,
-                review_created_on__isnull=False,
-            )
-        if self.filter_status == "disagree":
-            queryset = queryset.filter(
-                review_status=VisitReviewStatus.disagree,
-                review_created_on__isnull=False,
-            )
-        if self.filter_status == "agree":
-            queryset = queryset.filter(
-                review_status=VisitReviewStatus.agree,
-                status=VisitValidationStatus.approved,
-                review_created_on__isnull=False,
-            )
-        return queryset
-
-
-@opp_view_access_required
-@opportunity_required
-def visit_verification_table_view(request, org_slug, opp_id):
-    if switch_is_active(WORKER_VISITS_TASKS):
-        return WorkerVisitTableView.as_view()(request, org_slug=org_slug, opp_id=opp_id)
-    return VisitVerificationTableView.as_view()(request, org_slug=org_slug, opp_id=opp_id)
 
 
 @opp_view_access_required
@@ -3006,439 +2037,6 @@ def user_task_details(request, org_slug, opp_id, pk):
             images=images,
             hq_link=hq_link,
             can_edit_tasks=_can_edit_tasks(request, request.opportunity),
-        ),
-    )
-
-
-@method_decorator(opp_view_access_required, name="dispatch")
-class BaseWorkerListView(OpportunityObjectMixin, View):
-    template_name = "opportunity/opportunity_worker.html"
-    hx_template_name = "opportunity/workers.html"
-    active_tab = "workers"
-    tabs = [
-        {"key": "workers", "label": gettext_lazy("Connect Workers"), "url_name": "opportunity:worker_list"},
-        {"key": "learn", "label": gettext_lazy("Learn"), "url_name": "opportunity:worker_learn"},
-        {"key": "deliver", "label": gettext_lazy("Deliver"), "url_name": "opportunity:worker_deliver"},
-        {"key": "payments", "label": gettext_lazy("Payments"), "url_name": "opportunity:worker_payments"},
-        {"key": "tasks", "label": gettext_lazy("Tasks"), "url_name": "opportunity:worker_tasks"},
-    ]
-
-    def _is_navigating_between_tabs(self, org_slug, opportunity):
-        referer = self.request.headers.get("referer")
-        is_tab_navigation = False
-        if referer:
-            path = urlparse(referer).path
-            for tab in self.tabs:
-                if path.endswith(reverse(tab["url_name"], args=(org_slug, opportunity.opportunity_id))):
-                    is_tab_navigation = True
-                    break
-        return is_tab_navigation
-
-    def get_tabs(self, org_slug, opportunity):
-        tabs_with_urls = []
-        # Persist url-params when navigating in between tabs, but not other pages
-        is_tab_navigation = self._is_navigating_between_tabs(org_slug, opportunity)
-        session_key_prefix = "worker_tab_params"
-
-        params = {}
-        if not is_tab_navigation:
-            # Clear url params
-            for key in [t["key"] for t in self.tabs]:
-                self.request.session.pop(f"{session_key_prefix}:{key}", None)
-        if self.request.GET:
-            # Save url params
-            params = self.request.GET.dict()
-            self.request.session[f"{session_key_prefix}:{self.active_tab}"] = params
-        elif is_tab_navigation:
-            # Persist
-            params = self.request.session.get(f"{session_key_prefix}:{self.active_tab}", {})
-
-        # build urls with params
-        for tab in self.tabs:
-            url = reverse(tab["url_name"], args=(org_slug, opportunity.opportunity_id))
-            if tab["key"] == self.active_tab:
-                tab_params = params
-            else:
-                tab_params = self.request.session.get(f"worker_tab_params:{tab['key']}", {})
-            if tab_params:
-                url = f"{url}?{urlencode(tab_params)}"
-            tabs_with_urls.append({**tab, "url": url})
-
-        # Label with count for workers tab
-        workers_count = UserInvite.objects.filter(opportunity=opportunity).count()
-        tabs_with_urls[0]["label"] = _("Connect Workers") + f" ({workers_count})"
-        return tabs_with_urls
-
-    def get(self, request, org_slug, opp_id):
-        opportunity = self.get_opportunity()
-        request.opportunity = opportunity
-        if flag_is_active(request, MICROPLANNING):
-            self.tabs = self.tabs + [
-                {
-                    "key": "work_areas",
-                    "label": gettext_lazy("Work Area Assignments"),
-                    "url_name": "opportunity:worker_work_areas",
-                }
-            ]
-        context = self.get_context_data(opportunity, org_slug)
-        context.update(self.get_extra_context(opportunity, org_slug))
-        return render(
-            request,
-            self.hx_template_name if request.htmx else self.template_name,
-            context,
-        )
-
-    def get_context_data(self, opportunity, org_slug):
-        path = []
-        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
-        path.append(
-            {
-                "title": opportunity.program.name,
-                "url": reverse("program:home", args=(org_slug,)),
-            }
-        )
-        path.extend(
-            [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {
-                    "title": opportunity.name,
-                    "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
-                },
-                {
-                    "title": "Connect Workers",
-                    "url": reverse("opportunity:worker_list", args=(org_slug, opportunity.opportunity_id)),
-                },
-            ]
-        )
-
-        context = {
-            "path": path,
-            "opportunity": opportunity,
-            "active_tab": self.active_tab,
-            "tabs": self.get_tabs(org_slug, opportunity),
-            "export_task_id": get_export_task_id(self.request, opportunity),
-        }
-        if self.request.htmx:
-            context["table"] = self.get_table(opportunity, org_slug)
-        return context
-
-    def get_extra_context(self, opportunity, org_slug):
-        return {}
-
-    def get_table(self, opportunity, org_slug):
-        raise NotImplementedError
-
-
-class WorkerView(BaseWorkerListView):
-    hx_template_name = "opportunity/workers.html"
-    active_tab = "workers"
-
-    def _get_search_term(self):
-        return self.request.GET.get("q", "").strip()
-
-    def get_extra_context(self, opportunity, org_slug):
-        context = {
-            "export_form": PaymentExportForm(),
-            "search_term": self._get_search_term(),
-        }
-        if self.request.htmx:
-            # Counts for "Displaying X of Y Connect Workers"; table already built by get_context_data.
-            table = self._table
-            context["worker_filtered_count"] = table.paginator.count
-            context["worker_total_count"] = UserInvite.objects.filter(opportunity=opportunity).count()
-        return context
-
-    def get_table(self, opportunity, org_slug):
-        data = get_worker_table_data(opportunity, search_term=self._get_search_term())
-        table = WorkerStatusTable(data)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
-        # Cache for get_extra_context so we can read paginator.count without requerying.
-        self._table = table
-        return table
-
-
-class WorkerLearnView(BaseWorkerListView):
-    hx_template_name = "opportunity/learn.html"
-    active_tab = "learn"
-
-    def get_table(self, opportunity, org_slug):
-        data = get_worker_learn_table_data(opportunity)
-        table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
-        return table
-
-
-class WorkerDeliverView(BaseWorkerListView, FilterMixin):
-    hx_template_name = "opportunity/deliver.html"
-    active_tab = "deliver"
-    filter_class = DeliverFilterSet
-
-    def get_extra_context(self, opportunity, org_slug):
-        context = {
-            "visit_export_form": VisitExportForm(opportunity=opportunity, org_slug=org_slug),
-            "review_visit_export_form": VisitExportForm(
-                opportunity=opportunity, org_slug=org_slug, review_export=True
-            ),
-            "import_export_delivery_urls": {
-                "export_url_for_pm": reverse(
-                    "opportunity:review_visit_export",
-                    args=(org_slug, opportunity.opportunity_id),
-                ),
-                "export_url_for_nm": reverse(
-                    "opportunity:visit_export",
-                    args=(org_slug, opportunity.opportunity_id),
-                ),
-                "import_url": reverse(
-                    "opportunity:review_visit_import"
-                    if self.request.is_opportunity_pm
-                    else "opportunity:visit_import",
-                    args=(org_slug, opportunity.opportunity_id),
-                ),
-            },
-            "import_visit_helper_text": _(
-                'The file must contain at least the "Visit ID", "Justification" and "Status" column. The import is case-insensitive.'  # noqa: E501
-            ),
-            "export_user_visit_title": _(
-                "Import PM Review Sheet" if self.request.is_opportunity_pm else "Import Verified Visits"
-            ),
-        }
-        context.update(self.get_filter_context())
-        return context
-
-    def get_filter_kwargs(self):
-        kwargs = super().get_filter_kwargs()
-        kwargs["opportunity"] = self.get_opportunity()
-        return kwargs
-
-    def get_table(self, opportunity, org_slug):
-        data = get_worker_deliveries(opportunity, self.get_filter_values())
-        table_kwargs = {"org_slug": org_slug, "opp_id": opportunity.opportunity_id}
-        if opportunity.automatic_visit_verification:
-            table_kwargs["exclude"] = ("pending",)
-        table = WorkerDeliveryTable(data, **table_kwargs)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
-        return table
-
-
-class WorkerPaymentsView(BaseWorkerListView):
-    hx_template_name = "opportunity/payments.html"
-    active_tab = "payments"
-    show_import_outcome = True
-
-    def get(self, request, org_slug, opp_id):
-        # A finished import surfaces its result as a banner, or as the error modal opened by
-        # get_extra_context; a running one keeps the polling progress spinner.
-        if not request.htmx and self._payment_import_complete():
-            self.show_import_outcome = claim_task_outcome(
-                request, PAYMENT_IMPORT_CLAIMED_SESSION_KEY, self._payment_import_task_id
-            )
-            if self.show_import_outcome:
-                self._add_payment_import_message()
-        return super().get(request, org_slug, opp_id)
-
-    @cached_property
-    def _payment_import_task_id(self):
-        if opportunity_access_level_from_request(self.request, self.get_opportunity()) < AccessLevel.STANDARD:
-            return None
-        return self.request.GET.get(PAYMENT_IMPORT_TASK_PARAM)
-
-    @cached_property
-    def _payment_import_task(self):
-        task_id = self._payment_import_task_id
-        if not task_id:
-            return None
-        task = AsyncResult(task_id)
-        args = task.args or []
-        if not args or args[0] != self.get_opportunity().pk:
-            return None
-        return task
-
-    def _payment_import_complete(self):
-        task = self._payment_import_task
-        return bool(task) and task.status in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
-
-    def _add_payment_import_message(self):
-        """Surface the finished import task's result as a standard banner."""
-        task = self._payment_import_task
-        if not task:
-            return
-        if task.status == CELERY_TASK_FAILURE:
-            messages.error(self.request, _("The payment import failed. Please try again."))
-            return
-        if self._payment_import_errors():
-            return
-        message = get_task_progress_message(task)
-        if not message:
-            return
-        is_error = self._payment_import_result().get("is_error")
-        add_message = messages.error if is_error else messages.success
-        add_message(self.request, message)
-
-    def _payment_import_result(self):
-        """The import task's progress meta, or {} when there is no task or it crashed.
-
-        A task that failed carries the exception in `result` rather than the meta dict.
-        """
-        result = getattr(self._payment_import_task, "result", None)
-        return result if isinstance(result, dict) else {}
-
-    def _payment_import_errors(self):
-        """Row errors from the import task, as {description: [row numbers]}."""
-        return self._payment_import_result().get("errors") or {}
-
-    def get_extra_context(self, opportunity, org_slug):
-        # Only keep polling while the import is still running. Once it is complete the only thing
-        # left to open is the error modal, and only for errors this load has not already shown.
-        task_id = self._payment_import_task_id
-        if task_id and self._payment_import_complete():
-            if not (self._payment_import_errors() and self.show_import_outcome):
-                task_id = None
-        return {
-            "export_form": PaymentExportForm(),
-            "payment_import_task_id": task_id,
-        }
-
-    def get_table(self, opportunity, org_slug):
-        def get_payment_subquery(confirmed: bool = False) -> Subquery:
-            qs = Payment.objects.filter(opportunity_access=OuterRef("pk"))
-            if confirmed:
-                qs = qs.filter(confirmed=True)
-            subquery = qs.values("opportunity_access").annotate(total=Sum("amount")).values("total")[:1]
-            return Coalesce(Subquery(subquery), Value(0), output_field=DecimalField())
-
-        query_set = OpportunityAccess.objects.filter(
-            opportunity=opportunity, payment_accrued__gte=0, accepted=True
-        ).order_by("-payment_accrued")
-        query_set = query_set.annotate(
-            status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
-            last_paid=Max("payment__date_paid"),
-            total_paid_d=get_payment_subquery(),
-            confirmed_paid_d=get_payment_subquery(True),
-        )
-        table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
-        return table
-
-
-class WorkerTaskView(BaseWorkerListView, FilterMixin):
-    hx_template_name = "opportunity/tasks.html"
-    active_tab = "tasks"
-    filter_class = TasksFilterSet
-
-    def get_filter_kwargs(self):
-        return {
-            "queryset": get_worker_tasks_base_queryset(self.get_opportunity()),
-            "request": self.request,
-            "opportunity": self.get_opportunity(),
-        }
-
-    def get_extra_context(self, opportunity, org_slug):
-        return self.get_filter_context()
-
-    def get_table(self, opportunity, org_slug):
-        data = self._get_filter().qs
-        table = WorkerTasksTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
-        return table
-
-
-class WorkerWorkAreaView(BaseWorkerListView):
-    hx_template_name = "opportunity/worker_list_work_areas.html"
-    active_tab = "work_areas"
-
-    def dispatch(self, request, *args, **kwargs):
-        request.opportunity = self.get_opportunity()
-        if not flag_is_active(request, MICROPLANNING):
-            raise Http404
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_table(self, opportunity, org_slug):
-        data = get_worker_work_area_table_data(opportunity)
-        table = WorkerWorkAreaTable(data, org_slug=org_slug)
-        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
-        return table
-
-
-@opp_view_access_required
-@opportunity_required
-def worker_learn_status_view(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=access_id)
-    completed_modules = CompletedModule.objects.filter(opportunity_access=access)
-    total_duration = datetime.timedelta(0)
-    for cm in completed_modules:
-        total_duration += cm.duration
-    total_duration = get_duration_min(total_duration.total_seconds())
-
-    table = WorkerLearnStatusTable(completed_modules)
-
-    path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": org_slug})},
-        {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-        {
-            "title": "Connect Workers",
-            "url": reverse("opportunity:worker_learn", args=(org_slug, opp_id)),
-        },
-        {"title": access.user.name, "url": request.path},
-    ]
-
-    return render(
-        request,
-        "opportunity/opportunity_worker_learn.html",
-        {
-            "total_learn_duration": total_duration,
-            "table": table,
-            "access": access,
-            "path": path,
-            "has_suspension_perm": (request.is_opportunity_pm),
-        },
-    )
-
-
-@opp_view_access_required
-@opportunity_required
-def worker_payment_history(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=access_id)
-    queryset = Payment.objects.filter(opportunity_access=access).order_by("-date_paid")
-    payments = queryset.values("date_paid", "amount")
-
-    return render(
-        request,
-        "components/worker_page/payment_history.html",
-        context=dict(access=access, payments=payments, latest_payment=queryset.first()),
-    )
-
-
-@opp_view_access_required
-@opportunity_required
-def worker_flag_counts(request, org_slug, opp_id):
-    access_id = request.GET.get("access_id", None)
-    filters = {}
-    if access_id:
-        access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=access_id)
-        filters["completed_work__opportunity_access"] = access
-    else:
-        filters["completed_work__opportunity_access__opportunity"] = request.opportunity
-
-    status = request.GET.get("status", CompletedWorkStatus.pending)
-    payment_unit_ids = request.GET.getlist("payment_unit_id")
-    filters["completed_work__status"] = status
-    if payment_unit_ids:
-        filters["completed_work__payment_unit__payment_unit_id__in"] = payment_unit_ids
-
-    visits = UserVisit.objects.filter(**filters)
-    all_flags = [flag for visit in visits.all() for flag in visit.flags]
-    counts = dict(Counter(all_flags))
-
-    completed_work_ids = visits.values_list("completed_work_id", flat=True)
-    duplicate_count = CompletedWork.objects.filter(id__in=completed_work_ids, saved_completed_count__gt=1).count()
-    if duplicate_count:
-        counts["Duplicate"] = duplicate_count
-
-    return render(
-        request,
-        "components/worker_page/flag_counts.html",
-        context=dict(
-            flag_counts=counts.items(),
         ),
     )
 
@@ -3781,67 +2379,6 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
     return render(request, "opportunity/opportunity_delivery_stat.html", {"opp_stats": opp_stats})
 
 
-@opp_view_access_required
-@require_POST
-@opportunity_required
-def exchange_rate_preview(request, org_slug, opp_id):
-    rate_date = request.POST.get("date")
-    usd_currency = request.POST.get("usd_currency", False) == "true"
-    replace_amount = request.POST.get("should_replace_amount", False) == "true"  # condition when user toggles
-    amount = None
-
-    rate_date = datetime.datetime.strptime(rate_date, "%Y-%m-%d").date()
-    try:
-        amount = Decimal(request.POST.get("amount") or 0)
-    except InvalidOperation:
-        amount = Decimal(0)
-
-    converted_amount = amount
-
-    if not rate_date:
-        exchange_info = "Please select a date for exchange rate."
-        converted_amount_display = ""
-    else:
-        exchange_rate = ExchangeRate.latest_exchange_rate(request.opportunity.currency_code, rate_date)
-        if exchange_rate:
-            exchange_info = format_html(
-                "Exchange Rate on {}: <b>{}</b>",
-                rate_date.strftime("%d-%m-%Y"),
-                exchange_rate.rate,
-            )
-            other_currency_amount = None
-            currency = request.opportunity.currency_code
-
-            if usd_currency:
-                if replace_amount:
-                    converted_amount = amount / exchange_rate.rate
-                other_currency_amount = converted_amount * exchange_rate.rate
-            else:
-                if replace_amount:
-                    converted_amount = amount * exchange_rate.rate
-                other_currency_amount = converted_amount / exchange_rate.rate
-                currency = "USD"
-
-            converted_amount = round(converted_amount, 2)
-            other_currency_amount = round(other_currency_amount, 2)
-
-            converted_amount_display = format_html("Amount in {}: <b>{}</b>", currency, other_currency_amount)
-        else:
-            exchange_info = "Exchange rate not available for selected date."
-            converted_amount_display = ""
-
-    html = format_html(
-        """
-            <div id="exchange-rate-display" data-converted-amount="{converted_amount}">{exchange_info}</div>
-            <div id="converted-amount">{converted_amount_display}</div>
-        """,
-        exchange_info=exchange_info,
-        converted_amount_display=converted_amount_display,
-        converted_amount=converted_amount,
-    )
-    return HttpResponse(html)
-
-
 @login_required
 @require_POST
 def add_api_key(request, org_slug):
@@ -3853,69 +2390,6 @@ def add_api_key(request, org_slug):
         api_key.save()
         form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
     return HttpResponse(render_crispy_form(form))
-
-
-@require_POST
-@opportunity_required
-@opp_standard_access_required
-def invoice_items(request, *args, **kwargs):
-    body = json.loads(request.body)
-    start_date_str = body.get("start_date", None)
-    end_date_str = body.get("end_date", None)
-
-    if not start_date_str or not end_date_str:
-        return JsonResponse({"error": _("Start date and end date are required.")})
-
-    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
-    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
-
-    line_items = get_billable_line_items(request.opportunity, start_date, end_date)
-    # An empty window has nothing to sum, so seed with zero rather than sum()'s int 0.
-    total = sum((item.total_pay for item in line_items), Money.zero())
-    show_org = any(item.org_pay.local for item in line_items)
-
-    html = render_to_string(
-        "opportunity/partials/invoice_line_items.html",
-        {"table": InvoiceLineItemsTable(request.opportunity.currency_code, line_items, show_org=show_org)},
-        request=request,
-    )
-
-    return JsonResponse(
-        {
-            "line_items_table_html": html,
-            "total_amount": total.local,
-            "total_usd_amount": total.usd,
-            "late_delta_units": total_late_delta_units(line_items),
-        }
-    )
-
-
-@require_GET
-@opp_standard_access_required
-@opportunity_required
-def download_invoice_line_items(request, org_slug, opp_id):
-    start_date_str = request.GET.get("start_date", None)
-    end_date_str = request.GET.get("end_date", None)
-    invoice_id = request.GET.get("invoice_id", None)
-
-    if not start_date_str or not end_date_str:
-        return HttpResponseBadRequest("Start date and end date are required.")
-
-    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
-    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
-    if invoice_id:
-        invoice = get_object_or_404(PaymentInvoice, payment_invoice_id=invoice_id, opportunity=request.opportunity)
-        deliveries = get_invoice_delivery_rows_for_export(invoice)
-    else:
-        deliveries = get_billable_delivery_rows_for_export(request.opportunity, start_date, end_date)
-
-    show_org = any(delivery.org_pay.local for delivery in deliveries)
-    table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries, show_org=show_org)
-    export_format = "csv"
-    exporter = TableExport(export_format, table)
-    filename = f"invoice_line_items_{start_date}_{end_date}.csv"
-
-    return exporter.response(filename=filename)
 
 
 @login_required
