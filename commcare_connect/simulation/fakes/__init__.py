@@ -8,7 +8,7 @@ existing tests do, so the real code path runs right up to the outbound call.
 from contextlib import ExitStack, contextmanager
 from unittest import mock
 
-from config.celery_app import app as celery_app
+from django.test import override_settings
 
 from . import payments, review, setup, workers
 
@@ -32,12 +32,11 @@ def local_fakes():
         yield
 
 
-@contextmanager
 def _eager_celery():
-    """Run tasks inline so each step's side effects exist before the next step starts."""
-    previous = celery_app.conf.task_always_eager
-    celery_app.conf.task_always_eager = True
-    try:
-        yield
-    finally:
-        celery_app.conf.task_always_eager = previous
+    """Run tasks inline so each step's side effects exist before the next step starts.
+
+    Override the Django setting Celery reads from rather than assigning to ``celery_app.conf``: since Celery 5.7
+    a value assigned to ``conf`` keeps shadowing the settings after it is put back, so the override would outlive
+    the run.
+    """
+    return override_settings(CELERY_TASK_ALWAYS_EAGER=True)
