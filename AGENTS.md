@@ -18,6 +18,11 @@ inv down                            # docker compose down
 ./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
 ./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
 
+# Worktrees: each gets its own DB + Redis DB (see "Working in git worktrees" in README.md)
+wt switch --create <branch>         # create and set up via .config/wt.toml
+scripts/setup-worktree.sh           # same setup, for worktrees made by other tools
+wt new <branch> --share=1           # reuse the main checkout's DB + Redis DB; skips migrate
+
 # JavaScript/CSS
 npm ci                              # install deps
 inv build-js                        # dev build
