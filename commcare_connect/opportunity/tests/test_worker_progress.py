@@ -23,6 +23,7 @@ from commcare_connect.opportunity.worker_progress import (
     get_worker_payments,
 )
 from commcare_connect.opportunity.worker_progress_types import (
+    DailyUsage,
     DeliveryAllocation,
     LimitUsage,
     StatusCounts,
@@ -67,6 +68,23 @@ def test_limit_usage_bars_stop_at_full():
     assert usage.completed_width == 100
     # past the limit the split is scaled to the completed count, so it fills the track exactly
     assert usage.approved_width + usage.pending_width + usage.rejected_width == pytest.approx(100)
+
+
+@pytest.mark.parametrize(
+    "used, capacity, reached, width",
+    [
+        (84, 130, False, 84 / 130 * 100),
+        (130, 130, True, 100),
+        (140, 130, True, 100),
+        (0, 0, False, 0),
+        # Visits from a worker whose limit for the unit was ended after they visited, so it adds no capacity
+        (2, 0, True, 100),
+    ],
+)
+def test_daily_usage(used, capacity, reached, width):
+    today = DailyUsage(used=used, capacity=capacity)
+    assert today.is_reached is reached
+    assert today.width == pytest.approx(width)
 
 
 @pytest.mark.parametrize(
@@ -185,9 +203,122 @@ def test_get_delivery_allocation(opportunity):
     assert allocation.total.counts == StatusCounts(approved=2, pending=2, rejected=1)
     assert allocation.active_workers == 2
     assert allocation.synced_workers == 1
+    assert by_name[household.name].today == DailyUsage(used=2, capacity=3)
+    assert by_name[anc.name].today is None
     assert allocation.hide_pending is False
     assert breakdown.hide_pending is False
     assert allocation.has_payment_units is True
+
+
+TODAY = 0
+YESTERDAY = -1
+V = VisitValidationStatus
+A, B, OPTIONAL_1, OPTIONAL_2 = "a", "b", "optional_1", "optional_2"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "visits, used",
+    [
+        # The busiest deliver unit is the one the daily limit stops first
+        ([(A, TODAY, V.pending), (A, TODAY, V.pending), (B, TODAY, V.pending)], 2),
+        # Every visit the form receiver counts toward the limit counts, whatever its review status
+        ([(A, TODAY, V.approved), (A, TODAY, V.rejected), (A, TODAY, V.duplicate)], 3),
+        ([(A, YESTERDAY, V.pending), (A, YESTERDAY, V.pending), (B, TODAY, V.pending)], 1),
+        # Over-limit and trial visits don't count toward the daily limit
+        ([(A, TODAY, V.pending), (A, TODAY, V.over_limit), (A, TODAY, V.trial)], 1),
+        # A delivery needs a visit to only one optional deliver unit, so the least busy one is what the
+        # limit stops
+        ([(A, TODAY, V.pending), (OPTIONAL_1, TODAY, V.pending), (OPTIONAL_1, TODAY, V.pending)], 1),
+        (
+            [
+                (A, TODAY, V.pending),
+                (OPTIONAL_1, TODAY, V.pending),
+                (OPTIONAL_1, TODAY, V.pending),
+                (OPTIONAL_2, TODAY, V.pending),
+                (OPTIONAL_2, TODAY, V.pending),
+            ],
+            2,
+        ),
+    ],
+)
+def test_daily_limit_used(opportunity, visits, used):
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3)
+    deliver_units = {
+        A: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit),
+        B: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit),
+        OPTIONAL_1: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit, optional=True),
+        OPTIONAL_2: DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit, optional=True),
+    }
+    access = _claimed_worker(opportunity)
+    for du, days, status in visits:
+        _visit(access, deliver_units[du], status, days)
+
+    (allocation_unit,) = get_payment_unit_breakdown(opportunity).payment_units
+
+    assert allocation_unit.today.used == used
+
+
+@pytest.mark.django_db
+def test_daily_limit_used_sums_active_workers(opportunity):
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3)
+    a = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit)
+    b = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=unit)
+    # Each worker is stopped by a different deliver unit, and both count
+    first, second = _claimed_worker(opportunity), _claimed_worker(opportunity)
+    for deliver_unit in [a, a, b]:
+        _visit(first, deliver_unit, V.pending)
+    for deliver_unit in [b, b]:
+        _visit(second, deliver_unit, V.pending)
+    # Only active workers make up the daily capacity, so only their visits count
+    _visit(_claimed_worker(opportunity, suspended=True), a, V.rejected)
+
+    (allocation_unit,) = get_payment_unit_breakdown(opportunity).payment_units
+
+    assert allocation_unit.today.used == 2 + 2
+
+
+def _claimed_worker(opportunity, suspended=False):
+    access = OpportunityAccessFactory(opportunity=opportunity, suspended=suspended)
+    OpportunityClaimFactory(opportunity_access=access, end_date=localdate())
+    return access
+
+
+def _visit(access, deliver_unit, status, days=TODAY):
+    UserVisitFactory(
+        opportunity=access.opportunity,
+        opportunity_access=access,
+        deliver_unit=deliver_unit,
+        status=status,
+        visit_date=now() + timedelta(days=days),
+    )
+
+
+NO_LIMIT = object()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "limit_end_date, capacity",
+    [
+        (None, 3),
+        # The unit is still open to the worker on its last day
+        (localdate(), 3),
+        (localdate() - timedelta(days=1), 0),
+        # The budget ran out before the worker was funded for the unit
+        (NO_LIMIT, 0),
+    ],
+)
+def test_daily_capacity(opportunity, limit_end_date, capacity):
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3)
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=localdate())
+    if limit_end_date is not NO_LIMIT:
+        OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=unit, end_date=limit_end_date)
+
+    (allocation_unit,) = get_payment_unit_breakdown(opportunity).payment_units
+
+    assert allocation_unit.today.capacity == capacity
 
 
 @pytest.mark.django_db
@@ -347,7 +478,7 @@ def test_get_delivery_allocation_without_payment_units(opportunity):
 
 @pytest.mark.django_db
 def test_payment_unit_breakdown_template_renders(opportunity):
-    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=5, org_amount=5)
+    unit = PaymentUnitFactory(opportunity=opportunity, max_total=10, max_daily=3, amount=5, org_amount=5)
 
     html = render_to_string(
         "opportunity/partials/payment_unit_breakdown.html",
@@ -355,3 +486,4 @@ def test_payment_unit_breakdown_template_renders(opportunity):
     )
 
     assert unit.name in html
+    assert "Today (all workers):" in html
