@@ -1,6 +1,8 @@
+from django.shortcuts import render
 from django.utils.deprecation import MiddlewareMixin
 from django.utils.functional import SimpleLazyObject
 
+from ..organization.models import Organization
 from ..organization.models import UserOrganizationMembership as Membership
 from ..program.utils import (
     AccessLevel,
@@ -9,7 +11,7 @@ from ..program.utils import (
     opportunity_by_id,
     org_access_level_from_request,
 )
-from .helpers import get_organization_for_request
+from .helpers import active_memberships, get_organization_for_request
 
 
 def _get_organization(request, view_kwargs):
@@ -34,7 +36,7 @@ def _get_org_membership(request):
 
 def _get_all_memberships(request):
     if not hasattr(request, "_cached_memberships"):
-        memberships = Membership.objects.filter(user=request.user)
+        memberships = active_memberships(request.user)
         request._cached_memberships = memberships
     return request._cached_memberships
 
@@ -71,3 +73,24 @@ class OrganizationMiddleware(MiddlewareMixin):
         request.is_opportunity_pm = SimpleLazyObject(lambda: _is_opportunity_pm(request, view_kwargs))
         request.org_access_level = SimpleLazyObject(lambda: org_access_level_from_request(request))
         request.opp_access_level = SimpleLazyObject(lambda: _opportunity_access_level(request, view_kwargs))
+        if _is_archived_organization_page(request, view_kwargs):
+            request.org = None
+            return _render_organization_archived(request)
+
+
+def _is_archived_organization_page(request, view_kwargs):
+    org_slug = view_kwargs.get("org_slug")
+    return (
+        org_slug is not None
+        and request.path.startswith(f"/a/{org_slug}/")
+        and Organization.objects.filter(slug=org_slug, is_archived=True).exists()
+    )
+
+
+def _render_organization_archived(request):
+    authenticated = request.user.is_authenticated
+    context = {
+        "has_active_organization": authenticated and active_memberships(request.user).exists(),
+        "can_create_organization": authenticated,
+    }
+    return render(request, "organization/organization_archived.html", context, status=404)
