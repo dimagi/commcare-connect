@@ -161,7 +161,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         empty_label=_("Select a country"),
     )
     end_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}, format="%Y-%m-%d"),
         required=False,
         help_text=_("Extends opportunity end date for all users."),
     )
@@ -322,11 +322,16 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
         if self.instance:
             if self.instance.end_date:
-                self.initial["end_date"] = self.instance.end_date.isoformat()
+                self.initial["end_date"] = self.instance.end_date
             self.currently_active = self.instance.active
         if self.instance.pk:
             _first_unit_date, last_unit_date = payment_unit_date_bounds(self.instance)
-            set_date_limits(field=self.fields["end_date"], earliest=last_unit_date, saved=self.instance.end_date)
+            today = now().date()
+            set_date_limits(
+                field=self.fields["end_date"],
+                earliest=max(today, last_unit_date or today),
+                saved=self.instance.end_date,
+            )
             if last_unit_date:
                 end_help_text = cover_units_help_text(on_or_after=last_unit_date)
                 self.fields["end_date"].help_text = f"{self.fields['end_date'].help_text} {end_help_text}"
@@ -355,7 +360,10 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         cleaned_data = super().clean()
         end_date = cleaned_data.get("end_date")
         if end_date and "end_date" in self.changed_data:
-            validate_payment_unit_end_date(self.instance, end_date)
+            if end_date < now().date():
+                self.add_error("end_date", gettext("End date can't be in the past."))
+            else:
+                validate_payment_unit_end_date(self.instance, end_date)
         if cleaned_data.get("users") and self.opportunity.has_ended and (not end_date or end_date < now().date()):
             self.add_error("users", gettext("This opportunity has ended. You cannot invite more workers."))
         return cleaned_data

@@ -131,7 +131,7 @@ class TestOpportunityChangeForm:
             "country": valid_opportunity.country.code,
             "is_test": valid_opportunity.is_test,
             "delivery_type": valid_opportunity.delivery_type.id,
-            "end_date": valid_opportunity.end_date.isoformat(),
+            "end_date": valid_opportunity.end_date,
         }
         assert all(form.initial.get(key) == value for key, value in expected_initial.items())
 
@@ -208,6 +208,28 @@ class TestOpportunityChangeForm:
         assert form.is_valid() is (expected_error is None), form.errors
         if expected_error:
             assert expected_error in form.errors["end_date"][0]
+
+    @pytest.mark.parametrize(
+        "saved_end, new_end, expect_error",
+        [
+            (30, -1, True),
+            (-5, -5, False),  # unchanged: an ended opportunity can still be edited
+            (30, 0, False),
+        ],
+    )
+    def test_end_date_in_past(self, valid_opportunity, base_form_data, saved_end, new_end, expect_error):
+        valid_opportunity.start_date = _days_from_today(-30)
+        valid_opportunity.end_date = _days_from_today(saved_end)
+        valid_opportunity.save()
+        data = {**base_form_data, "end_date": _days_from_today(new_end).isoformat(), "users": ""}
+
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+
+        earliest = min(_days_from_today(0), valid_opportunity.end_date)
+        assert form.fields["end_date"].widget.attrs["min"] == str(earliest)
+        assert form.is_valid() is not expect_error, form.errors
+        if expect_error:
+            assert form.errors["end_date"] == ["End date can't be in the past."]
 
     @pytest.mark.parametrize(
         "new_end, expect_error",
