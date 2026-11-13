@@ -1,3 +1,4 @@
+import re
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -7,9 +8,9 @@ from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
-from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
+from commcare_connect.organization.forms import ContactForm, ContactPocChangeForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
-from commcare_connect.organization.tables import OrganizationDirectoryTable
+from commcare_connect.organization.tables import ContactDirectoryTable, OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.celery import get_export_storage
@@ -70,6 +71,20 @@ class TestOrganizationFilterSet:
 
         assert _filtered_organizations({"status": ["active", "prospective"]}) == {active, prospective}
 
+    def test_test_organizations_are_listed_only_when_asked_for(self):
+        real = OrganizationFactory()
+        test = OrganizationFactory(is_test=True)
+
+        assert set(OrganizationFilterSet(queryset=Organization.objects.all()).qs) == {real}
+        assert _filtered_organizations({"test": "on"}) == {test}
+
+    @pytest.mark.parametrize("value, lists_test", [("on", True), ("true", False), ("abc", False), ("0", False)])
+    def test_test_toggle_is_on_only_for_a_ticked_value(self, value, lists_test):
+        real = OrganizationFactory()
+        test = OrganizationFactory(is_test=True)
+
+        assert _filtered_organizations({"test": value}) == ({test} if lists_test else {real})
+
 
 @pytest.mark.django_db
 class TestOrganizationListAccess:
@@ -85,6 +100,15 @@ class TestOrganizationListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [org]
+
+    def test_count_leaves_out_test_organizations(self, client, user_with_directory_access):
+        OrganizationFactory()
+        OrganizationFactory(is_test=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:list"))
+
+        assert response.context["organizations_count"] == 1
 
 
 @pytest.mark.django_db
@@ -103,6 +127,51 @@ def test_status_column_shows_a_badge(status, badge_class):
 
     assert badge_class in cell
     assert str(status.label) in cell
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("order_by", ["flws_managed", "-flws_managed"])
+def test_organizations_without_flws_managed_sort_last(order_by):
+    few, many = OrganizationFactory(flws_managed=5), OrganizationFactory(flws_managed=50)
+    unknown = OrganizationFactory(flws_managed=None)
+    table = OrganizationDirectoryTable(Organization.objects.all(), order_by=order_by)
+
+    assert [row.record for row in table.rows] == ([few, many] if order_by == "flws_managed" else [many, few]) + [
+        unknown
+    ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("order_by", ["flws_managed", "-flws_managed"])
+def test_organizations_with_equal_flws_managed_keep_a_stable_order(order_by):
+    first, second = OrganizationFactory.create_batch(2, flws_managed=10)
+    # Changing an indexed column makes Postgres write the row as a new version that an unordered query returns last.
+    Organization.objects.filter(pk=first.pk).update(slug=f"{first.slug}-renamed")
+    table = OrganizationDirectoryTable(Organization.objects.all(), order_by=order_by)
+
+    assert [row.record for row in table.rows] == [first, second]
+
+
+@pytest.mark.django_db
+def test_countries_and_regions_columns_list_them(countries):
+    organization = OrganizationFactory(regions="Nyanza, Mwanza")
+    organization.countries.add(countries["KEN"], countries["TZA"])
+    row = OrganizationDirectoryTable([organization]).rows[0]
+
+    assert set(row.get_cell("countries").split(", ")) == {countries["KEN"].name, countries["TZA"].name}
+    assert row.get_cell("regions") == "Nyanza, Mwanza"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_archived, active", [(False, "Yes"), (True, "No")])
+def test_contact_row_shows_its_organization_status_and_whether_it_is_active(is_archived, active):
+    contact = ContactFactory(
+        organization=OrganizationFactory(status=OrganizationStatus.ACTIVE), is_archived=is_archived
+    )
+    row = ContactDirectoryTable([contact]).rows[0]
+
+    assert "positive-light" in row.get_cell("organization_status")
+    assert row.get_cell("active") == active
 
 
 def _form_data(country_by_code, sector_by_key, **overrides):
@@ -146,6 +215,12 @@ class TestOrganizationDirectoryForm:
         assert list(org.countries.all()) == [countries["KEN"]]
         assert org.contact_emails == "a@example.com\nb@example.com"
         assert org.eoi_links == "https://example.com/eoi-1\nhttps://example.com/eoi-2"
+
+    def test_saves_is_test(self, countries, sectors):
+        form = OrganizationDirectoryForm(data=_form_data(countries, sectors, is_test="True"))
+
+        assert form.is_valid(), form.errors
+        assert form.save().is_test
 
     def test_eoi_links_must_be_urls(self, countries, sectors):
         data = _form_data(countries, sectors, eoi_links="https://example.com/eoi-1\nnot a link")
@@ -263,7 +338,7 @@ class TestContactFilterSet:
         main = ContactFactory(name="A Main", is_main_poc=True)
         other = ContactFactory(name="B Other", organization=main.organization)
 
-        assert _filtered_contacts({"main_poc": "true"}) == [main]
+        assert _filtered_contacts({"main_poc": "on"}) == [main]
         assert _filtered_contacts({"main_poc": ""}) == [main, other]
 
     def test_lists_archived_contacts_only_when_asked_for(self):
@@ -271,7 +346,14 @@ class TestContactFilterSet:
         archived = ContactFactory(is_archived=True)
 
         assert _filtered_contacts({}) == [active]
-        assert _filtered_contacts({"archived": "true"}) == [archived]
+        assert _filtered_contacts({"archived": "on"}) == [archived]
+
+    def test_lists_contacts_of_test_organizations_only_when_asked_for(self):
+        real = ContactFactory()
+        test = ContactFactory(organization=OrganizationFactory(is_test=True))
+
+        assert _filtered_contacts({}) == [real]
+        assert _filtered_contacts({"organization_test": "on"}) == [test]
 
 
 @pytest.mark.django_db
@@ -289,6 +371,15 @@ class TestContactListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [contact]
+
+    def test_count_leaves_out_contacts_of_test_organizations(self, client, user_with_directory_access):
+        ContactFactory()
+        ContactFactory(organization=OrganizationFactory(is_test=True))
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contacts"))
+
+        assert response.context["contacts_count"] == 1
 
 
 def _contact_form_data(organization, **overrides):
@@ -383,6 +474,86 @@ class TestContactFormViews:
 
 
 @pytest.mark.django_db
+class TestContactPocChangeForm:
+    @pytest.mark.parametrize(
+        "is_main_poc, has_main_poc, choose_organization, editing_current, replaces",
+        [
+            ("True", True, True, False, True),
+            # Editing the current main point of contact replaces no one.
+            ("True", True, True, True, False),
+            ("False", True, True, False, False),
+            ("True", False, True, False, False),
+            ("True", True, False, False, False),
+        ],
+    )
+    def test_finds_the_main_point_of_contact_that_would_be_replaced(
+        self, is_main_poc, has_main_poc, choose_organization, editing_current, replaces
+    ):
+        current = ContactFactory(is_main_poc=has_main_poc)
+        data = {"organization": current.organization_id if choose_organization else "", "is_main_poc": is_main_poc}
+        if editing_current:
+            data["contact"] = current.contact_id
+
+        assert ContactPocChangeForm(data).main_poc_to_replace() == (current if replaces else None)
+
+
+def _poc_warning_slot(response):
+    return re.search(r"<div[^>]*poc-warning[^>]*>", response.content.decode().replace("\n", " ")).group()
+
+
+@pytest.mark.django_db
+class TestContactPocWarningView:
+    def test_names_the_current_and_new_point_of_contact(self, client, user_with_directory_access):
+        current = ContactFactory(
+            name="Grace Wanjiru", is_main_poc=True, organization=OrganizationFactory(name="Umoja")
+        )
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:contact_poc_warning"),
+            {"organization": current.organization_id, "is_main_poc": "True", "name": "Peter Otieno"},
+        )
+
+        assert "Please note that this changes Umoja's point of contact from Grace Wanjiru to Peter Otieno." in (
+            response.content.decode()
+        )
+
+    def test_requires_permission(self, client, user):
+        client.force_login(user)
+
+        assert client.get(reverse("organization_directory:contact_poc_warning")).status_code == 403
+
+    @pytest.mark.parametrize("editing", [False, True])
+    def test_contact_form_fetches_the_warning_into_itself(self, client, user_with_directory_access, editing):
+        contact = ContactFactory()
+        client.force_login(user_with_directory_access)
+        url = (
+            reverse("organization_directory:contact_edit", args=(contact.contact_id,))
+            if editing
+            else reverse("organization_directory:contact_create")
+        )
+
+        warning = _poc_warning_slot(client.get(url, HTTP_HX_REQUEST="true"))
+
+        # The modal's form targets the whole modal, which the warning would otherwise inherit and blank out.
+        assert 'hx-target="this"' in warning
+        assert (f"?contact={contact.contact_id}" in warning) is editing
+        # A freshly opened form can't replace anyone yet, so the warning waits for a change.
+        assert "load" not in warning
+        for field in ("organization", "is_main_poc", "name"):
+            assert f"change from:#id_{field}" in warning
+        # Screen readers announce the warning when it appears.
+        assert 'aria-live="polite"' in warning
+
+    def test_rerendered_form_fetches_the_warning_on_load(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+
+        response = client.post(reverse("organization_directory:contact_create"), {}, HTTP_HX_REQUEST="true")
+
+        assert "load" in _poc_warning_slot(response)
+
+
+@pytest.mark.django_db
 class TestContactArchiveView:
     def test_archives_and_returns_to_the_filtered_listing(self, client, user_with_directory_access):
         contact = ContactFactory()
@@ -450,7 +621,7 @@ class TestExportContacts:
             with get_export_storage().open(saved_name) as saved:
                 rows = saved.read().decode().splitlines()
 
-        assert rows[0].startswith("Contact Name,Organization,Role / Title,Main POC")
+        assert rows[0].startswith("Contact Name,Organization,Role / Title,Main Point of Contact")
         assert len(rows) == 2
         assert rows[1].startswith("Grace Wanjiru,")
         assert ",Yes," in rows[1]
@@ -486,17 +657,26 @@ class TestContactExportViews:
 
         with mock.patch.object(export_contacts, "apply_async") as apply_async:
             with django_capture_on_commit_callbacks(execute=True):
-                response = client.post(url, {"export_format": "xlsx"})
+                response = client.post(url, {"format": "xlsx"})
 
         task_id = parse_qs(urlparse(response.url).query)["export_task_id"][0]
         apply_async.assert_called_once_with(
             args=("search=grace", user_with_directory_access.pk, "xlsx"), task_id=task_id
         )
 
+    def test_listing_offers_the_export_modal_with_the_listing_filters(self, client, user_with_directory_access):
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:contacts"), {"search": "grace"})
+
+        content = response.content.decode()
+        assert "Export Contacts" in content
+        assert f'action="{reverse("organization_directory:contact_export")}?search=grace"' in content
+
     def test_rejects_an_unsupported_format(self, client, user_with_directory_access):
         client.force_login(user_with_directory_access)
 
-        response = client.post(reverse("organization_directory:contact_export"), {"export_format": "pdf"})
+        response = client.post(reverse("organization_directory:contact_export"), {"format": "pdf"})
 
         assert response.status_code == 400
 

@@ -8,12 +8,57 @@ from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
 
 
-class OrganizationFilterSet(django_filters.FilterSet):
+class ToggleInput(forms.CheckboxInput):
+    """A toggle switch that is on only for the value a ticked checkbox submits; any other value means off."""
+
+    ON_VALUE = "on"
+
+    def __init__(self, attrs=None):
+        super().__init__(attrs={"class": "simple-toggle"} | (attrs or {}))
+
+    def value_from_datadict(self, data, files, name):
+        # CheckboxInput treats any non-empty value other than "false" as ticked.
+        return data.get(name) == self.ON_VALUE
+
+
+class ToggleFilter(django_filters.BooleanFilter):
+    """A boolean filter shown as a toggle switch, filtering on True when on and on `off_value` when off.
+
+    An `off_value` of None leaves the rows unfiltered while the toggle is off.
+    """
+
+    def __init__(self, *args, off_value=None, **kwargs):
+        kwargs.setdefault("widget", ToggleInput())
+        super().__init__(*args, **kwargs)
+        self.off_value = off_value
+
+    def filter(self, qs, value):
+        # An unticked checkbox submits False, which stands for "off" rather than a value to filter on.
+        return super().filter(qs, True if value else self.off_value)
+
+
+class AlwaysBoundFilterSet(django_filters.FilterSet):
+    """Applies its filters even without data, so each filter's default holds on a plain visit to a listing."""
+
+    def __init__(self, data=None, *args, **kwargs):
+        # A filterset with no data skips filtering altogether.
+        super().__init__(data if data is not None else {}, *args, **kwargs)
+
+
+class DirectoryFilterSet(AlwaysBoundFilterSet):
+    """A filterset for an LLO Directory listing, with a search box each subclass matches in `filter_by_search_term`."""
+
     search = django_filters.CharFilter(
         method="filter_by_search_term",
         label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search organization, country, sector…")}),
+        widget=forms.TextInput(attrs={"placeholder": _("Search"), "class": "rounded-lg"}),
     )
+
+    def filter_by_search_term(self, queryset, name, value):
+        raise NotImplementedError
+
+
+class OrganizationFilterSet(DirectoryFilterSet):
     countries = django_filters.ModelMultipleChoiceFilter(
         queryset=Country.objects.order_by("name"),
         label=_("Countries"),
@@ -29,6 +74,7 @@ class OrganizationFilterSet(django_filters.FilterSet):
         label=_("Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
+    test = ToggleFilter(field_name="is_test", label=_("Test"), off_value=False)
 
     class Meta:
         form = CSRFExemptForm
@@ -42,12 +88,7 @@ class OrganizationFilterSet(django_filters.FilterSet):
         ).distinct()
 
 
-class ContactFilterSet(django_filters.FilterSet):
-    search = django_filters.CharFilter(
-        method="filter_by_search_term",
-        label=_("Search"),
-        widget=forms.TextInput(attrs={"placeholder": _("Search name, organization, email…")}),
-    )
+class ContactFilterSet(DirectoryFilterSet):
     countries = django_filters.ModelMultipleChoiceFilter(
         field_name="organization__countries",
         queryset=Country.objects.order_by("name"),
@@ -60,36 +101,12 @@ class ContactFilterSet(django_filters.FilterSet):
         label=_("Organization Status"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Status")}),
     )
-    main_poc = django_filters.BooleanFilter(
-        field_name="is_main_poc",
-        label=_("Contacts"),
-        widget=forms.Select(
-            choices=[("", _("Any Contacts")), ("true", _("Main POC Only"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
-    archived = django_filters.BooleanFilter(
-        field_name="is_archived",
-        label=_("Show"),
-        widget=forms.Select(
-            choices=[("", _("Active")), ("true", _("Archived"))],
-            attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"},
-        ),
-    )
+    main_poc = ToggleFilter(field_name="is_main_poc", label=_("Main Point of Contact"))
+    archived = ToggleFilter(field_name="is_archived", label=_("Archived"), off_value=False)
+    organization_test = ToggleFilter(field_name="organization__is_test", label=_("Test"), off_value=False)
 
     class Meta:
         form = CSRFExemptForm
-
-    def __init__(self, data=None, *args, **kwargs):
-        # A filterset with no data skips filtering altogether, which would list archived contacts
-        # on a plain visit to the listing, so it is always bound.
-        super().__init__(data if data is not None else {}, *args, **kwargs)
-
-    def filter_queryset(self, queryset):
-        # Archived contacts are only listed when asked for, so an unset filter shows the active ones.
-        if not self.form.cleaned_data.get("archived"):
-            queryset = queryset.filter(is_archived=False)
-        return super().filter_queryset(queryset)
 
     def filter_by_search_term(self, queryset, name, value):
         return queryset.filter(
