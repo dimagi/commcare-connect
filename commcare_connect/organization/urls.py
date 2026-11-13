@@ -21,6 +21,7 @@ directory_urlpatterns = [
     path("new/", views.OrganizationCreateView.as_view(), name="create"),
     path("contacts/", views.ContactListView.as_view(), name="contacts"),
     path("contacts/new/", views.ContactCreateView.as_view(), name="contact_create"),
+    path("contacts/poc-warning/", views.ContactPocWarningView.as_view(), name="contact_poc_warning"),
     path("contacts/export/", views.ContactExportView.as_view(), name="contact_export"),
     path("contacts/export/<slug:task_id>/", views.ContactExportStatusView.as_view(), name="contact_export_status"),
     path(

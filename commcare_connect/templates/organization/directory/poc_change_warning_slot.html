@@ -1,0 +1,6 @@
+{# Its own target: the modal's form targets the whole modal, which this would otherwise inherit and blank out. #}
+<div hx-get="{% url 'organization_directory:contact_poc_warning' %}{% if object %}?contact={{ object.contact_id }}{% endif %}"
+     hx-trigger="{% if form.is_bound %}load, {% endif %}change from:#id_organization, change from:#id_is_main_poc, change from:#id_name"
+     hx-target="this"
+     hx-include="#id_organization, #id_is_main_poc, #id_name"
+     aria-live="polite"></div>

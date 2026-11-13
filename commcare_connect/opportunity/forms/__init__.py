@@ -1034,7 +1034,7 @@ class VisitExportForm(forms.Form):
         return [VisitValidationStatus(status) for status in statuses]
 
 
-class PaymentExportForm(forms.Form):
+class ExportFormatForm(forms.Form):
     format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
 
     def __init__(self, *args, **kwargs):
