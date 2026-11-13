@@ -266,14 +266,7 @@ def get_api_keys(request):
     options = []
     options.append(format_html("<option value=''>{}</option>", "Select an API key"))
     for api_key in api_keys:
-        api_key_hidden = f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}"
-        options.append(
-            format_html(
-                "<option value='{}'>{}</option>",
-                api_key.id,
-                api_key_hidden,
-            )
-        )
+        options.append(format_html("<option value='{}'>{}</option>", api_key.id, api_key.masked))
     return HttpResponse("\n".join(options))
 
 

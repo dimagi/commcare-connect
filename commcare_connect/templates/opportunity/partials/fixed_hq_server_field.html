@@ -1,0 +1,10 @@
+{# The add-key modal's HQ server when the page pins it (HQApiKeyCreateForm's fixed_hq_server): shown, not chosen. #}
+<div id="div_{{ field.auto_id }}" class="mb-3">
+  <span class="mb-2 block text-sm font-bold text-gray-700">{{ field.label }}</span>
+  <p class="text-sm text-gray-700">{{ field.form.fixed_hq_server.name }}</p>
+  <input type="hidden"
+         name="{{ field.html_name }}"
+         id="{{ field.auto_id }}"
+         value="{{ field.form.fixed_hq_server.pk }}">
+  {% include "tailwind/layout/help_text_and_errors.html" %}
+</div>
