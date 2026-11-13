@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 
 from commcare_connect.jira_service_desk import CustomerRequest, JiraServiceDeskNotConfigured
-from commcare_connect.opportunity.forms import InvoiceFinanceRequestForm
+from commcare_connect.opportunity.forms.invoices import InvoiceFinanceRequestForm
 from commcare_connect.opportunity.models import (
     Currency,
     InvoiceFinanceRequest,
@@ -35,7 +35,7 @@ from commcare_connect.opportunity.utils.finance_request import (
     get_previous_finance_request,
     suggest_new_vendor,
 )
-from commcare_connect.opportunity.views import get_finance_request_context
+from commcare_connect.opportunity.views.invoices import get_finance_request_context
 from commcare_connect.users.tests.factories import UserFactory
 
 

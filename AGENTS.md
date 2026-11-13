@@ -1,6 +1,8 @@
-# CommCare Connect
+# Connect
 
 Django 5.2 + PostGIS monolith for managing community health worker opportunities, payments, and workflows. Integrates with CommCare HQ and ConnectID services.
+
+<!-- --8<-- [start:commands] -->
 
 ## Commands
 
@@ -44,7 +46,15 @@ uv add <pkg>
 
 # Translations
 inv translations
+
+# Developer docs site (Zensical; config in zensical.toml, pages in docs/)
+uv run --group docs zensical serve  # live preview on :8000
+uv run --group docs zensical build  # strict build into ./site, as CI does
 ```
+
+<!-- --8<-- [end:commands] -->
+
+<!-- --8<-- [start:architecture] -->
 
 ## Architecture
 
@@ -99,7 +109,11 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
 - **Verification flag config**: which validation flags an opportunity applies — `OpportunityVerificationFlags` and `DeliverUnitFlagRules` in `opportunity/models/verification.py`.
 
-**"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView`, the `Worker*Table` classes and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
+**"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView` (`opportunity/views/worker.py`), the `Worker*Table` classes (`opportunity/tables/worker.py`) and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
+
+<!-- --8<-- [end:architecture] -->
+
+<!-- --8<-- [start:code-style] -->
 
 ## Code Style
 
@@ -111,16 +125,19 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
 - **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
-- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views.py` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
+- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views/` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
 - **Use Django Forms** over raw HTML forms for validation and rendering
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
 - **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
 - **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
 - **Searchable selects are opt-in**: nothing enhances a `<select>` by default. Add `data-tomselect="1"` to the widget's attrs (or the tag) to have `static/js/tomselect.js` turn it into a tom-select, and add `data-tomselect:no-remove-button` on single selects or the chosen value renders as a removable chip. Extra TomSelect options go through `data-tomselect:settings` as JSON; anything needing render _functions_ gets its own module and must **not** carry `data-tomselect`, or the generic initializer claims it first (see `static/js/work_area_search.js`). Use it for long or searchable lists, not short fixed choices. The page must also load `bundles/js/tomselect-bundle.js` and `bundles/css/tomselect.css` or a marked field silently stays native — check they are there, and that they don't arrive by accident: `opportunity/user_tasks.html` gets them only from its permission-gated Create Task modal include, so its filters are searchable for some users and plain for others
 - **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists all 76 of them. Plenty of templates still use raw utilities; that's legacy
-- **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
-- **App READMEs are part of the change**: `opportunity/README.md`, `form_receiver/README.md`, `flags/README.md` and `health/README.md` document non-obvious behaviour (status rules, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
+- **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables/__init__.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
+- **App READMEs are part of the change**: `opportunity/README.md`, `opportunity/PAYMENTS.md`, `form_receiver/README.md`, `flags/README.md`, `health/README.md` and `templates/README.md` document non-obvious behaviour (status rules, accrual, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
+<!-- --8<-- [end:code-style] -->
 - **So are the Confluence docs**: user-facing changes must list the Confluence pages they affect in the PR's **Documentation** section, or say "None". To find them, search Confluence for the features the branch changes and compare the results against the documentation links on the Jira ticket. If the `connect-tech:docs-affected-by-branch` skill is available (Claude Code with the `connect-tech` plugin), open the PR first with "Pending" under the **Documentation** header, then run the skill on the branch in a subagent. Pass the subagent the PR link and the Jira ticket key, and tell it to replace "Pending" with its findings when it is done. A subagent can't ask the user, so if you don't know the ticket, ask the user before opening the PR; pass "none" if there isn't one. Without Confluence access, ask the user which pages are affected. Never drop the section as empty.
+
+<!-- --8<-- [start:conventions] -->
 
 ## Commits
 
@@ -161,9 +178,27 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
 
+## Architecture Decision Records
+
+ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file, and add it to the "Architecture decisions" section of `nav` in `zensical.toml` so the developer docs site lists it.
+
+Write ADRs for significant decisions only. A decision is significant when it is costly or disruptive to reverse, or when it shapes how the rest of the system is built. Examples: core architecture and system boundaries; the design of critical components such as data storage, authentication, multi-tenancy or message flow; new infrastructure or major dependencies; public APIs and data contracts; and cross-cutting concerns such as security, observability or scaling. If you're unsure whether a decision meets this bar, write the ADR and let the reviewers decide whether to keep it.
+
+- Before designing a change, read the ADRs that touch that area.
+- Cite them as `ADR-NNNN` in code comments, PR descriptions and conversations.
+- If your proposal contradicts an ADR, say so explicitly ("Contradicts ADR-0007 because …") rather than silently overriding it.
+- Ask before editing an accepted ADR. Reversing a decision means writing a new ADR that supersedes it.
+- To record a decision, run `/create-adr`.
+
+<!-- --8<-- [end:conventions] -->
+
 ## Further reading
+
+The developer docs site (`zensical.toml`) publishes these and the app READMEs. Most of its pages under `docs/` are one-line `--8<--` stubs that include a README from beside the code, so edit the README, not the stub. `README.md` and this file are published in parts, delimited by `<!-- --8<-- [start:name] -->` / `[end:name]` comments; keep those markers when you move sections around. A new doc page needs a `nav` entry in `zensical.toml`; links to files outside the site (`.github/`, source files) must be absolute GitHub URLs, because the site has no copy of them and the build's link check does not catch these.
 
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
-- `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, form_receiver, flags)
+- `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, opportunity/PAYMENTS.md, form_receiver, flags, health, templates)
+- `docs/audit-history.md` — django-pghistory change tracking
+- `docs/design/` — design docs for larger changes

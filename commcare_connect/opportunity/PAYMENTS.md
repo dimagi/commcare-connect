@@ -342,5 +342,5 @@ stateDiagram-v2
 
 - Transitions and the roles allowed to make them are defined in `InvoiceWorkflow` (`utils/invoice.py`).
 - **Cancel or reject** (service delivery only): `rollback_invoice_line_items()` lowers each work's `invoiced_approved_count` by its `billed_count` and deletes the invoice's `CompletedWorkInvoice` rows, so the units are billable again.
-- **Mark paid** (`views.invoice_pay`): only from `ready_to_pay`. Creates one `Payment` per invoice with `organization` and `invoice` set, copying the invoice's `amount` and `amount_usd`.
+- **Mark paid** (`views.invoices.invoice_pay`): only from `ready_to_pay`. Creates one `Payment` per invoice with `organization` and `invoice` set, copying the invoice's `amount` and `amount_usd`.
 - NM and PM certification (who moved the invoice and when) is read from the `pghistory` status events on `PaymentInvoice`.

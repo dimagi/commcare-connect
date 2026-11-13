@@ -1,11 +1,12 @@
-# CommCare Connect Deployment
+# Connect Deployment
 
-This folder contains the configuration and scripts for deploying CommCare Connect.
+This folder contains the configuration and scripts for deploying Connect.
 
 ## Overview
 
-CommCare Connect is deployed to AWS using Docker containers. The deployment is managed using [Kamal](https://kamal-deploy.org/), a Ruby-based deployment tool.
-See https://semaphoreci.com/blog/mrsk.
+Connect is deployed to AWS using Docker containers. The deployment is managed using [Kamal](https://kamal-deploy.org/), a Ruby-based deployment tool. Deploys use
+Kamal 1.x (`~> 1.9.2`, pinned in `.github/workflows/deploy.yml`); much of the current Kamal documentation describes
+Kamal 2, whose configuration differs.
 
 Deploying commcare-connect uses the following tools:
 
@@ -61,7 +62,7 @@ vault = "Connect Tech"
 
 See https://developer.1password.com/docs/ssh/agent for more details.
 
-#### AWS CLI
+### AWS CLI
 
 ```bash
 aws configure sso --profile commcare-connect
@@ -79,6 +80,14 @@ To test that SSH, 1Password and AWS are all working you can run (instance ID fro
 
 ```bash
 ssh -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p" connect@i-08bbcc89fcb90b8c7
+```
+
+To `ssh` to an instance ID without passing `-o ProxyCommand` each time, add this to `~/.ssh/config`. Kamal and
+Ansible don't need it.
+
+```
+Host i-*
+     ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --region us-east-1 --profile commcare-connect"
 ```
 
 ## Updating Django Settings
@@ -99,7 +108,13 @@ inv django-settings
 
 ## Deploy
 
-Ideally deploy should be done via GitHub actions however it can be run locally as follows:
+Deploy through the [`Deploy` workflow](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml) on
+GitHub Actions. It authenticates to AWS with OpenID Connect rather than stored keys; see
+[Use IAM roles to connect GitHub Actions to actions in AWS](https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/)
+and
+[Configuring OpenID Connect in Amazon Web Services](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services).
+
+It can also be run locally:
 
 ```bash
 inv deploy
@@ -116,6 +131,18 @@ A deploy restarts the app containers only. Changes to Traefik's own arguments (`
 ```bash
 kamal traefik reboot -d <destination>
 ```
+
+### Deploying to staging
+
+The staging environment at [https://connect-staging.dimagi.com/](https://connect-staging.dimagi.com/) is connected
+to the staging environment of CommCare HQ at [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
+
+1. Update
+   [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml)
+   with the branches you need to include.
+2. Run `deploy/rebuildstaging` to build the `autostaging` branch.
+3. Run the [`Deploy` workflow](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml) manually
+   for staging.
 
 ### Scheduled deploys
 
@@ -160,3 +187,14 @@ kamal app logs
 ```
 
 See `kamal app logs --help` for more details.
+
+## Setting up logical replication
+
+Connect can replicate its database to a secondary PostgreSQL database (see `commcare_connect/multidb/`).
+
+1. Create another PostgreSQL database, in a separate cluster.
+2. Add `SECONDARY_DATABASE_URL` to the Django settings.
+3. Enable replication on the default database, which requires a restart: `wal_level=logical`,
+   `max_replication_slots=5` and `max_wal_senders=5`.
+4. Create the table schemas in the secondary database with `./manage.py migrate_multi`.
+5. Initialize replication with `./manage.py setup_logical_replication`.

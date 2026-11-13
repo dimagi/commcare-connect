@@ -22,7 +22,6 @@ from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
-    AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     EditTaskTypeForm,
     OpportunityChangeForm,
@@ -31,12 +30,14 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     PaymentUnitForm,
 )
+from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     BillToAddress,
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    ExchangeRate,
     Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
@@ -894,7 +895,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.amount == 100.0
         assert invoice.date == datetime.date(2025, 11, 6)
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice")
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice")
     def test_non_service_delivery_form(self, mock_bill_invoice, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
 
@@ -920,6 +921,62 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.end_date is None
         assert invoice.title is None
         mock_bill_invoice.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "usd_currency, expected_amount, expected_amount_usd",
+        [
+            (False, Decimal("100.00"), Decimal("50.00")),
+            (True, Decimal("200.00"), Decimal("100.00")),
+        ],
+    )
+    def test_custom_invoice_converts_amount_with_one_rate_lookup(
+        self, valid_opportunity, usd_currency, expected_amount, expected_amount_usd
+    ):
+        rate = ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=2.0, rate_date="2025-11-01")
+
+        form = self._form(
+            valid_opportunity,
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "title": "Ignored for custom invoices",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", wraps=ExchangeRate.latest_exchange_rate) as lookup:
+            assert form.is_valid(), form.errors
+
+        lookup.assert_called_once_with(valid_opportunity.currency_code, datetime.date(2025, 11, 6))
+        assert form.cleaned_data["exchange_rate"] == rate
+        assert form.cleaned_data["amount"] == expected_amount
+        assert form.cleaned_data["amount_usd"] == expected_amount_usd
+        assert form.cleaned_data["title"] is None
+        assert form.cleaned_data["start_date"] is None
+        assert form.cleaned_data["end_date"] is None
+
+    @pytest.mark.parametrize("usd_currency", [False, True])
+    def test_custom_invoice_without_exchange_rate(self, valid_opportunity, usd_currency):
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", return_value=None) as lookup:
+            assert not form.is_valid()
+
+        lookup.assert_called_once()
+        assert form.non_field_errors() == ["Exchange rate not available for selected date."]
 
     def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
@@ -971,7 +1028,7 @@ class TestAutomatedPaymentInvoiceForm:
         ],
         ids=["completed-period", "end-before-start", "ends-today", "future-end"],
     )
-    @patch("commcare_connect.opportunity.forms.localdate", return_value=datetime.date(2025, 11, 6))
+    @patch("commcare_connect.opportunity.forms.invoices.localdate", return_value=datetime.date(2025, 11, 6))
     def test_service_delivery_window_must_be_a_completed_period(
         self, mock_localdate, valid_opportunity, start_date, end_date, expected_error
     ):
@@ -1027,7 +1084,7 @@ class TestAutomatedPaymentInvoiceForm:
             assert "The billable total for this period has changed since this page was loaded." in str(form.errors)
             assert not PaymentInvoice.objects.filter(invoice_number="INV-001").exists()
 
-    @patch("commcare_connect.opportunity.forms.bill_invoice", return_value=[])
+    @patch("commcare_connect.opportunity.forms.invoices.bill_invoice", return_value=[])
     def test_service_delivery_amount_is_never_the_posted_one(self, mock_bill_invoice, valid_opportunity):
         """The posted total is a preview artefact and must never survive onto the invoice.
 
@@ -1545,7 +1602,7 @@ class TestEditTaskTypeForm:
 class TestPaymentUnitFormBudgetValidation:
     """The per-user delivery limit is allocated from a shared budget pool per payment unit.
 
-    Adding or enlarging a payment unit lowers the derived ``number_of_users``; if it drops
+    Adding or enlarging a payment unit lowers the derived ``budgeted_workers``; if it drops
     below the count of workers who have already claimed, some workers silently receive a
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
@@ -1577,7 +1634,7 @@ class TestPaymentUnitFormBudgetValidation:
             pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
             # Budget that would fail with claimants, proving the no-claimants early return fires.
             pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
-            # Doubling an existing unit's max_total pushes number_of_users below the 3 claimants.
+            # Doubling an existing unit's max_total pushes budgeted_workers below the 3 claimants.
             pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
         ],
     )
