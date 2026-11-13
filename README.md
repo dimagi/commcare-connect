@@ -145,7 +145,8 @@ Create a branch and worktree, set it up, and start Claude Code in it:
 wt switch --create --execute claude my-branch
 ```
 
-Remove the worktree and drop its databases:
+Remove the worktree and drop the databases created for its branch. A worktree created with
+`--share=1` has none, so this leaves the main checkout's database alone:
 
 ```bash
 wt remove my-branch
@@ -155,7 +156,9 @@ Set up the main checkout first (above): worktrees copy its `.env`, and the docke
 services must be running. When a worktree is created, `scripts/setup-worktree.sh`:
 
 - copies `.env` from the main checkout, and runs `uv sync` and `npm ci`
-- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`
+- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`.
+  A worktree created with `wt new my-branch --share=1` skips this and uses the main checkout's
+  database and Redis database instead, without running `migrate`
 - picks a Redis database (1-14) that no other worktree's `.env` uses, and points `REDIS_URL` and
   `CELERY_BROKER_URL` at it, so the branch's Celery worker never runs another branch's tasks
 - comments out `SECONDARY_DATABASE_URL`, which would otherwise point at the main checkout's replica
