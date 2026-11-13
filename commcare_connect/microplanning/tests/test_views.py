@@ -1632,7 +1632,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         assert row_dict["Work Area Group Name"] == "Rev Group"
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
     @pytest.fixture(autouse=True)
     def setup_microplanning_flag(self, managed_opportunity, request):
@@ -1648,7 +1648,13 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
-        self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self,
+        mock_hq_sync,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+        django_capture_on_commit_callbacks,
     ):
         access_a = OpportunityAccessFactory(opportunity=managed_opportunity)
         access_b = OpportunityAccessFactory(opportunity=managed_opportunity)
@@ -1665,9 +1671,12 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
                 {"assignee_id": access_b.pk, "work_area_ids": [wa4.id]},
             ]
         }
-        with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
-        ) as delay_patch:
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
                 self._url(program_manager_org, managed_opportunity),
                 data=json.dumps(payload),
@@ -1679,14 +1688,22 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
         assert called_ids == sorted([access_a.pk, access_b.pk])
 
     def test_ignores_assignees_from_other_opportunity(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+        django_capture_on_commit_callbacks,
     ):
         other_access = OpportunityAccessFactory(opportunity=OpportunityFactory())
         client.force_login(program_manager_org_user_admin)
 
-        with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
-        ) as delay_patch:
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
                 self._url(program_manager_org, managed_opportunity),
                 data=json.dumps({"assignments": [{"assignee_id": other_access.pk, "work_area_ids": [1]}]}),

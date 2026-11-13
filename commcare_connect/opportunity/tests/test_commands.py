@@ -48,7 +48,7 @@ def setup_opportunity_with_duplicates(db):
     return _setup
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 @pytest.mark.usefixtures("remove_unique_constraint_module")
 @pytest.mark.parametrize(
     "num_duplicates,expected_remaining,dry_run",

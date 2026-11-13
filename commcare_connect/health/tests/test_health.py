@@ -56,7 +56,7 @@ class TestUp:
         assert reverse(name) == path
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestStatusGeneral:
     def test_healthy(self, client, redis_up):
         response = client.get("/status/", HTTP_ACCEPT="application/json")
