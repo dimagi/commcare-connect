@@ -334,21 +334,21 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             work_area.save(update_fields=["status"])
 
 
-def get_visit_flags(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+def get_visit_flags(
+    user_visit: UserVisit, xform: XForm, opportunity_flags: OpportunityVerificationFlags
+) -> list[list[str]]:
     """Return the verification flags a submitted visit raises.
 
     Checks GPS presence, location proximity, submission time window,
     duplicate entities, attachments, form duration, and custom JSON validation rules.
-    Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
-    side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
+    Returns a list of [flag_code, reason] pairs.
     """
-    opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
     deliver_unit_rules = DeliverUnitFlagRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     ).first()
 
     flags = []
-    flags += _check_duplicate(user_visit=user_visit, opportunity_flags=opportunity_flags)
+    flags += _check_duplicate(user_visit)
     flags += _check_gps(user_visit=user_visit, opportunity_flags=opportunity_flags)
     flags += _check_location_proximity(user_visit=user_visit, opportunity_flags=opportunity_flags)
     flags += _check_submission_period(xform=xform, opportunity_flags=opportunity_flags)
@@ -359,13 +359,10 @@ def get_visit_flags(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
     return flags
 
 
-def _check_duplicate(user_visit: UserVisit, opportunity_flags: OpportunityVerificationFlags) -> list[list[str]]:
-    """Flag a duplicate visit, or set it back to pending when duplicate checking is off."""
-    if user_visit.status != VisitValidationStatus.duplicate:
-        return []
-    if opportunity_flags.duplicate:
+def _check_duplicate(user_visit: UserVisit) -> list[list[str]]:
+    """Flag a duplicate visit. process_deliver_unit only sets that status when the duplicate check is on."""
+    if user_visit.status == VisitValidationStatus.duplicate:
         return [["duplicate", "A beneficiary with the same identifier already exists"]]
-    user_visit.status = VisitValidationStatus.pending
     return []
 
 
@@ -516,6 +513,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             form_json=xform.raw_form,
             location=xform.metadata.location,
         )
+        opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=opportunity)
         completed_work_needs_save = False
         today = datetime.date.today()
         over_limit_reasons = []
@@ -539,10 +537,10 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 if completed_work.status not in (CompletedWorkStatus.over_limit, CompletedWorkStatus.approved):
                     completed_work.status = CompletedWorkStatus.over_limit
                     completed_work_needs_save = True
-            elif counts["entity"] > 0:
+            elif opportunity_flags.duplicate and counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        flags = get_visit_flags(user_visit=user_visit, xform=xform)
+        flags = get_visit_flags(user_visit=user_visit, xform=xform, opportunity_flags=opportunity_flags)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected

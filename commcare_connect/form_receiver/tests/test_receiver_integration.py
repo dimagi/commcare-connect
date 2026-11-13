@@ -290,9 +290,9 @@ def test_receiver_deliver_form_without_daily_limit(
 def test_over_limit_status_preserved_when_duplicate_flag_disabled(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
-    # When the duplicate verification flag is off, get_visit_flags() must not
-    # clobber an over_limit status set by the cap check; otherwise auto_approve will
-    # silently accept visits past the per-worker max.
+    # When the duplicate verification flag is off, an over_limit status set by the cap
+    # check must be kept; otherwise auto_approve will silently accept visits past the
+    # per-worker max.
     oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
     before_request = now()
