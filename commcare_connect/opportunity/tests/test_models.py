@@ -1139,18 +1139,18 @@ class TestPaymentUnitRateLookups:
         return PaymentUnitFactory()
 
     def test_pay_rate_on_skips_cancelled_and_later_rows(self, unit):
-        jan = PaymentUnitRateFactory(payment_unit=unit, flw_amount=4, planned_for=date(2026, 1, 1))
-        PaymentUnitRateFactory(payment_unit=unit, flw_amount=5, planned_for=date(2026, 2, 1), cancelled_on=now())
-        mar = PaymentUnitRateFactory(payment_unit=unit, flw_amount=6, planned_for=date(2026, 3, 1))
+        jan = PaymentUnitRateFactory(payment_unit=unit, flw_amount=4, effective_from=date(2026, 1, 1))
+        PaymentUnitRateFactory(payment_unit=unit, flw_amount=5, effective_from=date(2026, 2, 1), cancelled_on=now())
+        mar = PaymentUnitRateFactory(payment_unit=unit, flw_amount=6, effective_from=date(2026, 3, 1))
         assert unit.pay_rate_on(date(2026, 2, 15)) == jan
         assert unit.pay_rate_on(date(2026, 3, 1)) == mar
         assert unit.pay_rate_on(date(2025, 12, 31)) is None
 
     def test_one_live_rate_per_date(self, unit):
-        PaymentUnitRateFactory(payment_unit=unit, flw_amount=4, planned_for=date(2026, 3, 1), cancelled_on=now())
-        PaymentUnitRateFactory(payment_unit=unit, flw_amount=5, planned_for=date(2026, 3, 1))
+        PaymentUnitRateFactory(payment_unit=unit, flw_amount=4, effective_from=date(2026, 3, 1), cancelled_on=now())
+        PaymentUnitRateFactory(payment_unit=unit, flw_amount=5, effective_from=date(2026, 3, 1))
         with pytest.raises(IntegrityError), transaction.atomic():
-            PaymentUnitRateFactory(payment_unit=unit, flw_amount=6, planned_for=date(2026, 3, 1))
+            PaymentUnitRateFactory(payment_unit=unit, flw_amount=6, effective_from=date(2026, 3, 1))
 
 
 @pytest.mark.django_db
@@ -1166,7 +1166,7 @@ class TestInitialPayRate:
         rate = unit.pay_rates.get()
         assert (rate.flw_amount, rate.org_amount) == (4, 1)
         # The unit's dates don't decide the pay rate; trial visits before its start are never paid
-        assert rate.planned_for == today
+        assert rate.effective_from == today
         assert unit.current_pay_rate == rate
         assert rate.workers_notified_on is None
         assert rate.created_by == SYSTEM_USER

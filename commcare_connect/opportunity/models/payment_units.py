@@ -54,7 +54,7 @@ class PaymentUnit(models.Model):
                 self.pay_rates.create(
                     flw_amount=self.amount,
                     org_amount=self.org_amount,
-                    planned_for=now().date(),
+                    effective_from=now().date(),
                     created_by=SYSTEM_USER,
                     modified_by=SYSTEM_USER,
                 )
@@ -69,8 +69,12 @@ class PaymentUnit(models.Model):
             rate.save(update_fields=["flw_amount", "org_amount", "modified_by", "date_modified"])
 
     def pay_rate_on(self, day: datetime.date) -> PaymentUnitRate | None:
-        """The pay rate in effect on `day`: the latest live rate planned on or before it."""
-        return self.pay_rates.filter(cancelled_on__isnull=True, planned_for__lte=day).order_by("-planned_for").first()
+        """The pay rate in effect on `day`: the latest live rate effective on or before it."""
+        return (
+            self.pay_rates.filter(cancelled_on__isnull=True, effective_from__lte=day)
+            .order_by("-effective_from")
+            .first()
+        )
 
     @property
     def current_pay_rate(self):
@@ -84,7 +88,7 @@ class PaymentUnitRate(BaseModel):
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.PROTECT, related_name="pay_rates")
     flw_amount = models.PositiveIntegerField()
     org_amount = models.PositiveIntegerField(default=0)
-    planned_for = models.DateField()
+    effective_from = models.DateField()
     # User's email, like created_by and modified_by
     cancelled_by = models.CharField(max_length=255, blank=True)
     cancelled_on = models.DateTimeField(null=True, blank=True)
@@ -94,7 +98,7 @@ class PaymentUnitRate(BaseModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["payment_unit", "planned_for"],
+                fields=["payment_unit", "effective_from"],
                 condition=Q(cancelled_on__isnull=True),
                 name="unique_live_pay_rate_per_date",
             ),

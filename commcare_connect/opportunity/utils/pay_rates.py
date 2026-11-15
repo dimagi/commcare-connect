@@ -31,7 +31,7 @@ def _pay_rate_for(PaymentUnitRate, unit, today):
         # A rate starts when its unit is created: workers can join before the unit starts, and budget checks need a
         # pay rate. The unit's start date can be later than its creation, so it isn't used. PaymentUnit stores no
         # created date, so the opportunity's start date stands in for it, or today if the opportunity hasn't started.
-        planned_for=min(unit.opportunity.start_date, today),
+        effective_from=min(unit.opportunity.start_date, today),
         # Hardcoded rather than const SYSTEM_USER, so the data migration always writes the same value
         created_by="system",
         modified_by="system",

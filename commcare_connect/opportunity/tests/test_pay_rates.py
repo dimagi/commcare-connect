@@ -32,7 +32,7 @@ class TestBackfillPayRates:
             (+5, None, 0),  # opportunity not started yet: today
         ],
     )
-    def test_planned_for(self, opp_start, unit_start, expected):
+    def test_effective_from(self, opp_start, unit_start, expected):
         unit = PaymentUnitFactory(
             opportunity=OpportunityFactory(start_date=_days_from_today(opp_start)),
             start_date=None if unit_start is None else _days_from_today(unit_start),
@@ -41,7 +41,7 @@ class TestBackfillPayRates:
         assert _backfill() == 1
 
         rate = unit.pay_rates.get()
-        assert rate.planned_for == _days_from_today(expected)
+        assert rate.effective_from == _days_from_today(expected)
         assert rate.workers_notified_on is None
         assert rate.created_by == rate.modified_by == SYSTEM_USER
 
