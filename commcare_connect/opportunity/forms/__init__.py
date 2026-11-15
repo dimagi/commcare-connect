@@ -1731,9 +1731,9 @@ def payment_unit_date_bounds(opportunity):
 
 def cover_units_help_text(on_or_before=None, on_or_after=None):
     if on_or_before:
-        return gettext("Must cover its payment units: on or before %(date)s.") % {"date": date_format(on_or_before)}
+        return gettext("Today to %(date)s (first payment unit start).") % {"date": date_format(on_or_before)}
     if on_or_after:
-        return gettext("Must cover its payment units: on or after %(date)s.") % {"date": date_format(on_or_after)}
+        return gettext("%(date)s or later (last payment unit end).") % {"date": date_format(on_or_after)}
     return ""
 
 
