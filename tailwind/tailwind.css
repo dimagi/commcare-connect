@@ -865,6 +865,7 @@
 select:disabled,
 .textinput:disabled,
 .numberinput:disabled,
+.dateinput:disabled,
 .textarea:disabled {
   @apply pointer-events-none opacity-50;
   @apply bg-gray-200;
