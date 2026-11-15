@@ -9,7 +9,7 @@ def backfill(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0155_rename_planned_for_paymentunitrate_effective_from"),
+        ("opportunity", "0154_paymentunitrate"),
     ]
 
     operations = [

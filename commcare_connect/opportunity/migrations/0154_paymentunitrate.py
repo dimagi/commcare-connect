@@ -21,14 +21,14 @@ class Migration(migrations.Migration):
                 ('date_modified', models.DateTimeField(auto_now=True)),
                 ('flw_amount', models.PositiveIntegerField()),
                 ('org_amount', models.PositiveIntegerField(default=0)),
-                ('planned_for', models.DateField()),
+                ('effective_from', models.DateField()),
                 ('cancelled_by', models.CharField(blank=True, max_length=255)),
                 ('cancelled_on', models.DateTimeField(blank=True, null=True)),
                 ('workers_notified_on', models.DateTimeField(blank=True, null=True)),
                 ('payment_unit', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='pay_rates', to='opportunity.paymentunit')),
             ],
             options={
-                'constraints': [models.UniqueConstraint(condition=models.Q(('cancelled_on__isnull', True)), fields=('payment_unit', 'planned_for'), name='unique_live_pay_rate_per_date')],
+                'constraints': [models.UniqueConstraint(condition=models.Q(('cancelled_on__isnull', True)), fields=('payment_unit', 'effective_from'), name='unique_live_pay_rate_per_date')],
             },
         ),
     ]
