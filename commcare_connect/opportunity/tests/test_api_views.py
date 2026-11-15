@@ -406,6 +406,17 @@ def test_delivery_progress_no_assigned_tasks(
     assert response.data["assigned_tasks"] == []
 
 
+def test_delivery_progress_unclaimed_access(mobile_user: User, api_client: APIClient, opportunity: Opportunity):
+    assert not OpportunityClaim.objects.filter(opportunity_access__user=mobile_user).exists()
+    api_client.force_authenticate(mobile_user)
+    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+    assert response.status_code == 200
+    assert response.data["end_date"] is None
+    assert response.data["max_payments"] == -1
+    assert response.data["deliveries"] == []
+    assert response.data["payments"] == []
+
+
 def test_delivery_progress_assigned_tasks_filtered_by_user(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
