@@ -58,7 +58,8 @@ from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.commcarehq_api import (
     CommCareHQAccessDenied,
     CommCareHQAPIException,
-    app_access_errors,
+    app_path,
+    hq_access_errors,
 )
 from commcare_connect.utils.forms import ManagedOptionForm
 from commcare_connect.utils.ocs_api import user_has_connected_ocs
@@ -984,7 +985,7 @@ def _verify_api_key_access(form, api_key, apps):
         return
     if api_key.id == form.instance.api_key_id and apps == _stored_apps(form.instance):
         return
-    errors = app_access_errors(api_key, [(domain, app_id) for _app_type, domain, app_id in apps])
+    errors = hq_access_errors(api_key, [app_path(domain, app_id) for _app_type, domain, app_id in apps])
     for (app_type, domain, _app_id), error in zip(apps, errors):
         if isinstance(error, CommCareHQAccessDenied):
             form.add_error(
