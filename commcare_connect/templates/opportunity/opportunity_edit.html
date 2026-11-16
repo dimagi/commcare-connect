@@ -16,9 +16,6 @@
   <div class="md:max-w-screen-lg mx-auto"
        x-data="{ showActiveHistory: false, showAddApiKeyModal: false }">
     <h2 class="title my-8">{% trans 'Edit Opportunity' %}</h2>
-    {% if api_key_owner_has_left %}
-      <div class="mb-4">{% include "opportunity/partials/api_key_owner_warning.html" %}</div>
-    {% endif %}
     <form method="post" class="flex flex-col gap-4">
       {% csrf_token %}
       {% crispy form %}

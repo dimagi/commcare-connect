@@ -388,7 +388,9 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if "api_key" in context["form"].fields:
-            context.update(api_key_replacement_context(self.object))
+            context["api_key_form"] = pinned_api_key_form(self.object)
+            if warning := api_key_owner_warning(self.object):
+                messages.warning(self.request, warning)
         context["active_events"] = self.active_history_events
         return context
 
@@ -400,13 +402,24 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
         return form_kwargs
 
 
-def api_key_replacement_context(opportunity):
-    """Context for the add-key modal and the departed-owner warning on pages that edit an opportunity's key."""
-    return {
-        # The key select only lists keys on the opportunity's server, so a key for another one would vanish.
-        "api_key_form": HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server),
-        "api_key_owner_has_left": api_key_owner_has_left(opportunity),
-    }
+def pinned_api_key_form(opportunity):
+    """The add-key modal's form on pages that edit an opportunity's key.
+
+    The key select only lists keys on the opportunity's server, so a key for another one would vanish.
+    """
+    return HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server)
+
+
+def api_key_owner_warning(opportunity):
+    """The warning to show when the opportunity's API key belongs to someone who can no longer manage its program,
+    or None."""
+    if not api_key_owner_has_left(opportunity):
+        return None
+    owner = opportunity.api_key.user
+    return _(
+        "The API key on this opportunity was added by %(name)s, who can no longer manage the %(program)s program. "
+        "Replace it with one of your own keys."
+    ) % {"name": owner.name or owner.email, "program": opportunity.program.name}
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
