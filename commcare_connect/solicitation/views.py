@@ -69,22 +69,27 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
 
 
 @method_decorator(org_pm_required, name="dispatch")
-class SolicitationStepMixin(WaffleSwitchMixin):
+class EditableSolicitationMixin(WaffleSwitchMixin):
+    """Looks up one of the org's solicitations that can still change; closed and cancelled ones are not found."""
+
+    waffle_switch = SOLICITATIONS
+    slug_field = "solicitation_id"
+    slug_url_kwarg = "solicitation_id"
+
+    def get_queryset(self):
+        return Solicitation.objects.editable().filter(organization=self.request.org)
+
+
+class SolicitationStepMixin(EditableSolicitationMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
     Every step saves to the draft, so a PM can leave and come back. Once active, the criteria and
     questions are locked so applicants answer the same form.
     """
 
-    waffle_switch = SOLICITATIONS
-    slug_field = "solicitation_id"
-    slug_url_kwarg = "solicitation_id"
     step = None
     previous_step = None
     next_step = None
-
-    def get_queryset(self):
-        return Solicitation.objects.editable().filter(organization=self.request.org)
 
     def get_context_data(self, **kwargs):
         kwargs["path"] = [
