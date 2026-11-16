@@ -30,6 +30,10 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/invite_workers.js',
     ),
+    organization_profile: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/organization_profile.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),

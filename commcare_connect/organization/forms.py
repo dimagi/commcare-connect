@@ -82,13 +82,17 @@ class OrganizationProfileForm(forms.ModelForm):
                 "This would be used to create the Organization URL, "
                 "and you will not be able to change the URL in future."
             ),
-            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["team_size"].choices = [("", gettext("Select team size")), *TeamSizeRange.choices]
         self.fields["year_of_establishment"].widget.choices = _year_choices()
+        # The separators named here are set in static/js/organization_profile.js.
+        self.fields["contact_emails"].help_text = gettext("Press comma, space or Enter after each email address.")
+        self.fields["eoi_links"].help_text = gettext(
+            "Expression of Interest (EOI) links. Press space or Enter after each one."
+        )
         self._drop_unpermitted_fields()
         self.helper = helper.FormHelper(self)
         self.helper.form_tag = False
@@ -295,8 +299,6 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
         }
         help_texts = {
             "name": gettext_lazy("Renaming the organization does not change its URL."),
-            "contact_emails": gettext_lazy("One email address per line."),
-            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
         }
 
     def __init__(self, *args, **kwargs):
