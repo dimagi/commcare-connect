@@ -598,6 +598,38 @@ def test_pending_task_delivery_gating(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("work_exists", [False, True], ids=["new_work", "existing_work"])
+def test_suspended_worker_rejects_completed_work(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity, work_exists
+):
+    # With auto_approve_payments on, the payment recalculation rejects the work by itself.
+    opportunity.auto_approve_payments = False
+    opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
+    if work_exists:
+        CompletedWorkFactory(
+            opportunity_access=access,
+            entity_id=form_json["form"]["deliver"]["entity_id"],
+            payment_unit=opportunity.paymentunit_set.get(),
+            status=CompletedWorkStatus.pending,
+        )
+    access.suspended = True
+    access.save()
+
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.select_related("completed_work").get(opportunity_access=access)
+    # Reloaded from the DB, so this fails if the rejected status was only set in memory.
+    assert (visit.status, visit.completed_work.status) == (
+        VisitValidationStatus.rejected,
+        CompletedWorkStatus.rejected,
+    )
+    assert "user_suspended" in {flag for flag, _ in visit.flag_reason["flags"]}
+
+
+@pytest.mark.django_db
 def test_over_limit_reasons_cleared_when_visit_is_rejected_instead(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
