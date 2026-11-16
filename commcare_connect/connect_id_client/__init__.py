@@ -6,5 +6,4 @@ from .main import (  # noqa: F401
     filter_users,
     queue_message_bulk,
     send_message,
-    send_message_bulk,
 )

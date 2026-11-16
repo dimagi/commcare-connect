@@ -1,6 +1,6 @@
 from httpx import URL
 
-from .main import fetch_users, queue_message_bulk, send_message, send_message_bulk
+from .main import fetch_users, queue_message_bulk, send_message
 from .models import FCM_ANALYTICS_LABEL, Message, MessageStatus
 
 
@@ -47,71 +47,6 @@ def test_send_message(httpx_mock):
     assert len(result.responses) == 1
     assert result.responses[0].username == "user_name1"
     assert result.responses[0].status == MessageStatus.success
-
-
-def test_send_message_bulk(httpx_mock):
-    httpx_mock.add_response(
-        match_json={
-            "messages": [
-                {
-                    "usernames": ["user_name1", "user_name2"],
-                    "body": "test message1",
-                    "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
-                },
-                {
-                    "usernames": ["user_name3", "user_name4"],
-                    "body": "test message2",
-                    "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
-                },
-            ]
-        },
-        json={
-            "all_success": False,
-            "messages": [
-                {
-                    "all_success": True,
-                    "responses": [
-                        {"status": "success", "username": "user_name1"},
-                        {"status": "success", "username": "user_name2"},
-                    ],
-                },
-                {
-                    "all_success": False,
-                    "responses": [
-                        {"status": "error", "username": "user_name3"},
-                        {"status": "deactivated", "username": "user_name4"},
-                    ],
-                },
-            ],
-        },
-    )
-
-    result = send_message_bulk(
-        [
-            Message(usernames=["user_name1", "user_name2"], body="test message1"),
-            Message(usernames=["user_name3", "user_name4"], body="test message2"),
-        ]
-    )
-    assert result.all_success is False
-    assert len(result.messages) == 2
-
-    assert result.messages[0].all_success is True
-    assert [(resp.username, resp.status) for resp in result.messages[0].responses] == [
-        ("user_name1", MessageStatus.success),
-        ("user_name2", MessageStatus.success),
-    ]
-    assert result.messages[0].responses[0].username == "user_name1"
-    assert result.messages[0].responses[0].status == MessageStatus.success
-    assert result.messages[0].responses[1].username == "user_name2"
-    assert result.messages[0].responses[1].status == MessageStatus.success
-
-    assert result.messages[1].all_success is False
-    assert [(resp.username, resp.status) for resp in result.messages[1].responses] == [
-        ("user_name3", MessageStatus.error),
-        ("user_name4", MessageStatus.deactivated),
-    ]
-
-    assert result.get_failures() == [[], list(result.messages[1].responses)]
 
 
 def test_queue_message_bulk(httpx_mock):

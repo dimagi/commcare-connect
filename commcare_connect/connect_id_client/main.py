@@ -7,7 +7,6 @@ from commcare_connect.connect_id_client.models import (
     ConnectIdUser,
     DemoUser,
     Message,
-    MessagingBulkResponse,
     MessagingResponse,
 )
 
@@ -34,20 +33,16 @@ def send_message(message: Message):
     return MessagingResponse.build(**data)
 
 
-def send_message_bulk(messages: list[Message]) -> MessagingBulkResponse:
-    """Send a push notification to multiple users."""
-    response = _post_message_bulk(messages)
-    return MessagingBulkResponse.build(**response.json())
-
-
 def queue_message_bulk(messages: list[Message]) -> None:
     """Ask ConnectID to send push notifications to multiple users from its own Celery worker.
 
     ConnectID answers straight away, so there are no per-user results. The response body is not read:
     a ConnectID that predates ``"async"`` ignores it, sends in the request and replies with results.
     """
-    if messages:
-        _post_message_bulk(messages, queue=True)
+    if not messages:
+        return
+    json = {"messages": [message.asdict() for message in messages], "async": True}
+    _make_request(POST, "/messaging/send_bulk/", json=json, timeout=30)
 
 
 def add_credentials(credentials_items: list[dict]):
@@ -99,13 +94,6 @@ def get_user_otp(phone_number):
         if e.response.status_code == 404:
             return None
         raise
-
-
-def _post_message_bulk(messages: list[Message], queue: bool = False) -> Response:
-    json = {"messages": [message.asdict() for message in messages]}
-    if queue:
-        json["async"] = True
-    return _make_request(POST, "/messaging/send_bulk/", json=json, timeout=30)
 
 
 def _make_request(method, path, params=None, json=None, timeout=10, auth=None) -> Response:
