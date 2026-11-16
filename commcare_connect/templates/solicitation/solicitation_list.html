@@ -2,12 +2,16 @@
 {% load i18n %}
 {% load render_table from django_tables2 %}
 {% block content %}
-  <div class="flex flex-col gap-2 w-full">
+  {# A row's menu loads its form into the modal, which opens once the form arrives. #}
+  <div class="flex flex-col gap-2 w-full"
+       x-data="{ formOpen: false }"
+       @htmx:after-swap.window="if ($event.detail.target.id === 'directory-form') formOpen = true">
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <h1 class="text-sm text-brand-deep-purple">{% translate "Solicitations" %}</h1>
       <a class="button button-md primary-dark"
          href="{% url "solicitation:create" request.org.slug %}">{% translate "New solicitation" %}</a>
     </div>
     <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
+    {% include "organization/directory/form_modal.html" %}
   </div>
 {% endblock content %}

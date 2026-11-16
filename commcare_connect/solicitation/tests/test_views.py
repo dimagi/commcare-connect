@@ -229,7 +229,7 @@ class TestSolicitationSteps:
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, deadline_passed, title_linked, invited_linked",
+        "status, public, deadline_passed, is_editable, is_open",
         [
             (Solicitation.Status.DRAFT, False, False, True, False),
             (Solicitation.Status.ACTIVE, False, False, True, True),
@@ -240,9 +240,7 @@ class TestSolicitationSteps:
             (Solicitation.Status.CANCELLED, False, False, False, False),
         ],
     )
-    def test_list_links(
-        self, pm_client, program_manager_org, status, public, deadline_passed, title_linked, invited_linked
-    ):
+    def test_list_links(self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open):
         solicitation = SolicitationFactory(
             organization=program_manager_org,
             status=status,
@@ -253,8 +251,10 @@ class TestSolicitationSteps:
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
         content = response.content.decode()
-        assert (step_url("details", solicitation) in content) is title_linked
-        assert (step_url("invitations", solicitation) in content) is invited_linked
+        assert (step_url("details", solicitation) in content) is is_editable
+        assert (step_url("cancel", solicitation) in content) is is_editable
+        assert (step_url("invitations", solicitation) in content) is is_open
+        assert (step_url("close", solicitation) in content) is is_open
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
