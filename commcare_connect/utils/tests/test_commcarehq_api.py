@@ -5,7 +5,7 @@ import pytest
 
 from commcare_connect.opportunity.tests.factories import HQApiKeyFactory
 from commcare_connect.utils import commcarehq_api
-from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_path, hq_access_errors
+from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_path, hq_access_errors, is_hq_domain
 
 APP_URL = "{url}/a/dom/api/v0.5/application/{app_id}/"
 
@@ -55,3 +55,20 @@ class TestAppAccessErrors:
         assert ok is None  # the check that finished keeps its result
         assert error is not None
         assert not isinstance(error, CommCareHQAccessDenied)
+
+
+@pytest.mark.parametrize(
+    "domain, expected",
+    [
+        ("my-project", True),
+        ("legacy_project.v2:test", True),
+        ("..", False),
+        ("../other", False),
+        ("x?limit=1", False),
+        ("x y", False),
+        ("x\ny", False),
+        ("projet-é", False),
+    ],
+)
+def test_is_hq_domain(domain, expected):
+    assert is_hq_domain(domain) is expected
