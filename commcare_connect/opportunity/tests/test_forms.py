@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -2305,26 +2306,23 @@ class TestApiKeyOnChangeForm:
 
 @pytest.mark.django_db
 class TestHQApiKeyCreateForm:
-    def test_pinned_server_is_shown_not_offered(self):
+    def test_pinned_server_is_shown_disabled(self):
         server = HQServerFactory(name="Pinned HQ")
-        HQServerFactory(name="Other HQ")  # must not be offered
         form = HQApiKeyCreateForm(fixed_hq_server=server)
-        assert list(form.fields["hq_server"].queryset) == [server]
+        assert form.fields["hq_server"].disabled
         html = render_crispy_form(form)
-        assert "<select" not in html  # the only other field, api_key, is a text input
-        assert "Pinned HQ" in html
-        assert "Other HQ" not in html
-        assert 'type="hidden"' in html
-        assert f'value="{server.pk}"' in html
+        assert re.search(r'<select[^>]*name="hq_server"[^>]*\bdisabled\b', html)
+        assert re.search(rf'value="{server.pk}"\s+selected', html)
 
-    @pytest.mark.parametrize("pinned, valid", [(True, False), (False, True)])
-    def test_another_server_is_rejected_only_when_pinned(self, pinned, valid):
+    @pytest.mark.parametrize("pinned", [True, False])
+    def test_another_server_is_ignored_only_when_pinned(self, pinned):
         server, other = HQServerFactory(), HQServerFactory()
         form = HQApiKeyCreateForm(
             data={"hq_server": other.id, "api_key": "a-new-api-key-value"},
             fixed_hq_server=server if pinned else None,
         )
-        assert form.is_valid() is valid
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["hq_server"] == (server if pinned else other)
 
 
 @pytest.mark.parametrize(
