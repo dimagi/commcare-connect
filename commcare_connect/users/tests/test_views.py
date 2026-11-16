@@ -24,6 +24,7 @@ from commcare_connect.users.views import (
     UserUpdateView,
     create_user_link_view,
 )
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
@@ -180,7 +181,7 @@ class TestStartLearnAppView:
     def _post(self, client, user, data, create_user_result=True):
         client.force_authenticate(user)
         with patch(
-            "commcare_connect.users.views.create_hq_user_and_link", return_value=create_user_result
+            "commcare_connect.users.helpers.create_hq_user_and_link", return_value=create_user_result
         ) as mock_create:
             response = client.post(self.url, data=data)
         return response, mock_create
@@ -225,6 +226,18 @@ class TestStartLearnAppView:
         else:
             mock_create.assert_called_once()
         assert response.json()["error_code"] == expected_error
+
+    def test_hq_failure_is_reported_not_raised(self, opportunity, user, api_client):
+        """HQ refusing to create the mobile worker, e.g. a key without "Edit Mobile Workers", is a 502 the app
+        can show rather than a 500."""
+        api_client.force_authenticate(user)
+        with patch(
+            "commcare_connect.users.helpers.create_hq_user_and_link",
+            side_effect=CommCareHQAPIException("403 Error response while creating user"),
+        ):
+            response = api_client.post(self.url, data={"opportunity": opportunity.id})
+
+        assert (response.status_code, response.json()) == (502, {"error_code": ErrorCodes.FAILED_USER_CREATE})
 
     def test_starts_learning_successfully(self, opportunity, user, api_client):
         access = OpportunityAccessFactory(opportunity=opportunity, user=user)

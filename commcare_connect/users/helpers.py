@@ -1,9 +1,15 @@
+import logging
+
 import httpx
+from rest_framework.response import Response
 
 from commcare_connect.opportunity.models import HQApiKey
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.error_codes import ErrorCodes
+
+logger = logging.getLogger(__name__)
 
 
 def get_organization_for_request(request, view_kwargs):
@@ -19,6 +25,20 @@ def get_organization_for_request(request, view_kwargs):
 
     membership = request.user.memberships.select_related("organization").first()
     return membership.organization if membership else None
+
+
+def hq_user_error_response(user, domain, opportunity) -> Response | None:
+    """Give the user an HQ mobile worker in the domain if they have none yet, as the app's start learning and
+    claim calls need. Returns the error response for the app when that fails, or None."""
+    try:
+        user_created = create_hq_user_and_link(user, domain, opportunity)
+    except (CommCareHQAPIException, httpx.RequestError):
+        # HQ refused (e.g. the opportunity's key lacks "Edit Mobile Workers") or couldn't be reached.
+        logger.exception("Failed to create/link HQ user in %s for opportunity %s", domain, opportunity.id)
+        return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=502)
+    if not user_created:
+        return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
+    return None
 
 
 def create_hq_user_and_link(user, domain, opportunity):
