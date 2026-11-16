@@ -23,7 +23,20 @@ from commcare_connect.solicitation.models import (
     SolicitationQuestion,
 )
 
-DATETIME_INPUT = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
+# Deadlines are whole hours. Browsers count `step` from the field's rendered value unless `min` is set, so
+# the whole-hour `min` anchors validation to :00. The picker still starts from the current time's minutes,
+# so the Alpine handler resets them to :00 on every change.
+SNAP_TO_WHOLE_HOUR = "$el.value && ($el.value = $el.value.slice(0, 14) + '00')"
+DATETIME_INPUT = forms.DateTimeInput(
+    format="%Y-%m-%dT%H:%M",
+    attrs={
+        "type": "datetime-local",
+        "step": "3600",
+        "min": "1970-01-01T00:00",
+        "x-data": "",
+        "@input": SNAP_TO_WHOLE_HOUR,
+    },
+)
 
 TOGGLE_WRAPPER_CLASS = (
     "bg-slate-100 flex flex-wrap items-center justify-between p-4 rounded-lg "
