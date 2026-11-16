@@ -19,6 +19,7 @@ from commcare_connect.organization.decorators import org_pm_required
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
+    SolicitationClosureForm,
     SolicitationForm,
     SolicitationInvitationDeleteForm,
     SolicitationInvitationForm,
@@ -34,6 +35,7 @@ from commcare_connect.solicitation.models import (
 from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
 from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
+from commcare_connect.utils.views import HtmxModalFormMixin
 
 # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
 NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
@@ -203,6 +205,45 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         if not self.object.public:
             return reverse("solicitation:invitations", args=[self.request.org.slug, self.object.solicitation_id])
         return super().get_success_url()
+
+
+class SolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView):
+    """Ends a solicitation with a reason, after which it can't be edited or applied to.
+
+    The form is the modal on the list page.
+    """
+
+    form_class = SolicitationClosureForm
+    template_name = "solicitation/closure_form.html"
+    status = None
+    title = None
+    hint = None
+
+    def form_valid(self, form):
+        form.instance.status = self.status
+        form.instance.modified_by = self.request.user.email
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("solicitation:list", args=[self.request.org.slug])
+
+
+class SolicitationCloseView(SolicitationClosureView):
+    status = Solicitation.Status.CLOSED
+    title = _("Close solicitation")
+    hint = _("Marks the solicitation closed before its deadline. It can't be edited or reopened afterwards.")
+    success_message = _("Solicitation closed.")
+
+    def get_queryset(self):
+        # A draft was never open to applications, so there is nothing to close.
+        return super().get_queryset().open()
+
+
+class SolicitationCancelView(SolicitationClosureView):
+    status = Solicitation.Status.CANCELLED
+    title = _("Cancel solicitation")
+    hint = _("Calls the solicitation off. A cancelled solicitation can't be edited, applied to or reopened.")
+    success_message = _("Solicitation cancelled.")
 
 
 @method_decorator(org_pm_required, name="dispatch")

@@ -268,6 +268,84 @@ def solicitation(program_manager_org):
     return SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE, public=False)
 
 
+ACTIONS = {"close": Solicitation.Status.CLOSED, "cancel": Solicitation.Status.CANCELLED}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ACTIONS)
+class TestSolicitationClosure:
+    @pytest.mark.parametrize(
+        "status, deadline_passed, allowed_actions",
+        [
+            # A draft was never open to applications, so it can only be cancelled.
+            (Solicitation.Status.DRAFT, False, {"cancel"}),
+            (Solicitation.Status.ACTIVE, False, {"close", "cancel"}),
+            # Past its deadline but not yet closed by update_solicitation_statuses.
+            (Solicitation.Status.ACTIVE, True, set()),
+            (Solicitation.Status.CLOSED, False, set()),
+            (Solicitation.Status.CANCELLED, False, set()),
+        ],
+    )
+    def test_transitions(
+        self,
+        pm_client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        action,
+        status,
+        deadline_passed,
+        allowed_actions,
+    ):
+        solicitation = SolicitationFactory(
+            organization=program_manager_org, status=status, deadline_passed=deadline_passed
+        )
+
+        response = pm_client.post(
+            step_url(action, solicitation), {"closure_reason": "Funding withdrawn"}, HTTP_HX_REQUEST="true"
+        )
+
+        solicitation.refresh_from_db()
+        if action in allowed_actions:
+            assert response.headers["HX-Redirect"] == reverse("solicitation:list", args=(program_manager_org.slug,))
+            assert (solicitation.status, solicitation.closure_reason, solicitation.modified_by) == (
+                ACTIONS[action],
+                "Funding withdrawn",
+                program_manager_org_user_admin.email,
+            )
+            assert pm_client.get(step_url("details", solicitation)).status_code == HTTPStatus.NOT_FOUND
+        else:
+            assert response.status_code == HTTPStatus.NOT_FOUND
+            assert (solicitation.status, solicitation.closure_reason) == (status, "")
+
+    def test_form_only_renders_in_the_modal(self, pm_client, solicitation, action):
+        url = step_url(action, solicitation)
+
+        response = pm_client.get(url, HTTP_HX_REQUEST="true")
+        assert response.status_code == HTTPStatus.OK
+        # The row menu's link is boosted, which would otherwise put this URL in the address bar.
+        assert response.headers["HX-Push-Url"] == "false"
+        # A direct visit goes to the list page that hosts the modal.
+        assert pm_client.get(url).url == reverse("solicitation:list", args=(solicitation.organization.slug,))
+
+    @pytest.mark.parametrize(
+        "switch_active, role, own_org",
+        [(False, "admin", True), (True, "member", True), (True, "admin", False)],
+    )
+    def test_only_pm_admins_of_the_owning_org(self, client, program_manager_org, action, switch_active, role, own_org):
+        organization = program_manager_org if own_org else OrganizationFactory(program_manager=True)
+        solicitation = SolicitationFactory(organization=organization, status=Solicitation.Status.ACTIVE)
+        client.force_login(MembershipFactory(organization=program_manager_org, role=role).user)
+        # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
+        url = reverse(f"solicitation:{action}", args=(program_manager_org.slug, solicitation.solicitation_id))
+
+        with override_switch(SOLICITATIONS, active=switch_active):
+            response = client.post(url, {"closure_reason": "Funding withdrawn"})
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        solicitation.refresh_from_db()
+        assert solicitation.status == Solicitation.Status.ACTIVE
+
+
 @pytest.mark.django_db
 class TestSolicitationInvitations:
     @pytest.fixture
