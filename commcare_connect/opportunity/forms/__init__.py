@@ -670,7 +670,6 @@ class OpportunityInitForm(forms.ModelForm):
                     self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
             except KeyError:
                 raise forms.ValidationError("Invalid app data")
-            # A field with an error has left cleaned_data, so the posted apps are only complete on a valid form.
             if not self.errors:
                 _verify_api_key_access(self, cleaned_data.get("api_key"), self._posted_apps())
             return cleaned_data
