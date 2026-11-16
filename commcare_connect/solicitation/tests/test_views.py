@@ -345,6 +345,15 @@ class TestSolicitationClosure:
         solicitation.refresh_from_db()
         assert solicitation.status == Solicitation.Status.ACTIVE
 
+    def test_list_shows_the_reason(self, pm_client, program_manager_org, action):
+        SolicitationFactory(
+            organization=program_manager_org, status=ACTIONS[action], closure_reason="Funding withdrawn"
+        )
+
+        response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
+
+        assert "Funding withdrawn" in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestSolicitationInvitations:
