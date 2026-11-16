@@ -95,14 +95,14 @@ class OpportunityUserInviteForm(forms.Form):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Field("users"),
-            Submit("submit", "Submit", css_class="button button-md primary-dark float-end"),
+            Submit("submit", "Submit", css_id="send-invites", css_class="button button-md primary-dark float-end"),
         )
         self.fields["users"] = forms.CharField(
             widget=forms.Textarea,
             required=True,
             help_text=_(
                 "Enter the phone numbers of the users you want to add to this opportunity with the"
-                " country code, one on each line."
+                " country code. Press Enter or comma after each one."
             ),
         )
 
