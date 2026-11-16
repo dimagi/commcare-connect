@@ -32,6 +32,8 @@ celery -A config.celery_app worker -B -l info
 
 # Tests
 pytest                              # run all tests
+pytest -n auto                      # run all tests in parallel, one pytest-xdist worker per core (what CI runs)
+pytest -n auto --create-db          # rebuild the per-worker test databases if setup fails on a stale one
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
