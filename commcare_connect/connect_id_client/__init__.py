@@ -4,6 +4,7 @@ from .main import (  # noqa: F401
     fetch_user_counts,
     fetch_users,
     filter_users,
+    queue_message_bulk,
     send_message,
     send_message_bulk,
 )
