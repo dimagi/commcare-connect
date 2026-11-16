@@ -7,10 +7,15 @@ import pytest
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.app_xml import DeliverUnit as DeliverUnitData
 from commcare_connect.opportunity.app_xml import Module
+from commcare_connect.opportunity.forms import API_KEY_CANNOT_CREATE_MOBILE_WORKERS
 from commcare_connect.opportunity.models import CommCareApp, HQApiKey, Opportunity
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory, HQApiKeyFactory
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, CommCareHQAPIException
+
+# The managed opportunity create asks HQ whether the key can create mobile workers.
+pytestmark = pytest.mark.usefixtures("hq_grants_app_access")
 
 
 @pytest.fixture
@@ -491,3 +496,77 @@ class TestManagedOpportunityCreate:
         assert not CommCareApp.objects.filter(cc_app_id="learn-app-123").exists()
         assert not CommCareApp.objects.filter(cc_app_id="deliver-app-456").exists()
         mock_send_email.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestManagedOpportunityCreateMobileWorkerCheck:
+    @pytest.fixture
+    def post_opportunity(
+        self,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        """Post the standard payload as the program admin, with `app_changes` merged into its learn and deliver
+        apps."""
+
+        def post(**app_changes):
+            payload = _opportunity_payload(organization, hq_server, hq_api_key)
+            for app_name, changes in app_changes.items():
+                payload[app_name].update(changes)
+            api_client.force_authenticate(program_manager_org_user_admin)
+            return api_client.post(f"/api/programs/{program.program_id}/opportunities/", payload, format="json")
+
+        return post
+
+    @pytest.fixture
+    def hq_answers(self, monkeypatch):
+        """Record the mobile worker checks, answering each domain from `answers` (None means allowed)."""
+        answers, checked = {}, []
+
+        def fake(api_key, paths):
+            checked.extend((api_key, path) for path in paths)
+            return [answers.get(path.split("/")[2]) for path in paths]
+
+        monkeypatch.setattr("commcare_connect.program.api.serializers.hq_access_errors", fake)
+        return answers, checked
+
+    def test_refuses_key_that_cannot_create_mobile_workers(self, post_opportunity, hq_answers, hq_api_key, program):
+        answers, checked = hq_answers
+        answers["deliver-domain"] = CommCareHQAccessDenied("403")
+
+        response = post_opportunity(deliver_app={"cc_domain": "deliver-domain"})
+
+        assert response.status_code == 400
+        assert not Opportunity.objects.filter(program=program).exists()
+        assert response.json()["learn_app"]["api_key"] == [
+            API_KEY_CANNOT_CREATE_MOBILE_WORKERS.format(domain="deliver-domain")
+        ]
+        # The learn key is the one the opportunity keeps, so it is checked in both domains.
+        assert checked == [
+            (hq_api_key, "/a/deliver-domain/api/v0.5/user/?limit=1"),
+            (hq_api_key, "/a/test-domain/api/v0.5/user/?limit=1"),
+        ]
+
+    def test_refuses_to_create_when_hq_cannot_answer(self, post_opportunity, hq_answers):
+        answers, _checked = hq_answers
+        answers["test-domain"] = CommCareHQAPIException("503")
+
+        response = post_opportunity()
+
+        assert (response.status_code, response.json()) == (
+            400,
+            {"non_field_errors": ["Could not reach CommCare HQ to check the API key."]},
+        )
+
+    def test_rejects_domain_that_is_not_a_project_space(self, post_opportunity, hq_answers):
+        response = post_opportunity(learn_app={"cc_domain": "../../a/other-domain/api/v0.5/web-user/?"})
+
+        assert response.status_code == 400
+        assert response.json()["learn_app"]["cc_domain"] == ["Enter an HQ project space name."]
+        assert hq_answers[1] == []
