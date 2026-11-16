@@ -27,6 +27,8 @@ connectid:
       ansible_host: i-01d4755cad044dcae
       # Set up without this play, so it has no webapps group.
       app_group: 'connect'
+    connectid_web1:
+      ansible_host: i-053c44cb9426822d0
     connectid_celery0:
       ansible_host: i-090b0c432298694c5
   vars:
