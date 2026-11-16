@@ -37,7 +37,7 @@ def queue_message_bulk(messages: list[Message]) -> None:
     """Ask ConnectID to send push notifications to multiple users from its own Celery worker.
 
     ConnectID answers straight away, so there are no per-user results. The response body is not read:
-    a ConnectID that predates ``"async"`` ignores it, sends in the request and replies with results.
+    a ConnectID that predates ``"async"`` ignores the flag and replies synchronously with results instead.
     """
     if not messages:
         return
