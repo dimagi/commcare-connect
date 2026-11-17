@@ -11,27 +11,35 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db import transaction
+from django.db.models import Count
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, UpdateView, View
+from django.views.generic import CreateView, FormView, UpdateView, View
 from django.views.generic.detail import SingleObjectMixin
 from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.organization.archive import (
+    archive_blockers,
+    archive_organization,
+    restore_organization,
+)
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     ContactForm,
     InviteAcceptForm,
+    OrganizationArchiveForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
     OrganizationDirectoryForm,
     OrganizationInviteForm,
+    OrganizationRestoreForm,
 )
 from commcare_connect.organization.models import Contact, Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.organization.tables import (
@@ -304,7 +312,7 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
         context = super().get_context_data(**kwargs)
         context.update(
             {
-                "organizations_count": Organization.objects.count(),
+                "organizations_count": Organization.objects.filter(is_archived=False).count(),
                 "contacts_count": Contact.objects.filter(is_archived=False).count(),
                 "result_count": context["table"].paginator.count,
             }
@@ -372,6 +380,9 @@ class LLODirectoryFormMixin(LLODirectoryAccessMixin):
             form.instance.created_by = self.request.user.email
         form.instance.modified_by = self.request.user.email
         self.object = form.save()
+        return self.success_response()
+
+    def success_response(self):
         messages.success(self.request, self.success_message.format(name=self.object.name))
         return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
 
@@ -390,7 +401,91 @@ class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
 
 
 class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
+    # An archived organization is restored before it can be edited.
+    queryset = Organization.objects.filter(is_archived=False)
     success_message = gettext_lazy("Organization {name} updated.")
+
+
+class OrganizationArchiveStateView(LLODirectoryFormMixin, SingleObjectMixin, FormView):
+    """Confirms a change to whether an organization is archived in a directory modal, then makes it."""
+
+    model = Organization
+    slug_field = "slug"
+    list_url_name = "organization_directory:list"
+    # The archived state the organization has to be in for the change to apply.
+    from_archived = None
+
+    def get_queryset(self):
+        queryset = Organization.objects.filter(is_archived=self.from_archived)
+        if self.request.method == "POST":
+            # Locked until the request's transaction ends, so two submissions at once can't both apply.
+            queryset = queryset.select_for_update()
+        return queryset
+
+    def form_valid(self, form):
+        self.change_state(form.cleaned_data)
+        return self.success_response()
+
+    def change_state(self, cleaned_data):
+        raise NotImplementedError
+
+
+class OrganizationArchiveView(OrganizationArchiveStateView):
+    from_archived = False
+    form_class = OrganizationArchiveForm
+    template_name = "organization/directory/organization_archive_form.html"
+    success_message = gettext_lazy("Organization {name} archived.")
+
+    # The organization is looked up here rather than in dispatch(), so the permission check runs first.
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.blockers = archive_blockers(self.object)
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        # Checked again on submit, in case work became live after the confirmation was opened.
+        self.blockers = archive_blockers(self.object)
+        if self.blockers:
+            return self.render_to_response(self.get_context_data())
+        return super().post(request, *args, **kwargs)
+
+    def get_template_names(self):
+        if self.blockers:
+            return ["organization/directory/organization_archive_refused.html"]
+        return super().get_template_names()
+
+    def get_context_data(self, **kwargs):
+        if self.blockers:
+            return super().get_context_data(blockers=self.blockers, **kwargs)
+        # The programs it owns, which archiving it hides along with their opportunities.
+        programs = self.object.program_set.annotate(opportunity_count=Count("opportunity")).order_by("name")
+        return super().get_context_data(programs=programs, **kwargs)
+
+    def change_state(self, cleaned_data):
+        archive_organization(self.object, user_email=self.request.user.email, reason=cleaned_data["reason"])
+
+
+class OrganizationRestoreView(OrganizationArchiveStateView):
+    from_archived = True
+    form_class = OrganizationRestoreForm
+    template_name = "organization/directory/organization_restore_form.html"
+    success_message = gettext_lazy(
+        "Organization {name} restored. Its contacts are still archived; restore the ones you need from the "
+        "Contacts tab."
+    )
+
+    # The organization is looked up here rather than in dispatch(), so the permission check runs first.
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super().post(request, *args, **kwargs)
+
+    def change_state(self, cleaned_data):
+        restore_organization(self.object, user_email=self.request.user.email, reason=cleaned_data["reason"])
 
 
 class ContactFormMixin(LLODirectoryFormMixin):
