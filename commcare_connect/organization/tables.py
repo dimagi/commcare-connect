@@ -82,10 +82,15 @@ def _status_column_header():
 WRAPPING_COLUMN_ATTRS = {"td": {"class": "whitespace-normal"}}
 
 
-class OrganizationDirectoryTable(tables.Table):
+class DirectoryTable(tables.Table):
+    """A table of an LLO Directory listing."""
+
     # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
     # instead of the referer's.
     use_view_url = False
+
+
+class OrganizationDirectoryTable(DirectoryTable):
     name = columns.Column(verbose_name=_("Name"))
     status = columns.TemplateColumn(
         # Lazy so the template isn't rendered at import time.
@@ -122,10 +127,7 @@ class OrganizationDirectoryTable(tables.Table):
         return queryset.order_by(ordering, "pk"), True
 
 
-class ContactDirectoryTable(tables.Table):
-    # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
-    # instead of the referer's.
-    use_view_url = False
+class ContactDirectoryTable(DirectoryTable):
     name = columns.Column(verbose_name=_("Contact Name"))
     organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
     organization_status = columns.TemplateColumn(
