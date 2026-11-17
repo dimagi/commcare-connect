@@ -16,6 +16,8 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_or_llo_directory_required
+from commcare_connect.organization.views import LLODirectoryListView
+from commcare_connect.solicitation.filters import SolicitationDirectoryFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -31,7 +33,11 @@ from commcare_connect.solicitation.models import (
     SolicitationInvitation,
     SolicitationQuestion,
 )
-from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
+from commcare_connect.solicitation.tables import (
+    SolicitationDirectoryTable,
+    SolicitationInvitationTable,
+    SolicitationTable,
+)
 from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
 
@@ -66,6 +72,26 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
             )
             .order_by("-date_created")
         )
+
+
+class SolicitationDirectoryListView(WaffleSwitchMixin, LLODirectoryListView):
+    """Every program manager organization's solicitations, as an LLO Directory tab."""
+
+    waffle_switch = SOLICITATIONS
+    table_class = SolicitationDirectoryTable
+    filterset_class = SolicitationDirectoryFilterSet
+    template_name = "organization/directory/solicitation_list.html"
+
+    def get_queryset(self):
+        return Solicitation.objects.select_related("organization", "program").order_by("-date_created")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": _("Admin"), "url": reverse("users:internal_features")},
+            {"title": _("Solicitations"), "url": reverse("organization_directory:solicitations")},
+        ]
+        return context
 
 
 @method_decorator(org_pm_or_llo_directory_required, name="dispatch")
