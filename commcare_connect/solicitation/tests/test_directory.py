@@ -1,7 +1,7 @@
 from http import HTTPStatus
 
 import pytest
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
@@ -113,3 +113,19 @@ class TestSolicitationDirectoryListView:
             response = client.get(reverse("organization_directory:list"))
 
         assert (reverse("organization_directory:solicitations") in response.content.decode()) == switch_active
+
+
+@pytest.mark.django_db
+class TestSolicitationDirectoryCreateView:
+    url = reverse_lazy("organization_directory:solicitation_create")
+
+    def test_sends_staff_to_the_organizations_solicitation_form(self, directory_client, program_manager_org):
+        response = directory_client.post(self.url, {"organization": program_manager_org.pk})
+
+        assert response.headers["HX-Redirect"] == reverse("solicitation:create", args=[program_manager_org.slug])
+
+    def test_only_program_manager_organizations_can_be_picked(self, directory_client, organization):
+        response = directory_client.post(self.url, {"organization": organization.pk}, headers={"HX-Request": "true"})
+
+        assert "HX-Redirect" not in response.headers
+        assert response.context["form"].errors.keys() == {"organization"}
