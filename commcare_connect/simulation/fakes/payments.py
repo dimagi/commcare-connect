@@ -25,7 +25,7 @@ DEFAULT_RATE = 1.0
 def patches():
     return [
         mock.patch("commcare_connect.opportunity.tasks.request_rates", fake_request_rates),
-        mock.patch("commcare_connect.opportunity.tasks.send_message_bulk", fake_send_message_bulk),
+        mock.patch("commcare_connect.opportunity.tasks.queue_message_bulk", fake_queue_message_bulk),
     ]
 
 
@@ -45,5 +45,5 @@ def fake_request_rates(url):
     return _FixedRates(FIXED_RATES)
 
 
-def fake_send_message_bulk(messages):
+def fake_queue_message_bulk(messages):
     """ConnectID would push these to the workers' phones; there is no phone to reach."""
