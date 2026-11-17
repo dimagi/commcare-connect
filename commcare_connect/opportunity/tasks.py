@@ -34,7 +34,6 @@ from commcare_connect.opportunity.export import (
     export_empty_payment_table,
     export_user_status_table,
     export_user_visit_review_data,
-    export_work_status_table,
 )
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -612,14 +611,6 @@ def download_inaccessibility_request_attachments(self, xform_id: str, attachment
     api_key = request_obj.work_area.opportunity.api_key
     domain = request_obj.work_area.opportunity.deliver_app.cc_domain
     _download_attachments(api_key, domain, xform_id, attachments)
-
-
-@celery_app.task()
-def generate_work_status_export(opportunity_id: int, export_format: str):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
-    dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
-    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()

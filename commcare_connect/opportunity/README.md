@@ -109,7 +109,7 @@ Organization
 | `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports                                     |
 | `forms/`                        | Django forms; invoice forms in `invoices.py`, the rest in `__init__`                             |
 | `tables/`                       | Tables; invoice tables in `invoices.py`, worker tables in `worker.py`, the rest in `__init__.py` |
-| `export.py`                     | Exports: visits, payments, user status, work status                                              |
+| `export.py`                     | Exports: visits, payments, user status, deliver status                                           |
 | `visit_import.py`               | Bulk visit/payment import, exchange rates                                                        |
 | `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                                             |
 | `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual                                   |

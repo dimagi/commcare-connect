@@ -166,7 +166,7 @@ Status changes are made in `CompletedWorkUpdater._update_status()` (`utils/compl
 ```mermaid
 flowchart TD
     A[CompletedWork with at least one visit] --> B{auto_approve_payments?}
-    B -->|no| K[Status unchanged<br/>set manually via work status import]
+    B -->|no| K[Status unchanged]
     B -->|yes| C{Any visit rejected?}
     C -->|yes| RJ[rejected<br/>reason = visit reasons]
     C -->|no| D{Every required unit, and one optional unit,<br/>has a visit approved + agree?}
@@ -176,7 +176,7 @@ flowchart TD
     E -->|no| K2[Status unchanged]
 ```
 
-With `auto_approve_payments` off, `CompletedWork` status is only changed by the completed-work status import (`visit_import.bulk_update_completed_work_status`).
+With `auto_approve_payments` off, nothing changes `CompletedWork` status. The completed-work status import that used to set it by hand was removed.
 
 ### Accrual calculation
 
@@ -216,7 +216,7 @@ flowchart LR
         T2[Bulk approve visits]
         T3[Reject visits]
         T4[PM review agree/disagree]
-        T5[Visit status / review status /<br/>work status imports]
+        T5[Visit status /<br/>review status imports]
         T6[Nightly bulk_approve_completed_work<br/>23:00]
     end
     T1 --> I1[update_payment_accrued_for_user<br/>incremental + current work]
@@ -238,7 +238,7 @@ flowchart LR
 | Bulk approve visits                  | `views.approve_visits` → `update_payment_accrued(incremental=True)`          | Works not yet approved with`saved_approved_count=0`                             |
 | Reject visits                        | `views.reject_visits` → `update_payment_accrued()`                           | All of the worker's works                                                       |
 | PM review                            | `views.user_visit_review` → `update_payment_accrued()`                       | All of the worker's works                                                       |
-| Visit, review or work status imports | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)              | All works except`rejected`                                                      |
+| Visit or review status imports       | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)              | All works except`rejected`                                                      |
 | Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)        | All works except`rejected`                                                      |
 
 **Incremental** skips works that are already processed (approved, or with `saved_approved_count > 0`), so only works still waiting on approval are recalculated. **Full** recalculates every one of the worker's works.
