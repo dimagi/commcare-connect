@@ -22,8 +22,8 @@ from commcare_connect.program.models import Program, ProgramApplication, Program
 from commcare_connect.utils.commcarehq_api import (
     CommCareHQAccessDenied,
     CommCareHQAPIException,
+    check_api_key_access,
     get_applications_for_user_by_domain,
-    hq_access_errors,
     is_hq_domain,
     mobile_workers_path,
 )
@@ -203,7 +203,7 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
         """Refuse a key that can't create mobile workers in the domains, as every new worker needs to start
         learning."""
         domains = sorted(domains)
-        errors = hq_access_errors(api_key, [mobile_workers_path(domain) for domain in domains])
+        errors = check_api_key_access(api_key, [mobile_workers_path(domain) for domain in domains])
         refused = [
             API_KEY_CANNOT_CREATE_MOBILE_WORKERS.format(domain=domain)
             for domain, error in zip(domains, errors)

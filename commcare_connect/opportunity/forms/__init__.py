@@ -59,7 +59,7 @@ from commcare_connect.utils.commcarehq_api import (
     CommCareHQAccessDenied,
     CommCareHQAPIException,
     app_path,
-    hq_access_errors,
+    check_api_key_access,
     is_hq_domain,
     mobile_workers_path,
 )
@@ -1015,7 +1015,7 @@ def _verify_api_key_access(form, api_key, apps):
         for domain in sorted({domain for _app_type, domain, _app_id in apps})
     ]
     checks = app_checks + mobile_worker_checks
-    errors = hq_access_errors(api_key, [path for path, _refusal in checks])
+    errors = check_api_key_access(api_key, [path for path, _refusal in checks])
     for (_path, refusal), error in zip(checks, errors):
         if isinstance(error, CommCareHQAccessDenied):
             form.add_error("api_key", refusal)

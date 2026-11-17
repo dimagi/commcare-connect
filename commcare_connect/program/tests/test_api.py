@@ -533,7 +533,7 @@ class TestManagedOpportunityCreateMobileWorkerCheck:
             checked.extend((api_key, path) for path in paths)
             return [answers.get(path.split("/")[2]) for path in paths]
 
-        monkeypatch.setattr("commcare_connect.program.api.serializers.hq_access_errors", fake)
+        monkeypatch.setattr("commcare_connect.program.api.serializers.check_api_key_access", fake)
         return answers, checked
 
     def test_refuses_key_that_cannot_create_mobile_workers(self, post_opportunity, hq_answers, hq_api_key, program):
