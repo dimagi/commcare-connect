@@ -2,25 +2,18 @@ from django.urls import include, path
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.views import (
-    AssignedTaskListView,
     AudioAttachmentTranscribe,
-    EditAssignedTask,
-    EditTaskType,
     OpportunityDashboard,
     OpportunityEdit,
     OpportunityFinalize,
     OpportunityList,
     OpportunityPaymentUnitTableView,
-    TaskTypeOcsSection,
-    TaskTypesConfig,
     add_budget_existing_users,
     add_budget_new_users,
     add_payment_unit,
     add_payment_units,
     approve_visits,
-    create_task,
     delete_form_json_rule,
-    delete_tasks,
     download_export,
     edit_payment_unit,
     export_deliver_status,
@@ -49,6 +42,16 @@ from commcare_connect.opportunity.views import (
     verification_flags_config,
 )
 from commcare_connect.opportunity.views import invoices as invoice_views
+from commcare_connect.opportunity.views.assigned_tasks import (
+    AssignedTaskListView,
+    EditAssignedTask,
+    EditTaskType,
+    TaskTypeOcsSection,
+    TaskTypesConfig,
+    create_task,
+    delete_tasks,
+    user_task_details,
+)
 from commcare_connect.opportunity.views.worker import (
     UserTasksView,
     UserVisitVerificationView,
@@ -105,7 +108,7 @@ urlpatterns = [
     ),
     path("<slug:opp_id>/user_visit_details/<slug:pk>/", view=views.user_visit_details, name="user_visit_details"),
     path("<slug:opp_id>/user_visit_data/<slug:pk>/", view=views.user_visit_data, name="user_visit_data"),
-    path("<slug:opp_id>/user_task_details/<slug:pk>/", view=views.user_task_details, name="user_task_details"),
+    path("<slug:opp_id>/user_task_details/<slug:pk>/", view=user_task_details, name="user_task_details"),
     path("<slug:opp_id>/payment/<slug:access_id>/delete/<slug:pk>/", view=payment_delete, name="payment_delete"),
     path("<slug:opp_id>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
     path("<slug:opp_id>/approve_visits", view=approve_visits, name="approve_visits"),
