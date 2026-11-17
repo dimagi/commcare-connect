@@ -176,7 +176,7 @@ flowchart TD
     E -->|no| K2[Status unchanged]
 ```
 
-With `auto_approve_payments` off, nothing changes `CompletedWork` status. The completed-work status import that used to set it by hand was removed.
+With `auto_approve_payments` off, nothing approves `CompletedWork`: only form processing changes its status (to `pending`, `over_limit` or `rejected`, see above). The completed-work status import that used to set it by hand was removed.
 
 ### Accrual calculation
 
