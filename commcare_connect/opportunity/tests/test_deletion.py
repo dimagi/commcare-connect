@@ -14,6 +14,7 @@ def test_delete_opportunity_clears_registered_models(opportunity_factory):
     opportunity_id = opportunity.id
     access = factories.OpportunityAccessFactory(opportunity=opportunity)
     payment_unit = factories.PaymentUnitFactory(opportunity=opportunity)
+    factories.PaymentUnitRateFactory(payment_unit=payment_unit)
     deliver_unit = factories.DeliverUnitFactory(payment_unit=payment_unit)
 
     factories.CompletedModuleFactory(opportunity=opportunity, opportunity_access=access)

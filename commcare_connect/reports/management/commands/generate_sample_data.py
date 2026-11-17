@@ -35,6 +35,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     PaymentUnit,
+    PaymentUnitRate,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -172,6 +173,7 @@ class Command(BaseCommand):
             # DeliverUnit.payment_unit is DO_NOTHING, so the unit has to go before what it points
             # at. It hangs off the opportunity's deliver app rather than the opportunity itself.
             lambda: DeliverUnit.objects.filter(payment_unit__opportunity__organization_id__in=org_ids).delete(),
+            lambda: PaymentUnitRate.objects.filter(payment_unit__opportunity__organization_id__in=org_ids).delete(),
             lambda: PaymentUnit.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: UserInvite.objects.filter(opportunity__organization_id__in=org_ids).delete(),
             lambda: OpportunityAccess.objects.filter(opportunity__organization_id__in=org_ids).delete(),
