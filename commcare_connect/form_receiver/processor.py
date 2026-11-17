@@ -450,7 +450,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     1. Rejects the form if a required record is missing or the work area is invalid
     2. Locks the claim limit row to serialize submissions for the same worker and payment unit
     3. Sets the visit's status: trial, over_limit or duplicate, otherwise pending
-    4. Flags the visit; a suspended worker or a blocking assigned task rejects it
+    4. Flags the visit; a suspended worker or a blocking assigned task rejects it and its CompletedWork,
+       unless the work is already approved
     5. Auto-rejects or auto-approves it if the opportunity is set up to
     6. Saves the visit and CompletedWork, then recalculates the worker's payment
     """
@@ -498,7 +499,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             completed_work_needs_save = completed_work.status != status_before
 
         rejected = _flag_visit(user_visit=user_visit, xform=xform, app=app, opportunity_flags=opportunity_flags)
-        if rejected and completed_work is not None:
+        if rejected and completed_work is not None and completed_work.status != CompletedWorkStatus.approved:
+            completed_work.status = CompletedWorkStatus.rejected
             completed_work_needs_save = True
         _apply_automatic_review(user_visit=user_visit, opportunity=opportunity)
 
@@ -661,7 +663,7 @@ def _count_earlier_visits(user_visit: UserVisit) -> dict[str, int]:
 def _flag_visit(
     user_visit: UserVisit, xform: XForm, app: CommCareApp, opportunity_flags: OpportunityVerificationFlags
 ) -> bool:
-    """Record the visit's flags. Flags about the worker also reject the visit and its CompletedWork.
+    """Record the visit's flags. Flags about the worker also reject the visit.
 
     Returns whether the visit was rejected.
     """
@@ -671,8 +673,6 @@ def _flag_visit(
     if worker_flags:
         flags += worker_flags
         user_visit.status = VisitValidationStatus.rejected
-        if user_visit.completed_work is not None:
-            user_visit.completed_work.status = CompletedWorkStatus.rejected
     if flags:
         user_visit.flagged = True
         user_visit.flag_reason = {"flags": flags}

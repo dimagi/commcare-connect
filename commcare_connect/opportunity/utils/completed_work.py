@@ -135,16 +135,18 @@ class CompletedWorkUpdater:
         """Set CompletedWork status based on visit statuses and approval rules.
 
         When auto_approve_payments is enabled: rejected if any visit is rejected,
-        approved if all visits are approved. For managed opportunities, approval
-        is downgraded to pending unless all visits have review_status=agree.
+        unless the work is already approved; approved if all visits are approved.
+        For managed opportunities, approval is downgraded to pending unless all
+        visits have review_status=agree.
         """
         updated = False
         if self.opportunity.auto_approve_payments:
             visits = completed_work.uservisit_set.values_list("status", "reason", "review_status")
 
             if any(status == VisitValidationStatus.rejected for status, *_ in visits):
-                completed_work.status = CompletedWorkStatus.rejected
-                completed_work.reason = "\n".join(reason for _, reason, *_ in visits if reason)
+                if completed_work.status != CompletedWorkStatus.approved:
+                    completed_work.status = CompletedWorkStatus.rejected
+                    completed_work.reason = "\n".join(reason for _, reason, *_ in visits if reason)
             elif self._is_completed_work_approved(completed_work):
                 completed_work.status = CompletedWorkStatus.approved
             elif completed_work.status == CompletedWorkStatus.incomplete:

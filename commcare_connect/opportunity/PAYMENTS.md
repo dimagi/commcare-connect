@@ -115,7 +115,7 @@ flowchart TD
     DUP --> FL
     P --> FL[Run verification flags]
     FL --> S{Worker suspended or<br/>blocking assigned task?}
-    S -->|yes| R[visit + work: rejected]
+    S -->|yes| R[visit: rejected<br/>work: rejected unless approved]
     S -->|no| AV{pending and flagged and<br/>automatic_visit_verification?}
     AV -->|yes| R2[status = rejected]
     AV -->|no| AA{pending, not flagged and<br/>auto_approve_visits?}
@@ -141,7 +141,9 @@ One row per `(opportunity_access, entity_id, payment_unit)`: everything a worker
 | `pending`    | Has visits, not yet approved                                                   |
 | `approved`   | Accrues payment                                                                |
 | `rejected`   | A visit was rejected, or the worker was suspended or blocked by a pending task |
-| `over_limit` | A visit hit a claim limit                                                      |
+
+Approved work stays approved when a later visit is rejected, whatever the reason.
+| `over_limit` | A visit hit a claim limit |
 
 `status_modified_date` is set automatically whenever `status` changes. It is the **approval date** used for USD conversion and invoice windows, and it does **not** move when more visits arrive for an already-approved work.
 
@@ -168,7 +170,9 @@ flowchart TD
     A[CompletedWork with at least one visit] --> B{auto_approve_payments?}
     B -->|no| K[Status unchanged<br/>set manually via work status import]
     B -->|yes| C{Any visit rejected?}
-    C -->|yes| RJ[rejected<br/>reason = visit reasons]
+    C -->|yes| AL{Already approved?}
+    AL -->|yes| K3[Status unchanged]
+    AL -->|no| RJ[rejected<br/>reason = visit reasons]
     C -->|no| D{Every required unit, and one optional unit,<br/>has a visit approved + agree?}
     D -->|yes| AP[approved]
     D -->|no| E{incomplete?}
