@@ -54,6 +54,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     OpportunityTable,
     ProgramManagerOpportunityTable,
+)
+from commcare_connect.opportunity.tables.assigned_tasks import (
     TaskTable,
 )
 from commcare_connect.opportunity.tasks import invite_user
@@ -3022,7 +3024,7 @@ class TestAssignedTaskListView:
 
 @pytest.mark.django_db
 class TestTaskTypesConfig:
-    MOCK_TASK_UNITS_PATH = "commcare_connect.opportunity.forms.get_task_units_for_app"
+    MOCK_TASK_UNITS_PATH = "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app"
 
     @pytest.fixture
     def opp(self, managed_opportunity):
