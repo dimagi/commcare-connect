@@ -2,6 +2,7 @@
 
 This uses the `Invoke` library."""
 
+import re
 from pathlib import Path
 
 from invoke import Context, Exit, call, task
@@ -50,6 +51,32 @@ def build_js(c: Context, watch=False, prod=False):
     else:
         extra = "-watch" if watch else ""
         c.run(f"npm run dev{extra}")
+
+
+@task
+def jscpd(c: Context, base="origin/main"):
+    """Report duplicate code this branch adds, compared with where it branched off BASE"""
+    merge_base = c.run(f"git merge-base HEAD {base}", hide=True).stdout.strip()
+    result = c.run(
+        f"uv run jscpd commcare_connect --baseline-from-ref {merge_base} --fail-on-new-clones 0",
+        hide=True,
+        warn=True,
+    )
+    print("\n".join(_new_clone_report(output=result.stdout + result.stderr)))
+    if result.failed:
+        raise Exit(code=result.exited)
+
+
+def _new_clone_report(output):
+    """Keep each new clone (the [NEW] line and its two location lines) and the summary lines."""
+    lines = output.splitlines()
+    report = []
+    for index, line in enumerate(lines):
+        if "[NEW]" in line:
+            report.extend(lines[index : index + 3])
+        elif re.search(r"Found \d+ clones|new clones", line):
+            report.append(line)
+    return report
 
 
 @task
