@@ -1,10 +1,12 @@
-{# The column's value is the status's display label, so this compares the stored status instead. #}
-{% if record.status == "active" %}
-  <span class="badge badge-sm positive-light">{{ value }}</span>
-{% elif record.status == "closed" %}
-  <span class="badge badge-sm primary-light">{{ value }}</span>
-{% elif record.status == "cancelled" %}
-  <span class="badge badge-sm negative-light">{{ value }}</span>
-{% else %}
-  <span class="badge badge-sm label">{{ value }}</span>
-{% endif %}
+{# An active solicitation counts as closed from its deadline, before the sweep task updates the stored status. #}
+{% with status=record.effective_status %}
+  {% if status == "active" %}
+    <span class="badge badge-sm positive-light">{{ status.label }}</span>
+  {% elif status == "closed" %}
+    <span class="badge badge-sm primary-light">{{ status.label }}</span>
+  {% elif status == "cancelled" %}
+    <span class="badge badge-sm negative-light">{{ status.label }}</span>
+  {% else %}
+    <span class="badge badge-sm label">{{ status.label }}</span>
+  {% endif %}
+{% endwith %}
