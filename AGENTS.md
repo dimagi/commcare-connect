@@ -19,6 +19,10 @@ inv down                            # docker compose down
 ./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
 ./manage.py run_scenario <name> --admin-email you@example.com  # build local data through the app (simulation/)
 
+# Worktrees: each gets its own DB + Redis DB (see "Working in git worktrees" in README.md)
+wt switch --create <branch>         # create and set up via .config/wt.toml
+wt new <branch> --share=1           # reuse the main checkout's DB + Redis DB; skips migrate
+
 # JavaScript/CSS
 npm ci                              # install deps
 inv build-js                        # dev build
