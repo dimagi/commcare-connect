@@ -193,11 +193,6 @@ With `--share=1`, it skips the database and Redis steps and copies `DATABASE_URL
 and `CELERY_BROKER_URL` from the main checkout's `.env` instead. Either way, the JS and CSS then
 build in the background.
 
-#### Other worktree tools
-
-Run `scripts/setup-worktree.sh` in the new worktree (add `--share` to use the main checkout's
-databases), and `uv run python scripts/worktree.py teardown <branch>` after removing it.
-
 <!-- --8<-- [end:local-setup] -->
 
 <!-- --8<-- [start:local-development] -->
