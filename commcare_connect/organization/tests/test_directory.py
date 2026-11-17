@@ -499,7 +499,9 @@ class TestContactPocChangeForm:
 
 
 def _poc_warning_slot(response):
-    return re.search(r"<div[^>]*poc-warning[^>]*>", response.content.decode().replace("\n", " ")).group()
+    slot = re.search(r'<div[^>]*id="poc-warning"[^>]*>', response.content.decode().replace("\n", " "))
+    assert slot, "point of contact warning slot not found in the response"
+    return slot.group()
 
 
 @pytest.mark.django_db
