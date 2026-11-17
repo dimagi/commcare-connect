@@ -5,7 +5,7 @@ from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
-from django.http import HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -16,7 +16,7 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_or_llo_directory_required
-from commcare_connect.organization.views import LLODirectoryListView
+from commcare_connect.organization.views import LLODirectoryFormMixin, LLODirectoryListView
 from commcare_connect.solicitation.filters import SolicitationDirectoryFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
@@ -24,6 +24,7 @@ from commcare_connect.solicitation.forms import (
     SolicitationForm,
     SolicitationInvitationDeleteForm,
     SolicitationInvitationForm,
+    SolicitationOrganizationForm,
     publish_errors,
 )
 from commcare_connect.solicitation.models import (
@@ -92,6 +93,19 @@ class SolicitationDirectoryListView(WaffleSwitchMixin, LLODirectoryListView):
             {"title": _("Solicitations"), "url": reverse("organization_directory:solicitations")},
         ]
         return context
+
+
+class SolicitationDirectoryCreateView(WaffleSwitchMixin, LLODirectoryFormMixin, FormView):
+    """Asks which organization posts a new solicitation, then sends staff to that organization's solicitation form."""
+
+    waffle_switch = SOLICITATIONS
+    form_class = SolicitationOrganizationForm
+    template_name = "organization/directory/solicitation_form.html"
+    list_url_name = "organization_directory:solicitations"
+
+    def form_valid(self, form):
+        url = reverse("solicitation:create", args=[form.cleaned_data["organization"].slug])
+        return HttpResponse(headers={"HX-Redirect": url})
 
 
 @method_decorator(org_pm_or_llo_directory_required, name="dispatch")
