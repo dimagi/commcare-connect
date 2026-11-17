@@ -21,10 +21,12 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    BaseAssignedTaskTable,
     StatusIndicatorColumn,
-    TaskStatusColumn,
     header_with_tooltip,
+)
+from commcare_connect.opportunity.tables.assigned_tasks import (
+    BaseAssignedTaskTable,
+    TaskStatusColumn,
 )
 from commcare_connect.utils.tables import (
     DMYTColumn,

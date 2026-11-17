@@ -30,9 +30,11 @@ from commcare_connect.opportunity.filters import (
     UserTasksFilterSet,
 )
 from commcare_connect.opportunity.forms import (
-    CreateTaskForm,
     PaymentExportForm,
     VisitExportForm,
+)
+from commcare_connect.opportunity.forms.assigned_tasks import (
+    CreateTaskForm,
 )
 from commcare_connect.opportunity.helpers import (
     get_worker_deliveries,
@@ -69,9 +71,11 @@ from commcare_connect.opportunity.tables.worker import (
 from commcare_connect.opportunity.views import (
     PAYMENT_IMPORT_CLAIMED_SESSION_KEY,
     OpportunityObjectMixin,
-    _can_manage_tasks,
     claim_task_outcome,
     get_export_task_id,
+)
+from commcare_connect.opportunity.views.assigned_tasks import (
+    _can_manage_tasks,
 )
 from commcare_connect.organization.decorators import (
     opp_view_access_required,
