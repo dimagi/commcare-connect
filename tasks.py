@@ -54,7 +54,7 @@ def build_js(c: Context, watch=False, prod=False):
 
 
 @task
-def jscpd(c: Context, base="origin/main"):
+def find_new_clones(c: Context, base="origin/main"):
     """Report duplicate code this branch adds, compared with where it branched off BASE"""
     merge_base = c.run(f"git merge-base HEAD {base}", hide=True).stdout.strip()
     result = c.run(
