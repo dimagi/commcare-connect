@@ -180,7 +180,23 @@ similar), so that you can see how the site behaves for both kinds of users.
 
 ### Sample data
 
-To populate a local database with organizations, opportunities, visits and payments
+To build local data that hangs together as if the app had been used, run a scenario. It drives the app's real
+forms, functions and APIs (with CommCare HQ, ConnectID and Twilio stood in for), so validation, visit flags,
+payment accrual and invoicing all run:
+
+```bash
+./manage.py run_scenario payments --admin-email you@example.com
+```
+
+`--admin-email` must belong to an existing local user, who becomes admin of every organization the scenario
+creates. The command doesn't create one, since that means picking a password; if you have no user yet, create one
+with `createsuperuser` (above). Rerunning a scenario first deletes the organizations it built. The command prints
+the pages worth opening. The scenarios and options are described in `commcare_connect/simulation/README.md`.
+
+#### Volume-only data
+
+`generate_sample_data` writes rows directly with factories, so it does not go through the app's rules and its
+records don't hang together. Use it only when you need volume, for example to look at report performance
 (`generate_sample_data <num_visits> <org_slug>`):
 
 ```bash
