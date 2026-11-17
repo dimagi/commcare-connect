@@ -9,7 +9,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Count, F, Q, Sum, TextChoices
+from django.db.models import Count, F, Sum, TextChoices
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -360,14 +360,8 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
     def clean_active(self):
         active = self.cleaned_data["active"]
-        if active and not self.currently_active:
-            app_ids = (self.instance.learn_app.cc_app_id, self.instance.deliver_app.cc_app_id)
-            if (
-                Opportunity.objects.filter(active=True)
-                .filter(Q(learn_app__cc_app_id__in=app_ids) | Q(deliver_app__cc_app_id__in=app_ids))
-                .exists()
-            ):
-                raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
+        if active and not self.currently_active and self.instance.shares_app_with_active_opportunity():
+            raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
         return active
 
     def save(self, commit=True):
