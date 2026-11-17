@@ -67,7 +67,7 @@ from commcare_connect.utils.permission_const import (
     PRODUCT_FEATURES_ACCESS,
 )
 
-from .helpers import create_hq_user_and_link
+from .helpers import hq_user_error_response
 from .models import ConnectIDUserLink
 
 User = get_user_model()
@@ -140,9 +140,8 @@ def start_learn_app(request):
     )
     app = opportunity.learn_app
     domain = app.cc_domain
-    user_created = create_hq_user_and_link(request.user, domain, opportunity)
-    if not user_created:
-        return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
+    if error_response := hq_user_error_response(request.user, domain, opportunity):
+        return error_response
     try:
         access_object = OpportunityAccess.objects.get(user=request.user, opportunity=opportunity)
     except OpportunityAccess.DoesNotExist:
