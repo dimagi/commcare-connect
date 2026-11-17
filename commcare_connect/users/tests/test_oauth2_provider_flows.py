@@ -1,11 +1,13 @@
 import time
+from datetime import timedelta
 from unittest import mock
 from urllib.parse import urlencode
 
 import pytest
 from django.conf import settings
 from django.urls import reverse
-from oauth2_provider.models import Application
+from django.utils import timezone
+from oauth2_provider.models import Application, get_grant_model
 from rest_framework.test import APIClient
 
 from commcare_connect.commcarehq.tests.factories import OauthApplicationFactory
@@ -242,3 +244,87 @@ class TestScopeEnforcement:
         client.credentials(Authorization=f"Bearer {token_data['access_token']}")
         response = client.get(EXPORT_URL)
         assert response.status_code == 200, response.content
+
+
+REDIRECT_URI = "https://client.example.com/callback"
+
+
+def _oidc_application(*, algorithm, plaintext_secret):
+    return OauthApplicationFactory(
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        client_secret=plaintext_secret,
+        hash_client_secret=False,
+        redirect_uris=REDIRECT_URI,
+        algorithm=algorithm,
+        skip_authorization=True,
+    )
+
+
+def _exchange_code(*, application, plaintext_secret, user, scope):
+    """Exchange an authorization code issued with `scope` at /o/token/."""
+    grant = get_grant_model().objects.create(
+        application=application,
+        user=user,
+        code=f"code-{application.client_id}",
+        expires=timezone.now() + timedelta(minutes=5),
+        redirect_uri=REDIRECT_URI,
+        scope=scope,
+        nonce="n123",
+    )
+    return APIClient().post(
+        TOKEN_URL,
+        data=urlencode(
+            {
+                "grant_type": "authorization_code",
+                "code": grant.code,
+                "redirect_uri": REDIRECT_URI,
+                "client_id": application.client_id,
+                "client_secret": plaintext_secret,
+            }
+        ),
+        content_type="application/x-www-form-urlencoded",
+    )
+
+
+class TestOpenIDConnectSigningAlgorithm:
+    """Applications without an ID token signing algorithm must not 500 on openid requests."""
+
+    def test_openid_code_exchange_without_algorithm_returns_client_error(self):
+        plaintext_secret = "no-algorithm-secret"
+        application = _oidc_application(algorithm=Application.NO_ALGORITHM, plaintext_secret=plaintext_secret)
+
+        response = _exchange_code(
+            application=application, plaintext_secret=plaintext_secret, user=UserFactory(), scope="openid read"
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json()["error"] == "invalid_scope"
+
+    def test_openid_code_exchange_with_algorithm_returns_id_token(self):
+        plaintext_secret = "hs256-secret"
+        application = _oidc_application(algorithm=Application.HS256_ALGORITHM, plaintext_secret=plaintext_secret)
+
+        response = _exchange_code(
+            application=application, plaintext_secret=plaintext_secret, user=UserFactory(), scope="openid read"
+        )
+
+        assert response.status_code == 200, response.content
+        assert response.json()["id_token"]
+
+    def test_openid_authorization_without_algorithm_is_rejected(self, client):
+        application = _oidc_application(algorithm=Application.NO_ALGORITHM, plaintext_secret="authz-secret")
+        client.force_login(UserFactory())
+
+        response = client.get(
+            reverse("oauth2_provider:authorize"),
+            {
+                "response_type": "code",
+                "client_id": application.client_id,
+                "redirect_uri": REDIRECT_URI,
+                "scope": "openid read",
+            },
+        )
+
+        assert response.status_code == 302, response.content
+        assert "error=invalid_scope" in response["Location"]
