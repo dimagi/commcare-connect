@@ -16,6 +16,7 @@ from commcare_connect.opportunity.helpers import (
     get_worker_table_data,
     get_worker_tasks_base_queryset,
     get_worker_work_area_table_data,
+    opportunities_orphaned_by_removal,
 )
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -863,25 +864,71 @@ def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity
 
 
 @pytest.mark.parametrize(
-    "case, expected",
+    "owner_member_of, expected",
     [
-        ("owner_is_member", False),
-        ("owner_in_funder_org", False),
+        ("program", False),
+        ("funder", False),
+        ("running", False),
+        ("supervising", False),
         ("owner_has_all_org_access", False),
         ("owner_not_member", True),
         ("no_api_key", False),
     ],
 )
-def test_api_key_owner_has_left(case, expected):
-    program = ProgramFactory(funder=OrganizationFactory())
-    opportunity = OpportunityFactory(program=program)
+def test_api_key_owner_has_left(owner_member_of, expected):
+    opportunity = _opportunity_in_funded_program()
     owner = opportunity.api_key.user
-    if case == "owner_is_member":
-        UserOrganizationMembership.objects.create(user=owner, organization=program.organization)
-    elif case == "owner_in_funder_org":
-        UserOrganizationMembership.objects.create(user=owner, organization=program.funder)
-    elif case == "owner_has_all_org_access":
+    if owner_member_of in ORG_OF:
+        UserOrganizationMembership.objects.create(user=owner, organization=ORG_OF[owner_member_of](opportunity))
+    elif owner_member_of == "owner_has_all_org_access":
         opportunity.api_key.user = grant_all_org_access(owner)
-    elif case == "no_api_key":
+    elif owner_member_of == "no_api_key":
         opportunity.api_key = None
     assert api_key_owner_has_left(opportunity) is expected
+
+
+@pytest.mark.parametrize(
+    "removed_from, still_member_of, owns_key, all_org_access, archived, orphaned",
+    [
+        pytest.param("program", None, True, False, False, True, id="program_org"),
+        pytest.param("funder", None, True, False, False, True, id="funder_org"),
+        pytest.param("running", None, True, False, False, True, id="running_org"),
+        pytest.param("supervising", None, True, False, False, True, id="supervising_org"),
+        pytest.param("program", "funder", True, False, False, False, id="still_in_funder_org"),
+        pytest.param("program", "running", True, False, False, False, id="still_in_running_org"),
+        pytest.param("running", "program", True, False, False, False, id="still_in_program_org"),
+        pytest.param("running", "supervising", True, False, False, False, id="still_in_supervising_org"),
+        pytest.param("program", None, True, True, False, False, id="all_org_access"),
+        pytest.param("program", None, True, False, True, False, id="archived"),
+        pytest.param(None, None, True, False, False, False, id="unrelated_org"),
+        pytest.param("program", None, False, False, False, False, id="key_owned_by_someone_else"),
+    ],
+)
+def test_opportunities_orphaned_by_removal(
+    removed_from, still_member_of, owns_key, all_org_access, archived, orphaned
+):
+    opportunity = _opportunity_in_funded_program(archived=archived)
+    user = opportunity.api_key.user if owns_key else MobileUserFactory()
+    if all_org_access:
+        user = grant_all_org_access(user)
+    if still_member_of:
+        UserOrganizationMembership.objects.create(user=user, organization=ORG_OF[still_member_of](opportunity))
+    organization = ORG_OF[removed_from](opportunity) if removed_from else OrganizationFactory()
+    membership = UserOrganizationMembership.objects.create(user=user, organization=organization)
+
+    assert opportunities_orphaned_by_removal(membership) == ([opportunity] if orphaned else [])
+
+
+# The four organizations that manage an opportunity from `_opportunity_in_funded_program`, all distinct.
+ORG_OF = {
+    "program": lambda opportunity: opportunity.program.organization,
+    "funder": lambda opportunity: opportunity.program.funder,
+    "running": lambda opportunity: opportunity.organization,
+    "supervising": lambda opportunity: opportunity.supervising_organization,
+}
+
+
+def _opportunity_in_funded_program(**kwargs):
+    return OpportunityFactory(
+        program=ProgramFactory(funder=OrganizationFactory()), supervising_organization=OrganizationFactory(), **kwargs
+    )
