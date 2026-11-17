@@ -1550,8 +1550,10 @@ def test_work_area_update_inaccessible_allowed_again_after_denial(
     )
 
 
-@pytest.mark.django_db(transaction=True)
-def test_work_area_update_attachment_download_queued(mobile_user_with_connect_link, api_client, opportunity):
+@pytest.mark.django_db
+def test_work_area_update_attachment_download_queued(
+    mobile_user_with_connect_link, api_client, opportunity, django_capture_on_commit_callbacks
+):
     access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
     work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
     work_area = WorkAreaFactory(
@@ -1577,7 +1579,10 @@ def test_work_area_update_attachment_download_queued(mobile_user_with_connect_li
         },
     )
 
-    with patch("commcare_connect.opportunity.tasks.download_inaccessibility_request_attachments.delay") as mock_delay:
+    with (
+        patch("commcare_connect.opportunity.tasks.download_inaccessibility_request_attachments.delay") as mock_delay,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
         make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     mock_delay.assert_called_once()
