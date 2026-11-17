@@ -307,6 +307,7 @@ class TestOpenIDConnectSigningAlgorithm:
         )
 
         assert response.status_code == 400, response.content
+        assert response["Content-Type"] == "application/json"
         assert response.json()["error"] == "invalid_scope"
 
     def test_openid_code_exchange_with_algorithm_returns_id_token(self):

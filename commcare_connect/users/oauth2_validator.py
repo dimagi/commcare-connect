@@ -8,6 +8,26 @@ logger = logging.getLogger(__name__)
 OPENID_SCOPE = "openid"
 
 
+class OIDCNotConfiguredError(InvalidScopeError):
+    """invalid_scope raised from the token endpoint with proper JSON error-response headers.
+
+    Errors raised after token request validation (e.g. from ``finalize_id_token``) are turned
+    into responses by django-oauth-toolkit using only ``exc.headers``, which oauthlib leaves
+    empty for 400s, so the JSON body would otherwise be served as ``text/html``.
+    """
+
+    description = "This application is not configured for OpenID Connect (no signing algorithm set)."
+
+    @property
+    def headers(self):
+        return {
+            **super().headers,
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        }
+
+
 def _client_supports_oidc(client):
     """An application can only sign ID tokens if it has a signing algorithm configured."""
     return bool(getattr(client, "algorithm", ""))
@@ -49,8 +69,5 @@ class CustomOAuth2Validator(OAuth2Validator):
                 "ID token requested for OAuth application without an ID token signing algorithm",
                 extra={"client_id": request.client_id, "scopes": list(request.scopes or [])},
             )
-            raise InvalidScopeError(
-                description="This application is not configured for OpenID Connect (no signing algorithm set).",
-                request=request,
-            )
+            raise OIDCNotConfiguredError(request=request)
         return super().finalize_id_token(id_token, token, token_handler, request)
