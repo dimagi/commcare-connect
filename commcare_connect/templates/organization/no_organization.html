@@ -7,14 +7,24 @@
   <div class="card_bg">
     <div class="flex flex-col items-center justify-center gap-4 h-[80vh]">
       <i class="fa-solid fa-box-open text-5xl text-gray-500"></i>
-      <p class="title text-brand-deep-purple text-center">{% trans "You are not part of an organization yet" %}</p>
-      <p class="max-w-lg text-center text-gray-500 text-sm">
-        {% blocktrans %}
-          You are not currently a member of any organizations. Please ask your administrator to invite you
-          to their organization.
-          Otherwise, you can create a new organization.
-        {% endblocktrans %}
-      </p>
+      {% if has_archived_organization %}
+        <p class="title text-brand-deep-purple text-center">{% trans "Your organization no longer exists" %}</p>
+        <p class="max-w-lg text-center text-gray-500 text-sm">
+          {% blocktrans %}
+            The organization you belonged to has been archived. Ask an administrator to invite you to another
+            organization, or create a new one.
+          {% endblocktrans %}
+        </p>
+      {% else %}
+        <p class="title text-brand-deep-purple text-center">{% trans "You are not part of an organization yet" %}</p>
+        <p class="max-w-lg text-center text-gray-500 text-sm">
+          {% blocktrans %}
+            You are not currently a member of any organizations. Please ask your administrator to invite you
+            to their organization.
+            Otherwise, you can create a new organization.
+          {% endblocktrans %}
+        </p>
+      {% endif %}
       <a href="{% url 'organization_create' %}"
          class="button button-md primary-dark">{% trans "Create an Organization" %}</a>
     </div>

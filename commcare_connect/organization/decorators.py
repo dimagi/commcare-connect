@@ -62,7 +62,8 @@ class IsProgramManagerOrgAdmin(BasePermission):
         org_slug = request.data.get("organization") or view.kwargs.get("org_slug")
         if not org_slug:
             return False
-        return is_user_pm_org_admin(request.user, Organization.objects.filter(slug=org_slug).first())
+        organization = Organization.objects.filter(slug=org_slug, is_archived=False).first()
+        return is_user_pm_org_admin(request.user, organization)
 
 
 def can_act_as_program_manager_user(user, org) -> bool:

@@ -286,6 +286,20 @@ class TestNoOrganizationView:
 
         assert response.status_code == 200
         assert reverse("organization_create") in response.content.decode()
+        assert "You are not part of an organization yet" in response.content.decode()
+
+    def test_member_of_only_an_archived_organization_is_told_it_no_longer_exists(
+        self, client, organization, org_user_member
+    ):
+        organization.is_archived = True
+        organization.save(update_fields=["is_archived"])
+        client.force_login(org_user_member)
+
+        response = client.get(self.url())
+
+        assert response.status_code == 200
+        assert "Your organization no longer exists" in response.content.decode()
+        assert reverse("organization_create") in response.content.decode()
 
     def test_member_is_redirected_to_their_organization(self, client, org_user_member):
         client.force_login(org_user_member)

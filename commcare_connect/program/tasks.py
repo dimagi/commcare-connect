@@ -117,6 +117,7 @@ def send_monthly_delivery_reminder_email():
         | Q(
             program__opportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending
         ),
+        is_archived=False,
     ).distinct()
 
     for organization in organizations_with_pending_deliveries.iterator(chunk_size=50):

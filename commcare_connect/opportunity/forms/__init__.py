@@ -50,7 +50,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, selectable_organizations_q
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm
@@ -351,7 +351,9 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
     def _add_supervising_organization_field(self):
         self.fields["supervising_organization"] = forms.ModelChoiceField(
-            queryset=eligible_supervising_organizations(self.instance.program),
+            queryset=eligible_supervising_organizations(
+                self.instance.program, already_linked=[self.instance.supervising_organization_id]
+            ),
             required=True,
             initial=self.instance.supervising_organization,
             widget=forms.Select(attrs={"data-tomselect": "1"}),
@@ -565,6 +567,7 @@ class OpportunityInitForm(forms.ModelForm):
             form_field.required = False
 
         program_members = Organization.objects.filter(
+            selectable_organizations_q([self.instance.organization_id]),
             programapplication__program=self.program,
             programapplication__status=ProgramApplicationStatus.ACCEPTED,
         ).distinct()
@@ -582,7 +585,9 @@ class OpportunityInitForm(forms.ModelForm):
         delivering organization chosen in `organization`. Both roles can coexist on the
         same organization."""
         self.fields["supervising_organization"] = forms.ModelChoiceField(
-            queryset=eligible_supervising_organizations(self.program),
+            queryset=eligible_supervising_organizations(
+                self.program, already_linked=[self.instance.supervising_organization_id]
+            ),
             required=True,
             initial=self.program.organization,
             widget=forms.Select(attrs={"data-tomselect": "1"}),

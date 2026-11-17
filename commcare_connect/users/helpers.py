@@ -17,8 +17,13 @@ def get_organization_for_request(request, view_kwargs):
         except Organization.DoesNotExist:
             return None
 
-    membership = request.user.memberships.select_related("organization").first()
+    membership = active_memberships(request.user).select_related("organization").first()
     return membership.organization if membership else None
+
+
+def active_memberships(user):
+    """The user's memberships of organizations that aren't archived."""
+    return user.memberships.filter(organization__is_archived=False)
 
 
 def create_hq_user_and_link(user, domain, opportunity):
