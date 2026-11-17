@@ -6,6 +6,7 @@ from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION
+from commcare_connect.opportunity.forms import API_KEY_CANNOT_CREATE_MOBILE_WORKERS
 from commcare_connect.opportunity.models import (
     CommCareApp,
     Country,
@@ -18,7 +19,14 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_applications_for_user_by_domain
+from commcare_connect.utils.commcarehq_api import (
+    CommCareHQAccessDenied,
+    CommCareHQAPIException,
+    check_api_key_access,
+    get_applications_for_user_by_domain,
+    is_hq_domain,
+    mobile_workers_path,
+)
 
 
 class ProgramCreateSerializer(serializers.ModelSerializer):
@@ -122,6 +130,11 @@ class CommCareAppInputSerializer(serializers.Serializer):
     cc_domain = serializers.CharField(max_length=255)
     cc_app_id = serializers.CharField(max_length=50)
 
+    def validate_cc_domain(self, value):
+        if not is_hq_domain(value):
+            raise serializers.ValidationError(_("Enter an HQ project space name."))
+        return value
+
 
 class LearnAppInputSerializer(CommCareAppInputSerializer):
     description = serializers.CharField()
@@ -186,6 +199,23 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
         except IntegrityError:
             raise serializers.ValidationError({"api_key": _("This API key is already registered to another user.")})
 
+    def _check_mobile_worker_access(self, api_key, domains):
+        """Refuse a key that can't create mobile workers in the domains, as every new worker needs to start
+        learning."""
+        domains = sorted(domains)
+        errors = check_api_key_access(api_key, [mobile_workers_path(domain) for domain in domains])
+        refused = [
+            API_KEY_CANNOT_CREATE_MOBILE_WORKERS.format(domain=domain)
+            for domain, error in zip(domains, errors)
+            if isinstance(error, CommCareHQAccessDenied)
+        ]
+        if refused:
+            raise serializers.ValidationError({"learn_app": {"api_key": refused}})
+        if any(errors):
+            raise serializers.ValidationError(
+                {"non_field_errors": [_("Could not reach CommCare HQ to check the API key.")]}
+            )
+
     def _get_hq_app_name(self, api_key, domain, cc_app_id):
         """Fetch the app name from HQ. Results cached per (api_key, domain) to avoid duplicate calls."""
         if not hasattr(self, "_apps_cache"):
@@ -217,6 +247,9 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
 
         learn_api_key = self._resolve_api_key(user, learn_data["hq_server"], learn_data["api_key"])
         deliver_api_key = self._resolve_api_key(user, deliver_data["hq_server"], deliver_data["api_key"])
+
+        # The opportunity keeps only the learn key, and creates every worker's mobile worker with it in both domains.
+        self._check_mobile_worker_access(learn_api_key, {learn_data["cc_domain"], deliver_data["cc_domain"]})
 
         learn_app_name = self._get_hq_app_name(learn_api_key, learn_data["cc_domain"], learn_data["cc_app_id"])
         deliver_app_name = self._get_hq_app_name(deliver_api_key, deliver_data["cc_domain"], deliver_data["cc_app_id"])
