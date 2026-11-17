@@ -431,15 +431,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 raise ValidationError("Exchange rate not available for selected date.")
 
             cleaned_data["exchange_rate"] = exchange_rate
-            cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
-
             cleaned_data["title"] = None
             cleaned_data["start_date"] = None
             cleaned_data["end_date"] = None
-
-            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
-            if not exchange_rate:
-                raise ValidationError("Exchange rate not available for selected date.")
 
             if cleaned_data.get("usd_currency"):
                 cleaned_data["amount_usd"] = amount

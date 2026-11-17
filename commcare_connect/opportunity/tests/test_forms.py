@@ -36,6 +36,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
+    ExchangeRate,
     Opportunity,
     OpportunityActiveEvent,
     OpportunitySupervisingOrganizationEvent,
@@ -856,6 +857,64 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.title is None
         mock_bill_invoice.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "usd_currency, expected_amount, expected_amount_usd",
+        [
+            (False, Decimal("100.00"), Decimal("50.00")),
+            (True, Decimal("200.00"), Decimal("100.00")),
+        ],
+    )
+    def test_custom_invoice_converts_amount_with_one_rate_lookup(
+        self, valid_opportunity, usd_currency, expected_amount, expected_amount_usd
+    ):
+        rate = ExchangeRateFactory(currency_code=valid_opportunity.currency_code, rate=2.0, rate_date="2025-11-01")
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "title": "Ignored for custom invoices",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", wraps=ExchangeRate.latest_exchange_rate) as lookup:
+            assert form.is_valid(), form.errors
+
+        lookup.assert_called_once_with(valid_opportunity.currency_code, datetime.date(2025, 11, 6))
+        assert form.cleaned_data["exchange_rate"] == rate
+        assert form.cleaned_data["amount"] == expected_amount
+        assert form.cleaned_data["amount_usd"] == expected_amount_usd
+        assert form.cleaned_data["title"] is None
+        assert form.cleaned_data["start_date"] is None
+        assert form.cleaned_data["end_date"] is None
+
+    @pytest.mark.parametrize("usd_currency", [False, True])
+    def test_custom_invoice_without_exchange_rate(self, valid_opportunity, usd_currency):
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": usd_currency,
+                "amount": 100.0,
+                "description": "A mandatory description",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+        with patch.object(ExchangeRate, "latest_exchange_rate", return_value=None) as lookup:
+            assert not form.is_valid()
+
+        lookup.assert_called_once()
+        assert form.non_field_errors() == ["Exchange rate not available for selected date."]
+
     def test_service_delivery_invoice_snapshots_its_line_items(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
         payment_unit = PaymentUnitFactory(opportunity=valid_opportunity, amount=100, org_amount=20)
@@ -1509,7 +1568,7 @@ class TestEditTaskTypeForm:
 class TestPaymentUnitFormBudgetValidation:
     """The per-user delivery limit is allocated from a shared budget pool per payment unit.
 
-    Adding or enlarging a payment unit lowers the derived ``number_of_users``; if it drops
+    Adding or enlarging a payment unit lowers the derived ``budgeted_workers``; if it drops
     below the count of workers who have already claimed, some workers silently receive a
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
@@ -1541,7 +1600,7 @@ class TestPaymentUnitFormBudgetValidation:
             pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
             # Budget that would fail with claimants, proving the no-claimants early return fires.
             pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
-            # Doubling an existing unit's max_total pushes number_of_users below the 3 claimants.
+            # Doubling an existing unit's max_total pushes budgeted_workers below the 3 claimants.
             pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
         ],
     )

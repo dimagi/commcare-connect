@@ -1,6 +1,6 @@
-# Release Toggles in CommCare Connect
+# Release Toggles in Connect
 
-CommCare Connect uses [django waffle](https://waffle.readthedocs.io/en/stable/) to manage feature release.
+Connect uses [django waffle](https://waffle.readthedocs.io/en/stable/) to manage feature release.
 
 Waffle provides different tools to control access to a feature on the environment.
 

@@ -1,0 +1,19 @@
+<h:html xmlns:h="http://www.w3.org/1999/xhtml" xmlns:orx="http://openrosa.org/jr/xforms" xmlns="http://www.w3.org/2002/xforms">
+  <h:head>
+    <h:title>Household Visit</h:title>
+    <model>
+      <instance>
+        <data xmlns="http://openrosa.org/formdesigner/sim-deliver-household_visit" uiVersion="1" version="1" name="Household Visit">
+          <household_visit>
+            <deliver xmlns="http://commcareconnect.com/data/v1/learn" id="household_visit">
+              <name>Household Visit</name>
+              <entity_id/>
+              <entity_name/>
+            </deliver>
+          </household_visit>
+        </data>
+      </instance>
+    </model>
+  </h:head>
+  <h:body/>
+</h:html>

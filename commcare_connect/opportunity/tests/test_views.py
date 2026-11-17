@@ -80,11 +80,10 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.utils.invoice_export import invoice_pdf_filename
 from commcare_connect.opportunity.views import (
     OpportunityList,
-    WorkerPaymentsView,
-    get_earned_summary,
     get_export_task_id,
     link_deliver_units,
 )
+from commcare_connect.opportunity.views.worker import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import AccessLevel
@@ -3409,15 +3408,17 @@ class TestCreateTask:
         assert response.context["form"].errors
         assert AssignedTask.objects.count() == 0
 
-    @pytest.mark.django_db(transaction=True)
     def test_create_task_schedules_push_notification(
-        self, client, program_manager_org_user_admin, opportunity, access
+        self, client, program_manager_org_user_admin, opportunity, access, django_capture_on_commit_callbacks
     ):
         client.force_login(program_manager_org_user_admin)
         task = TaskTypeFactory(app=opportunity.deliver_app)
         due_date = date.today() + timedelta(days=7)
 
-        with mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch:
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
                 self._url(opportunity),
                 data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
@@ -3936,7 +3937,7 @@ def test_payment_import_status_complete_with_errors_shows_modal(
     [(False, "bg-message-success"), (True, "bg-message-error")],
 )
 @pytest.mark.parametrize("is_watcher", [False, True])
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_shows_import_banner_on_reload(
     mock_async_result, is_watcher, is_error, expected_class, client, organization, opportunity, org_user_member
 ):
@@ -3967,7 +3968,7 @@ def test_worker_payments_shows_import_banner_on_reload(
     assert expected_class in content  # success -> green banner, error -> red banner
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_opens_modal_for_import_errors(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -3994,7 +3995,7 @@ def test_worker_payments_opens_modal_for_import_errors(
     assert "bg-message-error" not in content
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_stops_polling_once_import_succeeds(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -4014,7 +4015,7 @@ def test_worker_payments_stops_polling_once_import_succeeds(
 
 
 @pytest.mark.parametrize("is_error", [False, True])
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_shows_import_banner_only_once(
     mock_async_result, is_error, client, organization, opportunity, org_user_member
 ):
@@ -4038,7 +4039,7 @@ def test_worker_payments_shows_import_banner_only_once(
     assert message not in repeat.content.decode()
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 @mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_worker_payments_shows_import_error_modal_only_once(
     mock_status_async_result, mock_view_async_result, client, organization, opportunity, org_user_member
@@ -4072,7 +4073,7 @@ def test_worker_payments_shows_import_error_modal_only_once(
     assert "payment_import_status" not in repeat.content.decode()
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.opportunity.views.worker.AsyncResult")
 def test_worker_payments_reports_a_crashed_import_task(
     mock_async_result, client, organization, opportunity, org_user_member
 ):
@@ -4109,50 +4110,3 @@ def test_get_export_task_id_requires_standard_access(rf, opportunity, access_lev
         "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
     ):
         assert get_export_task_id(request, opportunity) == expected
-
-
-@pytest.mark.parametrize(
-    "worker_accrued, org_accrued, total_budget, expected_total, expected_percentage, expected_tooltip",
-    [
-        (
-            500,
-            0,
-            1000,
-            "NGN 500",
-            50,
-            "Percentage Earned by all workers out of Max Budget in the Opportunity",
-        ),
-        (
-            900,
-            100,
-            1000,
-            "NGN 900 workers · NGN 100 org",
-            100,
-            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
-        ),
-        (
-            900,
-            200,
-            1000,
-            "NGN 900 workers · NGN 200 org",
-            100,
-            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
-        ),
-        (
-            900,
-            100,
-            0,
-            "NGN 900 workers · NGN 100 org",
-            0,
-            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
-        ),
-    ],
-)
-def test_get_earned_summary(
-    worker_accrued, org_accrued, total_budget, expected_total, expected_percentage, expected_tooltip
-):
-    earned = get_earned_summary(worker_accrued, org_accrued, total_budget, "NGN")
-
-    assert earned.total == expected_total
-    assert earned.percentage == expected_percentage
-    assert earned.percentage_tooltip == expected_tooltip

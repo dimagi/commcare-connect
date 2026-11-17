@@ -8,13 +8,12 @@
   <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 {% endblock css %}
 {% block javascript %}
+  {# Not deferred: must run before Alpine starts. #}
+  <script src="{% static 'js/audit_task_modal.js' %}"></script>
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block content %}
   {% include 'components/breadcrumbs.html' with path=path %}
-  <div class="w-full flex flex-col gap-4">
-    {% include "audit/audit_report_body.html" %}
-    <div id="modal-root"></div>
-  </div>
+  <div class="w-full flex flex-col gap-4">{% include "audit/audit_report_body.html" %}</div>
 {% endblock %}

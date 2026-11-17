@@ -1,10 +1,10 @@
-# CommCare Connect Deployment
+# Connect Deployment
 
-This folder contains the configuration and scripts for deploying CommCare Connect.
+This folder contains the configuration and scripts for deploying Connect.
 
 ## Overview
 
-CommCare Connect is deployed to AWS using Docker containers. The deployment is managed using [Kamal](https://kamal-deploy.org/), a Ruby-based deployment tool. Deploys use
+Connect is deployed to AWS using Docker containers. The deployment is managed using [Kamal](https://kamal-deploy.org/), a Ruby-based deployment tool. Deploys use
 Kamal 1.x (`~> 1.9.2`, pinned in `.github/workflows/deploy.yml`); much of the current Kamal documentation describes
 Kamal 2, whose configuration differs.
 

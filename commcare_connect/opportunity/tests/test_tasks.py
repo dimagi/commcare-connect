@@ -41,6 +41,7 @@ from commcare_connect.opportunity.tasks import (
     generate_work_status_export,
     notify_user_for_scored_assessment,
     save_export,
+    send_payment_notification,
     send_task_assignment_notification,
     send_task_completion_notification,
 )
@@ -54,6 +55,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    PaymentFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
@@ -746,3 +748,17 @@ def test_get_payment_import_result_message(seen_users, expect_error, expect_text
 
     assert is_error is expect_error
     assert expect_text in message
+
+
+@pytest.mark.django_db
+def test_send_payment_notification_queues_bulk_message():
+    payment = PaymentFactory()
+    access = payment.opportunity_access
+
+    with mock.patch("commcare_connect.opportunity.tasks.queue_message_bulk") as queue:
+        send_payment_notification(access.opportunity_id, [payment.id])
+
+    queue.assert_called_once()
+    (messages,) = queue.call_args.args
+    assert [message.usernames for message in messages] == [[access.user.username]]
+    assert messages[0].data["payment_uuid"] == str(payment.payment_id)

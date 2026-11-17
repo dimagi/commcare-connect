@@ -1,6 +1,6 @@
-# CommCare Connect developer docs
+# Connect developer docs
 
-CommCare Connect is the Django + PostGIS web application behind Connect: organizations create paid opportunities,
+Connect is a Django + PostGIS web application: organizations create paid opportunities,
 community health workers learn and deliver services through CommCare apps, and Connect tracks their visits,
 verifies them and records payments. It integrates with CommCare HQ and ConnectID.
 

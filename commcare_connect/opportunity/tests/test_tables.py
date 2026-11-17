@@ -22,14 +22,13 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     OpportunityTable,
     ProgramManagerOpportunityTable,
-    WorkerDeliveryTable,
-    WorkerTasksTable,
 )
 from commcare_connect.opportunity.tables.invoices import (
     InvoiceDeliveriesTable,
     InvoiceLineItemsTable,
     PaymentInvoiceTable,
 )
+from commcare_connect.opportunity.tables.worker import WorkerDeliveryTable, WorkerTasksTable
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
