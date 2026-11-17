@@ -44,6 +44,8 @@ from commcare_connect.organization.tables import (
 )
 from commcare_connect.organization.tasks import export_contacts, send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
+from commcare_connect.solicitation.filters import SolicitationDirectoryFilterSet
+from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
@@ -308,6 +310,7 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
             {
                 "organizations_count": OrganizationFilterSet(queryset=Organization.objects.all()).qs.count(),
                 "contacts_count": ContactFilterSet(queryset=Contact.objects.all()).qs.count(),
+                "solicitations_count": SolicitationDirectoryFilterSet(queryset=Solicitation.objects.all()).qs.count(),
                 "result_count": context["table"].paginator.count,
             }
         )

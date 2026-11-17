@@ -1,0 +1,21 @@
+{% load i18n %}
+<div class="flex items-center gap-3">
+  {% if record.is_editable %}
+    <a href="{% url 'solicitation:details' record.organization.slug record.solicitation_id %}"
+       class="button-icon"
+       aria-label="{% blocktranslate with title=record.title %}Edit {{ title }}{% endblocktranslate %}"
+       x-data
+       x-tooltip.raw="{% translate 'Edit' %}">
+      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+    </a>
+  {% endif %}
+  {% if record.is_open %}
+    <a href="{% url 'solicitation:invitations' record.organization.slug record.solicitation_id %}"
+       class="button-icon"
+       aria-label="{% blocktranslate with title=record.title %}Invitations for {{ title }}{% endblocktranslate %}"
+       x-data
+       x-tooltip.raw="{% translate 'Invitations' %}">
+      <i class="fa-solid fa-envelope" aria-hidden="true"></i>
+    </a>
+  {% endif %}
+</div>
