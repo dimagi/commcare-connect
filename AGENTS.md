@@ -42,8 +42,8 @@ pytest -n auto --create-db          # rebuild the per-worker test databases if s
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
-inv jscpd                           # run before opening a PR; fails on clones your branch adds and lists only those (settings in .jscpd.json)
-inv jscpd --base origin/<branch>    # compare against another branch, e.g. the PR this one is stacked on
+inv find-new-clones                 # run before opening a PR; fails on clones your branch adds and lists only those (settings in .jscpd.json)
+inv find-new-clones --base origin/<branch>  # compare against another branch, e.g. the PR this one is stacked on
 
 # Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
