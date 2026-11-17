@@ -178,6 +178,18 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
 
+## Architecture Decision Records
+
+ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file, and add it to the "Architecture decisions" section of `nav` in `zensical.toml` so the developer docs site lists it.
+
+Write ADRs for significant decisions only. A decision is significant when it is costly or disruptive to reverse, or when it shapes how the rest of the system is built. Examples: core architecture and system boundaries; the design of critical components such as data storage, authentication, multi-tenancy or message flow; new infrastructure or major dependencies; public APIs and data contracts; and cross-cutting concerns such as security, observability or scaling. If you're unsure whether a decision meets this bar, write the ADR and let the reviewers decide whether to keep it.
+
+- Before designing a change, read the ADRs that touch that area.
+- Cite them as `ADR-NNNN` in code comments, PR descriptions and conversations.
+- If your proposal contradicts an ADR, say so explicitly ("Contradicts ADR-0007 because …") rather than silently overriding it.
+- Ask before editing an accepted ADR. Reversing a decision means writing a new ADR that supersedes it.
+- To record a decision, run `/create-adr`.
+
 <!-- --8<-- [end:conventions] -->
 
 ## Further reading

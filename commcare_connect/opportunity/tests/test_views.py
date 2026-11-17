@@ -28,7 +28,7 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, HQApiKeyCreateForm
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -84,10 +84,10 @@ from commcare_connect.opportunity.views import (
     OpportunityList,
     _fixed_hq_server,
     add_api_key,
-    api_key_replacement_context,
-    get_earned_summary,
+    api_key_owner_warning,
     get_export_task_id,
     link_deliver_units,
+    pinned_api_key_form,
 )
 from commcare_connect.opportunity.views.worker import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -2889,13 +2889,21 @@ class TestOpportunityEditActiveHistory:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("owner_is_member", [True, False])
-def test_api_key_replacement_context(opportunity, owner_is_member):
+def test_api_key_owner_warning(opportunity, owner_is_member):
+    owner = opportunity.api_key.user
     if owner_is_member:
-        make_membership(opportunity.program.organization, opportunity.api_key.user, "member")
-    context = api_key_replacement_context(opportunity)
-    assert isinstance(context["api_key_form"], HQApiKeyCreateForm)
-    assert context["api_key_form"].fixed_hq_server == opportunity.hq_server
-    assert context["api_key_owner_has_left"] is (not owner_is_member)
+        make_membership(opportunity.program.organization, owner, "member")
+    warning = api_key_owner_warning(opportunity)
+    if owner_is_member:
+        assert warning is None
+    else:
+        assert (owner.name or owner.email) in warning
+        assert opportunity.program.name in warning
+
+
+@pytest.mark.django_db
+def test_pinned_api_key_form(opportunity):
+    assert pinned_api_key_form(opportunity).fixed_hq_server == opportunity.hq_server
 
 
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
@@ -4126,53 +4134,6 @@ def test_get_export_task_id_requires_standard_access(rf, opportunity, access_lev
         "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
     ):
         assert get_export_task_id(request, opportunity) == expected
-
-
-@pytest.mark.parametrize(
-    "worker_accrued, org_accrued, total_budget, expected_total, expected_percentage, expected_tooltip",
-    [
-        (
-            500,
-            0,
-            1000,
-            "NGN 500",
-            50,
-            "Percentage Earned by all workers out of Max Budget in the Opportunity",
-        ),
-        (
-            900,
-            100,
-            1000,
-            "NGN 900 workers · NGN 100 org",
-            100,
-            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
-        ),
-        (
-            900,
-            200,
-            1000,
-            "NGN 900 workers · NGN 200 org",
-            100,
-            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
-        ),
-        (
-            900,
-            100,
-            0,
-            "NGN 900 workers · NGN 100 org",
-            0,
-            "Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity",
-        ),
-    ],
-)
-def test_get_earned_summary(
-    worker_accrued, org_accrued, total_budget, expected_total, expected_percentage, expected_tooltip
-):
-    earned = get_earned_summary(worker_accrued, org_accrued, total_budget, "NGN")
-
-    assert earned.total == expected_total
-    assert earned.percentage == expected_percentage
-    assert earned.percentage_tooltip == expected_tooltip
 
 
 @pytest.mark.django_db

@@ -1,0 +1,4 @@
+{% for unit in breakdown.payment_units %}
+  {% if not forloop.first %}<hr class="border-brand-border-light">{% endif %}
+  {% include "opportunity/partials/payment_unit_allocation.html" with unit=unit hide_pending=breakdown.hide_pending %}
+{% endfor %}

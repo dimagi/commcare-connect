@@ -60,6 +60,9 @@ nav = [
     { "Dependency management" = "dependency-management.md" },
   ] },
   { "Deployment" = "deployment.md" },
+  { "Architecture decisions" = [
+    { "ADR-0001: Database trigger change history" = "adr/0001-database-trigger-change-history.md" },
+  ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
   ] },
