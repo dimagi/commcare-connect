@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -2305,44 +2306,37 @@ class TestApiKeyOnChangeForm:
 
 @pytest.mark.django_db
 class TestHQApiKeyCreateForm:
-    def test_pinned_server_is_shown_not_offered(self):
+    def test_pinned_server_is_shown_disabled(self):
         server = HQServerFactory(name="Pinned HQ")
-        HQServerFactory(name="Other HQ")  # must not be offered
         form = HQApiKeyCreateForm(fixed_hq_server=server)
-        assert list(form.fields["hq_server"].queryset) == [server]
+        assert form.fields["hq_server"].disabled
         html = render_crispy_form(form)
-        assert "<select" not in html  # the only other field, api_key, is a text input
-        assert "Pinned HQ" in html
-        assert "Other HQ" not in html
-        assert 'type="hidden"' in html
-        assert f'value="{server.pk}"' in html
+        assert re.search(r'<select[^>]*name="hq_server"[^>]*\bdisabled\b', html)
+        assert re.search(rf'value="{server.pk}"\s+selected', html)
 
-    @pytest.mark.parametrize("pinned, valid", [(True, False), (False, True)])
-    def test_another_server_is_rejected_only_when_pinned(self, pinned, valid):
+    @pytest.mark.parametrize("pinned", [True, False])
+    def test_another_server_is_ignored_only_when_pinned(self, pinned):
         server, other = HQServerFactory(), HQServerFactory()
         form = HQApiKeyCreateForm(
             data={"hq_server": other.id, "api_key": "a-new-api-key-value"},
             fixed_hq_server=server if pinned else None,
         )
-        assert form.is_valid() is valid
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["hq_server"] == (server if pinned else other)
 
 
 @pytest.mark.parametrize(
-    "pending, expected",
+    "choices, pending, current_key_id, expected",
     [
-        ("2", "2"),  # the admin's unsaved pick survives the reload
-        (None, "1"),  # nothing sent: the opportunity's key
-        ("99", "1"),  # no longer offered: the opportunity's key
+        ([(1, "current"), (2, "mine")], "2", 1, "2"),  # the admin's unsaved pick survives the reload
+        ([(1, "current"), (2, "mine")], None, 1, "1"),  # nothing sent: the opportunity's key
+        ([(1, "current"), (2, "mine")], "99", 1, "1"),  # no longer offered: the opportunity's key
+        ([("", "Select an API key"), (2, "mine")], None, None, ""),  # no current key: the placeholder
     ],
 )
-def test_reloaded_api_key_selection(pending, expected):
-    opportunity = Opportunity(api_key_id=1)
-    assert reloaded_api_key_selection([(1, "current"), (2, "mine")], pending, opportunity) == expected
-
-
-def test_reloaded_api_key_selection_without_a_current_key():
-    choices = [("", "Select an API key"), (2, "mine")]
-    assert reloaded_api_key_selection(choices, None, Opportunity()) == ""
+def test_reloaded_api_key_selection(choices, pending, current_key_id, expected):
+    opportunity = Opportunity(api_key_id=current_key_id)
+    assert reloaded_api_key_selection(choices, pending, opportunity) == expected
 
 
 @pytest.mark.django_db
