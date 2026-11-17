@@ -1,9 +1,12 @@
+from django.http import Http404
 from django.shortcuts import render
 from django.utils.deprecation import MiddlewareMixin
 from django.utils.functional import SimpleLazyObject
 
+from ..opportunity.models import Opportunity
 from ..organization.models import Organization
 from ..organization.models import UserOrganizationMembership as Membership
+from ..program.models import Program
 from ..program.utils import (
     AccessLevel,
     is_opportunity_pm,
@@ -11,6 +14,7 @@ from ..program.utils import (
     opportunity_by_id,
     org_access_level_from_request,
 )
+from ..utils.db import get_object_by_uuid_or_int
 from .helpers import active_memberships, get_organization_for_request
 
 
@@ -73,18 +77,39 @@ class OrganizationMiddleware(MiddlewareMixin):
         request.is_opportunity_pm = SimpleLazyObject(lambda: _is_opportunity_pm(request, view_kwargs))
         request.org_access_level = SimpleLazyObject(lambda: org_access_level_from_request(request))
         request.opp_access_level = SimpleLazyObject(lambda: _opportunity_access_level(request, view_kwargs))
-        if _is_archived_organization_page(request, view_kwargs):
+        if _is_hidden_with_archived_organization(request, view_kwargs):
             request.org = None
             return _render_organization_archived(request)
 
 
-def _is_archived_organization_page(request, view_kwargs):
+def _is_hidden_with_archived_organization(request, view_kwargs):
+    """Whether the page belongs to an archived organization, or to a program or opportunity owned by one."""
     org_slug = view_kwargs.get("org_slug")
+    if org_slug is None or not request.path.startswith(f"/a/{org_slug}/"):
+        return False
+    if Organization.objects.filter(slug=org_slug, is_archived=True).exists():
+        return True
+    opp_id = view_kwargs.get("opp_id")
+    if opp_id is not None and _owned_by_archived_organization(
+        Opportunity.objects.filter(program__organization__is_archived=True), opp_id, "opportunity_id"
+    ):
+        return True
+    program_id = view_kwargs.get("pk")
     return (
-        org_slug is not None
-        and request.path.startswith(f"/a/{org_slug}/")
-        and Organization.objects.filter(slug=org_slug, is_archived=True).exists()
+        program_id is not None
+        and request.resolver_match.namespace == "program"
+        and _owned_by_archived_organization(
+            Program.objects.filter(organization__is_archived=True), program_id, "program_id"
+        )
     )
+
+
+def _owned_by_archived_organization(queryset, lookup_value, uuid_field):
+    try:
+        get_object_by_uuid_or_int(queryset, str(lookup_value), uuid_field=uuid_field)
+    except Http404:
+        return False
+    return True
 
 
 def _render_organization_archived(request):

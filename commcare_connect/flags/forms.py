@@ -2,6 +2,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Layout, Row, Submit
 from django import forms
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import Opportunity
@@ -25,13 +26,13 @@ class FlagForm(forms.ModelForm):
         label="Organizations",
     )
     programs = forms.ModelMultipleChoiceField(
-        queryset=Program.objects.order_by("name"),
+        queryset=Program.objects.none(),
         required=False,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
         label="Programs",
     )
     opportunities = forms.ModelMultipleChoiceField(
-        queryset=Opportunity.objects.order_by("name"),
+        queryset=Opportunity.objects.none(),
         required=False,
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
         label="Opportunities",
@@ -46,6 +47,14 @@ class FlagForm(forms.ModelForm):
         organizations = self.instance.organizations.all() if self.instance.pk else []
         self.fields["organizations"].queryset = Organization.objects.filter(
             selectable_organizations_q(organizations)
+        ).order_by("name")
+        programs = self.instance.programs.all() if self.instance.pk else []
+        self.fields["programs"].queryset = Program.objects.filter(
+            Q(organization__is_archived=False) | Q(pk__in=programs)
+        ).order_by("name")
+        opportunities = self.instance.opportunities.all() if self.instance.pk else []
+        self.fields["opportunities"].queryset = Opportunity.objects.filter(
+            Q(program__organization__is_archived=False) | Q(pk__in=opportunities)
         ).order_by("name")
         self.helper = FormHelper(self)
         self.helper.form_tag = False

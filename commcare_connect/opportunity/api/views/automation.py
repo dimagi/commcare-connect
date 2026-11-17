@@ -23,7 +23,9 @@ class OpportunityAPIView(APIView):
 
     def get_opportunity(self):
         opportunity = get_object_or_404(
-            Opportunity.objects.select_related("program__organization"), opportunity_id=self.kwargs["opportunity_id"]
+            Opportunity.objects.select_related("program__organization"),
+            opportunity_id=self.kwargs["opportunity_id"],
+            program__organization__is_archived=False,
         )
         allowed_orgs = [opportunity.organization, opportunity.program.organization]
         if not any(user_is_org_admin(self.request.user, org) for org in allowed_orgs):

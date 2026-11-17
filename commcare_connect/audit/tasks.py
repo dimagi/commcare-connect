@@ -38,6 +38,7 @@ def generate_audit_reports() -> None:
             archived=False,
             is_test=False,
             end_date__gte=period_start,
+            program__organization__is_archived=False,
         )
         .select_related("program__organization")
         .distinct()

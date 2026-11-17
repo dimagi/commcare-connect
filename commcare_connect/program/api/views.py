@@ -43,7 +43,7 @@ class ProgramAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_program(self):
-        program = get_object_or_404(Program, program_id=self.kwargs["program_id"])
+        program = get_object_or_404(Program, program_id=self.kwargs["program_id"], organization__is_archived=False)
         if not user_is_org_admin(self.request.user, program.organization):
             self.permission_denied(self.request)
         return program

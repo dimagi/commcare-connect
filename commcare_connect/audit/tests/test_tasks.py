@@ -11,7 +11,11 @@ from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
 from commcare_connect.program.tests.factories import ProgramFactory
-from commcare_connect.users.tests.factories import MembershipFactory, ProgramManagerOrganisationFactory
+from commcare_connect.users.tests.factories import (
+    MembershipFactory,
+    OrganizationFactory,
+    ProgramManagerOrganisationFactory,
+)
 
 MONDAY_2AM_UTC = datetime.datetime(2026, 4, 20, 2, 0, tzinfo=datetime.UTC)
 
@@ -53,6 +57,20 @@ def test_task_excludes_ineligible_opportunities(mock_now, opportunity_kwargs, cr
     generate_audit_reports()
 
     assert AuditReport.objects.filter(opportunity=opportunity).count() == 0
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
+def test_task_excludes_opportunities_of_an_archived_program_owner(mock_now):
+    program = ProgramFactory(organization=OrganizationFactory(is_archived=True))
+    opportunity = OpportunityFactory(is_test=False, program=program)
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.programs.add(program)
+
+    generate_audit_reports()
+
+    assert not AuditReport.objects.filter(opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db
