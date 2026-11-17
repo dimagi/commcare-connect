@@ -28,7 +28,7 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, HQApiKeyCreateForm
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -84,9 +84,10 @@ from commcare_connect.opportunity.views import (
     OpportunityList,
     _fixed_hq_server,
     add_api_key,
-    api_key_replacement_context,
+    api_key_owner_warning,
     get_export_task_id,
     link_deliver_units,
+    pinned_api_key_form,
 )
 from commcare_connect.opportunity.views.worker import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -2888,13 +2889,21 @@ class TestOpportunityEditActiveHistory:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("owner_is_member", [True, False])
-def test_api_key_replacement_context(opportunity, owner_is_member):
+def test_api_key_owner_warning(opportunity, owner_is_member):
+    owner = opportunity.api_key.user
     if owner_is_member:
-        make_membership(opportunity.program.organization, opportunity.api_key.user, "member")
-    context = api_key_replacement_context(opportunity)
-    assert isinstance(context["api_key_form"], HQApiKeyCreateForm)
-    assert context["api_key_form"].fixed_hq_server == opportunity.hq_server
-    assert context["api_key_owner_has_left"] is (not owner_is_member)
+        make_membership(opportunity.program.organization, owner, "member")
+    warning = api_key_owner_warning(opportunity)
+    if owner_is_member:
+        assert warning is None
+    else:
+        assert (owner.name or owner.email) in warning
+        assert opportunity.program.name in warning
+
+
+@pytest.mark.django_db
+def test_pinned_api_key_form(opportunity):
+    assert pinned_api_key_form(opportunity).fixed_hq_server == opportunity.hq_server
 
 
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
@@ -3425,15 +3434,17 @@ class TestCreateTask:
         assert response.context["form"].errors
         assert AssignedTask.objects.count() == 0
 
-    @pytest.mark.django_db(transaction=True)
     def test_create_task_schedules_push_notification(
-        self, client, program_manager_org_user_admin, opportunity, access
+        self, client, program_manager_org_user_admin, opportunity, access, django_capture_on_commit_callbacks
     ):
         client.force_login(program_manager_org_user_admin)
         task = TaskTypeFactory(app=opportunity.deliver_app)
         due_date = date.today() + timedelta(days=7)
 
-        with mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch:
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
                 self._url(opportunity),
                 data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
