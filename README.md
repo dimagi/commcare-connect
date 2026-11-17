@@ -134,6 +134,65 @@ Migrate the database and start Django:
 ./manage.py runserver
 ```
 
+### Working in git worktrees
+
+To work on several branches at once, give each one its own git worktree. The repository has
+hooks for [worktrunk](https://worktrunk.dev/) (`wt`) in `.config/wt.toml`.
+
+Set up the main checkout first (above): worktrees copy its `.env`, and the docker compose
+services must be running.
+
+#### Create a worktree
+
+By default, a worktree gets its own empty database and its own Redis database:
+
+```bash
+wt switch --create my-branch
+```
+
+`wt new my-branch` does the same; it is a shorter alias defined in `.config/wt.toml`.
+
+The database has no data in it; create a user with `./manage.py createsuperuser`.
+
+To use the main checkout's database and Redis database instead, for example to work with data
+you already have, pass `--share=1`:
+
+```bash
+wt new my-branch --share=1
+```
+
+Setup doesn't run `migrate` on a shared database. If the branch adds migrations, running them
+changes the main checkout's schema too, so give that branch its own database instead.
+
+To start Claude Code in the new worktree as soon as it is set up, add `--execute claude`:
+
+```bash
+wt switch --create --execute claude my-branch
+```
+
+#### Remove a worktree
+
+```bash
+wt remove my-branch
+```
+
+This drops the databases created for the branch. A worktree created with `--share=1` has none,
+so the main checkout's database is left alone.
+
+#### What setup does
+
+When a worktree is created, `scripts/setup-worktree.sh`:
+
+- copies `.env` from the main checkout, and runs `uv sync` and `npm ci`
+- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`
+- picks a Redis database (1-14) that no other worktree's `.env` uses, and points `REDIS_URL` and
+  `CELERY_BROKER_URL` at it, so the branch's Celery worker never runs another branch's tasks
+- comments out `SECONDARY_DATABASE_URL`, which would otherwise point at the main checkout's replica
+
+With `--share=1`, it skips the database and Redis steps and copies `DATABASE_URL`, `REDIS_URL`
+and `CELERY_BROKER_URL` from the main checkout's `.env` instead. Either way, the JS and CSS then
+build in the background.
+
 <!-- --8<-- [end:local-setup] -->
 
 <!-- --8<-- [start:local-development] -->
@@ -180,7 +239,23 @@ similar), so that you can see how the site behaves for both kinds of users.
 
 ### Sample data
 
-To populate a local database with organizations, opportunities, visits and payments
+To build local data that hangs together as if the app had been used, run a scenario. It drives the app's real
+forms, functions and APIs (with CommCare HQ, ConnectID and Twilio stood in for), so validation, visit flags,
+payment accrual and invoicing all run:
+
+```bash
+./manage.py run_scenario payments --admin-email you@example.com
+```
+
+`--admin-email` must belong to an existing local user, who becomes admin of every organization the scenario
+creates. The command doesn't create one, since that means picking a password; if you have no user yet, create one
+with `createsuperuser` (above). Rerunning a scenario first deletes the organizations it built. The command prints
+the pages worth opening. The scenarios and options are described in `commcare_connect/simulation/README.md`.
+
+#### Volume-only data
+
+`generate_sample_data` writes rows directly with factories, so it does not go through the app's rules and its
+records don't hang together. Use it only when you need volume, for example to look at report performance
 (`generate_sample_data <num_visits> <org_slug>`):
 
 ```bash

@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 from allauth.socialaccount.models import SocialAccount
 
-from commcare_connect.opportunity.views import get_ocs_task_section_context
+from commcare_connect.opportunity.views.assigned_tasks import get_ocs_task_section_context
 from commcare_connect.utils.oauth_tokens import SocialTokenMissingError, TokenRefreshError
 from commcare_connect.utils.ocs_api import OcsApiError
 
@@ -44,7 +44,7 @@ def test_context_connected(rf, user, list_chatbots_kwargs, assert_context):
     request = rf.get("/a/org/opportunity/task_types/ocs_section/")
     request.user = user
 
-    with patch("commcare_connect.opportunity.views.list_chatbots", **list_chatbots_kwargs):
+    with patch("commcare_connect.opportunity.views.assigned_tasks.list_chatbots", **list_chatbots_kwargs):
         context = get_ocs_task_section_context(request)
 
     assert context["ocs_connected"] is True
@@ -62,7 +62,7 @@ def test_context_token_error_prompts_reconnect(rf, user, error):
     )
     request.user = user
 
-    with patch("commcare_connect.opportunity.views.list_chatbots", side_effect=error):
+    with patch("commcare_connect.opportunity.views.assigned_tasks.list_chatbots", side_effect=error):
         context = get_ocs_task_section_context(request)
 
     assert context["ocs_connected"] is False

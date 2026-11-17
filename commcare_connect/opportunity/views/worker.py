@@ -30,9 +30,11 @@ from commcare_connect.opportunity.filters import (
     UserTasksFilterSet,
 )
 from commcare_connect.opportunity.forms import (
-    CreateTaskForm,
     PaymentExportForm,
     VisitExportForm,
+)
+from commcare_connect.opportunity.forms.assigned_tasks import (
+    CreateTaskForm,
 )
 from commcare_connect.opportunity.helpers import (
     get_worker_deliveries,
@@ -69,9 +71,11 @@ from commcare_connect.opportunity.tables.worker import (
 from commcare_connect.opportunity.views import (
     PAYMENT_IMPORT_CLAIMED_SESSION_KEY,
     OpportunityObjectMixin,
-    _can_manage_tasks,
     claim_task_outcome,
     get_export_task_id,
+)
+from commcare_connect.opportunity.views.assigned_tasks import (
+    _can_manage_tasks,
 )
 from commcare_connect.organization.decorators import (
     opp_view_access_required,
@@ -116,29 +120,14 @@ class WorkerPageView(OpportunityObjectMixin, TemplateView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_path(self):
-        org_slug = self.kwargs["org_slug"]
-        opp_id = self.kwargs["opp_id"]
-        path = []
-        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
-        path.append(
-            {
-                "title": self.opportunity.program.name,
-                "url": reverse("program:home", args=(org_slug,)),
-            }
-        )
-        path.extend(
-            [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {"title": self.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-                {"title": "Connect Workers", "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id))},
-                {"title": self.page_title, "url": self.request.path},
-            ]
-        )
-        return path
+        return [
+            *get_worker_breadcrumbs(self.kwargs["org_slug"], self.opportunity, "opportunity:worker_deliver"),
+            {"title": self.page_title, "url": self.request.path},
+        ]
 
     def get_worker_kpi_context(self):
         visits_queryset = UserVisit.objects.filter(opportunity_access=self.opportunity_access)
-        counts = get_user_visit_counts(self.opportunity, visits_queryset)
+        counts = get_user_visit_counts(visits_queryset)
 
         flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
         for visit in visits_queryset.filter(flagged=True, flag_reason__isnull=False):
@@ -294,7 +283,7 @@ class WorkerCompletedTaskTableView(WorkerTableView, FilterMixin):
         return self._get_filter().qs.order_by("-date_created")
 
 
-def get_user_visit_counts(opportunity, queryset):
+def get_user_visit_counts(queryset):
     user_visit_counts = queryset.aggregate(
         pending_review=Count(
             "id",
@@ -379,7 +368,7 @@ class VisitVerificationTableView(WorkerVisitTableView):
         return self.table
 
     def get_tab_display(self, **kwargs):
-        user_visit_counts = get_user_visit_counts(self.opportunity, self.filter_queryset)
+        user_visit_counts = get_user_visit_counts(self.filter_queryset)
         tabs_to_labels = {
             "all": _("All"),
             "approved": _("Approved"),
@@ -546,30 +535,8 @@ class BaseWorkerListView(OpportunityObjectMixin, View):
         )
 
     def get_context_data(self, opportunity, org_slug):
-        path = []
-        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
-        path.append(
-            {
-                "title": opportunity.program.name,
-                "url": reverse("program:home", args=(org_slug,)),
-            }
-        )
-        path.extend(
-            [
-                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {
-                    "title": opportunity.name,
-                    "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
-                },
-                {
-                    "title": "Connect Workers",
-                    "url": reverse("opportunity:worker_list", args=(org_slug, opportunity.opportunity_id)),
-                },
-            ]
-        )
-
         context = {
-            "path": path,
+            "path": get_worker_breadcrumbs(org_slug, opportunity, "opportunity:worker_list"),
             "opportunity": opportunity,
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
@@ -829,12 +796,7 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
     table = WorkerLearnStatusTable(completed_modules)
 
     path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": org_slug})},
-        {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-        {
-            "title": "Connect Workers",
-            "url": reverse("opportunity:worker_learn", args=(org_slug, opp_id)),
-        },
+        *get_worker_breadcrumbs(org_slug, request.opportunity, "opportunity:worker_learn"),
         {"title": access.user.name, "url": request.path},
     ]
 
@@ -898,3 +860,20 @@ def worker_flag_counts(request, org_slug, opp_id):
             flag_counts=counts.items(),
         ),
     )
+
+
+def get_worker_breadcrumbs(org_slug, opportunity, connect_workers_url_name):
+    """Breadcrumbs shared by the Connect Workers pages, ending with the "Connect Workers" crumb.
+
+    ``connect_workers_url_name`` is the tab that crumb returns to: the tab list pages link to the
+    "Connect Workers" tab itself, while a per-worker page links back to the tab it is opened from
+    (visits and tasks from Deliver, learn progress from Learn).
+    """
+    opp_id = opportunity.opportunity_id
+    return [
+        {"title": "Programs", "url": reverse("program:home", args=(org_slug,))},
+        {"title": opportunity.program.name, "url": reverse("program:home", args=(org_slug,))},
+        {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+        {"title": "Connect Workers", "url": reverse(connect_workers_url_name, args=(org_slug, opp_id))},
+    ]
