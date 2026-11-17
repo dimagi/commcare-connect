@@ -3,7 +3,7 @@ import hashlib
 import time
 from datetime import timedelta
 from unittest import mock
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 from django.conf import settings
@@ -337,5 +337,12 @@ class TestOpenIDConnectSigningAlgorithm:
             },
         )
 
+        # Authorize-endpoint errors are reported by redirecting back to the client with the
+        # error in the query string (RFC 6749 section 4.1.2.1), not with a JSON body.
         assert response.status_code == 302, response.content
-        assert "error=invalid_scope" in response["Location"]
+        location = urlsplit(response["Location"])
+        assert f"{location.scheme}://{location.netloc}{location.path}" == REDIRECT_URI
+        query = parse_qs(location.query)
+        assert query["error"] == ["invalid_scope"]
+        assert "code" not in query
+        assert not get_grant_model().objects.filter(application=application).exists()

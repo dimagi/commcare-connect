@@ -52,6 +52,11 @@ class CustomOAuth2Validator(OAuth2Validator):
         - oauthlib does not call ``validate_scopes`` during the authorization-code exchange at
           /o/token/ (scopes come from the stored grant), so that path is guarded by
           ``finalize_id_token`` below instead.
+
+        Returning False makes oauthlib raise ``invalid_scope``, which the authorize endpoint
+        reports by redirecting to the client's redirect URI with the error in the query string
+        (RFC 6749 section 4.1.2.1). There is no JSON body here, so the custom headers on
+        ``OIDCNotConfiguredError`` (needed only for the token endpoint) do not apply.
         """
         if OPENID_SCOPE in scopes and getattr(request, "response_type", None) and not _client_supports_oidc(client):
             logger.warning(
