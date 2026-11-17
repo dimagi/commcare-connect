@@ -6,7 +6,6 @@ Never import a submodule here: they import from this package, so it would be cir
 import datetime
 import json
 import logging
-from collections import namedtuple
 from datetime import timedelta
 from decimal import Decimal
 from functools import cached_property
@@ -85,10 +84,10 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
+    amount_with_currency,
     api_key_owner_has_left,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_worker_progress,
     get_payment_report_data,
 )
 from commcare_connect.opportunity.models import (
@@ -152,6 +151,11 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_completed_work_status,
     bulk_update_visit_review_status,
     update_payment_accrued,
+)
+from commcare_connect.opportunity.worker_progress import (
+    get_delivery_allocation,
+    get_payment_unit_breakdown,
+    get_worker_payments,
 )
 from commcare_connect.organization.decorators import (
     opp_admin_access_required,
@@ -384,7 +388,9 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if "api_key" in context["form"].fields:
-            context.update(api_key_replacement_context(self.object))
+            context["api_key_form"] = pinned_api_key_form(self.object)
+            if warning := api_key_owner_warning(self.object):
+                messages.warning(self.request, warning)
         context["active_events"] = self.active_history_events
         return context
 
@@ -396,13 +402,24 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
         return form_kwargs
 
 
-def api_key_replacement_context(opportunity):
-    """Context for the add-key modal and the departed-owner warning on pages that edit an opportunity's key."""
-    return {
-        # The key select only lists keys on the opportunity's server, so a key for another one would vanish.
-        "api_key_form": HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server),
-        "api_key_owner_has_left": api_key_owner_has_left(opportunity),
-    }
+def pinned_api_key_form(opportunity):
+    """The add-key modal's form on pages that edit an opportunity's key.
+
+    The key select only lists keys on the opportunity's server, so a key for another one would vanish.
+    """
+    return HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server)
+
+
+def api_key_owner_warning(opportunity):
+    """The warning to show when the opportunity's API key belongs to someone who can no longer manage its program,
+    or None."""
+    if not api_key_owner_has_left(opportunity):
+        return None
+    owner = opportunity.api_key.user
+    return _(
+        "The API key on this opportunity was added by %(name)s, who can no longer manage the %(program)s program. "
+        "Replace it with one of your own keys."
+    ) % {"name": owner.name or owner.email, "program": opportunity.program.name}
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
@@ -450,10 +467,6 @@ class OpportunityFinalize(OpportunityObjectMixin, UpdateView):
         return response
 
 
-def amount_with_currency(amount, currency_code):
-    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
-
-
 @method_decorator(opp_view_access_required, name="dispatch")
 class OpportunityDashboard(OpportunityObjectMixin, DetailView):
     model = Opportunity
@@ -482,6 +495,9 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
             if isinstance(value, datetime.date):
                 return value.strftime("%Y-%m-%d")
             return str(value)
+
+        def display_limit(value):
+            return _("Unlimited") if value is None else str(value)
 
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
@@ -516,14 +532,15 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
             {
                 "name": "Max Connect Workers",
                 "count": header_with_tooltip(
-                    safe_display(int(object.number_of_users)), "Maximum allowed workers in the Opportunity"
+                    display_limit(object.max_workers),
+                    "Workers who have claimed, plus how many more the remaining budget can fund",
                 ),
                 "icon": "fa-users",
             },
             {
                 "name": "Max Service Deliveries",
                 "count": header_with_tooltip(
-                    safe_display(int(object.allotted_visits)),
+                    display_limit(object.allotted_visits),
                     "Maximum number of payment units that can be delivered. Each payment unit is a service delivery",
                 ),
                 "icon": "fa-gears",
@@ -2162,103 +2179,25 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 @opp_view_access_required
 @opportunity_required
 def opportunity_worker_progress(request, org_slug, opp_id):
-    result = get_opportunity_worker_progress(request.opportunity.pk)
-
-    verified_percentage = safe_percent(result.approved_deliveries or 0, result.total_deliveries or 0)
-    rejected_percentage = safe_percent(result.rejected_deliveries or 0, result.total_deliveries or 0)
-    earned = get_earned_summary(
-        result.total_accrued or 0, result.total_org_accrued or 0, result.total_budget or 0, result.currency_code
-    )
-    paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
-
-    worker_progress = [
-        {
-            "title": "Verification",
-            "progress": [
-                {
-                    "title": "Approved",
-                    "total": header_with_tooltip(
-                        result.approved_deliveries,
-                        "Number of Service Deliveries Approved by both PM and NM or Auto-approved",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{verified_percentage:.0f}%", "Percentage Approved out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": verified_percentage,
-                },
-                {
-                    "title": "Rejected",
-                    "total": header_with_tooltip(result.rejected_deliveries, "Number of Service Deliveries Rejected"),
-                    "value": header_with_tooltip(
-                        f"{rejected_percentage:.0f}%", "Percentage Rejected out of Delivered"
-                    ),
-                    "badge_type": True,
-                    "percent": rejected_percentage,
-                },
-            ],
-        },
-        {
-            "title": "Payments to Connect Workers",
-            "progress": [
-                {
-                    "title": "Earned",
-                    "total": header_with_tooltip(earned.total, "Earned Amount"),
-                    "value": header_with_tooltip(f"{earned.percentage:.0f}%", earned.percentage_tooltip),
-                    "badge_type": True,
-                    "percent": earned.percentage,
-                },
-                {
-                    "title": "Paid",
-                    "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid, result.currency_code),
-                        "Paid Amount to All Connect Workers",
-                    ),
-                    "value": header_with_tooltip(
-                        f"{paid_percentage:.0f}%", "Percentage Paid to all  workers out of Earned amount"
-                    ),
-                    "badge_type": True,
-                    "percent": paid_percentage,
-                },
-            ],
-        },
-    ]
-
     return render(
         request,
         "opportunity/opportunity_worker_progress.html",
-        {"worker_progress": worker_progress},
+        {
+            "allocation": get_delivery_allocation(request.opportunity),
+            "payments": get_worker_payments(request.opportunity),
+            "payment_unit_breakdown_url": reverse("opportunity:payment_unit_breakdown", args=(org_slug, opp_id)),
+        },
     )
 
 
-EarnedSummary = namedtuple("EarnedSummary", ["total", "percentage", "percentage_tooltip"])
-
-
-def get_earned_summary(
-    worker_accrued: int, org_accrued: int, total_budget: int, currency_code: str | None
-) -> EarnedSummary:
-    """Earned figures for the Payments to Connect Workers card.
-
-    The budget covers org pay as well as worker pay, so the percentage counts both. The worker
-    amount is shown on its own so it still matches Payments Earned on the Worker Payments card.
-    """
-    percentage = safe_percent(worker_accrued + org_accrued, total_budget)
-    total = amount_with_currency(worker_accrued, currency_code)
-    if not org_accrued:
-        return EarnedSummary(
-            total, percentage, _("Percentage Earned by all workers out of Max Budget in the Opportunity")
-        )
-    return EarnedSummary(
-        _("%(worker_amount)s workers · %(org_amount)s org")
-        % {"worker_amount": total, "org_amount": amount_with_currency(org_accrued, currency_code)},
-        percentage,
-        _("Percentage Earned by all workers plus org pay out of Max Budget in the Opportunity"),
+@opp_view_access_required
+@opportunity_required
+def opportunity_payment_unit_breakdown(request, org_slug, opp_id):
+    return render(
+        request,
+        "opportunity/partials/payment_unit_breakdown.html",
+        {"breakdown": get_payment_unit_breakdown(request.opportunity)},
     )
-
-
-def safe_percent(numerator: float, denominator: float) -> float:
-    percent = (numerator / denominator) * 100 if denominator else 0
-    return 100 if percent > 100 else percent
 
 
 @opp_view_access_required

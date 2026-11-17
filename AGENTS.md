@@ -17,6 +17,11 @@ inv down                            # docker compose down
 ./manage.py runserver               # dev server
 ./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
 ./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
+./manage.py run_scenario <name> --admin-email you@example.com  # build local data through the app (simulation/)
+
+# Worktrees: each gets its own DB + Redis DB (see "Working in git worktrees" in README.md)
+wt switch --create <branch>         # create and set up via .config/wt.toml
+wt new <branch> --share=1           # reuse the main checkout's DB + Redis DB; skips migrate
 
 # JavaScript/CSS
 npm ci                              # install deps
@@ -32,6 +37,8 @@ celery -A config.celery_app worker -B -l info
 
 # Tests
 pytest                              # run all tests
+pytest -n auto                      # run all tests in parallel, one pytest-xdist worker per core (what CI runs)
+pytest -n auto --create-db          # rebuild the per-worker test databases if setup fails on a stale one
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
@@ -88,6 +95,7 @@ commcare_connect/
   health/          # /up liveness probe, token-gated /status/ dependency checks (see its README)
   multidb/         # Secondary DB support + logical replication
   deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
+  simulation/      # Builds local data by driving the real forms/functions/APIs; only in INSTALLED_APPS under local.py and test.py
   web/             # Context processors, shared template tags
   prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
@@ -165,6 +173,15 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
 - **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
 
+## Local data
+
+Local dev data (not test fixtures) comes from the `simulation` app, which builds it by driving the real forms, functions and APIs. See `commcare_connect/simulation/README.md`.
+
+- **Never seed with the ORM or factories.** Compose `Sim` steps. If a step is missing, add one that submits the page's request as the acting admin (`sim.browser(user)`); don't change production code to make a step possible
+- **Shared vs personal scenarios**: `simulation/scenarios/` holds a few shared scenarios that CI builds; one-off data (a feature in progress, a bug repro) goes in the gitignored `simulation/scenarios/local/` and is never committed. Prefer extending a shared scenario over adding one
+- **Changing a user flow means updating its step in the same PR.** If you change a form, view or function a step calls, update the step; `test_scenarios.py` usually fails otherwise. Scenarios only call steps, so they rarely need changing
+- **A fixed bug leaves a regression test, not a scenario**
+
 ## Gotchas
 
 - **PostGIS required everywhere** (including tests). Local dev needs `gdal`, `geos`, `proj` system libs. On macOS, set `GDAL_LIBRARY_PATH` and `GEOS_LIBRARY_PATH` in `.env`
@@ -177,6 +194,18 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
 - **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
 - **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
+
+## Architecture Decision Records
+
+ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file, and add it to the "Architecture decisions" section of `nav` in `zensical.toml` so the developer docs site lists it.
+
+Write ADRs for significant decisions only. A decision is significant when it is costly or disruptive to reverse, or when it shapes how the rest of the system is built. Examples: core architecture and system boundaries; the design of critical components such as data storage, authentication, multi-tenancy or message flow; new infrastructure or major dependencies; public APIs and data contracts; and cross-cutting concerns such as security, observability or scaling. If you're unsure whether a decision meets this bar, write the ADR and let the reviewers decide whether to keep it.
+
+- Before designing a change, read the ADRs that touch that area.
+- Cite them as `ADR-NNNN` in code comments, PR descriptions and conversations.
+- If your proposal contradicts an ADR, say so explicitly ("Contradicts ADR-0007 because …") rather than silently overriding it.
+- Ask before editing an accepted ADR. Reversing a decision means writing a new ADR that supersedes it.
+- To record a decision, run `/create-adr`.
 
 <!-- --8<-- [end:conventions] -->
 

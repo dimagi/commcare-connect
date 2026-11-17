@@ -22,7 +22,7 @@ from django.utils.translation import gettext, ngettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
-from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
+from commcare_connect.connect_id_client import fetch_users, queue_message_bulk, send_message
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.jira_service_desk import JiraServiceDeskNotConfigured, attach_temporary_file, create_request
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
@@ -427,7 +427,7 @@ def send_notification_inactive_users():
         message = _get_inactive_message(access)
         if message:
             messages.append(message)
-    send_message_bulk(messages)
+    queue_message_bulk(messages)
 
 
 @celery_app.task()
@@ -522,7 +522,7 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                 },
             )
         )
-    send_message_bulk(messages)
+    queue_message_bulk(messages)
 
 
 @celery_app.task()

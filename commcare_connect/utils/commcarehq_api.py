@@ -70,12 +70,13 @@ def get_app_structure(api_key, app):
     return _fetch_app(api_key, app.cc_domain, app.cc_app_id, timeout=300).json()
 
 
-def hq_access_errors(api_key: HQApiKey, paths) -> list[CommCareHQAPIException | None]:
+def hq_access_errors(api_key: HQApiKey, paths) -> list[Exception | None]:
     """Ask HQ, concurrently, whether `api_key` may GET each of `paths`, such as `app_path` and
     `mobile_workers_path`.
 
     Returns one entry per path, in order: None when HQ answers with a 2xx, otherwise the exception
-    (CommCareHQAccessDenied when HQ refused the key)."""
+    (CommCareHQAccessDenied when HQ refused the key). A check that fails unexpectedly, such as on a malformed
+    server URL, returns its exception rather than raising, so it can't take down the other checks."""
     return _hq_access_errors(api_key.hq_server.url, _auth_header(api_key), list(paths))
 
 
@@ -108,7 +109,10 @@ def _fetch_app(api_key, cc_domain, cc_app_id, timeout) -> httpx.Response:
 @async_to_sync
 async def _hq_access_errors(hq_server_url, auth_header, paths):
     async with httpx.AsyncClient(headers={"Authorization": auth_header}, timeout=HQ_ACCESS_TIMEOUT) as client:
-        return await asyncio.gather(*(_hq_access_error(client, hq_server_url, path) for path in paths))
+        return await asyncio.gather(
+            *(_hq_access_error(client, hq_server_url, path) for path in paths),
+            return_exceptions=True,
+        )
 
 
 async def _hq_access_error(client, hq_server_url, path):

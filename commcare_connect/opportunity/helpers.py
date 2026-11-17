@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import UUID
 
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import (
     Case,
     CharField,
@@ -50,7 +51,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import UserOrganizationMembership
-from commcare_connect.program.utils import opportunities_accessible_to_org
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_administered_by
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 
@@ -69,15 +70,11 @@ def inactive_workers_subquery(days_ago):
     return Coalesce(Subquery(subquery, output_field=IntegerField()), Value(0))
 
 
-def get_deliveries_count_subquery(status=None, sum_field=None):
+def get_deliveries_count_subquery(sum_field=None):
     agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
-    filters = {"opportunity_access__opportunity_id": OuterRef("pk")}
-    if status is not None:
-        filters["status"] = status
-
     return Coalesce(
         Subquery(
-            CompletedWork.objects.filter(**filters)
+            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
             .values("opportunity_access__opportunity_id")
             .annotate(count=agg)
             .values("count")[:1],
@@ -85,6 +82,10 @@ def get_deliveries_count_subquery(status=None, sum_field=None):
         ),
         0,
     )
+
+
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
 
 
 def total_accrued_sq():
@@ -230,7 +231,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
 def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, filters: dict):
     filters = filters or {}
     access_objects = []
-    for payment_unit in opportunity.paymentunit_set.all():
+    for payment_unit in opportunity.paymentunit_set.order_by("pk"):
         queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         if last_active_days := filters.get("last_active"):
             last_active_date = now() - timedelta(days=int(last_active_days))
@@ -384,7 +385,8 @@ def get_worker_deliveries(opportunity: Opportunity, filters: dict):
 
     That query returns a row for every payment unit in the opportunity, so units the worker has
     neither an allocation for nor any work in are dropped. A worker with nothing anywhere keeps
-    them all, since they could deliver in any of them.
+    them all, since they could deliver in any of them. Sub-rows and `payment_unit_ids` follow the
+    payment units' creation order.
     """
     rows_by_access = {}
     for row in get_annotated_opportunity_access_deliver_status(opportunity, filters):
@@ -841,24 +843,6 @@ def get_opportunity_delivery_progress(opp_id):
     return annotated_opportunity.first()
 
 
-def get_opportunity_worker_progress(opp_id):
-    return (
-        Opportunity.objects.filter(id=opp_id)
-        .annotate(
-            total_deliveries=get_deliveries_count_subquery(sum_field="saved_completed_count"),
-            approved_deliveries=get_deliveries_count_subquery(
-                CompletedWorkStatus.approved, sum_field="saved_approved_count"
-            ),
-            rejected_deliveries=get_deliveries_count_subquery(CompletedWorkStatus.rejected),
-            total_accrued=total_accrued_sq(),
-            total_org_accrued=total_org_accrued_sq(),
-            total_paid=total_paid_sq(),
-            visits_since_yesterday=deliveries_from_yesterday_sq(),
-        )
-        .first()
-    )
-
-
 def get_opportunity_funnel_progress(opp_id):
     claimed_job_subquery = Coalesce(
         Subquery(
@@ -920,18 +904,53 @@ def get_opportunity_funnel_progress(opp_id):
 
 
 def api_key_owner_has_left(opportunity: Opportunity) -> bool:
-    """True when the opportunity's API key belongs to someone who could no longer manage its program.
+    """True when the opportunity's API key belongs to someone who could no longer manage the opportunity.
 
-    Mirrors who passes `program_admin_access_required`: members of the program's owner or funder organization,
-    and users with ALL_ORG_ACCESS.
+    The key's owner can manage it while they belong to an organization that does (see `_opportunities_managed_by`),
+    or hold ALL_ORG_ACCESS.
     """
     api_key = opportunity.api_key
     if api_key is None:
         return False
     owner = api_key.user
-    program = opportunity.program
-    program_org_ids = [org_id for org_id in (program.organization_id, program.funder_id) if org_id]
-    if UserOrganizationMembership.objects.filter(user=owner, organization_id__in=program_org_ids).exists():
+    owner_org_ids = UserOrganizationMembership.objects.filter(user=owner).values("organization_id")
+    if _opportunities_managed_by(owner_org_ids).filter(pk=opportunity.pk).exists():
         return False
     # Checked last: the owner isn't the request user, so their permission cache is cold and this costs queries.
     return not owner.has_perm(ALL_ORG_ACCESS)
+
+
+def opportunities_orphaned_by_removal(membership: UserOrganizationMembership) -> list[Opportunity]:
+    """The opportunities whose API key would belong to someone who has left once `membership` is removed.
+
+    The rule is `api_key_owner_has_left`'s: the key's owner must stay in an organization that manages the
+    opportunity, or hold ALL_ORG_ACCESS. Archived opportunities are left out, since no one maintains their key.
+    """
+    user, organization = membership.user, membership.organization
+    remaining_org_ids = (
+        UserOrganizationMembership.objects.filter(user=user)
+        .exclude(organization=organization)
+        .values("organization_id")
+    )
+    opportunities = list(
+        _opportunities_managed_by([organization.id])
+        .filter(api_key__user=user, archived=False)
+        .exclude(pk__in=_opportunities_managed_by(remaining_org_ids))
+        .order_by("name")
+    )
+    # Checked last, as in api_key_owner_has_left: the user's permission cache is cold and this costs queries.
+    if opportunities and user.has_perm(ALL_ORG_ACCESS):
+        return []
+    return opportunities
+
+
+def _opportunities_managed_by(org_ids):
+    """The opportunities these orgs manage: those they run or supervise, and those in programs they own or fund.
+
+    These are the orgs `org_opportunity_access` makes ADMIN.
+    """
+    return Opportunity.objects.filter(
+        Q(organization__in=org_ids)
+        | Q(supervising_organization__in=org_ids)
+        | Q(program__in=programs_administered_by(org_ids))
+    )

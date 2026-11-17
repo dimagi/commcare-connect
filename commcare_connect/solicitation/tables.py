@@ -4,19 +4,19 @@ from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
 from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
-from commcare_connect.solicitation.models import EDITABLE_STATUSES, Solicitation
+from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
 
 
 def details_url(record, table):
-    if record.status in EDITABLE_STATUSES:
+    if record.is_editable:
         return reverse("solicitation:details", args=(table.request.org.slug, record.solicitation_id))
     return None
 
 
 def invitations_url(record, table):
-    # Invitations are only managed once a solicitation is live.
-    if record.status == Solicitation.Status.ACTIVE:
+    # Invitations are only managed while a solicitation is open.
+    if record.is_open:
         return reverse("solicitation:invitations", args=(table.request.org.slug, record.solicitation_id))
     return None
 
