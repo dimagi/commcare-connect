@@ -49,7 +49,13 @@ from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm, program_access_level_from_request
 from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_access_errors
+from commcare_connect.utils.commcarehq_api import (
+    CommCareHQAccessDenied,
+    app_path,
+    check_api_key_access,
+    is_hq_domain,
+    mobile_workers_path,
+)
 from commcare_connect.utils.forms import ManagedOptionForm
 
 logger = logging.getLogger(__name__)
@@ -637,6 +643,12 @@ class OpportunityInitForm(forms.ModelForm):
             opportunity=self.instance,
         )
 
+    def clean_learn_app_domain(self):
+        return _clean_app_domain(self.cleaned_data["learn_app_domain"])
+
+    def clean_deliver_app_domain(self):
+        return _clean_app_domain(self.cleaned_data["deliver_app_domain"])
+
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
@@ -917,6 +929,10 @@ def _own_api_keys(user, hq_server_id, exclude=None):
 
 
 API_KEY_NOT_ALLOWED = _("Select one of your own API keys for this HQ server.")
+API_KEY_CANNOT_CREATE_MOBILE_WORKERS = _(
+    "This API key can't create mobile workers on domain \"{domain}\", so new Connect Workers couldn't start "
+    'learning. Its HQ user needs the "Edit Mobile Workers" and "Access APIs" permissions there.'
+)
 
 
 def _allowed_api_key(key_id, *, user, hq_server, opportunity):
@@ -946,6 +962,14 @@ def _current_hq_server_id(opportunity):
     return opportunity.api_key.hq_server_id if opportunity.api_key else None
 
 
+def _clean_app_domain(domain):
+    """The domain is posted as free text and goes into HQ URLs, so it must be a project space name, never `../`
+    or a query string."""
+    if not is_hq_domain(domain):
+        raise forms.ValidationError(_("Select a project space from the list."))
+    return domain
+
+
 def _stored_apps(opportunity):
     """The opportunity's apps as `(app_type, cc_domain, cc_app_id)`, the shape `_verify_api_key_access` takes."""
     apps = (("learn", opportunity.learn_app), ("deliver", opportunity.deliver_app))
@@ -954,7 +978,8 @@ def _stored_apps(opportunity):
 
 def _verify_api_key_access(form, api_key, apps):
     """On an otherwise valid form, ask HQ whether `api_key` can fetch each `(app_type, cc_domain, cc_app_id)` in
-    `apps`, and add the first failure to the form.
+    `apps` and create mobile workers in their domains, which every new worker needs to start learning. Adds the
+    first failure to the form.
 
     Skipped only when the key and the apps are both what the opportunity already stores: a kept key may belong to
     a colleague, so pointing it at different apps needs the same check as a new key."""
@@ -962,15 +987,24 @@ def _verify_api_key_access(form, api_key, apps):
         return
     if api_key.id == form.instance.api_key_id and apps == _stored_apps(form.instance):
         return
-    errors = app_access_errors(api_key, [(domain, app_id) for _app_type, domain, app_id in apps])
-    for (app_type, domain, _app_id), error in zip(apps, errors):
+    app_checks = [
+        (
+            app_path(domain, app_id),
+            gettext('This API key cannot access the {app_type} app on domain "{domain}".').format(
+                app_type=app_type, domain=domain
+            ),
+        )
+        for app_type, domain, app_id in apps
+    ]
+    mobile_worker_checks = [
+        (mobile_workers_path(domain), API_KEY_CANNOT_CREATE_MOBILE_WORKERS.format(domain=domain))
+        for domain in sorted({domain for _app_type, domain, _app_id in apps})
+    ]
+    checks = app_checks + mobile_worker_checks
+    errors = check_api_key_access(api_key, [path for path, _refusal in checks])
+    for (_path, refusal), error in zip(checks, errors):
         if isinstance(error, CommCareHQAccessDenied):
-            form.add_error(
-                "api_key",
-                gettext('This API key cannot access the {app_type} app on domain "{domain}".').format(
-                    app_type=app_type, domain=domain
-                ),
-            )
+            form.add_error("api_key", refusal)
             return
         if error:
             # Unreachable, 5xx, rate limited, ...: not the key's fault, so don't blame it.
