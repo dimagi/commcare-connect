@@ -104,6 +104,7 @@ dev = [
     "pytest>=9.2.0",
     "pytest-django>=4.14.0",
     "pytest-httpx>=0.24.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.17.3",
     "time-machine>=3.6.0",
     "xml2json",

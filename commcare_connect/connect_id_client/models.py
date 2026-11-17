@@ -50,27 +50,6 @@ class MessagingResponse:
 
 
 @dataclasses.dataclass
-class MessagingBulkResponse:
-    all_success: bool
-    messages: list[MessagingResponse]
-
-    @classmethod
-    def build(cls, all_success: bool, messages: list[dict]):
-        return cls(all_success, [MessagingResponse.build(**message) for message in messages])
-
-    def get_failures(self) -> list[list[UserMessageStatus]]:
-        """Return a list of lists of UserMessageStatus objects, where each
-        inner list is the list of failures for a single message.
-
-        Usage:
-            for message, failures in zip(messages, response.get_failures()):
-                if failures:
-                    # do something with the failures
-        """
-        return [message.get_failures() for message in self.messages]
-
-
-@dataclasses.dataclass
 class Message:
     usernames: list[str]
     title: str = None

@@ -74,26 +74,22 @@ DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
 APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
 API_KEY_FIELD_TEMPLATE = "opportunity/partials/api_key_field.html"
-FIXED_HQ_SERVER_FIELD_TEMPLATE = "opportunity/partials/fixed_hq_server_field.html"
 
 
 class HQApiKeyCreateForm(forms.ModelForm):
     def __init__(self, *args, fixed_hq_server=None, **kwargs):
         """`fixed_hq_server` pins the key to that server, for pages whose key select only lists that server's
-        keys. The server is then shown as text rather than offered as a choice."""
+        keys. The server select is then disabled."""
         super().__init__(*args, **kwargs)
         self.fixed_hq_server = fixed_hq_server
-        server_layout = Field("hq_server")
         if fixed_hq_server:
-            server_field = self.fields["hq_server"]
-            # Narrowing the queryset also rejects a post naming any other server.
-            server_field.queryset = server_field.queryset.filter(pk=fixed_hq_server.pk)
-            server_field.initial = fixed_hq_server.pk
-            server_layout = Field("hq_server", template=FIXED_HQ_SERVER_FIELD_TEMPLATE)
+            # A disabled field ignores the posted value and uses its initial one, so no other server gets through.
+            self.fields["hq_server"].initial = fixed_hq_server.pk
+            self.fields["hq_server"].disabled = True
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            server_layout,
+            Field("hq_server"),
             Field("api_key"),
             Div(Submit("submit", "Save", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
@@ -671,7 +667,16 @@ class OpportunityInitForm(forms.ModelForm):
                     self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
             except KeyError:
                 raise forms.ValidationError("Invalid app data")
+            if not self.errors:
+                _verify_api_key_access(self, cleaned_data.get("api_key"), self._posted_apps())
             return cleaned_data
+
+    def _posted_apps(self):
+        """The chosen apps as `(app_type, cc_domain, cc_app_id)`, the shape `_verify_api_key_access` takes."""
+        return [
+            (app_type, self.cleaned_data[f"{app_type}_app_domain"], self.cleaned_data[f"{app_type}_app"]["id"])
+            for app_type in ("learn", "deliver")
+        ]
 
     def _build_commcare_app(self, *, app_type, organization, hq_server, created_by, update_existing=False):
         app_data = self.cleaned_data[f"{app_type}_app"]
