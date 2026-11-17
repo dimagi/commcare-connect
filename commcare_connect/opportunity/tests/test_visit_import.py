@@ -718,10 +718,8 @@ def get_assignable_completed_work_count(access: OpportunityAccess) -> int:
     return total_assigned_count
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.rejected])
 def test_network_manager_flagged_visit_review_status(mobile_user: User, opportunity: Opportunity, visit_status):
-    assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
         5,
@@ -748,9 +746,7 @@ def test_network_manager_flagged_visit_review_status(mobile_user: User, opportun
             assert visit.justification == "justification"
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_nm_flagged_visit_review_status_without_justification(mobile_user: User, opportunity: Opportunity):
-    assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
         5,
@@ -775,7 +771,6 @@ def test_nm_flagged_visit_review_status_without_justification(mobile_user: User,
     assert _ids(msg) == _ids(error_msg)
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize(
     "review_status, cw_status",
     [

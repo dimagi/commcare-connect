@@ -464,14 +464,6 @@ def test_adjustment_type_required_validation(
     assert form.errors["adjustment_type"][0] == "Please select an adjustment type for number of visits."
 
 
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-        {"opp_options": {"managed": False}},
-    ],
-    indirect=True,
-)
 @pytest.mark.django_db
 def test_approve_visits(
     client: Client,
@@ -513,8 +505,7 @@ def test_approve_visits(
         v.refresh_from_db()
         assert v.status == VisitValidationStatus.approved
         assert v.status_modified_date >= before_update
-        if opportunity.managed:
-            assert v.justification == justification
+        assert v.justification == justification
 
 
 @pytest.mark.django_db
