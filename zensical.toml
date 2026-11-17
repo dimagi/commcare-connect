@@ -57,6 +57,7 @@ nav = [
   ] },
   { "Contributing" = [
     { "Pull requests" = "contributing/pull-requests.md" },
+    { "Code organization" = "code-organization.md" },
     { "Dependency management" = "dependency-management.md" },
   ] },
   { "Deployment" = "deployment.md" },

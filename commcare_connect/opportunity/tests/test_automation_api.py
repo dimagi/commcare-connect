@@ -305,6 +305,41 @@ class TestActivateOpportunity:
         opportunity.refresh_from_db()
         assert opportunity.active is False
 
+    @pytest.mark.parametrize(
+        "shared_app, other_active, expected_status",
+        [
+            ("learn_app", True, 400),
+            ("deliver_app", True, 400),
+            ("learn_app", False, 200),
+            (None, True, 200),
+        ],
+        ids=["shared_learn_app", "shared_deliver_app", "shared_with_inactive", "no_shared_app"],
+    )
+    def test_activate_with_app_used_by_another_opportunity(
+        self,
+        api_client,
+        program_manager_org_user_admin,
+        managed_opp_with_deliver_units,
+        organization,
+        shared_app,
+        other_active,
+        expected_status,
+    ):
+        opportunity, du1, du2 = managed_opp_with_deliver_units
+        PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
+        other_apps = {"learn_app": CommCareAppFactory(), "deliver_app": CommCareAppFactory()}
+        if shared_app:
+            # Same HQ app id on a different CommCareApp row, as when two opportunities import one app.
+            other_apps[shared_app] = CommCareAppFactory(cc_app_id=getattr(opportunity, shared_app).cc_app_id)
+        OpportunityFactory(organization=organization, active=other_active, **other_apps)
+
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(f"/api/opportunities/{opportunity.opportunity_id}/activate/")
+
+        assert response.status_code == expected_status
+        opportunity.refresh_from_db()
+        assert opportunity.active is (expected_status == 200)
+
 
 @pytest.mark.django_db
 class TestInviteUsers:
