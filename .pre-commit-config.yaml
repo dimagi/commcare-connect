@@ -51,7 +51,7 @@ repos:
     rev: v10.10.0
     hooks:
       - id: eslint
-        files: commcare_connect/static/.*\.js$
+        files: commcare_connect/static/.*\.jsx?$
         exclude: commcare_connect/static/bundles/
         additional_dependencies:
           - eslint@10.10.0

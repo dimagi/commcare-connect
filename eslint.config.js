@@ -24,10 +24,11 @@ module.exports = [
     },
   },
   {
-    files: ['commcare_connect/static/**/*.js'],
+    files: ['commcare_connect/static/**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2020,
       sourceType: 'module',
+      parserOptions: { ecmaFeatures: { jsx: true } },
       globals: {
         ...globals.browser,
         // Django's JavaScript catalog (the `javascript-catalog` URL)
