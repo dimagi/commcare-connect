@@ -1,7 +1,5 @@
 import datetime
-import logging
 
-import httpx
 import waffle
 from django.db import transaction
 from django.db.models import Q
@@ -28,13 +26,10 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
 )
-from commcare_connect.users.helpers import create_hq_user_and_link
+from commcare_connect.users.helpers import hq_user_error_response
 from commcare_connect.users.models import User
-from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
-
-logger = logging.getLogger(__name__)
 
 
 class OpportunityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -122,13 +117,8 @@ class ClaimOpportunityView(APIView):
             OpportunityClaimLimit.create_claim_limits(opportunity, claim)
 
         domain = opportunity.deliver_app.cc_domain
-        try:
-            user_created = create_hq_user_and_link(self.request.user, domain, opportunity)
-        except (CommCareHQAPIException, httpx.RequestError, httpx.TimeoutException, httpx.ConnectError):
-            logger.exception("Failed to create/link HQ user while claiming opportunity %s", opportunity.id)
-            return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=502)
-        if not user_created:
-            return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
+        if error_response := hq_user_error_response(self.request.user, domain, opportunity):
+            return error_response
         return Response(status=201)
 
 
