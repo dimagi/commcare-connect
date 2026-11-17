@@ -72,9 +72,24 @@ def test_get_connect_blocks_for_app(httpx_mock, demo_app_ccz_content):
 @pytest.mark.django_db
 def test_get_task_units_for_app(httpx_mock, demo_app_ccz_content):
     httpx_mock.add_response(content=demo_app_ccz_content)
-    app = CommCareAppFactory(cc_domain="demo_domain", cc_app_id="app_id")
+    # get_task_units_for_app caches by cc_app_id in Redis, which outlives the test run, so let the
+    # factory generate a unique one rather than reusing a key an earlier run may have cached.
+    app = CommCareAppFactory(cc_domain="demo_domain")
     task_units = get_task_units_for_app(app)
     assert task_units == [
         TaskUnit(id="task_1", name="Task One", description="Description for task one"),
         TaskUnit(id="task_2", name="Task Two", description="Description for task two"),
     ]
+
+
+@pytest.mark.django_db
+def test_get_task_units_for_app_is_cached(httpx_mock, demo_app_ccz_content):
+    httpx_mock.add_response(content=demo_app_ccz_content)
+    # A fresh cc_app_id, so the first call cannot be a cache hit left by an earlier run.
+    app = CommCareAppFactory(cc_domain="demo_domain")
+
+    first = get_task_units_for_app(app)
+    second = get_task_units_for_app(app)
+
+    assert second == first
+    assert len(httpx_mock.get_requests()) == 1
