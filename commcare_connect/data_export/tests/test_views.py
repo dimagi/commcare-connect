@@ -787,7 +787,7 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
         assert response.status_code == 404
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
     @pytest.fixture(autouse=True)
     def setup_flag_for_managed_opportunity(self, managed_opportunity):
@@ -896,7 +896,12 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
 
     @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_pm_admin_assign_flips_status_syncs_hq_and_notifies(
-        self, mock_hq_sync, api_client, managed_opportunity, program_manager_org_user_admin
+        self,
+        mock_hq_sync,
+        api_client,
+        managed_opportunity,
+        program_manager_org_user_admin,
+        django_capture_on_commit_callbacks,
     ):
         add_export_credentials(api_client, program_manager_org_user_admin)
         _add_v2_header(api_client)
@@ -904,9 +909,12 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
 
         payload = [{"id": area.id, "opportunity_access": access.id}]
-        with mock.patch(
-            "commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"
-        ) as mock_notify:
+        with (
+            mock.patch(
+                "commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"
+            ) as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
 
         assert response.status_code == 200
@@ -1058,7 +1066,7 @@ def test_row_from_item_keys_match_get_fieldnames(view_class, sample_item):
     assert set(view.row_from_item(sample_item)) == set(view.get_fieldnames())
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
     def url(self, opp_id):
         return reverse("data_export:work_area_bulk_create", kwargs={"opp_id": opp_id})
@@ -1227,7 +1235,7 @@ class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
         assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestImplementationAreaBulkCreateView(BaseMicroplanningFlagTest):
     def url(self, opp_id):
         return reverse("data_export:implementation_area_bulk_create", kwargs={"opp_id": opp_id})

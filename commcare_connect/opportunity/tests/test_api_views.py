@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
     PaymentUnit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -28,6 +29,7 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -36,6 +38,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MobileUserFactory
@@ -359,10 +362,13 @@ def test_opportunity_list_endpoint_excludes_archived(
 
 
 def test_delivery_progress_endpoint(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+    mobile_user_with_connect_link: User, api_client: APIClient, worker_access: OpportunityAccess
 ):
-    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
-    completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
+    access = worker_access
+    opportunity = access.opportunity
+    completed_work = CompletedWorkFactory(
+        opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         user=mobile_user_with_connect_link,
@@ -394,6 +400,52 @@ def test_delivery_progress_endpoint(
     assert response.status_code == 200
     assert len(response.data["payments"]) == 1
     assert response.data["payments"][0].keys() == PaymentSerializer().get_fields().keys()
+
+
+@pytest.fixture
+def worker_access(mobile_user_with_connect_link, opportunity):
+    return OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+
+
+def test_delivery_progress_hides_work_until_optional_unit_delivered(worker_access: OpportunityAccess):
+    payment_unit = PaymentUnitFactory(opportunity=worker_access.opportunity)
+    required_unit, optional_unit = (
+        DeliverUnitFactory(payment_unit=payment_unit, optional=optional) for optional in (False, True)
+    )
+    work = CompletedWorkFactory(opportunity_access=worker_access, payment_unit=payment_unit)
+
+    def add_approved_visit(deliver_unit):
+        UserVisitFactory(
+            deliver_unit=deliver_unit,
+            completed_work=work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        update_status(worker_access.completedwork_set.all(), worker_access)
+
+    add_approved_visit(required_unit)
+    assert DeliveryProgressSerializer().get_deliveries(worker_access) == []
+
+    add_approved_visit(optional_unit)
+    deliveries = DeliveryProgressSerializer().get_deliveries(worker_access)
+    assert [(d["id"], d["status"]) for d in deliveries] == [(work.id, CompletedWorkStatus.approved)]
+
+
+@pytest.mark.parametrize(
+    "status, saved_completed_count, visible",
+    [
+        (CompletedWorkStatus.pending, 0, False),
+        (CompletedWorkStatus.pending, 1, True),
+        (CompletedWorkStatus.rejected, 0, True),
+        (CompletedWorkStatus.incomplete, 1, False),
+        (CompletedWorkStatus.over_limit, 1, False),
+    ],
+)
+def test_delivery_progress_deliveries_filter(worker_access, status, saved_completed_count, visible):
+    CompletedWorkFactory(opportunity_access=worker_access, status=status, saved_completed_count=saved_completed_count)
+
+    deliveries = DeliveryProgressSerializer().get_deliveries(worker_access)
+    assert [d["status"] for d in deliveries] == ([status] if visible else [])
 
 
 def test_delivery_progress_no_assigned_tasks(

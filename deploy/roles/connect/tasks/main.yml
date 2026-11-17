@@ -90,6 +90,7 @@
 - name: Create {{ base_dir }} folder.
   file:
     path: '{{ base_dir }}'
+    owner: '{{ app_user }}'
     group: '{{ app_group }}'
     mode: 0755
     state: directory

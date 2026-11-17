@@ -2,12 +2,15 @@ import datetime
 import json
 from decimal import Decimal
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
+import time_machine
 from allauth.socialaccount.models import SocialAccount
 from crispy_forms.utils import render_crispy_form
 from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
+from django.utils import timezone
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
@@ -21,14 +24,17 @@ from commcare_connect.flags.switch_names import (
 from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
-    AddTaskTypeForm,
-    CreateTaskForm,
-    EditTaskTypeForm,
     OpportunityChangeForm,
     OpportunityInitForm,
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     PaymentUnitForm,
+)
+from commcare_connect.opportunity.forms.assigned_tasks import (
+    AddTaskTypeForm,
+    CreateTaskForm,
+    EditAssignedTaskForm,
+    EditTaskTypeForm,
 )
 from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
@@ -1301,6 +1307,51 @@ class TestCreateTaskForm:
 
 
 @pytest.mark.django_db
+class TestTaskDueDateUsesActiveTimezone:
+    """Both task forms must treat "today" as the date in Django's active timezone, not the
+    server process's local date. Each case freezes time near midnight with the process clock
+    in a zone whose calendar date differs from the active timezone's."""
+
+    @pytest.fixture(
+        params=[
+            # Process clock (what date.today() reads), active Django timezone, today in the active timezone.
+            (datetime.datetime(2026, 3, 10, 23, 30, tzinfo=ZoneInfo("America/New_York")), "UTC", "2026-03-11"),
+            (datetime.datetime(2026, 3, 11, 0, 30, tzinfo=ZoneInfo("Asia/Tokyo")), "UTC", "2026-03-10"),
+            (datetime.datetime(2026, 3, 10, 23, 30, tzinfo=ZoneInfo("UTC")), "Asia/Kolkata", "2026-03-11"),
+        ],
+        ids=["server-behind-utc", "server-ahead-of-utc", "active-tz-ahead-of-server"],
+    )
+    def frozen_today(self, request):
+        process_now, active_tz, today = request.param
+        with time_machine.travel(process_now, tick=False), timezone.override(active_tz):
+            yield datetime.date.fromisoformat(today)
+
+    @pytest.fixture(params=["create", "edit"])
+    def make_form(self, request, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
+        if request.param == "create":
+            return lambda data=None: CreateTaskForm(
+                data and {"task": task_type.pk, "access": access.pk, **data}, opportunity=opportunity
+            )
+        assigned_task = AssignedTaskFactory(
+            task_type=task_type, opportunity_access=access, due_date=datetime.date(2026, 4, 1)
+        )
+        return lambda data=None: EditAssignedTaskForm(data, instance=assigned_task)
+
+    def test_date_input_min_is_active_timezone_today(self, frozen_today, make_form):
+        assert make_form().fields["due_date"].widget.attrs["min"] == frozen_today.isoformat()
+
+    @pytest.mark.parametrize("days_from_today, valid", [(0, True), (-1, False)], ids=["today", "yesterday"])
+    def test_due_date_validated_against_active_timezone_today(self, frozen_today, make_form, days_from_today, valid):
+        due_date = frozen_today + datetime.timedelta(days=days_from_today)
+        form = make_form({"due_date": due_date.isoformat()})
+        assert form.is_valid() is valid
+        if not valid:
+            assert form.errors["due_date"] == ["Due date cannot be in the past."]
+
+
+@pytest.mark.django_db
 def test_invite_form_rejects_ended_opportunity():
     opportunity = OpportunityFactory(end_date=datetime.date.today() - datetime.timedelta(days=1))
     form = OpportunityUserInviteForm(
@@ -1322,7 +1373,9 @@ class TestAddTaskTypeForm:
         ]
 
     def test_task_unit_choices_populated(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(opportunity=opportunity)
         choices = form.fields["task_unit_id"].choices
         assert choices[0] == ("", "Select a task unit")
@@ -1331,7 +1384,9 @@ class TestAddTaskTypeForm:
 
     def test_already_used_slugs_excluded(self, opportunity, task_units):
         TaskTypeFactory(app=opportunity.deliver_app, slug="task_1")
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(opportunity=opportunity)
         choice_ids = [c[0] for c in form.fields["task_unit_id"].choices]
         assert "task_1" not in choice_ids
@@ -1339,7 +1394,9 @@ class TestAddTaskTypeForm:
         assert "task_3" in choice_ids
 
     def test_valid_form(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={
                     "task_unit_id": "task_1",
@@ -1352,7 +1409,9 @@ class TestAddTaskTypeForm:
         assert form.is_valid(), form.errors
 
     def test_missing_required_fields(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(data={}, opportunity=opportunity)
         assert not form.is_valid()
         assert "task_unit_id" in form.errors
@@ -1360,7 +1419,9 @@ class TestAddTaskTypeForm:
         assert "description" in form.errors
 
     def test_save_sets_slug_and_app(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={
                     "task_unit_id": "task_1",
@@ -1376,7 +1437,9 @@ class TestAddTaskTypeForm:
         assert task_type.opportunity == opportunity
 
     def test_ocs_mode_requires_chatbot(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"mode": "ocs", "name": "Chat task", "description": "desc"},
                 opportunity=opportunity,
@@ -1385,7 +1448,9 @@ class TestAddTaskTypeForm:
         assert "Please select a chatbot." in form.non_field_errors()
 
     def test_ocs_mode_ignores_missing_task_unit(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
                 opportunity=opportunity,
@@ -1394,7 +1459,9 @@ class TestAddTaskTypeForm:
         assert "task_unit_id" not in form.errors
 
     def test_ocs_mode_save_sets_slug_and_clears_case_property(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={
                     "mode": "ocs",
@@ -1415,7 +1482,9 @@ class TestAddTaskTypeForm:
 
     def test_ocs_mode_duplicate_chatbot_rejected(self, opportunity, task_units):
         TaskTypeFactory(app=opportunity.deliver_app, slug="bot-123")
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
                 opportunity=opportunity,
@@ -1424,7 +1493,9 @@ class TestAddTaskTypeForm:
         assert "A task type for this chatbot already exists." in form.non_field_errors()
 
     def test_relearn_mode_still_valid_and_default(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"task_unit_id": "task_1", "name": "My Task", "description": "desc"},
                 opportunity=opportunity,
@@ -1568,7 +1639,7 @@ class TestEditTaskTypeForm:
 class TestPaymentUnitFormBudgetValidation:
     """The per-user delivery limit is allocated from a shared budget pool per payment unit.
 
-    Adding or enlarging a payment unit lowers the derived ``number_of_users``; if it drops
+    Adding or enlarging a payment unit lowers the derived ``budgeted_workers``; if it drops
     below the count of workers who have already claimed, some workers silently receive a
     reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
     """
@@ -1600,7 +1671,7 @@ class TestPaymentUnitFormBudgetValidation:
             pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
             # Budget that would fail with claimants, proving the no-claimants early return fires.
             pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
-            # Doubling an existing unit's max_total pushes number_of_users below the 3 claimants.
+            # Doubling an existing unit's max_total pushes budgeted_workers below the 3 claimants.
             pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
         ],
     )

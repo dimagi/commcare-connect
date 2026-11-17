@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.utils.timezone import now
-from factory import Faker, LazyFunction, Sequence, SubFactory
+from factory import Faker, LazyFunction, Sequence, SubFactory, Trait
 from factory.django import DjangoModelFactory
 
 from commcare_connect.program.tests.factories import _get_default_currency
@@ -23,6 +23,10 @@ class SolicitationFactory(DjangoModelFactory):
     application_deadline = LazyFunction(lambda: now() + timedelta(days=30))
     contact_email = Faker("email")
     organization = SubFactory(OrganizationFactory)
+
+    class Params:
+        # Past its deadline; with status=ACTIVE, not yet closed by update_solicitation_statuses.
+        deadline_passed = Trait(application_deadline=LazyFunction(lambda: now() - timedelta(days=1)))
 
     class Meta:
         model = Solicitation
