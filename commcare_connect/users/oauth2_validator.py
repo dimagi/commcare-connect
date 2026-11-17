@@ -22,9 +22,17 @@ class CustomOAuth2Validator(OAuth2Validator):
         return claims
 
     def validate_scopes(self, client_id, scopes, client, request, *args, **kwargs):
-        # Reject the openid scope on authorization requests (which go on to issue ID tokens)
-        # for applications that have no ID token signing algorithm, rather than issuing a
-        # code that later fails at the token endpoint.
+        """Refuse ``openid`` at the authorize endpoint for apps that cannot sign ID tokens.
+
+        The check is deliberately limited to authorization requests (``response_type`` set):
+
+        - Only the authorization-code/implicit/hybrid OIDC flows issue ID tokens; the password
+          and client_credentials grants accept ``openid`` (e.g. for /o/userinfo/) without
+          signing anything, so rejecting it there would break working clients.
+        - oauthlib does not call ``validate_scopes`` during the authorization-code exchange at
+          /o/token/ (scopes come from the stored grant), so that path is guarded by
+          ``finalize_id_token`` below instead.
+        """
         if OPENID_SCOPE in scopes and getattr(request, "response_type", None) and not _client_supports_oidc(client):
             logger.warning(
                 "Rejected openid scope for OAuth application without an ID token signing algorithm",
@@ -34,6 +42,8 @@ class CustomOAuth2Validator(OAuth2Validator):
         return super().validate_scopes(client_id, scopes, client, request, *args, **kwargs)
 
     def finalize_id_token(self, id_token, token, token_handler, request):
+        # Backstop for every flow that actually signs an ID token, including codes issued
+        # before validate_scopes started rejecting openid for these apps.
         if not _client_supports_oidc(request.client):
             logger.warning(
                 "ID token requested for OAuth application without an ID token signing algorithm",
