@@ -24,9 +24,6 @@ from commcare_connect.flags.switch_names import (
 from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
-    AddTaskTypeForm,
-    CreateTaskForm,
-    EditTaskTypeForm,
     HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityInitForm,
@@ -35,6 +32,11 @@ from commcare_connect.opportunity.forms import (
     PaymentUnitForm,
     fixed_server_api_key_choices,
     reloaded_api_key_selection,
+)
+from commcare_connect.opportunity.forms.assigned_tasks import (
+    AddTaskTypeForm,
+    CreateTaskForm,
+    EditTaskTypeForm,
 )
 from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
@@ -1452,7 +1454,9 @@ class TestAddTaskTypeForm:
         ]
 
     def test_task_unit_choices_populated(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(opportunity=opportunity)
         choices = form.fields["task_unit_id"].choices
         assert choices[0] == ("", "Select a task unit")
@@ -1461,7 +1465,9 @@ class TestAddTaskTypeForm:
 
     def test_already_used_slugs_excluded(self, opportunity, task_units):
         TaskTypeFactory(app=opportunity.deliver_app, slug="task_1")
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(opportunity=opportunity)
         choice_ids = [c[0] for c in form.fields["task_unit_id"].choices]
         assert "task_1" not in choice_ids
@@ -1469,7 +1475,9 @@ class TestAddTaskTypeForm:
         assert "task_3" in choice_ids
 
     def test_valid_form(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={
                     "task_unit_id": "task_1",
@@ -1482,7 +1490,9 @@ class TestAddTaskTypeForm:
         assert form.is_valid(), form.errors
 
     def test_missing_required_fields(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(data={}, opportunity=opportunity)
         assert not form.is_valid()
         assert "task_unit_id" in form.errors
@@ -1490,7 +1500,9 @@ class TestAddTaskTypeForm:
         assert "description" in form.errors
 
     def test_save_sets_slug_and_app(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={
                     "task_unit_id": "task_1",
@@ -1506,7 +1518,9 @@ class TestAddTaskTypeForm:
         assert task_type.opportunity == opportunity
 
     def test_ocs_mode_requires_chatbot(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"mode": "ocs", "name": "Chat task", "description": "desc"},
                 opportunity=opportunity,
@@ -1515,7 +1529,9 @@ class TestAddTaskTypeForm:
         assert "Please select a chatbot." in form.non_field_errors()
 
     def test_ocs_mode_ignores_missing_task_unit(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
                 opportunity=opportunity,
@@ -1524,7 +1540,9 @@ class TestAddTaskTypeForm:
         assert "task_unit_id" not in form.errors
 
     def test_ocs_mode_save_sets_slug_and_clears_case_property(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={
                     "mode": "ocs",
@@ -1545,7 +1563,9 @@ class TestAddTaskTypeForm:
 
     def test_ocs_mode_duplicate_chatbot_rejected(self, opportunity, task_units):
         TaskTypeFactory(app=opportunity.deliver_app, slug="bot-123")
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
                 opportunity=opportunity,
@@ -1554,7 +1574,9 @@ class TestAddTaskTypeForm:
         assert "A task type for this chatbot already exists." in form.non_field_errors()
 
     def test_relearn_mode_still_valid_and_default(self, opportunity, task_units):
-        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+        with patch(
+            "commcare_connect.opportunity.forms.assigned_tasks.get_task_units_for_app", return_value=task_units
+        ):
             form = AddTaskTypeForm(
                 data={"task_unit_id": "task_1", "name": "My Task", "description": "desc"},
                 opportunity=opportunity,
