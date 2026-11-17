@@ -3,7 +3,6 @@ from django.urls import include, path
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.views import (
     AudioAttachmentTranscribe,
-    OpportunityCompletedWorkTable,
     OpportunityDashboard,
     OpportunityEdit,
     OpportunityFinalize,
@@ -17,7 +16,6 @@ from commcare_connect.opportunity.views import (
     delete_form_json_rule,
     download_export,
     edit_payment_unit,
-    export_completed_work,
     export_deliver_status,
     export_status,
     export_user_status,
@@ -39,7 +37,6 @@ from commcare_connect.opportunity.views import (
     suspend_user,
     suspended_users_list,
     sync_deliver_units,
-    update_completed_work_status_import,
     update_visit_status_import,
     user_visit_review,
     verification_flags_config,
@@ -126,15 +123,6 @@ urlpatterns = [
         "<slug:opp_id>/audio_attachment/<int:pk>/transcribe/",
         view=AudioAttachmentTranscribe.as_view(),
         name="audio_attachment_transcribe",
-    ),
-    path(
-        "<slug:opp_id>/completed_work_table/",
-        view=OpportunityCompletedWorkTable.as_view(),
-        name="completed_work_table",
-    ),
-    path("<slug:opp_id>/completed_work_export/", view=export_completed_work, name="completed_work_export"),
-    path(
-        "<slug:opp_id>/completed_work_import/", view=update_completed_work_status_import, name="completed_work_import"
     ),
     path("<slug:opp_id>/verification_flags_config/", view=verification_flags_config, name="verification_flags_config"),
     path("<slug:opp_id>/task_types/", view=TaskTypesConfig.as_view(), name="task_types_config"),

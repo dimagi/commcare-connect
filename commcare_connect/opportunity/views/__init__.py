@@ -83,7 +83,6 @@ from commcare_connect.opportunity.helpers import (
 from commcare_connect.opportunity.models import (
     AudioAttachment,
     BlobMeta,
-    CompletedWork,
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
@@ -105,7 +104,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    CompletedWorkTable,
     DeliverUnitTable,
     LearnModuleTable,
     OpportunityTable,
@@ -125,7 +123,6 @@ from commcare_connect.opportunity.tasks import (
     generate_review_visit_export,
     generate_user_status_export,
     generate_visit_export,
-    generate_work_status_export,
     get_payment_upload_key,
     invite_user,
     send_push_notification_task,
@@ -134,7 +131,6 @@ from commcare_connect.opportunity.tasks import (
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
     ImportException,
-    bulk_update_completed_work_status,
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
@@ -1376,51 +1372,6 @@ def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
     )
     form_json_rule.delete()
     return HttpResponse(status=200)
-
-
-@method_decorator(opp_view_access_required, name="dispatch")
-class OpportunityCompletedWorkTable(OpportunityObjectMixin, SingleTableView):
-    model = CompletedWork
-    paginate_by = 25
-    table_class = CompletedWorkTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        access_objects = OpportunityAccess.objects.filter(opportunity=self.get_opportunity())
-        return list(
-            filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
-        )
-
-
-@opp_standard_access_required
-@opportunity_required
-def export_completed_work(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
-    if not form.is_valid():
-        messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opp_id)
-
-    export_format = form.cleaned_data["format"]
-    result = generate_work_status_export.delay(request.opportunity.pk, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
-
-
-@opp_standard_access_required
-@opportunity_required
-@require_POST
-def update_completed_work_status_import(request, org_slug=None, opp_id=None):
-    file = request.FILES.get("visits")
-    try:
-        status = bulk_update_completed_work_status(request.opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"Payment Verification status updated successfully for {len(status)} completed works."
-        if status.missing_completed_works:
-            message += status.get_missing_message()
-        messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, opp_id)
 
 
 @opportunity_pm_required
