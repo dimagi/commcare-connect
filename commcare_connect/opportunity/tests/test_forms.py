@@ -246,7 +246,7 @@ class TestOpportunityChangeForm:
         form = OpportunityChangeForm(data=data, instance=valid_opportunity)
 
         assert form.fields["end_date"].widget.attrs["min"] == str(_days_from_today(40))
-        assert "on or after" in form.fields["end_date"].help_text
+        assert "or later (last payment unit end)" in form.fields["end_date"].help_text
         assert form.is_valid() is (expected_error is None), form.errors
         if expected_error:
             assert expected_error in form.errors["end_date"][0]

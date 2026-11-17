@@ -364,8 +364,8 @@ class TestOpportunityFinalizeForm:
             assert not start_field.help_text and not end_field.help_text
         else:
             assert start_field.widget.attrs["max"] == str(_days_from_today(expected_start_max))
-            assert "on or before" in start_field.help_text
-            assert "on or after" in end_field.help_text
+            assert "(first payment unit start)" in start_field.help_text
+            assert "(last payment unit end)" in end_field.help_text
 
 
 @pytest.mark.django_db
