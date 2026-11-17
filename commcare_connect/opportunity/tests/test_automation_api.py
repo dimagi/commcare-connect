@@ -398,6 +398,7 @@ class TestInviteUsers:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures("hq_grants_app_access")
 class TestFullPipeline:
     @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
     @patch("commcare_connect.opportunity.api.views.automation.add_connect_users")

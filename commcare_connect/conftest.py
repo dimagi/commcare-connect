@@ -235,7 +235,7 @@ def anonymous_request(rf):
 
 @pytest.fixture
 def hq_grants_app_access(monkeypatch):
-    """HQ lets every key fetch every app, for tests of opportunity forms that aren't about the key check."""
-    monkeypatch.setattr(
-        "commcare_connect.opportunity.forms.app_access_errors", lambda api_key, apps: [None for _app in apps]
-    )
+    """HQ lets every key fetch every app and create mobile workers everywhere, for tests of the opportunity forms
+    and the managed opportunity API that aren't about the key check."""
+    for module in ("commcare_connect.opportunity.forms", "commcare_connect.program.api.serializers"):
+        monkeypatch.setattr(f"{module}.check_api_key_access", lambda api_key, paths: [None for _path in paths])
