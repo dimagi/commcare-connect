@@ -128,7 +128,7 @@ class OrganizationDirectoryTable(DirectoryTable):
 
 
 class ContactDirectoryTable(DirectoryTable):
-    name = columns.Column(verbose_name=_("Contact Name"))
+    name = columns.Column(verbose_name=_("Name"))
     organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
     organization_status = columns.TemplateColumn(
         verbose_name=lazy(_status_column_header, SafeString)(),
