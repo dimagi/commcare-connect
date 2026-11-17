@@ -301,6 +301,9 @@ class LLODirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
 class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView):
     """A filtered, paginated directory table under the directory's tab bar."""
 
+    tab_title = None
+    tab_url_name = None
+
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
 
@@ -312,6 +315,10 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
                 "contacts_count": ContactFilterSet(queryset=Contact.objects.all()).qs.count(),
                 "solicitations_count": SolicitationDirectoryFilterSet(queryset=Solicitation.objects.all()).qs.count(),
                 "result_count": context["table"].paginator.count,
+                "path": [
+                    {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+                    {"title": self.tab_title, "url": reverse(self.tab_url_name)},
+                ],
             }
         )
         return context
@@ -321,33 +328,25 @@ class OrganizationListView(LLODirectoryListView):
     table_class = OrganizationDirectoryTable
     filterset_class = OrganizationFilterSet
     template_name = "organization/directory/organization_list.html"
+    tab_title = gettext_lazy("Organizations")
+    tab_url_name = "organization_directory:list"
 
     def get_queryset(self):
         return Organization.objects.prefetch_related("countries", "primary_sectors").order_by("-date_created")
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["path"] = [
-            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
-            {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
-        ]
-        return context
 
 
 class ContactListView(LLODirectoryListView):
     table_class = ContactDirectoryTable
     filterset_class = ContactFilterSet
     template_name = "organization/directory/contact_list.html"
+    tab_title = gettext_lazy("Contacts")
+    tab_url_name = "organization_directory:contacts"
 
     def get_queryset(self):
         return Contact.objects.select_related("organization").order_by("name")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["path"] = [
-            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
-            {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
-        ]
         context["export_task_id"] = self.request.GET.get("export_task_id")
         context["export_form"] = ExportFormatForm()
         return context

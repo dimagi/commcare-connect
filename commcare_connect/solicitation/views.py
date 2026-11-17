@@ -82,17 +82,11 @@ class SolicitationDirectoryListView(WaffleSwitchMixin, LLODirectoryListView):
     table_class = SolicitationDirectoryTable
     filterset_class = SolicitationDirectoryFilterSet
     template_name = "organization/directory/solicitation_list.html"
+    tab_title = _("Solicitations")
+    tab_url_name = "organization_directory:solicitations"
 
     def get_queryset(self):
         return Solicitation.objects.select_related("organization", "program").order_by("-date_created")
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["path"] = [
-            {"title": _("Admin"), "url": reverse("users:internal_features")},
-            {"title": _("Solicitations"), "url": reverse("organization_directory:solicitations")},
-        ]
-        return context
 
 
 class SolicitationDirectoryCreateView(WaffleSwitchMixin, LLODirectoryFormMixin, FormView):
