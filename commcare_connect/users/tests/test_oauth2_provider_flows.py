@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import time
 from datetime import timedelta
 from unittest import mock
@@ -247,6 +249,9 @@ class TestScopeEnforcement:
 
 
 REDIRECT_URI = "https://client.example.com/callback"
+# PKCE is required by django-oauth-toolkit for the authorization code flow.
+CODE_VERIFIER = "UUCp0rT9qN7t7V3x33QbgDwKKn5Ztbs2XoWZPnRb124WMecWoe05x1oLy4QHWOBW"
+CODE_CHALLENGE = base64.urlsafe_b64encode(hashlib.sha256(CODE_VERIFIER.encode()).digest()).decode().rstrip("=")
 
 
 def _oidc_application(*, algorithm, plaintext_secret):
@@ -271,6 +276,8 @@ def _exchange_code(*, application, plaintext_secret, user, scope):
         redirect_uri=REDIRECT_URI,
         scope=scope,
         nonce="n123",
+        code_challenge=CODE_CHALLENGE,
+        code_challenge_method="S256",
     )
     return APIClient().post(
         TOKEN_URL,
@@ -278,6 +285,7 @@ def _exchange_code(*, application, plaintext_secret, user, scope):
             {
                 "grant_type": "authorization_code",
                 "code": grant.code,
+                "code_verifier": CODE_VERIFIER,
                 "redirect_uri": REDIRECT_URI,
                 "client_id": application.client_id,
                 "client_secret": plaintext_secret,
@@ -323,6 +331,8 @@ class TestOpenIDConnectSigningAlgorithm:
                 "client_id": application.client_id,
                 "redirect_uri": REDIRECT_URI,
                 "scope": "openid read",
+                "code_challenge": CODE_CHALLENGE,
+                "code_challenge_method": "S256",
             },
         )
 
