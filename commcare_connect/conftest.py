@@ -3,7 +3,7 @@ import importlib
 
 import pytest
 from django.apps import apps as django_apps
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Permission
 from django.contrib.messages.middleware import MessageMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
 from rest_framework.test import APIClient, APIRequestFactory
@@ -138,6 +138,13 @@ def org_user_member(organization) -> User:
 @pytest.fixture
 def org_user_admin(organization) -> User:
     return organization.memberships.filter(role="admin").first().user
+
+
+@pytest.fixture
+def user_with_directory_access(db) -> User:
+    user = UserFactory()
+    user.user_permissions.add(Permission.objects.get(codename="llo_directory_management_access"))
+    return user
 
 
 @pytest.fixture
