@@ -6,7 +6,6 @@ import openpyxl
 CONTACTS_TAB = "Contacts"
 ORGANIZATIONS_TAB = "Organizations"
 CONNECT_ID_COLUMN = "Connect ID"
-IMPORT_STATUS_COLUMN = "Connect Import Status"
 
 CONTACT_COLUMNS = (
     "Contact Full Name",
@@ -52,7 +51,6 @@ class SheetRow:
 @dataclass
 class LLOWorkbook:
     path: Path
-    book: openpyxl.Workbook
     contacts: list[SheetRow]
     organizations: list[SheetRow]
 
@@ -64,7 +62,6 @@ def load_workbook(path: Path) -> LLOWorkbook:
         raise WorkbookError(f"Missing tab(s): {', '.join(missing_tabs)}")
     return LLOWorkbook(
         path=Path(path),
-        book=book,
         contacts=_read_sheet(book[CONTACTS_TAB], CONTACTS_TAB, CONTACT_COLUMNS),
         organizations=_read_sheet(book[ORGANIZATIONS_TAB], ORGANIZATIONS_TAB, ORGANIZATION_COLUMNS),
     )

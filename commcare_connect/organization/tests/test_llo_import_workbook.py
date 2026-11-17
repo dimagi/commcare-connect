@@ -4,7 +4,6 @@ import pytest
 from commcare_connect.organization.llo_import.workbook import (
     CONTACT_COLUMNS,
     CONTACTS_TAB,
-    ORGANIZATIONS_TAB,
     WorkbookError,
     load_workbook,
 )
@@ -81,4 +80,3 @@ def test_result_columns_are_included_when_present(tmp_path):
     )
 
     assert load_workbook(path).organizations[0].values["Connect ID"] == "abc"
-    assert ORGANIZATIONS_TAB in load_workbook(path).book.sheetnames

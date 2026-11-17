@@ -43,7 +43,7 @@ def render_report(plan: ImportPlan, committed: bool, output_path: Path | None) -
 
 def _header(plan: ImportPlan, committed: bool, output_path: Path | None) -> str:
     if committed:
-        return f"REAL RUN — records were saved. Workbook: {plan.path.name}. Output copy: {output_path}"
+        return f"REAL RUN — records were saved. Workbook: {plan.path.name}. Results file: {output_path}"
     return f"DRY RUN — nothing was written. Workbook: {plan.path.name}"
 
 
