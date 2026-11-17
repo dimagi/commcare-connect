@@ -123,7 +123,7 @@ class WorkerPageView(OpportunityObjectMixin, TemplateView):
 
     def get_worker_kpi_context(self):
         visits_queryset = UserVisit.objects.filter(opportunity_access=self.opportunity_access)
-        counts = get_user_visit_counts(self.opportunity, visits_queryset)
+        counts = get_user_visit_counts(visits_queryset)
 
         flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
         for visit in visits_queryset.filter(flagged=True, flag_reason__isnull=False):
@@ -279,7 +279,7 @@ class WorkerCompletedTaskTableView(WorkerTableView, FilterMixin):
         return self._get_filter().qs.order_by("-date_created")
 
 
-def get_user_visit_counts(opportunity, queryset):
+def get_user_visit_counts(queryset):
     user_visit_counts = queryset.aggregate(
         pending_review=Count(
             "id",
@@ -364,7 +364,7 @@ class VisitVerificationTableView(WorkerVisitTableView):
         return self.table
 
     def get_tab_display(self, **kwargs):
-        user_visit_counts = get_user_visit_counts(self.opportunity, self.filter_queryset)
+        user_visit_counts = get_user_visit_counts(self.filter_queryset)
         tabs_to_labels = {
             "all": _("All"),
             "approved": _("Approved"),
