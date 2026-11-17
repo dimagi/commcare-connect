@@ -34,11 +34,6 @@
   border-radius: 0 0 0.5rem 0.5rem;
 }
 
-/* Match the rounded-lg corners of the other form fields. */
-.ts-control {
-  border-radius: 0.5rem;
-}
-
 /* Fit tom-selects to the h-9 (36px) search box and buttons of a filter bar, with or without chips. */
 .filter-bar .ts-control {
   padding-top: 5px;
