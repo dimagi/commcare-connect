@@ -42,7 +42,7 @@ APPROVED_AT = datetime.datetime(2026, 9, 10, 12, tzinfo=datetime.UTC)
 @pytest.fixture
 def sent_messages():
     """What the ConnectID stand-in was asked to push. Request it before ``sim``, which starts the stand-ins."""
-    with mock.patch.object(payment_fakes, "fake_send_message_bulk") as send:
+    with mock.patch.object(payment_fakes, "fake_queue_message_bulk") as send:
         yield send
 
 
