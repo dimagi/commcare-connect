@@ -62,7 +62,11 @@ def duplicate_code_report(c: Context, base="origin/main"):
         hide=True,
         warn=True,
     )
-    print("\n".join(_new_clone_report(output=result.stdout + result.stderr)))
+    output = result.stdout + result.stderr
+    if re.search(r"Found \d+ clones", output):
+        print("\n".join(_new_clone_report(output=output)))
+    else:
+        print(output)
     if result.failed:
         raise Exit(code=result.exited)
 
