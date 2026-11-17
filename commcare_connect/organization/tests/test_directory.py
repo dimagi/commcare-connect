@@ -3,7 +3,8 @@ from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import AnonymousUser, Permission
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
@@ -568,6 +569,16 @@ class TestContactArchiveView:
         assert contact.modified_by == user_with_directory_access.email
         assert response.url == f"{reverse('organization_directory:contacts')}?search=x"
 
+    def test_archiving_the_main_poc_leaves_the_organization_without_one(self, client, user_with_directory_access):
+        contact = ContactFactory(is_main_poc=True)
+        client.force_login(user_with_directory_access)
+
+        client.post(reverse("organization_directory:contact_archive", args=(contact.contact_id,)))
+
+        contact.refresh_from_db()
+        assert contact.is_archived
+        assert not contact.organization.contacts.filter(is_main_poc=True).exists()
+
     def test_get_is_not_allowed(self, client, user_with_directory_access):
         contact = ContactFactory()
         client.force_login(user_with_directory_access)
@@ -585,6 +596,18 @@ class TestContactArchiveView:
         url = reverse("organization_directory:contact_archive", args=(contact.contact_id,))
 
         assert client.post(url).status_code == 403
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_main_poc", [True, False])
+def test_archive_confirmation_warns_only_when_archiving_the_main_poc(rf, is_main_poc):
+    contact = ContactFactory(is_main_poc=is_main_poc)
+    request = rf.get("/")
+    request.user = AnonymousUser()
+
+    html = render_to_string("organization/directory/contact_row_actions.html", {"record": contact}, request=request)
+
+    assert ("will have no Main Point of Contact" in html) == is_main_poc
 
 
 @pytest.mark.django_db

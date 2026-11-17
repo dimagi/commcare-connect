@@ -436,8 +436,11 @@ class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     def post(self, request, *args, **kwargs):
         contact = self.get_object()
         contact.is_archived = self.is_archived
+        if contact.is_archived:
+            # An archived contact can't be the point of contact, so the organization is left without one.
+            contact.is_main_poc = False
         contact.modified_by = request.user.email
-        contact.save(update_fields=["is_archived", "modified_by", "date_modified"])
+        contact.save(update_fields=["is_archived", "is_main_poc", "modified_by", "date_modified"])
         messages.success(request, self.success_message.format(name=contact.name))
         return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
 
