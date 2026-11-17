@@ -15,7 +15,7 @@ from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.organization.decorators import org_pm_required
+from commcare_connect.organization.decorators import org_pm_or_llo_directory_required
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -45,7 +45,7 @@ STEP_LABELS = {
 }
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(org_pm_or_llo_directory_required, name="dispatch")
 class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     waffle_switch = SOLICITATIONS
     table_class = SolicitationTable
@@ -68,7 +68,7 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
         )
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(org_pm_or_llo_directory_required, name="dispatch")
 class SolicitationStepMixin(WaffleSwitchMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
@@ -200,7 +200,7 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(org_pm_or_llo_directory_required, name="dispatch")
 class InvitationsMixin(WaffleSwitchMixin):
     waffle_switch = SOLICITATIONS
 
