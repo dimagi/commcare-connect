@@ -80,7 +80,7 @@ def v2_write_client(api_client, org_user_admin):
 @pytest.mark.django_db
 class TestTaskTypeDataView:
     def test_returns_task_list(self, v2_export_client, opportunity):
-        task = TaskTypeFactory(opportunity=opportunity)
+        task = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity)
         url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
         response = v2_export_client.get(url)
         assert response.status_code == 200
@@ -89,6 +89,16 @@ class TestTaskTypeDataView:
         result = data["results"][0]
         assert result["id"] == task.id
         assert result["name"] == task.name
+        assert result["mode"] == task.mode
+
+    def test_lists_deliver_app_task_types_without_opportunity(self, v2_export_client, opportunity):
+        """Task types created before TaskType.opportunity existed have it NULL; the create-task
+        UI still offers them, so the export must too."""
+        legacy = TaskTypeFactory(app=opportunity.deliver_app, opportunity=None)
+        TaskTypeFactory()  # another app's task type
+        url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert [r["id"] for r in response.json()["results"]] == [legacy.id]
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
         add_export_credentials(api_client, user)

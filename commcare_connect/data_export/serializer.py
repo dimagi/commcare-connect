@@ -406,6 +406,7 @@ class TaskTypeDataSerializer(serializers.ModelSerializer):
             "is_active",
             "archived",
             "duration",
+            "mode",
         ]
 
 
