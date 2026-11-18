@@ -31,6 +31,7 @@ Add helpers here when a second demo needs the same thing; keep one-off selectors
 - Under `DEBUG=False` the repo's manifest storage needs `staticfiles/staticfiles.json`: a 500 on every page without it, stale bundles from an old one. `runserver --insecure` can't help, as `whitenoise.runserver_nostatic` disables it → `record_settings.py` swaps in plain storage and whitenoise's finders, so the server always serves the current `npm run dev` build with no collectstatic.
 - allauth bounces unverified emails to a verification page mid-login → the seed marks every `EmailAddress` verified.
 - The org slug is generated from the name (`slugify_uniquely`) → the seed looks orgs up by name and asserts the slug.
+- A long-lived local DB can hold two orgs with the same name, so `Organization.objects.get(name=…)` raises → in a `seed_extra.py`, look the demo org up by slug (`child-health-campaign`), and take other orgs with `.filter(name=…).first()`.
 - Flows that switch identity (admin → invitee) need `useState: false`; otherwise the runner saves the second user's session as the auth state and the next run's admin-only steps fail.
 - Auth-layout pages (login, signup) have no `<main>` → use `form` as their checkpoint.
 - **TomSelect fields resist automation in several stacked ways** → always use `pickTomSelect()`, never hand-roll it (why: `reference/troubleshooting.md` "TomSelect picker"). Beyond the picker:

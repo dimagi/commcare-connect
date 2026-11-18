@@ -56,6 +56,19 @@ cp "$SKILL"/{runner.mjs,connect.mjs} .   # copied, not run in place: Node resolv
 "$SKILL/serve.sh" 8010 && "$SKILL/reseed.sh"   # runserver (DEBUG off, email → console), realistic data
 ```
 
+**Recording a branch you don't have checked out.** `serve.sh` and `reseed.sh` run the code of the checkout `$SKILL` sits in, so serve the branch from a throwaway worktree and keep the task folder under `$REPO/.ui-demo/`:
+
+```bash
+WT="<scratchpad>/<task>-wt"
+git worktree add --detach "$WT" <branch>
+[ -d "$WT/.claude/skills/ui-demo" ] || git -C "$WT" checkout <ref-with-the-skill> -- .claude/skills/ui-demo   # branch older than the skill
+for f in .venv node_modules .env; do ln -s "$REPO/$f" "$WT/$f"; done   # fine while its lockfiles match yours
+(cd "$WT" && npm run dev)   # the branch's own JS/CSS bundles
+SKILL="$WT/.claude/skills/ui-demo"   # then setup as above, from $TASK_DIR
+```
+
+The worktree shares your DB. Compare its `./manage.py showmigrations` with the DB first: when the branch adds migrations, or your DB has applied ones the branch lacks, give it a DB of its own with `scripts/setup-worktree.sh` instead. Remove it after delivery with `git worktree remove --force "$WT"`.
+
 **Reseed before every Record Pass** — a Verify Run mutates data (accepts invites, creates users). Touch only the active task folder; never remove shared tooling, other task folders, or the active durable pair.
 
 ## 1. Seed data that reads as real
