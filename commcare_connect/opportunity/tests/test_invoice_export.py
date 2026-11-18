@@ -7,6 +7,7 @@ from unittest import mock
 from urllib.parse import urlparse
 
 import pytest
+import weasyprint
 from django.core.files.storage import default_storage
 from django.template.loader import render_to_string
 from django_weasyprint.utils import DjangoURLFetcher
@@ -22,6 +23,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.opportunity.utils.invoice_export import (
     EXPORT_EXCLUDED_STATUSES,
+    PDF_BASE_URL,
     build_invoice_pdf_zip,
     build_invoice_summary_dataset,
     get_exportable_invoices,
@@ -77,6 +79,22 @@ class TestPdfExport:
         invoice = PaymentInvoiceFactory(opportunity=opportunity, **extra)
         html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
         assertInHTML(expected, html)
+
+    @pytest.mark.parametrize("field", ["name", "address"])
+    def test_long_unbroken_bill_to_text_wraps_inside_the_page(self, opportunity, field):
+        address = BillToAddressFactory(**{field: "X" * 150})
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, bill_to=address)
+        html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
+        document = weasyprint.HTML(string=html, base_url=PDF_BASE_URL, url_fetcher=DjangoURLFetcher()).render()
+        page_box = document.pages[0]._page_box  # WeasyPrint has no public API for laid-out boxes.
+        content_right = page_box.content_box_x() + page_box.width
+        overflowing = [
+            box.text
+            for box in page_box.descendants()
+            if isinstance(box, weasyprint.formatting_structure.boxes.TextBox)
+            and box.position_x + box.width > content_right
+        ]
+        assert not overflowing
 
     def test_render_loads_static_assets_from_disk(self, opportunity):
         """Rendering runs outside a request, so the `file://` base URL is what lets the URL fetcher
