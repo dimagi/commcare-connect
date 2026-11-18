@@ -238,7 +238,7 @@ def _opportunity_payload(org, hq_server, hq_api_key):
 
 
 @pytest.mark.django_db
-class TestManagedOpportunityCreate:
+class TestProgramOpportunityCreate:
     @patch("commcare_connect.program.api.views.send_opportunity_created_email")
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")

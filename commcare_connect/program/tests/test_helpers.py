@@ -17,7 +17,7 @@ from commcare_connect.users.tests.factories import OrganizationFactory, UserFact
 
 
 @pytest.mark.django_db
-class BaseManagedOpportunityTest:
+class BaseProgramOpportunityTest:
     @pytest.fixture(autouse=True)
     def setup(self, db):
         self.program = ProgramFactory.create()
@@ -55,7 +55,7 @@ class BaseManagedOpportunityTest:
         return user
 
 
-class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
+class TestGetAnnotatedManagedOpportunity(BaseProgramOpportunityTest):
     @pytest.mark.parametrize(
         "scenario, visit_statuses, passing_assessments, expected_invited,"
         " expected_passing, expected_delivery, expected_conversion, expected_avg_time_to_convert",
@@ -132,7 +132,7 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
 
 
 @pytest.mark.django_db
-class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
+class TestDeliveryPerformanceReport(BaseProgramOpportunityTest):
     start_date = now() - timedelta(10)
     end_date = now() + timedelta(10)
 
