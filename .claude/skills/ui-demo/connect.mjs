@@ -112,13 +112,23 @@ export async function inviteMember(page, d, email, role = 'Member') {
 /** Picks a TomSelect value by typing to filter, the way a user would. Every line is load-bearing:
  *  reference/troubleshooting.md "TomSelect picker". */
 export async function pickTomSelect(page, d, id, text, { value = text } = {}) {
-  // 1. the visible control, not the size="1" input: the wrapper intercepts real-coordinate clicks under --record
-  await d.click(page, `.ts-wrapper:has(#${id}-ts-control) .ts-control`);
-  // 2. TomSelect drops keystrokes until it has registered focus itself
-  await page.evaluate(
-    (sel) => document.querySelector(sel).tomselect.focus(),
+  // 1. the visible control, not the size="1" input: the wrapper intercepts real-coordinate clicks under --record.
+  //    Skipped while TomSelect has focus (the next pick on a multi-select): the search box is still live, and the
+  //    click would land on a chosen chip
+  const focused = await page.evaluate(
+    (sel) => document.querySelector(sel).tomselect.isFocused,
     `#${id}`,
   );
+  if (!focused)
+    await d.click(page, `.ts-wrapper:has(#${id}-ts-control) .ts-control`);
+  // 2. TomSelect drops keystrokes until it has registered focus itself, and while a chip is active (a click on the
+  //    control lands on one once something is picked); a query left by the previous pick would join the new one
+  await page.evaluate((sel) => {
+    const ts = document.querySelector(sel).tomselect;
+    ts.setActiveItem(); // no argument: deactivates every chip and shows the search box again
+    ts.setTextboxValue('');
+    ts.focus();
+  }, `#${id}`);
   await page
     .locator(`#${id}-ts-control`)
     .pressSequentially(text, { delay: 60 });
