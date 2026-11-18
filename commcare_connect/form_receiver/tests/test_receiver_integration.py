@@ -928,9 +928,7 @@ def test_receiver_verification_flags_form_json_rule(
         ] in visit.flag_reason.get("flags", [])
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
-    assert opportunity.managed
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_with_connect_link)
     payment_unit = PaymentUnitFactory(opportunity=opportunity, org_amount=2)
     deliver_unit = DeliverUnitFactory(app=payment_unit.opportunity.deliver_app, payment_unit=payment_unit)
@@ -964,9 +962,7 @@ def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client:
     assert completed_work.status == CompletedWorkStatus.approved
 
 
-@pytest.mark.parametrize(
-    "opportunity", [{"opp_options": {"managed": True}, "verification_flags": {"gps": True}}], indirect=True
-)
+@pytest.mark.parametrize("opportunity", [{"verification_flags": {"gps": True}}], indirect=True)
 @pytest.mark.parametrize(
     "visit_status, review_status",
     [
@@ -977,7 +973,6 @@ def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client:
 def test_receiver_visit_review_status(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity, visit_status, review_status
 ):
-    assert opportunity.managed
     form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
     if visit_status != VisitValidationStatus.approved:
         form_json["metadata"]["location"] = None

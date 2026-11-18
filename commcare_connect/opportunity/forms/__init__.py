@@ -349,7 +349,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         """
         if self.request is None or not switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
             return False
-        if not self.instance.pk or not self.instance.managed:
+        if not self.instance.pk:
             return False
         return is_opportunity_pm(self.request, self.instance)
 
@@ -730,7 +730,6 @@ class OpportunityInitForm(forms.ModelForm):
         opportunity.currency = self.program.currency
         opportunity.country = self.program.country
         opportunity.delivery_type = self.program.delivery_type
-        opportunity.managed = True
 
         if not opportunity.pk and switch_is_active(AUTOMATIC_VISIT_VERIFICATION):
             opportunity.automatic_visit_verification = True

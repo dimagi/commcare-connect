@@ -298,7 +298,6 @@ def test_learn_progress(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=True)
 def test_opportunity_stats(opportunity: Opportunity, user: User):
     payment_unit_sub = PaymentUnitFactory.create(
         opportunity=opportunity, max_total=100, max_daily=10, amount=5, parent_payment_unit=None
