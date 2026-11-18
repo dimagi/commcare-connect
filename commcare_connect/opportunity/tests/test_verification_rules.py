@@ -29,7 +29,7 @@ def test_parse_question_path_finds_value(question_path, form_json, expected):
     assert [m.value for m in parse_question_path(question_path).find(form_json)] == expected
 
 
-@pytest.mark.parametrize("question_path", ["form.[[", "/", "//", " / "])
+@pytest.mark.parametrize("question_path", ["form.[[", "/", "//", " / ", "$", " $ ", "$.$", "$.", ""])
 def test_parse_question_path_invalid(question_path):
     with pytest.raises(JSONPathError):
         parse_question_path(question_path)
@@ -37,7 +37,8 @@ def test_parse_question_path_invalid(question_path):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "question_path, valid", [("/data/answer", True), ("form.answer", True), ("form.[[", False), ("/", False)]
+    "question_path, valid",
+    [("/data/answer", True), ("form.answer", True), ("form.[[", False), ("/", False), ("$", False)],
 )
 def test_form_json_validation_rules_form_question_path(question_path, valid):
     opportunity = OpportunityFactory()

@@ -31,6 +31,22 @@ def _build_slash_path(question_path):
     return json_path
 
 
+def _is_root_only(json_path):
+    """True if the path selects nothing but the document root (e.g. ``$`` or ``$.$``)."""
+    if isinstance(json_path, Root):
+        return True
+    if isinstance(json_path, Child):
+        return _is_root_only(json_path.left) and _is_root_only(json_path.right)
+    return False
+
+
+def _parse_expression(path, question_path):
+    json_path = parse(path)
+    if _is_root_only(json_path):
+        raise JSONPathError(f"Invalid question path: {question_path!r} does not select a question")
+    return json_path
+
+
 @lru_cache(maxsize=512)
 def parse_question_path(question_path):
     """Return a compiled JsonPath for ``question_path``, rooted at the submitted form JSON.
@@ -40,14 +56,15 @@ def parse_question_path(question_path):
     * CommCare/XPath style paths (``/data/group/question`` or ``data/question``)
 
     Compiled paths are cached because the same rules are evaluated on every form submission.
-    Raises ``jsonpath_ng.exceptions.JSONPathError`` if the path cannot be parsed.
+    Raises ``jsonpath_ng.exceptions.JSONPathError`` if the path cannot be parsed or only selects
+    the document root (e.g. ``$``), since such a rule could never match a question value.
     """
     path = (question_path or "").strip()
     if path.startswith("$"):
-        return parse(path)
+        return _parse_expression(path, question_path)
     if "/" in path:
         return _build_slash_path(path)
-    return parse(f"$.{path}")
+    return _parse_expression(f"$.{path}", question_path)
 
 
 class OpportunityVerificationFlags(models.Model):
