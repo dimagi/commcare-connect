@@ -12,9 +12,9 @@ from django.utils.decorators import method_decorator
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
-from django.views.generic import ListView, UpdateView
+from django.views.generic import CreateView, ListView, UpdateView
 
-from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
+from commcare_connect.opportunity.forms import HQApiKeyCreateForm, OpportunityInitForm, OpportunityInitUpdateForm
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
@@ -23,7 +23,8 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
+from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_units
+from commcare_connect.opportunity.views import OpportunityObjectMixin
 from commcare_connect.organization.decorators import (
     can_act_as_program_manager_user,
     is_user_pm_org_admin,
@@ -141,41 +142,60 @@ class ManagedOpportunityList(ListView):
         return context
 
 
-class ManagedOpportunityViewMixin:
+class ProgramOpportunityInitMixin:
+    """Shared by the create and edit pages of the opportunity setup wizard's first step."""
+
+    model = Opportunity
+    template_name = "opportunity/opportunity_init.html"
+    context_object_name = "opportunity"
+    opportunity_created = False
     program = None
 
     def dispatch(self, request, *args, **kwargs):
+        # Resolve the program before the access check: the check filters on the program id, which raises a
+        # ValidationError when it is not a valid UUID.
         try:
             self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
         except (Program.DoesNotExist, ValidationError):
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
+        return self._dispatch_as_program_admin(request, *args, **kwargs)
+
+    @method_decorator(program_admin_access_required)
+    def _dispatch_as_program_admin(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 
-    def form_valid(self, form):
-        is_create = self.object is None
-        response = super().form_valid(form)
-        if is_create:
-            send_opportunity_created_email(self.object.id)
-        return response
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["program"] = self.program
-        return context
+    def get_success_url(self):
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
         kwargs["program"] = self.program
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        context["opportunity_created"] = self.opportunity_created
+        context["program"] = self.program
+        return context
 
-class ManagedOpportunityInit(ManagedOpportunityViewMixin, OpportunityInit):
+
+class ProgramOpportunityInit(ProgramOpportunityInitMixin, CreateView):
     form_class = OpportunityInitForm
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        create_learn_modules_and_deliver_units(self.object.id)
+        send_opportunity_created_email(self.object.id)
+        return response
 
-class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, OpportunityInitUpdate):
+
+class ProgramOpportunityInitUpdate(ProgramOpportunityInitMixin, OpportunityObjectMixin, UpdateView):
     form_class = OpportunityInitUpdateForm
+    opportunity_created = True
 
     def get_opportunity_queryset(self):
         return Opportunity.objects.filter(program=self.program)

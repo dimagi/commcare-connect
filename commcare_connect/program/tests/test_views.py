@@ -414,7 +414,7 @@ class TestNetworkManagerPendingPayments:
 
 
 @pytest.mark.django_db
-class TestManagedOpportunityInitViews(BaseProgramTest):
+class TestProgramOpportunityInitViews(BaseProgramTest):
     """program:opportunity_init and program:opportunity_init_edit must still work."""
 
     @pytest.fixture(autouse=True)
@@ -440,7 +440,7 @@ class TestManagedOpportunityInitViews(BaseProgramTest):
     def test_opportunity_init_edit_get(self, actor, expected, program_actors):
         org = program_actors(self.program)[actor]
         act_as_admin(self.client, org)
-        # Delivered by another org: OpportunityInitUpdate is gated on being the PM, and an org
+        # Delivered by another org: ProgramOpportunityInitUpdate is gated on being the PM, and an org
         # that delivers its own program's opportunity is the NM.
         opportunity = OpportunityFactory.create(organization=OrganizationFactory(), program=self.program)
         edit_url = reverse(
