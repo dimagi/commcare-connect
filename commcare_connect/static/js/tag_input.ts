@@ -72,7 +72,8 @@ export interface TagInputChangeDetail {
   values: string[];
 }
 
-type TagInputTextarea = HTMLTextAreaElement & { tagInput?: TagInput };
+/** The tag input attached to each textarea, so attaching twice returns the same one. */
+const instances = new WeakMap<HTMLTextAreaElement, TagInput>();
 
 type Change = (state: State, rules: Rules) => State;
 
@@ -103,11 +104,15 @@ export default class TagInput {
   #renderingTags = false;
 
   static attach(
-    textarea: TagInputTextarea,
+    textarea: HTMLTextAreaElement,
     config: TagInputConfig = {},
   ): TagInput {
-    textarea.tagInput ??= new TagInput(textarea, config);
-    return textarea.tagInput;
+    let tagInput = instances.get(textarea);
+    if (!tagInput) {
+      tagInput = new TagInput(textarea, config);
+      instances.set(textarea, tagInput);
+    }
+    return tagInput;
   }
 
   private constructor(textarea: HTMLTextAreaElement, config: TagInputConfig) {
