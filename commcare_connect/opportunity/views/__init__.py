@@ -342,7 +342,7 @@ def api_key_owner_warning(opportunity):
     return _(
         "The API key on this opportunity was added by %(name)s, who can no longer manage the %(program)s program. "
         "Replace it with one of your own keys."
-    ) % {"name": owner.name or owner.email, "program": opportunity.program.name}
+    ) % {"name": owner.name or str(owner), "program": opportunity.program.name}
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
