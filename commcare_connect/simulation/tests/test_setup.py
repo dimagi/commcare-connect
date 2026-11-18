@@ -17,7 +17,7 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentUnit,
 )
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import Contact, Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.simulation.constants import (
     DELIVER_UNIT_SLUGS,
@@ -29,7 +29,7 @@ from commcare_connect.simulation.constants import (
 from commcare_connect.simulation.steps import PaymentUnitSpec, Sim
 from commcare_connect.simulation.steps.browser import StepRequestError
 from commcare_connect.users.tests.factories import UserFactory
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.permission_const import LLO_DIRECTORY_MANAGEMENT_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
 pytestmark = pytest.mark.django_db
 
@@ -59,6 +59,34 @@ def test_org_can_be_a_program_manager_without_the_admin_holding_the_permission(s
     assert organization.program_manager
     # Enabled on Organization Home by a staff user who joins no organization.
     assert list(organization.memberships.values_list("user", flat=True)) == [user.pk]
+
+
+def test_org_profile_changes_only_the_given_fields(sim, user):
+    address = "1 Clinic Road\nNairobi"
+    pm_org = sim.org("Sim PM", admin=user, program_manager=True)
+
+    sim.org_profile(pm_org, admin=user, office_address=address)
+
+    pm_org.refresh_from_db()
+    assert (pm_org.name, pm_org.program_manager, pm_org.office_address) == ("Sim PM", True, address)
+
+
+def test_contact_is_added_in_the_llo_directory(sim, user):
+    assert not user.has_perm(LLO_DIRECTORY_MANAGEMENT_ACCESS)
+    organization = sim.org("Sim Org", admin=user)
+
+    contact = sim.contact(
+        organization, name="Amina Okafor", email="amina@sim.example", title="Director", phone="+254 700", main=True
+    )
+
+    assert contact.organization == organization
+    assert (contact.name, contact.title, contact.phone, contact.is_main_poc) == (
+        "Amina Okafor",
+        "Director",
+        "+254 700",
+        True,
+    )
+    assert list(Contact.objects.all()) == [contact]
 
 
 def test_program_defaults_span_the_coming_months(sim, user):
