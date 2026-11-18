@@ -405,10 +405,17 @@ export default class TagInput {
         this.#input.focus();
       }
     });
-    // Saves any typed or half-edited entry before the form reads the textarea.
+    // Saves any typed or half-edited entry before the form reads the textarea. The browser has
+    // already validated the form by now, so an entry that turns out invalid stops the submit here.
     this.#textarea.form?.addEventListener(
       'submit',
-      () => this.#update(finishAll),
+      (event) => {
+        this.#update(finishAll);
+        if (!this.valid) {
+          event.preventDefault();
+          this.#input.reportValidity();
+        }
+      },
       { capture: true },
     );
   }
