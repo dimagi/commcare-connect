@@ -3,7 +3,7 @@
   "minLines": 4,
   "ignoreIdentifiers": true,
   "similarity": 0.9,
-  "format": ["python", "javascript"],
+  "format": ["python", "javascript", "typescript", "tsx"],
   "ignore": ["**/migrations/**"],
   "ignorePattern": [
     "(?m)^[ \\t]*(from[ \\t]+\\S+[ \\t]+)?import[ \\t]+(\\([^)]*\\)|.*)$"

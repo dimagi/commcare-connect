@@ -51,14 +51,16 @@ repos:
     rev: v10.10.0
     hooks:
       - id: eslint
-        files: commcare_connect/static/.*\.jsx?$
+        files: commcare_connect/static/.*\.[jt]sx?$
         types: [file]
-        types_or: [javascript, jsx]
+        types_or: [javascript, jsx, ts, tsx]
         exclude: commcare_connect/static/bundles/
         additional_dependencies:
           - eslint@10.10.0
           - '@eslint/js@10.0.1'
           - globals@17.8.0
+          - typescript@6.0.3
+          - typescript-eslint@8.73.0
 
   - repo: local
     hooks:
