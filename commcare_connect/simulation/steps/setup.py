@@ -121,7 +121,7 @@ class SetupSteps:
         verification_flags=None,
         deliver_unit_flags=None,
     ):
-        """Create a managed opportunity for ``nm_org`` under ``program`` through the setup wizard, as ``pm_admin``.
+        """Create an opportunity for ``nm_org`` under ``program`` through the setup wizard, as ``pm_admin``.
 
         Submits the program's "Create opportunity" page (which syncs the learn modules and deliver units), the
         "Add payment unit" form once per ``PaymentUnitSpec`` in ``payment_units`` (one default unit when omitted)

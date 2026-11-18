@@ -38,7 +38,7 @@ from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
-from django.views.generic import CreateView, DetailView, UpdateView
+from django.views.generic import DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from geopy import distance
 from waffle import flag_is_active, switch_is_active
@@ -66,8 +66,6 @@ from commcare_connect.opportunity.forms import (
     HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
-    OpportunityInitForm,
-    OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentUnitForm,
@@ -148,7 +146,6 @@ from commcare_connect.organization.decorators import (
     opportunity_pm_required,
     opportunity_required,
     org_view_access_required,
-    program_admin_access_required,
 )
 from commcare_connect.program.utils import (
     AccessLevel,
@@ -279,60 +276,6 @@ class OpportunityList(FilterMixin, SingleTableView):
             self.request.org, self.can_act_as_program_manager, self.get_filter_values(), self.search_term
         )
         return data.get_data()
-
-
-@method_decorator(program_admin_access_required, name="dispatch")
-class OpportunityInit(CreateView):
-    template_name = "opportunity/opportunity_init.html"
-    form_class = OpportunityInitForm
-
-    def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["opportunity_created"] = False
-        return context
-
-    def form_valid(self, form: OpportunityInitForm):
-        response = super().form_valid(form)
-        create_learn_modules_and_deliver_units(self.object.id)
-        return response
-
-
-@method_decorator(program_admin_access_required, name="dispatch")
-class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
-    model = Opportunity
-    template_name = "opportunity/opportunity_init.html"
-    form_class = OpportunityInitUpdateForm
-    context_object_name = "opportunity"
-
-    def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        opportunity = getattr(self, "object", None)
-        if opportunity is None:
-            opportunity = self.get_object()
-            self.object = opportunity
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        kwargs["program"] = opportunity.program
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["opportunity_created"] = True
-        return context
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
