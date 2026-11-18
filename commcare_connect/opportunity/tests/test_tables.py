@@ -171,14 +171,14 @@ def test_worker_tasks_table_empty(opportunity):
     ids=["manager", "member", "watching_org", "viewer_role"],
 )
 def test_invoice_action_needs_more_than_view_access(
-    table_class, relationship, role, offered, opp_orgs, managed_opportunity, user
+    table_class, relationship, role, offered, opp_orgs, pm_opportunity, user
 ):
     """The invoice list itself requires standard access, so a viewer must not be sent there."""
     org = opp_orgs[relationship]
     request = make_request(user, org=org, membership=make_membership(org, user, role))
-    table = table_class([managed_opportunity], org_slug=org.slug, request=request)
+    table = table_class([pm_opportunity], org_slug=org.slug, request=request)
 
-    actions = table.render_actions(managed_opportunity)
+    actions = table.render_actions(pm_opportunity)
 
     assert "View Opportunity" in actions
     assert ("View Invoices" in actions) is offered

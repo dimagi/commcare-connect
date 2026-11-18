@@ -119,7 +119,7 @@ class TestOpportunityInitForm:
         self.deliver_app = ApplicationFactory()
 
         self.form_data = {
-            "name": "Test managed opportunity",
+            "name": "Test opportunity",
             "description": FuzzyText(length=150).fuzz(),
             "short_description": FuzzyText(length=50).fuzz(),
             "organization": self.invited_org.id,
@@ -171,12 +171,12 @@ class TestOpportunityInitForm:
         assert form.is_valid()
         form.save()
         assert Opportunity.objects.count() == 1
-        managed_opportunity = Opportunity.objects.first()
-        assert managed_opportunity.name == "Test managed opportunity"
-        assert managed_opportunity.currency == self.program.currency
-        assert managed_opportunity.program == self.program
-        assert managed_opportunity.created_by == self.user.email
-        assert managed_opportunity.delivery_type == self.program.delivery_type
+        pm_opportunity = Opportunity.objects.first()
+        assert pm_opportunity.name == "Test opportunity"
+        assert pm_opportunity.currency == self.program.currency
+        assert pm_opportunity.program == self.program
+        assert pm_opportunity.created_by == self.user.email
+        assert pm_opportunity.delivery_type == self.program.delivery_type
 
 
 @pytest.mark.django_db

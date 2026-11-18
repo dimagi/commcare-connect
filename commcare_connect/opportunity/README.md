@@ -15,7 +15,7 @@ The opportunity app is the core domain of Connect. It manages paid programs wher
 - **CompletedWork** — Aggregates visits for a specific entity (beneficiary) and payment unit. Tracks approval status and payment.
 - **AssignedTask** — Tracks completion of individual tasks by a user (assigned → completed).
 - **Payment** — A confirmed payment to a user for approved work.
-- **PaymentInvoice** — An invoice for a managed opportunity. Tracks status through NM/PM review workflow and links to completed work and payments.
+- **PaymentInvoice** — An invoice for an opportunity. Tracks status through NM/PM review workflow and links to completed work and payments.
 - **BillToAddress** — An entity invoices are billed to (`PaymentInvoice.bill_to`, `PROTECT`). Exactly one active default always exists (seeded as Dimagi, Inc.), and new invoices without a choice get it. Once an invoice uses an address, its name and address are frozen. Managed on Internal Features: used addresses can only be deactivated, unused ones can be edited or deleted, and the default can't be deactivated or deleted. The default moves with the list's Make default button.
 
 ## User Journey
@@ -46,7 +46,7 @@ The user submits forms through the deliver app in CommCare. Each form submission
 
 ### 6. Payment
 
-Approved work accrues payment. Payments can be distributed manually via CSV upload or through the invoicing workflow for managed opportunities. See [PAYMENTS.md](PAYMENTS.md) for how accrual is calculated and how invoicing works.
+Approved work accrues payment. Payments can be distributed manually via CSV upload or through the invoicing workflow. See [PAYMENTS.md](PAYMENTS.md) for how accrual is calculated and how invoicing works.
 
 ## Verification Flags
 
