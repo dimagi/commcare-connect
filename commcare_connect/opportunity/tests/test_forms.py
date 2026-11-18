@@ -26,6 +26,7 @@ from commcare_connect.flags.switch_names import (
 )
 from commcare_connect.opportunity.app_xml import TaskUnit
 from commcare_connect.opportunity.forms import (
+    API_KEY_CANNOT_CREATE_MOBILE_WORKERS,
     AddBudgetNewUsersForm,
     HQApiKeyCreateForm,
     OpportunityChangeForm,
@@ -124,10 +125,19 @@ def _mock_hq_app(httpx_mock, hq_server, cc_domain, cc_app_id, status=200):
     httpx_mock.add_response(url=url, status_code=status, json={})
 
 
-def _mock_hq_apps(httpx_mock, opportunity, learn_status=200, deliver_status=200):
-    """HQ answers `learn_status` and `deliver_status` when asked for the opportunity's current apps."""
+def _mock_hq_mobile_workers(httpx_mock, hq_server, cc_domain, status=200):
+    """HQ answers `status` when the key reads the domain's mobile workers, as the check that it can create them."""
+    url = f"{hq_server.url}/a/{cc_domain}/api/v0.5/user/?limit=1"
+    httpx_mock.add_response(url=url, status_code=status, json={})
+
+
+def _mock_hq_apps(httpx_mock, opportunity, learn_status=200, deliver_status=200, mobile_workers_status=200):
+    """HQ answers `learn_status` and `deliver_status` when asked for the opportunity's current apps, and
+    `mobile_workers_status` for each of their domains' mobile workers."""
     for app, status in ((opportunity.learn_app, learn_status), (opportunity.deliver_app, deliver_status)):
         _mock_hq_app(httpx_mock, opportunity.hq_server, app.cc_domain, app.cc_app_id, status)
+    for domain in {opportunity.learn_app.cc_domain, opportunity.deliver_app.cc_domain}:
+        _mock_hq_mobile_workers(httpx_mock, opportunity.hq_server, domain, mobile_workers_status)
 
 
 @pytest.mark.django_db
@@ -471,6 +481,8 @@ class TestOpportunityInitUpdateForm:
         """The current key may belong to a colleague, so pointing it at other apps needs HQ's say-so."""
         _mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-learn-domain", "new-learn-id", status=403)
         _mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-deliver-domain", "new-deliver-id")
+        for domain in ("new-learn-domain", "new-deliver-domain"):
+            _mock_hq_mobile_workers(httpx_mock, opportunity.api_key.hq_server, domain)
         data = self._build_form_data(
             opportunity,
             learn_payload={"id": "new-learn-id", "name": "new learn app"},
@@ -753,6 +765,20 @@ class TestOpportunityInitFormKeyCheck(OpportunityInitFormTestBase):
         else:
             domain = opportunity.deliver_app.cc_domain
             assert form.errors["api_key"] == [error.format(domain=domain) for error in expected_errors]
+
+    def test_refuses_key_that_cannot_create_mobile_workers(self, opportunity, httpx_mock):
+        _mock_hq_apps(httpx_mock, opportunity, mobile_workers_status=403)
+        refused_domain = min(opportunity.learn_app.cc_domain, opportunity.deliver_app.cc_domain)
+
+        errors = self._build_form(opportunity).errors
+
+        assert errors["api_key"] == [API_KEY_CANNOT_CREATE_MOBILE_WORKERS.format(domain=refused_domain)]
+
+    @pytest.mark.parametrize("domain", ["..", "../../a/other/api/v0.5/web-user/?", "x\ny", "x y"])
+    def test_rejects_domain_that_is_not_a_project_space(self, opportunity, httpx_mock, domain):
+        # httpx_mock has no responses registered, so any HQ request fails the test.
+        form = self._build_form(opportunity, extra_data={"learn_app_domain": domain})
+        assert form.errors["learn_app_domain"] == ["Select a project space from the list."]
 
     def test_skips_the_hq_check_when_apps_are_invalid(self, opportunity, httpx_mock):
         # httpx_mock has no responses registered, so any HQ request fails the test.
@@ -2312,9 +2338,10 @@ class TestApiKeyOnChangeForm:
             app.save(update_fields=["cc_domain"])
         return opportunity
 
-    def _replacement_form(self, opportunity, httpx_mock, deliver_status=200):
-        """A form submitting a new key of the admin's own, with HQ answering for both apps."""
-        _mock_hq_apps(httpx_mock, opportunity, deliver_status=deliver_status)
+    def _replacement_form(self, opportunity, httpx_mock, **hq_statuses):
+        """A form submitting a new key of the admin's own, with HQ answering for both apps and their domains'
+        mobile workers (see `_mock_hq_apps` for `hq_statuses`)."""
+        _mock_hq_apps(httpx_mock, opportunity, **hq_statuses)
         request = _request_for(opportunity.program.organization, opportunity)
         new_key = HQApiKeyFactory(user=request.user, hq_server=opportunity.hq_server)
         return new_key, _change_form(opportunity, request, api_key=str(new_key.id))
@@ -2379,6 +2406,12 @@ class TestApiKeyOnChangeForm:
     def test_rejects_key_hq_refuses(self, opp, httpx_mock):
         _, form = self._replacement_form(opp, httpx_mock, deliver_status=403)
         assert form.errors["api_key"] == ['This API key cannot access the deliver app on domain "deliver-domain".']
+
+    def test_rejects_key_that_cannot_create_mobile_workers(self, opp, httpx_mock):
+        """CCCT-3078: a key that can read the apps but not create mobile workers left new workers unable to start
+        learning."""
+        _, form = self._replacement_form(opp, httpx_mock, mobile_workers_status=403)
+        assert form.errors["api_key"] == [API_KEY_CANNOT_CREATE_MOBILE_WORKERS.format(domain="deliver-domain")]
 
     @pytest.mark.parametrize("failure", ["timeout", 500, 502, 429])
     def test_reports_hq_failure_without_blaming_the_key(self, opp, httpx_mock, failure):
