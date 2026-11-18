@@ -2,6 +2,7 @@ import json
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.db import IntegrityError, transaction
+from django.utils.timezone import localdate
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -33,10 +34,12 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     TaskType,
+    TaskTypeModeChoices,
     UserVisit,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
+from commcare_connect.utils.ocs_api import user_has_connected_ocs
 
 
 class LonLatPointField(serializers.Field):
@@ -428,6 +431,47 @@ class AssignedTaskDataSerializer(serializers.ModelSerializer):
             "due_date",
             "date_created",
         ]
+
+
+class AssignedTaskCreateSerializer(serializers.Serializer):
+    """Assigns a task to a worker. Applies the same rules as ``CreateTaskForm``."""
+
+    task_type_id = serializers.UUIDField(source="task_type")
+    username = serializers.CharField(source="opportunity_access")
+    due_date = serializers.DateField()
+
+    def validate_task_type_id(self, value):
+        opportunity = self.context["view"].opportunity
+        try:
+            return TaskType.objects.get(task_type_id=value, app=opportunity.deliver_app, is_active=True)
+        except TaskType.DoesNotExist:
+            raise serializers.ValidationError(_("No active task type with this ID exists for this opportunity."))
+
+    def validate_username(self, value):
+        opportunity = self.context["view"].opportunity
+        try:
+            return OpportunityAccess.objects.select_related("user").get(
+                opportunity=opportunity, user__username=value, accepted=True, suspended=False
+            )
+        except OpportunityAccess.DoesNotExist:
+            raise serializers.ValidationError(_("No active worker with this username exists on this opportunity."))
+
+    def validate_due_date(self, value):
+        if value < localdate():
+            raise serializers.ValidationError(_("The due date cannot be in the past."))
+        return value
+
+    def validate(self, attrs):
+        task_type = attrs["task_type"]
+        user = self.context["request"].user
+        if task_type.mode == TaskTypeModeChoices.OCS and not user_has_connected_ocs(user):
+            raise serializers.ValidationError(
+                {"task_type_id": _("Connect your Open Chat Studio account in Connect to assign OCS tasks.")}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        return AssignedTask.assign(**validated_data, assigned_by=self.context["request"].user)
 
 
 class WorkAreaGroupDataSerializer(serializers.ModelSerializer):
