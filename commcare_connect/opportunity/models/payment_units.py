@@ -89,5 +89,11 @@ class DeliverUnit(models.Model):
 
     objects = DeliverUnitQuerySet.as_manager()
 
+    class Meta:
+        constraints = [
+            # Units with no opportunity (NULL) don't conflict, so units on apps no opportunity uses are unaffected
+            models.UniqueConstraint(fields=["opportunity", "app", "slug"], name="unique_deliver_unit_per_opportunity"),
+        ]
+
     def __str__(self):
         return self.name

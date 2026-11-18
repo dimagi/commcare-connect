@@ -1,7 +1,7 @@
 import importlib
 
 import pytest
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 
 from commcare_connect.form_receiver.processor import get_or_create_deliver_unit
 from commcare_connect.opportunity.models import DeliverUnit
@@ -60,6 +60,22 @@ class TestGetOrCreateForOpportunity:
 
         assert created
         assert unit != old_app_unit
+
+
+@pytest.mark.django_db
+class TestUniquePerOpportunity:
+    def test_rejects_a_second_unit_for_the_same_slug(self, opportunity):
+        DeliverUnitFactory(app=opportunity.deliver_app, slug="visit")
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=opportunity)
+
+    def test_allows_the_same_slug_on_units_with_no_opportunity(self):
+        app = CommCareAppFactory()
+
+        DeliverUnitFactory.create_batch(2, app=app, slug="visit", opportunity=None)
+
+        assert DeliverUnit.objects.filter(app=app, slug="visit").count() == 2
 
 
 @pytest.mark.django_db

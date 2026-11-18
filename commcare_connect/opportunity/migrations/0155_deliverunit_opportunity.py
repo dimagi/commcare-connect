@@ -43,4 +43,10 @@ class Migration(migrations.Migration):
         ),
         # The secondary database receives the backfilled rows by replication.
         migrations.RunSQL(BACKFILL_SQL, migrations.RunSQL.noop, hints={"run_on_secondary": False}),
+        migrations.AddConstraint(
+            model_name="deliverunit",
+            constraint=models.UniqueConstraint(
+                fields=("opportunity", "app", "slug"), name="unique_deliver_unit_per_opportunity"
+            ),
+        ),
     ]
