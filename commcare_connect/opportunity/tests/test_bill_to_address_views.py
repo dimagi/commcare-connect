@@ -15,7 +15,7 @@ def default_address(db):
 
 @pytest.fixture
 def used_address(db):
-    address = BillToAddressFactory(name="Dimagi South Africa")
+    address = BillToAddressFactory(name="Dimagi South Africa", address="1 Long St\nCape Town")
     PaymentInvoiceFactory(bill_to=address)
     return address
 
@@ -32,17 +32,48 @@ class TestBillToAddressForm:
         assert form.is_valid(), form.errors
         assert form.save().is_active
 
-    @pytest.mark.parametrize("used, expected_name", [(True, "Dimagi South Africa"), (False, "Renamed")])
-    def test_name_and_address_editable_only_until_used(self, used, expected_name):
-        address = BillToAddressFactory(name="Dimagi South Africa")
+    @pytest.mark.parametrize("used", [True, False])
+    def test_name_and_address_lock_once_used(self, used):
+        address = BillToAddressFactory()
         if used:
             PaymentInvoiceFactory(bill_to=address)
-        form = BillToAddressForm(instance=address, data=_data(name="Renamed", is_active=""))
+        form = BillToAddressForm(instance=address)
         assert form.fields["name"].disabled is used
         assert form.fields["address"].disabled is used
+
+    def test_unused_address_can_be_renamed(self):
+        address = BillToAddressFactory(name="Dimagi South Africa")
+        form = BillToAddressForm(instance=address, data=_data(name="Renamed", is_active=""))
         assert form.is_valid(), form.errors
         saved = form.save()
-        assert (saved.name, saved.is_active) == (expected_name, False)
+        assert (saved.name, saved.is_active) == ("Renamed", False)
+
+    # The tests below post what a page opened before the address's first invoice sends: the fields were still
+    # editable then, so the browser includes them.
+    @pytest.mark.parametrize("field, value", [("name", "Renamed"), ("address", "2 Other St\r\nCape Town")])
+    def test_stale_rename_of_now_used_address_is_rejected(self, used_address, field, value):
+        form = BillToAddressForm(instance=used_address, data=_data(**{field: value}, is_active=""))
+        assert not form.is_valid()
+        assert list(form.errors) == [field]
+        used_address.refresh_from_db()
+        assert (used_address.name, used_address.address, used_address.is_active) == (
+            "Dimagi South Africa",
+            "1 Long St\nCape Town",
+            True,
+        )
+
+    @pytest.mark.parametrize(
+        "omit",
+        [
+            pytest.param((), id="unchanged-text-with-crlf"),
+            pytest.param(("name", "address"), id="disabled-fields-left-out"),
+        ],
+    )
+    def test_now_used_address_saves_other_changes(self, used_address, omit):
+        data = {k: v for k, v in _data(address="1 Long St\r\nCape Town", is_active="").items() if k not in omit}
+        form = BillToAddressForm(instance=used_address, data=data)
+        assert form.is_valid(), form.errors
+        assert not form.save().is_active
 
 
 @pytest.mark.django_db

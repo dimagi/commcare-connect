@@ -1803,3 +1803,19 @@ class BillToAddressForm(forms.ModelForm):
             Field("address"),
             Field("is_active", css_class=CHECKBOX_CLASS),
         )
+
+    def clean(self):
+        # Django ignores a disabled field's posted value, so without this a rename on a page opened before the
+        # address was used would be dropped while the save still reports success.
+        cleaned_data = super().clean()
+        for name in ("name", "address"):
+            if self.fields[name].disabled and self._posted_change(name):
+                self.add_error(name, _("Used by an invoice since you opened this page, so it can't change."))
+        return cleaned_data
+
+    def _posted_change(self, name):
+        # A browser leaves disabled fields out of the POST, so a posted value means the page was opened while the
+        # field was still editable. Textareas post \r\n line endings.
+        posted = self.data.get(self.add_prefix(name))
+        saved = getattr(self.instance, name) or ""
+        return posted is not None and posted.replace("\r\n", "\n").strip() != saved.strip()
