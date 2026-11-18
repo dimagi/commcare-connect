@@ -12,44 +12,43 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-  {# A rejected invite re-renders the page, so the modal reopens to show the error. #}
+  {# Shared by the pages that manage who takes part in a solicitation; the view supplies the wording. #}
+  {# A rejected form re-renders the page, so the modal reopens to show the error. #}
   <div class="flex flex-col gap-4 w-full"
-       x-data="{ showInviteModal: {{ form.errors|yesno:'true,false' }}, ...selectableTable() }">
+       x-data="{ showAddModal: {{ form.errors|yesno:'true,false' }}, ...selectableTable() }">
     {% include "components/breadcrumbs.html" with path=path %}
     <div class="flex flex-col gap-1">
       <h1 class="title">{{ solicitation.title }}</h1>
-      <p class="hint">
-        {% if solicitation.public %}
-          {% translate "This solicitation is public: any organization can apply, and invited organizations' members get an email asking them to." %}
-        {% else %}
-          {% translate "This solicitation is private: only invited organizations can apply. Each invited organization's members get an email." %}
-        {% endif %}
-      </p>
+      <p class="hint">{{ view.hint }}</p>
     </div>
     <div class="card_bg">
       <div class="flex gap-x-4 items-center justify-between mb-4">
-        <h2 class="title-sm">{% translate "Invited organizations" %}</h2>
+        <h2 class="title-sm">{{ view.title }}</h2>
         <div class="flex gap-x-4 items-center">
           <button type="button"
                   class="button-icon shadow-sm"
-                  @click.stop="showInviteModal = true"
-                  x-tooltip.raw="{% translate "Invite organizations" %}">
+                  @click.stop="showAddModal = true"
+                  x-tooltip.raw="{{ view.add_title }}">
             <i class="fa-solid fa-plus text-brand-deep-purple"></i>
           </button>
-          <form x-ref="removeInvitationsForm"
+          <form x-ref="removeForm"
                 method="post"
-                action="{% url "solicitation:delete_invitations" request.org.slug solicitation.solicitation_id %}"
+                action="{{ delete_url }}"
                 class="hidden">
             {% csrf_token %}
             <template x-for="id in selected">
-              <input type="hidden" name="invitation_ids" :value="id">
+              <input type="hidden" name="ids" :value="id">
             </template>
           </form>
+          {# The wording travels as data attributes, so a quote in it can't break the handler. #}
           <button type="button"
                   class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
-                  @click="$store.confirmModal.show({ title: '{% translate "Remove invitations" %}', message: `{% blocktranslate %}Remove __count__ invitation(s)? Those organizations will no longer be able to apply.{% endblocktranslate %}`.replace('__count__', selected.length), confirmBtnText: '{% translate "Remove" %}', confirmBtnRed: true, formRef: $refs.removeInvitationsForm })"
+                  data-title="{{ view.remove_title }}"
+                  data-message="{{ view.remove_message }}"
+                  data-confirm="{% translate "Remove" %}"
+                  @click="$store.confirmModal.show({ title: $el.dataset.title, message: $el.dataset.message.replace('__count__', selected.length), confirmBtnText: $el.dataset.confirm, confirmBtnRed: true, formRef: $refs.removeForm })"
                   :disabled="selected.length === 0"
-                  x-tooltip.raw="{% translate "Remove invitation(s)" %}">
+                  x-tooltip.raw="{{ view.remove_title }}">
             <i class="fa-solid fa-trash"></i>
           </button>
         </div>
@@ -57,15 +56,15 @@
       {% render_table table %}
     </div>
     <div x-cloak
-         x-show="showInviteModal"
+         x-show="showAddModal"
          x-transition.opacity
          class="modal-backdrop"
-         @keydown.escape.window="showInviteModal = false">
-      <div @click.outside="showInviteModal = false" x-transition class="modal">
+         @keydown.escape.window="showAddModal = false">
+      <div @click.outside="showAddModal = false" x-transition class="modal">
         <div class="header">
-          <h2 class="title">{% translate "Invite organizations" %}</h2>
+          <h2 class="title">{{ view.add_title }}</h2>
           <button type="button"
-                  @click="showInviteModal = false"
+                  @click="showAddModal = false"
                   class="button-icon"
                   aria-label="{% translate "Close" %}">
             <i class="fa-solid fa-xmark text-xl"></i>
@@ -76,9 +75,9 @@
           <div class="py-4">{{ form|crispy }}</div>
           <div class="footer">
             <button type="button"
-                    @click="showInviteModal = false"
+                    @click="showAddModal = false"
                     class="button button-md outline-style">{% translate "Close" %}</button>
-            <button type="submit" class="button button-md primary-dark">{% translate "Invite" %}</button>
+            <button type="submit" class="button button-md primary-dark">{{ view.add_submit }}</button>
           </div>
         </form>
       </div>

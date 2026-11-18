@@ -43,6 +43,10 @@ TOGGLE_WRAPPER_CLASS = (
     "[&>label]:mb-0 [&>small]:basis-full [&>small]:mt-1"
 )
 SEARCHABLE_SELECT = forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"})
+# Clearing the search after each pick lets a PM type the next one straight away.
+SEARCHABLE_MULTI_SELECT = forms.SelectMultiple(
+    attrs={"data-tomselect": "1", "data-tomselect:settings": json.dumps({"clearAfterSelect": True})}
+)
 # Alpine handler on the program select: sets the delivery type select to the picked program's delivery type.
 FILL_DELIVERY_TYPE_FROM_PROGRAM = (
     "$el.value && $refs.deliveryType.tomselect.setValue(JSON.parse($el.dataset.deliveryTypes)[$el.value])"
@@ -324,12 +328,7 @@ class SolicitationClosureForm(forms.ModelForm):
 
 class SolicitationInvitationForm(forms.Form):
     organizations = forms.ModelMultipleChoiceField(
-        label=_("Organizations"),
-        queryset=Organization.objects.none(),
-        # Clearing the search after each pick lets a PM type the next organization straight away.
-        widget=forms.SelectMultiple(
-            attrs={"data-tomselect": "1", "data-tomselect:settings": json.dumps({"clearAfterSelect": True})}
-        ),
+        label=_("Organizations"), queryset=None, widget=SEARCHABLE_MULTI_SELECT
     )
 
     def __init__(self, *args, solicitation, **kwargs):
@@ -343,11 +342,11 @@ class SolicitationInvitationForm(forms.Form):
         # Organization.__str__ is its slug; PMs pick organizations by name.
         self.fields["organizations"].label_from_instance = attrgetter("name")
 
+    def new_participants(self):
+        return [SolicitationInvitation(organization=org) for org in self.cleaned_data["organizations"]]
 
-class SolicitationInvitationDeleteForm(forms.Form):
-    invitation_ids = forms.ModelMultipleChoiceField(queryset=SolicitationInvitation.objects.none())
 
-    def __init__(self, *args, solicitation, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Scoped to this solicitation, so a posted id from any other solicitation fails validation.
-        self.fields["invitation_ids"].queryset = solicitation.invitations.all()
+class SelectedParticipantsForm(forms.Form):
+    """The participants a PM selected to remove. The view sets which ones can be picked."""
+
+    ids = forms.ModelMultipleChoiceField(queryset=None)

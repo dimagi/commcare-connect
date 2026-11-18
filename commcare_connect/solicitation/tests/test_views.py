@@ -263,6 +263,9 @@ class TestSolicitationSteps:
         assert response.context["path"][-1] == {"title": "New solicitation"}
 
 
+PARTICIPANT_FACTORIES = {"invitations": SolicitationInvitationFactory}
+
+
 @pytest.fixture
 def solicitation(program_manager_org):
     return SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE, public=False)
@@ -355,13 +358,26 @@ class TestSolicitationClosure:
         assert "Funding withdrawn" in response.content.decode()
 
 
+@pytest.fixture
+def mock_send_mail():
+    with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
+        yield mock
+
+
+def sent_to(mock_send_mail):
+    return sorted(call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list)
+
+
+def assert_add_rejected(response, participants, expected_count, mock_send_mail):
+    """The form came back with errors, and nothing was added or emailed."""
+    assert response.status_code == HTTPStatus.OK
+    assert response.context["form"].errors
+    assert participants.count() == expected_count
+    mock_send_mail.delay.assert_not_called()
+
+
 @pytest.mark.django_db
 class TestSolicitationInvitations:
-    @pytest.fixture
-    def mock_send_mail(self):
-        with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
-            yield mock
-
     @pytest.mark.parametrize("public", [True, False])
     def test_invite_creates_rows_and_emails_each_org(
         self,
@@ -386,8 +402,7 @@ class TestSolicitationInvitations:
         assert {(i.organization, i.invited_by) for i in invitations} == {
             (org, program_manager_org_user_admin) for org in invited_orgs
         }
-        sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
-        assert sorted(sent_to) == sorted(org.get_member_emails() for org in invited_orgs)
+        assert sent_to(mock_send_mail) == sorted(org.get_member_emails() for org in invited_orgs)
 
     @pytest.mark.parametrize("already_invited", [True, False])
     def test_invite_rejects_invited_and_own_org(
@@ -402,10 +417,7 @@ class TestSolicitationInvitations:
         data = {"organizations": [organization.pk, OrganizationFactory().pk]}
         response = pm_client.post(step_url("invitations", solicitation), data)
 
-        assert response.status_code == HTTPStatus.OK
-        assert response.context["form"].errors
-        assert solicitation.invitations.count() == int(already_invited)
-        mock_send_mail.delay.assert_not_called()
+        assert_add_rejected(response, solicitation.invitations, int(already_invited), mock_send_mail)
 
     def test_list_shows_invitations_by_org_name(self, pm_client, solicitation):
         invitation = SolicitationInvitationFactory(solicitation=solicitation)
@@ -418,54 +430,59 @@ class TestSolicitationInvitations:
         choices = dict(response.context["form"].fields["organizations"].choices)
         assert choices[uninvited.pk] == uninvited.name
 
-    def test_delete_removes_selected_invitations(self, pm_client, solicitation):
-        removed, kept = SolicitationInvitationFactory.create_batch(2, solicitation=solicitation)
 
-        response = pm_client.post(step_url("delete_invitations", solicitation), {"invitation_ids": [removed.pk]})
+@pytest.mark.django_db
+class TestSolicitationParticipants:
+    """Behaviour the invitations and reviewers pages share."""
 
-        assert response.url == step_url("invitations", solicitation)
-        assert list(solicitation.invitations.all()) == [kept]
+    @pytest.mark.parametrize("page", PARTICIPANT_FACTORIES)
+    def test_delete_removes_selected_participants(self, pm_client, solicitation, page):
+        removed, kept = PARTICIPANT_FACTORIES[page].create_batch(2, solicitation=solicitation)
 
+        response = pm_client.post(step_url(f"delete_{page}", solicitation), {"ids": [removed.pk]})
+
+        assert response.url == step_url(page, solicitation)
+        assert list(type(kept).objects.filter(solicitation=solicitation)) == [kept]
+
+    @pytest.mark.parametrize("page", PARTICIPANT_FACTORIES)
     @pytest.mark.parametrize("other_solicitation", [True, False])
-    def test_delete_rejects_invalid_selection(self, pm_client, solicitation, other_solicitation):
+    def test_delete_rejects_invalid_selection(self, pm_client, solicitation, page, other_solicitation):
         """Nothing selected, or an id from another solicitation, deletes nothing."""
-        other = SolicitationInvitationFactory()
-        data = {"invitation_ids": [other.pk]} if other_solicitation else {}
+        other = PARTICIPANT_FACTORIES[page]()
+        data = {"ids": [other.pk]} if other_solicitation else {}
 
-        response = pm_client.post(step_url("delete_invitations", solicitation), data)
+        response = pm_client.post(step_url(f"delete_{page}", solicitation), data)
 
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert SolicitationInvitation.objects.filter(pk=other.pk).exists()
+        assert type(other).objects.filter(pk=other.pk).exists()
 
     @pytest.mark.parametrize(
-        "status, public, own_org, deadline_passed",
+        "page, status, own_org, deadline_passed, found",
         [
-            (Solicitation.Status.DRAFT, False, True, False),
-            (Solicitation.Status.CLOSED, False, True, False),
-            (Solicitation.Status.CANCELLED, False, True, False),
-            (Solicitation.Status.ACTIVE, False, False, False),
+            # Organizations are invited only while the solicitation is open.
+            ("invitations", Solicitation.Status.DRAFT, True, False, False),
+            ("invitations", Solicitation.Status.CLOSED, True, False, False),
+            ("invitations", Solicitation.Status.CANCELLED, True, False, False),
+            ("invitations", Solicitation.Status.ACTIVE, False, False, False),
             # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, True),
+            ("invitations", Solicitation.Status.ACTIVE, True, True, False),
         ],
     )
-    def test_only_own_open_solicitations(
-        self, pm_client, program_manager_org, status, public, own_org, deadline_passed
+    def test_only_own_manageable_solicitations(
+        self, pm_client, program_manager_org, page, status, own_org, deadline_passed, found
     ):
         organization = program_manager_org if own_org else OrganizationFactory()
-        solicitation = SolicitationFactory(
-            organization=organization,
-            status=status,
-            public=public,
-            deadline_passed=deadline_passed,
-        )
-        invitation = SolicitationInvitationFactory(solicitation=solicitation)
+        solicitation = SolicitationFactory(organization=organization, status=status, deadline_passed=deadline_passed)
+        participant = PARTICIPANT_FACTORIES[page](solicitation=solicitation)
         # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
         url_args = (program_manager_org.slug, solicitation.solicitation_id)
-        list_url = reverse("solicitation:invitations", args=url_args)
-        delete_url = reverse("solicitation:delete_invitations", args=url_args)
+        list_url = reverse(f"solicitation:{page}", args=url_args)
+        delete_url = reverse(f"solicitation:delete_{page}", args=url_args)
 
-        assert pm_client.get(list_url).status_code == HTTPStatus.NOT_FOUND
-        invite_response = pm_client.post(list_url, {"organizations": [OrganizationFactory().pk]})
-        assert invite_response.status_code == HTTPStatus.NOT_FOUND
-        assert pm_client.post(delete_url, {"invitation_ids": [invitation.pk]}).status_code == HTTPStatus.NOT_FOUND
-        assert solicitation.invitations.get() == invitation
+        # An empty add re-renders the page with its errors.
+        page_status = HTTPStatus.OK if found else HTTPStatus.NOT_FOUND
+        assert pm_client.get(list_url).status_code == page_status
+        assert pm_client.post(list_url, {}).status_code == page_status
+        delete_status = HTTPStatus.FOUND if found else HTTPStatus.NOT_FOUND
+        assert pm_client.post(delete_url, {"ids": [participant.pk]}).status_code == delete_status
+        assert type(participant).objects.filter(pk=participant.pk).exists() is not found
