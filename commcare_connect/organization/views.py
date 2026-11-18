@@ -181,7 +181,7 @@ def api_key_removal_blocks(memberships):
                         "{opportunities}. Replace the API key on each one first. "
                         "{link_start}Learn how to replace an API key{link_end}."
                     ),
-                    name=membership.user.name or membership.user.email,
+                    name=membership.user.name or str(membership.user),
                     opportunities=_opportunity_edit_links(membership.organization.slug, opportunities),
                     link_start=format_html(
                         '<a href="{}" target="_blank" rel="noopener" class="underline">', MANAGING_API_KEYS_URL

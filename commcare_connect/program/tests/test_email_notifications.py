@@ -67,11 +67,11 @@ def test_send_program_invited_notification(mock_send_mail):
 @patch("commcare_connect.program.tasks.send_mail_async.delay")
 def test_send_opportunity_created_notification(mock_send_mail):
     nm_org = ProgramManagerOrgWithUsersFactory()
-    managed_opportunity = OpportunityFactory(
+    pm_opportunity = OpportunityFactory(
         organization=nm_org,
     )
 
-    send_opportunity_created_email(managed_opportunity.id)
+    send_opportunity_created_email(pm_opportunity.id)
 
     assert mock_send_mail.called
     call_kwargs = mock_send_mail.call_args[1]

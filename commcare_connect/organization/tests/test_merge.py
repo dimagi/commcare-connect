@@ -23,7 +23,7 @@ from commcare_connect.organization.merge import (
 from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
 from commcare_connect.program.models import ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
-from commcare_connect.program.utils import get_managed_opp
+from commcare_connect.program.utils import get_cached_opp
 from commcare_connect.solicitation.models import SolicitationApplication, SolicitationInvitation
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
@@ -529,9 +529,9 @@ class TestFeatureFlags:
         assert get_cache().get(cache_key) is None
 
 
-class TestManagedOpportunityCache:
+class TestCachedOpp:
     """
-    ``get_managed_opp`` caches the opportunity with its program's organization attached for 24h.
+    ``get_cached_opp`` caches the opportunity with its program's organization attached for 24h.
     """
 
     def setup_method(self):
@@ -572,11 +572,11 @@ class TestManagedOpportunityCache:
     ):
         """One case per clause in _opportunities_linked_to_source."""
         opp_id = str(make_opportunity(source).pk)
-        assert organization_id(get_managed_opp(opp_id)) == source.pk
+        assert organization_id(get_cached_opp(opp_id)) == source.pk
 
         _merge_and_run_commit_hooks(source, funder_target)
 
-        assert organization_id(get_managed_opp(opp_id)) == funder_target.pk
+        assert organization_id(get_cached_opp(opp_id)) == funder_target.pk
 
     def test_every_form_of_the_identifier_is_cleared(self, source, target, delivered_opportunity):
         opp_ids = [
@@ -586,29 +586,29 @@ class TestManagedOpportunityCache:
             str(delivered_opportunity.opportunity_id),
         ]
         for opp_id in opp_ids:
-            assert get_managed_opp(opp_id).program.organization == source
+            assert get_cached_opp(opp_id).program.organization == source
 
         _merge_and_run_commit_hooks(source, target)
 
         for opp_id in opp_ids:
-            assert get_managed_opp.get_cached_value(opp_id) is Ellipsis, f"{opp_id!r} was left cached"
+            assert get_cached_opp.get_cached_value(opp_id) is Ellipsis, f"{opp_id!r} was left cached"
 
     def test_an_unrelated_opportunity_stays_cached(self, source, target):
         unrelated = OpportunityFactory()
-        assert get_managed_opp(str(unrelated.pk)) is not None
+        assert get_cached_opp(str(unrelated.pk)) is not None
 
         _merge_and_run_commit_hooks(source, target)
 
-        assert get_managed_opp.get_cached_value(str(unrelated.pk)) is not Ellipsis
+        assert get_cached_opp.get_cached_value(str(unrelated.pk)) is not Ellipsis
 
     def test_cache_survives_a_rolled_back_merge(self, source, target, delivered_opportunity, failing_merge):
         opp_id = str(delivered_opportunity.pk)
-        assert get_managed_opp(opp_id).program.organization == source
+        assert get_cached_opp(opp_id).program.organization == source
 
         with pytest.raises(RuntimeError, match="boom"):
             _merge_and_run_commit_hooks(source, target)
 
-        assert get_managed_opp.get_cached_value(opp_id) is not Ellipsis
+        assert get_cached_opp.get_cached_value(opp_id) is not Ellipsis
 
 
 def _merge_and_run_commit_hooks(source, target):
