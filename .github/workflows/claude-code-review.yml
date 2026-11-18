@@ -106,7 +106,7 @@ jobs:
 
       - name: Run OpenCodeReview
         id: ocr
-        uses: alibaba/open-code-review@375f64cd6f67a48a135da83cfcf59c52669a09cb # v1.13.3
+        uses: alibaba/open-code-review@4236c871fe8130aa840a2a1c0922f469e87e0416 # v1.13.8
         with:
           ocr_version: '1.12.8'
           llm_url: https://api.anthropic.com
@@ -229,7 +229,7 @@ jobs:
       # `gh pr review` are not granted at all.
       - name: Run Claude Code Review
         id: claude
-        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
+        uses: anthropics/claude-code-action@4d75e5f390ee76b2e09c1980ecc99ff3a2e088c8 # v1.0.275
         env:
           # The plugin's first step stops on a draft PR. A draft only gets here with
           # the `review-draft` label, so that one check is overridden; its other
