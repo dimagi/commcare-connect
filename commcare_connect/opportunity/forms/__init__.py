@@ -51,10 +51,7 @@ from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm, program_access_level_from_request
 from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils.commcarehq_api import (
-    CommCareHQAccessDenied,
-    app_access_errors,
-)
+from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_access_errors
 from commcare_connect.utils.forms import DATE_INPUT, ManagedOptionForm
 
 logger = logging.getLogger(__name__)
@@ -1844,9 +1841,9 @@ def payment_unit_date_bounds(opportunity):
 
 def cover_units_help_text(on_or_before=None, on_or_after=None):
     if on_or_before:
-        return gettext("Must cover its payment units: on or before %(date)s.") % {"date": date_format(on_or_before)}
+        return gettext("Today to %(date)s (first payment unit start).") % {"date": date_format(on_or_before)}
     if on_or_after:
-        return gettext("Must cover its payment units: on or after %(date)s.") % {"date": date_format(on_or_after)}
+        return gettext("%(date)s or later (last payment unit end).") % {"date": date_format(on_or_after)}
     return ""
 
 
