@@ -372,7 +372,7 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
             yield
 
-    def test_generate_invoice_for_two_active_managed_opportunities(self):
+    def test_generate_invoice_for_two_active_opportunities(self):
         opportunity1 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
         opportunity2 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 12, 1))
 

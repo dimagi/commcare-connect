@@ -225,19 +225,19 @@ class TestProgramHomeBudgetData(BaseProgramTest):
             for amount in budgets:
                 OpportunityFactory.create(program=self.program, organization=org, total_budget=amount)
 
-        # Application without any managed opportunities should show zero budget
+        # Application without any opportunities should show zero budget
         empty_org = OrganizationFactory()
         empty_application = ProgramApplicationFactory.create(program=self.program, organization=empty_org)
         self.program_applications.append(empty_application)
         self.expected_application_budgets[empty_org.id] = 0
 
-        # Managed opportunity for a different program should be ignored
+        # Opportunity for a different program should be ignored
         OpportunityFactory.create(
             program=self.other_program,
             organization=application_orgs[0],
             total_budget=999,
         )
-        # Managed opportunity for an org without an application should be ignored
+        # Opportunity for an org without an application should be ignored
         OpportunityFactory.create(program=self.program, organization=OrganizationFactory(), total_budget=777)
 
         self.expected_allocated_budget = sum(self.expected_application_budgets.values())
@@ -358,7 +358,7 @@ class TestProgramHomeListsAccessiblePrograms:
 @pytest.mark.django_db
 class TestNetworkManagerPendingPayments:
     """The network manager home (`network_manager_home`) is served to non-program-manager
-    org admins. It surfaces a "Pending Payments" figure per managed opportunity, computed as
+    org admins. It surfaces a "Pending Payments" figure per opportunity, computed as
     sum(payment_accrued) - sum(payment.amount) across the opportunity's accesses."""
 
     @pytest.fixture(autouse=True)

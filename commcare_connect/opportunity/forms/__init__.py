@@ -1249,7 +1249,7 @@ class AddBudgetNewUsersForm(forms.Form):
         total_budget = cleaned_data.get("total_budget")
 
         if not self.program_manager:
-            raise forms.ValidationError("Only program managers are allowed to add budgets for managed opportunities.")
+            raise forms.ValidationError("Only program managers are allowed to add budgets.")
 
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")

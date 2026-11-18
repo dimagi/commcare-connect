@@ -414,7 +414,7 @@ def network_manager_home(request, org):
             Prefetch(
                 "opportunity_set",
                 queryset=Opportunity.objects.filter(organization=org),
-                to_attr="managed_opportunities_for_org",
+                to_attr="opportunities_for_org",
             )
         )
     )

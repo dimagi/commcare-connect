@@ -48,7 +48,7 @@ def sent_messages():
 
 @pytest.fixture
 def opportunity(user, organization, program_manager_org):
-    """A managed opportunity; ``user`` administers both the network-manager and the program-manager organization."""
+    """An opportunity; ``user`` administers both the network-manager and the program-manager organization."""
     MembershipFactory(user=user, organization=organization)
     MembershipFactory(user=user, organization=program_manager_org)
     return OpportunityFactory(organization=organization, program=ProgramFactory(organization=program_manager_org))

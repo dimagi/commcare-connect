@@ -68,7 +68,7 @@
               <i class="fa-solid fa-circle-check text-green-600"></i> {% translate "Apply to Program" %}
             </button>
           {% elif program.status == 'accepted' %}
-            {% if program.managed_opportunities_for_org %}
+            {% if program.opportunities_for_org %}
               <button class="button button-sm outline-style w-full"
                       @click="showOpp = !showOpp">
                 <span class="relative z-20"
@@ -80,13 +80,13 @@
           {% endif %}
         </div>
         {% if program.status == 'accepted' %}
-          {% if program.managed_opportunities_for_org %}
+          {% if program.opportunities_for_org %}
             <div id="opportunity-container"
                  class="flex flex-col gap-y-4 py-4"
                  style="display:none"
                  x-cloak
                  x-show="showOpp">
-              {% for opportunity in program.managed_opportunities_for_org %}
+              {% for opportunity in program.opportunities_for_org %}
                 <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
                   <div class="flex justify-between w-full">
                     <div class="flex flex-col gap-5 w-1/2">

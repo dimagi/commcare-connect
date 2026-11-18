@@ -32,10 +32,10 @@ def audit_opp(program_manager_org):
 
 
 @pytest.fixture
-def nm_audit_opp(managed_opportunity):
+def nm_audit_opp(pm_opportunity):
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
-    flag.opportunities.add(managed_opportunity)
-    return managed_opportunity
+    flag.opportunities.add(pm_opportunity)
+    return pm_opportunity
 
 
 @pytest.mark.django_db
