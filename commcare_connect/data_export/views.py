@@ -735,7 +735,9 @@ class TaskTypeDataView(OpportunityDataExportView, BaseDataExportListViewV2):
     serializer_class = TaskTypeDataSerializer
 
     def get_queryset(self, *args, **kwargs):
-        return TaskType.objects.filter(opportunity=self.opportunity)
+        # Same set the create-task UI offers. Task types made before TaskType.opportunity
+        # existed have it NULL, so filtering on it would hide them.
+        return TaskType.objects.filter(app=self.opportunity.deliver_app)
 
 
 class AuditReportDataView(OpportunityDataExportView, BaseDataExportListViewV2):
