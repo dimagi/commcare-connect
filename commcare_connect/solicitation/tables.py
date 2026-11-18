@@ -22,6 +22,13 @@ def invitations_url(record, table):
     return None
 
 
+def reviewers_url(record, table):
+    # Reviewers are managed until a solicitation is cancelled; scoring continues after it closes.
+    if record.status != Solicitation.Status.CANCELLED:
+        return reverse("solicitation:reviewers", args=(table.request.org.slug, record.solicitation_id))
+    return None
+
+
 class SolicitationTable(tables.Table):
     title = columns.Column(verbose_name=_("Title"), linkify=details_url, attrs={"a": {"class": "underline"}})
     type = columns.Column(verbose_name=_("Type"))
@@ -31,12 +38,24 @@ class SolicitationTable(tables.Table):
     invited_count = columns.Column(
         verbose_name=_("Invited"), linkify=invitations_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
     )
+    reviewer_count = columns.Column(
+        verbose_name=_("Reviewers"), linkify=reviewers_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
+    )
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
     actions = columns.Column(verbose_name="", orderable=False, empty_values=())
 
     class Meta:
         model = Solicitation
-        fields = ("title", "type", "visibility", "status", "application_deadline", "invited_count", "response_count")
+        fields = (
+            "title",
+            "type",
+            "visibility",
+            "status",
+            "application_deadline",
+            "invited_count",
+            "reviewer_count",
+            "response_count",
+        )
         empty_text = _("No solicitations yet.")
 
     def render_visibility(self, value):

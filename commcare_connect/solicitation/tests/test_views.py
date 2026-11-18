@@ -34,6 +34,7 @@ def test_queryset_counts(rf, program_manager_org):
     for status in Status:
         SolicitationApplicationFactory(solicitation=solicitation, status=status)
     SolicitationInvitationFactory.create_batch(3, solicitation=solicitation)
+    SolicitationReviewerFactory.create_batch(2, solicitation=solicitation)
     empty = SolicitationFactory(organization=program_manager_org)
     SolicitationApplicationFactory(status=Status.SUBMITTED)  # another org's solicitation
 
@@ -42,10 +43,10 @@ def test_queryset_counts(rf, program_manager_org):
     view = SolicitationListView()
     view.setup(request)
 
-    counts = {s.pk: (s.response_count, s.invited_count) for s in view.get_queryset()}
+    counts = {s.pk: (s.response_count, s.invited_count, s.reviewer_count) for s in view.get_queryset()}
 
-    # Every status except draft and withdrawn counts as a response; invitations don't inflate that count.
-    assert counts == {solicitation.pk: (len(Status) - 2, 3), empty.pk: (0, 0)}
+    # Every status except draft and withdrawn counts as a response; the counts don't inflate each other.
+    assert counts == {solicitation.pk: (len(Status) - 2, 3, 2), empty.pk: (0, 0, 0)}
 
 
 @pytest.mark.django_db
@@ -236,18 +237,20 @@ class TestSolicitationSteps:
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, deadline_passed, is_editable, is_open",
+        "status, public, deadline_passed, is_editable, is_open, reviewers_linked",
         [
-            (Solicitation.Status.DRAFT, False, False, True, False),
-            (Solicitation.Status.ACTIVE, False, False, True, True),
-            (Solicitation.Status.ACTIVE, True, False, True, True),
+            (Solicitation.Status.DRAFT, False, False, True, False, True),
+            (Solicitation.Status.ACTIVE, False, False, True, True, True),
+            (Solicitation.Status.ACTIVE, True, False, True, True, True),
             # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, False, False),
-            (Solicitation.Status.CLOSED, False, False, False, False),
-            (Solicitation.Status.CANCELLED, False, False, False, False),
+            (Solicitation.Status.ACTIVE, False, True, False, False, True),
+            (Solicitation.Status.CLOSED, False, False, False, False, True),
+            (Solicitation.Status.CANCELLED, False, False, False, False, False),
         ],
     )
-    def test_list_links(self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open):
+    def test_list_links(
+        self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open, reviewers_linked
+    ):
         solicitation = SolicitationFactory(
             organization=program_manager_org,
             status=status,
@@ -262,6 +265,7 @@ class TestSolicitationSteps:
         assert (step_url("cancel", solicitation) in content) is is_editable
         assert (step_url("invitations", solicitation) in content) is is_open
         assert (step_url("close", solicitation) in content) is is_open
+        assert (step_url("reviewers", solicitation) in content) is reviewers_linked
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
