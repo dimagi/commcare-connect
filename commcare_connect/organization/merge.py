@@ -5,12 +5,12 @@ from functools import cached_property
 
 from django.apps import apps
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F
 
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import ProgramApplication
-from commcare_connect.program.utils import clear_managed_opp_cache
+from commcare_connect.program.utils import clear_managed_opp_cache, opportunities_linked_to_org
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 
 logger = logging.getLogger(__name__)
@@ -281,14 +281,7 @@ def _opportunities_linked_to_source(source: Organization) -> list[Opportunity]:
     That cache stores the opportunity with its program and the program's organization attached, so a merge
     invalidates it.
     """
-    return list(
-        Opportunity.objects.filter(
-            Q(organization=source)
-            | Q(supervising_organization=source)
-            | Q(program__organization=source)
-            | Q(program__funder=source)
-        ).only("id", "opportunity_id")
-    )
+    return list(opportunities_linked_to_org(source).only("id", "opportunity_id"))
 
 
 def _reassign_simple_relations(source: Organization, target: Organization) -> dict[str, int]:

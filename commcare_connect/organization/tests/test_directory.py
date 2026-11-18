@@ -1,16 +1,21 @@
+from datetime import date, timedelta
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.contrib.messages import get_messages
 from django.urls import reverse
 
 from commcare_connect.opportunity.models import Country
+from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import ContactForm, OrganizationDirectoryForm
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.organization.tables import OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
+from commcare_connect.organization.views import OrganizationArchiveView
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.celery import get_export_storage
 
@@ -70,6 +75,13 @@ class TestOrganizationFilterSet:
 
         assert _filtered_organizations({"status": ["active", "prospective"]}) == {active, prospective}
 
+    def test_lists_archived_organizations_only_when_asked_for(self):
+        active = OrganizationFactory()
+        archived = OrganizationFactory(is_archived=True)
+
+        assert _filtered_organizations({}) == {active}
+        assert _filtered_organizations({"archived": "true"}) == {archived}
+
 
 @pytest.mark.django_db
 class TestOrganizationListAccess:
@@ -85,6 +97,15 @@ class TestOrganizationListAccess:
 
         assert response.status_code == 200
         assert list(response.context["table"].data) == [org]
+
+    def test_organizations_count_excludes_archived(self, client, user_with_directory_access):
+        OrganizationFactory()
+        OrganizationFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:list"))
+
+        assert response.context["organizations_count"] == 1
 
 
 @pytest.mark.django_db
@@ -202,6 +223,23 @@ class TestOrganizationFormViews:
 
         assert response.headers["HX-Redirect"] == expected
 
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_an_archived_organization_cannot_be_edited(
+        self, client, user_with_directory_access, countries, sectors, method
+    ):
+        org = OrganizationFactory(name="Before", is_archived=True)
+        client.force_login(user_with_directory_access)
+        url = reverse("organization_directory:edit", args=(org.slug,))
+
+        if method == "get":
+            response = client.get(url, HTTP_HX_REQUEST="true")
+        else:
+            response = client.post(url, _form_data(countries, sectors, name="After"), HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 404
+        org.refresh_from_db()
+        assert org.name == "Before"
+
     def test_invalid_submission_rerenders_the_form(self, client, user_with_directory_access, countries, sectors):
         org = OrganizationFactory()
         client.force_login(user_with_directory_access)
@@ -234,6 +272,165 @@ class TestOrganizationFormViews:
         args = (org.slug,) if url_name.endswith("edit") else ()
 
         assert client.get(reverse(url_name, args=args)).status_code == 403
+
+
+@pytest.mark.django_db
+class TestOrganizationArchiveView:
+    def test_get_shows_the_owned_programs_with_their_opportunity_counts(
+        self, client, user_with_directory_access, organization
+    ):
+        ended = date.today() - timedelta(days=1)
+        program = ProgramFactory(organization=organization, start_date=ended - timedelta(days=30), end_date=ended)
+        OpportunityFactory.create_batch(2, program=program, end_date=ended)
+        ProgramFactory(funder=organization, start_date=ended - timedelta(days=30), end_date=ended)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:archive", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        assert [(listed, listed.opportunity_count) for listed in response.context["programs"]] == [(program, 2)]
+        assert program.name in response.content.decode()
+
+    def test_direct_visit_redirects_to_the_listing(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = client.get(reverse("organization_directory:archive", args=(organization.slug,)))
+
+        assert response.url == reverse("organization_directory:list")
+
+    def test_post_archives_and_redirects(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = _post_archive(client, organization, {"reason": "Duplicate"})
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:list")
+        organization.refresh_from_db()
+        assert organization.is_archived
+        assert organization.notes.endswith(": Duplicate")
+
+    def test_get_lists_the_blockers_instead_of_the_form(self, client, user_with_directory_access, organization):
+        program = ProgramFactory(organization=organization)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:archive", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        assert "organization/directory/organization_archive_refused.html" in [t.name for t in response.templates]
+        assert [blocker.name for blocker in response.context["blockers"]] == [program.name]
+        assert 'name="reason"' not in response.content.decode()
+
+    def test_refusal_lists_each_blockers_roles(self, client, user_with_directory_access, organization):
+        ProgramFactory(organization=organization, funder=organization)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:archive", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        content = response.content.decode()
+        assert "Program owner, Program funder" in content
+        assert "programs" not in response.context
+
+    def test_post_is_refused_when_work_became_live_after_the_modal_opened(
+        self, client, user_with_directory_access, organization
+    ):
+        client.force_login(user_with_directory_access)
+        ProgramFactory(organization=organization)
+
+        response = _post_archive(client, organization, {"reason": "Duplicate"})
+
+        assert "HX-Redirect" not in response.headers
+        assert "organization/directory/organization_archive_refused.html" in [t.name for t in response.templates]
+        organization.refresh_from_db()
+        assert not organization.is_archived
+        assert organization.notes == ""
+
+    def test_post_locks_the_organization_row(self, rf, organization):
+        view = OrganizationArchiveView()
+        view.setup(rf.post("/"), slug=organization.slug)
+
+        assert view.get_queryset().query.select_for_update
+
+    def test_archived_organization_is_not_found(self, client, user_with_directory_access):
+        organization = OrganizationFactory(is_archived=True, notes="Existing")
+        client.force_login(user_with_directory_access)
+
+        response = _post_archive(client, organization, {"reason": "Again"})
+
+        assert response.status_code == 404
+        organization.refresh_from_db()
+        assert organization.notes == "Existing"
+
+
+@pytest.mark.django_db
+class TestOrganizationRestoreView:
+    def test_get_links_to_the_organizations_archived_contacts(self, client, user_with_directory_access):
+        organization = OrganizationFactory(name="Umoja Health", is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(
+            reverse("organization_directory:restore", args=(organization.slug,)), HTTP_HX_REQUEST="true"
+        )
+
+        contacts_url = f"{reverse('organization_directory:contacts')}?archived=true&amp;search=Umoja%20Health"
+        assert f'href="{contacts_url}" target="_blank" rel="noopener">here</a>' in response.content.decode()
+
+    def test_post_restores_and_says_the_contacts_stay_archived(self, client, user_with_directory_access):
+        organization = OrganizationFactory(name="Umoja Health", is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = _post_restore(client, organization, {"reason": ""})
+
+        assert response.headers["HX-Redirect"] == reverse("organization_directory:list")
+        organization.refresh_from_db()
+        assert not organization.is_archived
+        [message] = [str(message) for message in get_messages(response.wsgi_request)]
+        assert "Umoja Health restored" in message
+        assert "contacts are still archived" in message
+
+    def test_active_organization_is_not_found(self, client, user_with_directory_access, organization):
+        client.force_login(user_with_directory_access)
+
+        response = _post_restore(client, organization, {"reason": ""})
+
+        assert response.status_code == 404
+
+    def test_archived_rows_offer_restore_instead_of_edit(self, client, user_with_directory_access):
+        organization = OrganizationFactory(is_archived=True)
+        client.force_login(user_with_directory_access)
+
+        response = client.get(f"{reverse('organization_directory:list')}?archived=true")
+
+        content = response.content.decode()
+        assert reverse("organization_directory:restore", args=(organization.slug,)) in content
+        assert reverse("organization_directory:edit", args=(organization.slug,)) not in content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name, is_archived", [("organization_directory:archive", False), ("organization_directory:restore", True)]
+)
+@pytest.mark.parametrize("slug_exists", [True, False])
+def test_archiving_and_restoring_require_permission(client, user, url_name, is_archived, slug_exists):
+    organization = OrganizationFactory(is_archived=is_archived)
+    client.force_login(user)
+    slug = organization.slug if slug_exists else "no-such-org"
+
+    assert client.post(reverse(url_name, args=(slug,))).status_code == 403
+
+
+def _post_restore(client, organization, data):
+    return client.post(
+        reverse("organization_directory:restore", args=(organization.slug,)), data, HTTP_HX_REQUEST="true"
+    )
+
+
+def _post_archive(client, organization, data):
+    return client.post(
+        reverse("organization_directory:archive", args=(organization.slug,)), data, HTTP_HX_REQUEST="true"
+    )
 
 
 def _filtered_contacts(params):
@@ -297,6 +494,13 @@ def _contact_form_data(organization, **overrides):
 
 @pytest.mark.django_db
 class TestContactForm:
+    def test_organization_choices_exclude_archived_organizations(self, organization):
+        archived = OrganizationFactory(is_archived=True)
+
+        assert list(ContactForm().fields["organization"].queryset) == [organization]
+        contact_of_archived = ContactFactory(organization=archived)
+        assert archived in ContactForm(instance=contact_of_archived).fields["organization"].queryset
+
     def test_requires_name_organization_and_email(self):
         form = ContactForm(data={})
 
