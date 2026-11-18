@@ -27,7 +27,7 @@ __all__ = ["Sim", "PaymentUnitSpec"]
 class Sim(SetupSteps, WorkerSteps, ReviewSteps, PaymentSteps):
     """Acts as ``pm_admin`` for program-manager steps and ``nm_admin`` for network-manager steps.
 
-    Both may be the same user, who then sees each side of a managed opportunity by switching organization.
+    Both may be the same user, who then sees each side of an opportunity by switching organization.
     """
 
     def __init__(self, *, pm_admin, nm_admin, seed=42, log=print):

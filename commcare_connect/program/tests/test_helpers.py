@@ -11,13 +11,13 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     UserVisitFactory,
 )
-from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
+from commcare_connect.program.helpers import get_annotated_opportunity, get_delivery_performance_report
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
 @pytest.mark.django_db
-class BaseManagedOpportunityTest:
+class BaseProgramOpportunityTest:
     @pytest.fixture(autouse=True)
     def setup(self, db):
         self.program = ProgramFactory.create()
@@ -55,7 +55,7 @@ class BaseManagedOpportunityTest:
         return user
 
 
-class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
+class TestGetAnnotatedOpportunity(BaseProgramOpportunityTest):
     @pytest.mark.parametrize(
         "scenario, visit_statuses, passing_assessments, expected_invited,"
         " expected_passing, expected_delivery, expected_conversion, expected_avg_time_to_convert",
@@ -119,7 +119,7 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
                     opportunity_access=access,
                     visit_date=now() + timedelta(days=2),
                 )
-        opps = get_annotated_managed_opportunity(self.program)
+        opps = get_annotated_opportunity(self.program)
         assert len(opps) == 1
         annotated_opp = opps[0]
         assert annotated_opp.workers_invited == expected_invited
@@ -132,7 +132,7 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
 
 
 @pytest.mark.django_db
-class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
+class TestDeliveryPerformanceReport(BaseProgramOpportunityTest):
     start_date = now() - timedelta(10)
     end_date = now() + timedelta(10)
 
@@ -276,7 +276,7 @@ def test_average_time_to_convert_for_negative_values():
             status=VisitValidationStatus.approved,
         )
 
-    opp = get_annotated_managed_opportunity(program)[0]
+    opp = get_annotated_opportunity(program)[0]
 
     expected_avg = sum(valid_durations, timedelta()) / len(valid_durations)
     assert opp.average_time_to_convert == expected_avg

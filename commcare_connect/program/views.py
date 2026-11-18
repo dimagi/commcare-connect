@@ -120,7 +120,7 @@ class ProgramUpdate(ProgramCreateOrUpdate):
 
 
 @method_decorator(program_admin_access_required, name="dispatch")
-class ManagedOpportunityList(ListView):
+class ProgramOpportunityList(ListView):
     model = Opportunity
     paginate_by = 10
     default_ordering = "name"
@@ -414,7 +414,7 @@ def network_manager_home(request, org):
             Prefetch(
                 "opportunity_set",
                 queryset=Opportunity.objects.filter(organization=org),
-                to_attr="managed_opportunities_for_org",
+                to_attr="opportunities_for_org",
             )
         )
     )

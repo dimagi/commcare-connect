@@ -20,7 +20,7 @@ finishes.
 
 ## Standard scenarios
 
-Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations, a program and managed opportunities,
+Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations, a program and opportunities,
 with a history that runs from about six weeks ago to now.
 
 - `baseline`: one active opportunity whose workers have finished learning and claimed it.
