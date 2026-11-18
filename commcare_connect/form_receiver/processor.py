@@ -400,11 +400,12 @@ def _get_form_json_rule_flags(user_visit: UserVisit) -> list[list[str]]:
     form_json_rules = FormJsonValidationRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     )
-    return [
-        flag
-        for flag in (_check_form_json_rule(form_json_rule, user_visit.form_json) for form_json_rule in form_json_rules)
-        if flag is not None
-    ]
+    flags = []
+    for form_json_rule in form_json_rules:
+        flag = _check_form_json_rule(form_json_rule, user_visit.form_json)
+        if flag is not None:
+            flags.append(flag)
+    return flags
 
 
 def _check_form_json_rule(form_json_rule: FormJsonValidationRules, form_json: dict) -> list[str] | None:

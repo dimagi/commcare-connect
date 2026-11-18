@@ -2,28 +2,31 @@ import pytest
 from jsonpath_ng.exceptions import JSONPathError
 
 from commcare_connect.opportunity.forms import FormJsonValidationRulesForm
-from commcare_connect.opportunity.models.verification import normalize_question_path, parse_question_path
+from commcare_connect.opportunity.models.verification import parse_question_path
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, OpportunityFactory
 
 
 @pytest.mark.parametrize(
-    "question_path, expected",
+    "question_path, form_json, expected",
     [
-        ("form.value", "$.form.value"),
-        ("$.form.value", "$.form.value"),
-        ("/data/value", "$.form.value"),
-        ("data/group/value", "$.form.group.value"),
-        ("/data/unit1/sk-test-deliver-a/entity_id", '$.form.unit1."sk-test-deliver-a".entity_id'),
+        ("form.value", {"form": {"value": "1"}}, ["1"]),
+        ("$.form.value", {"form": {"value": "1"}}, ["1"]),
+        ("/data/value", {"form": {"value": "1"}}, ["1"]),
+        ("data/group/value", {"form": {"group": {"value": "1"}}}, ["1"]),
+        (
+            "/data/unit1/sk-test-deliver-a/entity_id",
+            {"form": {"unit1": {"sk-test-deliver-a": {"entity_id": "1"}}}},
+            ["1"],
+        ),
+        # Slash-path segments are matched literally, including JsonPath special characters.
+        ("/data/a\\b", {"form": {"a\\b": "1"}}, ["1"]),
+        ("/data/$x/[y]", {"form": {"$x": {"[y]": "1"}}}, ["1"]),
+        ("/data/it's/q\"t", {"form": {"it's": {'q"t': "1"}}}, ["1"]),
+        ("/data/missing", {"form": {"value": "1"}}, []),
     ],
 )
-def test_normalize_question_path(question_path, expected):
-    assert normalize_question_path(question_path) == expected
-
-
-def test_parse_question_path_finds_value():
-    form_json = {"form": {"unit1": {"sk-test-deliver-a": {"entity_id": "123"}}}}
-    path = parse_question_path("/data/unit1/sk-test-deliver-a/entity_id")
-    assert [m.value for m in path.find(form_json)] == ["123"]
+def test_parse_question_path_finds_value(question_path, form_json, expected):
+    assert [m.value for m in parse_question_path(question_path).find(form_json)] == expected
 
 
 @pytest.mark.parametrize("question_path", ["form.[[", "/", "//", " / "])
