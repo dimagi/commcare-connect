@@ -89,7 +89,9 @@
         <p>
           <strong>{{ opportunity.organization.name|default:"" }}</strong>
         </p>
-        {% if opportunity.organization.office_address %}<p>{{ opportunity.organization.office_address }}</p>{% endif %}
+        {% if opportunity.organization.office_address %}
+          <p>{{ opportunity.organization.office_address|linebreaksbr }}</p>
+        {% endif %}
       </div>
       <div class="section">
         <p>{% trans "Invoice number" %}: {{ invoice.invoice_number }}</p>
