@@ -107,7 +107,7 @@ flowchart TD
     B -->|no| C[get_or_create CompletedWork<br/>access + entity_id + PaymentUnit]
     C --> D{Over a limit?<br/>claim ended, max_visits, max_daily}
     D -->|yes| OL[visit: over_limit<br/>work: over_limit]
-    D -->|no| E{Entity already<br/>visited for this unit?}
+    D -->|no| E{Duplicate flag on and<br/>entity already visited<br/>for this unit?}
     E -->|yes| DUP[status = duplicate]
     E -->|no| P[status = pending]
     T --> FL
@@ -115,7 +115,7 @@ flowchart TD
     DUP --> FL
     P --> FL[Run verification flags]
     FL --> S{Worker suspended or<br/>blocking assigned task?}
-    S -->|yes| R[visit + work: rejected]
+    S -->|yes| R[visit: rejected<br/>work: rejected unless approved]
     S -->|no| AV{pending and flagged and<br/>automatic_visit_verification?}
     AV -->|yes| R2[status = rejected]
     AV -->|no| AA{pending, not flagged and<br/>auto_approve_visits?}
@@ -141,7 +141,9 @@ One row per `(opportunity_access, entity_id, payment_unit)`: everything a worker
 | `pending`    | Has visits, not yet approved                                                   |
 | `approved`   | Accrues payment                                                                |
 | `rejected`   | A visit was rejected, or the worker was suspended or blocked by a pending task |
-| `over_limit` | A visit hit a claim limit                                                      |
+
+Approved work stays approved when a later visit is rejected, whatever the reason.
+| `over_limit` | A visit hit a claim limit |
 
 A `pending` work may not be complete yet: it moves there on its first visit, even if other deliver units still need one. The mobile `delivery_progress` API therefore only returns work with `saved_completed_count > 0`, plus `rejected` work, and never `incomplete` or `over_limit` work.
 
@@ -170,7 +172,9 @@ flowchart TD
     A[CompletedWork with at least one visit] --> B{auto_approve_payments?}
     B -->|no| K[Status unchanged]
     B -->|yes| C{Any visit rejected?}
-    C -->|yes| RJ[rejected<br/>reason = visit reasons]
+    C -->|yes| AL{Already approved?}
+    AL -->|yes| K3[Status unchanged]
+    AL -->|no| RJ[rejected<br/>reason = visit reasons]
     C -->|no| D{Every required unit, and one optional unit,<br/>has a visit approved + agree?}
     D -->|yes| AP[approved]
     D -->|no| E{incomplete?}
