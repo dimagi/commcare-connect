@@ -26,6 +26,10 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/org_creation_wizard.js',
     ),
+    invite_workers: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/invite_workers.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
