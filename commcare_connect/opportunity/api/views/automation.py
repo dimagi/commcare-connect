@@ -67,6 +67,12 @@ class OpportunityActivateView(OpportunityAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if opportunity.shares_app_with_active_opportunity():
+            return Response(
+                {"non_field_errors": [_("Cannot reactivate opportunity with reused applications.")]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         opportunity.active = True
         opportunity.modified_by = request.user.email
         opportunity.save(update_fields=["active", "modified_by", "date_modified"])
