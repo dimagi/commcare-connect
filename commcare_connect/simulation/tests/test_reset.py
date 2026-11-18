@@ -72,7 +72,7 @@ def test_reset_twice_or_of_nothing_is_a_no_op(baseline):
 @pytest.mark.parametrize(
     "outside",
     [
-        lambda sim_opportunity: {"program": sim_opportunity.program, "managed": True},
+        lambda sim_opportunity: {"program": sim_opportunity.program},
         lambda sim_opportunity: {"learn_app": sim_opportunity.learn_app},
         lambda sim_opportunity: {"deliver_app": sim_opportunity.deliver_app},
     ],

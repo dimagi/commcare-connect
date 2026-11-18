@@ -42,7 +42,8 @@ pytest -n auto --create-db          # rebuild the per-worker test databases if s
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
-uv run jscpd commcare_connect --baseline-from-ref "$(git merge-base HEAD origin/main)" --fail-on-new-clones 0  # run before opening a PR; fails on clones your branch adds (settings in .jscpd.json)
+inv duplicate-code-report           # run before opening a PR; fails on clones your branch adds and lists only those (settings in .jscpd.json)
+inv duplicate-code-report --base origin/<branch>  # compare against another branch, e.g. the PR this one is stacked on
 
 # Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
@@ -171,7 +172,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 - **Framework**: pytest + pytest-django + factory-boy
 - **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
-- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `managed_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `user_with_directory_access`, `api_rf`, `api_client`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `pm_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `user_with_directory_access`, `api_rf`, `api_client`
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
 - HTTP mocking: `pytest-httpx` for httpx calls
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances

@@ -143,6 +143,8 @@ One row per `(opportunity_access, entity_id, payment_unit)`: everything a worker
 | `rejected`   | A visit was rejected, or the worker was suspended or blocked by a pending task |
 | `over_limit` | A visit hit a claim limit                                                      |
 
+A `pending` work may not be complete yet: it moves there on its first visit, even if other deliver units still need one. The mobile `delivery_progress` API therefore only returns work with `saved_completed_count > 0`, plus `rejected` work, and never `incomplete` or `over_limit` work.
+
 `status_modified_date` is set automatically whenever `status` changes. It is the **approval date** used for USD conversion and invoice windows, and it does **not** move when more visits arrive for an already-approved work.
 
 ### Counting completions
