@@ -2174,8 +2174,6 @@ class TestSupervisingOrganizationOnChangeForm:
 
     @pytest.fixture
     def managed_opportunity(self, opportunity):
-        opportunity.managed = True
-        opportunity.save()
         ProgramApplicationFactory(
             organization=opportunity.organization,
             program=opportunity.program,
@@ -2233,15 +2231,6 @@ class TestSupervisingOrganizationOnChangeForm:
         updated.refresh_from_db()
 
         assert updated.supervising_organization == original
-
-    def test_absent_for_unmanaged_opportunity(self, opportunity):
-        opportunity.managed = False
-        opportunity.save()
-        request = self._request_for(opportunity.program.organization, opportunity)
-
-        form = OpportunityChangeForm(instance=opportunity, request=request)
-
-        assert "supervising_organization" not in form.fields
 
     def test_absent_without_a_request(self, managed_opportunity):
         form = OpportunityChangeForm(instance=managed_opportunity)

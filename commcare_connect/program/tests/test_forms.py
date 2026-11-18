@@ -250,8 +250,6 @@ class TestOpportunityFinalizeForm:
         assert form.errors["total_budget"] == ["Budget exceeds the program budget."]
 
     def test_form_no_org_pay_per_visit_field(self):
-        self.opportunity.managed = False
-        self.opportunity.save()
         form = self.get_form(
             start_date=timezone.now().date() + timezone.timedelta(days=2),
             end_date=timezone.now().date() + timezone.timedelta(days=20),

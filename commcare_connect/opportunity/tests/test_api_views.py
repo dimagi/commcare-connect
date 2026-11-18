@@ -73,7 +73,6 @@ def test_claim_endpoint_success(mobile_user: User, api_client: APIClient):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=["opportunity"])
 def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: APIClient):
     pu = PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
     opportunity.total_budget = 10 * 100

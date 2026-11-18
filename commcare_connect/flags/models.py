@@ -124,8 +124,7 @@ class Flag(AbstractUserFlag):
         opportunity = getattr(request, "opportunity", None)
         if opportunity and self.is_active_for(opportunity):
             return True
-        program = opportunity.program if opportunity else None
-        if program and self.is_active_for(program):
+        if opportunity and self.is_active_for(opportunity.program):
             return True
         org = getattr(request, "org", None)
         if org and self.is_active_for(org):
