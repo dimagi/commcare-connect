@@ -100,11 +100,28 @@ Secrets are stored in 1Password under the `Ansible Secrets - Staging` and `Ansib
 secret out renders an empty value, which leaves the `/status/` health check pages open. See
 `commcare_connect/health/README.md`.
 
+`OIDC_RSA_PRIVATE_KEY` is set from the `oidc_rsa_private_key` secret, the PEM key that signs OpenID Connect ID tokens
+for OAuth applications using RS256. Generate it with:
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096
+```
+
+Paste the PEM into the secrets YAML as a block scalar (`oidc_rsa_private_key: |`). Docker env files can't hold
+multi-line values, so the template writes each newline as a literal `\n` and Django converts them back.
+
+Leaving the secret out stops RS256 applications getting ID tokens: an authorization-code request for the `openid`
+scope returns `invalid_scope`. Grants that don't issue an ID token, such as the password grant used for
+`/o/userinfo/`, still accept `openid`. Replacing the key invalidates ID tokens signed with the old one.
+
 To update the Django settings:
 
 ```bash
 inv django-settings
 ```
+
+It prints the environment, shows a diff from an Ansible check-mode run, and asks before applying the changes.
+Pass `--env production` for production; the default is staging.
 
 ## Deploy
 

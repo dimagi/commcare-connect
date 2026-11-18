@@ -325,7 +325,7 @@ constraint here:
 
 | View | Form | Guard | Who that admits |
 | ---- | ---- | ----- | --------------- |
-| `ManagedOpportunityInitUpdate` | `OpportunityInitUpdateForm` | `ProgramManagerMixin` | program org, funder, or the opportunity's supervisor |
+| `ProgramOpportunityInitUpdate` | `OpportunityInitUpdateForm` | `ProgramManagerMixin` | program org, funder, or the opportunity's supervisor |
 | `OpportunityEdit` | `OpportunityChangeForm` | `org_member_required` | any member of the opportunity's own organization |
 
 Adding the field to `OpportunityChangeForm` unguarded would therefore let the *delivering*
@@ -340,7 +340,7 @@ switch:
 def _can_edit_supervising_organization(self):
     if self.request is None or not switch_is_active(ENABLE_PROGRAM_ACCESS_REDESIGN):
         return False
-    if not self.instance.pk or not self.instance.managed:
+    if not self.instance.pk:
         return False
     return is_opportunity_pm(self.request, self.instance)
 ```
@@ -351,8 +351,10 @@ def _can_edit_supervising_organization(self):
   `request.org` through `_base_access_level`, and the form is constructed without a request
   in several existing tests. A request whose `org` is None is already safe: the access check
   returns NONE and the `and` short-circuits before `request.org.id`.
-- **`managed` is checked** because a supervising organization is a program concept; on a
-  standalone opportunity the eligible-organization list would be meaningless.
+- **`managed` is no longer checked.** The first version also returned False for opportunities
+  with `managed=False`, because a supervising organization is a program concept. That field has
+  since been dropped: every opportunity belongs to a program, and the old unmanaged ones were
+  moved into the auto-created legacy programs (migration `opportunity/0134`).
 - **Hiding the field is not the control.** Withholding it from the layout only affects
   rendering; what actually prevents reassignment is that the field is never added to
   `self.fields`, so a crafted POST carrying `supervising_organization` finds no field to
@@ -584,7 +586,7 @@ asserted in two halves, because hiding a field is not by itself a control.
     persists.
 29. The opportunity's own organization does **not** see the field, **and** a POST from it
     carrying a different `supervising_organization` leaves the stored value unchanged.
-30. The field is absent for an unmanaged opportunity.
+30. ~~The field is absent for an unmanaged opportunity.~~ Dropped along with `Opportunity.managed`.
 31. The field is absent when the form is built without a request, which is how several
     pre-existing tests construct it.
 

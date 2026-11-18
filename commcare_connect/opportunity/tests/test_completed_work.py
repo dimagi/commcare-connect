@@ -151,7 +151,7 @@ class TestUpdateStatus:
         assert completed_work.saved_completed_count == 1
         assert completed_work.saved_payment_accrued == 0
 
-    def test_managed_opp_completed_work_not_updated_to_approved_without_agreement(self):
+    def test_completed_work_not_updated_to_approved_without_agreement(self):
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
         )
@@ -191,7 +191,7 @@ class TestUpdateStatus:
         assert completed_work.saved_completed_count == 1
         assert completed_work.saved_payment_accrued == 0
 
-    def test_managed_opp_completed_work_updated_to_approved_with_agreement(self):
+    def test_completed_work_updated_to_approved_with_agreement(self):
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
         )
@@ -231,7 +231,7 @@ class TestUpdateStatus:
         assert completed_work.saved_completed_count == 1
         assert completed_work.saved_payment_accrued == 100
 
-    def test_managed_opp_completed_work_updated_to_approved_with_same_unit_over_limit(self):
+    def test_completed_work_updated_to_approved_with_same_unit_over_limit(self):
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
         )
@@ -265,7 +265,7 @@ class TestUpdateStatus:
         assert completed_work.saved_completed_count == 2
         assert completed_work.saved_payment_accrued == 100
 
-    def test_managed_opp_completed_work_not_updated_to_approved_with_no_optional_visit(self):
+    def test_completed_work_not_updated_to_approved_with_no_optional_visit(self):
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
         )
@@ -450,8 +450,8 @@ class TestUpdateStatus:
 
         assert completed_work.status == CompletedWorkStatus.approved
 
-    def test_managed_opp_saved_approved_count_uses_agreed_count(self):
-        """For managed opps, saved_approved_count tallies only PM-agreed visits.
+    def test_saved_approved_count_uses_agreed_count(self):
+        """saved_approved_count tallies only PM-agreed visits.
 
         An approved-but-unagreed duplicate must not raise the billable count.
         """
@@ -499,7 +499,7 @@ class TestUpdateStatus:
         assert completed_work.saved_payment_accrued == 100
         assert completed_work.saved_completed_count == 3
 
-    def test_managed_opp_billable_count_is_min_agreed_across_required_deliver_units(self):
+    def test_billable_count_is_min_agreed_across_required_deliver_units(self):
         """Billable count is the minimum agreed count across required deliver units."""
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
@@ -544,7 +544,7 @@ class TestUpdateStatus:
         assert completed_work.saved_payment_accrued == 100
         assert completed_work.saved_completed_count == 3
 
-    def test_managed_opp_billable_count_caps_at_agreed_optional_visits(self):
+    def test_billable_count_caps_at_agreed_optional_visits(self):
         """Optional unit's agreed count caps the billable total, not its approved count."""
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
@@ -589,7 +589,7 @@ class TestUpdateStatus:
         assert completed_work.saved_payment_accrued == 200
         assert completed_work.saved_completed_count == 3
 
-    def test_managed_opp_approved_completed_work_status_preserved_when_agreement_revoked(self):
+    def test_approved_completed_work_status_preserved_when_agreement_revoked(self):
         opp_access = OpportunityAccessFactory(
             opportunity=OpportunityFactory(auto_approve_payments=True),
         )

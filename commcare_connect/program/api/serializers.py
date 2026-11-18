@@ -128,7 +128,7 @@ class LearnAppInputSerializer(CommCareAppInputSerializer):
     passing_score = serializers.IntegerField(min_value=0, max_value=100)
 
 
-class ManagedOpportunityCreateSerializer(serializers.Serializer):
+class ProgramOpportunityCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField()
     short_description = serializers.CharField(max_length=50)
@@ -254,7 +254,6 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
             short_description=validated_data["short_description"],
             organization=organization,
             program=program,
-            managed=True,
             learn_app=learn_app,
             deliver_app=deliver_app,
             start_date=validated_data["start_date"],
@@ -286,13 +285,16 @@ class LearnModuleResponseSerializer(serializers.ModelSerializer):
         fields = ["id", "slug", "name", "description", "time_estimate"]
 
 
-class ManagedOpportunityResponseSerializer(serializers.ModelSerializer):
+class ProgramOpportunityResponseSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(slug_field="slug", read_only=True)
     program_id = serializers.UUIDField(source="program.program_id", read_only=True)
     learn_app = serializers.SerializerMethodField()
     deliver_app = serializers.SerializerMethodField()
     currency = serializers.SlugRelatedField(slug_field="code", read_only=True)
     country = serializers.SlugRelatedField(slug_field="name", read_only=True)
+    # Opportunity.managed was dropped once every opportunity belonged to a program. Kept as a
+    # constant so existing API clients that read it don't break; remove in a later API version.
+    managed = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -315,6 +317,9 @@ class ManagedOpportunityResponseSerializer(serializers.ModelSerializer):
             "country",
             "active",
         ]
+
+    def get_managed(self, obj):
+        return True
 
     def get_learn_app(self, obj):
         app = obj.learn_app
