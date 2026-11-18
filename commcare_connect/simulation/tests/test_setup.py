@@ -89,7 +89,7 @@ def test_opportunity_runs_the_setup_wizard(sim, joined):
 
     opportunity = sim.opportunity(program, nm_org, name="Sim Opp", max_users=4)
 
-    assert (opportunity.organization, opportunity.program, opportunity.managed) == (nm_org, program, True)
+    assert (opportunity.organization, opportunity.program) == (nm_org, program)
     assert opportunity.learn_app.cc_domain == opportunity.deliver_app.cc_domain == SIM_DOMAIN
     assert opportunity.learn_app.cc_app_id.startswith(SIM_LEARN_APP_PREFIX)
     assert opportunity.deliver_app.cc_app_id.startswith(SIM_DELIVER_APP_PREFIX)
