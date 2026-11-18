@@ -25,7 +25,7 @@ def backfill_invoice_bill_to(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0153_deliverunit_display_name_paymentunit_display_name'),
+        ('opportunity', '0154_remove_opportunity_managed'),
     ]
 
     operations = [

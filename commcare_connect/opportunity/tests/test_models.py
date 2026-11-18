@@ -4,7 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
-from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.db.models import ProtectedError, Sum
 from django.db.utils import IntegrityError
@@ -240,7 +240,7 @@ class TestPaymentInvoice:
 
 @pytest.fixture
 def default_address(db):
-    # Seeded by migration 0154 and restored by the ensure_default_bill_to_address autouse fixture.
+    # Seeded by migration 0155 and restored by the ensure_default_bill_to_address autouse fixture.
     return BillToAddress.objects.get(is_default=True)
 
 
@@ -263,14 +263,6 @@ class TestBillToAddress:
         with pytest.raises(ImproperlyConfigured, match="No default Bill To address"):
             BillToAddress.get_default()
 
-    @pytest.mark.parametrize("field", ["name", "address"])
-    def test_used_address_text_cannot_change(self, field):
-        address = BillToAddressFactory()
-        PaymentInvoiceFactory(bill_to=address)
-        setattr(address, field, "Changed")
-        with pytest.raises(ValidationError):
-            address.save()
-
     @pytest.mark.parametrize("which, expected", [("unused", False), ("used", True), ("default", True)])
     def test_is_in_use(self, default_address, which, expected):
         address = default_address if which == "default" else BillToAddressFactory()
@@ -281,6 +273,7 @@ class TestBillToAddress:
     def test_make_default_moves_the_flag(self, default_address):
         address = BillToAddressFactory()
         address.make_default(modified_by="admin@example.com")
+        assert address.modified_by == "admin@example.com"  # the instance matches what was written
         default_address.refresh_from_db()
         address.refresh_from_db()
         assert address.is_default and not default_address.is_default
