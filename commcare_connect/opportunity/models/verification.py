@@ -4,6 +4,7 @@ import re
 from uuid import uuid4
 
 from django.db import models
+from jsonpath_ng.exceptions import JSONPathError
 from jsonpath_ng.ext import parse
 
 from commcare_connect.opportunity.models.opportunity import Opportunity
@@ -20,13 +21,17 @@ def normalize_question_path(question_path):
     * JsonPath expressions, with or without the leading ``$.`` (``form.value``, ``$.form.value``)
     * CommCare/XPath style paths (``/data/group/question`` or ``data/question``), where the
       ``data`` root maps to the ``form`` key of the submitted form JSON.
+
+    Raises ``JSONPathError`` if a slash-style path contains no segments (e.g. ``"/"``).
     """
     path = (question_path or "").strip()
     if path.startswith("$"):
         return path
     if "/" in path:
         segments = [segment for segment in path.split("/") if segment]
-        if segments and segments[0] == "data":
+        if not segments:
+            raise JSONPathError(f"Invalid question path: {question_path!r}")
+        if segments[0] == "data":
             segments[0] = "form"
         return "$." + ".".join(
             segment if _PLAIN_JSONPATH_FIELD.match(segment) else '"{}"'.format(segment.replace('"', '\\"'))
