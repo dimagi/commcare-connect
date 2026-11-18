@@ -128,18 +128,18 @@ class TestExportInvoicesView:
         delay.assert_called_once_with(opportunity.pk, [chosen.pk])
 
     def test_program_manager_can_export(
-        self, client, managed_opportunity, program_manager_org, program_manager_org_user_admin
+        self, client, pm_opportunity, program_manager_org, program_manager_org_user_admin
     ):
         """A program manager reaches the opportunity through their own org slug."""
-        invoice = june_invoice(managed_opportunity)
+        invoice = june_invoice(pm_opportunity)
         with mock.patch.object(generate_invoice_pdf_zip_export, "delay") as delay:
             delay.return_value.id = "task-1"
             client.force_login(program_manager_org_user_admin)
             response = client.post(
-                self._url(managed_opportunity, org_slug=program_manager_org.slug),
+                self._url(pm_opportunity, org_slug=program_manager_org.slug),
                 {"export_type": InvoiceExportForm.PDF_ZIP, "month": "2026-06"},
             )
-        delay.assert_called_once_with(managed_opportunity.pk, [invoice.pk])
+        delay.assert_called_once_with(pm_opportunity.pk, [invoice.pk])
         assert response.status_code == 302
 
     def test_nothing_to_export_reports_an_error(self, client, opportunity, org_user_member):

@@ -7,7 +7,7 @@ from commcare_connect.program.tests.factories import ProgramApplicationFactory
 
 
 @pytest.mark.django_db
-def test_managed_opportunity_stats():
+def test_opportunity_stats():
     opportunity = OpportunityFactory(total_budget=3600000)
     PaymentUnitFactory(opportunity=opportunity, max_total=600, max_daily=5, amount=750, org_amount=450)
 

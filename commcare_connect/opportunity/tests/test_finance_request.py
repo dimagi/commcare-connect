@@ -488,8 +488,8 @@ class TestInvoiceFinanceRequestView:
         settings.JIRA_SERVICE_DESK_CLIENT_SECRET = "client-secret"
 
     @pytest.fixture
-    def pm_invoice(self, managed_opportunity):
-        return PaymentInvoiceFactory(opportunity=managed_opportunity, status=InvoiceStatus.READY_TO_PAY)
+    def pm_invoice(self, pm_opportunity):
+        return PaymentInvoiceFactory(opportunity=pm_opportunity, status=InvoiceStatus.READY_TO_PAY)
 
     def _post(self, client, user, invoice, org_slug, data=None):
         client.force_login(user)
