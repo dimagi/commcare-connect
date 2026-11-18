@@ -119,6 +119,9 @@ To update the Django settings:
 inv django-settings
 ```
 
+It prints the environment, shows a diff from an Ansible check-mode run, and asks before applying the changes.
+Pass `--env production` for production; the default is staging.
+
 ## Deploy
 
 Deploy through the [`Deploy` workflow](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml) on
