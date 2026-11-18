@@ -419,7 +419,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     6. Updates or creates the associated CompletedWork record
     7. Triggers incremental payment recalculation
     """
-    deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
+    deliver_unit = get_or_create_deliver_unit(opportunity, deliver_unit_block)
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
@@ -603,13 +603,9 @@ def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> b
     ).exists()
 
 
-def get_or_create_deliver_unit(app, unit_data):
-    unit, _ = DeliverUnit.objects.get_or_create(
-        app=app,
-        slug=unit_data["@id"],
-        defaults={
-            "name": unit_data["name"],
-        },
+def get_or_create_deliver_unit(opportunity, unit_data):
+    unit, _ = DeliverUnit.objects.get_or_create_for_opportunity(
+        opportunity, unit_data["@id"], defaults={"name": unit_data["name"]}
     )
     return unit
 

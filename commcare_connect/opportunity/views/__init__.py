@@ -440,7 +440,7 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
         context = super().get_context_data(**kwargs)
 
         learn_module_count = LearnModule.objects.filter(app=object.learn_app).count()
-        deliver_unit_count = DeliverUnit.objects.filter(app=object.deliver_app).count()
+        deliver_unit_count = DeliverUnit.objects.for_opportunity(object).count()
         payment_unit_count = object.paymentunit_set.count()
 
         def safe_display(value):
@@ -861,9 +861,7 @@ def add_payment_units(request, org_slug=None, opp_id=None):
 @opportunity_pm_required
 @opportunity_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
-    deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=request.opportunity.deliver_app
-    )
+    deliver_units = assignable_deliver_units(request.opportunity)
     form = PaymentUnitForm(
         deliver_units=deliver_units,
         data=request.POST or None,
@@ -926,10 +924,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
-    deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
-        app=request.opportunity.deliver_app,
-    )
+    deliver_units = assignable_deliver_units(request.opportunity, payment_unit)
     exclude_payment_units = [payment_unit.pk]
     if payment_unit.parent_payment_unit_id:
         exclude_payment_units.append(payment_unit.parent_payment_unit_id)
@@ -999,11 +994,21 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     )
 
 
+def assignable_deliver_units(opportunity, payment_unit=None):
+    """The opportunity's own deliver units that none of its other payment units count."""
+    # A unit can still carry another opportunity's payment unit from before units belonged to an
+    # opportunity (CCCT-3057), so only this opportunity's payment units make a unit unavailable
+    available = Q(payment_unit__isnull=True) | ~Q(payment_unit__opportunity=opportunity)
+    if payment_unit:
+        available |= Q(payment_unit=payment_unit)
+    return DeliverUnit.objects.for_opportunity(opportunity).filter(available)
+
+
 def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):
-    # The form only offers unattached units and units from inactive opportunities, so this may move
-    # a unit off an inactive opportunity's payment unit
-    DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
-    DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
+    # Scoped to the payment unit's opportunity so another opportunity's units are never moved
+    own_units = DeliverUnit.objects.for_opportunity(payment_unit.opportunity)
+    own_units.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
+    own_units.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
 
 
 @opp_standard_access_required
@@ -1285,7 +1290,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     form = OpportunityVerificationFlagsConfigForm(
         instance=verification_flags, data=request.POST or None, opportunity=request.opportunity
     )
-    deliver_unit_count = DeliverUnit.objects.filter(app=request.opportunity.deliver_app).count()
+    deliver_unit_count = DeliverUnit.objects.for_opportunity(request.opportunity).count()
     DeliverUnitFlagsFormset = modelformset_factory(
         DeliverUnitFlagRules, DeliverUnitFlagsForm, extra=deliver_unit_count, max_num=deliver_unit_count
     )
@@ -1297,7 +1302,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         data=request.POST or None,
         initial=[
             {"deliver_unit": du}
-            for du in request.opportunity.deliver_app.deliver_units.exclude(
+            for du in DeliverUnit.objects.for_opportunity(request.opportunity).exclude(
                 id__in=deliver_unit_flags.values_list("deliver_unit")
             )
         ],
@@ -1821,7 +1826,7 @@ def learn_module_table(request, org_slug=None, opp_id=None):
 @opp_view_access_required
 @opportunity_required
 def deliver_unit_table(request, org_slug=None, opp_id=None):
-    unit = DeliverUnit.objects.filter(app=request.opportunity.deliver_app)
+    unit = DeliverUnit.objects.for_opportunity(request.opportunity)
     table = DeliverUnitTable(unit)
     return render(
         request,

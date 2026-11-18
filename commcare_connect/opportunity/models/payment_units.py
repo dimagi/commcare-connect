@@ -35,7 +35,40 @@ class PaymentUnit(models.Model):
         return self.name
 
 
+class DeliverUnitQuerySet(models.QuerySet):
+    def for_opportunity(self, opportunity):
+        """The units of the opportunity's current deliver app that belong to the opportunity."""
+        return self.filter(opportunity=opportunity, app_id=opportunity.deliver_app_id)
+
+    def get_or_create_for_opportunity(self, opportunity, slug, defaults=None):
+        """Find or create the opportunity's unit for ``slug``, never one belonging to another opportunity.
+
+        When an app is reused by a new opportunity, it gets fresh units, so configuring its payment
+        units can't take the previous opportunity's units away from it.
+        """
+        lookup = {"opportunity": opportunity, "app_id": opportunity.deliver_app_id, "slug": slug}
+        try:
+            return self.get(**lookup), False
+        except self.model.DoesNotExist:
+            pass
+        # Units with no opportunity were created before DeliverUnit.opportunity existed, or by code
+        # still running while it was deployed. Only apps no opportunity uses have them after the backfill.
+        self.filter(app_id=opportunity.deliver_app_id, slug=slug, opportunity__isnull=True).update(
+            opportunity=opportunity
+        )
+        return self.get_or_create(**lookup, defaults=defaults)
+
+
 class DeliverUnit(models.Model):
+    # Nullable, and SET_NULL rather than CASCADE, until part 2 of CCCT-3057 splits the units that
+    # several opportunities used: until then another opportunity's visits can still point at a unit.
+    # opportunity/deletion.py deletes an opportunity's units.
+    opportunity = models.ForeignKey(
+        Opportunity,
+        on_delete=models.SET_NULL,
+        related_name="deliver_units",
+        null=True,
+    )
     app = models.ForeignKey(
         CommCareApp,
         on_delete=models.CASCADE,
@@ -53,6 +86,8 @@ class DeliverUnit(models.Model):
         null=True,
     )
     optional = models.BooleanField(default=False)
+
+    objects = DeliverUnitQuerySet.as_manager()
 
     def __str__(self):
         return self.name

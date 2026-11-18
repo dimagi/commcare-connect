@@ -53,13 +53,12 @@ class PaymentUnitItemSerializer(serializers.Serializer):
                 }
             )
 
-        deliver_app = opportunity.deliver_app
         all_du_ids = set(required + optional)
         if all_du_ids:
             valid_ids = set(
-                DeliverUnit.objects.filter(app=deliver_app, id__in=all_du_ids, payment_unit__isnull=True).values_list(
-                    "id", flat=True
-                )
+                DeliverUnit.objects.for_opportunity(opportunity)
+                .filter(id__in=all_du_ids, payment_unit__isnull=True)
+                .values_list("id", flat=True)
             )
             invalid = all_du_ids - valid_ids
             if invalid:
@@ -136,8 +135,10 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
         unique_ids = set(deliver_unit_ids)
         if not unique_ids:
             return
-        updated = DeliverUnit.objects.filter(id__in=unique_ids, payment_unit__isnull=True).update(
-            payment_unit=payment_unit, optional=optional
+        updated = (
+            DeliverUnit.objects.for_opportunity(payment_unit.opportunity)
+            .filter(id__in=unique_ids, payment_unit__isnull=True)
+            .update(payment_unit=payment_unit, optional=optional)
         )
         if updated != len(unique_ids):
             raise serializers.ValidationError(

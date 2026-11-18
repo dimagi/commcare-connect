@@ -1681,7 +1681,7 @@ class DeliverUnitFlagsForm(forms.ModelForm):
                 ),
             )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
+            queryset=DeliverUnit.objects.for_opportunity(self.opportunity), disabled=True, empty_label=None
         )
 
     def save(self, commit=True):
@@ -1725,7 +1725,7 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         self.helper.render_hidden_fields = True
 
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            queryset=DeliverUnit.objects.for_opportunity(self.opportunity),
             widget=forms.CheckboxSelectMultiple,
         )
 
