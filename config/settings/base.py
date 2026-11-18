@@ -432,6 +432,10 @@ OAUTH2_PROVIDER = {
     },
     "OAUTH2_VALIDATOR_CLASS": "commcare_connect.users.oauth2_validator.CustomOAuth2Validator",
     "OIDC_ENABLED": True,
+    # PEM private key for signing RS256 ID tokens; published at /o/.well-known/jwks.json.
+    # Env files can't hold multi-line values, so newlines may be written as a literal "\n".
+    # Without it, RS256 applications get invalid_scope when they request openid.
+    "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", default="", multiline=True),
 }
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 

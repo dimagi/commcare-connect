@@ -42,12 +42,19 @@ def _client_supports_oidc(client):
 
 
 class CustomOAuth2Validator(OAuth2Validator):
-    def get_userinfo_claims(self, request):
-        claims = super().get_userinfo_claims(request)
-        claims["name"] = request.user.name
-        claims["email"] = request.user.email
-        claims["username"] = request.user.username
-        return claims
+    # Every claim is released with the openid scope alone, in both the ID token and /o/userinfo/.
+    # /o/userinfo/ returned these to openid-only tokens before they were added to the ID token,
+    # so gating them behind the standard profile/email scopes would break existing clients.
+    oidc_claim_scope = None
+
+    def get_additional_claims(self):
+        # Request-agnostic form (callables, no request argument) so discovery lists the claims
+        # in claims_supported.
+        return {
+            "name": lambda request: request.user.name,
+            "email": lambda request: request.user.email,
+            "username": lambda request: request.user.username,
+        }
 
     def validate_scopes(self, client_id, scopes, client, request, *args, **kwargs):
         """Refuse ``openid`` at the authorize endpoint for apps that cannot sign ID tokens.
