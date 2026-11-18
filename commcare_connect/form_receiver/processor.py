@@ -395,7 +395,22 @@ def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     )
     for form_json_rule in form_json_rules:
-        json_path = parse(f"$.{form_json_rule.question_path}")
+        try:
+            json_path = form_json_rule.get_json_path()
+        except JSONPathError:
+            logger.exception(
+                "Invalid question_path %r on form JSON validation rule %s (opportunity %s)",
+                form_json_rule.question_path,
+                form_json_rule.pk,
+                form_json_rule.opportunity_id,
+            )
+            flags.append(
+                [
+                    "form_json_rule_invalid",
+                    f"Validation rule {form_json_rule.name} has an invalid question path and could not be checked.",
+                ]
+            )
+            continue
         matches = [
             match.value
             for match in json_path.find(user_visit.form_json)

@@ -14,6 +14,7 @@ from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
+from jsonpath_ng.exceptions import JSONPathError
 from waffle import switch_is_active
 
 from commcare_connect.flags.switch_names import (
@@ -43,6 +44,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.models.verification import parse_question_path
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
@@ -1728,6 +1730,17 @@ class FormJsonValidationRulesForm(forms.ModelForm):
             queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
             widget=forms.CheckboxSelectMultiple,
         )
+
+    def clean_question_path(self):
+        question_path = self.cleaned_data["question_path"].strip()
+        try:
+            parse_question_path(question_path)
+        except JSONPathError as e:
+            raise ValidationError(
+                _("Enter a valid question path, e.g. form.group.question or /data/group/question (%(error)s)."),
+                params={"error": e},
+            )
+        return question_path
 
 
 class AudioAttachmentTranscribeForm(forms.ModelForm):
