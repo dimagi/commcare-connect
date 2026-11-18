@@ -5,7 +5,7 @@ from django.utils.html import escape
 
 from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityFactory
 from commcare_connect.organization.models import UserOrganizationMembership
-from commcare_connect.organization.views import MANAGING_API_KEYS_URL
+from commcare_connect.organization.views import MANAGING_API_KEYS_URL, api_key_removal_blocks
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import UserFactory
 
@@ -45,6 +45,15 @@ class TestRemoveMembersView:
             "Learn how to replace an API key</a>."
         ]
         assert selected.count() == len(membership_ids) == 2
+
+    def test_member_without_name_or_email_is_named_by_username(self, organization):
+        user = UserFactory(name="", email=None)
+        membership = UserOrganizationMembership.objects.create(user=user, organization=organization)
+        OpportunityFactory(program=ProgramFactory(organization=organization), api_key=HQApiKeyFactory(user=user))
+
+        [message] = api_key_removal_blocks([membership])
+
+        assert message.startswith(f"{user.username} can't be removed")
 
     def test_non_admin_cannot_access(self, client, org_user_member, organization):
         client.force_login(org_user_member)

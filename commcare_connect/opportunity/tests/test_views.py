@@ -2890,7 +2890,7 @@ def test_api_key_owner_warning(opportunity, owner_is_member):
     if owner_is_member:
         assert warning is None
     else:
-        assert (owner.name or owner.email) in warning
+        assert (owner.name or str(owner)) in warning
         assert opportunity.program.name in warning
 
 

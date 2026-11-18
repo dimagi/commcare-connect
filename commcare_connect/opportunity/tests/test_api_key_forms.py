@@ -207,7 +207,7 @@ def test_fixed_server_api_key_choices(opportunity, current_is_own):
     HQApiKeyFactory(user=user)  # another server
     owner = current.user
     assert fixed_server_api_key_choices(opportunity, user) == [
-        (current.id, f"{current.masked} (added by {owner.name or owner.email})"),
+        (current.id, f"{current.masked} (added by {owner.name or str(owner)})"),
         (newer.id, newer.masked),
         (older.id, older.masked),
     ]

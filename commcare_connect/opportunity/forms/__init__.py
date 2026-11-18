@@ -877,7 +877,7 @@ def fixed_server_api_key_choices(opportunity, user):
     current_key = opportunity.api_key
     if current_key:
         owner = current_key.user
-        label = gettext("{key} (added by {owner})").format(key=current_key.masked, owner=owner.name or owner.email)
+        label = gettext("{key} (added by {owner})").format(key=current_key.masked, owner=owner.name or str(owner))
         choices = [(current_key.id, label)]
     else:
         # A placeholder stops the browser preselecting one of the user's keys.
