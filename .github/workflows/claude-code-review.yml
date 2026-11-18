@@ -257,6 +257,10 @@ jobs:
             Every other stop condition still applies.
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The action refuses to run for a bot actor unless it is listed here.
+          # Sentry's Seer opens and pushes autofix PRs as `sentry[bot]`, and those
+          # need review as much as a person's.
+          allowed_bots: 'sentry'
           # Workload identity federation, in place of anthropic_api_key. Setting
           # an API key as well would silently take precedence over these. The IDs
           # are identifiers, not credentials: the exchange only succeeds for an
