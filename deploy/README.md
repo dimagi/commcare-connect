@@ -110,8 +110,9 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096
 Paste the PEM into the secrets YAML as a block scalar (`oidc_rsa_private_key: |`). Docker env files can't hold
 multi-line values, so the template writes each newline as a literal `\n` and Django converts them back.
 
-Leaving the secret out disables RS256: those applications get `invalid_scope` when they request the `openid` scope.
-Replacing the key invalidates ID tokens signed with the old one.
+Leaving the secret out stops RS256 applications getting ID tokens: an authorization-code request for the `openid`
+scope returns `invalid_scope`. Grants that don't issue an ID token, such as the password grant used for
+`/o/userinfo/`, still accept `openid`. Replacing the key invalidates ID tokens signed with the old one.
 
 To update the Django settings:
 
