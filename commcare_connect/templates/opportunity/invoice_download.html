@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <style>
       body {
+        /* Break a word that can't fit on its own line (an address typed without spaces) instead of running off the page. */
+        overflow-wrap: anywhere;
         font-family: sans-serif;
         color: #1a1a1a;
       }
@@ -101,7 +103,11 @@
       </div>
       <div class="section">
         <p class="section-heading">{% trans "Bill to" %}</p>
-        <p>{{ dimagi_address|linebreaksbr }}</p>
+        <p>
+          {{ invoice.bill_to.name }}
+          <br>
+          {{ invoice.bill_to.address|linebreaksbr }}
+        </p>
       </div>
       <div class="section">
         <p>{% trans "Opportunity" %}: {{ opportunity.name }}</p>

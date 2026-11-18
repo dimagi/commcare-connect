@@ -1,0 +1,5 @@
+{% extends "users/managed_options/list.html" %}
+{% load i18n %}
+{% block intro %}
+  {% translate "The Dimagi entities a Network Manager can bill an invoice to. The default is pre-selected on new invoices. Once an invoice uses an address, its name and address can no longer change and it can't be deleted; deactivate it to stop offering it on new invoices." %}
+{% endblock intro %}

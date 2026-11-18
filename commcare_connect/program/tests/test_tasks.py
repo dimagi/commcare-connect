@@ -16,8 +16,8 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.program.tasks import (
-    get_org_managed_opps_for_review,
     get_org_opps_for_review,
+    get_org_pm_opps_for_review,
     send_monthly_delivery_reminder_email,
     send_pm_invoice_review_reminder,
 )
@@ -66,48 +66,48 @@ class TestGetOrgOppsIdsForReview:
 
 
 @pytest.mark.django_db
-class TestGetOrgManagedOppsIdsForReview:
-    def test_org_no_managed_opps_for_review(self):
+class TestGetOrgPmOppsIdsForReview:
+    def test_org_no_pm_opps_for_review(self):
         pm_org = ProgramManagerOrgWithUsersFactory()
         nm_org = OrganizationFactory()
 
         program = ProgramFactory(organization=pm_org)
-        managed_opportunity = OpportunityFactory(organization=nm_org, program=program, is_test=False)
+        pm_opportunity = OpportunityFactory(organization=nm_org, program=program, is_test=False)
 
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
         completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
 
         UserVisitFactory(
-            opportunity=managed_opportunity,
+            opportunity=pm_opportunity,
             user=access.user,
             opportunity_access=access,
             status=VisitValidationStatus.pending,
             completed_work=completed_work,
         )
-        opps = get_org_managed_opps_for_review(pm_org)
+        opps = get_org_pm_opps_for_review(pm_org)
         assert len(opps) == 0
 
-    def test_org_managed_opps_for_review(self):
+    def test_org_pm_opps_for_review(self):
         pm_org = ProgramManagerOrgWithUsersFactory()
         nm_org = OrganizationFactory()
 
         program = ProgramFactory(organization=pm_org)
-        managed_opportunity = OpportunityFactory(organization=nm_org, program=program, is_test=False)
+        pm_opportunity = OpportunityFactory(organization=nm_org, program=program, is_test=False)
 
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
         completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
 
         UserVisitFactory(
-            opportunity=managed_opportunity,
+            opportunity=pm_opportunity,
             user=access.user,
             opportunity_access=access,
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.pending,
             completed_work=completed_work,
         )
-        opps = get_org_managed_opps_for_review(pm_org)
+        opps = get_org_pm_opps_for_review(pm_org)
         assert len(opps) == 1
-        assert opps[0].id == managed_opportunity.id
+        assert opps[0].id == pm_opportunity.id
 
 
 @pytest.mark.django_db
@@ -178,18 +178,18 @@ class TestSendMonthlyDeliveryReminderEmail:
         send_monthly_delivery_reminder_email()
         send_mock.delay.assert_not_called()
 
-    def test_send_reminder_email_for_pm_org_with_pending_managed_deliveries(self, send_mock):
+    def test_send_reminder_email_for_pm_org_with_pending_deliveries(self, send_mock):
         pm_org = ProgramManagerOrgWithUsersFactory()
         nm_org = OrganizationFactory()
 
         program = ProgramFactory(organization=pm_org)
-        managed_opportunity = OpportunityFactory(organization=nm_org, program=program, is_test=False)
+        pm_opportunity = OpportunityFactory(organization=nm_org, program=program, is_test=False)
 
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
         completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
 
         UserVisitFactory(
-            opportunity=managed_opportunity,
+            opportunity=pm_opportunity,
             user=access.user,
             opportunity_access=access,
             status=VisitValidationStatus.approved,
@@ -208,13 +208,13 @@ class TestSendMonthlyDeliveryReminderEmail:
         program_1 = ProgramFactory(organization=pm_org_1)
         program_2 = ProgramFactory(organization=pm_org_2)
 
-        managed_opportunity_1 = OpportunityFactory(organization=nm_org, program=program_1, is_test=False)
-        managed_opportunity_2 = OpportunityFactory(organization=nm_org, program=program_2, is_test=False)
+        pm_opportunity_1 = OpportunityFactory(organization=nm_org, program=program_1, is_test=False)
+        pm_opportunity_2 = OpportunityFactory(organization=nm_org, program=program_2, is_test=False)
         nm_opportunity = OpportunityFactory(organization=nm_org, is_test=False)
         pm_opportunity = OpportunityFactory(organization=pm_org_2, is_test=False)
 
-        access_1 = OpportunityAccessFactory(opportunity=managed_opportunity_1)
-        access_2 = OpportunityAccessFactory(opportunity=managed_opportunity_2)
+        access_1 = OpportunityAccessFactory(opportunity=pm_opportunity_1)
+        access_2 = OpportunityAccessFactory(opportunity=pm_opportunity_2)
         access_3 = OpportunityAccessFactory(opportunity=nm_opportunity)
         access_4 = OpportunityAccessFactory(opportunity=pm_opportunity)
 
@@ -224,7 +224,7 @@ class TestSendMonthlyDeliveryReminderEmail:
         completed_work_4 = CompletedWorkFactory(opportunity_access=access_4, status=CompletedWorkStatus.pending)
 
         UserVisitFactory(
-            opportunity=managed_opportunity_1,
+            opportunity=pm_opportunity_1,
             user=access_1.user,
             opportunity_access=access_1,
             status=VisitValidationStatus.pending,
@@ -232,7 +232,7 @@ class TestSendMonthlyDeliveryReminderEmail:
             completed_work=completed_work_1,
         )
         UserVisitFactory(
-            opportunity=managed_opportunity_2,
+            opportunity=pm_opportunity_2,
             user=access_2.user,
             opportunity_access=access_2,
             status=VisitValidationStatus.approved,
@@ -272,14 +272,14 @@ class TestSendMonthlyDeliveryReminderEmail:
         assert pm_call_args["organization"] == pm_org_2
         assert pm_call_args["recipient_emails"] == pm_org_2_member_emails
         assert len(pm_call_args["opportunities"]) == 2
-        expected_opps = {pm_opportunity.id, managed_opportunity_2.id}
+        expected_opps = {pm_opportunity.id, pm_opportunity_2.id}
         actual_opps = {pm_call_args["opportunities"][0].id, pm_call_args["opportunities"][1].id}
         assert expected_opps == actual_opps
 
         assert nm_call_args["organization"] == nm_org
         assert nm_call_args["recipient_emails"] == nm_org_member_emails
         assert len(nm_call_args["opportunities"]) == 2
-        expected_opps = {nm_opportunity.id, managed_opportunity_1.id}
+        expected_opps = {nm_opportunity.id, pm_opportunity_1.id}
         actual_opps = {nm_call_args["opportunities"][0].id, nm_call_args["opportunities"][1].id}
         assert expected_opps == actual_opps
 

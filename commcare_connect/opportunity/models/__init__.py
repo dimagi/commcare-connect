@@ -26,6 +26,7 @@ from commcare_connect.opportunity.models.base import CHOICE_FIELD_MAX_LENGTH, XF
 from commcare_connect.opportunity.models.commcare_app import CommCareApp, HQApiKey
 from commcare_connect.opportunity.models.completed_work import CompletedWork, CompletedWorkStatus
 from commcare_connect.opportunity.models.invoices import (
+    BillToAddress,
     CompletedWorkInvoice,
     InvoiceFinanceRequest,
     InvoiceFinanceRequestStatus,
@@ -62,6 +63,7 @@ __all__ = [
     "AssignedTask",
     "AssignedTaskStatus",
     "AudioAttachment",
+    "BillToAddress",
     "BlobMeta",
     "CommCareApp",
     "CompletedModule",

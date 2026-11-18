@@ -44,7 +44,7 @@ def program(sim, title):
 
 
 def opportunity(sim, program, nm_org, name, days=OPPORTUNITY_DAYS_AGO, **options):
-    """Create and launch a managed opportunity ``days`` ago; it starts that day unless ``options`` say otherwise."""
+    """Create and launch an opportunity ``days`` ago; it starts that day unless ``options`` say otherwise."""
     with sim.at(days_ago(days)):
         return sim.opportunity(program, nm_org, name=name, **options)
 

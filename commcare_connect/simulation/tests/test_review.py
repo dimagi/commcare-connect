@@ -41,7 +41,7 @@ MAX_DAILY = 2
 
 @pytest.fixture
 def opportunity(user, organization, program_manager_org):
-    """A managed opportunity reviewed by hand, with every visit flag on. ``user`` administers both sides."""
+    """An opportunity reviewed by hand, with every visit flag on. ``user`` administers both sides."""
     MembershipFactory(user=user, organization=organization)
     MembershipFactory(user=user, organization=program_manager_org)
     api_key = HQApiKeyFactory()

@@ -1,0 +1,10 @@
+{% load i18n %}
+{% if record.is_default %}
+  <span class="badge badge-sm primary-light">{% translate "Default" %}</span>
+{% elif record.is_active %}
+  <form method="post"
+        action="{% url 'users:bill_to_address_make_default' record.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="button button-sm outline-style">{% translate "Make default" %}</button>
+  </form>
+{% endif %}

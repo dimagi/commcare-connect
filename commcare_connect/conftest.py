@@ -31,6 +31,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 
 @pytest.fixture(autouse=True)
@@ -153,7 +154,7 @@ def unusable_end_date(request):
 
 
 @pytest.fixture
-def managed_opportunity(organization, program_manager_org):
+def pm_opportunity(organization, program_manager_org):
     program = ProgramFactory(organization=program_manager_org)
     return OpportunityFactory(program=program, organization=organization)
 
@@ -189,16 +190,16 @@ def supervisor_org(db) -> Organization:
 
 
 @pytest.fixture
-def opp_orgs(managed_opportunity, supervisor_org, funder_org, watcher_org):
-    """Every org with a distinct relationship to `managed_opportunity`."""
-    program = managed_opportunity.program
+def opp_orgs(pm_opportunity, supervisor_org, funder_org, watcher_org):
+    """Every org with a distinct relationship to `pm_opportunity`."""
+    program = pm_opportunity.program
     program.funder = funder_org
     program.save()
     program.watchers.add(watcher_org)
-    managed_opportunity.supervising_organization = supervisor_org
-    managed_opportunity.save()
+    pm_opportunity.supervising_organization = supervisor_org
+    pm_opportunity.save()
     return {
-        "delivery": managed_opportunity.organization,
+        "delivery": pm_opportunity.organization,
         "supervisor": supervisor_org,
         "program_org": program.organization,
         "funder": funder_org,
@@ -219,6 +220,20 @@ def ensure_currency_country_data(db):
     migration_module.load_currency_and_country_data(django_apps, schema_editor=None)
 
 
+@pytest.fixture(autouse=True)
+def ensure_default_bill_to_address(db):
+    # transaction=True tests flush the row migration 0155 seeds, and invoices can't be created without a default.
+    # Same text as the seed, so the PDF still matches the old hardcoded address after a flush.
+    BillToAddress = django_apps.get_model("opportunity", "BillToAddress")
+    BillToAddress.objects.get_or_create(
+        is_default=True,
+        defaults={
+            "name": "Dimagi, Inc.",
+            "address": "245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214",
+        },
+    )
+
+
 @pytest.fixture
 def anonymous_request(rf):
     """Builds a RequestFactory request with the user, session and messages that templates and allauth expect."""
@@ -231,3 +246,12 @@ def anonymous_request(rf):
         return request
 
     return make
+
+
+@pytest.fixture
+def settings_admin(user):
+    app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
+    user.user_permissions.add(
+        user.user_permissions.model.objects.get(content_type__app_label=app_label, codename=codename)
+    )
+    return user
