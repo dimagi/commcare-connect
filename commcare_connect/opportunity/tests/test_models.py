@@ -4,7 +4,7 @@ from unittest import mock
 
 import pghistory
 import pytest
-from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.db.models import ProtectedError, Sum
 from django.db.utils import IntegrityError
@@ -261,14 +261,6 @@ class TestBillToAddress:
         BillToAddress.objects.update(is_default=False)
         with pytest.raises(ImproperlyConfigured, match="No default Bill To address"):
             BillToAddress.get_default()
-
-    @pytest.mark.parametrize("field", ["name", "address"])
-    def test_used_address_text_cannot_change(self, field):
-        address = BillToAddressFactory()
-        PaymentInvoiceFactory(bill_to=address)
-        setattr(address, field, "Changed")
-        with pytest.raises(ValidationError):
-            address.save()
 
     @pytest.mark.parametrize("which, expected", [("unused", False), ("used", True), ("default", True)])
     def test_is_in_use(self, default_address, which, expected):

@@ -4,7 +4,7 @@ import datetime
 from uuid import uuid4
 
 import pghistory
-from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.exceptions import ImproperlyConfigured
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Q
@@ -42,7 +42,11 @@ class InvoiceStatus(models.TextChoices):
 
 
 class BillToAddress(BaseModel):
-    """An entity an invoice can be billed to."""
+    """An entity an invoice can be billed to.
+
+    Once an invoice uses an address, its name and address are frozen so issued invoices never change.
+    BillToAddressForm enforces this; nothing at the model or database level does, so any new write path must too.
+    """
 
     name = models.CharField(max_length=255)
     address = models.TextField()
@@ -63,14 +67,6 @@ class BillToAddress(BaseModel):
     def __str__(self):
         return self.name
 
-    def save(self, *args, **kwargs):
-        if self.pk and self._text_changed() and self.has_invoices():
-            raise ValidationError(
-                gettext_lazy("'%(name)s' is used by invoices, so its name and address can't change."),
-                params={"name": self.name},
-            )
-        super().save(*args, **kwargs)
-
     def has_invoices(self):
         return self.invoices.exists()
 
@@ -84,10 +80,6 @@ class BillToAddress(BaseModel):
         BillToAddress.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False, **changes)
         BillToAddress.objects.filter(pk=self.pk).update(is_default=True, **changes)
         self.is_default = True
-
-    def _text_changed(self):
-        saved = type(self).objects.filter(pk=self.pk).values_list("name", "address").first()
-        return saved is not None and saved != (self.name, self.address)
 
     @classmethod
     def get_default(cls):
