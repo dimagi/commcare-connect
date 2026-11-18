@@ -1,6 +1,5 @@
 import datetime
 import logging
-from functools import partial
 from uuid import UUID
 
 import pghistory
@@ -240,7 +239,7 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         if not created:
             raise ProcessingError("Learn Assessment is already completed")
 
-        transaction.on_commit(partial(notify_user_for_scored_assessment.delay, assessment.pk))
+        notify_user_for_scored_assessment.delay_on_commit(assessment.pk)
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -327,7 +326,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         photo_attachments = {name: meta for name, meta in all_attachments.items() if name == photo_evidence}
         if not photo_attachments:
             raise ProcessingError(f"photo_evidence attachment '{photo_evidence}' not found on form")
-        transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, photo_attachments))
+        download_inaccessibility_request_attachments.delay_on_commit(xform.id, photo_attachments)
 
         work_area.status = new_status
         with pghistory.context(username=user.username, user_email=user.email):
@@ -392,19 +391,41 @@ def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]
         ):
             flags.append(["duration", "The form was completed too quickly."])
 
+    flags.extend(_get_form_json_rule_flags(user_visit))
+    return flags
+
+
+def _get_form_json_rule_flags(user_visit: UserVisit) -> list[list[str]]:
+    """Check the visit's form JSON against the deliver unit's custom validation rules."""
     form_json_rules = FormJsonValidationRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     )
+    flags = []
     for form_json_rule in form_json_rules:
-        json_path = parse(f"$.{form_json_rule.question_path}")
-        matches = [
-            match.value
-            for match in json_path.find(user_visit.form_json)
-            if match.value == form_json_rule.question_value
-        ]
-        if not matches:
-            flags.append(["form_value_not_found", f"Form does not satisfy {form_json_rule.name} validation rule."])
+        flag = _check_form_json_rule(form_json_rule, user_visit.form_json)
+        if flag is not None:
+            flags.append(flag)
     return flags
+
+
+def _check_form_json_rule(form_json_rule: FormJsonValidationRules, form_json: dict) -> list[str] | None:
+    """Return a [flag_code, reason] pair if the form JSON fails the rule, otherwise None."""
+    try:
+        json_path = form_json_rule.get_json_path()
+    except JSONPathError:
+        logger.exception(
+            "Invalid question_path %r on form JSON validation rule %s (opportunity %s)",
+            form_json_rule.question_path,
+            form_json_rule.pk,
+            form_json_rule.opportunity_id,
+        )
+        return [
+            "form_json_rule_invalid",
+            f"Validation rule {form_json_rule.name} has an invalid question path and could not be checked.",
+        ]
+    if any(match.value == form_json_rule.question_value for match in json_path.find(form_json)):
+        return None
+    return ["form_value_not_found", f"Form does not satisfy {form_json_rule.name} validation rule."]
 
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
@@ -566,7 +587,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     completed_work_id = completed_work.id if completed_work is not None else None
     update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
-    transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+    download_user_visit_attachments.delay_on_commit(user_visit.id)
 
 
 def check_visit_over_limit(

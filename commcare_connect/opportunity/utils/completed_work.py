@@ -18,7 +18,7 @@ class CompletedWorkUpdater:
     """Recalculates status and payment for a batch of CompletedWork records.
 
     Prepares deliver/payment unit mappings, counts completed and approved visits
-    per work item, updates statuses based on auto-approval and managed opportunity
+    per work item, updates statuses based on auto-approval and program manager review
     rules, and caches payment amounts (local currency + USD).
     """
 
@@ -135,8 +135,8 @@ class CompletedWorkUpdater:
         """Set CompletedWork status based on visit statuses and approval rules.
 
         When auto_approve_payments is enabled: rejected if any visit is rejected,
-        approved if all visits are approved. For managed opportunities, approval
-        is downgraded to pending unless all visits have review_status=agree.
+        approved if all visits are approved. Approval
+        is then downgraded to pending unless all visits have review_status=agree.
         """
         updated = False
         if self.opportunity.auto_approve_payments:
@@ -177,7 +177,7 @@ class CompletedWorkUpdater:
         """Cache payment amounts on the CompletedWork record.
 
         Calculates local currency and USD amounts for approved work using
-        the exchange rate at the time of status change. For managed opportunities,
+        the exchange rate at the time of status change. It
         also calculates the organization's payment portion.
         """
         updated = False

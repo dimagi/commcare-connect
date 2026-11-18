@@ -12,7 +12,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
 )
 from commcare_connect.opportunity.models import (
-    CompletedWork,
     Opportunity,
     OpportunityAccess,
     UserVisit,
@@ -20,7 +19,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    CompletedWorkTable,
     DeliverStatusTable,
     UserStatusTable,
     UserVisitReviewTable,
@@ -170,20 +168,6 @@ def export_deliver_status_table(opportunity: Opportunity) -> Dataset:
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
     table = DeliverStatusTable(access_objects, exclude=("details", "date_popup"))
     return get_dataset(table, export_title="Deliver Status export")
-
-
-def export_work_status_table(opportunity: Opportunity) -> Dataset:
-    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=False)
-    completed_works = []
-    for completed_work in CompletedWork.objects.filter(opportunity_access__in=access_objects):
-        completed = completed_work.completed
-        if opportunity.auto_approve_payments and completed and completed_work.flags:
-            completed_works.append(completed_work)
-            continue
-        if completed:
-            completed_works.append(completed_work)
-    table = CompletedWorkTable(completed_works, exclude=("date_popup"))
-    return get_dataset(table, export_title="Payment Verification export")
 
 
 def get_dataset(table, export_title):

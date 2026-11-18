@@ -17,6 +17,11 @@ inv down                            # docker compose down
 ./manage.py runserver               # dev server
 ./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
 ./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
+./manage.py run_scenario <name> --admin-email you@example.com  # build local data through the app (simulation/)
+
+# Worktrees: each gets its own DB + Redis DB (see "Working in git worktrees" in README.md)
+wt switch --create <branch>         # create and set up via .config/wt.toml
+wt new <branch> --share=1           # reuse the main checkout's DB + Redis DB; skips migrate
 
 # JavaScript/CSS
 npm ci                              # install deps
@@ -32,12 +37,15 @@ celery -A config.celery_app worker -B -l info
 
 # Tests
 pytest                              # run all tests
+pytest -n auto                      # run all tests in parallel, one pytest-xdist worker per core (what CI runs)
+pytest -n auto --create-db          # rebuild the per-worker test databases if setup fails on a stale one
 pytest path/to/test_file.py::test_name  # run single test
 
 # Duplicate code
-jscpd --changed commcare_connect    # clones in your uncommitted files, [NEW] = not in HEAD (pre-commit hook; settings in .jscpd.json)
+inv duplicate-code-report           # run before opening a PR; fails on clones your branch adds and lists only those (settings in .jscpd.json)
+inv duplicate-code-report --base origin/<branch>  # compare against another branch, e.g. the PR this one is stacked on
 
-# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, jscpd)
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
 prek run -a
 
 # Requirements (uv)
@@ -88,6 +96,7 @@ commcare_connect/
   health/          # /up liveness probe, token-gated /status/ dependency checks (see its README)
   multidb/         # Secondary DB support + logical replication
   deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
+  simulation/      # Builds local data by driving the real forms/functions/APIs; only in INSTALLED_APPS under local.py and test.py
   web/             # Context processors, shared template tags
   prelogin/        # Public marketing pages
   utils/           # BaseModel, middleware, caching, permissions
@@ -125,7 +134,10 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
 - **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
-- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views/` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
+- **Code organization**: read `docs/code-organization.md` before adding code that writes another app's models, adding a utility, or moving existing code
+- **Refactoring code you touch**: when code you touch breaks the rules in `docs/code-organization.md`, or a module you change has grown large enough to split, ask the user whether to refactor it and say why you want to. If they agree and the fix is small, do it in its own `refactor:` commit; larger fixes get a separate PR
+- **Duplicate code (jscpd)**: before opening a PR, run the jscpd command under Commands. It fails when your branch adds a clone, meaning your change copied code; extract the shared part into one function or class that both callers use. Clones that were already on `main` don't fail it: if one is in code you touched, follow **Refactoring code you touch**. jscpd also flags code that only looks alike. Don't extract imports, `Meta` classes, single field declarations, crispy-form layouts, argparse options or other framework boilerplate; copies that differ in their details, so a shared version would need flags or parameters per caller; or a few lines that would read worse extracted. Do extract a field that brings its own queryset, widget setup or validation when a second form needs it: that is a field factory. Leave clones of these kinds in place and list them in the PR description
+- **Prefer class-based views** for form handling and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views/` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
 - **Use Django Forms** over raw HTML forms for validation and rendering
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
 - **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
@@ -136,6 +148,8 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **App READMEs are part of the change**: `opportunity/README.md`, `opportunity/PAYMENTS.md`, `form_receiver/README.md`, `flags/README.md`, `health/README.md` and `templates/README.md` document non-obvious behaviour (status rules, accrual, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
 <!-- --8<-- [end:code-style] -->
 - **So are the Confluence docs**: user-facing changes must list the Confluence pages they affect in the PR's **Documentation** section, or say "None". To find them, search Confluence for the features the branch changes and compare the results against the documentation links on the Jira ticket. If the `connect-tech:docs-affected-by-branch` skill is available (Claude Code with the `connect-tech` plugin), open the PR first with "Pending" under the **Documentation** header, then run the skill on the branch in a subagent. Pass the subagent the PR link and the Jira ticket key, and tell it to replace "Pending" with its findings when it is done. A subagent can't ask the user, so if you don't know the ticket, ask the user before opening the PR; pass "none" if there isn't one. Without Confluence access, ask the user which pages are affected. Never drop the section as empty.
+- **Moving or renaming a module**: grep `*.md` for the old path and update it in the same commit.
+- **Moving or deleting a function**: grep `*/migrations/*.py` for imports of it and copy it into each of those migrations, in the same commit.
 
 <!-- --8<-- [start:conventions] -->
 
@@ -149,7 +163,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 - **Required vs optional**: if only one feature needs it, degrade that feature alone — hide or disable the UI and say why (see `configured_provider` in `commcare_connect/users/templatetags/socialaccount_extras.py` and `commcare_connect/templates/ocs/_connect_prompt.html`). If the app genuinely can't work without it, fail loudly and early in the code path that needs it rather than half-working.
 - **Never render broken UI**: don't emit a button, link or map that 500s or dead-ends when the config is absent
 - **Set an explicit timeout on outbound calls**: all HTTP goes through **httpx**, which defaults to 5s — fine for quick calls, too short for bulk work, so pass a timeout sized to the operation (see `_make_request` in `commcare_connect/connect_id_client/main.py`: `timeout=10` default, 15–30s for bulk sends; `commcare_connect/ocs_provider/views.py`)
-- **Dispatch Celery tasks after commit**: `ATOMIC_REQUESTS = True` means a bare `task.delay()` in a request can run before the transaction commits, so the worker may not see the rows it was told about. Wrap the dispatch: `transaction.on_commit(partial(task.delay, obj.pk))` (see `commcare_connect/form_receiver/processor.py`). Most views still call `.delay()` directly — don't copy that.
+- **Dispatch Celery tasks after commit**: `ATOMIC_REQUESTS = True` means a bare `task.delay()` in a request can run before the transaction commits, so the worker may not see the rows it was told about. Dispatch from the service, not the view, so every caller gets it, and wrap the dispatch: `task.delay_on_commit(obj.pk)` (see `commcare_connect/form_receiver/processor.py`). Most views still call `.delay()` directly — don't copy that.
 - **Celery tasks: skip vs retry**: missing configuration won't fix itself — log and return (`commcare_connect/audit/tasks.py`). A transient failure (unreachable service, lock contention) should retry with `autoretry_for` + `retry_backoff` (`commcare_connect/opportunity/tasks.py`)
 - **Log, don't spam**: use the module `logger` (`logger.exception` / `logger.error`). Log at error level only when the config is _expected_ in that environment; things that are legitimately absent in dev belong at `info` (e.g. `audit/tasks.py`)
 - **Test the unconfigured path**: add a test that runs with the setting unset or the record missing — an optional feature still renders/runs, a required one fails early with a clear error
@@ -158,12 +172,21 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 - **Framework**: pytest + pytest-django + factory-boy
 - **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
-- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `managed_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `pm_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
 - HTTP mocking: `pytest-httpx` for httpx calls
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
 - **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
 - **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
+
+## Local data
+
+Local dev data (not test fixtures) comes from the `simulation` app, which builds it by driving the real forms, functions and APIs. See `commcare_connect/simulation/README.md`.
+
+- **Never seed with the ORM or factories.** Compose `Sim` steps. If a step is missing, add one that submits the page's request as the acting admin (`sim.browser(user)`); don't change production code to make a step possible
+- **Shared vs personal scenarios**: `simulation/scenarios/` holds a few shared scenarios that CI builds; one-off data (a feature in progress, a bug repro) goes in the gitignored `simulation/scenarios/local/` and is never committed. Prefer extending a shared scenario over adding one
+- **Changing a user flow means updating its step in the same PR.** If you change a form, view or function a step calls, update the step; `test_scenarios.py` usually fails otherwise. Scenarios only call steps, so they rarely need changing
+- **A fixed bug leaves a regression test, not a scenario**
 
 ## Gotchas
 
@@ -196,6 +219,7 @@ Write ADRs for significant decisions only. A decision is significant when it is 
 
 The developer docs site (`zensical.toml`) publishes these and the app READMEs. Most of its pages under `docs/` are one-line `--8<--` stubs that include a README from beside the code, so edit the README, not the stub. `README.md` and this file are published in parts, delimited by `<!-- --8<-- [start:name] -->` / `[end:name]` comments; keep those markers when you move sections around. A new doc page needs a `nav` entry in `zensical.toml`; links to files outside the site (`.github/`, source files) must be absolute GitHub URLs, because the site has no copy of them and the build's link check does not catch these.
 
+- `docs/code-organization.md` — writing another app's models, where utilities go, and migration imports
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
