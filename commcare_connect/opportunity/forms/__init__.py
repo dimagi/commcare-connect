@@ -14,6 +14,7 @@ from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
+from jsonpath_ng.exceptions import JSONPathError
 from waffle import switch_is_active
 
 from commcare_connect.flags.switch_names import (
@@ -44,6 +45,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.models.verification import parse_question_path
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
@@ -1410,7 +1412,7 @@ class AddBudgetNewUsersForm(forms.Form):
         total_budget = cleaned_data.get("total_budget")
 
         if not self.program_manager:
-            raise forms.ValidationError("Only program managers are allowed to add budgets for managed opportunities.")
+            raise forms.ValidationError("Only program managers are allowed to add budgets.")
 
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")
@@ -1892,6 +1894,17 @@ class FormJsonValidationRulesForm(forms.ModelForm):
             widget=forms.CheckboxSelectMultiple,
         )
 
+    def clean_question_path(self):
+        question_path = self.cleaned_data["question_path"].strip()
+        try:
+            parse_question_path(question_path)
+        except JSONPathError as e:
+            raise ValidationError(
+                _("Enter a valid question path, e.g. form.group.question or /data/group/question (%(error)s)."),
+                params={"error": e},
+            )
+        return question_path
+
 
 class AudioAttachmentTranscribeForm(forms.ModelForm):
     class Meta:
@@ -1965,3 +1978,19 @@ class BillToAddressForm(forms.ModelForm):
             Field("address"),
             Field("is_active", css_class=CHECKBOX_CLASS),
         )
+
+    def clean(self):
+        # Django ignores a disabled field's posted value, so without this a rename on a page opened before the
+        # address was used would be dropped while the save still reports success.
+        cleaned_data = super().clean()
+        for name in ("name", "address"):
+            if self.fields[name].disabled and self._posted_change(name):
+                self.add_error(name, _("Used by an invoice since you opened this page, so it can't change."))
+        return cleaned_data
+
+    def _posted_change(self, name):
+        # A browser leaves disabled fields out of the POST, so a posted value means the page was opened while the
+        # field was still editable. Textareas post \r\n line endings.
+        posted = self.data.get(self.add_prefix(name))
+        saved = getattr(self.instance, name) or ""
+        return posted is not None and posted.replace("\r\n", "\n").strip() != saved.strip()

@@ -457,8 +457,7 @@ class BillToAddressListView(BillToAddressMixin, ManagedOptionListView):
     def get_queryset(self):
         return BillToAddress.objects.annotate(
             invoice_count=Count("invoices"),
-            # Mirrors BillToAddress.is_in_use().
-            in_use=Q(is_default=True) | Q(invoice_count__gt=0),
+            in_use=BillToAddress.in_use_condition(),
         ).order_by("-is_default", "-is_active", "name")
 
 

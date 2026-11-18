@@ -852,7 +852,7 @@ class TestAddBudgetNewUsersForm:
 
         assert not form.is_valid()
         assert "__all__" in form.errors
-        assert "Only program managers are allowed to add budgets for managed opportunities." in form.errors["__all__"]
+        assert "Only program managers are allowed to add budgets." in form.errors["__all__"]
 
     @pytest.mark.parametrize("new_budget, is_valid", [(150, True), (201, False)])
     def test_changing_total_budget(self, setup, new_budget, is_valid):
@@ -2315,7 +2315,7 @@ class TestSupervisingOrganizationOnChangeForm:
     """
 
     @pytest.fixture
-    def managed_opportunity(self, opportunity):
+    def pm_opportunity(self, opportunity):
         ProgramApplicationFactory(
             organization=opportunity.organization,
             program=opportunity.program,
@@ -2323,29 +2323,29 @@ class TestSupervisingOrganizationOnChangeForm:
         )
         return opportunity
 
-    def test_program_manager_can_reassign(self, managed_opportunity):
-        request = _request_for(managed_opportunity.program.organization, managed_opportunity)
+    def test_program_manager_can_reassign(self, pm_opportunity):
+        request = _request_for(pm_opportunity.program.organization, pm_opportunity)
 
         form = _change_form(
-            managed_opportunity,
+            pm_opportunity,
             request,
-            supervising_organization=managed_opportunity.organization.pk,
+            supervising_organization=pm_opportunity.organization.pk,
         )
 
         assert form.is_valid(), form.errors
         updated = form.save()
         updated.refresh_from_db()
 
-        assert updated.supervising_organization == managed_opportunity.organization
+        assert updated.supervising_organization == pm_opportunity.organization
 
-    def test_delivering_organization_cannot_see_or_set_it(self, managed_opportunity):
-        original = managed_opportunity.supervising_organization
-        request = _request_for(managed_opportunity.organization, managed_opportunity)
+    def test_delivering_organization_cannot_see_or_set_it(self, pm_opportunity):
+        original = pm_opportunity.supervising_organization
+        request = _request_for(pm_opportunity.organization, pm_opportunity)
 
         form = _change_form(
-            managed_opportunity,
+            pm_opportunity,
             request,
-            supervising_organization=managed_opportunity.organization.pk,
+            supervising_organization=pm_opportunity.organization.pk,
         )
 
         assert "supervising_organization" not in form.fields
@@ -2355,8 +2355,8 @@ class TestSupervisingOrganizationOnChangeForm:
 
         assert updated.supervising_organization == original
 
-    def test_absent_without_a_request(self, managed_opportunity):
-        form = OpportunityChangeForm(instance=managed_opportunity)
+    def test_absent_without_a_request(self, pm_opportunity):
+        form = OpportunityChangeForm(instance=pm_opportunity)
 
         assert "supervising_organization" not in form.fields
 
