@@ -85,6 +85,8 @@ class BillToAddress(BaseModel):
         BillToAddress.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False, **changes)
         BillToAddress.objects.filter(pk=self.pk).update(is_default=True, **changes)
         self.is_default = True
+        self.modified_by = changes["modified_by"]
+        self.date_modified = changes["date_modified"]
 
     @classmethod
     def get_default(cls):

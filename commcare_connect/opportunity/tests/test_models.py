@@ -272,6 +272,7 @@ class TestBillToAddress:
     def test_make_default_moves_the_flag(self, default_address):
         address = BillToAddressFactory()
         address.make_default(modified_by="admin@example.com")
+        assert address.modified_by == "admin@example.com"  # the instance matches what was written
         default_address.refresh_from_db()
         address.refresh_from_db()
         assert address.is_default and not default_address.is_default
