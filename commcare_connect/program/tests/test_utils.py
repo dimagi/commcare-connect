@@ -2,10 +2,12 @@ import pytest
 
 from commcare_connect.opportunity.tests.factories import OpportunityFactory
 from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
     opportunities_accessible_to_org,
+    opportunities_accessible_to_orgs,
     opportunity_access_level_from_request,
     opportunity_by_id,
     org_access_for_program,
@@ -13,6 +15,7 @@ from commcare_connect.program.utils import (
     org_opportunity_access,
     program_access_level_from_request,
     programs_accessible_to_org,
+    programs_accessible_to_orgs,
     user_access_for_org,
 )
 from commcare_connect.users.tests.factories import OrganizationFactory
@@ -109,6 +112,14 @@ class TestProgramsAccessibleToOrg:
         program.watchers.add(funder_org)
 
         assert [p.id for p in programs_accessible_to_org(funder_org)] == [program.id]
+
+    def test_several_orgs_reach_what_each_one_reaches(self, orgs, program):
+        """Several orgs together reach every program that any one of them reaches."""
+        other_program = ProgramFactory(organization=orgs["unrelated"])
+
+        accessible = programs_accessible_to_orgs([orgs["watcher"], orgs["unrelated"]])
+
+        assert {p.id for p in accessible} == {program.id, other_program.id}
 
 
 class TestProgramAccessLevelFromRequest:
@@ -240,6 +251,14 @@ class TestOpportunitiesAccessibleToOrg:
         opportunity = OpportunityFactory(program=program, organization=organization)
 
         assert [opp.id for opp in opportunities_accessible_to_org(organization)] == [opportunity.id]
+
+    def test_several_orgs_reach_what_each_one_reaches(self, opp_orgs, managed_opportunity, program):
+        """Several orgs together reach every opportunity that any one of them reaches."""
+        other_opportunity = OpportunityFactory(program=program, organization=opp_orgs["unrelated"])
+
+        accessible = opportunities_accessible_to_orgs([opp_orgs["watcher"], opp_orgs["unrelated"]])
+
+        assert {opp.id for opp in accessible} == {managed_opportunity.id, other_opportunity.id}
 
 
 class TestOpportunityAccessLevelFromRequest:
