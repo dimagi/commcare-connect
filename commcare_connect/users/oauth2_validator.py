@@ -1,6 +1,8 @@
 import logging
 
+from oauth2_provider.models import AbstractApplication
 from oauth2_provider.oauth2_validators import OAuth2Validator
+from oauth2_provider.settings import oauth2_settings
 from oauthlib.oauth2.rfc6749.errors import InvalidScopeError
 
 logger = logging.getLogger(__name__)
@@ -16,7 +18,7 @@ class OIDCNotConfiguredError(InvalidScopeError):
     empty for 400s, so the JSON body would otherwise be served as ``text/html``.
     """
 
-    description = "This application is not configured for OpenID Connect (no signing algorithm set)."
+    description = "This application is not configured for OpenID Connect (no ID token signing key available)."
 
     @property
     def headers(self):
@@ -29,17 +31,30 @@ class OIDCNotConfiguredError(InvalidScopeError):
 
 
 def _client_supports_oidc(client):
-    """An application can only sign ID tokens if it has a signing algorithm configured."""
-    return bool(getattr(client, "algorithm", ""))
+    """An application can only sign ID tokens if it has a signing algorithm and a key for it.
+
+    RS256 signs with the server-wide ``OIDC_RSA_PRIVATE_KEY``, which is optional in dev.
+    """
+    algorithm = getattr(client, "algorithm", "")
+    if algorithm == AbstractApplication.RS256_ALGORITHM:
+        return bool(oauth2_settings.OIDC_RSA_PRIVATE_KEY)
+    return bool(algorithm)
 
 
 class CustomOAuth2Validator(OAuth2Validator):
-    def get_userinfo_claims(self, request):
-        claims = super().get_userinfo_claims(request)
-        claims["name"] = request.user.name
-        claims["email"] = request.user.email
-        claims["username"] = request.user.username
-        return claims
+    # Every claim is released with the openid scope alone, in both the ID token and /o/userinfo/.
+    # /o/userinfo/ returned these to openid-only tokens before they were added to the ID token,
+    # so gating them behind the standard profile/email scopes would break existing clients.
+    oidc_claim_scope = None
+
+    def get_additional_claims(self):
+        # Request-agnostic form (callables, no request argument) so discovery lists the claims
+        # in claims_supported.
+        return {
+            "name": lambda request: request.user.name,
+            "email": lambda request: request.user.email,
+            "username": lambda request: request.user.username,
+        }
 
     def validate_scopes(self, client_id, scopes, client, request, *args, **kwargs):
         """Refuse ``openid`` at the authorize endpoint for apps that cannot sign ID tokens.
@@ -60,7 +75,7 @@ class CustomOAuth2Validator(OAuth2Validator):
         """
         if OPENID_SCOPE in scopes and getattr(request, "response_type", None) and not _client_supports_oidc(client):
             logger.warning(
-                "Rejected openid scope for OAuth application without an ID token signing algorithm",
+                "Rejected openid scope for OAuth application that cannot sign ID tokens",
                 extra={"client_id": client_id, "scopes": list(scopes)},
             )
             return False
@@ -71,7 +86,7 @@ class CustomOAuth2Validator(OAuth2Validator):
         # before validate_scopes started rejecting openid for these apps.
         if not _client_supports_oidc(request.client):
             logger.warning(
-                "ID token requested for OAuth application without an ID token signing algorithm",
+                "ID token requested for OAuth application that cannot sign ID tokens",
                 extra={"client_id": request.client_id, "scopes": list(request.scopes or [])},
             )
             raise OIDCNotConfiguredError(request=request)
