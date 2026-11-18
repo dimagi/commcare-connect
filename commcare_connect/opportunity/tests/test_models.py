@@ -239,7 +239,7 @@ class TestPaymentInvoice:
 
 @pytest.fixture
 def default_address(db):
-    # Seeded by migration 0154 and restored by the ensure_default_bill_to_address autouse fixture.
+    # Seeded by migration 0155 and restored by the ensure_default_bill_to_address autouse fixture.
     return BillToAddress.objects.get(is_default=True)
 
 
