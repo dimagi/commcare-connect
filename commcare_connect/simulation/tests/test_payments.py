@@ -51,9 +51,7 @@ def opportunity(user, organization, program_manager_org):
     """A managed opportunity; ``user`` administers both the network-manager and the program-manager organization."""
     MembershipFactory(user=user, organization=organization)
     MembershipFactory(user=user, organization=program_manager_org)
-    return OpportunityFactory(
-        organization=organization, program=ProgramFactory(organization=program_manager_org), managed=True
-    )
+    return OpportunityFactory(organization=organization, program=ProgramFactory(organization=program_manager_org))
 
 
 def _user(kind, opportunity):

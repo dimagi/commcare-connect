@@ -254,7 +254,6 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
             short_description=validated_data["short_description"],
             organization=organization,
             program=program,
-            managed=True,
             learn_app=learn_app,
             deliver_app=deliver_app,
             start_date=validated_data["start_date"],
@@ -293,6 +292,9 @@ class ManagedOpportunityResponseSerializer(serializers.ModelSerializer):
     deliver_app = serializers.SerializerMethodField()
     currency = serializers.SlugRelatedField(slug_field="code", read_only=True)
     country = serializers.SlugRelatedField(slug_field="name", read_only=True)
+    # Opportunity.managed was dropped once every opportunity belonged to a program. Kept as a
+    # constant so existing API clients that read it don't break; remove in a later API version.
+    managed = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -315,6 +317,9 @@ class ManagedOpportunityResponseSerializer(serializers.ModelSerializer):
             "country",
             "active",
         ]
+
+    def get_managed(self, obj):
+        return True
 
     def get_learn_app(self, obj):
         app = obj.learn_app
