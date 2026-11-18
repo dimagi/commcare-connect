@@ -31,11 +31,18 @@ One decode → Python → encode pass that does, in order:
      --fast swaps in h264_videotoolbox on macOS, libx264 ultrafast elsewhere (and bilinear resampling) for previews.
   7. budget: if final.mp4 > --max-mb (default 10, GitHub's free-plan cap), one
      re-encode at crf+3.
+  8. voiceover (--voiceover, after narrate.py): output/voiceover.json's lines
+     are placed at their anchors in output time, one after another, and any
+     line that would outrun its window holds the settled frame (`holdAt`)
+     until it finishes — speech is never cut or sped up. The intro card is held
+     or trimmed so the first step starts INTRO_GAP_S after the intro line ends,
+     however long the recorded card ran. The voice replaces intent pills and
+     caption cards; the spotlight stays. Mixed to AAC.
 
 Usage:
   python3 render.py [--task DIR] [--out final.mp4] [--action-speed 1.0]
                     [--scale 1.5] [--spot-dim 0.4] [--no-frame] [--bg dark|light]
-                    [--fps N] [--crf 19] [--fast] [--max-mb 10] [--no-captions]
+                    [--fps N] [--crf 19] [--fast] [--max-mb 10] [--no-captions] [--voiceover]
 """
 
 import argparse
@@ -55,6 +62,10 @@ CAPTION_BAND = {"bottom": (0.78, 0.95), "top": (0.09, 0.26)}  # vertical extent 
 CARD_BG = (17, 24, 39)  # slate-900
 ACCENT = (237, 106, 20)  # Connect orange
 BG_COLORS = {"dark": ("0x1e293b", "0x334155"), "light": ("0xe2e8f0", "0xcbd5e1")}
+LINE_GAP_S = 0.35  # silence between two voiceover lines
+SETTLE_S = 0.5  # the frame stays still this long after a step's last line before the next action starts
+INTRO_GAP_S = 0.6  # intro line end → first step start, the card's fade-out included
+CARD_FADE_S = 0.4  # the tail of the intro capture that is the card fading out (Playwright: 300 ms) — never trimmed
 # (path, face index) — first that exists wins. Helvetica Neue renders visibly better than Arial (learnings.md).
 FONT_CANDIDATES = {
     "bold": [
@@ -102,19 +113,27 @@ def probe(path):
 
 
 def load_steps(out_dir):
-    """steps.json (written by the runner) → (steps, spots, navigations, video meta)."""
+    """steps.json (written by the runner) → (steps, spots, navigations, video meta, intro card)."""
     steps_path = out_dir / "steps.json"
     if not steps_path.exists():
         sys.exit("No output/steps.json found — run `node flow.mjs --record` first")
     data = json.loads(steps_path.read_text())
-    return data.get("steps", []), data.get("spots", []), data.get("navigations", []), data.get("video", {})
+    return (
+        data.get("steps", []),
+        data.get("spots", []),
+        data.get("navigations", []),
+        data.get("video", {}),
+        data.get("intro"),
+    )
 
 
 # --------------------------------------------------------------------------- time map
 
 
 class TimeMap:
-    """Piecewise-linear source→output time map. Action segments run at `speed`, everything else 1x."""
+    """Piecewise-linear source→output time map. Action segments run at `speed`, everything else 1x, each freeze
+    (source t, seconds) holds the frame at t for that long, and each cut (source t, seconds) drops that much 1x source
+    from t on — the render loop skips frames whose output time does not advance."""
 
     def __init__(self, steps, speed, min_len=1.0):
         segs = []
@@ -125,8 +144,15 @@ class TimeMap:
                     segs.append((a, b))
         self.segs = sorted(segs)
         self.speed = speed
+        self.freezes = []
+        self.cuts = []
 
     def __call__(self, t):
+        held = sum(sec for at, sec in self.freezes if at < t)
+        cut = sum(min(max(t - at, 0.0), sec) for at, sec in self.cuts)
+        return self.base(t) + held - cut
+
+    def base(self, t):
         out, cursor = 0.0, 0.0
         for a, b in self.segs:
             if t <= a:
@@ -320,6 +346,64 @@ class Spotlight:
         return Image.composite(self.black, img, mask)
 
 
+# --------------------------------------------------------------------------- voiceover
+
+
+def schedule_voiceover(out_dir, tmap, intro):
+    """Places each line at its anchor or, if the previous line is still talking, right after it. Lines sharing a
+    `holdAt` (one step, or a card) are one window: when its last line ends after that frame, the frame is held
+    until it has finished and settled — except the intro card, which fit_intro sizes to its line. Freezes and cuts
+    are added in time order, so earlier placements never move."""
+    vo_path = out_dir / "voiceover.json"
+    if not vo_path.exists():
+        sys.exit('--voiceover needs output/voiceover.json: run `uv run "$SKILL/narrate.py"` first')
+    lines = sorted(json.loads(vo_path.read_text())["lines"], key=lambda ln: (ln["holdAt"], ln["anchor"]))
+    placed, clock = [], -LINE_GAP_S
+    for i, line in enumerate(lines):
+        start = max(tmap(line["anchor"]), clock + LINE_GAP_S)
+        clock = start + line["seconds"]
+        placed.append((out_dir / "vo" / line["file"], start))
+        if i + 1 < len(lines) and lines[i + 1]["holdAt"] == line["holdAt"]:
+            continue  # the window's last line decides its hold
+        if line["kind"] == "intro" and intro:
+            fit_intro(tmap, line["holdAt"], intro["end"], clock)
+            continue
+        short = clock + SETTLE_S - tmap(line["holdAt"])
+        if short > 0:
+            tmap.freezes.append((line["holdAt"], short))
+    return placed
+
+
+def fit_intro(tmap, hold_at, intro_end, speech_end):
+    """Starts the first step INTRO_GAP_S after the intro line ends: the settled card (from `hold_at`) is held while
+    the line runs past it, or trimmed when the line is shorter. The card's fade-out always plays, inside the gap."""
+    delta = speech_end + INTRO_GAP_S - tmap(intro_end)
+    if delta > 0:
+        tmap.freezes.append((hold_at, delta))
+        return
+    cut = min(-delta, intro_end - CARD_FADE_S - hold_at)
+    if cut > 0:
+        tmap.cuts.append((hold_at, cut))
+
+
+def mix_voiceover(out_dir, final, voice):
+    """Lays every line at its output time, one pass, loudness-normalised, onto the finished video (copied, not
+    re-encoded). apad + -shortest keep the audio exactly as long as the video."""
+    inputs = [arg for path, _ in voice for arg in ("-i", str(path))]
+    delays = "".join(f"[{i + 1}:a]adelay={round(start * 1000)}:all=1[a{i}];" for i, (_, start) in enumerate(voice))
+    mixed = "".join(f"[a{i}]" for i in range(len(voice)))
+    graph = (
+        f"{delays}{mixed}amix=inputs={len(voice)}:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,apad[aout]"
+    )
+    voiced = final.with_name(final.stem + "_voiced.mp4")
+    run(
+        ["ffmpeg", "-y", "-v", "error", "-i", str(final), *inputs, "-filter_complex", graph]
+        + ["-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest"]
+        + ["-movflags", "+faststart", str(voiced)]
+    )
+    shutil.move(voiced, final)
+
+
 # --------------------------------------------------------------------------- device frame
 
 
@@ -421,6 +505,7 @@ def main():
         help="preview encode (h264_videotoolbox on macOS, libx264 ultrafast elsewhere) + bilinear downscale",
     )
     ap.add_argument("--max-mb", type=float, default=10.0)
+    ap.add_argument("--voiceover", action="store_true", help="mix output/voiceover.json (narrate.py); drops captions")
     args = ap.parse_args()
 
     out_dir = Path(args.task) / "output"
@@ -430,7 +515,7 @@ def main():
     final = out_dir / args.out
     src = probe(raw)
     SW, SH = src["width"], src["height"]
-    steps, spots, navigations, video = load_steps(out_dir)
+    steps, spots, navigations, video, intro = load_steps(out_dir)
     # Raw frames are dpr× the CSS viewport (2x capture); output is --scale× it, never upscaled past the source.
     css_w, css_h = int(video.get("width") or SW), int(video.get("height") or SH)
     dpr = SW / css_w
@@ -441,7 +526,8 @@ def main():
     args.fps = args.fps or int(video.get("fps") or 25)
 
     tmap = TimeMap(steps, args.action_speed)
-    caps = [] if args.no_captions else build_captions(steps, spots, tmap, css_h)
+    voice = schedule_voiceover(out_dir, tmap, intro) if args.voiceover else []
+    caps = [] if args.no_captions or args.voiceover else build_captions(steps, spots, tmap, css_h)
     painter = CaptionPainter(W, H)
     spotlight = Spotlight(spots, navigations, tmap, k, W, H, args.spot_dim)
     scale_flags = "bilinear" if args.fast else "lanczos"
@@ -525,6 +611,8 @@ def main():
     encode.wait()
     if encode.returncode:
         sys.exit(f"encode failed ({encode.returncode})")
+    if voice:
+        mix_voiceover(out_dir, final, voice)
 
     size_mb = final.stat().st_size / 1e6
     if size_mb > args.max_mb and not args.fast:
@@ -549,6 +637,8 @@ def main():
                 "yuv420p",
                 "-g",
                 "30",
+                "-c:a",
+                "copy",
                 "-movflags",
                 "+faststart",
                 str(small),
@@ -589,6 +679,9 @@ def main():
         "captions": sum(c["kind"] == "caption" for c in caps),
         "intents": sum(c["kind"] == "intent" for c in caps),
         "spots": len(spotlight.items),
+        "voice_lines": len(voice),
+        "held_s": round(sum(sec for _, sec in tmap.freezes), 2),
+        "cut_s": round(sum(sec for _, sec in tmap.cuts), 2),
         "over_budget": size_mb > args.max_mb,
     }
     (out_dir / "render.json").write_text(json.dumps(summary, indent=2))

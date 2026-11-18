@@ -33,6 +33,7 @@ await page.screencast.showOverlay(
 ```bash
 R="../venv/bin/python $SKILL/render.py"   # from the task folder, <repo>/.ui-demo/<task>/
 $R                       # final.mp4 + poster.png + render.json (frame on, captions on, x264)
+$R --voiceover           # mix output/voiceover.json from narrate.py instead of captions (SKILL.md §5a)
 $R --fast                # quick preview (VideoToolbox on macOS, libx264 ultrafast elsewhere) while iterating captions
 $R --action-speed 1.5    # typing/navigation segments 1.5x; caption holds stay 1x
 $R --no-frame            # bare 1920x1200, e.g. for embedding in slides

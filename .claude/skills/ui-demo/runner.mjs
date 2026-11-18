@@ -318,7 +318,7 @@ export async function run(config, flowUrl) {
     capture.begin(t0);
     await introCard;
     await drawCursor(page, cursor); // after the card, so the pointer never sits on its text
-    intro = { start: 0, end: now() };
+    intro = { start: 0, end: now(), ...INTRO };
   }
 
   // ---------- step loop
@@ -352,6 +352,7 @@ export async function run(config, flowUrl) {
           target: lastTarget,
           navigated: page.url() !== urlBefore,
           captionPos: step.captionPos ?? null,
+          say: step.say ?? null, // voiceover lines for narrate.py
           // where the outcome is on screen, so render.py keeps the caption off it
           result: step.checkpoint
             ? await page
@@ -412,7 +413,7 @@ export async function run(config, flowUrl) {
         {
           video: { ...VIEW, fps: FPS, dpr: DPR },
           intro,
-          outro: { start: outroStart, end: outroEnd },
+          outro: { start: outroStart, end: outroEnd, ...OUTRO },
           steps: stepsLog,
           spots,
           navigations,

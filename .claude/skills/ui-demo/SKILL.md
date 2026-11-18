@@ -1,6 +1,6 @@
 ---
 name: ui-demo
-description: 'Verify a commcare-connect UI flow and produce a polished, share-ready demo video (captions, cursor, intro/outro, device frame, mp4). A script-driven Verify Run proves the flow works before a single headed Record Pass. Use only when the user explicitly asks for a demo/recording or names this skill.'
+description: 'Verify a commcare-connect UI flow and produce a polished, share-ready demo video (captions or a voiceover with --voiceover, cursor, intro/outro, device frame, mp4). A script-driven Verify Run proves the flow works before a single headed Record Pass. Use only when the user explicitly asks for a demo/recording or names this skill.'
 ---
 
 # UI Demo — verified flow, demo-grade recording
@@ -14,7 +14,10 @@ Core idea: **the script owns browser state, not the conversation.** `flow.mjs` p
 - **Verify Run** — `node flow.mjs`: headless, assertion-instrumented run of the script that will record; emits `output/report.json`. Iterate until clean.
 - **Record Pass** — `node flow.mjs --record`: headed, 2x; produces `raw.mp4` + `steps.json`.
 - **Post-Process** — `render.py` on existing artifacts (speed, captions, frame, encode); never touches the browser.
+- **Voiceover** (only with `--voiceover`) — `narrate.py` voices each step's `say` lines; `render.py --voiceover` mixes them in place of captions.
 - **Spot-Check** — quick look at `final.mp4`; not a re-investigation.
+
+**Arguments.** `--voiceover` in the skill's arguments (or a request for narration or a voiceover) makes it a narrated demo: write `say` lines while drafting (§2) and run §5a. Without it, captions as usual. `--voiceover <task>` on a task that is already recorded needs no new recording: add `say` to its `output/steps.json` (§5a) and run only §5a and §6.
 
 ## Golden Rules
 
@@ -28,7 +31,7 @@ Capture is `page.screencast` — never MCP's `browser_video_*` tools (tool round
 
 ## Setup (once per task)
 
-Run `preflight.sh` first (Node 20+, Python 3 venv, ffmpeg with libx264, the repo's `.venv`, a display for the headed Record Pass); it prints what to install. Playwright ≥1.61 is required (`showOverlay`) and is installed by the block below.
+Run `preflight.sh` first (Node 20+, Python 3 venv, ffmpeg with libx264, the repo's `.venv`, a display for the headed Record Pass); it prints what to install. Playwright ≥1.61 is required (`showOverlay`) and is installed by the block below. **On Linux**, Chromium also needs its system libraries once: `sudo npx playwright install-deps chromium` (needs sudo, so the user runs it; preflight warns when they look missing). Captions there use DejaVu Sans, as Helvetica Neue is macOS-only.
 
 Kick off `$SKILL/serve.sh` and `$SKILL/reseed.sh` in the background _before_ reading any code, and draft `flow.mjs` while they run. `curl` readiness right before the first Verify Run.
 
@@ -39,7 +42,7 @@ REPO=$(git rev-parse --show-toplevel)
 SKILL="$REPO/.claude/skills/ui-demo"
 RECORD_DIR="$REPO/.ui-demo"
 TASK_DIR="$RECORD_DIR/<task-id-or-slug>"
-"$SKILL/preflight.sh" || { echo "fix the ✗ lines above, then re-run setup"; exit 1; }
+"$SKILL/preflight.sh" || { echo "fix the ✗ lines above, then re-run setup"; exit 1; }   # add --voiceover to also check uv
 mkdir -p "$RECORD_DIR" && [ -f "$RECORD_DIR/.gitignore" ] || echo '*' > "$RECORD_DIR/.gitignore"
 if [ ! -d "$RECORD_DIR/node_modules" ]; then
   cd "$RECORD_DIR" && npm init -y && npm install playwright @playwright/test
@@ -73,6 +76,7 @@ Never `test123`, `example.com`, `uitest.local` — viewers translate "demo/test"
 - `caption: [title, subtitle]` — title ≤42 chars, plain language ("Invite sent to Isha", not "Invitation record created"). Subtitle = _why it matters to the user_, not a second description of the screen ("Both will hear when someone joins"). Hold time is derived from text length.
 - A `checkpoint` region on each page whose outcome matters (2–3 per flow), scoped to the main content area; the renderer flips captions off the clicked target and off the checkpoint. `captionPos: 'top'` only to override.
 - `INTRO`/`OUTRO` follow one arc — **problem → walkthrough → result**. Intro names the need ("Know when your invite is accepted"), description says what was missing before (for a bug fix, the broken behaviour). Outro states what is now true ("Isha joined, and both admins know"), not "Done".
+- **With `--voiceover`: `say` on every step and on `INTRO`/`OUTRO`** — `say: { intent: '…', outcome: '…' }` on a step, a plain string on a card. The words of a presenter giving the demo live, first person, talking while they click and then reacting to the screen ("Let me start a draft, and I'll set the max budget below the min on purpose" → "And it's caught on save."), not the caption read aloud. One or two short sentences per line; spell numbers as words ("sixty percent"); end each line with a full stop (a trailing comma voices badly). Size the intent line to the action (≈2.7 words/s): a long form fill can carry a sentence of context, a single click gets three words or `null`.
 - Selectors come from code; the Verify Run confirms them. No fixed sleeps.
 
 ## 3. Verify Run loop
@@ -97,9 +101,24 @@ Exit criteria: clean report + checkpoints reviewed + no unexpected console error
 
 Defaults: 1920×1200, spotlight on, intent pills + captions, dark device frame, 30 fps, `libx264 -crf 19`, 10 MB budget with one automatic `crf+3` retry. Flags and details: `reference/recording-snippets.md`. Caption wording lives in `steps.json`.
 
+## 5a. Voiceover (only with `--voiceover`)
+
+```bash
+"$SKILL/preflight.sh" --voiceover
+uv run "$SKILL/narrate.py"                              # output/vo/*.wav + output/voiceover.json
+../venv/bin/python "$SKILL/render.py" --voiceover       # same flags as §5; captions and intent pills off
+```
+
+- `narrate.py` is a uv inline script: Chatterbox, on an NVIDIA GPU (CUDA) or Apple's GPU (MPS) when there is one, else the CPU — much slower, so a laptop without a GPU takes a while. Defaults: built-in voice, exaggeration 0.5, cfg 0.5, **tempo 0.9**, a little slower than speech so a viewer can follow the clicks. `--voice ref.wav` clones a voice from 5–9 s of clean speech.
+- **First run:** uv installs its packages into a cached environment of their own (not the repo's `.venv`, not `.ui-demo/venv`) and Chatterbox downloads its weights (~3.2 GB, to `~/.cache/huggingface`); later runs reuse both. On x86_64 Linux, torch is the CUDA build and adds 13 NVIDIA packages, a few GB more. Works on Apple Silicon and Linux; an Intel Mac has no torch 2.6 build, and `preflight.sh --voiceover` stops there.
+- Clips are cached by text + settings, so editing one `say` in `steps.json` re-voices only that line. Chatterbox is stochastic: re-take a line that sounds off by editing it, or all of them with `--fresh`.
+- Timing: each line starts at its anchor (card start, `actionStart`, `actionEnd`) or 0.35 s after the previous line ends. When a step's lines outrun its hold, `render.py` holds the step's settled frame until they finish + 0.5 s (`render.json` `held_s`); the outro card holds the same way. The intro card is fitted to its line instead, held or trimmed (`cut_s`) so the first step starts 0.6 s after the intro line ends.
+- A step without `say` falls back to its caption text with a warning — fix it; captions read aloud don't sound like a demo.
+- **Already recorded:** add `say` to each step in `output/steps.json`, and `title`/`description`/`say` to its `intro`/`outro` (recordings made before voiceover support lack them). Post-Process only, no new recording.
+
 ## 6. Spot-Check
 
-Check `render.json` (`duration_s` plausible vs. Record Pass wall-clock, `over_budget: false`), then sample the first second (intro card visible) and the last second (outro card): `ffmpeg -ss <t> -i output/final.mp4 -frames:v 1 -vf scale=800:-1 frame.png` — always downscale. Each frame shows the expected page, a legible caption not covering its target, and the frame. If a caption covers content, set `captionPos` in `steps.json` and re-render. If something is wrong (duration far off, blank/stale frame), see `reference/troubleshooting.md`. Never deliver an unverified recording.
+Check `render.json` (`duration_s` plausible vs. Record Pass wall-clock, `over_budget: false`; with a voiceover also `voice_lines` matching `voiceover.json`, `held_s` small next to the duration — large means lines too long for their steps — and `ffprobe` showing an `aac` stream), then sample the first second (intro card visible) and the last second (outro card): `ffmpeg -ss <t> -i output/final.mp4 -frames:v 1 -vf scale=800:-1 frame.png` — always downscale. Each frame shows the expected page, a legible caption not covering its target, and the frame. If a caption covers content, set `captionPos` in `steps.json` and re-render. If something is wrong (duration far off, blank/stale frame), see `reference/troubleshooting.md`. Never deliver an unverified recording.
 
 ## 7. Cleanup & deliver
 
@@ -114,4 +133,4 @@ Deliver `final.mp4` (plays inline on Slack, Jira, Confluence, GitHub), plus `pos
 - `reference/troubleshooting.md` — MCP unavailable, blocked verification, corrupted recording, TomSelect, zsh gotcha.
 - `reference/learnings.md` — measured findings behind the rules.
 - `reference/connect.md` — the seeded people, `connect.mjs` helpers, commcare-connect gotchas.
-- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `serve.sh` (port check, DEBUG off, `--insecure` when the whitenoise manifest is missing, readiness wait), `reseed.sh [scenario]`, example flows.
+- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `serve.sh` (port check, DEBUG off, `--insecure` when the whitenoise manifest is missing, readiness wait), `reseed.sh [scenario]`, `narrate.py` (voiceover), example flows.

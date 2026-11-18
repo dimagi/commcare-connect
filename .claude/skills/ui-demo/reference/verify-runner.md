@@ -16,6 +16,7 @@ Steps are data. Each step:
 - `captionPos` — optional `'top' | 'bottom'`; default: bottom, auto-flipped to top when the clicked target sits in the bottom 28% of the frame (and the step did not navigate), or when the step's `checkpoint` region overlaps the bottom caption band but not the top one.
 - `checkpoint` — optional CSS selector; on success (verify mode), `ariaSnapshot()` of that region goes into the report for semantic review. 2–3 per flow, scoped to the main content region. Under `--record` its bounding box is saved as the step's `result`, which keeps the caption off the outcome.
 - `failRegion` — optional CSS selector; on failure, `ariaSnapshot()` of that region goes into the report. Defaults to `main, form, [role=main]`.
+- `say` — voiceover only: `{ intent, outcome }`, spoken from `actionStart` and from `actionEnd`; `null` mutes either line. `INTRO`/`OUTRO` take `say` as a plain string, spoken over the card. Copied into `steps.json` for `narrate.py`; wording rules in SKILL.md §2.
 
 Runnable examples: `flow.feature-example.mjs` (signed in off camera) and `flow.example.mjs` (login on camera), in this skill's folder.
 
@@ -57,7 +58,13 @@ The `d` helpers passed to `run(page, d)`: `d.click(page, selectorOrLocator, { hi
 ```json
 {
   "video": { "width": 1280, "height": 800, "fps": 30, "dpr": 2 },
-  "intro": { "start": 0, "end": 2.6 },
+  "intro": {
+    "start": 0,
+    "end": 2.6,
+    "title": "…",
+    "description": "…",
+    "say": "…"
+  },
   "spots": [
     {
       "start": 3.3,
@@ -66,7 +73,13 @@ The `d` helpers passed to `run(page, d)`: `d.click(page, selectorOrLocator, { hi
     }
   ],
   "navigations": [0.4, 8.3],
-  "outro": { "start": 61.2, "end": 63.9 },
+  "outro": {
+    "start": 61.2,
+    "end": 63.9,
+    "title": "…",
+    "description": "…",
+    "say": "…"
+  },
   "steps": [
     {
       "name": "invite",
@@ -79,13 +92,14 @@ The `d` helpers passed to `run(page, d)`: `d.click(page, selectorOrLocator, { hi
       "target": { "x": 1012, "y": 372, "width": 88, "height": 40 },
       "navigated": false,
       "captionPos": null,
+      "say": { "intent": "…", "outcome": "…" },
       "result": null
     }
   ]
 }
 ```
 
-`render.py` reads it to place intents in `[actionStart, actionEnd]` and captions in `[actionEnd, holdEnd]`, to speed up `[actionStart, actionEnd]` when `--action-speed > 1`, to flip a caption to the top when `target` sits in the bottom band or `result` would sit under it, and to dim around each `spots` box (cut at the next `navigations` entry). `video.dpr` tells it the raw frames are 2x the CSS size. **Editing `title`/`subtitle`/`captionPos` here and re-rendering is the way to fix caption wording or placement** — no re-record.
+`render.py` reads it to place intents in `[actionStart, actionEnd]` and captions in `[actionEnd, holdEnd]`, to speed up `[actionStart, actionEnd]` when `--action-speed > 1`, to flip a caption to the top when `target` sits in the bottom band or `result` would sit under it, and to dim around each `spots` box (cut at the next `navigations` entry). `video.dpr` tells it the raw frames are 2x the CSS size. **Editing `title`/`subtitle`/`captionPos` here and re-rendering is the way to fix caption wording or placement** — no re-record. The same goes for `say`: edit it, re-run `narrate.py` (only changed lines are re-voiced) and `render.py --voiceover`.
 
 ## Iterating on failures
 

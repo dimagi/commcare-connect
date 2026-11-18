@@ -34,9 +34,21 @@ has curl || missing "curl not found"
 if [ "$(uname)" = "Linux" ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
   warn "no display — the Record Pass runs a headed browser; use a desktop session or wrap it in xvfb-run"
 fi
+# Chromium's system libraries can't be installed without sudo; two that fresh installs often lack stand in for the rest.
+if [ "$(uname)" = "Linux" ] && ! { ldconfig -p 2>/dev/null | grep -q libnss3 && ldconfig -p 2>/dev/null | grep -q libgbm; }; then
+  warn "Chromium's system libraries look missing — run once: sudo npx playwright install-deps chromium"
+fi
 
 REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 [ -x "$REPO/.venv/bin/python" ] || missing "no $REPO/.venv — serve.sh and reseed.sh run Django from it (run: uv sync)"
+
+if [ "${1:-}" = "--voiceover" ]; then
+  has uv || missing "uv not found — narrate.py runs Chatterbox through it (brew install uv)"
+  # hw.optional.arm64 is 1 on Apple Silicon even under Rosetta, where uname -m says x86_64
+  if [ "$(uname)" = "Darwin" ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" != 1 ]; then
+    missing "the voiceover can't run on an Intel Mac — Chatterbox needs torch 2.6, which has no Intel Mac build"
+  fi
+fi
 
 [ "$fail" = 0 ] && echo "✓ preflight ok"
 exit "$fail"
