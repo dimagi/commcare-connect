@@ -24,7 +24,11 @@
     </button>
     {% translate "Archive contact" as archive_title %}
     {% translate "Archive" as archive_label %}
-    {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? They can be restored from the archived contacts.{% endblocktranslate %}
+    {% if record.is_main_poc %}
+      {% blocktranslate asvar archive_message with name=record.name|safe organization=record.organization.name|safe %}Archive {{ name }}? They are {{ organization }}'s Main Point of Contact, so {{ organization }} will have no Main Point of Contact. They can be restored from the archived contacts.{% endblocktranslate %}
+    {% else %}
+      {% blocktranslate asvar archive_message with name=record.name|safe %}Archive {{ name }}? They can be restored from the archived contacts.{% endblocktranslate %}
+    {% endif %}
     <form x-data
           x-ref="archiveForm"
           method="post"

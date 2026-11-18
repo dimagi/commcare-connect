@@ -61,6 +61,7 @@ from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AudioAttachmentTranscribeForm,
     DeliverUnitFlagsForm,
+    ExportFormatForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
     OpportunityChangeForm,
@@ -69,7 +70,6 @@ from commcare_connect.opportunity.forms import (
     OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
-    PaymentExportForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -782,7 +782,7 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
 @opp_standard_access_required
 @opportunity_required
 def export_users_for_payment(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_payments", org_slug, opp_id)
@@ -1035,7 +1035,7 @@ def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_un
 @opp_standard_access_required
 @opportunity_required
 def export_user_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_list", request.org.slug, opp_id)
@@ -1049,7 +1049,7 @@ def export_user_status(request, org_slug, opp_id):
 @opp_standard_access_required
 @opportunity_required
 def export_deliver_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:detail", request.org.slug, opp_id)
