@@ -295,12 +295,17 @@ def _exchange_code(*, application, plaintext_secret, user, scope):
     )
 
 
-class TestOpenIDConnectSigningAlgorithm:
-    """Applications without an ID token signing algorithm must not 500 on openid requests."""
+# Apps that cannot sign an ID token: no algorithm, or RS256 while OIDC_RSA_PRIVATE_KEY is unset (as in tests).
+UNSIGNABLE_ALGORITHMS = pytest.mark.parametrize("algorithm", [Application.NO_ALGORITHM, Application.RS256_ALGORITHM])
 
-    def test_openid_code_exchange_without_algorithm_returns_client_error(self):
+
+class TestOpenIDConnectSigningAlgorithm:
+    """Applications that cannot sign ID tokens must not 500 on openid requests."""
+
+    @UNSIGNABLE_ALGORITHMS
+    def test_openid_code_exchange_without_signing_key_returns_client_error(self, algorithm):
         plaintext_secret = "no-algorithm-secret"
-        application = _oidc_application(algorithm=Application.NO_ALGORITHM, plaintext_secret=plaintext_secret)
+        application = _oidc_application(algorithm=algorithm, plaintext_secret=plaintext_secret)
 
         response = _exchange_code(
             application=application, plaintext_secret=plaintext_secret, user=UserFactory(), scope="openid read"
@@ -321,8 +326,9 @@ class TestOpenIDConnectSigningAlgorithm:
         assert response.status_code == 200, response.content
         assert response.json()["id_token"]
 
-    def test_openid_authorization_without_algorithm_is_rejected(self, client):
-        application = _oidc_application(algorithm=Application.NO_ALGORITHM, plaintext_secret="authz-secret")
+    @UNSIGNABLE_ALGORITHMS
+    def test_openid_authorization_without_signing_key_is_rejected(self, client, algorithm):
+        application = _oidc_application(algorithm=algorithm, plaintext_secret="authz-secret")
         client.force_login(UserFactory())
 
         response = client.get(
