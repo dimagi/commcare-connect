@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
 from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
+from commcare_connect.organization.tables import DirectoryTable
 from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
 
@@ -51,6 +52,48 @@ class SolicitationTable(tables.Table):
             actions.append({"title": _("Cancel"), "url": reverse("solicitation:cancel", args=url_args)})
         # Closed and cancelled solicitations are finished, so they get no menu.
         return render_to_string("solicitation/row_actions.html", {"actions": actions}) if actions else ""
+
+
+# The date headers are longer than the dates under them, so they wrap rather than widen the table.
+WRAPPING_HEADER_ATTRS = {"th": {"class": "whitespace-normal"}}
+
+
+class SolicitationDirectoryTable(DirectoryTable):
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    program = columns.Column(verbose_name=_("Program"), accessor="program__name")
+    title = columns.Column(verbose_name=_("Title"))
+    type = columns.Column(verbose_name=_("Type"))
+    status = columns.TemplateColumn(verbose_name=_("Status"), template_name="solicitation/status_badge.html")
+    public = columns.Column(verbose_name=_("Public"))
+    expected_start_date = DMYTColumn(verbose_name=_("Expected Start Date"), attrs=WRAPPING_HEADER_ATTRS)
+    expected_end_date = DMYTColumn(verbose_name=_("Expected End Date"), attrs=WRAPPING_HEADER_ATTRS)
+    application_deadline = DMYTColumn(verbose_name=_("Application Deadline"), attrs=WRAPPING_HEADER_ATTRS)
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/solicitation_row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
+
+    class Meta:
+        model = Solicitation
+        fields = (
+            "organization",
+            "program",
+            "title",
+            "type",
+            "status",
+            "public",
+            "expected_start_date",
+            "expected_end_date",
+            "application_deadline",
+        )
+        sequence = (*fields, "actions")
+        default = "—"
+        empty_text = _("No solicitations found.")
+
+    def render_public(self, value):
+        return _("Yes") if value else _("No")
 
 
 class SolicitationInvitationTable(tables.Table):

@@ -64,6 +64,26 @@ class TestSolicitationListAccess:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["list", "create", "details", "criteria", "questions", "publish", "invitations"])
+@pytest.mark.parametrize("program_manager, expected", [(True, HTTPStatus.OK), (False, HTTPStatus.NOT_FOUND)])
+def test_llo_directory_staff_manage_program_manager_orgs_solicitations(
+    client, user_with_directory_access, url_name, program_manager, expected
+):
+    solicitation = SolicitationFactory(
+        organization__program_manager=program_manager, status=Solicitation.Status.ACTIVE
+    )
+    args = [solicitation.organization.slug]
+    if url_name not in ("list", "create"):
+        args.append(solicitation.solicitation_id)
+    client.force_login(user_with_directory_access)
+
+    with override_switch(SOLICITATIONS, active=True):
+        response = client.get(reverse(f"solicitation:{url_name}", args=args))
+
+    assert response.status_code == expected
+
+
+@pytest.mark.django_db
 class TestSolicitationNavItem:
     @pytest.mark.parametrize(
         "switch_active, program_manager, role, shown",

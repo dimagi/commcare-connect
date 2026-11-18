@@ -7,7 +7,6 @@ from commcare_connect.connect_id_client.models import (
     ConnectIdUser,
     DemoUser,
     Message,
-    MessagingBulkResponse,
     MessagingResponse,
 )
 
@@ -34,12 +33,16 @@ def send_message(message: Message):
     return MessagingResponse.build(**data)
 
 
-def send_message_bulk(messages: list[Message]) -> MessagingBulkResponse:
-    """Send a push notification to multiple users."""
-    json = {"messages": [message.asdict() for message in messages]}
-    response = _make_request(POST, "/messaging/send_bulk/", json=json, timeout=30)
-    data = response.json()
-    return MessagingBulkResponse.build(**data)
+def queue_message_bulk(messages: list[Message]) -> None:
+    """Ask ConnectID to send push notifications to multiple users from its own Celery worker.
+
+    ConnectID answers straight away, so there are no per-user results. The response body is not read:
+    a ConnectID that predates ``"async"`` ignores the flag and replies synchronously with results instead.
+    """
+    if not messages:
+        return
+    json = {"messages": [message.asdict() for message in messages], "async": True}
+    _make_request(POST, "/messaging/send_bulk/", json=json, timeout=30)
 
 
 def add_credentials(credentials_items: list[dict]):

@@ -1,0 +1,4 @@
+# Personal scenarios stay on your machine; only this file and __init__.py are tracked.
+*
+!.gitignore
+!__init__.py

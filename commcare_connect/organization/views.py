@@ -23,10 +23,12 @@ from django_filters.views import FilterView
 from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
+from commcare_connect.opportunity.forms import ExportFormatForm
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
     ContactForm,
+    ContactPocChangeForm,
     InviteAcceptForm,
     OrganizationChangeForm,
     OrganizationCreateForm,
@@ -42,6 +44,8 @@ from commcare_connect.organization.tables import (
 )
 from commcare_connect.organization.tasks import export_contacts, send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
+from commcare_connect.solicitation.filters import SolicitationDirectoryFilterSet
+from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
@@ -297,6 +301,9 @@ class LLODirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
 class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView):
     """A filtered, paginated directory table under the directory's tab bar."""
 
+    tab_title = None
+    tab_url_name = None
+
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
 
@@ -304,9 +311,14 @@ class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView
         context = super().get_context_data(**kwargs)
         context.update(
             {
-                "organizations_count": Organization.objects.count(),
-                "contacts_count": Contact.objects.filter(is_archived=False).count(),
+                "organizations_count": OrganizationFilterSet(queryset=Organization.objects.all()).qs.count(),
+                "contacts_count": ContactFilterSet(queryset=Contact.objects.all()).qs.count(),
+                "solicitations_count": SolicitationDirectoryFilterSet(queryset=Solicitation.objects.all()).qs.count(),
                 "result_count": context["table"].paginator.count,
+                "path": [
+                    {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+                    {"title": self.tab_title, "url": reverse(self.tab_url_name)},
+                ],
             }
         )
         return context
@@ -316,34 +328,27 @@ class OrganizationListView(LLODirectoryListView):
     table_class = OrganizationDirectoryTable
     filterset_class = OrganizationFilterSet
     template_name = "organization/directory/organization_list.html"
+    tab_title = gettext_lazy("Organizations")
+    tab_url_name = "organization_directory:list"
 
     def get_queryset(self):
-        return Organization.objects.prefetch_related("primary_sectors").order_by("-date_created")
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["path"] = [
-            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
-            {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
-        ]
-        return context
+        return Organization.objects.prefetch_related("countries", "primary_sectors").order_by("-date_created")
 
 
 class ContactListView(LLODirectoryListView):
     table_class = ContactDirectoryTable
     filterset_class = ContactFilterSet
     template_name = "organization/directory/contact_list.html"
+    tab_title = gettext_lazy("Contacts")
+    tab_url_name = "organization_directory:contacts"
 
     def get_queryset(self):
         return Contact.objects.select_related("organization").order_by("name")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["path"] = [
-            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
-            {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
-        ]
         context["export_task_id"] = self.request.GET.get("export_task_id")
+        context["export_form"] = ExportFormatForm()
         return context
 
 
@@ -410,6 +415,18 @@ class ContactUpdateView(ContactFormMixin, UpdateView):
     success_message = gettext_lazy("Contact {name} updated.")
 
 
+class ContactPocWarningView(LLODirectoryAccessMixin, View):
+    """Warns, as a contact form fragment, which main point of contact the form's choices would replace."""
+
+    http_method_names = ["get"]
+
+    def get(self, request):
+        form = ContactPocChangeForm(request.GET)
+        main_poc_to_replace = form.main_poc_to_replace()
+        context = {"main_poc_to_replace": main_poc_to_replace, "name": form.cleaned_data.get("name", "")}
+        return render(request, "organization/directory/poc_change_warning.html", context)
+
+
 class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     model = Contact
     slug_field = "contact_id"
@@ -421,8 +438,11 @@ class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
     def post(self, request, *args, **kwargs):
         contact = self.get_object()
         contact.is_archived = self.is_archived
+        if contact.is_archived:
+            # An archived contact can't be the point of contact, so the organization is left without one.
+            contact.is_main_poc = False
         contact.modified_by = request.user.email
-        contact.save(update_fields=["is_archived", "modified_by", "date_modified"])
+        contact.save(update_fields=["is_archived", "is_main_poc", "modified_by", "date_modified"])
         messages.success(request, self.success_message.format(name=contact.name))
         return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
 
@@ -434,12 +454,12 @@ class ContactRestoreView(ContactArchiveView):
 
 class ContactExportView(LLODirectoryAccessMixin, View):
     http_method_names = ["post"]
-    EXPORT_FORMATS = ("csv", "xlsx")
 
     def post(self, request, *args, **kwargs):
-        export_format = request.POST.get("export_format")
-        if export_format not in self.EXPORT_FORMATS:
+        form = ExportFormatForm(data=request.POST)
+        if not form.is_valid():
             return HttpResponseBadRequest(gettext("Unsupported export format."))
+        export_format = form.cleaned_data["format"]
         task_id = str(uuid.uuid4())
         transaction.on_commit(
             partial(

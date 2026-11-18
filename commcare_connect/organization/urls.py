@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.organization import views
+from commcare_connect.solicitation.views import SolicitationDirectoryCreateView, SolicitationDirectoryListView
 
 app_name = "organization"
 
@@ -21,6 +22,7 @@ directory_urlpatterns = [
     path("new/", views.OrganizationCreateView.as_view(), name="create"),
     path("contacts/", views.ContactListView.as_view(), name="contacts"),
     path("contacts/new/", views.ContactCreateView.as_view(), name="contact_create"),
+    path("contacts/poc-warning/", views.ContactPocWarningView.as_view(), name="contact_poc_warning"),
     path("contacts/export/", views.ContactExportView.as_view(), name="contact_export"),
     path("contacts/export/<slug:task_id>/", views.ContactExportStatusView.as_view(), name="contact_export_status"),
     path(
@@ -31,5 +33,7 @@ directory_urlpatterns = [
     path("contacts/<uuid:contact_id>/edit/", views.ContactUpdateView.as_view(), name="contact_edit"),
     path("contacts/<uuid:contact_id>/archive/", views.ContactArchiveView.as_view(), name="contact_archive"),
     path("contacts/<uuid:contact_id>/restore/", views.ContactRestoreView.as_view(), name="contact_restore"),
+    path("solicitations/", SolicitationDirectoryListView.as_view(), name="solicitations"),
+    path("solicitations/new/", SolicitationDirectoryCreateView.as_view(), name="solicitation_create"),
     path("<slug:slug>/edit/", views.OrganizationUpdateView.as_view(), name="edit"),
 ]

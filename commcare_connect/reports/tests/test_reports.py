@@ -58,10 +58,13 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
             **access_kwargs,
         )
-        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
+        opportunity = access.opportunity
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        inv = PaymentInvoiceFactory(opportunity=opportunity, amount=100)
         cw = CompletedWorkFactory(
             status_modified_date=timestamp,
             opportunity_access=access,
+            payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
             saved_payment_accrued_usd=i * 100,
@@ -70,23 +73,28 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
         )
         UserVisitFactory(
             date_created=timestamp - timedelta(i * 10),
+            opportunity=opportunity,
+            user=user,
             opportunity_access=access,
+            deliver_unit__app=opportunity.deliver_app,
+            deliver_unit__payment_unit=payment_unit,
             completed_work=cw,
             status=VisitValidationStatus.approved,
         )
         PaymentFactory(opportunity_access=access, date_paid=timestamp, amount_usd=i * 50, confirmed=True)
-        PaymentFactory(invoice=inv, date_paid=timestamp, amount_usd=50)
-        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        PaymentFactory(opportunity_access=None, invoice=inv, date_paid=timestamp, amount_usd=50)
+        other_inv = PaymentInvoiceFactory(opportunity=opportunity, amount=100, service_delivery=False)
         CompletedWorkFactory(
             status_modified_date=timestamp,
             opportunity_access=access,
+            payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             saved_approved_count=0,
             saved_payment_accrued_usd=0,
             saved_org_payment_accrued_usd=100,
             payment_date=timestamp + timedelta(minutes=30),
         )
-        PaymentFactory(invoice=other_inv, date_paid=timestamp, amount_usd=100)
+        PaymentFactory(opportunity_access=None, invoice=other_inv, date_paid=timestamp, amount_usd=100)
 
 
 @pytest.mark.django_db
