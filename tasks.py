@@ -150,8 +150,11 @@ def run_ansible(
     if check:
         ansible_cmd += " --check"
 
+    # Staging and production share inventory hostnames (web0), and facts are cached by hostname,
+    # so a shared cache would hand one environment's facts (e.g. its Python path) to the other.
+    fact_cache = {"ANSIBLE_CACHE_PLUGIN_CONNECTION": f"~/.ansiblecache/{env}"}
     with c.cd(PROJECT_DIR / "deploy"):
-        c.run(ansible_cmd)
+        c.run(ansible_cmd, env=fact_cache)
 
 
 @task
