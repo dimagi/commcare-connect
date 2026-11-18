@@ -189,7 +189,7 @@ def opportunity_required(view_func):
 
         if getattr(request, "opportunity", None) is None:
             request.opportunity = get_object_by_uuid_or_int(
-                Opportunity.objects.all(), opp_id, uuid_field="opportunity_id"
+                Opportunity.objects.select_related("program"), opp_id, uuid_field="opportunity_id"
             )
         return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
 
