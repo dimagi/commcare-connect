@@ -1,5 +1,6 @@
 const js = require('@eslint/js');
 const globals = require('globals');
+const tseslint = require('typescript-eslint');
 
 module.exports = [
   {
@@ -24,7 +25,7 @@ module.exports = [
     },
   },
   {
-    files: ['commcare_connect/static/**/*.js'],
+    files: ['commcare_connect/static/**/*.{js,ts}'],
     languageOptions: {
       ecmaVersion: 2020,
       sourceType: 'module',
@@ -42,6 +43,22 @@ module.exports = [
       // for a deliberately ignored error, so keep it exempt.
       'no-unused-vars': ['error', { caughtErrorsIgnorePattern: '^_$' }],
       'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ['commcare_connect/static/**/*.ts'],
+  })),
+  {
+    files: ['commcare_connect/static/**/*.ts'],
+    rules: {
+      // TypeScript reports undefined names itself, and knows about types that ESLint doesn't.
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { caughtErrorsIgnorePattern: '^_$' },
+      ],
     },
   },
 ];

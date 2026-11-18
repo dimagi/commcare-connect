@@ -51,12 +51,16 @@ repos:
     rev: v10.10.0
     hooks:
       - id: eslint
-        files: commcare_connect/static/.*\.js$
+        files: commcare_connect/static/.*\.[jt]s$
+        types: [file]
+        types_or: [javascript, ts]
         exclude: commcare_connect/static/bundles/
         additional_dependencies:
           - eslint@10.10.0
           - '@eslint/js@10.0.1'
           - globals@17.8.0
+          - typescript@6.0.3
+          - typescript-eslint@8.73.0
 
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
