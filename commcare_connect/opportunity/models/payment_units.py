@@ -62,7 +62,8 @@ class DeliverUnitQuerySet(models.QuerySet):
 class DeliverUnit(models.Model):
     # Nullable, and SET_NULL rather than CASCADE, until part 2 of CCCT-3057 splits the units that
     # several opportunities used: until then another opportunity's visits can still point at a unit.
-    # opportunity/deletion.py deletes an opportunity's units.
+    # opportunity/deletion.py still deletes units by their payment unit's opportunity, as before this
+    # field existed; units it doesn't reach are left with no opportunity, like units on an unused app.
     opportunity = models.ForeignKey(
         Opportunity,
         on_delete=models.SET_NULL,
