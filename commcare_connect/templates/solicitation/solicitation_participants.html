@@ -12,7 +12,7 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-  {# Shared by the pages that manage who takes part in a solicitation; the view supplies the wording. #}
+  {# Shared by a solicitation's invitations and its reviewers; the view supplies the wording. #}
   {# A rejected form re-renders the page, so the modal reopens to show the error. #}
   <div class="flex flex-col gap-4 w-full"
        x-data="{ showAddModal: {{ form.errors|yesno:'true,false' }}, ...selectableTable() }">

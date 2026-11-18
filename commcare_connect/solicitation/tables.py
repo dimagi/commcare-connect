@@ -62,3 +62,16 @@ class SolicitationInvitationTable(tables.Table):
 
     class Meta:
         empty_text = _("No organizations invited yet.")
+
+
+class SolicitationReviewerTable(tables.Table):
+    select = select_column()
+    index = IndexColumn()
+    name = columns.Column(verbose_name=_("Name"), accessor="user__name")
+    email = columns.Column(verbose_name=_("Email"), accessor="user__email")
+    role = columns.Column(verbose_name=_("Role"))
+    invited_by = columns.Column(verbose_name=_("Added by"), orderable=False)
+    date_created = DMYTColumn(verbose_name=_("Added on"))
+
+    class Meta:
+        empty_text = _("No reviewers or observers yet.")

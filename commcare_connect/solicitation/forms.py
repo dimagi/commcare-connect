@@ -21,6 +21,7 @@ from commcare_connect.solicitation.models import (
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
+    SolicitationReviewer,
 )
 
 # Deadlines are whole hours. Browsers count `step` from the field's rendered value unless `min` is set, so
@@ -344,6 +345,33 @@ class SolicitationInvitationForm(forms.Form):
 
     def new_participants(self):
         return [SolicitationInvitation(organization=org) for org in self.cleaned_data["organizations"]]
+
+
+class SolicitationReviewerForm(forms.Form):
+    users = forms.ModelMultipleChoiceField(label=_("Members"), queryset=None, widget=SEARCHABLE_MULTI_SELECT)
+    role = forms.ChoiceField(
+        label=_("Role"),
+        choices=SolicitationReviewer.Role.choices,
+        help_text=_("Reviewers score applications; observers can only read the scores."),
+    )
+
+    def __init__(self, *args, solicitation, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Only the posting organization's members can be assigned. Those already assigned aren't offered,
+        # so each member holds one role per solicitation.
+        self.fields["users"].queryset = solicitation.organization.members.exclude(
+            solicitationreviewer__solicitation=solicitation
+        ).order_by("name", "email")
+        # User.__str__ is the email alone; PMs pick colleagues by name.
+        self.fields["users"].label_from_instance = member_label
+
+    def new_participants(self):
+        role = self.cleaned_data["role"]
+        return [SolicitationReviewer(user=user, role=role) for user in self.cleaned_data["users"]]
+
+
+def member_label(user):
+    return f"{user.name} ({user.email})" if user.name else user.email
 
 
 class SelectedParticipantsForm(forms.Form):

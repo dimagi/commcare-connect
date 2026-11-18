@@ -23,6 +23,7 @@ from commcare_connect.solicitation.forms import (
     SolicitationClosureForm,
     SolicitationForm,
     SolicitationInvitationForm,
+    SolicitationReviewerForm,
     publish_errors,
 )
 from commcare_connect.solicitation.models import (
@@ -31,8 +32,12 @@ from commcare_connect.solicitation.models import (
     SolicitationEvaluationCriterion,
     SolicitationQuestion,
 )
-from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
-from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
+from commcare_connect.solicitation.tables import (
+    SolicitationInvitationTable,
+    SolicitationReviewerTable,
+    SolicitationTable,
+)
+from commcare_connect.solicitation.tasks import send_reviewer_assignment_emails, send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
 from commcare_connect.utils.views import HtmxModalFormMixin
 
@@ -247,7 +252,7 @@ class SolicitationCancelView(SolicitationClosureView):
 
 @method_decorator(org_pm_required, name="dispatch")
 class SolicitationParticipantsMixin(WaffleSwitchMixin):
-    """Who takes part in one of the org's solicitations, as a PM manages them, starting with invited orgs."""
+    """Who takes part in one of the org's solicitations, as a PM manages them: invited orgs or reviewers."""
 
     waffle_switch = SOLICITATIONS
     url_name = None  # the page listing the participants; its delete endpoint is named delete_<url_name>
@@ -293,9 +298,13 @@ class SolicitationParticipantsView(SolicitationParticipantsMixin, SingleTableMix
         return get_validated_page_size(self.request)
 
     def get_context_data(self, **kwargs):
+        solicitation_crumb = {"title": self.solicitation.title}
+        # The details page only exists while the solicitation can be edited.
+        if self.solicitation.is_editable:
+            solicitation_crumb["url"] = self.solicitation_url("details")
         path = [
             {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
-            {"title": self.solicitation.title, "url": self.solicitation_url("details")},
+            solicitation_crumb,
             {"title": self.title, "url": self.request.path},
         ]
         return super().get_context_data(
@@ -375,3 +384,34 @@ class SolicitationInvitationsView(InvitationsMixin, SolicitationParticipantsView
 
 class SolicitationInvitationDeleteView(InvitationsMixin, SolicitationParticipantsDeleteView):
     removed_message = _("Removed %(count)d invitation(s).")
+
+
+class ReviewersMixin(SolicitationParticipantsMixin):
+    url_name = "reviewers"
+    related_name = "reviewer_assignments"
+    # Reviewers are lined up while drafting and keep scoring after the solicitation closes, so only
+    # a cancelled solicitation has no use for them.
+    solicitations = Solicitation.objects.exclude(status=Solicitation.Status.CANCELLED)
+
+
+class SolicitationReviewersView(ReviewersMixin, SolicitationParticipantsView):
+    form_class = SolicitationReviewerForm
+    table_class = SolicitationReviewerTable
+    title = _("Reviewers")
+    hint = _(
+        "Reviewers score this solicitation's applications; observers can only read the scores. "
+        "Each person added gets an email."
+    )
+    add_title = _("Add reviewers")
+    add_submit = _("Add")
+    added_message = _("Added %(count)d reviewer(s).")
+    remove_title = _("Remove reviewers")
+    remove_message = _("Remove __count__ reviewer(s)? They will lose access to this solicitation's applications.")
+    send_emails = staticmethod(send_reviewer_assignment_emails)
+
+    def get_table_data(self):
+        return self.get_participants().select_related("user", "invited_by").order_by("user__name", "user__email")
+
+
+class SolicitationReviewerDeleteView(ReviewersMixin, SolicitationParticipantsDeleteView):
+    removed_message = _("Removed %(count)d reviewer(s).")

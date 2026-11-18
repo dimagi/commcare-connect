@@ -270,7 +270,7 @@ class TestSolicitationSteps:
         assert response.context["path"][-1] == {"title": "New solicitation"}
 
 
-PARTICIPANT_FACTORIES = {"invitations": SolicitationInvitationFactory}
+PARTICIPANT_FACTORIES = {"invitations": SolicitationInvitationFactory, "reviewers": SolicitationReviewerFactory}
 
 
 @pytest.fixture
@@ -371,6 +371,11 @@ def mock_send_mail():
         yield mock
 
 
+@pytest.fixture
+def member(program_manager_org):
+    return MembershipFactory(organization=program_manager_org, role="viewer").user
+
+
 def sent_to(mock_send_mail):
     return sorted(call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list)
 
@@ -440,6 +445,77 @@ class TestSolicitationInvitations:
 
 @pytest.mark.django_db
 class TestSolicitationReviewers:
+    @pytest.mark.parametrize("role", SolicitationReviewer.Role.values)
+    def test_add_assigns_role_and_emails_each_person(
+        self,
+        pm_client,
+        solicitation,
+        program_manager_org_user_admin,
+        member,
+        mock_send_mail,
+        django_capture_on_commit_callbacks,
+        role,
+    ):
+        # The PM is a member too, so can take a role on their own solicitation.
+        users = [member, program_manager_org_user_admin]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = pm_client.post(
+                step_url("reviewers", solicitation), {"users": [user.pk for user in users], "role": role}
+            )
+
+        assert response.url == step_url("reviewers", solicitation)
+        assert {(a.user, a.role, a.invited_by) for a in solicitation.reviewer_assignments.all()} == {
+            (user, role, program_manager_org_user_admin) for user in users
+        }
+        assert sent_to(mock_send_mail) == sorted([user.email] for user in users)
+
+    @pytest.mark.parametrize("already_assigned", [True, False])
+    def test_add_rejects_assigned_members_and_non_members(
+        self, pm_client, solicitation, program_manager_org, member, mock_send_mail, already_assigned
+    ):
+        if already_assigned:
+            SolicitationReviewerFactory(solicitation=solicitation, user=member)
+            rejected = member
+        else:
+            rejected = MembershipFactory().user  # belongs to another organization
+
+        # A valid member alongside the rejected one is not added either.
+        valid = MembershipFactory(organization=program_manager_org).user
+        data = {"users": [rejected.pk, valid.pk], "role": SolicitationReviewer.Role.REVIEWER}
+        response = pm_client.post(step_url("reviewers", solicitation), data)
+
+        assert_add_rejected(response, solicitation.reviewer_assignments, int(already_assigned), mock_send_mail)
+
+    def test_list_shows_assignments_and_offers_other_members(self, pm_client, solicitation, member):
+        assignment = SolicitationReviewerFactory(
+            solicitation=solicitation, user=member, role=SolicitationReviewer.Role.OBSERVER
+        )
+        # Assigned on another solicitation only, so still offered here.
+        unassigned = SolicitationReviewerFactory(
+            user=MembershipFactory(organization=solicitation.organization).user
+        ).user
+
+        response = pm_client.get(step_url("reviewers", solicitation))
+
+        [row] = response.context["table"].rows
+        assert (row.record, row.get_cell("name"), row.get_cell("role")) == (assignment, member.name, "Observer")
+        choices = dict(response.context["form"].fields["users"].choices)
+        assert member.pk not in choices
+        assert choices[unassigned.pk] == f"{unassigned.name} ({unassigned.email})"
+
+    @pytest.mark.parametrize(
+        "status, linked", [(Solicitation.Status.ACTIVE, True), (Solicitation.Status.CLOSED, False)]
+    )
+    def test_solicitation_crumb_links_to_details_only_while_editable(
+        self, pm_client, program_manager_org, status, linked
+    ):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+
+        response = pm_client.get(step_url("reviewers", solicitation))
+
+        assert response.context["path"][1].get("url") == (step_url("details", solicitation) if linked else None)
+
     @pytest.mark.parametrize(
         "role, email, subject",
         [
@@ -497,6 +573,12 @@ class TestSolicitationParticipants:
             ("invitations", Solicitation.Status.ACTIVE, False, False, False),
             # Past its deadline but not yet closed by update_solicitation_statuses.
             ("invitations", Solicitation.Status.ACTIVE, True, True, False),
+            # Reviewers are managed until the solicitation is cancelled.
+            ("reviewers", Solicitation.Status.DRAFT, True, False, True),
+            ("reviewers", Solicitation.Status.ACTIVE, True, True, True),
+            ("reviewers", Solicitation.Status.CLOSED, True, False, True),
+            ("reviewers", Solicitation.Status.CANCELLED, True, False, False),
+            ("reviewers", Solicitation.Status.ACTIVE, False, False, False),
         ],
     )
     def test_only_own_manageable_solicitations(
