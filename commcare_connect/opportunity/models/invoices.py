@@ -7,7 +7,7 @@ import pghistory
 from django.core.exceptions import ImproperlyConfigured
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext, gettext_lazy
@@ -70,8 +70,13 @@ class BillToAddress(BaseModel):
     def has_invoices(self):
         return self.invoices.exists()
 
+    @classmethod
+    def in_use_condition(cls):
+        """True for the default and for addresses any invoice uses; usable in filter() and annotate()."""
+        return Q(is_default=True) | Exists(PaymentInvoice.objects.filter(bill_to=OuterRef("pk")))
+
     def is_in_use(self):
-        return self.is_default or self.has_invoices()
+        return BillToAddress.objects.filter(BillToAddress.in_use_condition(), pk=self.pk).exists()
 
     @transaction.atomic
     def make_default(self, modified_by):
