@@ -38,7 +38,7 @@ jobs:
       sha: ${{ steps.ready.outputs.sha }}
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - id: ready
         name: Check main is ready to deploy
@@ -49,7 +49,7 @@ jobs:
       # Posts every skip, warn or not, so each scheduled run leaves a message in the channel
       - name: Notify deploy skipped
         if: ${{ steps.ready.outputs.deploy != 'true' || failure() }}
-        uses: slackapi/slack-github-action@v1.24.0
+        uses: slackapi/slack-github-action@e28cf165c92ffef168d23c5c9000cffc8a25e117 # v1.24.0
         with:
           channel-id: ${{ vars.SLACK_PRODUCTION_DEPLOY_CHANNEL }}
           # toJSON escapes quotes and newlines in the reason, which would otherwise break the JSON
