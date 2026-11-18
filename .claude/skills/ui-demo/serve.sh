@@ -24,12 +24,9 @@ cd "$REPO" || { echo "repo not found: $REPO"; exit 1; }
 # shellcheck disable=SC1091
 source .venv/bin/activate || { echo "no .venv in $REPO — run: uv sync"; exit 1; }
 
-# whitenoise ManifestStaticFilesStorage needs the manifest under DEBUG=False; --insecure avoids a collectstatic step.
-INSECURE=""
-[ -f staticfiles/staticfiles.json ] || INSECURE="--insecure"
-
+# Static files need no collectstatic: record_settings serves them from the source folders (see its docstring).
 PYTHONPATH="$SKILL_DIR" DJANGO_SETTINGS_MODULE=record_settings \
-  nohup ./manage.py runserver "$PORT" $INSECURE > "$OLDPWD/output/server.log" 2>&1 &
+  nohup ./manage.py runserver "$PORT" > "$OLDPWD/output/server.log" 2>&1 &
 cd "$OLDPWD"
 
 for _ in $(seq 1 40); do

@@ -28,7 +28,7 @@ Add helpers here when a second demo needs the same thing; keep one-off selectors
 ## Gotchas (from real recordings)
 
 - `DJANGO_DEBUG=False` env var is ignored (`local.py` hardcodes `DEBUG = True`) → settings module override via PYTHONPATH, zero repo edits.
-- Under `DEBUG=False` whitenoise needs `staticfiles/staticfiles.json`; `serve.sh` adds `--insecure` when it is missing. A 500 on every page anyway usually means a stale manifest → `npm run build` then `./manage.py collectstatic`.
+- Under `DEBUG=False` the repo's manifest storage needs `staticfiles/staticfiles.json`: a 500 on every page without it, stale bundles from an old one. `runserver --insecure` can't help, as `whitenoise.runserver_nostatic` disables it → `record_settings.py` swaps in plain storage and whitenoise's finders, so the server always serves the current `npm run dev` build with no collectstatic.
 - allauth bounces unverified emails to a verification page mid-login → the seed marks every `EmailAddress` verified.
 - The org slug is generated from the name (`slugify_uniquely`) → the seed looks orgs up by name and asserts the slug.
 - Flows that switch identity (admin → invitee) need `useState: false`; otherwise the runner saves the second user's session as the auth state and the next run's admin-only steps fail.

@@ -45,7 +45,8 @@ TASK_DIR="$RECORD_DIR/<task-id-or-slug>"
 "$SKILL/preflight.sh" || { echo "fix the ✗ lines above, then re-run setup"; exit 1; }   # add --voiceover to also check uv
 mkdir -p "$RECORD_DIR" && [ -f "$RECORD_DIR/.gitignore" ] || echo '*' > "$RECORD_DIR/.gitignore"
 if [ ! -d "$RECORD_DIR/node_modules" ]; then
-  cd "$RECORD_DIR" && npm init -y && npm install playwright @playwright/test
+  cd "$RECORD_DIR" && echo '{ "name": "ui-demo", "private": true }' > package.json   # not `npm init -y`: ".ui-demo" is no valid package name
+  npm install playwright @playwright/test
   python3 -m venv venv && source venv/bin/activate && pip install --quiet pillow
 fi
 (cd "$RECORD_DIR" && npx playwright install chromium)   # no-op when present
@@ -133,4 +134,4 @@ Deliver `final.mp4` (plays inline on Slack, Jira, Confluence, GitHub), plus `pos
 - `reference/troubleshooting.md` — MCP unavailable, blocked verification, corrupted recording, TomSelect, zsh gotcha.
 - `reference/learnings.md` — measured findings behind the rules.
 - `reference/connect.md` — the seeded people, `connect.mjs` helpers, commcare-connect gotchas.
-- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `serve.sh` (port check, DEBUG off, `--insecure` when the whitenoise manifest is missing, readiness wait), `reseed.sh [scenario]`, `narrate.py` (voiceover), example flows.
+- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `reseed.sh [scenario]`, `narrate.py` (voiceover), example flows.
