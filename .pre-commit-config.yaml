@@ -19,7 +19,8 @@ repos:
       - id: check-docstring-first
       - id: detect-private-key
 
-  - repo: https://github.com/pre-commit/mirrors-prettier
+  # Archived; prettier is pinned at v3.1.0 until the hook moves elsewhere
+  - repo: https://github.com/pre-commit/mirrors-prettier # zizmor: ignore[archived-uses]
     rev: v3.1.0
     hooks:
       - id: prettier
@@ -57,6 +58,22 @@ repos:
           - eslint@10.10.0
           - '@eslint/js@10.0.1'
           - globals@17.8.0
+
+  # GitHub Actions workflows. actionlint checks syntax, expressions and (through shellcheck) run: scripts;
+  # zizmor checks for security problems. Ignore a zizmor finding inline with `# zizmor: ignore[<audit>]`
+  # and say why in a comment. --offline skips the audits that call the GitHub API, so the hook gives the same
+  # result with or without a GH_TOKEN and doesn't hit API rate limits.
+  - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
+    rev: v1.7.12.25
+    hooks:
+      - id: actionlint
+        additional_dependencies: [shellcheck-py==0.11.0.1]
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor
+        args: [--offline]
 
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
