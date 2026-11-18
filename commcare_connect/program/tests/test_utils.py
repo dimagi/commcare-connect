@@ -212,11 +212,10 @@ class TestOrgOpportunityAccess:
             is AccessLevel.NONE
         )
 
-    def test_the_program_side_reaches_even_a_non_managed_opportunity(self, program, organization):
-        """Opportunity.program is non-null on every row, so a non-managed opp still has a program owner."""
-        opp = OpportunityFactory(
-            program=program, organization=organization, supervising_organization=organization, managed=False
-        )
+    def test_the_program_side_reaches_an_opportunity_it_does_not_supervise(self, program, organization):
+        """Opportunity.program is non-null on every row, so the program owner keeps access when another org
+        supervises."""
+        opp = OpportunityFactory(program=program, organization=organization, supervising_organization=organization)
         assert org_opportunity_access(program.organization, opp) is AccessLevel.ADMIN
 
 

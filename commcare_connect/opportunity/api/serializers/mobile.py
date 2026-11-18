@@ -1,4 +1,4 @@
-from django.db.models import Max, Sum
+from django.db.models import Max, Q, Sum
 from rest_framework import serializers
 
 from commcare_connect.cache import quickcache
@@ -343,6 +343,10 @@ class DeliveryProgressSerializer(serializers.Serializer):
             CompletedWork.objects.filter(opportunity_access=obj)
             .exclude(status=CompletedWorkStatus.over_limit)
             .exclude(status=CompletedWorkStatus.incomplete)
+            # Work moves to pending on its first visit, before every required and optional deliver unit
+            # has one. Hide it until a full set is done or mobile shows it as pending indefinitely.
+            # Rejected work stays visible so the worker sees the rejection.
+            .filter(Q(saved_completed_count__gt=0) | Q(status=CompletedWorkStatus.rejected))
             .annotate(last_visit_date=Max("uservisit__visit_date"))
         )
         return CompletedWorkSerializer(completed_works, many=True).data
