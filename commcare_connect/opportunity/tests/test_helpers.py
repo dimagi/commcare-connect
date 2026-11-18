@@ -352,13 +352,6 @@ def test_get_worker_learn_table_data_all_fields(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-    ],
-    indirect=True,
-)
 def test_opportunity_delivery_stats(opportunity):
     today = now()
     yesterday = today - timedelta(days=1)
@@ -515,13 +508,6 @@ def test_opportunity_delivery_stats(opportunity):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-    ],
-    indirect=True,
-)
 def test_get_opportunity_funnel_progress(opportunity):
     today = now()
     user1 = OpportunityAccessFactory(

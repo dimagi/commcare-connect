@@ -77,7 +77,6 @@ class Command(BaseCommand):
             name=OPPORTUNITY_NAME,
             organization=nm_org,
             program=program,
-            managed=True,
             # The factory's default API key creates a user with a sequential username, which
             # collides with users left by earlier runs.
             api_key=HQApiKeyFactory(user=user),

@@ -222,7 +222,7 @@ def ensure_currency_country_data(db):
 
 @pytest.fixture(autouse=True)
 def ensure_default_bill_to_address(db):
-    # transaction=True tests flush the row migration 0154 seeds, and invoices can't be created without a default.
+    # transaction=True tests flush the row migration 0155 seeds, and invoices can't be created without a default.
     # Same text as the seed, so the PDF still matches the old hardcoded address after a flush.
     BillToAddress = django_apps.get_model("opportunity", "BillToAddress")
     BillToAddress.objects.get_or_create(

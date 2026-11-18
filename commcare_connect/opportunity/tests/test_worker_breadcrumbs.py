@@ -5,7 +5,6 @@ from commcare_connect.opportunity.views.worker import get_worker_breadcrumbs
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("managed", [True, False], ids=["program-managed", "not-managed"])
 @pytest.mark.parametrize(
     "connect_workers_url_name",
     [
@@ -18,9 +17,7 @@ from commcare_connect.opportunity.views.worker import get_worker_breadcrumbs
     ],
     ids=["worker-tabs", "worker-page", "learn-status"],
 )
-def test_get_worker_breadcrumbs(opportunity, managed, connect_workers_url_name):
-    opportunity.managed = managed
-    opportunity.save()
+def test_get_worker_breadcrumbs(opportunity, connect_workers_url_name):
     org_slug = opportunity.organization.slug
     opp_id = opportunity.opportunity_id
 
