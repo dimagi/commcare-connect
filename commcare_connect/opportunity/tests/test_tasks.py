@@ -374,7 +374,7 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
             yield
 
-    def test_generate_invoice_for_two_active_managed_opportunities(self):
+    def test_generate_invoice_for_two_active_opportunities(self):
         # The task saves invoices without choosing an entity, so they go to whichever address is the default.
         BillToAddress.objects.update(is_default=False)
         bill_to = BillToAddressFactory(name="Dimagi South Africa", is_default=True)

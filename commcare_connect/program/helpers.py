@@ -76,7 +76,7 @@ def calculate_safe_percentage(numerator, denominator):
     )
 
 
-def get_annotated_managed_opportunity(program: Program):
+def get_annotated_opportunity(program: Program):
     earliest_visits = (
         UserVisit.objects.filter(
             opportunity_access=OuterRef("opportunityaccess"),
@@ -87,7 +87,7 @@ def get_annotated_managed_opportunity(program: Program):
         .values("visit_date")[:1]
     )
 
-    managed_opportunities = (
+    opportunities = (
         Opportunity.objects.filter(program=program)
         .order_by("start_date")
         .annotate(
@@ -119,7 +119,7 @@ def get_annotated_managed_opportunity(program: Program):
             ),
         )
     )
-    return managed_opportunities
+    return opportunities
 
 
 def get_delivery_performance_report(program: Program, start_date, end_date):
@@ -137,7 +137,7 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
         & Q(opportunityaccess__uservisit__completed_work__isnull=False)
     )
 
-    managed_opportunities = (
+    opportunities = (
         Opportunity.objects.filter(program=program)
         .order_by("start_date")
         .annotate(
@@ -170,4 +170,4 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
         )
     )
 
-    return managed_opportunities
+    return opportunities
