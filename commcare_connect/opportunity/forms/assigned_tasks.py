@@ -1,6 +1,5 @@
 """Assigned-task forms: creating and editing tasks and task types."""
 
-import datetime
 import json
 import logging
 from urllib.parse import urlencode
@@ -12,7 +11,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
@@ -29,7 +28,25 @@ from commcare_connect.utils.ocs_api import user_has_connected_ocs
 logger = logging.getLogger(__name__)
 
 
-class CreateTaskForm(forms.Form):
+class DueDateNotInPastMixin:
+    """Keeps a form's ``due_date`` on or after today.
+
+    "Today" is the date in the active Django timezone (``localdate()``), not the server
+    process's local date, so the date picker's ``min`` and the validation agree with each
+    other and with the rest of the app regardless of the host's clock settings.
+    """
+
+    def set_due_date_min(self):
+        self.fields["due_date"].widget.attrs["min"] = localdate().isoformat()
+
+    def clean_due_date(self):
+        due_date = self.cleaned_data["due_date"]
+        if due_date < localdate():
+            raise ValidationError(_("Due date cannot be in the past."))
+        return due_date
+
+
+class CreateTaskForm(DueDateNotInPastMixin, forms.Form):
     task = forms.ModelChoiceField(
         label=_("Task"),
         queryset=TaskType.objects.none(),
@@ -86,7 +103,7 @@ class CreateTaskForm(forms.Form):
             self.fields["access"].initial = access.pk
             self.fields["access"].widget = forms.HiddenInput()
 
-        self.fields["due_date"].widget.attrs["min"] = datetime.date.today().isoformat()
+        self.set_due_date_min()
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -95,12 +112,6 @@ class CreateTaskForm(forms.Form):
             Field("access"),
             Field("due_date"),
         )
-
-    def clean_due_date(self):
-        due_date = self.cleaned_data["due_date"]
-        if due_date < datetime.date.today():
-            raise ValidationError(_("Due date cannot be in the past."))
-        return due_date
 
     def clean(self):
         cleaned_data = super().clean()
@@ -290,7 +301,7 @@ class EditTaskTypeForm(forms.ModelForm):
         return instance
 
 
-class EditAssignedTaskForm(forms.ModelForm):
+class EditAssignedTaskForm(DueDateNotInPastMixin, forms.ModelForm):
     reason = forms.CharField(
         required=False,
         label=_("Reason for change (Optional)"),
@@ -307,15 +318,9 @@ class EditAssignedTaskForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["due_date"].label = _("New End Date")
-        self.fields["due_date"].widget.attrs["min"] = datetime.date.today().isoformat()
+        self.set_due_date_min()
         self.helper = FormHelper(self)
         self.helper.form_tag = False
-
-    def clean_due_date(self):
-        due_date = self.cleaned_data["due_date"]
-        if due_date < datetime.date.today():
-            raise ValidationError(_("Due date cannot be in the past."))
-        return due_date
 
     def has_changed(self):
         # Ignore "reason" field if no updated due date is given

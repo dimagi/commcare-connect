@@ -49,7 +49,6 @@ def opportunity(user, organization, program_manager_org):
     opportunity = OpportunityFactory(
         organization=organization,
         program=ProgramFactory(organization=program_manager_org),
-        managed=True,
         hq_server=api_key.hq_server,
         api_key=api_key,
         learn_app=_app(api_key.hq_server, SIM_LEARN_APP_PREFIX),
