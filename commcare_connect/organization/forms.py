@@ -168,6 +168,11 @@ class OrganizationProfileForm(forms.ModelForm):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
 
 
+EXISTING_ORGANIZATION_HELP_TEXTS = OrganizationProfileForm.Meta.help_texts | {
+    "name": gettext_lazy("Renaming the organization does not change its URL."),
+}
+
+
 class OrganizationCreateForm(OrganizationProfileForm):
     """Creates an organization from the create wizard.
 
@@ -203,9 +208,7 @@ class OrganizationChangeForm(OrganizationProfileForm):
         labels = OrganizationProfileForm.Meta.labels | {
             "program_manager": gettext_lazy("Enable Program Manager"),
         }
-        help_texts = OrganizationProfileForm.Meta.help_texts | {
-            "name": gettext_lazy("Renaming the organization does not change its URL."),
-        }
+        help_texts = EXISTING_ORGANIZATION_HELP_TEXTS
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user")
@@ -295,11 +298,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
             "notes": gettext_lazy("Organization Notes"),
         }
-        help_texts = {
-            "name": gettext_lazy("Renaming the organization does not change its URL."),
-            "contact_emails": gettext_lazy("Press comma, space or Enter after each email address."),
-            "eoi_links": gettext_lazy("Expression of Interest (EOI) links. Press space or Enter after each one."),
-        }
+        help_texts = EXISTING_ORGANIZATION_HELP_TEXTS
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
