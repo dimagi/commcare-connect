@@ -173,7 +173,7 @@ The verification flags themselves are listed in `../opportunity/README.md`.
 | Record                           | Created from              | Unique on                                        |
 | -------------------------------- | ------------------------- | ------------------------------------------------ |
 | `LearnModule`                    | first block seen          | none; `get_or_create` on app + slug only         |
-| `DeliverUnit`                    | first block seen          | none; looked up on opportunity + app + slug      |
+| `DeliverUnit`                    | first block seen          | `opportunity, app, slug`                         |
 | `CompletedModule`                | `module` block            | `xform_id, module, opportunity_access`           |
 | `Assessment`                     | `assessment` block        | none; `get_or_create` lookup includes `xform_id` |
 | `UserVisit`                      | `deliver` block           | `xform_id, entity_id, deliver_unit`              |
