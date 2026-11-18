@@ -175,4 +175,18 @@ The [mockup](https://claude.ai/artifact/DR5nWCB1Xy8oLd5NpVzTw1) shows each scree
 
 ## Open questions
 
-- **For the mobile spec:** the first phone app version that supports learn-less opportunities, how job status is worked out without learning progress (a claimed job with no learning should show as delivering). The phone's generic opportunity push sends workers to the job page for any job that's available, learning or delivering, so it depends on that status logic.
+For the mobile spec to answer:
+
+- **The first phone app version that supports learn-less opportunities.**
+  - The server can't tell versions apart, so this version number is the only thing that tells the delivery team when the feature is safe to use.
+  - The feature flag stays off until that version has shipped, and delivery teams tell invited workers to update to at least that version.
+  - Workers on older versions get the behaviour described under [Risks](#risks).
+- **How a learn-less job's status is worked out.**
+  - The phone sets a job's status when it parses the opportunity list. A job starts as "available", becomes "learning" once learning progress is above 0, and only becomes "delivering" if it's claimed *and* learning progress is above 0.
+  - Learning progress counts the assessment as one module. A job with no modules and no passed assessment is therefore at 0%, so a claimed learn-less job would stay "available".
+  - The status decides which section of the opportunity list the job appears in and which screen opens when the worker taps it, so a wrong status would send a worker who has claimed back to the job details screen.
+  - Expected outcome: an unclaimed learn-less job shows as available, and a claimed one shows as delivering.
+- **Where the generic opportunity push leads.**
+  - The "Claim your job" reminder uses the existing `ccc_generic_opportunity` push action. When the worker taps it, the phone picks the screen from the job's status.
+  - Today that's payments or the job page for delivering jobs, the job page for available or learning jobs, and no redirect for any other status.
+  - The reminder only goes to workers who haven't claimed, so an "available" job leads to the job page, which is what we want. If the mobile spec adds a new status for learn-less jobs, this mapping has to handle it, or the reminder stops leading anywhere.
