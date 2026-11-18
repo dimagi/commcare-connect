@@ -737,15 +737,19 @@ class TestOpportunityInitForm(OpportunityInitFormTestBase):
 @pytest.mark.django_db
 class TestOpportunityInitFormKeyCheck(OpportunityInitFormTestBase):
     @pytest.mark.parametrize(
-        "deliver_status, expected_errors",
+        "learn_status, deliver_status, expected_errors",
         [
-            (200, None),
-            (403, ['This API key cannot access the deliver app on domain "{domain}".']),
-            (503, ["Could not reach CommCare HQ to check this API key. Please try again."]),
+            (200, 200, None),
+            (200, 403, ['This API key cannot access the deliver app on domain "{domain}".']),
+            (200, 503, ["Could not reach CommCare HQ to check this API key. Please try again."]),
+            # A denial is reported over an earlier app's transient failure: retrying wouldn't fix it.
+            (503, 403, ['This API key cannot access the deliver app on domain "{domain}".']),
         ],
     )
-    def test_checks_the_key_can_reach_the_apps(self, opportunity, httpx_mock, deliver_status, expected_errors):
-        _mock_hq_apps(httpx_mock, opportunity, deliver_status=deliver_status)
+    def test_checks_the_key_can_reach_the_apps(
+        self, opportunity, httpx_mock, learn_status, deliver_status, expected_errors
+    ):
+        _mock_hq_apps(httpx_mock, opportunity, learn_status=learn_status, deliver_status=deliver_status)
         form = self._build_form(opportunity)
 
         if expected_errors is None:

@@ -952,7 +952,8 @@ def _stored_apps(opportunity):
 
 def _verify_api_key_access(form, api_key, apps):
     """On an otherwise valid form, ask HQ whether `api_key` can fetch each `(app_type, cc_domain, cc_app_id)` in
-    `apps`, and add the first failure to the form.
+    `apps`, and add one failure to the form: an access denial if any app has one, since retrying won't fix it,
+    otherwise the first other failure.
 
     Skipped only when the key and the apps are both what the opportunity already stores: a kept key may belong to
     a colleague, so pointing it at different apps needs the same check as a new key."""
@@ -970,11 +971,10 @@ def _verify_api_key_access(form, api_key, apps):
                 ),
             )
             return
-        if error:
-            # Unreachable, 5xx, rate limited, ...: not the key's fault, so don't blame it.
-            logger.warning("HQ API key check failed for opportunity %s", form.instance.pk, exc_info=error)
-            form.add_error("api_key", gettext("Could not reach CommCare HQ to check this API key. Please try again."))
-            return
+    if error := next((error for error in errors if error), None):
+        # Unreachable, 5xx, rate limited, ...: not the key's fault, so don't blame it.
+        logger.warning("HQ API key check failed for opportunity %s", form.instance.pk, exc_info=error)
+        form.add_error("api_key", gettext("Could not reach CommCare HQ to check this API key. Please try again."))
 
 
 class OpportunityFinalizeForm(forms.ModelForm):
