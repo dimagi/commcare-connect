@@ -128,7 +128,7 @@ class LearnAppInputSerializer(CommCareAppInputSerializer):
     passing_score = serializers.IntegerField(min_value=0, max_value=100)
 
 
-class ManagedOpportunityCreateSerializer(serializers.Serializer):
+class ProgramOpportunityCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField()
     short_description = serializers.CharField(max_length=50)
@@ -285,7 +285,7 @@ class LearnModuleResponseSerializer(serializers.ModelSerializer):
         fields = ["id", "slug", "name", "description", "time_estimate"]
 
 
-class ManagedOpportunityResponseSerializer(serializers.ModelSerializer):
+class ProgramOpportunityResponseSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(slug_field="slug", read_only=True)
     program_id = serializers.UUIDField(source="program.program_id", read_only=True)
     learn_app = serializers.SerializerMethodField()

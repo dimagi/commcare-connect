@@ -3,6 +3,7 @@
 This uses the `Invoke` library."""
 
 import re
+from functools import partial
 from pathlib import Path
 
 from invoke import Context, Exit, call, task
@@ -95,9 +96,19 @@ def setup_ec2(c: Context, env="staging", verbose=False, diff=False):
 
 
 @task
-def django_settings(c: Context, env="staging", verbose=False, diff=False):
-    """Update the Django settings file on prod servers"""
-    run_ansible(c, env=env, tags="django_settings", verbose=verbose, diff=diff, user="connect", become=False)
+def django_settings(c: Context, env="staging", verbose=False):
+    """Preview and then update the Django settings file on prod servers"""
+    print(f"Environment: {env}\n")
+    settings_ansible = partial(
+        run_ansible, c, env=env, tags="django_settings", verbose=verbose, diff=True, user="connect", become=False
+    )
+    settings_ansible(check=True)
+    val = input(f"\nThat was a preview. Apply these changes to {env}? [y/N] ")
+    if val.lower() != "y":
+        print("No changes made.")
+        return
+
+    settings_ansible()
     print("\nSettings updated. A re-deploy is required to have the services use the new settings.")
     val = input("Do you want to re-deploy the Django services? [y/N] ")
     if val.lower() == "y":
@@ -139,8 +150,11 @@ def run_ansible(
     if check:
         ansible_cmd += " --check"
 
+    # Staging and production share inventory hostnames (web0), and facts are cached by hostname,
+    # so a shared cache would hand one environment's facts (e.g. its Python path) to the other.
+    fact_cache = {"ANSIBLE_CACHE_PLUGIN_CONNECTION": f"~/.ansiblecache/{env}"}
     with c.cd(PROJECT_DIR / "deploy"):
-        c.run(ansible_cmd)
+        c.run(ansible_cmd, env=fact_cache)
 
 
 @task

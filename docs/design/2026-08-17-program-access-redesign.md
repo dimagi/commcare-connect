@@ -325,7 +325,7 @@ constraint here:
 
 | View | Form | Guard | Who that admits |
 | ---- | ---- | ----- | --------------- |
-| `ManagedOpportunityInitUpdate` | `OpportunityInitUpdateForm` | `ProgramManagerMixin` | program org, funder, or the opportunity's supervisor |
+| `ProgramOpportunityInitUpdate` | `OpportunityInitUpdateForm` | `ProgramManagerMixin` | program org, funder, or the opportunity's supervisor |
 | `OpportunityEdit` | `OpportunityChangeForm` | `org_member_required` | any member of the opportunity's own organization |
 
 Adding the field to `OpportunityChangeForm` unguarded would therefore let the *delivering*

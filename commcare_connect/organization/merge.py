@@ -10,7 +10,7 @@ from django.db.models import F, Q
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.organization.models import Organization, OrganizationInvite
 from commcare_connect.program.models import ProgramApplication
-from commcare_connect.program.utils import clear_managed_opp_cache
+from commcare_connect.program.utils import clear_cached_opp
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 
 logger = logging.getLogger(__name__)
@@ -276,7 +276,7 @@ def _reject_conflicting_solicitation_applications(source: Organization, target: 
 
 
 def _opportunities_linked_to_source(source: Organization) -> list[Opportunity]:
-    """Opportunities whose ``get_managed_opp`` entry holds a reference to the source.
+    """Opportunities whose ``get_cached_opp`` entry holds a reference to the source.
 
     That cache stores the opportunity with its program and the program's organization attached, so a merge
     invalidates it.
@@ -392,7 +392,7 @@ def _clear_flag_memberships(source: Organization) -> int:
 
 def _clear_opportunity_caches(opportunities: Sequence[Opportunity]) -> None:
     for opportunity in opportunities:
-        clear_managed_opp_cache(opportunity)
+        clear_cached_opp(opportunity)
 
 
 def relation_counts(organization: Organization) -> dict[str, int]:
