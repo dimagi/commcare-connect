@@ -92,6 +92,14 @@
         {% if opportunity.organization.office_address %}
           <p>{{ opportunity.organization.office_address|linebreaksbr }}</p>
         {% endif %}
+        {% if main_contact %}
+          <p>{% trans "Contact" %}: {{ main_contact.name }}</p>
+          {% if main_contact.title %}<p>{{ main_contact.title }}</p>{% endif %}
+          <p>
+            {{ main_contact.email }}
+            {% if main_contact.phone %}| {{ main_contact.phone }}{% endif %}
+          </p>
+        {% endif %}
       </div>
       <div class="section">
         <p>{% trans "Invoice number" %}: {{ invoice.invoice_number }}</p>
