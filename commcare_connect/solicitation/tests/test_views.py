@@ -7,16 +7,23 @@ from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.models import (
+    Solicitation,
+    SolicitationApplication,
+    SolicitationInvitation,
+    SolicitationReviewer,
+)
+from commcare_connect.solicitation.tasks import send_reviewer_assignment_emails
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
     SolicitationFactory,
     SolicitationInvitationFactory,
     SolicitationQuestionFactory,
+    SolicitationReviewerFactory,
 )
 from commcare_connect.solicitation.views import SolicitationListView
-from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 Status = SolicitationApplication.Status
 
@@ -429,6 +436,30 @@ class TestSolicitationInvitations:
         assert (row.record, row.get_cell("organization")) == (invitation, invitation.organization.name)
         choices = dict(response.context["form"].fields["organizations"].choices)
         assert choices[uninvited.pk] == uninvited.name
+
+
+@pytest.mark.django_db
+class TestSolicitationReviewers:
+    @pytest.mark.parametrize(
+        "role, email, subject",
+        [
+            (SolicitationReviewer.Role.REVIEWER, "reviewer@example.com", "Reviewer assignment: Malaria outreach"),
+            (SolicitationReviewer.Role.OBSERVER, "observer@example.com", "Observer assignment: Malaria outreach"),
+            # Nobody to write to.
+            (SolicitationReviewer.Role.REVIEWER, None, None),
+            (SolicitationReviewer.Role.REVIEWER, "", None),
+        ],
+    )
+    def test_assignment_email(self, mock_send_mail, role, email, subject):
+        assignment = SolicitationReviewerFactory(
+            solicitation__title="Malaria outreach", user=UserFactory(email=email), role=role
+        )
+
+        send_reviewer_assignment_emails([assignment.pk])
+
+        subjects = [call.kwargs["subject"] for call in mock_send_mail.delay.call_args_list]
+        assert subjects == ([subject] if subject else [])
+        assert sent_to(mock_send_mail) == ([[email]] if subject else [])
 
 
 @pytest.mark.django_db
