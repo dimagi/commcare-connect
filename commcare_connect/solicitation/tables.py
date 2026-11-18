@@ -64,11 +64,14 @@ class SolicitationTable(tables.Table):
     def render_actions(self, record):
         url_args = (self.request.org.slug, record.solicitation_id)
         actions = []
+        if url := reviewers_url(record, self):
+            # A page of its own, so it opts out of the menu's boost into the list page's modal.
+            actions.append({"title": _("Manage reviewers"), "url": url, "hx_boost": "false"})
         if record.is_open:
             actions.append({"title": _("Close"), "url": reverse("solicitation:close", args=url_args)})
         if record.is_editable:
             actions.append({"title": _("Cancel"), "url": reverse("solicitation:cancel", args=url_args)})
-        # Closed and cancelled solicitations are finished, so they get no menu.
+        # Cancelled solicitations are finished, so they get no menu.
         return render_to_string("solicitation/row_actions.html", {"actions": actions}) if actions else ""
 
 

@@ -1,3 +1,4 @@
+import re
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from commcare_connect.solicitation.models import (
     SolicitationInvitation,
     SolicitationReviewer,
 )
+from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.solicitation.tasks import send_reviewer_assignment_emails
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
@@ -47,6 +49,38 @@ def test_queryset_counts(rf, program_manager_org):
 
     # Every status except draft and withdrawn counts as a response; the counts don't inflate each other.
     assert counts == {solicitation.pk: (len(Status) - 2, 3, 2), empty.pk: (0, 0, 0)}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status, deadline_passed, items",
+    [
+        (Solicitation.Status.DRAFT, False, ["Manage reviewers", "Cancel"]),
+        (Solicitation.Status.ACTIVE, False, ["Manage reviewers", "Close", "Cancel"]),
+        # Past its deadline but not yet closed by update_solicitation_statuses.
+        (Solicitation.Status.ACTIVE, True, ["Manage reviewers"]),
+        (Solicitation.Status.CLOSED, False, ["Manage reviewers"]),
+        (Solicitation.Status.CANCELLED, False, []),
+    ],
+)
+def test_row_menu(rf, program_manager_org, status, deadline_passed, items):
+    request = rf.get("/")
+    request.org = program_manager_org
+    solicitation = SolicitationFactory(
+        organization=program_manager_org, status=status, deadline_passed=deadline_passed
+    )
+    table = SolicitationTable([solicitation])
+    table.request = request
+
+    links = re.findall(
+        r'<a href="([^"]+)"\s*(hx-boost="false")?[^>]*>\s*(.+?)\s*</a>', table.render_actions(solicitation)
+    )
+
+    assert [title for _url, _boost, title in links] == items
+    # Only the reviewers page navigates; close and cancel load their form into the list page's modal.
+    assert [(url, boost) for url, boost, title in links if boost] == (
+        [(step_url("reviewers", solicitation), 'hx-boost="false"')] if items else []
+    )
 
 
 @pytest.mark.django_db
