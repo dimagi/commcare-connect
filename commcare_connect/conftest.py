@@ -153,7 +153,7 @@ def unusable_end_date(request):
 
 
 @pytest.fixture
-def managed_opportunity(organization, program_manager_org):
+def pm_opportunity(organization, program_manager_org):
     program = ProgramFactory(organization=program_manager_org)
     return OpportunityFactory(program=program, organization=organization)
 
@@ -189,16 +189,16 @@ def supervisor_org(db) -> Organization:
 
 
 @pytest.fixture
-def opp_orgs(managed_opportunity, supervisor_org, funder_org, watcher_org):
-    """Every org with a distinct relationship to `managed_opportunity`."""
-    program = managed_opportunity.program
+def opp_orgs(pm_opportunity, supervisor_org, funder_org, watcher_org):
+    """Every org with a distinct relationship to `pm_opportunity`."""
+    program = pm_opportunity.program
     program.funder = funder_org
     program.save()
     program.watchers.add(watcher_org)
-    managed_opportunity.supervising_organization = supervisor_org
-    managed_opportunity.save()
+    pm_opportunity.supervising_organization = supervisor_org
+    pm_opportunity.save()
     return {
-        "delivery": managed_opportunity.organization,
+        "delivery": pm_opportunity.organization,
         "supervisor": supervisor_org,
         "program_org": program.organization,
         "funder": funder_org,
@@ -231,3 +231,11 @@ def anonymous_request(rf):
         return request
 
     return make
+
+
+@pytest.fixture
+def hq_grants_app_access(monkeypatch):
+    """HQ lets every key fetch every app, for tests of opportunity forms that aren't about the key check."""
+    monkeypatch.setattr(
+        "commcare_connect.opportunity.forms.app_access_errors", lambda api_key, apps: [None for _app in apps]
+    )

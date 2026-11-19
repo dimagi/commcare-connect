@@ -69,6 +69,11 @@ def org_access_for_program(org, program) -> AccessLevel:
     return AccessLevel.NONE
 
 
+def programs_administered_by(org_ids):
+    """The programs these orgs administer: those they own or fund, the orgs `org_access_for_program` makes ADMIN."""
+    return Program.objects.filter(Q(organization__in=org_ids) | Q(funder__in=org_ids))
+
+
 def programs_accessible_to_org(org):
     if not org:
         return Program.objects.none()
@@ -173,17 +178,17 @@ def _base_access_level(request) -> AccessLevel | None:
 
 
 @quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
-def get_managed_opp(opp_id) -> Opportunity | None:
+def get_cached_opp(opp_id) -> Opportunity | None:
     queryset = Opportunity.objects.select_related("program__organization")
     if str(opp_id).isdigit():
         return queryset.filter(pk=int(opp_id)).first()
     return queryset.filter(opportunity_id=opp_id).first()
 
 
-def clear_managed_opp_cache(opportunity) -> None:
+def clear_cached_opp(opportunity) -> None:
     ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
     for opp_id in ids:
-        get_managed_opp.clear(opp_id)
+        get_cached_opp.clear(opp_id)
 
 
 def is_opportunity_pm(request, opportunity) -> bool:

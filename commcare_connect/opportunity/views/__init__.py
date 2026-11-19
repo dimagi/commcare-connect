@@ -38,11 +38,12 @@ from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
-from django.views.generic import CreateView, DetailView, UpdateView
+from django.views.generic import DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from geopy import distance
 from waffle import flag_is_active, switch_is_active
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
@@ -60,15 +61,13 @@ from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AudioAttachmentTranscribeForm,
     DeliverUnitFlagsForm,
+    ExportFormatForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
-    OpportunityInitForm,
-    OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
-    PaymentExportForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -76,6 +75,7 @@ from commcare_connect.opportunity.forms import (
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
     amount_with_currency,
+    api_key_owner_has_left,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_payment_report_data,
@@ -146,7 +146,6 @@ from commcare_connect.organization.decorators import (
     opportunity_pm_required,
     opportunity_required,
     org_view_access_required,
-    program_admin_access_required,
 )
 from commcare_connect.program.utils import (
     AccessLevel,
@@ -279,60 +278,6 @@ class OpportunityList(FilterMixin, SingleTableView):
         return data.get_data()
 
 
-@method_decorator(program_admin_access_required, name="dispatch")
-class OpportunityInit(CreateView):
-    template_name = "opportunity/opportunity_init.html"
-    form_class = OpportunityInitForm
-
-    def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["opportunity_created"] = False
-        return context
-
-    def form_valid(self, form: OpportunityInitForm):
-        response = super().form_valid(form)
-        create_learn_modules_and_deliver_units(self.object.id)
-        return response
-
-
-@method_decorator(program_admin_access_required, name="dispatch")
-class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
-    model = Opportunity
-    template_name = "opportunity/opportunity_init.html"
-    form_class = OpportunityInitUpdateForm
-    context_object_name = "opportunity"
-
-    def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        opportunity = getattr(self, "object", None)
-        if opportunity is None:
-            opportunity = self.get_object()
-            self.object = opportunity
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        kwargs["program"] = opportunity.program
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["opportunity_created"] = True
-        return context
-
-
 @method_decorator(opportunity_pm_required, name="dispatch")
 class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     model = Opportunity
@@ -365,6 +310,10 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        if "api_key" in context["form"].fields:
+            context["api_key_form"] = pinned_api_key_form(self.object)
+            if warning := api_key_owner_warning(self.object):
+                messages.warning(self.request, warning)
         context["active_events"] = self.active_history_events
         return context
 
@@ -374,6 +323,26 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
         if self.active_history_events:
             form_kwargs.update({"latest_active_history_event": self.active_history_events[0]})
         return form_kwargs
+
+
+def pinned_api_key_form(opportunity):
+    """The add-key modal's form on pages that edit an opportunity's key.
+
+    The key select only lists keys on the opportunity's server, so a key for another one would vanish.
+    """
+    return HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server)
+
+
+def api_key_owner_warning(opportunity):
+    """The warning to show when the opportunity's API key belongs to someone who can no longer manage its program,
+    or None."""
+    if not api_key_owner_has_left(opportunity):
+        return None
+    owner = opportunity.api_key.user
+    return _(
+        "The API key on this opportunity was added by %(name)s, who can no longer manage the %(program)s program. "
+        "Replace it with one of your own keys."
+    ) % {"name": owner.name or str(owner), "program": opportunity.program.name}
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
@@ -756,7 +725,7 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
 @opp_standard_access_required
 @opportunity_required
 def export_users_for_payment(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_payments", org_slug, opp_id)
@@ -1009,7 +978,7 @@ def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_un
 @opp_standard_access_required
 @opportunity_required
 def export_user_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_list", request.org.slug, opp_id)
@@ -1023,7 +992,7 @@ def export_user_status(request, org_slug, opp_id):
 @opp_standard_access_required
 @opportunity_required
 def export_deliver_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:detail", request.org.slug, opp_id)
@@ -2073,14 +2042,26 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
 @login_required
 @require_POST
 def add_api_key(request, org_slug):
-    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s")
+    fixed_hq_server = _fixed_hq_server(request)
+    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s", fixed_hq_server=fixed_hq_server)
 
+    headers = {}
     if form.is_valid():
         api_key = form.save(commit=False)
         api_key.user = request.user
         api_key.save()
-        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-    return HttpResponse(render_crispy_form(form))
+        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=fixed_hq_server)
+        # Only a saved key closes the modal and reloads the key select; a rejected one keeps its errors on screen.
+        headers["HX-Trigger"] = "reload_api_keys"
+    return HttpResponse(render_crispy_form(form), headers=headers)
+
+
+def _fixed_hq_server(request):
+    """The server the add-key modal is pinned to, passed as `?hq_server=` by pages that pin it."""
+    server_id = request.GET.get("hq_server")
+    if not server_id or not server_id.isdigit():
+        return None
+    return HQServer.objects.filter(pk=server_id).first()
 
 
 @login_required
