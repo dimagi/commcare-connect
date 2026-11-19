@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib.auth.models import Permission
 from django.urls import resolve, reverse
+from django.utils.text import slugify
 from oauth2_provider.models import get_application_model
 from waffle import switch_is_active
 
@@ -66,7 +67,7 @@ class SetupSteps:
         data = {
             "name": name,
             "description": f"{name} (simulated)",
-            "delivery_type": _delivery_type().pk,
+            "delivery_type": delivery_type().pk,
             "budget": budget,
             "currency": currency,
             "country": country,
@@ -193,12 +194,12 @@ def _org_settings_staff():
     return staff
 
 
-def _delivery_type():
-    """Delivery types are managed in Django admin only, so the simulation's is get-or-created."""
-    delivery_type, _created = DeliveryType.objects.get_or_create(
-        slug="simulation", defaults={"name": "Simulation", "description": "Programs built by the simulation"}
+def delivery_type(name="Simulation"):
+    """Delivery types are managed in Django admin only, so the simulation's are get-or-created by name."""
+    found, _created = DeliveryType.objects.get_or_create(
+        slug=slugify(name), defaults={"name": name, "description": f"{name}, created by the simulation"}
     )
-    return delivery_type
+    return found
 
 
 def _invited(program, organization):

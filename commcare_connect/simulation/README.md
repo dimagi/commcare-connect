@@ -51,7 +51,8 @@ through `sim.browser(user)`, which fails with the errors the page showed if the 
 integrations with no page, such as HQ forwarding a form, call the function their endpoint runs.
 
 The one exception is configuration records that have no UI path: the simulated `HQServer` and its OAuth
-application, and the program's `DeliveryType`, are get-or-created.
+application, and the `DeliveryType`s programs and solicitations use, are get-or-created. Waffle switches are not
+in that list: a step whose pages are behind a switch refuses with a clear error until you turn it on.
 
 A scenario is done when it has run: build it with `run_scenario <name> --admin-email <your local user>` and open
 the pages it prints. For a shared scenario, also run `pytest commcare_connect/simulation/tests/test_scenarios.py`.
@@ -81,7 +82,7 @@ Steps call the same code the pages do, so they break when that code changes, and
 - **A page's request changes** (a renamed field, a new required field, a different URL or success response):
   update the step's POST to match what the page now sends.
 - **A new feature needs local data**: whoever first needs it adds the step. Areas with no steps yet include tasks,
-  microplanning, audit, solicitations and the reports.
+  microplanning, audit, solicitation applications and reviews, and the reports.
 - **A new state should be easy to reach**: extend the shared scenario for that area, or add a new one if no area
   fits.
 
