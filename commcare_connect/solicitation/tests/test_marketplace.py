@@ -240,3 +240,24 @@ def test_page_links_keep_the_filters(client):
 
     assert response.context["page_obj"].paginator.num_pages == 2
     assert 'href="?type=eoi&amp;page=2"' in response.content.decode()
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize("has_org", [True, False], ids=["with an organization", "without an organization"])
+def test_sidebar_links_logged_in_users_to_the_marketplace(client, request, has_org):
+    user = request.getfixturevalue("org_user_member" if has_org else "user")
+    client.force_login(user)
+
+    content = client.get(MARKETPLACE_URL).content.decode()
+
+    assert f'href="{MARKETPLACE_URL}"' in content
+
+
+@pytest.mark.parametrize("switch_on", [True, False])
+def test_sidebar_marketplace_link_follows_the_switch(client, organization, org_user_member, switch_on):
+    client.force_login(org_user_member)
+
+    with override_switch(SOLICITATIONS, active=switch_on):
+        content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
+
+    assert (f'href="{MARKETPLACE_URL}"' in content) is switch_on
