@@ -242,9 +242,10 @@ export async function run(config, flowUrl) {
         typeof selector === 'string'
           ? page.locator(selector).first()
           : selector;
-      if (RECORD) await d.click(page, el, { highlight: false });
-      else await el.check();
-      await el.check().catch(() => {});
+      if (RECORD) {
+        await d.click(page, el, { highlight: false });
+        await el.check().catch(() => {}); // the click toggles: re-check a box that was already ticked
+      } else await el.check();
     },
     async goto(page, url) {
       await page.goto(url);

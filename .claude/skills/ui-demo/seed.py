@@ -45,7 +45,8 @@ def upsert_user(email, name, **flags):
 
 # Organization.save() derives the slug from the name (slugify_uniquely) — look up by name and let the model slug it.
 org = Organization.objects.filter(name=ORG["name"]).first() or Organization.objects.create(name=ORG["name"])
-assert org.slug == ORG["slug"], f"org slug is {org.slug!r}; update ORG.slug in seed.py and connect.mjs"
+if org.slug != ORG["slug"]:
+    raise SystemExit(f"org slug is {org.slug!r}; update ORG.slug in seed.py and connect.mjs")
 for name in OTHER_ORGS:
     Organization.objects.filter(name=name).first() or Organization.objects.create(name=name)
 
