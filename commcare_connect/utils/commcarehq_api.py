@@ -163,14 +163,16 @@ async def _get_within_deadline(hq_server_url, auth_header, path, action, timeout
 
 
 def _application_option(application):
-    app_name = application.get("name")
+    app_id = application["id"]
+    # HQ can list an app with no name; its id is the next best thing to show.
+    app_name = application.get("name") or app_id
     # The top-level app object is always a draft (is_released=False).
     # Released builds are nested inside 'versions', so we check there.
     versions = application.get("versions", [])
     is_released = any(v.get("is_released") for v in versions)
     if not is_released:
         app_name = f"Unreleased - {app_name}"
-    return {"id": application.get("id"), "name": app_name}
+    return {"id": app_id, "name": app_name}
 
 
 def _response_error(response, action, denied_status_codes) -> CommCareHQAPIException:

@@ -149,7 +149,7 @@ class TestListCalls:
         assert get_domains_for_user(key) == ["dom"]
         assert get_applications_for_user_by_domain(key, "dom") == [
             {"id": "a1", "name": "App"},
-            {"id": "a2", "name": "Unreleased - None"},
+            {"id": "a2", "name": "Unreleased - a2"},
         ]
 
 
