@@ -39,6 +39,9 @@ One decode → Python → encode pass that does, in order:
      however long the recorded card ran. The voice replaces intent pills and
      caption cards; the spotlight stays. Mixed to AAC.
 
+This file is the CLI and the pipeline; each step lives beside it: render_timing.py (time map, frame repeats),
+render_captions.py, render_spotlight.py, render_voiceover.py, render_ffmpeg.py (probe, encode, device frame, budget).
+
 Usage:
   python3 render.py [--task DIR] [--out final.mp4] [--action-speed 1.0]
                     [--scale 1.5] [--spot-dim 0.4] [--no-frame] [--bg dark|light]
@@ -46,457 +49,27 @@ Usage:
 """
 
 import argparse
-import itertools
 import json
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
-FADE_S = 0.2
-MIN_WINDOW_S = 0.8  # an intent/caption shorter than this (after speed-up) is dropped, not flashed
-SAFE = 0.05  # safe margin as a fraction of the frame
-BOTTOM_BAND = 0.72  # a clicked target lower than this flips the caption to the top
-CAPTION_BAND = {"bottom": (0.78, 0.95), "top": (0.09, 0.26)}  # vertical extent of a two-line card, fraction of H
-CARD_BG = (17, 24, 39)  # slate-900
-ACCENT = (237, 106, 20)  # Connect orange
-BG_COLORS = {"dark": ("0x1e293b", "0x334155"), "light": ("0xe2e8f0", "0xcbd5e1")}
-LINE_GAP_S = 0.35  # silence between two voiceover lines
-SETTLE_S = 0.5  # the frame stays still this long after a step's last line before the next action starts
-INTRO_GAP_S = 0.6  # intro line end → first step start, the card's fade-out included
-CARD_FADE_S = 0.4  # the tail of the intro capture that is the card fading out (Playwright: 300 ms) — never trimmed
-# (path, face index) — first that exists wins. Helvetica Neue renders visibly better than Arial (learnings.md).
-FONT_CANDIDATES = {
-    "bold": [
-        ("/System/Library/Fonts/HelveticaNeue.ttc", 1),
-        ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0),
-    ],
-    "regular": [
-        ("/System/Library/Fonts/HelveticaNeue.ttc", 0),
-        ("/System/Library/Fonts/Supplemental/Arial.ttf", 0),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0),
-    ],
-}
-
-# --------------------------------------------------------------------------- inputs
-
-
-def probe(path):
-    out = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height,r_frame_rate:format=duration",
-            "-of",
-            "json",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    info = json.loads(out)
-    s = info["streams"][0]
-    num, den = s["r_frame_rate"].split("/")
-    return {
-        "width": s["width"],
-        "height": s["height"],
-        "fps": float(num) / float(den),
-        "duration": float(info["format"]["duration"]),
-    }
-
-
-def load_steps(out_dir):
-    """steps.json (written by the runner) → (steps, spots, navigations, video meta, intro card)."""
-    steps_path = out_dir / "steps.json"
-    if not steps_path.exists():
-        sys.exit("No output/steps.json found — run `node flow.mjs --record` first")
-    data = json.loads(steps_path.read_text())
-    return (
-        data.get("steps", []),
-        data.get("spots", []),
-        data.get("navigations", []),
-        data.get("video", {}),
-        data.get("intro"),
-    )
-
-
-# --------------------------------------------------------------------------- time map
-
-
-class TimeMap:
-    """Piecewise-linear source→output time map. Action segments run at `speed`, everything else 1x, each freeze
-    (source t, seconds) holds the frame at t for that long, and each cut (source t, seconds) drops that much 1x source
-    from t on — the render loop skips frames whose output time does not advance."""
-
-    def __init__(self, steps, speed, min_len=1.0):
-        windows = [(s.get("actionStart"), s.get("actionEnd")) for s in steps] if speed > 1.0 else []
-        self.segs = sorted((a, b) for a, b in windows if None not in (a, b) and b - a >= min_len)
-        self.speed = speed
-        self.freezes = []
-        self.cuts = []
-
-    def __call__(self, t):
-        held = sum(sec for at, sec in self.freezes if at < t)
-        cut = sum(min(max(t - at, 0.0), sec) for at, sec in self.cuts)
-        return self.base(t) + held - cut
-
-    def base(self, t):
-        out, cursor = 0.0, 0.0
-        for a, b in self.segs:
-            if t <= a:
-                break
-            out += a - cursor
-            out += (min(t, b) - a) / self.speed
-            cursor = min(t, b)
-            if t <= b:
-                return out
-        return out + (t - cursor)
-
-
-# --------------------------------------------------------------------------- captions
-
-
-def load_font(kind, size):
-    for p, idx in FONT_CANDIDATES[kind]:
-        if Path(p).exists():
-            try:
-                return ImageFont.truetype(p, size, index=idx)
-            except OSError:
-                continue
-    return ImageFont.load_default(size)  # Pillow's bundled scalable font (Pillow 10.1+)
-
-
-def wrap(draw, text, font, max_w):
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=font) <= max_w or not cur:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines[:2]  # never more than two lines per block
-
-
-class CaptionPainter:
-    def __init__(self, W, H):
-        self.W, self.H = W, H
-        self.title_font = load_font("bold", round(H * 0.044))
-        self.sub_font = load_font("regular", round(H * 0.026))
-        self.intent_font = load_font("regular", round(H * 0.03))
-        self.pad = round(H * 0.022)
-        self.radius = round(H * 0.014)
-
-    def alpha(self, cap, t):
-        if t < cap["start"] + FADE_S:
-            return max(0.0, (t - cap["start"]) / FADE_S)
-        if t > cap["end"] - FADE_S:
-            return max(0.0, (cap["end"] - t) / FADE_S)
-        return 1.0
-
-    def paint(self, img, cap, t):
-        a = self.alpha(cap, t)
-        if a <= 0:
-            return
-        if cap["kind"] == "intent":
-            return self.paint_intent(img, cap, a)
-        W, H, pad = self.W, self.H, self.pad
-        draw = ImageDraw.Draw(img, "RGBA")
-        max_text_w = W * 0.8 - 2 * pad
-        title_lines = wrap(draw, cap["title"], self.title_font, max_text_w)
-        sub_lines = wrap(draw, cap["subtitle"], self.sub_font, max_text_w) if cap.get("subtitle") else []
-        th = self.title_font.size * 1.25
-        sh = self.sub_font.size * 1.35
-        text_w = max(
-            [draw.textlength(line, font=self.title_font) for line in title_lines]
-            + [draw.textlength(line, font=self.sub_font) for line in sub_lines]
-        )
-        box_w = min(W * 0.8, text_w + 2 * pad)
-        box_h = pad * 1.6 + th * len(title_lines) + (sh * len(sub_lines) + pad * 0.3 if sub_lines else 0) + pad * 0.6
-        x0 = (W - box_w) / 2
-        y0 = H * 0.09 if cap.get("pos") == "top" else H * (1 - SAFE) - box_h
-        draw.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=self.radius, fill=(*CARD_BG, int(225 * a)))
-        draw.rounded_rectangle([x0, y0, x0 + box_w, y0 + 4], radius=2, fill=(*ACCENT, int(255 * a)))
-        y = y0 + pad * 0.9
-        for line in title_lines:
-            draw.text((W / 2, y + th / 2), line, font=self.title_font, fill=(255, 255, 255, int(255 * a)), anchor="mm")
-            y += th
-        if sub_lines:
-            y += pad * 0.3
-        for line in sub_lines:
-            draw.text((W / 2, y + sh / 2), line, font=self.sub_font, fill=(203, 213, 225, int(255 * a)), anchor="mm")
-            y += sh
-
-    def paint_intent(self, img, cap, a):
-        """One-line pill with an accent dot: what the viewer should watch for during the action."""
-        W, H, font = self.W, self.H, self.intent_font
-        draw = ImageDraw.Draw(img, "RGBA")
-        pad_x, pad_y, dot = round(H * 0.02), round(H * 0.012), round(H * 0.012)
-        text_w = draw.textlength(cap["title"], font=font)
-        box_w, box_h = text_w + 2 * pad_x + dot * 2, font.size * 1.25 + 2 * pad_y
-        x0 = (W - box_w) / 2
-        y0 = H * 0.09 if cap["pos"] == "top" else H * (1 - SAFE) - box_h
-        draw.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=box_h / 2, fill=(*CARD_BG, int(205 * a)))
-        cy = y0 + box_h / 2
-        dx = x0 + pad_x + dot / 2
-        draw.ellipse([dx - dot / 2, cy - dot / 2, dx + dot / 2, cy + dot / 2], fill=(*ACCENT, int(255 * a)))
-        draw.text((dx + dot * 1.5, cy), cap["title"], font=font, fill=(241, 245, 249, int(255 * a)), anchor="lm")
-
-
-def build_captions(steps, spots, tmap, css_h):
-    """Intent pills over each step's action window, then its outcome card over the hold. Boxes are CSS px."""
-    caps = []
-    for s in steps:
-        caps += intent_pill(s, spots, tmap, css_h) + outcome_card(s, tmap, css_h)
-    return caps
-
-
-def intent_pill(s, spots, tmap, css_h):
-    if not s.get("intent"):
-        return []
-    start, end = tmap(s["actionStart"]), tmap(s["actionEnd"])
-    if end - start < MIN_WINDOW_S:
-        return []
-    active = [sp["box"] for sp in spots if s["actionStart"] <= sp["start"] <= s["actionEnd"]]
-    pos = s.get("captionPos") or ("top" if any(in_bottom_band(box, css_h) for box in active) else "bottom")
-    return [{"kind": "intent", "title": s["intent"], "start": start, "end": end, "pos": pos}]
-
-
-def outcome_card(s, tmap, css_h):
-    if not s.get("title"):
-        return []
-    start, end = tmap(s["actionEnd"]), tmap(s["holdEnd"])
-    if end - start < MIN_WINDOW_S:
-        return []
-    return [
-        {
-            "kind": "caption",
-            "title": s["title"],
-            "subtitle": s.get("subtitle") or "",
-            "start": start,
-            "end": end,
-            "pos": card_position(s, css_h),
-        }
-    ]
-
-
-def card_position(s, css_h):
-    """`captionPos` when set; else top when the clicked target sits in the bottom band (and the step stayed on its
-    page), or when the step's checkpoint region would sit under a bottom caption: never cover the outcome."""
-    pos = s.get("captionPos")
-    if pos is not None:
-        return pos or "bottom"
-    target_low = not s.get("navigated") and in_bottom_band(s.get("target"), css_h)
-    res = s.get("result")
-    result_low = covers(res, "bottom", css_h) and not covers(res, "top", css_h)
-    return "top" if target_low or result_low else "bottom"
-
-
-def in_bottom_band(box, css_h):
-    return box and (box["y"] + box["height"]) > BOTTOM_BAND * css_h
-
-
-def covers(box, band, css_h):
-    y0, y1 = CAPTION_BAND[band]
-    return bool(box) and box["y"] < y1 * css_h and box["y"] + box["height"] > y0 * css_h
-
-
-# --------------------------------------------------------------------------- spotlight
-
-
-def until_next_page(spots, navigations):
-    """Ends each spot at the next navigation after it: the hole would sit on the next page."""
-    return [{**sp, "end": min([sp["end"]] + [n for n in navigations if n > sp["start"] + 0.05])} for sp in spots]
-
-
-class Spotlight:
-    """Dims everything but the active target. One feathered mask per spot, built once; fades scale the mask."""
-
-    def __init__(self, spots, tmap, canvas, dim):
-        W, H, k = canvas.width, canvas.height, canvas.k
-        self.black = Image.new("RGB", (W, H))
-        self.items = []
-        for sp in spots if dim > 0 else []:
-            b, start, end = sp["box"], sp["start"], sp["end"]
-            if end - start < 0.4 or b["width"] * b["height"] > 0.4 * (W / k) * (H / k):
-                continue
-            pad, blur = 8 * k, 5 * k
-            mask = Image.new("L", (W, H), round(255 * dim))
-            ImageDraw.Draw(mask).rounded_rectangle(
-                [
-                    b["x"] * k - pad,
-                    b["y"] * k - pad,
-                    (b["x"] + b["width"]) * k + pad,
-                    (b["y"] + b["height"]) * k + pad,
-                ],
-                radius=pad,
-                fill=0,
-            )
-            self.items.append(
-                {"start": tmap(start), "end": tmap(end), "mask": mask.filter(ImageFilter.GaussianBlur(blur))}
-            )
-
-    def active(self, t):
-        return next((s for s in self.items if s["start"] <= t <= s["end"]), None)
-
-    def paint(self, img, spot, t):
-        a = min(1.0, (t - spot["start"]) / FADE_S, (spot["end"] - t) / FADE_S)
-        mask = spot["mask"] if a >= 1 else spot["mask"].point(lambda v: int(v * max(0.0, a)))
-        return Image.composite(self.black, img, mask)
-
-
-# --------------------------------------------------------------------------- voiceover
-
-
-def schedule_voiceover(out_dir, tmap, intro):
-    """Places each line at its anchor or, if the previous line is still talking, right after it. Lines sharing a
-    `holdAt` (one step, or a card) are one window: when its last line ends after that frame, the frame is held
-    until it has finished and settled — except the intro card, which fit_intro sizes to its line. Freezes and cuts
-    are added in time order, so earlier placements never move."""
-    vo_path = out_dir / "voiceover.json"
-    if not vo_path.exists():
-        sys.exit('--voiceover needs output/voiceover.json: run `uv run "$SKILL/narrate.py"` first')
-    lines = sorted(json.loads(vo_path.read_text())["lines"], key=lambda ln: (ln["holdAt"], ln["anchor"]))
-    placed, clock = [], -LINE_GAP_S
-    for i, line in enumerate(lines):
-        start = max(tmap(line["anchor"]), clock + LINE_GAP_S)
-        clock = start + line["seconds"]
-        placed.append((out_dir / "vo" / line["file"], start))
-        if i + 1 < len(lines) and lines[i + 1]["holdAt"] == line["holdAt"]:
-            continue  # the window's last line decides its hold
-        if line["kind"] == "intro" and intro:
-            fit_intro(tmap, line["holdAt"], intro["end"], clock)
-            continue
-        short = clock + SETTLE_S - tmap(line["holdAt"])
-        if short > 0:
-            tmap.freezes.append((line["holdAt"], short))
-    return placed
-
-
-def fit_intro(tmap, hold_at, intro_end, speech_end):
-    """Starts the first step INTRO_GAP_S after the intro line ends: the settled card (from `hold_at`) is held while
-    the line runs past it, or trimmed when the line is shorter. The card's fade-out always plays, inside the gap."""
-    delta = speech_end + INTRO_GAP_S - tmap(intro_end)
-    if delta > 0:
-        tmap.freezes.append((hold_at, delta))
-        return
-    cut = min(-delta, intro_end - CARD_FADE_S - hold_at)
-    if cut > 0:
-        tmap.cuts.append((hold_at, cut))
-
-
-def mix_voiceover(out_dir, final, voice):
-    """Lays every line at its output time, one pass, loudness-normalised, onto the finished video (copied, not
-    re-encoded). apad + -shortest keep the audio exactly as long as the video. No lines, nothing to do."""
-    if not voice:
-        return
-    inputs = [arg for path, _ in voice for arg in ("-i", str(path))]
-    delays = "".join(f"[{i + 1}:a]adelay={round(start * 1000)}:all=1[a{i}];" for i, (_, start) in enumerate(voice))
-    mixed = "".join(f"[a{i}]" for i in range(len(voice)))
-    graph = (
-        f"{delays}{mixed}amix=inputs={len(voice)}:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,apad[aout]"
-    )
-    voiced = final.with_name(final.stem + "_voiced.mp4")
-    run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(final), *inputs, "-filter_complex", graph]
-        + ["-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest"]
-        + ["-movflags", "+faststart", str(voiced)]
-    )
-    shutil.move(voiced, final)
-
-
-# --------------------------------------------------------------------------- device frame
-
-
-def build_frame_assets(out_dir, canvas, pad, bg):
-    """Render bg.png (gradient + shadow) and mask.png (rounded corners) once."""
-    W, H = canvas.width, canvas.height
-    cw, ch = W + 2 * pad, H + 2 * pad
-    mask, shadow, bgp = out_dir / "_mask.png", out_dir / "_shadow.png", out_dir / "_bg.png"
-    r = max(12, round(H * 0.02))
-    geq = (
-        f"if(gt(abs(W/2-X),W/2-{r})*gt(abs(H/2-Y),H/2-{r}),"
-        f"if(lte(hypot({r}-(W/2-abs(W/2-X)),{r}-(H/2-abs(H/2-Y))),{r}),255,0),255)"
-    )
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            f"color=c=black:s={W}x{H}",
-            "-frames:v",
-            "1",
-            "-vf",
-            f"format=gray,geq=lum='{geq}'",
-            str(mask),
-        ]
-    )
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-v",
-            "error",
-            "-i",
-            str(mask),
-            "-frames:v",
-            "1",
-            "-vf",
-            f"pad={cw}:{ch}:{pad}:{pad + round(pad * 0.25)}:black,gblur=sigma={round(pad * 0.28)},"
-            "format=gray,geq=lum='p(X,Y)*0.55'",
-            str(shadow),
-        ]
-    )
-    c0, c1 = BG_COLORS[bg]
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            f"gradients=s={cw}x{ch}:c0={c0}:c1={c1}:x0=0:y0=0:x1={cw}:y1={ch}:type=linear:nb_colors=2:speed=0",
-            "-i",
-            str(shadow),
-            "-frames:v",
-            "1",
-            "-filter_complex",
-            f"[0:v]format=rgb24[g];[1:v]format=gray[a];color=c=black:s={cw}x{ch},format=rgb24[blk];"
-            "[blk][a]alphamerge[sh];[g][sh]overlay=format=auto,format=rgb24",
-            str(bgp),
-        ]
-    )
-    return bgp, mask, cw, ch
-
-
-def run(cmd):
-    subprocess.run(cmd, check=True)
-
-
-def has_encoder(name):
-    encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
-    return f" {name} " in encoders
-
-
-# --------------------------------------------------------------------------- main
+from PIL import Image
+from render_captions import CaptionPainter, build_captions
+from render_ffmpeg import (
+    BG_COLORS,
+    decode_command,
+    device_frame,
+    encode_command,
+    fit_size_budget,
+    probe,
+    write_poster,
+)
+from render_spotlight import Spotlight, until_next_page
+from render_timing import TimeMap, frame_repeats
+from render_voiceover import mix_voiceover, schedule_voiceover
 
 
 def main():
@@ -677,80 +250,19 @@ def read_frames(stream, frame_bytes):
         yield buf
 
 
-def frame_repeats(tmap, src_fps, out_fps):
-    """For each source frame in turn: its output time, and how many slots of the constant-fps output it fills — none
-    when the time map squeezes it out, several while it is stretched or held."""
-    next_slot = 0.0
-    for src_idx in itertools.count():
-        t_out = tmap(src_idx / src_fps)
-        count = 0
-        while next_slot <= t_out + 1e-6:
-            count += 1
-            next_slot += 1.0 / out_fps
-        yield t_out, count
-
-
-def decode_command(raw, canvas, fast):
-    """ffmpeg decoding the capture to rgb24 frames on stdout, downscaled in ffmpeg (multithreaded) so Python
-    receives output-size frames."""
-    flags = "bilinear" if fast else "lanczos"
-    same_size = (canvas.width, canvas.height) == (canvas.src_w, canvas.src_h)
-    scale = [] if same_size else ["-vf", f"scale={canvas.width}:{canvas.height}:flags={flags}"]
-    return ["ffmpeg", "-v", "error", "-i", str(raw), *scale, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-
-
-def device_frame(out_dir, canvas, args):
-    """(pad, frame): the device frame's margin, and its extra ffmpeg inputs (background, rounded-corner mask) with
-    the graph that puts the video on them. (0, None) with --no-frame."""
-    if args.no_frame:
-        return 0, None
-    pad = (round(canvas.width * 0.05) // 2) * 2
-    bgp, mask, _, _ = build_frame_assets(out_dir, canvas, pad, args.bg)
-    inputs = ["-loop", "1", "-i", str(bgp), "-loop", "1", "-i", str(mask)]
-    graph = (
-        "[0:v]format=rgba[v];[v][2:v]alphamerge=shortest=1[vr];"
-        f"[1:v][vr]overlay=x={pad}:y={pad}:format=auto:shortest=1,format=yuv420p[out]"
+def load_steps(out_dir):
+    """steps.json (written by the runner) → (steps, spots, navigations, video meta, intro card)."""
+    steps_path = out_dir / "steps.json"
+    if not steps_path.exists():
+        sys.exit("No output/steps.json found — run `node flow.mjs --record` first")
+    data = json.loads(steps_path.read_text())
+    return (
+        data.get("steps", []),
+        data.get("spots", []),
+        data.get("navigations", []),
+        data.get("video", {}),
+        data.get("intro"),
     )
-    return pad, (inputs, graph)
-
-
-def encode_command(args, final, canvas, frame):
-    """ffmpeg reading rgb24 frames on stdin; `frame` is device_frame()'s inputs and graph, or None."""
-    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24"]
-    cmd += ["-s", f"{canvas.width}x{canvas.height}", "-r", str(args.fps), "-i", "-"]
-    if frame:
-        inputs, graph = frame
-        cmd += [*inputs, "-filter_complex", graph, "-map", "[out]"]
-    else:
-        cmd += ["-pix_fmt", "yuv420p"]
-    return cmd + [*video_codec(args), "-g", "30", "-movflags", "+faststart", str(final)]
-
-
-def video_codec(args):
-    if args.fast and has_encoder("h264_videotoolbox"):  # macOS hardware encoder
-        return ["-c:v", "h264_videotoolbox", "-b:v", "6M"]
-    if args.fast:
-        return ["-c:v", "libx264", "-crf", str(args.crf), "-preset", "ultrafast"]
-    return ["-c:v", "libx264", "-crf", str(args.crf), "-preset", "slow", "-tune", "stillimage"]
-
-
-def fit_size_budget(final, args):
-    """Re-encodes once at crf+3 when the video is over --max-mb (not for --fast previews); returns its size in MB."""
-    size_mb = final.stat().st_size / 1e6
-    if size_mb <= args.max_mb or args.fast:
-        return size_mb
-    small = final.with_name(final.stem + "_small.mp4")
-    run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(final), "-c:v", "libx264", "-crf", str(args.crf + 3)]
-        + ["-preset", "slow", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "copy"]
-        + ["-movflags", "+faststart", str(small)]
-    )
-    shutil.move(small, final)
-    return final.stat().st_size / 1e6
-
-
-def write_poster(final, poster, t):
-    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t}", "-i", str(final), "-frames:v", "1", str(poster)])
 
 
 if __name__ == "__main__":

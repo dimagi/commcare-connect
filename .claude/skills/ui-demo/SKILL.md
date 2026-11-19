@@ -148,4 +148,4 @@ Deliver `final.mp4` (plays inline on Slack, Jira, Confluence, GitHub), plus `pos
 - `reference/troubleshooting.md` — MCP unavailable, blocked verification, corrupted recording, TomSelect, zsh gotcha.
 - `reference/learnings.md` — measured findings behind the rules.
 - `reference/connect.md` — the seeded people, `connect.mjs` helpers, commcare-connect gotchas.
-- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `demo_mail.py` + `demo_urls.py` + `templates/` (the demo inbox), `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `reseed.sh [scenario]`, `narrate.py` (voiceover), example flows.
+- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `demo_mail.py` + `demo_urls.py` + `templates/` (the demo inbox), `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `reseed.sh [scenario]`, `render.py` + its `render_*.py` modules (Post-Process), `narrate.py` (voiceover), example flows.
