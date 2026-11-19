@@ -38,9 +38,9 @@ from commcare_connect.opportunity.tasks import (
     generate_review_visit_export,
     generate_user_status_export,
     generate_visit_export,
-    generate_work_status_export,
     notify_user_for_scored_assessment,
     save_export,
+    send_payment_notification,
     send_task_assignment_notification,
     send_task_completion_notification,
 )
@@ -54,6 +54,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    PaymentFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
@@ -371,7 +372,7 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
             yield
 
-    def test_generate_invoice_for_two_active_managed_opportunities(self):
+    def test_generate_invoice_for_two_active_opportunities(self):
         opportunity1 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
         opportunity2 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 12, 1))
 
@@ -670,9 +671,8 @@ class TestExportTasksCreateExportFile:
             (generate_payment_export, "export_empty_payment_table", (), "_payment_export"),
             (generate_user_status_export, "export_user_status_table", (), "_user_status"),
             (generate_deliver_status_export, "export_deliver_status_table", (), "_deliver_status"),
-            (generate_work_status_export, "export_work_status_table", (), "_work_status"),
         ],
-        ids=["review_visit", "payment", "user_status", "deliver_status", "work_status"],
+        ids=["review_visit", "payment", "user_status", "deliver_status"],
     )
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
     def test_generate_table_export(self, mock_save, opportunity, export_task, builder, extra_args, filename_suffix):
@@ -746,3 +746,17 @@ def test_get_payment_import_result_message(seen_users, expect_error, expect_text
 
     assert is_error is expect_error
     assert expect_text in message
+
+
+@pytest.mark.django_db
+def test_send_payment_notification_queues_bulk_message():
+    payment = PaymentFactory()
+    access = payment.opportunity_access
+
+    with mock.patch("commcare_connect.opportunity.tasks.queue_message_bulk") as queue:
+        send_payment_notification(access.opportunity_id, [payment.id])
+
+    queue.assert_called_once()
+    (messages,) = queue.call_args.args
+    assert [message.usernames for message in messages] == [[access.user.username]]
+    assert messages[0].data["payment_uuid"] == str(payment.payment_id)

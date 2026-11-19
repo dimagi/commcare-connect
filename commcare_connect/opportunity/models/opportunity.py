@@ -98,7 +98,6 @@ class Opportunity(BaseModel):
     is_test = models.BooleanField(default=True)
     archived = models.BooleanField(default=False)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
-    managed = models.BooleanField(default=False)
     program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING)
     supervising_organization = models.ForeignKey(
         Organization,
@@ -369,6 +368,22 @@ class Opportunity(BaseModel):
     @property
     def has_ended(self):
         return bool(self.end_date and self.end_date < now().date())
+
+    def shares_app_with_active_opportunity(self):
+        """Whether another active opportunity uses this one's learn or deliver app.
+
+        Such an opportunity must not be (re)activated. Shared by the web form and the
+        automation API so the two activation paths apply the same rule.
+        """
+        app_ids = [app.cc_app_id for app in (self.learn_app, self.deliver_app) if app is not None]
+        if not app_ids:
+            return False
+        return (
+            Opportunity.objects.filter(active=True)
+            .exclude(pk=self.pk)
+            .filter(Q(learn_app__cc_app_id__in=app_ids) | Q(deliver_app__cc_app_id__in=app_ids))
+            .exists()
+        )
 
 
 class CredentialConfiguration(models.Model):

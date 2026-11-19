@@ -1,9 +1,10 @@
 # Claude Code Review
 #
 # Two-stage automated review, ported from dimagi/open-chat-studio. OpenCodeReview
-# runs first and posts inline findings; the Claude review runs only if it found
-# nothing. The `Automated review verdict` check is advisory: it always passes, and
-# says in a warning and the job summary whether both stages ran and found nothing.
+# runs first and posts inline findings; the Claude review runs unless one of them
+# is a bug or security finding above low severity. The `Automated review verdict`
+# check is advisory: it always passes, and says in a warning and the job summary
+# whether both stages ran and found nothing.
 #
 # Triggered on: PR opened, pushed or marked ready for review. Drafts are reviewed
 # only on request: add the `review-draft` label.
@@ -95,6 +96,7 @@ jobs:
       comments_total: ${{ steps.ocr.outputs.comments_total }}
       comments_failed: ${{ steps.ocr.outputs.comments_failed }}
       complete: ${{ steps.completeness.outputs.complete }}
+      blocking: ${{ steps.completeness.outputs.blocking }}
 
     steps:
       # Audit only: records egress without blocking. Flip to `block` plus an
@@ -106,7 +108,7 @@ jobs:
 
       - name: Run OpenCodeReview
         id: ocr
-        uses: alibaba/open-code-review@375f64cd6f67a48a135da83cfcf59c52669a09cb # v1.13.3
+        uses: alibaba/open-code-review@4236c871fe8130aa840a2a1c0922f469e87e0416 # v1.13.8
         with:
           ocr_version: '1.12.8'
           llm_url: https://api.anthropic.com
@@ -119,8 +121,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           sticky_summary: 'true'
           # Skips findings on lines that already carry a bot comment, so a repeat
-          # push does not post them again. `comments_total` is counted before
-          # that filter, so a repeat finding still counts against the verdict:
+          # push does not post them again. `comments_total` and the result file are
+          # counted before that filter, so a repeat finding still counts against
+          # the verdict and, if it is blocking, still holds back the Claude review:
           # https://github.com/alibaba/open-code-review/blob/375f64cd6f67a48a135da83cfcf59c52669a09cb/scripts/github-actions/post-review-comments.js#L287
           incremental: 'true'
           upload_artifacts: 'true'
@@ -132,6 +135,12 @@ jobs:
       # `skipped` means no file was eligible for review, which is full coverage of
       # nothing; the Claude review still runs. The result path is where the pinned
       # action writes it, so an action bump can move it.
+      #
+      # `blocking` counts the findings that hold back the Claude review: category
+      # `bug` or `security` at any severity other than `low`, including a missing
+      # one. OCR's other findings (maintainability, style, low-severity bugs) are
+      # mostly nits, and in its first week blocking on them kept the Claude review
+      # from running on about half of all pushes.
       - name: Check the review covered every file
         id: completeness
         run: |
@@ -156,18 +165,23 @@ jobs:
             jq -r '.[] | tostring' <<< "$warnings"
             incomplete "OpenCodeReview reported warnings (listed above), so part of the diff was not reviewed."
           fi
+          blocking=$(jq '[.comments // [] | .[]
+            | select((.category == "bug" or .category == "security") and .severity != "low")] | length' "$result") \
+            || incomplete "OCR's comments in $result are not a list of findings."
+          echo "blocking=$blocking" >> "$GITHUB_OUTPUT"
           echo "complete=true" >> "$GITHUB_OUTPUT"
 
   claude:
     name: Claude Code Review
     needs: ocr
-    # Only reviews code OCR has already cleared. `ocr` must have succeeded: a
-    # failed OCR run reports no counts, and the verdict reports it. The fork,
-    # Dependabot and draft-label guard is repeated from `ocr` because this job
-    # holds an OIDC token; it must not depend on `ocr`'s condition staying in step.
+    # Only reviews code where OCR raised no blocking finding (see the `ocr` job's
+    # completeness step). `ocr` must have succeeded: a failed OCR run reports no
+    # counts, and the verdict reports it. The fork, Dependabot and draft-label
+    # guard is repeated from `ocr` because this job holds an OIDC token; it must
+    # not depend on `ocr`'s condition staying in step.
     if: >-
       needs.ocr.result == 'success'
-      && needs.ocr.outputs.comments_total == '0'
+      && needs.ocr.outputs.blocking == '0'
       && needs.ocr.outputs.comments_failed == '0'
       && needs.ocr.outputs.complete == 'true'
       && github.event.pull_request.head.repo.full_name == github.repository
@@ -229,7 +243,7 @@ jobs:
       # `gh pr review` are not granted at all.
       - name: Run Claude Code Review
         id: claude
-        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
+        uses: anthropics/claude-code-action@4d75e5f390ee76b2e09c1980ecc99ff3a2e088c8 # v1.0.275
         env:
           # The plugin's first step stops on a draft PR. A draft only gets here with
           # the `review-draft` label, so that one check is overridden; its other
@@ -243,6 +257,11 @@ jobs:
             Every other stop condition still applies.
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The action refuses to run for a bot actor unless it is listed here.
+          # Sentry's Seer opens and pushes autofix PRs as `sentry[bot]`, and those
+          # need review as much as a person's. The action drops a `[bot]` suffix on
+          # both sides before comparing, so either spelling matches.
+          allowed_bots: 'sentry[bot]'
           # Workload identity federation, in place of anthropic_api_key. Setting
           # an API key as well would silently take precedence over these. The IDs
           # are identifiers, not credentials: the exchange only succeeds for an
@@ -308,6 +327,7 @@ jobs:
           OCR_COMMENTS: ${{ needs.ocr.outputs.comments_total }}
           OCR_FAILED: ${{ needs.ocr.outputs.comments_failed }}
           OCR_COMPLETE: ${{ needs.ocr.outputs.complete }}
+          OCR_BLOCKING: ${{ needs.ocr.outputs.blocking }}
           CLAUDE_RESULT: ${{ needs.claude.result }}
           FINDINGS: ${{ needs.claude.outputs.findings }}
           CONCLUSION: ${{ needs.claude.outputs.conclusion }}
@@ -327,11 +347,15 @@ jobs:
           # An empty count means OCR produced no outputs.
           [[ "$OCR_COMMENTS" =~ ^[0-9]+$ && "$OCR_FAILED" =~ ^[0-9]+$ ]] \
             || not_clean "OpenCodeReview reported no comment counts."
-          [[ "$OCR_COMMENTS" == "0" && "$OCR_FAILED" == "0" ]] \
-            || not_clean "OpenCodeReview raised $OCR_COMMENTS finding(s) ($OCR_FAILED failed to post). The Claude review runs once they are resolved."
+          [[ "$OCR_FAILED" == "0" ]] \
+            || not_clean "$OCR_FAILED of OpenCodeReview's $OCR_COMMENTS finding(s) failed to post, so the Claude review did not run."
           # Zero findings only counts if OCR looked at everything.
           [[ "$OCR_COMPLETE" == "true" ]] \
             || not_clean "OpenCodeReview did not review the whole diff. See the OpenCodeReview job log."
+          [[ "$OCR_BLOCKING" =~ ^[0-9]+$ ]] \
+            || not_clean "OpenCodeReview reported no count of blocking findings."
+          [[ "$OCR_BLOCKING" == "0" ]] \
+            || not_clean "OpenCodeReview raised $OCR_BLOCKING bug or security finding(s) above low severity, out of $OCR_COMMENTS. The Claude review runs on a push where it raises none."
           [[ "$CLAUDE_RESULT" == "success" ]] \
             || not_clean "The Claude review job did not complete (result: $CLAUDE_RESULT)."
           # Zero findings has to mean "the review ran and found nothing", not "the review
@@ -341,4 +365,6 @@ jobs:
           # An empty count means the counting step never ran.
           [[ "$FINDINGS" == "0" ]] \
             || not_clean "The Claude review left ${FINDINGS:-an unknown number of} inline comment(s) on this push."
+          [[ "$OCR_COMMENTS" == "0" ]] \
+            || not_clean "OpenCodeReview raised $OCR_COMMENTS minor finding(s). The Claude review found nothing."
           echo "OpenCodeReview and the Claude review found nothing on this push." | tee -a "$GITHUB_STEP_SUMMARY"
