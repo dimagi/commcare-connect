@@ -97,6 +97,17 @@ def org_pm_required(view_func, *args, **kwargs):
     )
 
 
+def org_pm_or_llo_directory_required(view_func):
+    """Lets in program manager org admins, and LLO Directory staff for any program manager org."""
+    return _get_decorated_function(
+        view_func,
+        lambda request, *args, **kwargs: (
+            is_user_pm_org_admin(request.user, request.org)
+            or (request.user.can_access_organization_directory and org_is_program_manager(request.org))
+        ),
+    )
+
+
 def org_profile_edit_access_required(view_func):
     return _get_decorated_function(view_func, lambda request, *args, **kwargs: can_edit_org_profile(request))
 
