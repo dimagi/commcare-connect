@@ -19,6 +19,7 @@
     <div>
       {% for item in list %}
         <a href="{{ item.url }}"
+           {% if item.hx_boost %}hx-boost="{{ item.hx_boost }}"{% endif %}
            class="block w-full text-left bg-transparent border-0 px-2 my-2 hover:bg-slate-100 rounded">
           {{ item.title }}
         </a>
