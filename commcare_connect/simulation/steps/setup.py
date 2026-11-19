@@ -17,6 +17,7 @@ from commcare_connect.simulation.constants import SIM_DELIVER_APP_PREFIX, SIM_DO
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
+from .form_data import management_form
 from .types import PaymentUnitSpec
 
 SIM_HQ_URL = "https://hq.simulation.local"
@@ -336,23 +337,14 @@ def _verification_data(opportunity, verification_flags, deliver_unit_flags):
     for index, deliver_unit in enumerate(deliver_units):
         rules = {"duration": 0} | deliver_unit_flags.get(deliver_unit.slug, {})
         data |= {f"deliver_unit-{index}-{key}": _checkbox(value) for key, value in rules.items() if value is not False}
-    data |= _management_form("deliver_unit", total=len(deliver_units), max_num=len(deliver_units))
-    data |= _management_form("form_json", total=1, max_num=1000)
+    data |= management_form("deliver_unit", total=len(deliver_units), max_num=len(deliver_units))
+    data |= management_form("form_json", total=1, max_num=1000)
     return data
 
 
 def _checkbox(value):
     """A ticked checkbox posts "on"; other inputs post their value."""
     return "on" if value is True else value
-
-
-def _management_form(prefix, *, total, max_num):
-    return {
-        f"{prefix}-TOTAL_FORMS": total,
-        f"{prefix}-INITIAL_FORMS": 0,
-        f"{prefix}-MIN_NUM_FORMS": 0,
-        f"{prefix}-MAX_NUM_FORMS": max_num,
-    }
 
 
 def _verification_saved(response):
