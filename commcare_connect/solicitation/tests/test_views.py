@@ -123,6 +123,31 @@ class TestSolicitationSteps:
             program_manager_org_user_admin.email,
         )
 
+    @pytest.mark.parametrize("step", ["criteria", "questions"])
+    @pytest.mark.parametrize("has_rows", [False, True])
+    def test_formset_step_adds_blank_row_only_when_empty(self, pm_client, draft, step, has_rows):
+        if has_rows:
+            SolicitationQuestionFactory(
+                solicitation=draft, criterion=SolicitationEvaluationCriterionFactory(solicitation=draft)
+            )
+
+        formset = pm_client.get(step_url(step, draft)).context["form"]
+
+        assert (len(formset.initial_forms), len(formset.extra_forms)) == ((1, 0) if has_rows else (0, 1))
+
+    def test_criteria_step_skips_untouched_blank_row(self, pm_client, draft):
+        data = {
+            "criteria-TOTAL_FORMS": 1,
+            "criteria-INITIAL_FORMS": 0,
+            "criteria-0-label": "",
+            "criteria-0-weight": "",
+        }
+
+        response = pm_client.post(step_url("criteria", draft), data)
+
+        assert response.url == step_url("questions", draft)
+        assert not draft.criteria.exists()
+
     def test_questions_step_links_saved_criterion(self, pm_client, draft):
         criterion = SolicitationEvaluationCriterionFactory(solicitation=draft)
         data = {

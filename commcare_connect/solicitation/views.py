@@ -132,6 +132,10 @@ class SolicitationFormSetStepView(SolicitationStepMixin, UpdateView):
             for form in formset:
                 for field in form.fields.values():
                     field.disabled = True
+        elif not formset.is_bound and not formset.get_queryset().exists():
+            # Start with one blank row so the PM doesn't have to add the first one. An untouched blank row
+            # is skipped on save.
+            formset.extra = 1
         return formset
 
     def form_valid(self, formset):
