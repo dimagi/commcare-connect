@@ -46,11 +46,14 @@ Usage:
 """
 
 import argparse
+import itertools
 import json
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -136,13 +139,8 @@ class TimeMap:
     from t on — the render loop skips frames whose output time does not advance."""
 
     def __init__(self, steps, speed, min_len=1.0):
-        segs = []
-        if speed > 1.0:
-            for s in steps:
-                a, b = s.get("actionStart"), s.get("actionEnd")
-                if a is not None and b is not None and b - a >= min_len:
-                    segs.append((a, b))
-        self.segs = sorted(segs)
+        windows = [(s.get("actionStart"), s.get("actionEnd")) for s in steps] if speed > 1.0 else []
+        self.segs = sorted((a, b) for a, b in windows if None not in (a, b) and b - a >= min_len)
         self.speed = speed
         self.freezes = []
         self.cuts = []
@@ -318,15 +316,20 @@ def covers(box, band, css_h):
 # --------------------------------------------------------------------------- spotlight
 
 
+def until_next_page(spots, navigations):
+    """Ends each spot at the next navigation after it: the hole would sit on the next page."""
+    return [{**sp, "end": min([sp["end"]] + [n for n in navigations if n > sp["start"] + 0.05])} for sp in spots]
+
+
 class Spotlight:
     """Dims everything but the active target. One feathered mask per spot, built once; fades scale the mask."""
 
-    def __init__(self, spots, navigations, tmap, k, W, H, dim):
+    def __init__(self, spots, tmap, canvas, dim):
+        W, H, k = canvas.width, canvas.height, canvas.k
         self.black = Image.new("RGB", (W, H))
         self.items = []
         for sp in spots if dim > 0 else []:
             b, start, end = sp["box"], sp["start"], sp["end"]
-            end = min([end] + [n for n in navigations if n > start + 0.05])  # the hole would sit on the next page
             if end - start < 0.4 or b["width"] * b["height"] > 0.4 * (W / k) * (H / k):
                 continue
             pad, blur = 8 * k, 5 * k
@@ -396,7 +399,9 @@ def fit_intro(tmap, hold_at, intro_end, speech_end):
 
 def mix_voiceover(out_dir, final, voice):
     """Lays every line at its output time, one pass, loudness-normalised, onto the finished video (copied, not
-    re-encoded). apad + -shortest keep the audio exactly as long as the video."""
+    re-encoded). apad + -shortest keep the audio exactly as long as the video. No lines, nothing to do."""
+    if not voice:
+        return
     inputs = [arg for path, _ in voice for arg in ("-i", str(path))]
     delays = "".join(f"[{i + 1}:a]adelay={round(start * 1000)}:all=1[a{i}];" for i, (_, start) in enumerate(voice))
     mixed = "".join(f"[a{i}]" for i in range(len(voice)))
@@ -415,8 +420,9 @@ def mix_voiceover(out_dir, final, voice):
 # --------------------------------------------------------------------------- device frame
 
 
-def build_frame_assets(out_dir, W, H, pad, bg):
+def build_frame_assets(out_dir, canvas, pad, bg):
     """Render bg.png (gradient + shadow) and mask.png (rounded corners) once."""
+    W, H = canvas.width, canvas.height
     cw, ch = W + 2 * pad, H + 2 * pad
     mask, shadow, bgp = out_dir / "_mask.png", out_dir / "_shadow.png", out_dir / "_bg.png"
     r = max(12, round(H * 0.02))
@@ -495,63 +501,13 @@ def has_encoder(name):
 
 def main():
     args = parse_args()
-    out_dir = Path(args.task) / "output"
-    raw = out_dir / "raw.mp4"
-    if not raw.exists():
-        sys.exit("No output/raw.mp4 found — run `node flow.mjs --record` first")
-    final = out_dir / args.out
-    src = probe(raw)
-    SW, SH = src["width"], src["height"]
-    steps, spots, navigations, video, intro = load_steps(out_dir)
-    # Raw frames are dpr× the CSS viewport (2x capture); output is --scale× it, never upscaled past the source.
-    css_w, css_h = int(video.get("width") or SW), int(video.get("height") or SH)
-    dpr = SW / css_w
-    if abs(dpr - round(dpr)) > 0.01 or abs(SH / css_h - dpr) > 0.01:
-        sys.exit(f"{raw.name} {SW}x{SH} is not an integer multiple of the CSS viewport {css_w}x{css_h}")
-    k = min(args.scale, dpr)
-    W, H = round(css_w * k / 2) * 2, round(css_h * k / 2) * 2
-    args.fps = args.fps or int(video.get("fps") or 25)
-
-    tmap = TimeMap(steps, args.action_speed)
-    voice = schedule_voiceover(out_dir, tmap, intro) if args.voiceover else []
-    caps = [] if args.no_captions or args.voiceover else build_captions(steps, spots, tmap, css_h)
-    compose = FrameComposer((W, H), caps, Spotlight(spots, navigations, tmap, k, W, H, args.spot_dim))
-    pad = 0 if args.no_frame else (round(W * 0.05) // 2) * 2
-    frame = None if args.no_frame else device_frame(out_dir, (W, H), pad, args.bg)
-
-    # Downscale in ffmpeg (multithreaded) so Python receives output-size frames.
-    scale_flags = "bilinear" if args.fast else "lanczos"
-    decode_vf = [] if (W, H) == (SW, SH) else ["-vf", f"scale={W}:{H}:flags={scale_flags}"]
-    decode_cmd = ["ffmpeg", "-v", "error", "-i", str(raw), *decode_vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-    enc_cmd = encode_command(args, final, (W, H), frame)
-    written = render_frames(decode_cmd, enc_cmd, compose, tmap=tmap, src_fps=src["fps"], out_fps=args.fps)
-    if voice:
-        mix_voiceover(out_dir, final, voice)
-    size_mb = fit_size_budget(final, args)
-    write_poster(final, out_dir / "poster.png", min(1.0, max(0.0, written / args.fps - 0.1)))
+    plan = plan_render(args)
+    written = render_video(plan)
+    size_mb = fit_size_budget(plan.final, args)
+    write_poster(plan.final, plan.out_dir / "poster.png", min(1.0, max(0.0, written / args.fps - 0.1)))
     for p in ("_mask.png", "_shadow.png", "_bg.png"):
-        (out_dir / p).unlink(missing_ok=True)
-
-    summary = {
-        "final": str(final),
-        "size_mb": round(size_mb, 2),
-        "frames": written,
-        "duration_s": round(written / args.fps, 2),
-        "source_duration_s": round(src["duration"], 2),
-        "source": f"{SW}x{SH} (dpr {dpr:g})",
-        "canvas": f"{W + 2 * pad}x{H + 2 * pad}",
-        "action_speed": args.action_speed,
-        "sped_segments": len(tmap.segs),
-        "captions": sum(c["kind"] == "caption" for c in caps),
-        "intents": sum(c["kind"] == "intent" for c in caps),
-        "spots": len(compose.spotlight.items),
-        "voice_lines": len(voice),
-        "held_s": round(sum(sec for _, sec in tmap.freezes), 2),
-        "cut_s": round(sum(sec for _, sec in tmap.cuts), 2),
-        "over_budget": size_mb > args.max_mb,
-    }
-    (out_dir / "render.json").write_text(json.dumps(summary, indent=2))
-    print(json.dumps(summary, indent=2))
+        (plan.out_dir / p).unlink(missing_ok=True)
+    write_summary(plan, written, size_mb)
 
 
 def parse_args():
@@ -578,16 +534,111 @@ def parse_args():
     return ap.parse_args()
 
 
+class Canvas(NamedTuple):
+    """The output frame: `k` output px per CSS px, from a capture of `src_w`×`src_h` at `dpr`× the viewport."""
+
+    width: int
+    height: int
+    k: float
+    css_h: int
+    src_w: int
+    src_h: int
+    dpr: float
+
+
+def fit_canvas(raw, src, video, scale):
+    """Raw frames are dpr× the CSS viewport (2x capture); output is --scale× it, never upscaled past the source."""
+    SW, SH = src["width"], src["height"]
+    css_w, css_h = int(video.get("width") or SW), int(video.get("height") or SH)
+    dpr = SW / css_w
+    if abs(dpr - round(dpr)) > 0.01 or abs(SH / css_h - dpr) > 0.01:
+        sys.exit(f"{raw.name} {SW}x{SH} is not an integer multiple of the CSS viewport {css_w}x{css_h}")
+    k = min(scale, dpr)
+    return Canvas(round(css_w * k / 2) * 2, round(css_h * k / 2) * 2, k, css_h, SW, SH, dpr)
+
+
+@dataclass
+class RenderPlan:
+    """Everything the render needs, worked out before the first frame."""
+
+    args: argparse.Namespace
+    out_dir: Path
+    raw: Path
+    final: Path
+    src: dict
+    canvas: Canvas
+    tmap: TimeMap
+    voice: list
+    caps: list
+    spotlight: Spotlight
+    pad: int
+    frame: tuple | None
+
+
+def plan_render(args):
+    out_dir = Path(args.task) / "output"
+    raw = out_dir / "raw.mp4"
+    if not raw.exists():
+        sys.exit("No output/raw.mp4 found — run `node flow.mjs --record` first")
+    src = probe(raw)
+    steps, spots, navigations, video, intro = load_steps(out_dir)
+    canvas = fit_canvas(raw, src, video, args.scale)
+    args.fps = args.fps or int(video.get("fps") or 25)
+    tmap = TimeMap(steps, args.action_speed)
+    voice = schedule_voiceover(out_dir, tmap, intro) if args.voiceover else []  # adds holds to tmap: before the rest
+    caps = [] if args.no_captions or args.voiceover else build_captions(steps, spots, tmap, canvas.css_h)
+    spotlight = Spotlight(until_next_page(spots, navigations), tmap, canvas, args.spot_dim)
+    pad, frame = device_frame(out_dir, canvas, args)
+    return RenderPlan(args, out_dir, raw, out_dir / args.out, src, canvas, tmap, voice, caps, spotlight, pad, frame)
+
+
+def render_video(plan):
+    """Encodes the capture, retimed and painted, into plan.final and mixes in the voiceover; returns frames written."""
+    args, canvas = plan.args, plan.canvas
+    written = render_frames(
+        decode_command(plan.raw, canvas, args.fast),
+        encode_command(args, plan.final, canvas, plan.frame),
+        FrameComposer(canvas, plan.caps, plan.spotlight),
+        frame_repeats(plan.tmap, plan.src["fps"], args.fps),
+    )
+    mix_voiceover(plan.out_dir, plan.final, plan.voice)
+    return written
+
+
+def write_summary(plan, written, size_mb):
+    args, canvas, pad = plan.args, plan.canvas, plan.pad
+    summary = {
+        "final": str(plan.final),
+        "size_mb": round(size_mb, 2),
+        "frames": written,
+        "duration_s": round(written / args.fps, 2),
+        "source_duration_s": round(plan.src["duration"], 2),
+        "source": f"{canvas.src_w}x{canvas.src_h} (dpr {canvas.dpr:g})",
+        "canvas": f"{canvas.width + 2 * pad}x{canvas.height + 2 * pad}",
+        "action_speed": args.action_speed,
+        "sped_segments": len(plan.tmap.segs),
+        "captions": sum(c["kind"] == "caption" for c in plan.caps),
+        "intents": sum(c["kind"] == "intent" for c in plan.caps),
+        "spots": len(plan.spotlight.items),
+        "voice_lines": len(plan.voice),
+        "held_s": round(sum(sec for _, sec in plan.tmap.freezes), 2),
+        "cut_s": round(sum(sec for _, sec in plan.tmap.cuts), 2),
+        "over_budget": size_mb > args.max_mb,
+    }
+    (plan.out_dir / "render.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2))
+
+
 class FrameComposer:
     """Paints the captions and the spotlight active at output time t onto a decoded frame. Most frames have
     neither and pass through untouched."""
 
-    def __init__(self, size, caps, spotlight):
-        self.size = size
-        self.frame_bytes = size[0] * size[1] * 3
+    def __init__(self, canvas, caps, spotlight):
+        self.size = (canvas.width, canvas.height)
+        self.frame_bytes = canvas.width * canvas.height * 3
         self.caps = caps
         self.spotlight = spotlight
-        self.painter = CaptionPainter(*size)
+        self.painter = CaptionPainter(*self.size)
 
     def __call__(self, buf, t):
         active = [c for c in self.caps if c["start"] <= t <= c["end"]]
@@ -602,21 +653,17 @@ class FrameComposer:
         return img.tobytes()
 
 
-def render_frames(decode_cmd, enc_cmd, compose, *, tmap, src_fps, out_fps):
-    """Pipes every decoded source frame through `compose` into the encoder at the output's constant fps: a frame is
-    repeated or dropped as the time map stretches or squeezes it. Returns the number of frames written."""
+def render_frames(decode_cmd, enc_cmd, compose, repeats):
+    """Pipes each decoded source frame through `compose` into the encoder as many times as `repeats` says (see
+    frame_repeats). Returns the number of frames written."""
     decode = subprocess.Popen(decode_cmd, stdout=subprocess.PIPE)
     encode = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE)
-    next_slot, src_idx, written = 0.0, 0, 0
-    while len(buf := decode.stdout.read(compose.frame_bytes)) == compose.frame_bytes:
-        t_out = tmap(src_idx / src_fps)
-        src_idx += 1
-        emitted = None
-        while next_slot <= t_out + 1e-6:
-            emitted = emitted or compose(buf, t_out)
-            encode.stdin.write(emitted)
-            written += 1
-            next_slot += 1.0 / out_fps
+    written = 0
+    for buf, (t_out, count) in zip(read_frames(decode.stdout, compose.frame_bytes), repeats):
+        frame = compose(buf, t_out) if count else None
+        for _ in range(count):
+            encode.stdin.write(frame)
+        written += count
     encode.stdin.close()
     decode.wait()
     encode.wait()
@@ -625,23 +672,52 @@ def render_frames(decode_cmd, enc_cmd, compose, *, tmap, src_fps, out_fps):
     return written
 
 
-def device_frame(out_dir, size, pad, bg):
-    """The device frame's extra ffmpeg inputs (background, rounded-corner mask) and the graph that puts the video
-    on them."""
-    bgp, mask, _, _ = build_frame_assets(out_dir, *size, pad, bg)
+def read_frames(stream, frame_bytes):
+    while len(buf := stream.read(frame_bytes)) == frame_bytes:
+        yield buf
+
+
+def frame_repeats(tmap, src_fps, out_fps):
+    """For each source frame in turn: its output time, and how many slots of the constant-fps output it fills — none
+    when the time map squeezes it out, several while it is stretched or held."""
+    next_slot = 0.0
+    for src_idx in itertools.count():
+        t_out = tmap(src_idx / src_fps)
+        count = 0
+        while next_slot <= t_out + 1e-6:
+            count += 1
+            next_slot += 1.0 / out_fps
+        yield t_out, count
+
+
+def decode_command(raw, canvas, fast):
+    """ffmpeg decoding the capture to rgb24 frames on stdout, downscaled in ffmpeg (multithreaded) so Python
+    receives output-size frames."""
+    flags = "bilinear" if fast else "lanczos"
+    same_size = (canvas.width, canvas.height) == (canvas.src_w, canvas.src_h)
+    scale = [] if same_size else ["-vf", f"scale={canvas.width}:{canvas.height}:flags={flags}"]
+    return ["ffmpeg", "-v", "error", "-i", str(raw), *scale, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+
+
+def device_frame(out_dir, canvas, args):
+    """(pad, frame): the device frame's margin, and its extra ffmpeg inputs (background, rounded-corner mask) with
+    the graph that puts the video on them. (0, None) with --no-frame."""
+    if args.no_frame:
+        return 0, None
+    pad = (round(canvas.width * 0.05) // 2) * 2
+    bgp, mask, _, _ = build_frame_assets(out_dir, canvas, pad, args.bg)
     inputs = ["-loop", "1", "-i", str(bgp), "-loop", "1", "-i", str(mask)]
     graph = (
         "[0:v]format=rgba[v];[v][2:v]alphamerge=shortest=1[vr];"
         f"[1:v][vr]overlay=x={pad}:y={pad}:format=auto:shortest=1,format=yuv420p[out]"
     )
-    return inputs, graph
+    return pad, (inputs, graph)
 
 
-def encode_command(args, final, size, frame):
+def encode_command(args, final, canvas, frame):
     """ffmpeg reading rgb24 frames on stdin; `frame` is device_frame()'s inputs and graph, or None."""
-    W, H = size
-    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}"]
-    cmd += ["-r", str(args.fps), "-i", "-"]
+    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24"]
+    cmd += ["-s", f"{canvas.width}x{canvas.height}", "-r", str(args.fps), "-i", "-"]
     if frame:
         inputs, graph = frame
         cmd += [*inputs, "-filter_complex", graph, "-map", "[out]"]
