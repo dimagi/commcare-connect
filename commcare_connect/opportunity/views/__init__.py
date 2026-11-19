@@ -861,7 +861,7 @@ def add_payment_units(request, org_slug=None, opp_id=None):
 @opportunity_pm_required
 @opportunity_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
-    deliver_units = assignable_deliver_units(request.opportunity)
+    deliver_units = DeliverUnit.objects.assignable(request.opportunity)
     form = PaymentUnitForm(
         deliver_units=deliver_units,
         data=request.POST or None,
@@ -924,7 +924,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
-    deliver_units = assignable_deliver_units(request.opportunity, payment_unit)
+    deliver_units = DeliverUnit.objects.assignable(request.opportunity, payment_unit)
     exclude_payment_units = [payment_unit.pk]
     if payment_unit.parent_payment_unit_id:
         exclude_payment_units.append(payment_unit.parent_payment_unit_id)
@@ -992,16 +992,6 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
             path=path,
         ),
     )
-
-
-def assignable_deliver_units(opportunity, payment_unit=None):
-    """The opportunity's own deliver units that none of its other payment units count."""
-    # A unit can still carry another opportunity's payment unit from before units belonged to an
-    # opportunity (CCCT-3057), so only this opportunity's payment units make a unit unavailable
-    available = Q(payment_unit__isnull=True) | ~Q(payment_unit__opportunity=opportunity)
-    if payment_unit:
-        available |= Q(payment_unit=payment_unit)
-    return DeliverUnit.objects.for_opportunity(opportunity).filter(available)
 
 
 def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):

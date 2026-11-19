@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 
 from commcare_connect.opportunity.models.commcare_app import CommCareApp
 from commcare_connect.opportunity.models.opportunity import Opportunity
@@ -40,6 +41,25 @@ class DeliverUnitQuerySet(models.QuerySet):
         """The units of the opportunity's current deliver app that belong to the opportunity."""
         return self.filter(opportunity=opportunity, app_id=opportunity.deliver_app_id)
 
+    def for_opportunity_including(self, opportunity, unit_ids):
+        """``for_opportunity`` plus the given units, which an existing rule may still point at.
+
+        Before CCCT-3057 split units by opportunity, a rule could target a unit that the 0155
+        backfill gave to another opportunity. Editing the rule must not drop or reject it.
+        """
+        return self.filter(
+            Q(opportunity=opportunity, app_id=opportunity.deliver_app_id) | Q(pk__in=[pk for pk in unit_ids if pk])
+        )
+
+    def assignable(self, opportunity, payment_unit=None):
+        """The opportunity's own units that none of its other payment units count."""
+        # A unit can still carry another opportunity's payment unit from before units belonged to an
+        # opportunity (CCCT-3057), so only this opportunity's payment units make a unit unavailable
+        available = Q(payment_unit__isnull=True) | ~Q(payment_unit__opportunity=opportunity)
+        if payment_unit:
+            available |= Q(payment_unit=payment_unit)
+        return self.for_opportunity(opportunity).filter(available)
+
     def get_or_create_for_opportunity(self, opportunity, slug, defaults=None):
         """Find or create the opportunity's unit for ``slug``, never one belonging to another opportunity.
 
@@ -51,12 +71,25 @@ class DeliverUnitQuerySet(models.QuerySet):
             return self.get(**lookup), False
         except self.model.DoesNotExist:
             pass
-        # Units with no opportunity were created before DeliverUnit.opportunity existed, or by code
-        # still running while it was deployed. Only apps no opportunity uses have them after the backfill.
-        self.filter(app_id=opportunity.deliver_app_id, slug=slug, opportunity__isnull=True).update(
-            opportunity=opportunity
-        )
+        self._adopt_unit_with_no_opportunity(opportunity, slug)
         return self.get_or_create(**lookup, defaults=defaults)
+
+    def _adopt_unit_with_no_opportunity(self, opportunity, slug):
+        """Give the opportunity one matching unit that has no opportunity, if there is one.
+
+        Such units were created before DeliverUnit.opportunity existed or by code still running while
+        it was deployed, or were left by a deleted opportunity. Only one is adopted: several can match,
+        and giving them all the same opportunity would break the unique constraint.
+        """
+        orphan = (
+            self.filter(app_id=opportunity.deliver_app_id, slug=slug, opportunity__isnull=True)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+            .first()
+        )
+        if orphan:
+            # opportunity__isnull again, so a concurrent caller that adopted it first wins
+            self.filter(pk=orphan, opportunity__isnull=True).update(opportunity=opportunity)
 
 
 class DeliverUnit(models.Model):

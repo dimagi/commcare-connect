@@ -119,8 +119,9 @@ class PaymentUnitFactory(DjangoModelFactory):
 
 
 def _deliver_unit_opportunity(unit):
-    """The opportunity migration 0155's backfill would give the unit.
+    """Roughly the opportunity migration 0155's backfill would give the unit.
 
+    The payment unit's opportunity if it uses the unit's app, else the latest opportunity on the app.
     Falls back to the payment unit's opportunity so units on a factory-made app still get one.
     """
     payment_unit_opportunity = unit.payment_unit.opportunity if unit.payment_unit else None
