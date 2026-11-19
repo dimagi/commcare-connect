@@ -39,7 +39,7 @@ class SolicitationTable(tables.Table):
         verbose_name=_("Invited"), linkify=invitations_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
     )
     reviewer_count = columns.Column(
-        verbose_name=_("Reviewers"), linkify=reviewers_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
+        verbose_name=_("Review Team"), linkify=reviewers_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
     )
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
     actions = columns.Column(verbose_name="", orderable=False, empty_values=())
@@ -66,7 +66,7 @@ class SolicitationTable(tables.Table):
         actions = []
         if url := reviewers_url(record, self):
             # A page of its own, so it opts out of the menu's boost into the list page's modal.
-            actions.append({"title": _("Manage reviewers"), "url": url, "hx_boost": "false"})
+            actions.append({"title": _("Manage Review Team"), "url": url, "hx_boost": "false"})
         if record.is_open:
             actions.append({"title": _("Close"), "url": reverse("solicitation:close", args=url_args)})
         if record.is_editable:

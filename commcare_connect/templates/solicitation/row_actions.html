@@ -1,5 +1,5 @@
 {# SolicitationTable's row menu. Boosting makes its links load their form into the list page's modal instead of navigating; #}
-{# an item with hx_boost "false" (Manage reviewers) is a page of its own and navigates. #}
+{# an item with hx_boost "false" (Manage Review Team) is a page of its own and navigates. #}
 <div class="flex justify-end" hx-boost="true" hx-target="#directory-form">
   {% include "components/dropdowns/text_button_dropdown.html" with text='<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'|safe list=actions styles="button-icon" %}
 </div>

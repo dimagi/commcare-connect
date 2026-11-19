@@ -55,11 +55,11 @@ def test_queryset_counts(rf, program_manager_org):
 @pytest.mark.parametrize(
     "status, deadline_passed, items",
     [
-        (Solicitation.Status.DRAFT, False, ["Manage reviewers", "Cancel"]),
-        (Solicitation.Status.ACTIVE, False, ["Manage reviewers", "Close", "Cancel"]),
+        (Solicitation.Status.DRAFT, False, ["Manage Review Team", "Cancel"]),
+        (Solicitation.Status.ACTIVE, False, ["Manage Review Team", "Close", "Cancel"]),
         # Past its deadline but not yet closed by update_solicitation_statuses.
-        (Solicitation.Status.ACTIVE, True, ["Manage reviewers"]),
-        (Solicitation.Status.CLOSED, False, ["Manage reviewers"]),
+        (Solicitation.Status.ACTIVE, True, ["Manage Review Team"]),
+        (Solicitation.Status.CLOSED, False, ["Manage Review Team"]),
         (Solicitation.Status.CANCELLED, False, []),
     ],
 )

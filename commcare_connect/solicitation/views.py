@@ -398,16 +398,16 @@ class ReviewersMixin(SolicitationParticipantsMixin):
 class SolicitationReviewersView(ReviewersMixin, SolicitationParticipantsView):
     form_class = SolicitationReviewerForm
     table_class = SolicitationReviewerTable
-    title = _("Reviewers")
+    title = _("Review Team")
     hint = _(
         "Reviewers score this solicitation's applications; observers can only read the scores. "
         "Each person added gets an email."
     )
-    add_title = _("Add reviewers")
+    add_title = _("Add team members")
     add_submit = _("Add")
-    added_message = _("Added %(count)d reviewer(s).")
-    remove_title = _("Remove reviewers")
-    remove_message = _("Remove __count__ reviewer(s)? They will lose access to this solicitation's applications.")
+    added_message = _("Added %(count)d team member(s).")
+    remove_title = _("Remove team members")
+    remove_message = _("Remove __count__ team member(s)? They will lose access to this solicitation's applications.")
     send_emails = staticmethod(send_reviewer_assignment_emails)
 
     def get_table_data(self):
@@ -415,4 +415,4 @@ class SolicitationReviewersView(ReviewersMixin, SolicitationParticipantsView):
 
 
 class SolicitationReviewerDeleteView(ReviewersMixin, SolicitationParticipantsDeleteView):
-    removed_message = _("Removed %(count)d reviewer(s).")
+    removed_message = _("Removed %(count)d team member(s).")
