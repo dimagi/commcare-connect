@@ -268,7 +268,7 @@ including the attachment files under `MEDIA_ROOT`. Optional flags:
 
 - `--invited_org_slug` — reuse a specific organization as the invited org. Without it, a new invited org with a
   random slug is created on every run, and the previous one is left behind.
-- `--managed_opportunities` — how many managed opportunities to create (default 3)
+- `--pm_opportunities` — how many opportunities the invited org delivers under the primary org's programs (default 3)
 - `--image_percent` — percentage of visits that get a photo (default 0, none)
 - `--audio_percent` — percentage of visits that get one to three audio recordings, each with a stand-in
   transcript and translation (default 0, none)
@@ -277,7 +277,7 @@ including the attachment files under `MEDIA_ROOT`. Optional flags:
 
 Adding yourself to the generated organizations is a separate step, either through
 `/admin/organization/userorganizationmembership/` or the organization's own member admin pages. Note there are
-two: the primary org from `<org_slug>` and the invited org, which owns the managed opportunities — join only the
+two: the primary org from `<org_slug>` and the invited org, which delivers those opportunities — join only the
 first and those stay hidden. Worker tabs list only workers whose `OpportunityAccess` is accepted, which the
 generated ones are.
 

@@ -79,19 +79,19 @@ class TestChatWidgetContext:
         assert context["chatbot_id"] == "test-chatbot-id"
         assert context["chatbot_embed_key"] == "test-embed-key"
 
-    def test_flag_enabled_for_program_of_managed_opportunity(self, settings, managed_opportunity):
+    def test_flag_enabled_for_program_of_opportunity(self, settings, pm_opportunity):
         settings.CHATBOT_ID = "test-chatbot-id"
         settings.CHATBOT_EMBED_KEY = "test-embed-key"
 
         user = UserFactory()
-        MembershipFactory(user=user, organization=managed_opportunity.organization)
+        MembershipFactory(user=user, organization=pm_opportunity.organization)
         flag = Flag.objects.create(name="open_chat_studio_widget")
-        flag.programs.add(managed_opportunity.program)
+        flag.programs.add(pm_opportunity.program)
 
         request = RequestFactory().get("/")
         request.user = user
-        request.org = managed_opportunity.organization
-        request.opportunity = managed_opportunity
+        request.org = pm_opportunity.organization
+        request.opportunity = pm_opportunity
 
         assert chat_widget_context(request)["chat_widget_enabled"] is True
 
