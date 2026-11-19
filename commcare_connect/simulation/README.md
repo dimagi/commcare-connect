@@ -20,8 +20,8 @@ organization's solicitation linked to their program. The command prints the page
 
 ## Standard scenarios
 
-Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations, a program and opportunities,
-with a history that runs from about six weeks ago to now.
+Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations and a program, with a history
+that runs from about six weeks ago to now. All but `solicitations` also build opportunities.
 
 - `baseline`: one active opportunity whose workers have finished learning and claimed it.
 - `opp_setup`: opportunities in each setup state: a draft, an active one, an ended one, and one with several
@@ -34,6 +34,10 @@ with a history that runs from about six weeks ago to now.
   waiting for program-manager review.
 - `payment_units`: one opportunity paying two kinds of visit at different rates, workers paid in full and in part,
   and an invoice whose line items split the work by payment unit.
+- `solicitations`: RFPs and EOIs in every state: public and open across countries, delivery types and deadlines
+  (enough to fill more than one page), private with the network manager invited, a draft, one past its deadline
+  but not yet closed, and one the hourly task has closed. A Celery worker running beat (`-B`) closes the expired
+  one within the hour. Needs the `solicitations` switch on (`./manage.py waffle_switch solicitations on --create`).
 
 `--small` builds the fewest records that still show every state; that is what CI builds.
 
