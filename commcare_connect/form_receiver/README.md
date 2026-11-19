@@ -221,6 +221,25 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 - **Deliver:** `User does not have access to opportunity …`; `Payment unit is not configured for the deliver unit …`; `User has not claimed opportunity …`; `User has no claim limit for payment unit …`; `Invalid work area case id specified …`; `Work area not found`.
 - **Work area update:** pending request already exists; user not assigned to the work area; invalid status or transition; missing `reason` / `photo_evidence`; photo attachment not found on the form.
 
+## Metrics
+
+`metrics.py` sends three Sentry metrics for every `POST` to the receiver. All automated checks (limits, duplicates, verification flags, auto-approve and auto-reject, payment accrual) run inside the request, so a form is fully processed when its transaction commits. The Celery tasks that run afterwards (attachments, notifications) are not included.
+
+| Metric                          | Type         | Measures                                                                                     |
+| ------------------------------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `form_receiver.forms`           | count        | Forms received                                                                               |
+| `form_receiver.processing_time` | distribution | Milliseconds from Connect receiving the request to the transaction committing (or the error) |
+| `form_receiver.end_to_end_time` | distribution | Milliseconds from HQ's `received_on` to the commit. `processed` forms only                   |
+
+The end-to-end time includes HQ's forwarding queue and retry delays, and relies on HQ's and Connect's clocks agreeing.
+
+Each metric has these attributes:
+
+- `outcome`: `processed` (an active opportunity uses the app), `ignored` (200, but no active opportunity uses the app), `duplicate` (a resent visit, module or inaccessibility request), `rejected` (4xx, including invalid payloads) or `error` (500).
+- `app_type`: `deliver`, `learn`, or `none` when the form was not processed.
+
+A 200 is recorded only after its transaction commits, so a rolled-back form is never counted as processed. Without `SENTRY_DSN` nothing is sent.
+
 ## Debugging
 
 **"A form was submitted but isn't in Connect"**

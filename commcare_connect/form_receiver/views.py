@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.commcarehq.models import HQServer
+from commcare_connect.form_receiver.exceptions import ProcessingError
+from commcare_connect.form_receiver.metrics import FormMetrics
 from commcare_connect.form_receiver.processor import process_xform
 from commcare_connect.form_receiver.serializers import XFormSerializer
 
@@ -18,6 +20,18 @@ class FormReceiver(APIView):
     authentication_classes = [OAuth2Authentication]
     permission_classes = [TokenHasReadWriteScope]
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.method != "POST":
+            return super().dispatch(request, *args, **kwargs)
+        self.metrics = FormMetrics()
+        try:
+            response = super().dispatch(request, *args, **kwargs)
+        except Exception:
+            self.metrics.record_error()
+            raise
+        self.metrics.record_response(response.status_code)
+        return response
+
     def get(self, request):
         """
         Simple GET endpoint to test connectivity and OAuth authentication.
@@ -28,16 +42,16 @@ class FormReceiver(APIView):
         serializer = XFormSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         xform = serializer.save()
+        self.metrics.received_on = xform.received_on
         try:
             hq_server = HQServer.objects.get(oauth_application=request.auth.application)
         except HQServer.DoesNotExist as e:
-            from commcare_connect.form_receiver.exceptions import ProcessingError
-
             raise ProcessingError from e
 
         try:
-            process_xform(xform, hq_server)
+            self.metrics.app_type = process_xform(xform, hq_server)
         except IntegrityError as e:
+            self.metrics.duplicate = True
             if "unique_xform_entity_deliver_unit" in str(e):
                 logger.info(f"Duplicate form with ID: {xform.id} received.")
             elif "unique_xform_completed_module" in str(e):
@@ -45,5 +59,6 @@ class FormReceiver(APIView):
             elif "unique_xform_work_area_inaccessibility" in str(e):
                 logger.info(f"Duplicate inaccessibility request for form ID: {xform.id}.")
             else:
+                self.metrics.duplicate = False
                 raise
         return Response(status=status.HTTP_200_OK)
