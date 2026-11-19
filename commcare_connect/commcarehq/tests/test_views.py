@@ -10,6 +10,7 @@ from commcare_connect.commcarehq.views import (
     _get_api_key,
     application_options,
     domain_options,
+    options_for_api_key,
 )
 from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, CommCareHQAPIException
@@ -80,9 +81,19 @@ def test_application_options_when_every_app_is_used(api_key):
         assert "already used" in _single_message(application_options(api_key, "dom"))
 
 
-@pytest.mark.parametrize("build_options", [domain_options, lambda key: application_options(key, "dom")])
-def test_options_when_api_key_not_found(build_options):
-    assert build_options(None) == [API_KEY_NOT_FOUND_CHOICE]
+def test_options_for_api_key_when_key_is_not_the_users(api_key, user):
+    request = RequestFactory().get("/")
+    request.user = user  # not the key's owner
+    options = options_for_api_key(request, api_key.hq_server_id, api_key.pk, lambda key: pytest.fail("built options"))
+    assert options == [API_KEY_NOT_FOUND_CHOICE]
+
+
+def test_options_for_api_key_builds_options_for_the_users_key(api_key):
+    request = RequestFactory().get("/")
+    request.user = api_key.user
+    assert options_for_api_key(request, api_key.hq_server_id, api_key.pk, lambda key: [("v", key.pk)]) == [
+        ("v", api_key.pk)
+    ]
 
 
 @pytest.mark.parametrize(

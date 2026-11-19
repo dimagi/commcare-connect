@@ -29,21 +29,21 @@ ERROR_BODY_LIMIT = 500
 
 
 def get_domains_for_user(api_key):
-    action = "Failed to fetch domains"
-    objects = _fetch_hq_objects(api_key, "/api/v0.5/user_domains/?limit=100", action)
-    try:
-        return [domain["domain_name"] for domain in objects]
-    except (KeyError, TypeError) as e:
-        raise CommCareHQAPIException(f"{action}: unexpected domain in HQ's answer ({e!r})")
+    return _fetch_hq_list(
+        api_key,
+        "/api/v0.5/user_domains/?limit=100",
+        action="Failed to fetch domains",
+        parse_item=lambda domain: domain["domain_name"],
+    )
 
 
 def get_applications_for_user_by_domain(api_key: HQApiKey, domain):
-    action = "Failed to fetch applications"
-    objects = _fetch_hq_objects(api_key, f"/a/{domain}/api/v0.5/application/", action)
-    try:
-        return [_application_option(application) for application in objects]
-    except AttributeError as e:
-        raise CommCareHQAPIException(f"{action}: unexpected application in HQ's answer ({e!r})")
+    return _fetch_hq_list(
+        api_key,
+        f"/a/{domain}/api/v0.5/application/",
+        action="Failed to fetch applications",
+        parse_item=_application_option,
+    )
 
 
 def get_app_structure(api_key, app):
@@ -116,9 +116,10 @@ def _auth_header(api_key):
     return f"ApiKey {api_key.user.email}:{api_key.api_key}"
 
 
-def _fetch_hq_objects(api_key, path, action):
-    """GET an HQ list endpoint and return its `objects`. Every failure raises CommCareHQAPIException, including an
-    answer that isn't the list HQ's API gives, such as a maintenance page served with a 200."""
+def _fetch_hq_list(api_key, path, *, action, parse_item):
+    """GET an HQ list endpoint and return `parse_item` of each of its `objects`. Every failure raises
+    CommCareHQAPIException, including an answer that isn't the list HQ's API gives, such as a maintenance page
+    served with a 200."""
     response = _get_within_deadline(
         api_key.hq_server.url, f"ApiKey {api_key.user.email}:{api_key.api_key}", path, action
     )
@@ -126,11 +127,14 @@ def _fetch_hq_objects(api_key, path, action):
         raise _response_error(response, action)
     try:
         objects = response.json()["objects"]
+        if not isinstance(objects, list):
+            raise TypeError
     except (ValueError, KeyError, TypeError):
         raise CommCareHQAPIException(f"{action}: HQ's answer has no list of objects: {_error_body(response)}")
-    if not isinstance(objects, list):
-        raise CommCareHQAPIException(f"{action}: HQ's answer has no list of objects: {_error_body(response)}")
-    return objects
+    try:
+        return [parse_item(item) for item in objects]
+    except (KeyError, TypeError, AttributeError) as e:
+        raise CommCareHQAPIException(f"{action}: unexpected item in HQ's answer ({e!r})")
 
 
 @async_to_sync

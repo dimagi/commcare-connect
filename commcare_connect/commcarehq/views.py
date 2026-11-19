@@ -36,7 +36,7 @@ def get_domains(request):
     if not hq_server or not api_key_id:
         return _render_options([DOMAIN_PLACEHOLDER_CHOICE])
 
-    return _render_options(domain_options(_get_api_key(request, hq_server, api_key_id)))
+    return _render_options(options_for_api_key(request, hq_server, api_key_id, domain_options))
 
 
 # used for loading learn_app and deliver_app dropdowns
@@ -49,25 +49,31 @@ def get_application(request):
     if not hq_server or not api_key_id or not domain:
         return _render_options([APP_DOMAIN_PLACEHOLDER_CHOICE])
 
-    return _render_options(application_options(_get_api_key(request, hq_server, api_key_id), domain))
+    return _render_options(
+        options_for_api_key(request, hq_server, api_key_id, lambda api_key: application_options(api_key, domain))
+    )
+
+
+def options_for_api_key(request, hq_server, api_key_id, build_options):
+    """Return `build_options(api_key)` for the user's API key, or a message option when the key isn't theirs."""
+    api_key = _get_api_key(request, hq_server, api_key_id)
+    if api_key is None:
+        return [API_KEY_NOT_FOUND_CHOICE]
+    return build_options(api_key)
 
 
 def domain_options(api_key):
     """Return the `(value, label)` options for the domain select, or a single message option when there are none."""
-    if api_key is None:
-        return [API_KEY_NOT_FOUND_CHOICE]
     try:
         domains = get_domains_for_user(api_key)
     except CommCareHQAPIException as e:
-        return [
-            _hq_error_option(
-                e,
-                denied_message=_(
-                    "CommCare HQ refused this API key. Check that it is still active, or select another key."
-                ),
-                failed_message=_("Couldn't load domains from CommCare HQ. Try again."),
-            )
-        ]
+        return _hq_error_options(
+            e,
+            denied_message=_(
+                "CommCare HQ refused this API key. Check that it is still active, or select another key."
+            ),
+            failed_message=_("Couldn't load domains from CommCare HQ. Try again."),
+        )
     if not domains:
         return [("", _("No project spaces found for this API key."))]
     return [("", _("Select a Domain.")), *((domain, domain) for domain in domains)]
@@ -76,22 +82,18 @@ def domain_options(api_key):
 def application_options(api_key, domain):
     """Return the `(value, label)` options for an app select, leaving out apps that active opportunities already
     use, or a single message option when there are none to pick."""
-    if api_key is None:
-        return [API_KEY_NOT_FOUND_CHOICE]
     try:
         applications = get_applications_for_user_by_domain(api_key, domain)
     except CommCareHQAPIException as e:
-        return [
-            _hq_error_option(
-                e,
-                # The same key has just listed this domain, so a refusal here is about access to the domain's apps.
-                denied_message=_(
-                    "CommCare HQ refused access to this project space's apps. Check that the API key's user can "
-                    "see its applications, or select another domain."
-                ),
-                failed_message=_("Couldn't load apps from CommCare HQ. Try again."),
-            )
-        ]
+        return _hq_error_options(
+            e,
+            # The same key has just listed this domain, so a refusal here is about access to the domain's apps.
+            denied_message=_(
+                "CommCare HQ refused access to this project space's apps. Check that the API key's user can "
+                "see its applications, or select another domain."
+            ),
+            failed_message=_("Couldn't load apps from CommCare HQ. Try again."),
+        )
     if not applications:
         return [("", _("No apps found in this project space."))]
 
@@ -129,13 +131,13 @@ def _app_ids_used_by_active_opportunities(domain):
     return used_app_ids
 
 
-def _hq_error_option(error, *, denied_message, failed_message):
+def _hq_error_options(error, *, denied_message, failed_message):
     # A refused key is the user's to fix, so it's only a warning; anything else means HQ is failing us.
     if isinstance(error, CommCareHQAccessDenied):
         logger.warning("CommCare HQ refused a setup select request: %s", error)
-        return ("", denied_message)
+        return [("", denied_message)]
     logger.error("CommCare HQ request for a setup select failed: %s", error)
-    return ("", failed_message)
+    return [("", failed_message)]
 
 
 def _render_options(options):
