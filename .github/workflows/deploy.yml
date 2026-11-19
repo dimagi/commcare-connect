@@ -284,12 +284,14 @@ jobs:
           git rev-list --first-parent "${PREV_RELEASE}..${DEPLOY_SHA}" \
             | while read -r sha; do
                 gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" \
-                  --jq '.[] | select(.merged_at != null and .base.ref == "main") | .number'
+                  --jq '.[] | select(.merged_at != null and .base.ref == "main") | .number' \
+                  || echo "::warning::Could not look up the PR for commit ${sha}" >&2
               done \
             | sort -un \
             | while read -r pr; do
                 echo "Labelling #${pr}"
-                gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/labels" -f "labels[]=${LABEL}" --silent
+                gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/labels" -f "labels[]=${LABEL}" --silent \
+                  || echo "::warning::Could not label #${pr}"
               done
 
       - name: Notify Deploy End
