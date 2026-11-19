@@ -316,7 +316,7 @@ class SolicitationClosureForm(forms.ModelForm):
 
     # Blank is allowed on the model only because a solicitation closed by its deadline has no reason;
     # a PM closing or cancelling one must give one.
-    closure_reason = forms.CharField(label=_("Reason"), widget=forms.Textarea(attrs={"rows": 4}))
+    closure_reason = forms.CharField(label=_("Reason"), max_length=150, widget=forms.Textarea(attrs={"rows": 4}))
 
     class Meta:
         model = Solicitation
