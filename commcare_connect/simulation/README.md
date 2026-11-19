@@ -15,8 +15,8 @@ Installed only by `config/settings/local.py` and `config/settings/test.py`; it n
 creates. Use `--pm-email` / `--nm-email` to put the program-manager and network-manager sides on different users.
 Unless `--keep` is passed, the scenario first deletes the organizations it owns, so reruns start clean. It
 refuses, deleting nothing, when anything outside them depends on them: another organization's opportunity
-under their program or using their apps, or a solicitation. The command prints the pages worth opening when it
-finishes.
+under their program or using their apps, another organization's application to their solicitation, or another
+organization's solicitation linked to their program. The command prints the pages worth opening when it finishes.
 
 ## Standard scenarios
 
