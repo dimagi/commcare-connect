@@ -4,7 +4,13 @@ import pytest
 from django.utils.timezone import now
 
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.forms import CriterionForm, QuestionForm, SolicitationForm, publish_errors
+from commcare_connect.solicitation.forms import (
+    CriterionForm,
+    QuestionForm,
+    SolicitationClosureForm,
+    SolicitationForm,
+    publish_errors,
+)
 from commcare_connect.solicitation.models import Solicitation, SolicitationQuestion
 from commcare_connect.solicitation.tests.conftest import deadline
 from commcare_connect.solicitation.tests.factories import SolicitationEvaluationCriterionFactory, SolicitationFactory
@@ -146,3 +152,11 @@ def test_criterion_weight_bounds(weight, valid):
     form = CriterionForm({"label": "Technical expertise", "weight": weight})
 
     assert form.is_valid() is valid
+
+
+@pytest.mark.parametrize(
+    "reason, valid",
+    [("Funding withdrawn", True), ("", False), ("   ", False), ("x" * 150, True), ("x" * 151, False)],
+)
+def test_closure_reason(reason, valid):
+    assert SolicitationClosureForm({"closure_reason": reason}).is_valid() is valid

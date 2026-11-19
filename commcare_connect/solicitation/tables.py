@@ -1,4 +1,5 @@
 import django_tables2 as tables
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
@@ -32,6 +33,7 @@ class SolicitationTable(tables.Table):
         verbose_name=_("Invited"), linkify=invitations_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
     )
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
+    actions = columns.Column(verbose_name="", orderable=False, empty_values=())
 
     class Meta:
         model = Solicitation
@@ -40,6 +42,16 @@ class SolicitationTable(tables.Table):
 
     def render_visibility(self, value):
         return _("Public") if value else _("Private")
+
+    def render_actions(self, record):
+        url_args = (self.request.org.slug, record.solicitation_id)
+        actions = []
+        if record.is_open:
+            actions.append({"title": _("Close"), "url": reverse("solicitation:close", args=url_args)})
+        if record.is_editable:
+            actions.append({"title": _("Cancel"), "url": reverse("solicitation:cancel", args=url_args)})
+        # Closed and cancelled solicitations are finished, so they get no menu.
+        return render_to_string("solicitation/row_actions.html", {"actions": actions}) if actions else ""
 
 
 # The date headers are longer than the dates under them, so they wrap rather than widen the table.

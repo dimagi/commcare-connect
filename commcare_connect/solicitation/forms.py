@@ -311,6 +311,18 @@ def publish_errors(solicitation):
     return errors
 
 
+class SolicitationClosureForm(forms.ModelForm):
+    """The reason a PM gives for closing a solicitation early or cancelling it."""
+
+    # Blank is allowed on the model only because a solicitation closed by its deadline has no reason;
+    # a PM closing or cancelling one must give one.
+    closure_reason = forms.CharField(label=_("Reason"), max_length=150, widget=forms.Textarea(attrs={"rows": 4}))
+
+    class Meta:
+        model = Solicitation
+        fields = ["closure_reason"]
+
+
 class SolicitationOrganizationForm(forms.Form):
     """Picks the program manager organization a new solicitation is posted by."""
 
