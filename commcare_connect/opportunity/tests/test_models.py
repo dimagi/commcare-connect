@@ -24,6 +24,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.models.learn import resolve_time_estimate
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
@@ -1126,3 +1127,17 @@ class TestOpportunityApiKey:
         assert event.pgh_label == "api_key_update"
         assert event.api_key_id == new_key.id
         assert event.pgh_context.metadata["user_email"] == "admin@example.com"
+
+
+@pytest.mark.parametrize(
+    "hours, minutes, expected",
+    [
+        ("2", None, (2, 120)),  # legacy form, hours only
+        ("1", "10", (1, 10)),
+        (None, "90", (2, 90)),  # hours rounded up for older apps
+        ("3", "", (3, 180)),  # blank minutes treated as missing
+        (None, None, (None, None)),
+    ],
+)
+def test_resolve_time_estimate(hours, minutes, expected):
+    assert resolve_time_estimate(hours, minutes) == expected
