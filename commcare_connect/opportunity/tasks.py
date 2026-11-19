@@ -99,6 +99,7 @@ def sync_learn_modules_and_deliver_units(opportunity):
                 "name": block.name,
                 "description": block.description,
                 "time_estimate": block.time_estimate,
+                "time_estimate_minutes": block.time_estimate_minutes,
             },
         )
 

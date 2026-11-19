@@ -115,13 +115,13 @@ Only these fields are read. Example payloads are in `tests/xforms.py`.
 
 `received_on` is validated but not used.
 
-| Block              | App     | Key fields                                                                  |
-| ------------------ | ------- | --------------------------------------------------------------------------- |
-| `module`           | learn   | `@id` (slug), `name`, `description`, `time_estimate`                        |
-| `assessment`       | learn   | `user_score`                                                                |
-| `deliver`          | deliver | `@id` (slug), `name`, `entity_id`, `entity_name`, `work_area_id` (optional) |
-| `task`             | deliver | `@id` (task type slug)                                                      |
-| `work_area_update` | deliver | `work_area_id`, `status`, `reason`, `photo_evidence`, `additional_details`  |
+| Block              | App     | Key fields                                                                                       |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------ |
+| `module`           | learn   | `@id` (slug), `name`, `description`, `time_estimate` (hours), `time_estimate_minutes` (optional) |
+| `assessment`       | learn   | `user_score`                                                                                     |
+| `deliver`          | deliver | `@id` (slug), `name`, `entity_id`, `entity_name`, `work_area_id` (optional)                      |
+| `task`             | deliver | `@id` (task type slug)                                                                           |
+| `work_area_update` | deliver | `work_area_id`, `status`, `reason`, `photo_evidence`, `additional_details`                       |
 
 **Not re-validated:** Connect stores the form's username, timestamps and GPS as sent. `timeStart` is device time, so a wrong phone clock shifts the visit date and the daily-limit day.
 
@@ -129,7 +129,7 @@ Only these fields are read. Example payloads are in `tests/xforms.py`.
 
 ### Learn forms
 
-- **Modules** (`process_learn_modules`): one `CompletedModule` per block, and `LearnModule` is created on first sight. When learning reaches 100%, `completed_learn_date` is set to the latest of each module's _earliest_ completion, so a re-taken module doesn't move it.
+- **Modules** (`process_learn_modules`): one `CompletedModule` per block, and `LearnModule` is created on first sight. Older forms have only `time_estimate` (hours), so minutes fall back to hours × 60; a form with only minutes gets hours rounded up for app versions that still read hours. When learning reaches 100%, `completed_learn_date` is set to the latest of each module's _earliest_ completion, so a re-taken module doesn't move it.
 - **Assessments** (`process_assessments`): `passed = user_score >= app.passing_score`. Only one `Assessment` per `xform_id`, so each attempt is recorded separately. If HQ resends the same form (same `xform_id`), it is rejected with a 400.
 - **Access:** learn processing looks up `OpportunityAccess` without a guard, so a learn form from a worker with no access returns a 500 (unlike deliver, which returns a 400).
 
