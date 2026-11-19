@@ -21,28 +21,31 @@ class CommCareHQAccessDenied(CommCareHQAPIException):
 ACCESS_DENIED_STATUS_CODES = (401, 403, 404)
 # The access check runs inside a web request, so it must answer before the load balancer gives up on it.
 APP_ACCESS_TIMEOUT = 50
-# The domain and app lists load inside a web request, so they must answer before the proxies in front of Connect
-# give up on it. Production has CloudFront in front of the load balancer, and its origin timeout defaults to 30s.
+# The setup selects load the domain and app lists inside a web request, so they must answer before the proxies in
+# front of Connect give up on it. Production has CloudFront in front of the load balancer, and its origin timeout
+# defaults to 30s. Callers that can wait longer pass their own timeout.
 HQ_LIST_TIMEOUT = 25
 # HQ can answer an error with a whole HTML page; keep enough of it to tell what went wrong.
 ERROR_BODY_LIMIT = 500
 
 
-def get_domains_for_user(api_key):
+def get_domains_for_user(api_key, *, timeout=HQ_LIST_TIMEOUT):
     return _fetch_hq_list(
         api_key,
         "/api/v0.5/user_domains/?limit=100",
         action="Failed to fetch domains",
         parse_item=lambda domain: domain["domain_name"],
+        timeout=timeout,
     )
 
 
-def get_applications_for_user_by_domain(api_key: HQApiKey, domain):
+def get_applications_for_user_by_domain(api_key: HQApiKey, domain, *, timeout=HQ_LIST_TIMEOUT):
     return _fetch_hq_list(
         api_key,
         f"/a/{domain}/api/v0.5/application/",
         action="Failed to fetch applications",
         parse_item=_application_option,
+        timeout=timeout,
     )
 
 
@@ -116,12 +119,12 @@ def _auth_header(api_key):
     return f"ApiKey {api_key.user.email}:{api_key.api_key}"
 
 
-def _fetch_hq_list(api_key, path, *, action, parse_item):
+def _fetch_hq_list(api_key, path, *, action, parse_item, timeout):
     """GET an HQ list endpoint and return `parse_item` of each of its `objects`. Every failure raises
     CommCareHQAPIException, including an answer that isn't the list HQ's API gives, such as a maintenance page
     served with a 200."""
     response = _get_within_deadline(
-        api_key.hq_server.url, f"ApiKey {api_key.user.email}:{api_key.api_key}", path, action
+        api_key.hq_server.url, f"ApiKey {api_key.user.email}:{api_key.api_key}", path, action, timeout
     )
     if not response.is_success:
         raise _response_error(response, action)
@@ -138,19 +141,19 @@ def _fetch_hq_list(api_key, path, *, action, parse_item):
 
 
 @async_to_sync
-async def _get_within_deadline(hq_server_url, auth_header, path, action):
+async def _get_within_deadline(hq_server_url, auth_header, path, action, timeout):
     async with httpx.AsyncClient(
-        timeout=HQ_LIST_TIMEOUT, headers={"Authorization": auth_header}, base_url=hq_server_url
+        timeout=timeout, headers={"Authorization": auth_header}, base_url=hq_server_url
     ) as client:
         try:
             # httpx's timeout applies to each phase (connect, then each read) separately, so a slow server that
             # keeps trickling data in would outlast the proxies. This bounds the whole request.
-            async with asyncio.timeout(HQ_LIST_TIMEOUT):
+            async with asyncio.timeout(timeout):
                 return await client.get(path)
         except httpx.RequestError as e:
             raise CommCareHQAPIException(f"{action}: {e}")
         except TimeoutError:
-            raise CommCareHQAPIException(f"{action}: no answer within {HQ_LIST_TIMEOUT}s")
+            raise CommCareHQAPIException(f"{action}: no answer within {timeout}s")
 
 
 def _application_option(application):

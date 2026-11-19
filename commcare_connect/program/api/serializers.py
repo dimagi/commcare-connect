@@ -20,6 +20,9 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_applications_for_user_by_domain
 
+# The setup selects give HQ 25s to list a domain's apps; API clients have always been given longer.
+HQ_API_APP_LIST_TIMEOUT = 300
+
 
 class ProgramCreateSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(slug_field="slug", queryset=Organization.objects.all())
@@ -193,7 +196,9 @@ class ProgramOpportunityCreateSerializer(serializers.Serializer):
         cache_key = (api_key.pk, domain)
         if cache_key not in self._apps_cache:
             try:
-                self._apps_cache[cache_key] = get_applications_for_user_by_domain(api_key, domain)
+                self._apps_cache[cache_key] = get_applications_for_user_by_domain(
+                    api_key, domain, timeout=HQ_API_APP_LIST_TIMEOUT
+                )
             except CommCareHQAPIException:
                 raise serializers.ValidationError({"non_field_errors": [_("Failed to fetch apps from CommCare HQ.")]})
         for app in self._apps_cache[cache_key]:

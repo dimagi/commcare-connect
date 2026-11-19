@@ -83,8 +83,8 @@ class TestListCalls:
     @pytest.fixture(params=["domains", "applications"])
     def fetch(self, request, key):
         if request.param == "domains":
-            return lambda: get_domains_for_user(key)
-        return lambda: get_applications_for_user_by_domain(key, "dom")
+            return lambda **kwargs: get_domains_for_user(key, **kwargs)
+        return lambda **kwargs: get_applications_for_user_by_domain(key, "dom", **kwargs)
 
     @pytest.mark.parametrize(
         "status, access_denied", [(401, True), (403, True), (404, True), (500, False), (504, False)]
@@ -99,15 +99,14 @@ class TestListCalls:
         httpx_mock.add_exception(httpx.ReadTimeout("timed out"))
         _assert_hq_failure(fetch)
 
-    def test_call_that_outlasts_the_deadline_raises_hq_exception(self, httpx_mock, fetch, monkeypatch):
-        monkeypatch.setattr(commcarehq_api, "HQ_LIST_TIMEOUT", 0.1)
+    def test_call_that_outlasts_the_deadline_raises_hq_exception(self, httpx_mock, fetch):
 
         async def stall(request):
             await asyncio.sleep(5)
 
         httpx_mock.add_callback(stall)
-        with pytest.raises(CommCareHQAPIException, match="no answer within"):
-            fetch()
+        with pytest.raises(CommCareHQAPIException, match="no answer within 0.1s"):
+            fetch(timeout=0.1)
 
     @pytest.mark.parametrize(
         "response",
