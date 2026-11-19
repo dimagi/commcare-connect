@@ -4,7 +4,13 @@ from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribu
 from factory.django import DjangoModelFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.opportunity.models import AssignedTaskStatus, Country, Currency, VisitValidationStatus
+from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
+    Country,
+    Currency,
+    Opportunity,
+    VisitValidationStatus,
+)
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
@@ -112,11 +118,24 @@ class PaymentUnitFactory(DjangoModelFactory):
         model = "opportunity.PaymentUnit"
 
 
+def _deliver_unit_opportunity(unit):
+    """The opportunity migration 0155's backfill would give the unit.
+
+    Falls back to the payment unit's opportunity so units on a factory-made app still get one.
+    """
+    payment_unit_opportunity = unit.payment_unit.opportunity if unit.payment_unit else None
+    if payment_unit_opportunity and payment_unit_opportunity.deliver_app_id == unit.app.id:
+        return payment_unit_opportunity
+    latest_using_app = Opportunity.objects.filter(deliver_app=unit.app).order_by("-id").first()
+    return latest_using_app or payment_unit_opportunity
+
+
 class DeliverUnitFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("pystr")
     name = Faker("name")
     payment_unit = SubFactory(PaymentUnitFactory)
+    opportunity = LazyAttribute(_deliver_unit_opportunity)
 
     class Meta:
         model = "opportunity.DeliverUnit"
