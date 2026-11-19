@@ -21,6 +21,7 @@ from commcare_connect.solicitation.models import (
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
+    SolicitationReviewer,
 )
 
 # Deadlines are whole hours. Browsers count `step` from the field's rendered value unless `min` is set, so
@@ -43,6 +44,10 @@ TOGGLE_WRAPPER_CLASS = (
     "[&>label]:mb-0 [&>small]:basis-full [&>small]:mt-1"
 )
 SEARCHABLE_SELECT = forms.Select(attrs={"data-tomselect": "1", "data-tomselect:no-remove-button": "1"})
+# Clearing the search after each pick lets a PM type the next one straight away.
+SEARCHABLE_MULTI_SELECT = forms.SelectMultiple(
+    attrs={"data-tomselect": "1", "data-tomselect:settings": json.dumps({"clearAfterSelect": True})}
+)
 # Alpine handler on the program select: sets the delivery type select to the picked program's delivery type.
 FILL_DELIVERY_TYPE_FROM_PROGRAM = (
     "$el.value && $refs.deliveryType.tomselect.setValue(JSON.parse($el.dataset.deliveryTypes)[$el.value])"
@@ -343,12 +348,7 @@ class SolicitationOrganizationForm(forms.Form):
 
 class SolicitationInvitationForm(forms.Form):
     organizations = forms.ModelMultipleChoiceField(
-        label=_("Organizations"),
-        queryset=Organization.objects.none(),
-        # Clearing the search after each pick lets a PM type the next organization straight away.
-        widget=forms.SelectMultiple(
-            attrs={"data-tomselect": "1", "data-tomselect:settings": json.dumps({"clearAfterSelect": True})}
-        ),
+        label=_("Organizations"), queryset=None, widget=SEARCHABLE_MULTI_SELECT
     )
 
     def __init__(self, *args, solicitation, **kwargs):
@@ -362,11 +362,38 @@ class SolicitationInvitationForm(forms.Form):
         # Organization.__str__ is its slug; PMs pick organizations by name.
         self.fields["organizations"].label_from_instance = attrgetter("name")
 
+    def new_participants(self):
+        return [SolicitationInvitation(organization=org) for org in self.cleaned_data["organizations"]]
 
-class SolicitationInvitationDeleteForm(forms.Form):
-    invitation_ids = forms.ModelMultipleChoiceField(queryset=SolicitationInvitation.objects.none())
+
+class SolicitationReviewerForm(forms.Form):
+    users = forms.ModelMultipleChoiceField(label=_("Members"), queryset=None, widget=SEARCHABLE_MULTI_SELECT)
+    role = forms.ChoiceField(
+        label=_("Role"),
+        choices=SolicitationReviewer.Role.choices,
+        help_text=_("Reviewers score applications; observers can only read the scores."),
+    )
 
     def __init__(self, *args, solicitation, **kwargs):
         super().__init__(*args, **kwargs)
-        # Scoped to this solicitation, so a posted id from any other solicitation fails validation.
-        self.fields["invitation_ids"].queryset = solicitation.invitations.all()
+        # Only the posting organization's members can be assigned. Those already assigned aren't offered,
+        # so each member holds one role per solicitation.
+        self.fields["users"].queryset = solicitation.organization.members.exclude(
+            solicitationreviewer__solicitation=solicitation
+        ).order_by("name", "email")
+        # User.__str__ is the email alone; PMs pick colleagues by name.
+        self.fields["users"].label_from_instance = member_label
+
+    def new_participants(self):
+        role = self.cleaned_data["role"]
+        return [SolicitationReviewer(user=user, role=role) for user in self.cleaned_data["users"]]
+
+
+def member_label(user):
+    return f"{user.name} ({user.email})" if user.name else user.email
+
+
+class SelectedParticipantsForm(forms.Form):
+    """The participants a PM selected to remove. The view sets which ones can be picked."""
+
+    ids = forms.ModelMultipleChoiceField(queryset=None)
