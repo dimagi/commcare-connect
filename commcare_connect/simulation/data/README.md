@@ -4,7 +4,8 @@ Form XML that the simulation's HQ stand-in serves in place of a CCZ download, so
 `sync_learn_modules_and_deliver_units` creates real `LearnModule` and `DeliverUnit` rows.
 
 - `learn_app/` is a copy of `opportunity/tests/data/demo_app` (modules `module_1`–`module_3`, assessment `demo`,
-  tasks `task_1`, `task_2`).
+  tasks `task_1`, `task_2`), except that `module_1` and `module_3` also carry `time_estimate_minutes` (10 and 150)
+  so both the minutes and the hours-only shapes of a module block are exercised.
 - `deliver_app/` is hand-written: deliver units `household_visit` and `child_screening`. The demo app has no
   deliver blocks, and a payment unit cannot be created without one.
 
