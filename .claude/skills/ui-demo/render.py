@@ -259,47 +259,55 @@ class CaptionPainter:
 
 def build_captions(steps, spots, tmap, css_h):
     """Intent pills over each step's action window, then its outcome card over the hold. Boxes are CSS px."""
-
-    def in_bottom_band(box):
-        return box and (box["y"] + box["height"]) > BOTTOM_BAND * css_h
-
     caps = []
     for s in steps:
-        pos = s.get("captionPos")
-        if s.get("intent"):
-            start, end = tmap(s["actionStart"]), tmap(s["actionEnd"])
-            active = [sp["box"] for sp in spots if s["actionStart"] <= sp["start"] <= s["actionEnd"]]
-            if end - start >= MIN_WINDOW_S:
-                caps.append(
-                    {
-                        "kind": "intent",
-                        "title": s["intent"],
-                        "start": start,
-                        "end": end,
-                        "pos": pos or ("top" if any(map(in_bottom_band, active)) else "bottom"),
-                    }
-                )
-        if not s.get("title"):
-            continue
-        start, end = tmap(s["actionEnd"]), tmap(s["holdEnd"])
-        if end - start < MIN_WINDOW_S:
-            continue
-        if pos is None and not s.get("navigated") and in_bottom_band(s.get("target")):
-            pos = "top"
-        res = s.get("result")  # the step's checkpoint region: never cover the outcome the caption describes
-        if pos is None and covers(res, "bottom", css_h) and not covers(res, "top", css_h):
-            pos = "top"
-        caps.append(
-            {
-                "kind": "caption",
-                "title": s["title"],
-                "subtitle": s.get("subtitle") or "",
-                "start": start,
-                "end": end,
-                "pos": pos or "bottom",
-            }
-        )
+        caps += intent_pill(s, spots, tmap, css_h) + outcome_card(s, tmap, css_h)
     return caps
+
+
+def intent_pill(s, spots, tmap, css_h):
+    if not s.get("intent"):
+        return []
+    start, end = tmap(s["actionStart"]), tmap(s["actionEnd"])
+    if end - start < MIN_WINDOW_S:
+        return []
+    active = [sp["box"] for sp in spots if s["actionStart"] <= sp["start"] <= s["actionEnd"]]
+    pos = s.get("captionPos") or ("top" if any(in_bottom_band(box, css_h) for box in active) else "bottom")
+    return [{"kind": "intent", "title": s["intent"], "start": start, "end": end, "pos": pos}]
+
+
+def outcome_card(s, tmap, css_h):
+    if not s.get("title"):
+        return []
+    start, end = tmap(s["actionEnd"]), tmap(s["holdEnd"])
+    if end - start < MIN_WINDOW_S:
+        return []
+    return [
+        {
+            "kind": "caption",
+            "title": s["title"],
+            "subtitle": s.get("subtitle") or "",
+            "start": start,
+            "end": end,
+            "pos": card_position(s, css_h),
+        }
+    ]
+
+
+def card_position(s, css_h):
+    """`captionPos` when set; else top when the clicked target sits in the bottom band (and the step stayed on its
+    page), or when the step's checkpoint region would sit under a bottom caption: never cover the outcome."""
+    pos = s.get("captionPos")
+    if pos is not None:
+        return pos or "bottom"
+    target_low = not s.get("navigated") and in_bottom_band(s.get("target"), css_h)
+    res = s.get("result")
+    result_low = covers(res, "bottom", css_h) and not covers(res, "top", css_h)
+    return "top" if target_low or result_low else "bottom"
+
+
+def in_bottom_band(box, css_h):
+    return box and (box["y"] + box["height"]) > BOTTOM_BAND * css_h
 
 
 def covers(box, band, css_h):
@@ -486,28 +494,7 @@ def has_encoder(name):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--task", default=".", help="task folder holding output/")
-    ap.add_argument("--out", default="final.mp4")
-    ap.add_argument("--action-speed", type=float, default=1.0, help=">1 speeds up typing/navigation segments")
-    ap.add_argument("--no-frame", action="store_true")
-    ap.add_argument("--no-captions", action="store_true")
-    ap.add_argument("--bg", choices=BG_COLORS, default="dark")
-    ap.add_argument("--fps", type=int, default=None, help="default: the recording's fps")
-    ap.add_argument("--scale", type=float, default=1.5, help="output size as a multiple of the CSS viewport (≤ dpr)")
-    ap.add_argument(
-        "--spot-dim", type=float, default=0.4, help="spotlight: how much to dim around the target; 0 = off"
-    )
-    ap.add_argument("--crf", type=int, default=19)
-    ap.add_argument(
-        "--fast",
-        action="store_true",
-        help="preview encode (h264_videotoolbox on macOS, libx264 ultrafast elsewhere) + bilinear downscale",
-    )
-    ap.add_argument("--max-mb", type=float, default=10.0)
-    ap.add_argument("--voiceover", action="store_true", help="mix output/voiceover.json (narrate.py); drops captions")
-    args = ap.parse_args()
-
+    args = parse_args()
     out_dir = Path(args.task) / "output"
     raw = out_dir / "raw.mp4"
     if not raw.exists():
@@ -528,81 +515,105 @@ def main():
     tmap = TimeMap(steps, args.action_speed)
     voice = schedule_voiceover(out_dir, tmap, intro) if args.voiceover else []
     caps = [] if args.no_captions or args.voiceover else build_captions(steps, spots, tmap, css_h)
-    painter = CaptionPainter(W, H)
-    spotlight = Spotlight(spots, navigations, tmap, k, W, H, args.spot_dim)
-    scale_flags = "bilinear" if args.fast else "lanczos"
-
+    compose = FrameComposer((W, H), caps, Spotlight(spots, navigations, tmap, k, W, H, args.spot_dim))
     pad = 0 if args.no_frame else (round(W * 0.05) // 2) * 2
-    filter_inputs, filter_complex = [], None
-    if not args.no_frame:
-        bgp, mask, cw, ch = build_frame_assets(out_dir, W, H, pad, args.bg)
-        filter_inputs = ["-loop", "1", "-i", str(bgp), "-loop", "1", "-i", str(mask)]
-        filter_complex = (
-            "[0:v]format=rgba[v];[v][2:v]alphamerge=shortest=1[vr];"
-            f"[1:v][vr]overlay=x={pad}:y={pad}:format=auto:shortest=1,format=yuv420p[out]"
-        )
-
-    if args.fast and has_encoder("h264_videotoolbox"):  # macOS hardware encoder
-        vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "6M"]
-    elif args.fast:
-        vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", "ultrafast"]
-    else:
-        vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", "slow", "-tune", "stillimage"]
-    enc_cmd = [
-        "ffmpeg",
-        "-y",
-        "-v",
-        "error",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgb24",
-        "-s",
-        f"{W}x{H}",
-        "-r",
-        str(args.fps),
-        "-i",
-        "-",
-        *filter_inputs,
-    ]
-    if filter_complex:
-        enc_cmd += ["-filter_complex", filter_complex, "-map", "[out]"]
-    else:
-        enc_cmd += ["-pix_fmt", "yuv420p"]
-    enc_cmd += [*vcodec, "-g", "30", "-movflags", "+faststart", str(final)]
+    frame = None if args.no_frame else device_frame(out_dir, (W, H), pad, args.bg)
 
     # Downscale in ffmpeg (multithreaded) so Python receives output-size frames.
+    scale_flags = "bilinear" if args.fast else "lanczos"
     decode_vf = [] if (W, H) == (SW, SH) else ["-vf", f"scale={W}:{H}:flags={scale_flags}"]
-    decode = subprocess.Popen(
-        ["ffmpeg", "-v", "error", "-i", str(raw), *decode_vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-        stdout=subprocess.PIPE,
-    )
-    encode = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE)
+    decode_cmd = ["ffmpeg", "-v", "error", "-i", str(raw), *decode_vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    enc_cmd = encode_command(args, final, (W, H), frame)
+    written = render_frames(decode_cmd, enc_cmd, compose, tmap=tmap, src_fps=src["fps"], out_fps=args.fps)
+    if voice:
+        mix_voiceover(out_dir, final, voice)
+    size_mb = fit_size_budget(final, args)
+    write_poster(final, out_dir / "poster.png", min(1.0, max(0.0, written / args.fps - 0.1)))
+    for p in ("_mask.png", "_shadow.png", "_bg.png"):
+        (out_dir / p).unlink(missing_ok=True)
 
-    frame_size = W * H * 3
-    src_fps, out_fps = src["fps"], args.fps
+    summary = {
+        "final": str(final),
+        "size_mb": round(size_mb, 2),
+        "frames": written,
+        "duration_s": round(written / args.fps, 2),
+        "source_duration_s": round(src["duration"], 2),
+        "source": f"{SW}x{SH} (dpr {dpr:g})",
+        "canvas": f"{W + 2 * pad}x{H + 2 * pad}",
+        "action_speed": args.action_speed,
+        "sped_segments": len(tmap.segs),
+        "captions": sum(c["kind"] == "caption" for c in caps),
+        "intents": sum(c["kind"] == "intent" for c in caps),
+        "spots": len(compose.spotlight.items),
+        "voice_lines": len(voice),
+        "held_s": round(sum(sec for _, sec in tmap.freezes), 2),
+        "cut_s": round(sum(sec for _, sec in tmap.cuts), 2),
+        "over_budget": size_mb > args.max_mb,
+    }
+    (out_dir / "render.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2))
+
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--task", default=".", help="task folder holding output/")
+    ap.add_argument("--out", default="final.mp4")
+    ap.add_argument("--action-speed", type=float, default=1.0, help=">1 speeds up typing/navigation segments")
+    ap.add_argument("--no-frame", action="store_true")
+    ap.add_argument("--no-captions", action="store_true")
+    ap.add_argument("--bg", choices=BG_COLORS, default="dark")
+    ap.add_argument("--fps", type=int, default=None, help="default: the recording's fps")
+    ap.add_argument("--scale", type=float, default=1.5, help="output size as a multiple of the CSS viewport (≤ dpr)")
+    ap.add_argument(
+        "--spot-dim", type=float, default=0.4, help="spotlight: how much to dim around the target; 0 = off"
+    )
+    ap.add_argument("--crf", type=int, default=19)
+    ap.add_argument(
+        "--fast",
+        action="store_true",
+        help="preview encode (h264_videotoolbox on macOS, libx264 ultrafast elsewhere) + bilinear downscale",
+    )
+    ap.add_argument("--max-mb", type=float, default=10.0)
+    ap.add_argument("--voiceover", action="store_true", help="mix output/voiceover.json (narrate.py); drops captions")
+    return ap.parse_args()
+
+
+class FrameComposer:
+    """Paints the captions and the spotlight active at output time t onto a decoded frame. Most frames have
+    neither and pass through untouched."""
+
+    def __init__(self, size, caps, spotlight):
+        self.size = size
+        self.frame_bytes = size[0] * size[1] * 3
+        self.caps = caps
+        self.spotlight = spotlight
+        self.painter = CaptionPainter(*size)
+
+    def __call__(self, buf, t):
+        active = [c for c in self.caps if c["start"] <= t <= c["end"]]
+        spot = self.spotlight.active(t)
+        if not active and spot is None:
+            return buf
+        img = Image.frombytes("RGB", self.size, buf)
+        if spot:
+            img = self.spotlight.paint(img, spot, t)
+        for cap in active:
+            self.painter.paint(img, cap, t)
+        return img.tobytes()
+
+
+def render_frames(decode_cmd, enc_cmd, compose, *, tmap, src_fps, out_fps):
+    """Pipes every decoded source frame through `compose` into the encoder at the output's constant fps: a frame is
+    repeated or dropped as the time map stretches or squeezes it. Returns the number of frames written."""
+    decode = subprocess.Popen(decode_cmd, stdout=subprocess.PIPE)
+    encode = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE)
     next_slot, src_idx, written = 0.0, 0, 0
-    while True:
-        buf = decode.stdout.read(frame_size)
-        if len(buf) < frame_size:
-            break
-        t_src = src_idx / src_fps
-        t_out = tmap(t_src)
+    while len(buf := decode.stdout.read(compose.frame_bytes)) == compose.frame_bytes:
+        t_out = tmap(src_idx / src_fps)
         src_idx += 1
         emitted = None
         while next_slot <= t_out + 1e-6:
-            if emitted is None:
-                active = [c for c in caps if c["start"] <= t_out <= c["end"]]
-                spot = spotlight.active(t_out)
-                if not active and spot is None:
-                    emitted = buf  # passthrough — most frames
-                else:
-                    img = Image.frombytes("RGB", (W, H), buf)
-                    if spot:
-                        img = spotlight.paint(img, spot, t_out)
-                    for cap in active:
-                        painter.paint(img, cap, t_out)
-                    emitted = img.tobytes()
+            emitted = emitted or compose(buf, t_out)
             encode.stdin.write(emitted)
             written += 1
             next_slot += 1.0 / out_fps
@@ -611,81 +622,59 @@ def main():
     encode.wait()
     if encode.returncode:
         sys.exit(f"encode failed ({encode.returncode})")
-    if voice:
-        mix_voiceover(out_dir, final, voice)
+    return written
 
-    size_mb = final.stat().st_size / 1e6
-    if size_mb > args.max_mb and not args.fast:
-        small = final.with_name(final.stem + "_small.mp4")
-        run(
-            [
-                "ffmpeg",
-                "-y",
-                "-v",
-                "error",
-                "-i",
-                str(final),
-                "-c:v",
-                "libx264",
-                "-crf",
-                str(args.crf + 3),
-                "-preset",
-                "slow",
-                "-tune",
-                "stillimage",
-                "-pix_fmt",
-                "yuv420p",
-                "-g",
-                "30",
-                "-c:a",
-                "copy",
-                "-movflags",
-                "+faststart",
-                str(small),
-            ]
-        )
-        shutil.move(small, final)
-        size_mb = final.stat().st_size / 1e6
 
-    poster_t = min(1.0, max(0.0, written / out_fps - 0.1))
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-v",
-            "error",
-            "-ss",
-            f"{poster_t}",
-            "-i",
-            str(final),
-            "-frames:v",
-            "1",
-            str(out_dir / "poster.png"),
-        ]
+def device_frame(out_dir, size, pad, bg):
+    """The device frame's extra ffmpeg inputs (background, rounded-corner mask) and the graph that puts the video
+    on them."""
+    bgp, mask, _, _ = build_frame_assets(out_dir, *size, pad, bg)
+    inputs = ["-loop", "1", "-i", str(bgp), "-loop", "1", "-i", str(mask)]
+    graph = (
+        "[0:v]format=rgba[v];[v][2:v]alphamerge=shortest=1[vr];"
+        f"[1:v][vr]overlay=x={pad}:y={pad}:format=auto:shortest=1,format=yuv420p[out]"
     )
-    for p in ("_mask.png", "_shadow.png", "_bg.png"):
-        (out_dir / p).unlink(missing_ok=True)
+    return inputs, graph
 
-    summary = {
-        "final": str(final),
-        "size_mb": round(size_mb, 2),
-        "frames": written,
-        "duration_s": round(written / out_fps, 2),
-        "source_duration_s": round(src["duration"], 2),
-        "source": f"{SW}x{SH} (dpr {dpr:g})",
-        "canvas": f"{W + 2 * pad}x{H + 2 * pad}",
-        "action_speed": args.action_speed,
-        "sped_segments": len(tmap.segs),
-        "captions": sum(c["kind"] == "caption" for c in caps),
-        "intents": sum(c["kind"] == "intent" for c in caps),
-        "spots": len(spotlight.items),
-        "voice_lines": len(voice),
-        "held_s": round(sum(sec for _, sec in tmap.freezes), 2),
-        "cut_s": round(sum(sec for _, sec in tmap.cuts), 2),
-        "over_budget": size_mb > args.max_mb,
-    }
-    (out_dir / "render.json").write_text(json.dumps(summary, indent=2))
-    print(json.dumps(summary, indent=2))
+
+def encode_command(args, final, size, frame):
+    """ffmpeg reading rgb24 frames on stdin; `frame` is device_frame()'s inputs and graph, or None."""
+    W, H = size
+    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}"]
+    cmd += ["-r", str(args.fps), "-i", "-"]
+    if frame:
+        inputs, graph = frame
+        cmd += [*inputs, "-filter_complex", graph, "-map", "[out]"]
+    else:
+        cmd += ["-pix_fmt", "yuv420p"]
+    return cmd + [*video_codec(args), "-g", "30", "-movflags", "+faststart", str(final)]
+
+
+def video_codec(args):
+    if args.fast and has_encoder("h264_videotoolbox"):  # macOS hardware encoder
+        return ["-c:v", "h264_videotoolbox", "-b:v", "6M"]
+    if args.fast:
+        return ["-c:v", "libx264", "-crf", str(args.crf), "-preset", "ultrafast"]
+    return ["-c:v", "libx264", "-crf", str(args.crf), "-preset", "slow", "-tune", "stillimage"]
+
+
+def fit_size_budget(final, args):
+    """Re-encodes once at crf+3 when the video is over --max-mb (not for --fast previews); returns its size in MB."""
+    size_mb = final.stat().st_size / 1e6
+    if size_mb <= args.max_mb or args.fast:
+        return size_mb
+    small = final.with_name(final.stem + "_small.mp4")
+    run(
+        ["ffmpeg", "-y", "-v", "error", "-i", str(final), "-c:v", "libx264", "-crf", str(args.crf + 3)]
+        + ["-preset", "slow", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "copy"]
+        + ["-movflags", "+faststart", str(small)]
+    )
+    shutil.move(small, final)
+    return final.stat().st_size / 1e6
+
+
+def write_poster(final, poster, t):
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t}", "-i", str(final), "-frames:v", "1", str(poster)])
 
 
 if __name__ == "__main__":

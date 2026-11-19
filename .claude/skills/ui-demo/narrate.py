@@ -41,15 +41,7 @@ CARD_SETTLED_S = 0.1  # how far inside the intro/outro capture the card frame to
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--task", default=".", help="task folder holding output/")
-    ap.add_argument("--voice", default=None, help="reference wav to clone (5-9 s of clean speech); default: built-in")
-    ap.add_argument("--exaggeration", type=float, default=0.5, help="energy")
-    ap.add_argument("--cfg-weight", type=float, default=0.5, help="pacing; lower = slower, more deliberate")
-    ap.add_argument("--tempo", type=float, default=0.9, help="ffmpeg atempo applied after generation, pitch kept")
-    ap.add_argument("--fresh", action="store_true", help="new takes for every line (Chatterbox is stochastic)")
-    args = ap.parse_args()
-
+    args = parse_args()
     out_dir = Path(args.task) / "output"
     data = json.loads((out_dir / "steps.json").read_text())
     lines = script_lines(data)
@@ -59,6 +51,26 @@ def main():
     vo_dir = out_dir / "vo"
     vo_dir.mkdir(exist_ok=True)
     settings = [args.voice, args.exaggeration, args.cfg_weight, args.tempo]
+    voice_lines(lines, vo_dir, settings, args)
+    remove_stale_clips(vo_dir, lines)
+    (out_dir / "voiceover.json").write_text(json.dumps({"settings": settings, "lines": lines}, indent=2))
+    print(f"[vo] {len(lines)} lines, {sum(line['seconds'] for line in lines):.1f}s of speech → output/voiceover.json")
+
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--task", default=".", help="task folder holding output/")
+    ap.add_argument("--voice", default=None, help="reference wav to clone (5-9 s of clean speech); default: built-in")
+    ap.add_argument("--exaggeration", type=float, default=0.5, help="energy")
+    ap.add_argument("--cfg-weight", type=float, default=0.5, help="pacing; lower = slower, more deliberate")
+    ap.add_argument("--tempo", type=float, default=0.9, help="ffmpeg atempo applied after generation, pitch kept")
+    ap.add_argument("--fresh", action="store_true", help="new takes for every line (Chatterbox is stochastic)")
+    return ap.parse_args()
+
+
+def voice_lines(lines, vo_dir, settings, args):
+    """Gives each line its clip (`file`, `seconds`): cached by text + settings, so only new or edited lines are
+    voiced, unless --fresh."""
     narrator = Narrator(args)
     for line in lines:
         wav = vo_dir / f"{hashlib.sha256(json.dumps([line['text'], *settings]).encode()).hexdigest()[:16]}.wav"
@@ -68,12 +80,12 @@ def main():
         line["seconds"] = duration(wav)
         print(f"[vo] {line['seconds']:5.2f}s  {line['kind']:<7} {line['text']}", flush=True)
 
+
+def remove_stale_clips(vo_dir, lines):
     used = {line["file"] for line in lines}
     for stale in vo_dir.glob("*.wav"):
         if stale.name not in used:
             stale.unlink()
-    (out_dir / "voiceover.json").write_text(json.dumps({"settings": settings, "lines": lines}, indent=2))
-    print(f"[vo] {len(lines)} lines, {sum(line['seconds'] for line in lines):.1f}s of speech → output/voiceover.json")
 
 
 def script_lines(data):
