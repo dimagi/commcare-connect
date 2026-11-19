@@ -2581,10 +2581,11 @@ class TestGetMetricsForMicroplanningWorkAreas:
     def _make_visits(self, opp, work_area, *, approved=0, pending=0, deliver_unit=None):
         """Create `approved` approved + `pending` pending UserVisits for `work_area`."""
         deliver_unit = (
-            deliver_unit or DeliverUnit.objects.for_opportunity(opp).filter(slug=SERVICE_DELIVERY_UNIT_SLUG).first()
-        )
-        deliver_unit = deliver_unit or DeliverUnitFactory(
-            app=opp.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG, name="Health Service Delivery"
+            deliver_unit
+            or DeliverUnit.objects.for_opportunity(opp).filter(slug=SERVICE_DELIVERY_UNIT_SLUG).first()
+            or DeliverUnitFactory(
+                opportunity=opp, app=opp.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG, name="Health Service Delivery"
+            )
         )
         for _ in range(approved):
             UserVisitFactory(
