@@ -17,6 +17,7 @@ from django.utils.http import urlencode
 from django.utils.timezone import now
 from django.utils.translation import gettext, ngettext
 
+from commcare_connect.opportunity.filters import FilterMixin
 from commcare_connect.opportunity.models import Opportunity, UserVisit
 from commcare_connect.organization.decorators import user_can_edit_org_profile
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -137,22 +138,21 @@ def _org_node(
     programs = {**filterable_programs, **{opp.program_id: opp.program for opp in opportunities}}
 
     home_url = "organization:home" if can_open_org_home else "opportunity:list"
-    opportunities_url = reverse("opportunity:list", args=(org.slug,))
     return {
         "id": org.slug,
         "name": org.name,
         "type": gettext("Program Manager") if org.program_manager else gettext("Network Manager"),
+        "test": org.is_test,
         "url": reverse(home_url, args=(org.slug,)),
-        "opportunities_url": opportunities_url,
+        "opportunities_url": _opportunity_list_url(org=org, params={}),
         "programs": [
             _program_node(
                 org=org,
                 program=program,
                 opportunities=opportunities_by_program[program.id],
-                opportunities_url=(
-                    f"{opportunities_url}?{urlencode({'program': program.slug})}"
-                    if program.id in filterable_programs
-                    else opportunities_url
+                opportunities_url=_opportunity_list_url(
+                    org=org,
+                    params={"program": program.slug} if program.id in filterable_programs else {},
                 ),
             )
             # Latest end date first, so running programs sit above ended ones.
@@ -160,6 +160,15 @@ def _org_node(
         ],
         "visit_summary": VisitStats.total(opportunities.values()).summary(),
     }
+
+
+def _opportunity_list_url(org: Organization, params: dict[str, str]) -> str:
+    """The org's opportunity list for "See all", showing what the selector shows.
+
+    Marking the filters as chosen turns off the list's defaults, which hide test and inactive opportunities.
+    """
+    params = {**params, FilterMixin.filters_submitted_param: "1"}
+    return f"{reverse('opportunity:list', args=(org.slug,))}?{urlencode(params)}"
 
 
 def _program_node(
@@ -190,6 +199,7 @@ def _opportunity_node(org: Organization, opportunity: Opportunity, stats: VisitS
         "name": opportunity.name,
         # Active matches the opportunity list's default filters, which also leave out test opportunities.
         "active": opportunity.is_active and not opportunity.is_test,
+        "test": opportunity.is_test,
         "url": reverse("opportunity:detail", args=(org.slug, opportunity.opportunity_id)),
         "end_label": opportunity_end_label(opportunity),
         "visit_summary": stats.summary(),

@@ -302,7 +302,7 @@ def test_page_context_shows_program_only_with_access(nm_org, program, member_of_
 def test_see_all_filters_by_program_only_where_the_list_allows_it(pm_org, nm_org, program):
     """The "See all" link filters the opportunity list by program only where that list offers the program as a filter.
 
-    An NM org that only delivers for a program can't filter by it, so its link opens the unfiltered list.
+    An NM org that only delivers for a program can't filter by it, so its link opens the list without a program.
     """
     OpportunityFactory(organization=nm_org, program=program)
     user = _member(pm_org)
@@ -311,9 +311,29 @@ def test_see_all_filters_by_program_only_where_the_list_allows_it(pm_org, nm_org
     tree = _tree_for(user)
 
     (pm_program,) = tree["A PM org"]["programs"]
-    assert pm_program["opportunities_url"] == f"/a/{pm_org.slug}/opportunity/?program={program.slug}"
+    assert pm_program["opportunities_url"] == f"/a/{pm_org.slug}/opportunity/?program={program.slug}&filtered=1"
     (nm_program,) = tree["B NM org"]["programs"]
-    assert nm_program["opportunities_url"] == f"/a/{nm_org.slug}/opportunity/"
+    assert nm_program["opportunities_url"] == f"/a/{nm_org.slug}/opportunity/?filtered=1"
+
+
+def test_see_all_turns_off_the_lists_default_filters(pm_org):
+    """See all turns off the list's default filters, so the list shows test and inactive opportunities too."""
+    org_node = _tree_for(_member(pm_org))["A PM org"]
+
+    assert org_node["opportunities_url"] == f"/a/{pm_org.slug}/opportunity/?filtered=1"
+
+
+@pytest.mark.parametrize("is_test", [True, False])
+def test_test_orgs_and_opportunities_are_marked(is_test):
+    """The selector marks test organizations and test opportunities."""
+    org = OrganizationFactory(name="Org", is_test=is_test)
+    OpportunityFactory(organization=org, program=ProgramFactory(organization=org), is_test=is_test)
+
+    org_node = _tree_for(_member(org))["Org"]
+    (program_node,) = org_node["programs"]
+
+    assert org_node["test"] is is_test
+    assert program_node["opportunities"][0]["test"] is is_test
 
 
 def test_ended_program_with_a_running_opportunity_is_active(pm_org):

@@ -21,7 +21,12 @@
             class="flex items-center gap-3 rounded-lg px-3 py-1.5 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-deep-purple/30">
       <div class="text-left">
         {% if current_org %}
-          <p class="text-sm font-medium text-brand-deep-purple max-w-48 truncate">{{ request.org.name }}</p>
+          <p class="flex items-center gap-2 text-sm font-medium text-brand-deep-purple">
+            <span class="max-w-48 truncate">{{ request.org.name }}</span>
+            {% if request.org.is_test %}
+              <span class="badge badge-sm badge-amber">{% translate "Test" %}</span>
+            {% endif %}
+          </p>
         {% else %}
           <p class="text-sm font-medium text-brand-deep-purple">{% translate "Select Organization" %}</p>
         {% endif %}
