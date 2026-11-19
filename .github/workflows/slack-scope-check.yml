@@ -1,0 +1,32 @@
+name: Slack token scope check
+
+# Temporary: checks whether SLACK_BOT_TOKEN has the users:read.email scope. Delete before merging.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List token scopes
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        # Every Slack Web API response lists the token's scopes in the x-oauth-scopes header
+        run: |
+          curl -sS -D - -o /dev/null -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            https://slack.com/api/auth.test | grep -i '^x-oauth-scopes'
+
+      - name: Look up user by email
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          LOOKUP_EMAIL: chris.smit@dimagi.com
+        # Same request as slack_user_id() in deploy/staging_report.py (PR #1716), which reads .user.id.
+        # missing_scope in `error` means the token lacks users:read.email.
+        run: |
+          curl -sS -G -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            --data-urlencode "email=${LOOKUP_EMAIL}" \
+            https://slack.com/api/users.lookupByEmail \
+            | jq '{ok, error, needed, provided, id: .user.id, name: .user.name}'
