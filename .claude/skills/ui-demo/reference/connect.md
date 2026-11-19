@@ -36,7 +36,7 @@ Add helpers here when a second demo needs the same thing; keep one-off selectors
 - Auth-layout pages (login, signup) have no `<main>` → use `form` as their checkpoint.
 - **TomSelect fields resist automation in several stacked ways** → always use `pickTomSelect()`, never hand-roll it (why: `reference/troubleshooting.md` "TomSelect picker"). Beyond the picker:
   - a value the seed already selected is hidden from its own dropdown (Child Health Campaign already has India) → pick one that is not seeded;
-  - a multi-select's options are keyed by pk, so pass `{ value }` read off the native select: `await page.locator('#id_users option:has-text("Ravi Admin")').getAttribute('value')`;
+  - a multi-select's options are keyed by pk, so pass `{ text, value }` with the value read off the native select: `pickTomSelect(p, d, 'id_users', { text: 'Ravi Admin', value: await p.locator('#id_users option:has-text("Ravi Admin")').getAttribute('value') })`;
   - a selected `.item` carries a `×` → assert with `toContainText`, not exact text.
 - **Tooltips** (`x-tooltip`, tippy) close when their icon is clicked → reach them with `d.hover`, and assert `.tippy-box[data-state="visible"]`: a fading tooltip stays in the DOM, so a presence check passes headless while the headed take shows nothing.
 - The test-data warning fires on Django admin's "Is test" label — expected there, not a seed problem.

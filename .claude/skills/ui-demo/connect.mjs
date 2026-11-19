@@ -109,9 +109,12 @@ export async function inviteMember(page, d, email, role = 'Member') {
 }
 
 // ---------- TomSelect (countries, primary sectors, year of establishment, work areas)
-/** Picks a TomSelect value by typing to filter, the way a user would. Every line is load-bearing:
- *  reference/troubleshooting.md "TomSelect picker". */
-export async function pickTomSelect(page, d, id, text, { value = text } = {}) {
+/** Picks a TomSelect value by typing to filter, the way a user would. `option` is the text to type, or
+ *  `{ text, value }` when the option's value is not its text (a multi-select keyed by pk). Every line is
+ *  load-bearing: reference/troubleshooting.md "TomSelect picker". */
+export async function pickTomSelect(page, d, id, option) {
+  const { text, value = text } =
+    typeof option === 'string' ? { text: option } : option;
   // 1. the visible control, not the size="1" input: the wrapper intercepts real-coordinate clicks under --record.
   //    Skipped while TomSelect has focus (the next pick on a multi-select): the search box is still live, and the
   //    click would land on a chosen chip
