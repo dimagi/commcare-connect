@@ -123,7 +123,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PREV_RELEASE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          if ! PREV_RELEASE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2> "$RUNNER_TEMP/err")"; then
+            grep -q 'HTTP 404' "$RUNNER_TEMP/err" && exit 0  # no release yet
+            cat "$RUNNER_TEMP/err" >&2
+            echo "::warning::Could not read the latest release, so PRs won't be labelled as deployed"
+            exit 1
+          fi
           echo "PREV_RELEASE=${PREV_RELEASE}" >> "$GITHUB_ENV"
 
       # Record the deploy in GitHub's Deployments API so each environment shows what is running there.
