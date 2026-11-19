@@ -279,6 +279,7 @@ class TestProgramOpportunityCreate:
         assert response.data["total_budget"] == 100000
         assert response.data["active"] is False
         assert len(response.data["learn_app"]["learn_modules"]) == 1
+        assert response.data["learn_app"]["learn_modules"][0]["time_estimate_minutes"] == 600
         assert len(response.data["deliver_app"]["deliver_units"]) == 2
 
         opp = Opportunity.objects.get(opportunity_id=response.data["opportunity_id"])
