@@ -82,7 +82,9 @@ def device_frame(out_dir, canvas, args):
         return 0, None
     pad = (round(canvas.width * 0.05) // 2) * 2
     bgp, mask, _, _ = build_frame_assets(out_dir, canvas, pad, args.bg)
-    inputs = ["-loop", "1", "-i", str(bgp), "-loop", "1", "-i", str(mask)]
+    # -framerate: a looped image defaults to 25 fps, and overlay takes its rate from the background input
+    fps = ["-framerate", str(args.fps), "-loop", "1"]
+    inputs = [*fps, "-i", str(bgp), *fps, "-i", str(mask)]
     graph = (
         "[0:v]format=rgba[v];[v][2:v]alphamerge=shortest=1[vr];"
         f"[1:v][vr]overlay=x={pad}:y={pad}:format=auto:shortest=1,format=yuv420p[out]"
