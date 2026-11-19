@@ -9,15 +9,15 @@
 **Current flow.**
 
 - A Program Manager creates an opportunity and has to choose a Learn app, a description and a passing score.
-- An invited worker sees the job in the phone app. The only action on the job details screen is **Start learning**. Tapping it accepts the invite, creates the worker's CommCare HQ user and installs the Learn app.
+- An invited worker sees the job in the phone app. The job opens on the opportunity intro screen (badged "New Opportunity"), where the only action is **Start learning**. Tapping it accepts the invite, creates the worker's CommCare HQ user and installs the Learn app.
 - Learn forms come back to Connect through CommCare HQ and record completed modules and assessment scores.
-- The phone shows a **Claim** button only after the worker has finished every module and passed the assessment. Claiming creates the worker's limits and HQ user for delivery, and the worker installs the Deliver app.
+- Once the worker has finished every module and passed the assessment, the phone shows a **Go To App** button. Tapping it claims the job, which creates the worker's limits and HQ user for delivery, and opens the delivery dashboard. From there the worker taps **Start** to install and launch the Deliver app.
 - The invite SMS links to the job: the phone app opens it if installed, otherwise the link goes to the Play Store. Opening the link doesn't accept the invite. There is no accept button in the phone app, so in practice "Start learning" is the only thing that accepts an invite. (An older browser confirmation page that accepts invites still exists, but nothing links to it any more.)
 
 **Goals.**
 
 - **G1.** A Program Manager can create an opportunity without a Learn app, on the web or through the program automation API.
-- **G2.** A worker on a phone app version that supports it can claim a learn-less opportunity straight from the job details screen.
+- **G2.** A worker on a phone app version that supports it can claim a learn-less opportunity straight from the opportunity intro screen.
 - **G3.** Phone app versions that don't support it keep working: they skip learn-less opportunities and still show the worker's other jobs.
 - **G4.** Invite acceptance, reporting and reminders still work without a learning step.
 - **G5.** The web UI only shows learning information where an opportunity has a Learn app. Opportunities that have one don't change.
@@ -100,7 +100,7 @@ sequenceDiagram
     participant HQ as CommCare HQ
     Phone->>Django: Fetch opportunity list
     Django-->>Phone: Includes learn-less opportunities, learn_app: null (G2)
-    Worker->>Phone: Open job details, tap Claim
+    Worker->>Phone: Open opportunity intro screen, tap Claim
     Phone->>Django: Claim
     Django->>Django: Create claim and limits, accept invite (G4)
     Django->>HQ: Create worker's user on the Deliver app's project
@@ -117,7 +117,7 @@ sequenceDiagram
   - No error code the server could send would make these apps tell the worker to update, so sending the job as it is gives the most useful result.
 
   The sync error is what tells this case apart from a worker who wasn't invited. Support can ask "Do you see a sync error on the opportunity list?".
-- "Start learning" is only called from the job intro screen, which current apps never show for a learn-less job, and new apps won't call it for one. As a safeguard, the view returns `400 NO_LEARN_APP` for a learn-less opportunity before it does anything else, so it creates no HQ user and doesn't accept the invite. Today it would fail with a 500 on the missing app.
+- "Start learning" is only called from the opportunity intro screen, which current apps never show for a learn-less job, and new apps won't call it for one. As a safeguard, the view returns `400 NO_LEARN_APP` for a learn-less opportunity before it does anything else, so it creates no HQ user and doesn't accept the invite. Today it would fail with a 500 on the missing app.
 
 #### Reminding workers who haven't claimed (G4)
 
@@ -169,7 +169,7 @@ The [mockup](https://claude.ai/artifact/DR5nWCB1Xy8oLd5NpVzTw1) shows each scree
 
 - **An invited worker on an old app version never sees the job.** They see a sync error on the opportunity list, and "opportunity not found" if they tap the invite, but nothing tells them to update. Delivery teams should tell workers to update before inviting them, and support can ask workers who don't see the job whether they see the sync error.
 - **The sync error shows on every refresh.** An old app keeps reporting a failed sync for as long as the worker has access to a learn-less opportunity, even though their other jobs work. This is accepted, because it's the signal that the app needs updating.
-- **Some workers on old app versions would see no jobs at all (to confirm with the mobile team).** From reading the phone app code (2.64 onwards): the opportunity list only shows the jobs saved on the phone if the list has synced successfully at least once on that install, and a list that includes a learn-less job never syncs successfully. So a worker with no earlier successful sync, such as a new Connect worker, someone who reinstalled the app, cleared its data or moved to a new phone, or someone upgrading from a version before 2.64, would see only "Sync Failed" and none of their jobs, including jobs with a Learn app. Logging out doesn't reset this. If the mobile team confirms it, we either accept it or hide learn-less opportunities from old app versions after all, which needs a way for the phone to say it supports them.
+- **Some workers on old app versions see no jobs at all (confirmed by the mobile team).** From the phone app code (2.64 onwards): the opportunity list only shows the jobs saved on the phone if the list has synced successfully at least once on that install, and a list that includes a learn-less job never syncs successfully. So a worker with no earlier successful sync, such as a new Connect worker, someone who reinstalled the app, cleared its data or moved to a new phone, or someone upgrading from a version before 2.64, would see only "Sync Failed" and none of their jobs, including jobs with a Learn app. Logging out doesn't reset this. This is accepted, because delivery teams will be asking workers to update anyway. The alternative, hiding learn-less opportunities from old app versions, would need a way for the phone to say it supports them.
 - **The flag is turned on before a phone app that supports learn-less opportunities has shipped.** Every worker would get a sync error on the opportunity list, and no one could see learn-less opportunities created then. The flag's description and the release notes say it must only be turned on after that release.
 - **Consumers of the data export break on `learn_app: null`.** The change goes in the release notes, and known consumers are told before the flag goes on for any organization.
 
@@ -184,9 +184,9 @@ For the mobile spec to answer:
 - **How a learn-less job's status is worked out.**
   - The phone sets a job's status when it parses the opportunity list. A job starts as "available", becomes "learning" once learning progress is above 0, and only becomes "delivering" if it's claimed *and* learning progress is above 0.
   - Learning progress counts the assessment as one module. A job with no modules and no passed assessment is therefore at 0%, so a claimed learn-less job would stay "available".
-  - The status decides which section of the opportunity list the job appears in and which screen opens when the worker taps it, so a wrong status would send a worker who has claimed back to the job details screen.
+  - The status decides which section of the opportunity list the job appears in and which screen opens when the worker taps it, so a wrong status would send a worker who has claimed back to the opportunity intro screen.
   - Expected outcome: an unclaimed learn-less job shows as available, and a claimed one shows as delivering.
 - **Where the generic opportunity push leads.**
   - The "Claim your job" reminder uses the existing `ccc_generic_opportunity` push action. When the worker taps it, the phone picks the screen from the job's status.
   - Today that's payments or the job page for delivering jobs, the job page for available or learning jobs, and no redirect for any other status.
-  - The reminder only goes to workers who haven't claimed, so an "available" job leads to the job page, which is what we want. If the mobile spec adds a new status for learn-less jobs, this mapping has to handle it, or the reminder stops leading anywhere.
+  - The reminder only goes to workers who haven't claimed, so an "available" job leads to the opportunity intro screen, which is what we want. If the mobile spec adds a new status for learn-less jobs, this mapping has to handle it, or the reminder stops leading anywhere.
