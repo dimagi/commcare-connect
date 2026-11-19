@@ -19,6 +19,7 @@ permissions:
   contents: write
   actions: write
   deployments: write
+  pull-requests: write
 
 # The group manual production deploys take in deploy.yml (deploy-<environment>); keep the name and
 # cancel-in-progress: false the same in both, or one could cancel the other's deploy halfway. Holding it for the whole
