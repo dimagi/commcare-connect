@@ -21,7 +21,7 @@ Primary org: **Child Health Campaign** (slug `child-health-campaign`, generated 
 
 ## Helpers (`connect.mjs`)
 
-`quickLogin(page,user)` (off-camera, for `preAuth` — the default for features that are not about auth), `login(p,d,user)` (on camera), `fillLogin(p,d,user)` (form already on screen, keeps `?next=`), `switchUser(p,d,user)` (clears cookies first — set `useState:false`), `assertLoggedIn(p)` (also asserts the Debug Toolbar is absent), `openOrgMembers(p,d)`, `inviteMember(p,d,email,role)`, `openAdmin(p,d,'organization/organizationinvite/')`, `pickTomSelect(p,d,'id_countries','Kenya')` (any TomSelect field — countries, primary sectors, year of establishment, work areas), plus `urls`, `sel`, `ORG`, `USERS`, `PASSWORD`.
+`quickLogin(page,user)` (off-camera, for `preAuth` — the default for features that are not about auth), `login(p,d,user)` (on camera), `fillLogin(p,d,user)` (form already on screen, keeps `?next=`), `switchUser(p,d,user)` (clears cookies first — set `useState:false`), `assertLoggedIn(p)` (also asserts the Debug Toolbar is absent), `openOrgMembers(p,d)`, `inviteMember(p,d,email,role)`, `openAdmin(p,d,'organization/organizationinvite/')`, `pickTomSelect(p,d,'id_countries',{ text: 'Kenya', value: 'KEN' })` (any TomSelect field — countries, primary sectors, year of establishment, work areas; plain text such as `'2012'` when an option's value is its text), plus `urls`, `sel`, `ORG`, `USERS`, `PASSWORD`.
 
 Add helpers here when a second demo needs the same thing; keep one-off selectors in the flow.
 
