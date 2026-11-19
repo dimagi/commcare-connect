@@ -87,7 +87,7 @@ def test_form_receiver_learn_module(
     "hours, minutes, expected_hours, expected_minutes",
     [
         (2, None, 2, 120),  # legacy form, hours only
-        (2, 25, 2, 25),
+        (1, 25, 1, 25),
         (None, 90, 2, 90),  # minutes only
     ],
 )

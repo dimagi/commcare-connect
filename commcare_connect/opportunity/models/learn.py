@@ -1,5 +1,6 @@
 """Learn app modules and the progress workers make through them."""
 
+import logging
 import math
 
 from django.db import models
@@ -9,6 +10,8 @@ from commcare_connect.opportunity.models.base import XFormBaseModel
 from commcare_connect.opportunity.models.commcare_app import CommCareApp
 from commcare_connect.opportunity.models.opportunity import Opportunity
 from commcare_connect.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class LearnModule(models.Model):
@@ -38,20 +41,28 @@ class LearnModule(models.Model):
         return self.time_estimate * 60
 
 
-def resolve_time_estimate(hours, minutes) -> tuple[int | None, int | None]:
+def resolve_time_estimate(hours, minutes, slug) -> tuple[int | None, int | None]:
     """Return (hours, minutes) for a learn module block from HQ.
 
-    HQ sends ``time_estimate_minutes`` alongside the legacy ``time_estimate`` hours. Forms built before
-    that only have hours, so minutes fall back to hours × 60; if a form only has minutes, hours are
-    derived by rounding up so older apps never show less time than the module takes.
+    HQ sends ``time_estimate_minutes`` alongside the legacy ``time_estimate`` hours. Minutes are the
+    source of truth: when present, hours are derived from them, rounded up so older apps never show less
+    time than the module takes. Forms built before minutes existed only have hours, so minutes fall back
+    to hours × 60.
     """
     hours = _to_int(hours)
     minutes = _to_int(minutes)
     if minutes is None:
         return hours, hours * 60 if hours is not None else None
-    if hours is None:
-        hours = math.ceil(minutes / 60)
-    return hours, minutes
+    derived_hours = math.ceil(minutes / 60)
+    if hours is not None and hours != derived_hours:
+        logger.warning(
+            "Learn module %s: time_estimate %s hours disagrees with time_estimate_minutes %s; using %s hours",
+            slug,
+            hours,
+            minutes,
+            derived_hours,
+        )
+    return derived_hours, minutes
 
 
 def _to_int(value) -> int | None:

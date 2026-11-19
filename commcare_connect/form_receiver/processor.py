@@ -105,10 +105,17 @@ def _get_matching_blocks(jsonpath, xform):
 
 
 def get_or_create_learn_module(app, module_data):
-    hours, minutes = resolve_time_estimate(module_data.get("time_estimate"), module_data.get("time_estimate_minutes"))
+    slug = module_data["@id"]
+    # Resolve estimates only for a new module, so a mismatch warning isn't logged on every submission.
+    module = LearnModule.objects.filter(app=app, slug=slug).first()
+    if module:
+        return module
+    hours, minutes = resolve_time_estimate(
+        module_data.get("time_estimate"), module_data.get("time_estimate_minutes"), slug
+    )
     module, _ = LearnModule.objects.get_or_create(
         app=app,
-        slug=module_data["@id"],
+        slug=slug,
         defaults=dict(
             name=module_data["name"],
             description=module_data["description"],

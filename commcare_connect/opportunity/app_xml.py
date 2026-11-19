@@ -107,7 +107,7 @@ def extract_modules(xml: ET.Element):
         name = get_element_text(block, "name")
         description = get_element_text(block, "description")
         hours, minutes = resolve_time_estimate(
-            get_element_text(block, "time_estimate"), get_element_text(block, "time_estimate_minutes")
+            get_element_text(block, "time_estimate"), get_element_text(block, "time_estimate_minutes"), slug
         )
         yield Module(slug, name, description, hours, minutes)
 
