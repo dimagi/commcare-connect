@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import Exists, Q
 
 from commcare_connect.opportunity.models.commcare_app import CommCareApp
 from commcare_connect.opportunity.models.opportunity import Opportunity
@@ -88,8 +88,12 @@ class DeliverUnitQuerySet(models.QuerySet):
             .first()
         )
         if orphan:
-            # opportunity__isnull again, so a concurrent caller that adopted it first wins
-            self.filter(pk=orphan, opportunity__isnull=True).update(opportunity=opportunity)
+            # Both conditions are re-checked by the UPDATE itself, so a concurrent caller that already
+            # adopted this unit, or another one for the same slug, wins and this call adopts nothing
+            already_has_unit = self.filter(opportunity=opportunity, app_id=opportunity.deliver_app_id, slug=slug)
+            self.filter(pk=orphan, opportunity__isnull=True).filter(~Exists(already_has_unit)).update(
+                opportunity=opportunity
+            )
 
 
 class DeliverUnit(models.Model):

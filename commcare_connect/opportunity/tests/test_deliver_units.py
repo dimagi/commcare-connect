@@ -57,6 +57,16 @@ class TestGetOrCreateForOpportunity:
         second.refresh_from_db()
         assert second.opportunity is None
 
+    def test_adopts_nothing_once_the_opportunity_has_a_unit(self, opportunity):
+        # A concurrent caller adopted the first unit after this one's initial lookup missed
+        DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=opportunity)
+        orphan = DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=None)
+
+        DeliverUnit.objects.all()._adopt_unit_with_no_opportunity(opportunity, "visit")
+
+        orphan.refresh_from_db()
+        assert orphan.opportunity is None
+
     def test_ignores_units_of_a_previous_deliver_app(self, opportunity):
         old_app_unit = DeliverUnitFactory(app=CommCareAppFactory(), slug="visit", opportunity=opportunity)
 
